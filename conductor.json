@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "setup": "pnpm install\nln -sfn \"$CONDUCTOR_ROOT_PATH/.env.local\" .env.local",
+    "setup": "pnpm install\nln -sfn \"$CONDUCTOR_ROOT_PATH/.env.local\" .env.local\nmkdir -p \"$CONDUCTOR_ROOT_PATH/data\"\nln -sfn \"$CONDUCTOR_ROOT_PATH/data\" data\npnpm db:migrate",
     "run": "pnpm dev --port \"$CONDUCTOR_PORT\"",
     "archive": ""
   },
