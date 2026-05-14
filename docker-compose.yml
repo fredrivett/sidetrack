@@ -1,0 +1,23 @@
+services:
+  sidetrack:
+    build: .
+    image: sidetrack:latest
+    container_name: sidetrack
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Required. Generate with: openssl rand -hex 32
+      WEB_TOKEN: ${WEB_TOKEN:?WEB_TOKEN is required}
+      MCP_TOKEN: ${MCP_TOKEN:?MCP_TOKEN is required}
+    volumes:
+      - sidetrack-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/login"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  sidetrack-data:
