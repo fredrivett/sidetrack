@@ -16,12 +16,14 @@ export function ProjectColumn({
   categories,
   prevId,
   nextId,
+  onShowActivity,
 }: {
   project: Project;
   items: Item[];
   categories: Category[];
   prevId: string | null;
   nextId: string | null;
+  onShowActivity: (projectId: string) => void;
 }) {
   const completed = items.filter((i) => i.completedAt !== null);
   const active = items.filter((i) => i.completedAt === null);
@@ -46,6 +48,7 @@ export function ProjectColumn({
           prevId={prevId}
           nextId={nextId}
           name={project.name}
+          onShowActivity={onShowActivity}
         />
       </header>
 

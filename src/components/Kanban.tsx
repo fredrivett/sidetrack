@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { AddProjectButton } from "./AddProjectButton";
-import { ProjectColumn } from "./ProjectColumn";
+import { useEffect, useRef, useState } from "react";
 import type { Category, Item, Project } from "@/core/schema";
+import { AddProjectButton } from "./AddProjectButton";
+import { AuditDrawer } from "./AuditDrawer";
+import { ProjectColumn } from "./ProjectColumn";
 
 export function Kanban({
   projects,
@@ -16,6 +17,9 @@ export function Kanban({
 }) {
   const railRef = useRef<HTMLDivElement>(null);
   const initialised = useRef(false);
+  const [audit, setAudit] = useState<{ open: boolean; projectId?: string }>({
+    open: false,
+  });
 
   // On first paint: scroll to ?p=<id> if present.
   useEffect(() => {
@@ -64,9 +68,18 @@ export function Kanban({
     <main className="flex h-dvh flex-col">
       <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
         <h1 className="text-sm font-semibold tracking-tight">Sidetrack</h1>
-        <span className="text-xs text-neutral-400">
-          {projects.length} project{projects.length === 1 ? "" : "s"}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-neutral-400">
+            {projects.length} project{projects.length === 1 ? "" : "s"}
+          </span>
+          <button
+            type="button"
+            onClick={() => setAudit({ open: true })}
+            className="rounded-md border border-neutral-200 px-2 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-100 dark:border-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-800"
+          >
+            Activity
+          </button>
+        </div>
       </div>
       <div
         ref={railRef}
@@ -85,10 +98,18 @@ export function Kanban({
             categories={categoriesByProject[p.id] ?? []}
             prevId={projects[idx - 1]?.id ?? null}
             nextId={projects[idx + 1]?.id ?? null}
+            onShowActivity={(pid) => setAudit({ open: true, projectId: pid })}
           />
         ))}
         <AddProjectButton />
       </div>
+
+      <AuditDrawer
+        open={audit.open}
+        projectId={audit.projectId}
+        projects={projects}
+        onClose={() => setAudit({ open: false })}
+      />
     </main>
   );
 }
