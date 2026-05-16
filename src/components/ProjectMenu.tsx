@@ -11,11 +11,13 @@ export function ProjectMenu({
   prevId,
   nextId,
   name,
+  onShowActivity,
 }: {
   projectId: string;
   prevId: string | null;
   nextId: string | null;
   name: string;
+  onShowActivity: (projectId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
@@ -65,6 +67,14 @@ export function ProjectMenu({
             }
           >
             Move right
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              setOpen(false);
+              onShowActivity(projectId);
+            }}
+          >
+            Activity
           </MenuItem>
           <div className="my-1 border-t border-neutral-200 dark:border-neutral-800" />
           <MenuItem
