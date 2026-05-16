@@ -8,10 +8,15 @@ export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (pathname.startsWith("/mcp")) {
+    // Prefer the Authorization header (curl, scripts). Fall back to a
+    // ?key= query param because claude.ai custom connectors only support
+    // OAuth — there is no header field — so the token must ride in the URL.
     const header = request.headers.get("authorization");
-    const token = header?.startsWith("Bearer ")
+    const headerToken = header?.startsWith("Bearer ")
       ? header.slice("Bearer ".length)
       : undefined;
+    const queryToken = request.nextUrl.searchParams.get("key") ?? undefined;
+    const token = headerToken ?? queryToken;
     if (!safeCompare(token, process.env.MCP_TOKEN)) {
       return new NextResponse("unauthorized", { status: 401 });
     }
