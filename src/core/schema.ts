@@ -20,6 +20,22 @@ export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 export const ITEM_KINDS = ["task", "milestone"] as const;
 export type ItemKind = (typeof ITEM_KINDS)[number];
 
+export const AUDIT_SOURCES = ["web", "mcp"] as const;
+export type AuditSource = (typeof AUDIT_SOURCES)[number];
+
+export const AUDIT_ACTIONS = [
+  "create",
+  "update",
+  "complete",
+  "uncomplete",
+  "reorder",
+  "delete",
+] as const;
+export type AuditAction = (typeof AUDIT_ACTIONS)[number];
+
+export const AUDIT_ENTITIES = ["project", "item", "category"] as const;
+export type AuditEntity = (typeof AUDIT_ENTITIES)[number];
+
 export const projects = sqliteTable("projects", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull().default("me"),
@@ -69,9 +85,35 @@ export const meta = sqliteTable("meta", {
   value: text("value").notNull(),
 });
 
+// Append-only change log. Deliberately NO foreign key / cascade to projects:
+// when a project is deleted the audit rows must survive so the deletion
+// itself stays auditable. `actor` is the multi-user seam (mirrors
+// projects.userId DEFAULT 'me'); source/action/entityType are app-validated
+// plain TEXT so a new client/action never needs a migration.
+export const auditLog = sqliteTable(
+  "audit_log",
+  {
+    id: text("id").primaryKey(),
+    ts: integer("ts").notNull(),
+    actor: text("actor").notNull().default("me"),
+    source: text("source").$type<AuditSource>().notNull(),
+    action: text("action").$type<AuditAction>().notNull(),
+    entityType: text("entity_type").$type<AuditEntity>().notNull(),
+    entityId: text("entity_id").notNull(),
+    projectId: text("project_id"),
+    detail: text("detail").notNull().default(""),
+  },
+  (t) => [
+    index("audit_log_ts").on(t.ts),
+    index("audit_log_project_ts").on(t.projectId, t.ts),
+  ],
+);
+
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 export type Item = typeof items.$inferSelect;
 export type NewItem = typeof items.$inferInsert;
 export type Category = typeof categories.$inferSelect;
 export type NewCategory = typeof categories.$inferInsert;
+export type AuditEntry = typeof auditLog.$inferSelect;
+export type NewAuditEntry = typeof auditLog.$inferInsert;

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { listAudit } from "@/core/audit";
 import { addCategory, listCategories } from "@/core/categories";
 import { getDb } from "@/core/db";
 import {
@@ -20,7 +21,9 @@ import {
   reorderProject,
   updateProject,
 } from "@/core/projects";
-import { ITEM_KINDS, PROJECT_STATUSES } from "@/core/schema";
+import { AUDIT_SOURCES, ITEM_KINDS, PROJECT_STATUSES } from "@/core/schema";
+
+const SOURCE = "mcp" as const;
 
 const Status = z.enum(PROJECT_STATUSES);
 const Kind = z.enum(ITEM_KINDS);
@@ -96,7 +99,7 @@ export function registerTools(server: McpServer) {
     },
     async ({ name, status }) => {
       const { db } = getDb();
-      return json(createProject(db, { name, status }));
+      return json(createProject(db, { name, status }, SOURCE));
     },
   );
 
@@ -116,7 +119,7 @@ export function registerTools(server: McpServer) {
     async ({ id, ...patch }) => {
       const { db } = getDb();
       if (!getProject(db, id)) return notFound("project", id);
-      return json(updateProject(db, id, patch));
+      return json(updateProject(db, id, patch, SOURCE));
     },
   );
 
@@ -134,7 +137,7 @@ export function registerTools(server: McpServer) {
     async ({ id, position }) => {
       const { db } = getDb();
       if (!getProject(db, id)) return notFound("project", id);
-      return json(reorderProject(db, id, position));
+      return json(reorderProject(db, id, position, SOURCE));
     },
   );
 
@@ -147,7 +150,7 @@ export function registerTools(server: McpServer) {
     },
     async ({ id }) => {
       const { db } = getDb();
-      deleteProject(db, id);
+      deleteProject(db, id, SOURCE);
       return json({ ok: true });
     },
   );
@@ -170,13 +173,17 @@ export function registerTools(server: McpServer) {
       const { db } = getDb();
       if (!getProject(db, project_id)) return notFound("project", project_id);
       return json(
-        addItem(db, {
-          projectId: project_id,
-          kind,
-          title,
-          category,
-          positionRef: position,
-        }),
+        addItem(
+          db,
+          {
+            projectId: project_id,
+            kind,
+            title,
+            category,
+            positionRef: position,
+          },
+          SOURCE,
+        ),
       );
     },
   );
@@ -195,7 +202,7 @@ export function registerTools(server: McpServer) {
     async ({ id, ...patch }) => {
       const { db } = getDb();
       if (!getItem(db, id)) return notFound("item", id);
-      return json(updateItem(db, id, patch));
+      return json(updateItem(db, id, patch, SOURCE));
     },
   );
 
@@ -210,7 +217,7 @@ export function registerTools(server: McpServer) {
     async ({ id }) => {
       const { db } = getDb();
       if (!getItem(db, id)) return notFound("item", id);
-      return json(completeItem(db, id));
+      return json(completeItem(db, id, SOURCE));
     },
   );
 
@@ -224,7 +231,7 @@ export function registerTools(server: McpServer) {
     async ({ id }) => {
       const { db } = getDb();
       if (!getItem(db, id)) return notFound("item", id);
-      return json(uncompleteItem(db, id));
+      return json(uncompleteItem(db, id, SOURCE));
     },
   );
 
@@ -239,7 +246,7 @@ export function registerTools(server: McpServer) {
     async ({ id, position }) => {
       const { db } = getDb();
       if (!getItem(db, id)) return notFound("item", id);
-      return json(reorderItem(db, id, position));
+      return json(reorderItem(db, id, position, SOURCE));
     },
   );
 
@@ -252,7 +259,7 @@ export function registerTools(server: McpServer) {
     },
     async ({ id }) => {
       const { db } = getDb();
-      deleteItem(db, id);
+      deleteItem(db, id, SOURCE);
       return json({ ok: true });
     },
   );
@@ -281,7 +288,27 @@ export function registerTools(server: McpServer) {
     async ({ project_id, name }) => {
       const { db } = getDb();
       if (!getProject(db, project_id)) return notFound("project", project_id);
-      return json(addCategory(db, project_id, name));
+      return json(addCategory(db, project_id, name, SOURCE));
+    },
+  );
+
+  server.registerTool(
+    "list_audit",
+    {
+      title: "List audit log",
+      description:
+        "Recent change history (newest first). Every create/update/complete/uncomplete/reorder/delete is logged with its source (web or mcp) and a human summary. Optionally filter by project_id or source.",
+      inputSchema: {
+        project_id: z.string().optional(),
+        source: z.enum(AUDIT_SOURCES).optional(),
+        limit: z.number().int().min(1).max(500).optional(),
+      },
+    },
+    async ({ project_id, source, limit }) => {
+      const { db } = getDb();
+      return json(
+        listAudit(db, { projectId: project_id, source, limit }),
+      );
     },
   );
 }

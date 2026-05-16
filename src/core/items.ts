@@ -1,14 +1,21 @@
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import type { Db } from "./db";
+import { recordAudit } from "./audit";
 import { ensureCategory } from "./categories";
+import type { Db } from "./db";
 import {
   parseRef,
   resolveCompletePosition,
   resolveItemPosition,
   resolveUncompletePosition,
 } from "./fracidx";
-import { type Item, type ItemKind, ITEM_KINDS, items } from "./schema";
+import {
+  type AuditSource,
+  type Item,
+  type ItemKind,
+  ITEM_KINDS,
+  items,
+} from "./schema";
 
 export function listItems(
   db: Db,
@@ -45,12 +52,14 @@ export function addItem(
     category?: string | null;
     positionRef?: string;
   },
+  source: AuditSource,
 ): Item {
   assertKind(input.kind);
   const ref = parseRef(input.positionRef);
   const siblings = getAllSiblings(db, input.projectId);
   const position = resolveItemPosition(siblings, ref);
   const category = input.category?.trim() || null;
+  const title = input.title.trim();
   const id = nanoid(12);
   const now = Date.now();
 
@@ -61,12 +70,20 @@ export function addItem(
         id,
         projectId: input.projectId,
         kind: input.kind,
-        title: input.title.trim(),
+        title,
         category,
         position,
         createdAt: now,
       })
       .run();
+    recordAudit(tx as unknown as Db, {
+      source,
+      action: "create",
+      entityType: "item",
+      entityId: id,
+      projectId: input.projectId,
+      detail: `added ${input.kind} "${title}"`,
+    });
   });
 
   return getItem(db, id)!;
@@ -80,15 +97,23 @@ export function updateItem(
   db: Db,
   id: string,
   patch: { title?: string; category?: string | null },
+  source: AuditSource,
 ): Item {
   const existing = getItem(db, id);
   if (!existing) throw new Error(`item not found: ${id}`);
 
   const next: Partial<Item> = {};
-  if (patch.title !== undefined) next.title = patch.title.trim();
+  const changes: string[] = [];
+  if (patch.title !== undefined && patch.title.trim() !== existing.title) {
+    next.title = patch.title.trim();
+    changes.push(`renamed to "${next.title}"`);
+  }
   if (patch.category !== undefined) {
     const c = patch.category?.trim() || null;
-    next.category = c;
+    if (c !== existing.category) {
+      next.category = c;
+      changes.push(c ? `category → ${c}` : "category cleared");
+    }
   }
   if (Object.keys(next).length === 0) return existing;
 
@@ -97,40 +122,73 @@ export function updateItem(
       ensureCategory(tx as unknown as Db, existing.projectId, next.category);
     }
     tx.update(items).set(next).where(eq(items.id, id)).run();
+    recordAudit(tx as unknown as Db, {
+      source,
+      action: "update",
+      entityType: "item",
+      entityId: id,
+      projectId: existing.projectId,
+      detail: `${existing.title}: ${changes.join(", ")}`,
+    });
   });
 
   return getItem(db, id)!;
 }
 
-export function completeItem(db: Db, id: string): Item {
+export function completeItem(db: Db, id: string, source: AuditSource): Item {
   const existing = getItem(db, id);
   if (!existing) throw new Error(`item not found: ${id}`);
   if (existing.completedAt !== null) return existing;
 
   const siblings = getAllSiblings(db, existing.projectId);
   const position = resolveCompletePosition(siblings, id);
-  db.update(items)
-    .set({ completedAt: Date.now(), position })
-    .where(eq(items.id, id))
-    .run();
+  db.transaction((tx) => {
+    tx.update(items)
+      .set({ completedAt: Date.now(), position })
+      .where(eq(items.id, id))
+      .run();
+    recordAudit(tx as unknown as Db, {
+      source,
+      action: "complete",
+      entityType: "item",
+      entityId: id,
+      projectId: existing.projectId,
+      detail: `completed "${existing.title}"`,
+    });
+  });
   return getItem(db, id)!;
 }
 
-export function uncompleteItem(db: Db, id: string): Item {
+export function uncompleteItem(db: Db, id: string, source: AuditSource): Item {
   const existing = getItem(db, id);
   if (!existing) throw new Error(`item not found: ${id}`);
   if (existing.completedAt === null) return existing;
 
   const siblings = getAllSiblings(db, existing.projectId);
   const position = resolveUncompletePosition(siblings, id);
-  db.update(items)
-    .set({ completedAt: null, position })
-    .where(eq(items.id, id))
-    .run();
+  db.transaction((tx) => {
+    tx.update(items)
+      .set({ completedAt: null, position })
+      .where(eq(items.id, id))
+      .run();
+    recordAudit(tx as unknown as Db, {
+      source,
+      action: "uncomplete",
+      entityType: "item",
+      entityId: id,
+      projectId: existing.projectId,
+      detail: `reopened "${existing.title}"`,
+    });
+  });
   return getItem(db, id)!;
 }
 
-export function reorderItem(db: Db, id: string, refRaw: string): Item {
+export function reorderItem(
+  db: Db,
+  id: string,
+  refRaw: string,
+  source: AuditSource,
+): Item {
   const existing = getItem(db, id);
   if (!existing) throw new Error(`item not found: ${id}`);
   const ref = parseRef(refRaw);
@@ -138,10 +196,32 @@ export function reorderItem(db: Db, id: string, refRaw: string): Item {
     (s) => s.id !== id,
   );
   const position = resolveItemPosition(siblings, ref);
-  db.update(items).set({ position }).where(eq(items.id, id)).run();
+  db.transaction((tx) => {
+    tx.update(items).set({ position }).where(eq(items.id, id)).run();
+    recordAudit(tx as unknown as Db, {
+      source,
+      action: "reorder",
+      entityType: "item",
+      entityId: id,
+      projectId: existing.projectId,
+      detail: `reordered "${existing.title}"`,
+    });
+  });
   return getItem(db, id)!;
 }
 
-export function deleteItem(db: Db, id: string): void {
-  db.delete(items).where(eq(items.id, id)).run();
+export function deleteItem(db: Db, id: string, source: AuditSource): void {
+  const existing = getItem(db, id);
+  if (!existing) return;
+  db.transaction((tx) => {
+    tx.delete(items).where(eq(items.id, id)).run();
+    recordAudit(tx as unknown as Db, {
+      source,
+      action: "delete",
+      entityType: "item",
+      entityId: id,
+      projectId: existing.projectId,
+      detail: `deleted "${existing.title}"`,
+    });
+  });
 }
