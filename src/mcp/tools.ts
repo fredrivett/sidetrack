@@ -191,7 +191,7 @@ export function registerTools(server: McpServer) {
       title: "Add item",
       description:
         "Add a task or milestone to a project. description is optional free-text. " +
-        "Category is free-text and is auto-created if new. " +
+        "category is free-text and is auto-created if new. " +
         "position defaults to end of the active range; top|end|after:<id>|before:<id> are also valid. " +
         "Returns { created, items } where items is every incomplete item in the project in position order.\n" +
         "After adding, show the user the project's updated list (the items array) so they can see where " +
