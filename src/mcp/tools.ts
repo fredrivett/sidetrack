@@ -191,8 +191,13 @@ export function registerTools(server: McpServer) {
       description:
         "Add a task or milestone to a project. Category is free-text and is auto-created if new. " +
         "position defaults to end of the active range; top|end|after:<id>|before:<id> are also valid. " +
-        "Returns { created, items } where items is every incomplete item in the project in position " +
-        "order, so you can see where the new item landed.",
+        "Returns { created, items } where items is every incomplete item in the project in position order.\n" +
+        "After adding, show the user the project's updated list (the items array) so they can see where " +
+        "the new item landed, unless the user asked you not to:\n" +
+        "- Keep items in the order returned; do not re-sort unless the user asked for a different order.\n" +
+        "- A task is a box-drawing branch, e.g. `├── Write the docs`.\n" +
+        "- A milestone is a divider, not a task row: a single dashed line with its title centred in it, " +
+        "e.g. `─ ─ ─  v1.0 launch  ─ ─ ─`.",
       inputSchema: {
         project_id: z.string(),
         kind: Kind,
