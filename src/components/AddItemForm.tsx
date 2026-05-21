@@ -12,6 +12,7 @@ export function AddItemForm({
   categories: Category[];
 }) {
   const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
   const [category, setCategory] = useState("");
   const [kind, setKind] = useState<ItemKind>("task");
   const [pending, start] = useTransition();
@@ -23,9 +24,11 @@ export function AddItemForm({
     const t = title.trim();
     if (!t) return;
     const c = category.trim() || null;
+    const d = description.trim() || null;
     start(async () => {
-      await addItemAction({ projectId, kind, title: t, category: c });
+      await addItemAction({ projectId, kind, title: t, description: d, category: c });
       setTitle("");
+      setDescription("");
       inputRef.current?.focus();
     });
   }
@@ -52,6 +55,14 @@ export function AddItemForm({
         placeholder={kind === "task" ? "Add a task…" : "Add a milestone…"}
         disabled={pending}
         className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-neutral-400 dark:border-neutral-700 dark:bg-neutral-900"
+      />
+      <textarea
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="Description (optional)"
+        disabled={pending}
+        rows={2}
+        className="w-full resize-none rounded-lg border border-neutral-300 bg-white px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-neutral-400 dark:border-neutral-700 dark:bg-neutral-900"
       />
       {kind === "task" && (
         <>

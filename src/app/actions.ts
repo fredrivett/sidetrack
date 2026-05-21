@@ -63,6 +63,7 @@ export async function addItemAction(input: {
   projectId: string;
   kind: ItemKind;
   title: string;
+  description?: string | null;
   category?: string | null;
   positionRef?: string;
 }) {
@@ -74,7 +75,7 @@ export async function addItemAction(input: {
 
 export async function updateItemAction(
   id: string,
-  patch: { title?: string; category?: string | null },
+  patch: { title?: string; description?: string | null; category?: string | null },
 ) {
   const { db } = getDb();
   const it = updateItemCore(db, id, patch, SOURCE);

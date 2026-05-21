@@ -190,7 +190,8 @@ export function registerTools(server: McpServer) {
     {
       title: "Add item",
       description:
-        "Add a task or milestone to a project. Category is free-text and is auto-created if new. " +
+        "Add a task or milestone to a project. description is optional free-text. " +
+        "Category is free-text and is auto-created if new. " +
         "position defaults to end of the active range; top|end|after:<id>|before:<id> are also valid. " +
         "Returns { created, items } where items is every incomplete item in the project in position order.\n" +
         "After adding, show the user the project's updated list (the items array) so they can see where " +
@@ -203,11 +204,12 @@ export function registerTools(server: McpServer) {
         project_id: z.string(),
         kind: Kind,
         title: z.string().min(1),
+        description: z.string().optional(),
         category: z.string().optional(),
         position: PosRef.optional(),
       },
     },
-    async ({ project_id, kind, title, category, position }) => {
+    async ({ project_id, kind, title, description, category, position }) => {
       const { db } = getDb();
       if (!getProject(db, project_id)) return notFound("project", project_id);
       const created = addItem(
@@ -216,6 +218,7 @@ export function registerTools(server: McpServer) {
           projectId: project_id,
           kind,
           title,
+          description,
           category,
           positionRef: position,
         },
@@ -229,10 +232,12 @@ export function registerTools(server: McpServer) {
     "update_item",
     {
       title: "Update item",
-      description: "Patch title/category on an item.",
+      description:
+        "Patch title/description/category on an item. Pass description or category as null to clear it.",
       inputSchema: {
         id: z.string(),
         title: z.string().optional(),
+        description: z.string().nullable().optional(),
         category: z.string().nullable().optional(),
       },
     },

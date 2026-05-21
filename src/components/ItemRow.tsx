@@ -99,6 +99,20 @@ export function ItemRow({
           } ${item.kind === "milestone" ? "font-medium" : ""}`}
           inputClassName="w-full text-sm"
         />
+        <EditableText
+          value={item.description ?? ""}
+          onSave={(next) =>
+            updateItemAction(item.id, { description: next || null })
+          }
+          multiline
+          placeholder="Add description…"
+          className={`block w-full whitespace-pre-wrap break-words text-xs ${
+            item.description
+              ? "text-neutral-500 dark:text-neutral-400"
+              : "hidden text-neutral-400 group-hover:block"
+          }`}
+          inputClassName="w-full text-xs"
+        />
         {item.category && (
           <span className="inline-block rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-neutral-500 dark:bg-neutral-800">
             {item.category}

@@ -58,6 +58,7 @@ export const items = sqliteTable(
       .references(() => projects.id, { onDelete: "cascade" }),
     kind: text("kind").$type<ItemKind>().notNull(),
     title: text("title").notNull(),
+    description: text("description"),
     category: text("category"),
     position: text("position").notNull(),
     completedAt: integer("completed_at"),
