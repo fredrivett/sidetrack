@@ -17,6 +17,7 @@ import {
   deleteProject,
   getProject,
   getProjectWithItems,
+  listAllProjectsWithItems,
   listProjects,
   reorderProject,
   updateProject,
@@ -84,6 +85,24 @@ export function registerTools(server: McpServer) {
       });
       if (!result) return notFound("project", id);
       return json(result);
+    },
+  );
+
+  server.registerTool(
+    "list_all_items",
+    {
+      title: "List all items across projects",
+      description:
+        "Fetch every project together with its items (tasks and milestones) — the whole board in one call. Projects come back in kanban order; each carries its own items array in position order. Pass include_completed: true to also return completed items. Present the result to the user as an indented tree: each project is a top-level node with its items nested beneath it.",
+      inputSchema: {
+        include_completed: z.boolean().optional(),
+      },
+    },
+    async ({ include_completed }) => {
+      const { db } = getDb();
+      return json(
+        listAllProjectsWithItems(db, { includeCompleted: include_completed }),
+      );
     },
   );
 
