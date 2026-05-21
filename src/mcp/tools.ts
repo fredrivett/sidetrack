@@ -17,6 +17,7 @@ import {
   deleteProject,
   getProject,
   getProjectWithItems,
+  listAllProjectsWithItems,
   listProjects,
   reorderProject,
   updateProject,
@@ -84,6 +85,33 @@ export function registerTools(server: McpServer) {
       });
       if (!result) return notFound("project", id);
       return json(result);
+    },
+  );
+
+  server.registerTool(
+    "list_all_items",
+    {
+      title: "List all items across projects",
+      description:
+        "Fetch every project together with its items — the whole board in one call. " +
+        "Projects come back in kanban order; each carries its own items array in position order. " +
+        "include_completed defaults to false; pass true only when the user explicitly wants completed items.\n" +
+        "Render the result for the user as an indented tree:\n" +
+        "- Each project is a top-level node; its items nest beneath it.\n" +
+        "- Keep projects and items in the order returned; do not re-sort unless the user asked for a different order.\n" +
+        "- Do not show completed items in the tree.\n" +
+        "- A task is a box-drawing branch, e.g. `├── Write the docs`.\n" +
+        "- A milestone is a divider, not a task row: a single dashed line with its title centred in it, " +
+        "e.g. `─ ─ ─  v1.0 launch  ─ ─ ─`. It marks a point in the list rather than something to check off.",
+      inputSchema: {
+        include_completed: z.boolean().optional(),
+      },
+    },
+    async ({ include_completed }) => {
+      const { db } = getDb();
+      return json(
+        listAllProjectsWithItems(db, { includeCompleted: include_completed }),
+      );
     },
   );
 

@@ -35,6 +35,18 @@ export function getProjectWithItems(
   return { project, items };
 }
 
+export function listAllProjectsWithItems(
+  db: Db,
+  opts: { includeCompleted?: boolean } = {},
+) {
+  return listProjects(db).map((project) => ({
+    project,
+    items: listItems(db, project.id, {
+      includeCompleted: opts.includeCompleted,
+    }),
+  }));
+}
+
 function assertStatus(status: string): asserts status is ProjectStatus {
   if (!(PROJECT_STATUSES as readonly string[]).includes(status)) {
     throw new Error(`invalid status: ${status}`);
