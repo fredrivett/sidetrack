@@ -24,6 +24,7 @@ import {
   updateProject,
 } from "@/core/projects";
 import { AUDIT_SOURCES, ITEM_KINDS, PROJECT_STATUSES } from "@/core/schema";
+import { formatRelativeLong } from "@/lib/time";
 
 const SOURCE = "mcp" as const;
 
@@ -333,7 +334,7 @@ export function registerTools(server: McpServer) {
     {
       title: "List audit log",
       description:
-        "Recent change history (newest first). Every create/update/complete/uncomplete/reorder/delete is logged with its source (web or mcp) and a human summary. Optionally filter by project_id or source.",
+        "Recent change history (newest first). Every create/update/complete/uncomplete/reorder/delete is logged with its source (web or mcp) and a human summary. Each row includes `when`, a ready-to-display relative time (e.g. \"just now\", \"5 minutes ago\", \"7 months ago\") — show that to the user, not the raw `ts` epoch. Optionally filter by project_id or source.",
       inputSchema: {
         project_id: z.string().optional(),
         source: z.enum(AUDIT_SOURCES).optional(),
@@ -342,8 +343,13 @@ export function registerTools(server: McpServer) {
     },
     async ({ project_id, source, limit }) => {
       const { db } = getDb();
+      const rows = listAudit(db, { projectId: project_id, source, limit });
       return json(
-        listAudit(db, { projectId: project_id, source, limit }),
+        rows.map(({ ts, ...rest }) => ({
+          ts,
+          when: formatRelativeLong(ts),
+          ...rest,
+        })),
       );
     },
   );
