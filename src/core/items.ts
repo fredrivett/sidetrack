@@ -49,6 +49,7 @@ export function addItem(
     projectId: string;
     kind: ItemKind;
     title: string;
+    description?: string | null;
     category?: string | null;
     positionRef?: string;
   },
@@ -59,6 +60,7 @@ export function addItem(
   const siblings = getAllSiblings(db, input.projectId);
   const position = resolveItemPosition(siblings, ref);
   const category = input.category?.trim() || null;
+  const description = input.description?.trim() || null;
   const title = input.title.trim();
   const id = nanoid(12);
   const now = Date.now();
@@ -71,6 +73,7 @@ export function addItem(
         projectId: input.projectId,
         kind: input.kind,
         title,
+        description,
         category,
         position,
         createdAt: now,
@@ -96,7 +99,7 @@ export function getItem(db: Db, id: string): Item | undefined {
 export function updateItem(
   db: Db,
   id: string,
-  patch: { title?: string; category?: string | null },
+  patch: { title?: string; description?: string | null; category?: string | null },
   source: AuditSource,
 ): Item {
   const existing = getItem(db, id);
@@ -107,6 +110,13 @@ export function updateItem(
   if (patch.title !== undefined && patch.title.trim() !== existing.title) {
     next.title = patch.title.trim();
     changes.push(`renamed to "${next.title}"`);
+  }
+  if (patch.description !== undefined) {
+    const d = patch.description?.trim() || null;
+    if (d !== existing.description) {
+      next.description = d;
+      changes.push(d ? "edited description" : "description cleared");
+    }
   }
   if (patch.category !== undefined) {
     const c = patch.category?.trim() || null;
