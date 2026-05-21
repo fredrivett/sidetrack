@@ -8,6 +8,7 @@ import {
   completeItem,
   deleteItem,
   getItem,
+  listItems,
   reorderItem,
   uncompleteItem,
   updateItem,
@@ -188,7 +189,10 @@ export function registerTools(server: McpServer) {
     {
       title: "Add item",
       description:
-        "Add a task or milestone to a project. Category is free-text and is auto-created if new. position defaults to end of the active range; top|end|after:<id>|before:<id> are also valid.",
+        "Add a task or milestone to a project. Category is free-text and is auto-created if new. " +
+        "position defaults to end of the active range; top|end|after:<id>|before:<id> are also valid. " +
+        "Returns { created, items } where items is every incomplete item in the project in position " +
+        "order, so you can see where the new item landed.",
       inputSchema: {
         project_id: z.string(),
         kind: Kind,
@@ -200,19 +204,18 @@ export function registerTools(server: McpServer) {
     async ({ project_id, kind, title, category, position }) => {
       const { db } = getDb();
       if (!getProject(db, project_id)) return notFound("project", project_id);
-      return json(
-        addItem(
-          db,
-          {
-            projectId: project_id,
-            kind,
-            title,
-            category,
-            positionRef: position,
-          },
-          SOURCE,
-        ),
+      const created = addItem(
+        db,
+        {
+          projectId: project_id,
+          kind,
+          title,
+          category,
+          positionRef: position,
+        },
+        SOURCE,
       );
+      return json({ created, items: listItems(db, project_id) });
     },
   );
 
