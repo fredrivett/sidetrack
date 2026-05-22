@@ -1,8 +1,9 @@
+import { getSessionCookie } from "better-auth/cookies";
 import { type NextRequest, NextResponse } from "next/server";
-import { safeCompare, WEB_COOKIE } from "./lib/auth";
+import { safeCompare } from "./lib/auth";
 
-// Proxy must not import shared modules with mutable state. Token check is
-// pure: env var compared in constant time.
+// Proxy must not import shared modules with mutable state. Token compare
+// (MCP) and cookie presence (web) are both pure header-level checks.
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -11,6 +12,8 @@ export function proxy(request: NextRequest) {
     // Prefer the Authorization header (curl, scripts). Fall back to a
     // ?key= query param because claude.ai custom connectors only support
     // OAuth — there is no header field — so the token must ride in the URL.
+    // Per-user API keys land in phase 4; today this still gates on the
+    // shared MCP_TOKEN env var.
     const header = request.headers.get("authorization");
     const headerToken = header?.startsWith("Bearer ")
       ? header.slice("Bearer ".length)
@@ -23,7 +26,11 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (pathname === "/login" || pathname.startsWith("/login/")) {
+  if (
+    pathname === "/login" ||
+    pathname.startsWith("/login/") ||
+    pathname.startsWith("/api/auth/")
+  ) {
     return NextResponse.next();
   }
 
@@ -36,8 +43,11 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const cookie = request.cookies.get(WEB_COOKIE)?.value;
-  if (!safeCompare(cookie, process.env.WEB_TOKEN)) {
+  // Presence check only — the real session validation happens in route
+  // handlers / RSCs via auth.api.getSession (which hits the DB). The proxy
+  // just bounces unauthenticated traffic to /login so we don't render any
+  // app shell first.
+  if (!getSessionCookie(request)) {
     const loginUrl = new URL("/login", request.url);
     if (pathname !== "/") loginUrl.searchParams.set("next", pathname);
     return NextResponse.redirect(loginUrl);

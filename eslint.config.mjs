@@ -58,8 +58,15 @@ const eslintConfig = defineConfig([
     },
   },
   // Operational CLI entrypoints log progress to the console by design.
+  // better-auth.ts logs once when the first user adopts legacy 'me' data —
+  // a one-time data migration the operator should see in the logs.
   {
-    files: ["src/core/backup.ts", "src/core/migrate.ts", "scripts/**/*.ts"],
+    files: [
+      "src/core/backup.ts",
+      "src/core/migrate.ts",
+      "src/lib/better-auth.ts",
+      "scripts/**/*.ts",
+    ],
     rules: { "no-console": "off" },
   },
   // Audit-log invariant — transactions live only in the domain layer.
