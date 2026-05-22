@@ -9,14 +9,22 @@ import {
   uncompleteItemAction,
   updateItemAction,
 } from "@/app/actions";
-import type { Item } from "@/core/schema";
+import type { Item, ItemPrLink } from "@/core/schema";
 import { EditableText } from "./EditableText";
+
+function prLabel(url: string): string {
+  const m = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+  if (m) return `${m[1]}/${m[2]}#${m[3]}`;
+  return url;
+}
 
 export function ItemRow({
   item,
+  prLinks,
   draggable,
 }: {
   item: Item;
+  prLinks: ItemPrLink[];
   draggable: boolean;
 }) {
   const sortable = useSortable({ id: item.id, disabled: !draggable });
@@ -92,6 +100,22 @@ export function ItemRow({
           <span className="inline-block rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-neutral-500 dark:bg-neutral-800">
             {item.category}
           </span>
+        )}
+        {prLinks.length > 0 && (
+          <div className="flex flex-wrap gap-1 pt-0.5">
+            {prLinks.map((link) => (
+              <a
+                key={link.id}
+                href={link.prUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+                onPointerDown={(e) => e.stopPropagation()}
+                className="inline-block rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 hover:bg-blue-100 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/70"
+              >
+                {prLabel(link.prUrl)}
+              </a>
+            ))}
+          </div>
         )}
       </div>
 

@@ -14,6 +14,11 @@ import {
   updateItem,
 } from "@/core/items";
 import {
+  linkItemToPr,
+  listPrLinksForItem,
+  unlinkItemFromPr,
+} from "@/core/prLinks";
+import {
   createProject,
   deleteProject,
   getProject,
@@ -303,6 +308,53 @@ export function registerTools(server: McpServer) {
       const { db } = getDb();
       deleteItem(db, id, SOURCE);
       return json({ ok: true });
+    },
+  );
+
+  server.registerTool(
+    "link_item_to_pr",
+    {
+      title: "Link item to PR",
+      description:
+        "Associate an item with a GitHub pull request URL. Idempotent: linking the same item/PR pair twice is a no-op. " +
+        "Items can have many linked PRs and PRs can be linked from many items. " +
+        "Call this after raising the PR so a later merge can resolve it back to the item(s) it closes.",
+      inputSchema: { item_id: z.string(), pr_url: z.string().min(1) },
+    },
+    async ({ item_id, pr_url }) => {
+      const { db } = getDb();
+      if (!getItem(db, item_id)) return notFound("item", item_id);
+      return json(linkItemToPr(db, item_id, pr_url, SOURCE));
+    },
+  );
+
+  server.registerTool(
+    "unlink_item_from_pr",
+    {
+      title: "Unlink item from PR",
+      description:
+        "Remove a previously-set item↔PR link. No-op if the link doesn't exist.",
+      inputSchema: { item_id: z.string(), pr_url: z.string().min(1) },
+    },
+    async ({ item_id, pr_url }) => {
+      const { db } = getDb();
+      if (!getItem(db, item_id)) return notFound("item", item_id);
+      unlinkItemFromPr(db, item_id, pr_url, SOURCE);
+      return json({ ok: true });
+    },
+  );
+
+  server.registerTool(
+    "list_item_pr_links",
+    {
+      title: "List PR links for item",
+      description: "Return all PR URLs linked to an item (oldest first).",
+      inputSchema: { item_id: z.string() },
+    },
+    async ({ item_id }) => {
+      const { db } = getDb();
+      if (!getItem(db, item_id)) return notFound("item", item_id);
+      return json(listPrLinksForItem(db, item_id));
     },
   );
 

@@ -1,10 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import type { Item } from "@/core/schema";
+import type { Item, ItemPrLink } from "@/core/schema";
 import { ItemRow } from "./ItemRow";
 
-export function CompletedSection({ items }: { items: Item[] }) {
+export function CompletedSection({
+  items,
+  prLinksByItem,
+}: {
+  items: Item[];
+  prLinksByItem: Record<string, ItemPrLink[]>;
+}) {
   const [expanded, setExpanded] = useState(false);
   if (items.length === 0) return null;
   // items are sorted by position ASC; newest-completed (closest to active
@@ -16,7 +22,12 @@ export function CompletedSection({ items }: { items: Item[] }) {
     <section className="space-y-1.5">
       <div className="space-y-1.5">
         {shown.map((it) => (
-          <ItemRow key={it.id} item={it} draggable={false} />
+          <ItemRow
+            key={it.id}
+            item={it}
+            prLinks={prLinksByItem[it.id] ?? []}
+            draggable={false}
+          />
         ))}
       </div>
       {items.length > 1 && (
