@@ -6,7 +6,6 @@ import { useTransition } from "react";
 import {
   completeItemAction,
   deleteItemAction,
-  reorderItemAction,
   uncompleteItemAction,
   updateItemAction,
 } from "@/app/actions";
@@ -15,13 +14,9 @@ import { EditableText } from "./EditableText";
 
 export function ItemRow({
   item,
-  prevId,
-  nextId,
   draggable,
 }: {
   item: Item;
-  prevId: string | null;
-  nextId: string | null;
   draggable: boolean;
 }) {
   const sortable = useSortable({ id: item.id, disabled: !draggable });
@@ -36,18 +31,6 @@ export function ItemRow({
     opacity: isDragging ? 0.4 : pending ? 0.7 : 1,
   };
 
-  function moveUp() {
-    if (!prevId) return;
-    start(() => {
-      void reorderItemAction(item.id, `before:${prevId}`);
-    });
-  }
-  function moveDown() {
-    if (!nextId) return;
-    start(() => {
-      void reorderItemAction(item.id, `after:${nextId}`);
-    });
-  }
   function toggle() {
     start(() => {
       void (completed ? uncompleteItemAction(item.id) : completeItemAction(item.id));
@@ -119,29 +102,6 @@ export function ItemRow({
           </span>
         )}
       </div>
-
-      {draggable && (
-        <div className="flex shrink-0 flex-col gap-1">
-          <button
-            type="button"
-            aria-label="Move up"
-            onClick={moveUp}
-            disabled={!prevId || pending}
-            className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-30 dark:hover:bg-neutral-800"
-          >
-            ↑
-          </button>
-          <button
-            type="button"
-            aria-label="Move down"
-            onClick={moveDown}
-            disabled={!nextId || pending}
-            className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-30 dark:hover:bg-neutral-800"
-          >
-            ↓
-          </button>
-        </div>
-      )}
 
       <button
         type="button"

@@ -16,13 +16,7 @@ export function CompletedSection({ items }: { items: Item[] }) {
     <section className="space-y-1.5">
       <div className="space-y-1.5">
         {shown.map((it) => (
-          <ItemRow
-            key={it.id}
-            item={it}
-            prevId={null}
-            nextId={null}
-            draggable={false}
-          />
+          <ItemRow key={it.id} item={it} draggable={false} />
         ))}
       </div>
       {items.length > 1 && (
