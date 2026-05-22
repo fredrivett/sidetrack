@@ -3,6 +3,9 @@
 import { useId, useRef, useState, useTransition } from "react";
 import { addItemAction } from "@/app/actions";
 import type { Category, ItemKind } from "@/core/schema";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 export function AddItemForm({
   projectId,
@@ -47,33 +50,30 @@ export function AddItemForm({
           </button>
         ))}
       </div>
-      <input
+      <Input
         ref={inputRef}
-        type="text"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         placeholder={kind === "task" ? "Add a task…" : "Add a milestone…"}
         disabled={pending}
-        className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-neutral-400 dark:border-neutral-700 dark:bg-neutral-900"
       />
-      <textarea
+      <Textarea
         value={description}
         onChange={(e) => setDescription(e.target.value)}
         placeholder="Description (optional)"
         disabled={pending}
         rows={2}
-        className="w-full resize-none rounded-lg border border-neutral-300 bg-white px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-neutral-400 dark:border-neutral-700 dark:bg-neutral-900"
+        className="min-h-0 resize-none text-xs"
       />
       {kind === "task" && (
         <>
-          <input
-            type="text"
+          <Input
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             placeholder="Category (optional)"
             list={listId}
             disabled={pending}
-            className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-neutral-400 dark:border-neutral-700 dark:bg-neutral-900"
+            className="text-xs"
           />
           <datalist id={listId}>
             {categories.map((c) => (
@@ -82,13 +82,14 @@ export function AddItemForm({
           </datalist>
         </>
       )}
-      <button
+      <Button
         type="submit"
         disabled={!title.trim() || pending}
-        className="w-full rounded-lg bg-neutral-900 py-2 text-xs font-medium text-white disabled:opacity-50 dark:bg-white dark:text-neutral-900"
+        size="sm"
+        className="w-full"
       >
         Add
-      </button>
+      </Button>
     </form>
   );
 }
