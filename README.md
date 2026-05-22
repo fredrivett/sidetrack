@@ -14,14 +14,16 @@ simplicity and to work where you're already working.
 The easiest way to run Sidetrack is with [Docker](https://docs.docker.com/get-docker/)
 and Docker Compose.
 
-1. Create a `.env` file alongside `docker-compose.yml` with two access tokens:
+1. Create a `.env` file alongside `docker-compose.yml`:
 
    ```bash
-   WEB_TOKEN=...   # gates the web UI
-   MCP_TOKEN=...   # gates the MCP server
+   BETTER_AUTH_SECRET=...                  # signs session cookies
+   BETTER_AUTH_URL=http://localhost:3000   # the URL you serve from
    ```
 
-   Generate strong values for each with `openssl rand -hex 32`.
+   Generate the secret with `openssl rand -hex 32`. Set `BETTER_AUTH_URL`
+   to the public URL you actually reach the app at — the session cookie's
+   attributes depend on it.
 
 2. Start it:
 
@@ -31,7 +33,8 @@ and Docker Compose.
 
 Sidetrack is now running at [http://localhost:3000](http://localhost:3000).
 Migrations run automatically on startup, and your data persists in the
-`sidetrack-data` volume.
+`sidetrack-data` volume. Open the app and sign up — after the first signup,
+registration locks automatically (see `ALLOW_SIGNUP` to keep it open).
 
 ## Configuration
 
@@ -39,18 +42,22 @@ Sidetrack is configured with environment variables, read the same way whether
 you run it via Docker or locally. Set them in `.env` for Docker Compose, or
 `.env.local` for local development.
 
-**Required** — the two access tokens (the only configuration most users need):
+**Required** — authentication (the only configuration most users need):
 
 | Variable | Description |
 | --- | --- |
-| `WEB_TOKEN` | Gates access to the web UI |
-| `MCP_TOKEN` | Gates access to the MCP server |
+| `BETTER_AUTH_SECRET` | Signs session cookies. Generate with `openssl rand -hex 32` |
+| `BETTER_AUTH_URL` | The public URL you serve from (e.g. `https://sidetrack.example.com`) |
 
-**Optional** — override where data is stored. The Docker image already sets
-these to `/data`, so self-hosters can ignore them:
+Accounts are managed in-app with email + password. The **first** person to
+sign up claims the instance; after that, registration is locked.
 
-| Variable | Default (local) | Description |
+**Optional** — registration and data location. The Docker image already sets
+the data paths to `/data`, so self-hosters can ignore those:
+
+| Variable | Default | Description |
 | --- | --- | --- |
+| `ALLOW_SIGNUP` | `false` | `true` keeps signup open after the first user (multi-tenant instances) |
 | `DB_PATH` | `./data/sidetrack.db` | SQLite database path |
 | `BACKUP_DIR` | `./data/backups` | Where periodic backups are written |
 
@@ -88,10 +95,26 @@ unaffected. They power the hosted deploy and are not needed for self-hosting.
 
 ## Connecting an MCP client
 
-The MCP server is exposed at `/mcp` and authenticates with `MCP_TOKEN`. Point an
-MCP-capable client (e.g. Claude) at it to list, create, and update projects and
-items. Web requests are tagged `web` and MCP requests `mcp` in the audit log, so
-you always know what changed and through which interface.
+The MCP server is exposed at `/mcp` and authenticates with a personal API key.
+Mint one from **Account → API keys** in the web UI (the plaintext is shown
+once — copy it then), and pass it either way:
+
+```bash
+# Authorization header — curl, Claude Desktop, scripts
+curl -X POST https://your-host/mcp \
+  -H "Authorization: Bearer sk_…" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+
+# ?key= query param — claude.ai custom connectors, which can't set a
+# custom header, so the key rides in the URL
+https://your-host/mcp?key=sk_…
+```
+
+Point an MCP-capable client (e.g. Claude) at it to list, create, and update
+projects and items. Web requests are tagged `web` and MCP requests `mcp` in
+the audit log, so you always know what changed and through which interface.
+Keys are scoped to the user who minted them; revoke them from the same page.
 
 ## Development
 
@@ -102,10 +125,11 @@ To run Sidetrack locally to make changes, you'll need
 pnpm install
 ```
 
-Add `WEB_TOKEN` and `MCP_TOKEN` to `.env.local` (any random strings), then start
-the dev server:
+Add auth config to `.env.local`, then start the dev server:
 
 ```bash
+echo "BETTER_AUTH_SECRET=$(openssl rand -hex 32)" >> .env.local
+echo "BETTER_AUTH_URL=http://localhost:3000" >> .env.local
 pnpm dev
 ```
 
@@ -121,6 +145,7 @@ After changing the schema in `src/core/schema.ts`, generate a migration with
 | `pnpm build` | Production build |
 | `pnpm start` | Serve the production build |
 | `pnpm lint` | Run ESLint |
+| `pnpm test` | Run the Vitest suite |
 | `pnpm db:generate` | Generate Drizzle migrations from schema changes |
 | `pnpm db:migrate` | Apply pending migrations manually |
 

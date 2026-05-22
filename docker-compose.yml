@@ -8,8 +8,13 @@ services:
       - "3000:3000"
     environment:
       # Required. Generate with: openssl rand -hex 32
-      WEB_TOKEN: ${WEB_TOKEN:?WEB_TOKEN is required}
-      MCP_TOKEN: ${MCP_TOKEN:?MCP_TOKEN is required}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET is required}
+      # Required. The URL the app is reachable at — set-cookie domain depends
+      # on this matching the host you actually serve from.
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
+      # Optional. unset/false → first signup wins, then signup is locked.
+      # true → signup stays open (multi-tenant instances).
+      ALLOW_SIGNUP: ${ALLOW_SIGNUP:-false}
       # Optional. Set your own PostHog key to enable server-side error tracking.
       # Unset = disabled, nothing is sent anywhere.
       POSTHOG_KEY: ${POSTHOG_KEY:-}
