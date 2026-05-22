@@ -74,14 +74,8 @@ export function ItemList({ items }: { items: Item[] }) {
         strategy={verticalListSortingStrategy}
       >
         <div className="space-y-1.5">
-          {ordered.map((item, idx) => (
-            <ItemRow
-              key={item.id}
-              item={item}
-              prevId={ordered[idx - 1]?.id ?? null}
-              nextId={ordered[idx + 1]?.id ?? null}
-              draggable
-            />
+          {ordered.map((item) => (
+            <ItemRow key={item.id} item={item} draggable />
           ))}
         </div>
       </SortableContext>
