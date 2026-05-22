@@ -27,6 +27,15 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // PWA static assets must be reachable unauthenticated: the browser fetches
+  // the manifest and icons from <head> even on the login page.
+  if (
+    pathname === "/manifest.webmanifest" ||
+    pathname.startsWith("/icons/")
+  ) {
+    return NextResponse.next();
+  }
+
   const cookie = request.cookies.get(WEB_COOKIE)?.value;
   if (!safeCompare(cookie, process.env.WEB_TOKEN)) {
     const loginUrl = new URL("/login", request.url);
