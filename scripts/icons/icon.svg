@@ -1,0 +1,11 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" rx="96" fill="#0A0A0A"/>
+  <path
+    d="M 384 96 H 128 V 256 H 384 V 416 H 128"
+    fill="none"
+    stroke="#FAFAFA"
+    stroke-width="64"
+    stroke-linecap="square"
+    stroke-linejoin="miter"
+    stroke-miterlimit="4"/>
+</svg>

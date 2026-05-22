@@ -83,7 +83,7 @@ export function Kanban({
       </div>
       <div
         ref={railRef}
-        className="kanban-rail flex flex-1 snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-hidden p-3"
+        className="kanban-rail flex flex-1 snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-hidden p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
       >
         {projects.length === 0 && (
           <div className="m-auto text-sm text-neutral-500">
