@@ -47,24 +47,16 @@ export function ItemRow({
     <div
       ref={setNodeRef}
       style={style}
+      {...(draggable ? attributes : {})}
+      {...(draggable ? listeners : {})}
       className={`group relative flex items-start gap-2 rounded-lg border border-neutral-200 bg-white p-2 dark:border-neutral-800 dark:bg-neutral-900 ${
+        draggable ? "cursor-grab touch-none active:cursor-grabbing" : ""
+      } ${
         item.kind === "milestone"
           ? "border-l-4 border-l-amber-400 dark:border-l-amber-500"
           : ""
       }`}
     >
-      {draggable && (
-        <button
-          type="button"
-          aria-label="Drag"
-          className="cursor-grab touch-none px-1 text-neutral-400 hover:text-neutral-600 active:cursor-grabbing"
-          {...attributes}
-          {...listeners}
-        >
-          ⋮⋮
-        </button>
-      )}
-
       <input
         type="checkbox"
         checked={completed}
