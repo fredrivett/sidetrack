@@ -1,6 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import {
+  createApiKey as createApiKeyCore,
+  revokeApiKey as revokeApiKeyCore,
+} from "@/core/api-keys";
 import { listAudit as listAuditCore } from "@/core/audit";
 import {
   addCategory as addCategoryCore,
@@ -143,4 +147,21 @@ export async function listAuditAction(opts: {
   const userId = await requireUserId();
   const { db } = getDb();
   return listAuditCore(db, userId, opts);
+}
+
+export async function createApiKeyAction(name: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const { record, plaintext } = createApiKeyCore(db, userId, name);
+  revalidatePath("/settings/keys");
+  // plaintext is returned to the caller exactly once, then never persisted.
+  return { record, plaintext };
+}
+
+export async function revokeApiKeyAction(id: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const removed = revokeApiKeyCore(db, userId, id);
+  revalidatePath("/settings/keys");
+  return { removed };
 }

@@ -5,6 +5,7 @@ import type { Category, Item, ItemPrLink, Project } from "@/core/schema";
 import { AddProjectButton } from "./AddProjectButton";
 import { AuditDrawer } from "./AuditDrawer";
 import { ProjectColumn } from "./ProjectColumn";
+import { UserMenu } from "./UserMenu";
 
 export function Kanban({
   projects,
@@ -81,6 +82,7 @@ export function Kanban({
           >
             Activity
           </button>
+          <UserMenu />
         </div>
       </div>
       <div
