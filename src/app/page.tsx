@@ -5,17 +5,22 @@ import { listItems } from "@/core/items";
 import { listAllPrLinks } from "@/core/prLinks";
 import { listProjects } from "@/core/projects";
 import type { ItemPrLink } from "@/core/schema";
+import { requireUserId } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-export default function Home() {
+export default async function Home() {
+  const userId = await requireUserId();
   const { db } = getDb();
-  const projects = listProjects(db);
+  const projects = listProjects(db, userId);
   const itemsByProject = Object.fromEntries(
-    projects.map((p) => [p.id, listItems(db, p.id, { includeCompleted: true })]),
+    projects.map((p) => [
+      p.id,
+      listItems(db, userId, p.id, { includeCompleted: true }),
+    ]),
   );
   const categoriesByProject = Object.fromEntries(
-    projects.map((p) => [p.id, listCategories(db, p.id)]),
+    projects.map((p) => [p.id, listCategories(db, userId, p.id)]),
   );
   const prLinksByItem: Record<string, ItemPrLink[]> = {};
   for (const link of listAllPrLinks(db)) {

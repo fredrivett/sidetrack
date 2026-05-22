@@ -40,7 +40,7 @@ export type AuditEntity = (typeof AUDIT_ENTITIES)[number];
 
 export const projects = sqliteTable("projects", {
   id: text("id").primaryKey(),
-  userId: text("user_id").notNull().default("me"),
+  userId: text("user_id").notNull(),
   name: text("name").notNull(),
   status: text("status").$type<ProjectStatus>().notNull().default("idea"),
   summary: text("summary").notNull().default(""),
@@ -110,17 +110,17 @@ export const meta = sqliteTable("meta", {
   value: text("value").notNull(),
 });
 
-// Append-only change log. Deliberately NO foreign key / cascade to projects:
-// when a project is deleted the audit rows must survive so the deletion
-// itself stays auditable. `actor` is the multi-user seam (mirrors
-// projects.userId DEFAULT 'me'); source/action/entityType are app-validated
+// Append-only change log. Deliberately NO foreign key / cascade to projects
+// or users: when a project (or user) is deleted the audit rows must survive
+// so the deletion itself stays auditable. `actor` holds the user id of
+// whoever performed the action; source/action/entityType are app-validated
 // plain TEXT so a new client/action never needs a migration.
 export const auditLog = sqliteTable(
   "audit_log",
   {
     id: text("id").primaryKey(),
     ts: integer("ts").notNull(),
-    actor: text("actor").notNull().default("me"),
+    actor: text("actor").notNull(),
     source: text("source").$type<AuditSource>().notNull(),
     action: text("action").$type<AuditAction>().notNull(),
     entityType: text("entity_type").$type<AuditEntity>().notNull(),

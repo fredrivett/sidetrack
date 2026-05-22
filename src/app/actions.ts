@@ -22,6 +22,7 @@ import {
   updateProject as updateProjectCore,
 } from "@/core/projects";
 import type { AuditSource, ItemKind, ProjectStatus } from "@/core/schema";
+import { requireUserId } from "@/lib/session";
 
 const SOURCE: AuditSource = "web";
 
@@ -30,8 +31,9 @@ function refresh() {
 }
 
 export async function createProjectAction(name: string) {
+  const userId = await requireUserId();
   const { db } = getDb();
-  const p = createProjectCore(db, { name }, SOURCE);
+  const p = createProjectCore(db, userId, { name }, SOURCE);
   refresh();
   return p;
 }
@@ -40,22 +42,25 @@ export async function updateProjectAction(
   id: string,
   patch: { name?: string; status?: ProjectStatus; summary?: string },
 ) {
+  const userId = await requireUserId();
   const { db } = getDb();
-  const p = updateProjectCore(db, id, patch, SOURCE);
+  const p = updateProjectCore(db, userId, id, patch, SOURCE);
   refresh();
   return p;
 }
 
 export async function reorderProjectAction(id: string, ref: string) {
+  const userId = await requireUserId();
   const { db } = getDb();
-  const p = reorderProjectCore(db, id, ref, SOURCE);
+  const p = reorderProjectCore(db, userId, id, ref, SOURCE);
   refresh();
   return p;
 }
 
 export async function deleteProjectAction(id: string) {
+  const userId = await requireUserId();
   const { db } = getDb();
-  deleteProjectCore(db, id, SOURCE);
+  deleteProjectCore(db, userId, id, SOURCE);
   refresh();
 }
 
@@ -67,8 +72,9 @@ export async function addItemAction(input: {
   category?: string | null;
   positionRef?: string;
 }) {
+  const userId = await requireUserId();
   const { db } = getDb();
-  const it = addItemCore(db, input, SOURCE);
+  const it = addItemCore(db, userId, input, SOURCE);
   refresh();
   return it;
 }
@@ -77,49 +83,56 @@ export async function updateItemAction(
   id: string,
   patch: { title?: string; description?: string | null; category?: string | null },
 ) {
+  const userId = await requireUserId();
   const { db } = getDb();
-  const it = updateItemCore(db, id, patch, SOURCE);
+  const it = updateItemCore(db, userId, id, patch, SOURCE);
   refresh();
   return it;
 }
 
 export async function completeItemAction(id: string) {
+  const userId = await requireUserId();
   const { db } = getDb();
-  const it = completeItemCore(db, id, SOURCE);
+  const it = completeItemCore(db, userId, id, SOURCE);
   refresh();
   return it;
 }
 
 export async function uncompleteItemAction(id: string) {
+  const userId = await requireUserId();
   const { db } = getDb();
-  const it = uncompleteItemCore(db, id, SOURCE);
+  const it = uncompleteItemCore(db, userId, id, SOURCE);
   refresh();
   return it;
 }
 
 export async function reorderItemAction(id: string, ref: string) {
+  const userId = await requireUserId();
   const { db } = getDb();
-  const it = reorderItemCore(db, id, ref, SOURCE);
+  const it = reorderItemCore(db, userId, id, ref, SOURCE);
   refresh();
   return it;
 }
 
 export async function deleteItemAction(id: string) {
+  const userId = await requireUserId();
   const { db } = getDb();
-  deleteItemCore(db, id, SOURCE);
+  deleteItemCore(db, userId, id, SOURCE);
   refresh();
 }
 
 export async function addCategoryAction(projectId: string, name: string) {
+  const userId = await requireUserId();
   const { db } = getDb();
-  const c = addCategoryCore(db, projectId, name, SOURCE);
+  const c = addCategoryCore(db, userId, projectId, name, SOURCE);
   refresh();
   return c;
 }
 
 export async function listCategoriesAction(projectId: string) {
+  const userId = await requireUserId();
   const { db } = getDb();
-  return listCategoriesCore(db, projectId);
+  return listCategoriesCore(db, userId, projectId);
 }
 
 export async function listAuditAction(opts: {
@@ -127,6 +140,7 @@ export async function listAuditAction(opts: {
   source?: AuditSource;
   limit?: number;
 } = {}) {
+  const userId = await requireUserId();
   const { db } = getDb();
-  return listAuditCore(db, opts);
+  return listAuditCore(db, userId, opts);
 }
