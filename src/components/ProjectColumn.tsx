@@ -31,9 +31,9 @@ export function ProjectColumn({
   return (
     <article
       data-project-id={project.id}
-      className="flex h-full snap-center shrink-0 flex-col gap-3 overflow-y-auto rounded-2xl border border-neutral-200 bg-white p-3 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 w-[92vw] sm:w-80"
+      className="flex h-full snap-center shrink-0 flex-col gap-3 overflow-hidden rounded-2xl border border-neutral-200 bg-white p-3 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 w-[92vw] sm:w-80"
     >
-      <header className="flex items-start gap-2">
+      <header className="flex items-start gap-2 shrink-0">
         <div className="min-w-0 flex-1 space-y-1">
           <EditableText
             value={project.name}
@@ -52,18 +52,22 @@ export function ProjectColumn({
         />
       </header>
 
-      <SummaryBlock
-        projectId={project.id}
-        summary={project.summary}
-        summaryUpdatedAt={project.summaryUpdatedAt}
-      />
+      <div className="flex-1 min-h-0 -mx-3 overflow-y-auto px-3">
+        <SummaryBlock
+          projectId={project.id}
+          summary={project.summary}
+          summaryUpdatedAt={project.summaryUpdatedAt}
+        />
 
-      <div className="flex-1 space-y-3 pt-1">
-        <CompletedSection items={completed} />
-        <ItemList items={active} />
+        <div className="space-y-3 pt-3">
+          <CompletedSection items={completed} />
+          <ItemList items={active} />
+        </div>
       </div>
 
-      <AddItemForm projectId={project.id} categories={categories} />
+      <div className="shrink-0">
+        <AddItemForm projectId={project.id} categories={categories} />
+      </div>
     </article>
   );
 }
