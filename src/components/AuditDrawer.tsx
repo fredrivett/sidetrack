@@ -4,6 +4,13 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { listAuditAction } from "@/app/actions";
 import type { AuditEntry, AuditSource, Project } from "@/core/schema";
 import { dayLabel, formatRelative } from "@/lib/time";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 
 const PAGE = 100;
 
@@ -48,7 +55,6 @@ export function AuditDrawer({
     [projects],
   );
 
-  // Reset paging/filter each time the drawer is (re)opened or rescoped.
   useEffect(() => {
     if (open) {
       setFilter("all");
@@ -79,35 +85,20 @@ export function AuditDrawer({
     return out;
   }, [entries]);
 
-  if (!open) return null;
-
   const maybeMore = entries.length === limit;
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
-      <button
-        type="button"
-        aria-label="Close activity"
-        onClick={onClose}
-        className="absolute inset-0 bg-black/40"
-      />
-      <aside className="relative flex h-full w-full max-w-md flex-col bg-white shadow-xl dark:bg-neutral-900">
-        <header className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-          <div className="min-w-0">
-            <h2 className="text-sm font-semibold">Activity</h2>
-            <p className="truncate text-xs text-neutral-500">
-              {projectName ?? "All projects"}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded p-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-            aria-label="Close"
-          >
-            ✕
-          </button>
-        </header>
+    <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
+      <SheetContent
+        side="right"
+        className="w-full gap-0 p-0 data-[side=right]:sm:max-w-md"
+      >
+        <SheetHeader className="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+          <SheetTitle className="text-sm font-semibold">Activity</SheetTitle>
+          <SheetDescription className="truncate text-xs">
+            {projectName ?? "All projects"}
+          </SheetDescription>
+        </SheetHeader>
 
         <div className="flex items-center gap-1 border-b border-neutral-200 p-2 dark:border-neutral-800">
           {(["all", "web", "mcp"] as const).map((f) => (
@@ -193,7 +184,7 @@ export function AuditDrawer({
             </button>
           )}
         </div>
-      </aside>
-    </div>
+      </SheetContent>
+    </Sheet>
   );
 }

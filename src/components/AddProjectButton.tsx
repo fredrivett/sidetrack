@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { createProjectAction } from "@/app/actions";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 export function AddProjectButton() {
   const [open, setOpen] = useState(false);
@@ -37,34 +39,35 @@ export function AddProjectButton() {
       className="flex h-full w-72 shrink-0 snap-center flex-col gap-2 rounded-2xl border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-900"
     >
       <h3 className="text-sm font-semibold">New project</h3>
-      <input
+      <Input
         autoFocus
-        type="text"
         value={name}
         onChange={(e) => setName(e.target.value)}
         placeholder="Project name"
         disabled={pending}
-        className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-neutral-400 dark:border-neutral-700 dark:bg-neutral-950"
       />
       <div className="flex gap-2">
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="sm"
           onClick={() => {
             setOpen(false);
             setName("");
           }}
           disabled={pending}
-          className="flex-1 rounded-lg border border-neutral-300 py-2 text-xs font-medium dark:border-neutral-700"
+          className="flex-1"
         >
           Cancel
-        </button>
-        <button
+        </Button>
+        <Button
           type="submit"
+          size="sm"
           disabled={!name.trim() || pending}
-          className="flex-1 rounded-lg bg-neutral-900 py-2 text-xs font-medium text-white disabled:opacity-50 dark:bg-white dark:text-neutral-900"
+          className="flex-1"
         >
           Create
-        </button>
+        </Button>
       </div>
     </form>
   );
