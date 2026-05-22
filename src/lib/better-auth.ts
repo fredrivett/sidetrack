@@ -1,23 +1,25 @@
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { APIError } from "better-auth/api";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
 import { users as authUsers } from "@/core/auth-schema";
 import { getDb } from "@/core/db";
-import { auditLog, projects } from "@/core/schema";
+import { auditLog, meta, projects } from "@/core/schema";
 
 const { db } = getDb();
 
 // Sign-up gate:
 //   ALLOW_SIGNUP=true  → signup always enabled (open instance, intentional).
-//   unset/anything else → first signup wins, then locked. Subsequent signups
-//                         are rejected at the database hook layer, evaluated
-//                         per request so the lock takes effect immediately
-//                         (no server restart needed).
-//   Self-hosters who want to add more users later flip ALLOW_SIGNUP=true
-//   and restart.
+//   unset/anything else → first signup wins, then locked.
+//
+// The lock is enforced by a row in the `meta` table whose primary key
+// guarantees atomicity: the `before` hook does INSERT OR FAIL on that row,
+// so concurrent first-signup requests can't both pass the check (Better
+// Auth runs hooks across async boundaries, which is what made the naive
+// `userCount() === 0` check racey).
 const ALLOW_SIGNUP = process.env.ALLOW_SIGNUP === "true";
+const SIGNUP_LOCK_KEY = "signups_first_claimed";
 
 function userCount(): number {
   try {
@@ -26,6 +28,31 @@ function userCount(): number {
     // Migrations may not have run yet on the very first boot.
     return 0;
   }
+}
+
+// Reconcile the lock against actual user state at boot. Two situations to
+// repair:
+//   - No users + lock present: a prior signup claimed the sentinel then
+//     died before writing the user row. Without this, the instance would
+//     be permanently locked with no way in.
+//   - Users + no lock: the lock was added after the first user existed
+//     (e.g. operator flipped ALLOW_SIGNUP from true → false). Claim it now
+//     so the next signup is correctly rejected.
+try {
+  const haveUsers = userCount() > 0;
+  if (!haveUsers) {
+    db.delete(meta).where(eq(meta.key, SIGNUP_LOCK_KEY)).run();
+  } else {
+    try {
+      db.insert(meta)
+        .values({ key: SIGNUP_LOCK_KEY, value: "1" })
+        .run();
+    } catch {
+      // Lock already present — fine, leave it.
+    }
+  }
+} catch {
+  // Migrations may not have run yet on the very first boot.
 }
 
 // First-user adoption: the very first signup claims all pre-existing data
@@ -69,15 +96,23 @@ export const auth = betterAuth({
       create: {
         before: async () => {
           if (ALLOW_SIGNUP) return;
-          if (userCount() > 0) {
+          // Atomic claim: SQLite's PK constraint on meta.key serializes
+          // concurrent inserts — exactly one survives, everyone else gets a
+          // CONSTRAINT error. No userCount() race.
+          try {
+            db.insert(meta)
+              .values({ key: SIGNUP_LOCK_KEY, value: "1" })
+              .run();
+          } catch {
             throw new APIError("FORBIDDEN", {
               message: "Sign-up is closed on this instance.",
             });
           }
         },
         after: async (user) => {
-          // The user has just been written. If they were the first ever
-          // (count === 1 now), adopt any legacy 'me' rows. Otherwise no-op.
+          // Race-free with the sentinel gate above: only one signup can
+          // reach here when ALLOW_SIGNUP is unset, so count === 1 reliably
+          // identifies the first-ever user.
           if (userCount() === 1) adoptMeRows(user.id);
         },
       },

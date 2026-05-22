@@ -152,7 +152,7 @@ export async function listAuditAction(opts: {
 export async function createApiKeyAction(name: string) {
   const userId = await requireUserId();
   const { db } = getDb();
-  const { record, plaintext } = createApiKeyCore(db, userId, name);
+  const { record, plaintext } = createApiKeyCore(db, userId, name, SOURCE);
   revalidatePath("/settings/keys");
   // plaintext is returned to the caller exactly once, then never persisted.
   return { record, plaintext };
@@ -161,7 +161,7 @@ export async function createApiKeyAction(name: string) {
 export async function revokeApiKeyAction(id: string) {
   const userId = await requireUserId();
   const { db } = getDb();
-  const removed = revokeApiKeyCore(db, userId, id);
+  const removed = revokeApiKeyCore(db, userId, id, SOURCE);
   revalidatePath("/settings/keys");
   return { removed };
 }

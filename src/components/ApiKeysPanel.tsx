@@ -88,7 +88,7 @@ export function ApiKeysPanel({ initial }: { initial: KeyRow[] }) {
       {justCreated && (
         <section className="rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/40 p-3 space-y-2">
           <p className="text-sm font-medium">
-            Copy your key now — it won't be shown again.
+            Copy your key now — it won&apos;t be shown again.
           </p>
           <p className="text-xs text-muted-foreground">
             Key for <span className="font-mono">{justCreated.name}</span>:
@@ -110,7 +110,7 @@ export function ApiKeysPanel({ initial }: { initial: KeyRow[] }) {
             size="sm"
             onClick={() => setJustCreated(null)}
           >
-            I've copied it
+            I&apos;ve copied it
           </Button>
         </section>
       )}

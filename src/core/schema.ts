@@ -35,7 +35,12 @@ export const AUDIT_ACTIONS = [
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
-export const AUDIT_ENTITIES = ["project", "item", "category"] as const;
+export const AUDIT_ENTITIES = [
+  "project",
+  "item",
+  "category",
+  "api_key",
+] as const;
 export type AuditEntity = (typeof AUDIT_ENTITIES)[number];
 
 export const projects = sqliteTable("projects", {

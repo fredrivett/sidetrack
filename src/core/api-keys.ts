@@ -2,7 +2,9 @@ import { createHash, randomBytes } from "node:crypto";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { type ApiKey, apiKeys } from "./auth-schema";
+import { recordAudit } from "./audit";
 import type { Db } from "./db";
+import type { AuditSource } from "./schema";
 
 // API keys are issued from the web UI, stored as sha256(key), and passed in
 // MCP requests either via Authorization: Bearer <key> or ?key=<key>.
@@ -25,31 +27,45 @@ export function createApiKey(
   db: Db,
   userId: string,
   name: string,
+  source: AuditSource,
 ): { record: Omit<ApiKey, "keyHash">; plaintext: string } {
   const trimmed = name.trim();
   if (!trimmed) throw new Error("key name required");
   const plaintext = generate();
   const id = nanoid(12);
   const now = new Date();
-  db.insert(apiKeys)
-    .values({
-      id,
-      userId,
-      name: trimmed,
-      // First 11 chars: "sk_" + 8 hex. Enough to disambiguate keys in the UI
-      // without exposing material that could narrow a brute force.
-      prefix: plaintext.slice(0, 11),
-      keyHash: hash(plaintext),
-      createdAt: now,
-      lastUsedAt: null,
-    })
-    .run();
+  const prefix = plaintext.slice(0, 11);
+
+  db.transaction((tx) => {
+    tx.insert(apiKeys)
+      .values({
+        id,
+        userId,
+        name: trimmed,
+        // First 11 chars: "sk_" + 8 hex. Enough to disambiguate keys in the
+        // UI without exposing material that could narrow a brute force.
+        prefix,
+        keyHash: hash(plaintext),
+        createdAt: now,
+        lastUsedAt: null,
+      })
+      .run();
+    recordAudit(tx as unknown as Db, {
+      actor: userId,
+      source,
+      action: "create",
+      entityType: "api_key",
+      entityId: id,
+      detail: `minted API key "${trimmed}" (${prefix}…)`,
+    });
+  });
+
   return {
     record: {
       id,
       userId,
       name: trimmed,
-      prefix: plaintext.slice(0, 11),
+      prefix,
       createdAt: now,
       lastUsedAt: null,
     },
@@ -80,12 +96,32 @@ export function revokeApiKey(
   db: Db,
   userId: string,
   id: string,
+  source: AuditSource,
 ): boolean {
-  const { changes } = db
-    .delete(apiKeys)
+  // Pre-read so the audit detail can name the key being revoked. The
+  // ownership filter lives on both this read and the delete to make sure
+  // we never reveal another user's key existence by audit-side effects.
+  const existing = db
+    .select({ name: apiKeys.name, prefix: apiKeys.prefix })
+    .from(apiKeys)
     .where(and(eq(apiKeys.id, id), eq(apiKeys.userId, userId)))
-    .run();
-  return changes > 0;
+    .get();
+  if (!existing) return false;
+
+  db.transaction((tx) => {
+    tx.delete(apiKeys)
+      .where(and(eq(apiKeys.id, id), eq(apiKeys.userId, userId)))
+      .run();
+    recordAudit(tx as unknown as Db, {
+      actor: userId,
+      source,
+      action: "delete",
+      entityType: "api_key",
+      entityId: id,
+      detail: `revoked API key "${existing.name}" (${existing.prefix}…)`,
+    });
+  });
+  return true;
 }
 
 /**
@@ -94,6 +130,9 @@ export function revokeApiKey(
  * and-forget — we don't await or surface errors). Constant-time isn't
  * needed: the lookup is by sha256(key), which is a uniformly-distributed
  * fixed-length string; mismatches all fail at the indexed lookup.
+ *
+ * Intentionally NOT audited: this fires on every MCP request and would
+ * drown the meaningful events. Same carve-out as ensureCategory.
  */
 export function verifyApiKey(db: Db, key: string): string | null {
   if (!key || !key.startsWith(KEY_PREFIX)) return null;
