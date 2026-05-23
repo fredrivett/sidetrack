@@ -49,7 +49,7 @@ export function ItemRow({
       style={style}
       {...(draggable ? attributes : {})}
       {...(draggable ? listeners : {})}
-      className={`group relative flex items-start gap-2 rounded-lg border border-neutral-200 bg-white p-2 dark:border-neutral-800 dark:bg-neutral-900 ${
+      className={`group relative flex select-none items-start gap-2 rounded-lg border border-neutral-200 bg-white p-2 dark:border-neutral-800 dark:bg-neutral-900 ${
         draggable ? "cursor-grab touch-pan-y active:cursor-grabbing" : ""
       } ${
         item.kind === "milestone"
