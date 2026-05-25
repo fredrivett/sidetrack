@@ -46,6 +46,20 @@ export function AuditDrawer({
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [pending, start] = useTransition();
 
+  // Reset filter + limit when the drawer opens, or when the user switches
+  // projects while it stays open. Compare prev props in render rather than
+  // syncing via useEffect (avoids cascading renders).
+  const [prevOpen, setPrevOpen] = useState(open);
+  const [prevProjectId, setPrevProjectId] = useState(projectId);
+  if (prevOpen !== open || prevProjectId !== projectId) {
+    setPrevOpen(open);
+    setPrevProjectId(projectId);
+    if (open) {
+      setFilter("all");
+      setLimit(PAGE);
+    }
+  }
+
   const projectName = useMemo(
     () => projects.find((p) => p.id === projectId)?.name,
     [projects, projectId],
@@ -54,13 +68,6 @@ export function AuditDrawer({
     () => new Map(projects.map((p) => [p.id, p.name])),
     [projects],
   );
-
-  useEffect(() => {
-    if (open) {
-      setFilter("all");
-      setLimit(PAGE);
-    }
-  }, [open, projectId]);
 
   useEffect(() => {
     if (!open) return;
