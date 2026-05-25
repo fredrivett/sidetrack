@@ -12,7 +12,6 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - `pnpm test` — Vitest, real `better-sqlite3` in-memory, no mocks of `src/core`
 - `pnpm db:generate` — drizzle-kit, after editing `src/core/schema.ts`
 - `pnpm db:migrate` — apply pending migrations to the local DB
-- `tsx scripts/smoke-core.ts` — end-to-end exercise of the core API
 
 # Project structure
 
