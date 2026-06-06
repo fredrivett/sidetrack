@@ -22,11 +22,13 @@ asserts the audit row was written is incomplete.
    via `src/instrumentation.ts`.
 
 2. **Core function.** Add to the relevant file under `src/core/` (or create
-   a new one if the entity is new). Signature MUST be
-   `(db: Db, input, source: AuditSource): Result`. The body MUST wrap the
-   mutation and `recordAudit(...)` in `db.transaction((tx) => { ... })`. Copy
-   the pattern from `addItem` in `src/core/items.ts`. If the mutation is a
-   no-op (nothing actually changed), return early WITHOUT writing audit.
+   a new one if the entity is new). The signature follows
+   `(db: Db, input, source: AuditSource)` and returns the concrete entity type
+   for the mutation — e.g. `Item` (`addItem`), `Project` (`createProject`), or
+   `void` (`deleteItem`). The body MUST wrap the mutation and `recordAudit(...)`
+   in `db.transaction((tx) => { ... })`. Copy the pattern from `addItem` in
+   `src/core/items.ts`. If the mutation is a no-op (nothing actually changed),
+   return early WITHOUT writing audit.
 
 3. **Tool registration.** Add to `registerTools()` in `src/mcp/tools.ts`:
    - `snake_case` tool name and input field names (MCP convention).
