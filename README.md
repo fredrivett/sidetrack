@@ -34,3 +34,22 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## License
+
+Sidetrack is [Fair Source](https://fair.io) software, licensed under the
+[Functional Source License, Version 1.1, Apache 2.0 Future License (FSL-1.1-ALv2)](./LICENSE.md).
+Copyright © 2026 Jotmake Limited.
+
+In short:
+
+- You may use, copy, modify, and redistribute the code for **any purpose except
+  a Competing Use** — broadly, building a commercial product or service that
+  substitutes for Sidetrack. Internal use, education, research, and
+  contributions back are all explicitly permitted.
+- Each released version **automatically converts to the
+  [Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0) two
+  years after its release**, at which point all restrictions fall away.
+
+This is a source-available license, not an OSI-approved "open source" license,
+during the two-year window. See [`LICENSE.md`](./LICENSE.md) for the full terms.
