@@ -1,39 +1,69 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Sidetrack
 
-## Getting Started
+Sidetrack is a self-hostable side-project tracker.
 
-First, run the development server:
+- 🤖 **MCP first** — a built-in [Model Context Protocol](https://modelcontextprotocol.io) server so AI agents can read and update your projects
+- 🖥️ **Web UI** for everyday use
+- 📁 **Projects → items → categories**, with drag-to-reorder
+- 📜 **Audit log** — every change recorded, web or agent
+- 📱 **Installable** as an iOS PWA
+
+## Stack
+
+- **[Next.js 16](https://nextjs.org)** (App Router) + **React 19**
+- **SQLite** via [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) and [Drizzle ORM](https://orm.drizzle.team)
+- **[Tailwind CSS v4](https://tailwindcss.com)** with [shadcn/ui](https://ui.shadcn.com) and [Base UI](https://base-ui.com)
+- **[dnd-kit](https://dndkit.com)** + [fractional indexing](https://github.com/rocicorp/fractional-indexing) for drag-to-reorder
+- **[MCP](https://modelcontextprotocol.io)** server via [`@modelcontextprotocol/sdk`](https://github.com/modelcontextprotocol/typescript-sdk)
+
+## Getting started
+
+Requires Node.js and [pnpm](https://pnpm.io).
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Create a `.env.local` with the two access tokens (any sufficiently random
+strings):
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+WEB_TOKEN=...   # gates access to the web UI
+MCP_TOKEN=...   # gates access to the MCP server
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Set up the database and start the dev server:
 
-## Learn More
+```bash
+pnpm db:migrate   # apply migrations
+pnpm dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+Open [http://localhost:3000](http://localhost:3000).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Scripts
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Command | Description |
+| --- | --- |
+| `pnpm dev` | Start the development server |
+| `pnpm build` | Production build |
+| `pnpm start` | Serve the production build |
+| `pnpm lint` | Run ESLint |
+| `pnpm db:generate` | Generate Drizzle migrations from schema changes |
+| `pnpm db:migrate` | Apply pending migrations |
 
-## Deploy on Vercel
+## MCP server
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+The MCP server is exposed at `/mcp` and authenticates with `MCP_TOKEN`. Point an
+MCP-capable client (e.g. Claude) at it to list, create, and update projects and
+items. Web requests are tagged `web` and MCP requests `mcp` in the audit log, so
+you always know what changed and through which interface.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Deployment
+
+A `Dockerfile` and `docker-compose.yml` are included for self-hosting. The app
+also deploys to [Vercel](https://vercel.com); note the SQLite database expects a
+persistent filesystem.
 
 ## License
 
@@ -44,9 +74,9 @@ Copyright © 2026 Jotmake Limited.
 In short:
 
 - You may use, copy, modify, and redistribute the code for **any purpose except
-  a Competing Use** — broadly, building a commercial product or service that
-  substitutes for Sidetrack. Internal use, education, research, and
-  contributions back are all explicitly permitted.
+  a Competing Use** — broadly, a commercial product or service that substitutes
+  for Sidetrack. Internal use, education, research, and contributions back are
+  all explicitly permitted.
 - Each released version **automatically converts to the
   [Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0) two
   years after its release**, at which point all restrictions fall away.
