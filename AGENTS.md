@@ -4,7 +4,27 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
-# Audit log invariant
+# Commands
+
+- `pnpm dev` — Next.js dev server (port from `$CONDUCTOR_PORT` in Conductor)
+- `pnpm build` / `pnpm start` — production build + serve
+- `pnpm lint` — ESLint (run after edits; PostToolUse hook does this automatically)
+- `pnpm test` — Vitest, real `better-sqlite3` in-memory, no mocks of `src/core`
+- `pnpm db:generate` — drizzle-kit, after editing `src/core/schema.ts`
+- `pnpm db:migrate` — apply pending migrations to the local DB
+
+# Project structure
+
+- `src/core/` — domain layer (DB, items, projects, audit, fractional indexing). Pure, no React/Next/MCP imports. See `src/core/AGENTS.md`.
+- `src/mcp/` — MCP tool surface. See `src/mcp/AGENTS.md`.
+- `src/app/` — Next.js App Router (pages + Server Actions). See `src/app/AGENTS.md`.
+- `src/components/` — React UI (shadcn-style primitives in `src/components/ui/`).
+- `src/lib/` — small framework-agnostic helpers (auth stub, time formatting).
+- `scripts/` — operational scripts (smoke, backup). Not part of the app bundle.
+
+# Boundaries
+
+## Audit log invariant
 
 Every state-changing DB operation MUST write an `audit_log` row **in the same
 transaction** as the mutation (`recordAudit()` in `src/core/audit.ts`). The log

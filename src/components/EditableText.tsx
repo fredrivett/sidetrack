@@ -21,9 +21,12 @@ export function EditableText({
   const [draft, setDraft] = useState(value);
   const ref = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
 
-  useEffect(() => {
-    if (!editing) setDraft(value);
-  }, [value, editing]);
+  // Draft only matters while editing; the non-editing branch renders `value`
+  // directly. Seed draft at the moment editing starts, not via an effect.
+  function startEditing() {
+    setDraft(value);
+    setEditing(true);
+  }
 
   useEffect(() => {
     if (editing && ref.current) {
@@ -51,7 +54,7 @@ export function EditableText({
     return (
       <button
         type="button"
-        onClick={() => setEditing(true)}
+        onClick={startEditing}
         className={`text-left ${value ? "" : "text-neutral-400"} ${className}`}
       >
         {value || placeholder || ""}

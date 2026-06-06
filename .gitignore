@@ -44,3 +44,7 @@ next-env.d.ts
 /data
 /backups
 
+# agent tooling — personal overrides (project .claude/settings.json IS committed)
+.claude/settings.local.json
+.claude/cache/
+

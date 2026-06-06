@@ -37,6 +37,10 @@ ENV HOSTNAME=0.0.0.0
 ENV DB_PATH=/data/sidetrack.db
 ENV BACKUP_DIR=/data/backups
 
+# su-exec lets the entrypoint drop from root to the unprivileged `node` user
+# after fixing volume ownership.
+RUN apk add --no-cache su-exec
+
 WORKDIR /app
 
 # Next.js standalone output: contains server.js + minimal traced node_modules.
@@ -53,10 +57,16 @@ COPY --from=builder /native/file-uri-to-path ./node_modules/file-uri-to-path
 # Drizzle migrations are read at runtime by core/migrate.ts.
 COPY --from=builder /app/src/core/migrations ./src/core/migrations
 
-# Runs as root: the data dir is a runtime-mounted volume (Railway Volume
-# or a docker-compose bind) owned by root; a non-root user would hit
-# EACCES on it. App is single-user and gated by token auth.
-RUN mkdir -p /data /data/backups
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh && mkdir -p /data /data/backups
+
 EXPOSE 3000
 
+# The container starts as root so the entrypoint can chown the mounted /data
+# volume, then immediately drops to the unprivileged `node` user via su-exec
+# (see docker-entrypoint.sh). There is intentionally no final USER directive —
+# privilege-dropping happens at runtime, after volume perms are fixed.
+# nosemgrep: dockerfile.security.missing-user-entrypoint.missing-user-entrypoint
+ENTRYPOINT ["docker-entrypoint.sh"]
+# nosemgrep: dockerfile.security.missing-user.missing-user
 CMD ["node", "server.js"]
