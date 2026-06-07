@@ -10,6 +10,16 @@
           }
         ]
       }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "grep -q '^### ' LEARNINGS.md && echo '⚠ Untriaged LEARNINGS.md drafts — run triage (see top of LEARNINGS.md)' || true"
+          }
+        ]
+      }
     ]
   }
 }
