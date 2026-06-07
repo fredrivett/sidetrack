@@ -11,8 +11,11 @@ export const dynamic = "force-dynamic";
 // imports. The proxy lets every /mcp request through; we 401 here.
 function extractKey(request: Request): string | null {
   const header = request.headers.get("authorization");
-  if (header?.startsWith("Bearer ")) {
-    return header.slice("Bearer ".length).trim() || null;
+  // The auth-scheme token is case-insensitive per RFC 7235, so accept any
+  // casing of "Bearer" and tolerate extra whitespace before the key.
+  const bearer = header?.match(/^Bearer\s+(.+)$/i);
+  if (bearer) {
+    return bearer[1].trim() || null;
   }
   // claude.ai custom connectors can only put the secret in the URL — they
   // have no way to set a custom request header. Fall back to ?key=.
