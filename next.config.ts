@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withPostHogConfig } from "@posthog/nextjs-config";
 
 // The commit this build came from. The deploy pipeline sets SOURCE_COMMIT (CI
 // builds fall back to GITHUB_SHA); empty when unknown, in which case captures
@@ -16,4 +17,24 @@ const nextConfig: NextConfig = {
   env: { NEXT_PUBLIC_RELEASE: release },
 };
 
-export default nextConfig;
+// Source-map upload happens at build time, but only when the build is given
+// PostHog credentials (the hosted sidetrack.it deploy). A self-hoster or a
+// local build without them gets the plain config and uploads nothing — so
+// stack traces are readable for us without forcing anything on self-hosters.
+// These are a personal API key + project id, distinct from the ingestion key.
+const personalApiKey = process.env.POSTHOG_API_KEY;
+const projectId = process.env.POSTHOG_PROJECT_ID;
+
+export default personalApiKey && projectId
+  ? withPostHogConfig(nextConfig, {
+      personalApiKey,
+      projectId,
+      host: process.env.POSTHOG_API_HOST ?? "https://us.posthog.com",
+      sourcemaps: {
+        enabled: true,
+        releaseName: "sidetrack",
+        releaseVersion: release || undefined,
+        deleteAfterUpload: true,
+      },
+    })
+  : nextConfig;
