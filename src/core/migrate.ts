@@ -6,10 +6,31 @@ let migrated = false;
 
 export function runMigrations() {
   if (migrated) return;
-  const { db } = getDb();
-  migrate(db, {
-    migrationsFolder: resolve(process.cwd(), "src/core/migrations"),
-  });
+  const { sqlite, db } = getDb();
+
+  // FK enforcement MUST be off while migrating. Drizzle runs every migration
+  // inside one transaction, and table-rebuild migrations (the standard SQLite
+  // "12-step" recreate, e.g. 0004) DROP and recreate parent tables. With FKs
+  // on, `DROP TABLE projects` performs an implicit DELETE that fires
+  // `ON DELETE CASCADE` and wipes items/categories. `PRAGMA foreign_keys` is
+  // a no-op *inside* a transaction, so it must be toggled here — before
+  // drizzle opens its own BEGIN — not in the migration SQL itself.
+  sqlite.pragma("foreign_keys = OFF");
+  try {
+    migrate(db, {
+      migrationsFolder: resolve(process.cwd(), "src/core/migrations"),
+    });
+    // Catch any referential damage a rebuild may have introduced while
+    // enforcement was off, rather than silently carrying it forward.
+    const violations = sqlite.pragma("foreign_key_check") as unknown[];
+    if (violations.length > 0) {
+      throw new Error(
+        `migrations left ${violations.length} foreign-key violation(s)`,
+      );
+    }
+  } finally {
+    sqlite.pragma("foreign_keys = ON");
+  }
   migrated = true;
 }
 
