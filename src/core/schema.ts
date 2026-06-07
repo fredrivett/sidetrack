@@ -136,6 +136,9 @@ export const auditLog = sqliteTable(
   (t) => [
     index("audit_log_ts").on(t.ts),
     index("audit_log_project_ts").on(t.projectId, t.ts),
+    // listAudit always filters by actor and orders by ts desc; this composite
+    // serves the per-user "my activity" read without a full-table scan.
+    index("audit_log_actor_ts").on(t.actor, t.ts),
   ],
 );
 

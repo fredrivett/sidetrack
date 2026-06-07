@@ -29,6 +29,13 @@
       "when": 1779484429235,
       "tag": "0003_cool_the_stranger",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1780844102345,
+      "tag": "0005_steep_stardust",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1 @@
+CREATE INDEX `audit_log_actor_ts` ON `audit_log` (`actor`,`ts`);
