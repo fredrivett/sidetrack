@@ -44,6 +44,10 @@ commit or fail together — never write one without the other.
   Do not "fix" this by adding a cascade.
 - New mutating core functions and new MCP tools are not complete until they
   record audit. Treat a missing audit row as a bug.
+- Enforced in-loop: the `audit/audit-in-transaction` ESLint rule fails any
+  `db.transaction` that mutates without calling `recordAudit` in the same
+  transaction. Direct, un-transactioned writes (e.g. `ensureCategory`) are
+  exempt by design — keep deliberate non-audited writes outside a transaction.
 
 # Review
 
