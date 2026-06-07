@@ -126,10 +126,10 @@ export function revokeApiKey(
 
 /**
  * Resolve a plaintext key to its owning user id. Returns null if the key
- * is unknown. Also updates last_used_at as a side effect (cheap, fire-
- * and-forget — we don't await or surface errors). Constant-time isn't
- * needed: the lookup is by sha256(key), which is a uniformly-distributed
- * fixed-length string; mismatches all fail at the indexed lookup.
+ * is unknown. Also bumps last_used_at as a best-effort side effect — a write
+ * failure there is swallowed so it can't fail auth for a valid key. Constant-
+ * time isn't needed: the lookup is by sha256(key), which is a uniformly-
+ * distributed fixed-length string; mismatches all fail at the indexed lookup.
  *
  * Intentionally NOT audited: this fires on every MCP request and would
  * drown the meaningful events. Same carve-out as ensureCategory.
@@ -142,9 +142,15 @@ export function verifyApiKey(db: Db, key: string): string | null {
     .where(eq(apiKeys.keyHash, hash(key)))
     .get();
   if (!row) return null;
-  db.update(apiKeys)
-    .set({ lastUsedAt: new Date() })
-    .where(eq(apiKeys.id, row.id))
-    .run();
+  // last_used_at is best-effort telemetry: a write failure (e.g. SQLITE_BUSY)
+  // must not fail auth for an otherwise-valid key.
+  try {
+    db.update(apiKeys)
+      .set({ lastUsedAt: new Date() })
+      .where(eq(apiKeys.id, row.id))
+      .run();
+  } catch {
+    // ignore — usage tracking is not load-bearing for auth.
+  }
   return row.userId;
 }
