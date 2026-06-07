@@ -4,6 +4,7 @@ import {
   addItem,
   completeItem,
   deleteItem,
+  getItem,
   listItems,
   reorderItem,
   uncompleteItem,
@@ -98,6 +99,14 @@ describe("items", () => {
       "b",
       "a",
     ]);
+  });
+
+  it("returns undefined for an empty or unknown id", () => {
+    const { db, userId, projectId } = seedProject();
+    addItem(db, userId, { projectId, kind: "task", title: "real" }, "web");
+    // An empty id must not fall through to "match any owned item".
+    expect(getItem(db, userId, "")).toBeUndefined();
+    expect(getItem(db, userId, "nope")).toBeUndefined();
   });
 
   it("deletes an item and logs it", () => {

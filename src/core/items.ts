@@ -23,10 +23,11 @@ import {
 // every write that takes an existing item id goes through getItem() which
 // applies the same join.
 
-function ownedItemWhere(userId: string, itemId?: string) {
-  const conds = [eq(projects.userId, userId)];
-  if (itemId) conds.push(eq(items.id, itemId));
-  return and(...conds);
+// itemId is required, not optional: a falsy guard here once let an empty
+// string drop the id filter and match an arbitrary owned item. The only
+// caller always has an id, so require it and always filter on it.
+function ownedItemWhere(userId: string, itemId: string) {
+  return and(eq(projects.userId, userId), eq(items.id, itemId));
 }
 
 function ownedProjectWhere(userId: string, projectId: string) {
