@@ -32,6 +32,7 @@ export function ApiKeysPanel({ initial }: { initial: KeyRow[] }) {
     name: string;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
 
   function onCreate(formData: FormData) {
     const raw = String(formData.get("name") ?? "").trim();
@@ -56,9 +57,16 @@ export function ApiKeysPanel({ initial }: { initial: KeyRow[] }) {
     if (!confirm("Revoke this key? Any client using it will stop working.")) {
       return;
     }
+    setRevokeError(null);
     startTransition(async () => {
-      await revokeApiKeyAction(id);
-      router.refresh();
+      try {
+        await revokeApiKeyAction(id);
+        router.refresh();
+      } catch (e) {
+        setRevokeError(
+          e instanceof Error ? e.message : "Failed to revoke key.",
+        );
+      }
     });
   }
 
@@ -117,6 +125,9 @@ export function ApiKeysPanel({ initial }: { initial: KeyRow[] }) {
 
       <section>
         <h2 className="text-sm font-medium mb-2">Existing keys</h2>
+        {revokeError && (
+          <p className="text-sm text-destructive mb-2">{revokeError}</p>
+        )}
         {initial.length === 0 ? (
           <p className="text-sm text-muted-foreground">No keys yet.</p>
         ) : (
