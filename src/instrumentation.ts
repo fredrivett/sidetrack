@@ -19,7 +19,9 @@ export const onRequestError: Instrumentation.onRequestError = async (
   const posthog = getPostHog();
   if (!posthog) return;
   await posthog.captureExceptionImmediate(err, undefined, {
-    path: request.path,
+    // Strip the query string — it can carry tokens/PII and adds nothing to
+    // error grouping (route_path below already captures the template).
+    path: request.path.split("?")[0],
     method: request.method,
     router_kind: context.routerKind,
     route_path: context.routePath,
