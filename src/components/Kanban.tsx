@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { Category, Item, Project } from "@/core/schema";
+import type { Category, Item, ItemPrLink, Project } from "@/core/schema";
 import { AddProjectButton } from "./AddProjectButton";
 import { AuditDrawer } from "./AuditDrawer";
 import { ProjectColumn } from "./ProjectColumn";
@@ -10,10 +10,12 @@ export function Kanban({
   projects,
   itemsByProject,
   categoriesByProject,
+  prLinksByItem,
 }: {
   projects: Project[];
   itemsByProject: Record<string, Item[]>;
   categoriesByProject: Record<string, Category[]>;
+  prLinksByItem: Record<string, ItemPrLink[]>;
 }) {
   const railRef = useRef<HTMLDivElement>(null);
   const initialised = useRef(false);
@@ -96,6 +98,7 @@ export function Kanban({
             project={p}
             items={itemsByProject[p.id] ?? []}
             categories={categoriesByProject[p.id] ?? []}
+            prLinksByItem={prLinksByItem}
             prevId={projects[idx - 1]?.id ?? null}
             nextId={projects[idx + 1]?.id ?? null}
             onShowActivity={(pid) => setAudit({ open: true, projectId: pid })}

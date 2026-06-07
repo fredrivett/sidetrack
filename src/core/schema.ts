@@ -20,7 +20,7 @@ export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 export const ITEM_KINDS = ["task", "milestone"] as const;
 export type ItemKind = (typeof ITEM_KINDS)[number];
 
-export const AUDIT_SOURCES = ["web", "mcp"] as const;
+export const AUDIT_SOURCES = ["web", "mcp", "github"] as const;
 export type AuditSource = (typeof AUDIT_SOURCES)[number];
 
 export const AUDIT_ACTIONS = [
@@ -30,6 +30,8 @@ export const AUDIT_ACTIONS = [
   "uncomplete",
   "reorder",
   "delete",
+  "link",
+  "unlink",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -67,6 +69,28 @@ export const items = sqliteTable(
       .default(sql`(unixepoch() * 1000)`),
   },
   (t) => [index("items_project_position").on(t.projectId, t.position)],
+);
+
+// Many-to-many link between items and GitHub pull requests. Explicit, agent-set
+// link so a future merge handler can deterministically resolve PR → item(s)
+// without fuzzy matching. Cascades on item delete; PR rows are just URLs.
+export const itemPrLinks = sqliteTable(
+  "item_pr_links",
+  {
+    id: text("id").primaryKey(),
+    itemId: text("item_id")
+      .notNull()
+      .references(() => items.id, { onDelete: "cascade" }),
+    prUrl: text("pr_url").notNull(),
+    linkedBySource: text("linked_by_source").$type<AuditSource>().notNull(),
+    createdAt: integer("created_at")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => [
+    uniqueIndex("item_pr_links_item_pr").on(t.itemId, t.prUrl),
+    index("item_pr_links_pr").on(t.prUrl),
+  ],
 );
 
 export const categories = sqliteTable(
@@ -118,3 +142,5 @@ export type Category = typeof categories.$inferSelect;
 export type NewCategory = typeof categories.$inferInsert;
 export type AuditEntry = typeof auditLog.$inferSelect;
 export type NewAuditEntry = typeof auditLog.$inferInsert;
+export type ItemPrLink = typeof itemPrLinks.$inferSelect;
+export type NewItemPrLink = typeof itemPrLinks.$inferInsert;

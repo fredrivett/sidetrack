@@ -1,7 +1,7 @@
 "use client";
 
 import { updateProjectAction } from "@/app/actions";
-import type { Category, Item, Project } from "@/core/schema";
+import type { Category, Item, ItemPrLink, Project } from "@/core/schema";
 import { AddItemForm } from "./AddItemForm";
 import { CompletedSection } from "./CompletedSection";
 import { EditableText } from "./EditableText";
@@ -14,6 +14,7 @@ export function ProjectColumn({
   project,
   items,
   categories,
+  prLinksByItem,
   prevId,
   nextId,
   onShowActivity,
@@ -21,6 +22,7 @@ export function ProjectColumn({
   project: Project;
   items: Item[];
   categories: Category[];
+  prLinksByItem: Record<string, ItemPrLink[]>;
   prevId: string | null;
   nextId: string | null;
   onShowActivity: (projectId: string) => void;
@@ -60,8 +62,8 @@ export function ProjectColumn({
         />
 
         <div className="space-y-3 pt-3">
-          <CompletedSection items={completed} />
-          <ItemList items={active} />
+          <CompletedSection items={completed} prLinksByItem={prLinksByItem} />
+          <ItemList items={active} prLinksByItem={prLinksByItem} />
         </div>
       </div>
 

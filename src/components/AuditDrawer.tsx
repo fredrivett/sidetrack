@@ -17,6 +17,7 @@ const PAGE = 100;
 const SOURCE_BADGE: Record<AuditSource, string> = {
   web: "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200",
   mcp: "bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200",
+  github: "bg-neutral-200 text-neutral-800 dark:bg-neutral-700 dark:text-neutral-100",
 };
 
 const ACTION_LABEL: Record<string, string> = {
@@ -26,6 +27,8 @@ const ACTION_LABEL: Record<string, string> = {
   uncomplete: "reopened",
   reorder: "reordered",
   delete: "deleted",
+  link: "linked",
+  unlink: "unlinked",
 };
 
 type Filter = "all" | AuditSource;
@@ -108,7 +111,7 @@ export function AuditDrawer({
         </SheetHeader>
 
         <div className="flex items-center gap-1 border-b border-neutral-200 p-2 dark:border-neutral-800">
-          {(["all", "web", "mcp"] as const).map((f) => (
+          {(["all", "web", "mcp", "github"] as const).map((f) => (
             <button
               key={f}
               type="button"

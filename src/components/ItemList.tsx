@@ -15,10 +15,16 @@ import {
 } from "@dnd-kit/sortable";
 import { useState, useTransition } from "react";
 import { reorderItemAction } from "@/app/actions";
-import type { Item } from "@/core/schema";
+import type { Item, ItemPrLink } from "@/core/schema";
 import { ItemRow } from "./ItemRow";
 
-export function ItemList({ items }: { items: Item[] }) {
+export function ItemList({
+  items,
+  prLinksByItem,
+}: {
+  items: Item[];
+  prLinksByItem: Record<string, ItemPrLink[]>;
+}) {
   const [optimistic, setOptimistic] = useState<Item[] | null>(null);
   const [, start] = useTransition();
   const ordered = optimistic ?? items;
@@ -75,7 +81,12 @@ export function ItemList({ items }: { items: Item[] }) {
       >
         <div className="space-y-1.5">
           {ordered.map((item) => (
-            <ItemRow key={item.id} item={item} draggable />
+            <ItemRow
+              key={item.id}
+              item={item}
+              prLinks={prLinksByItem[item.id] ?? []}
+              draggable
+            />
           ))}
         </div>
       </SortableContext>
