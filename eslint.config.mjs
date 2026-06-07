@@ -76,6 +76,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Stryker's sandbox copies (with injected @ts-nocheck) and HTML report.
+    ".stryker-tmp/**",
+    "reports/**",
   ]),
   // Agent anti-pattern rules. Agents reach for `any` and stub throws when the
   // type or implementation is hard; block them at the linter so they show up
