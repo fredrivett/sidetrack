@@ -2,20 +2,10 @@ import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/LoginForm";
 import { users as authUsers } from "@/core/auth-schema";
 import { getDb } from "@/core/db";
+import { sanitizeNext } from "@/lib/safe-next";
 import { getCurrentSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
-
-// Next.js hands back `string | string[]` for a repeated query param, so guard
-// the type. Only allow same-origin absolute paths: reject protocol-relative
-// targets (`//host`, and `/\host` since browsers normalise `\` to `/`) which
-// otherwise sail past a bare `startsWith("/")` and become an open redirect.
-function sanitizeNext(next: string | string[] | undefined): string {
-  if (typeof next !== "string") return "/";
-  if (!next.startsWith("/")) return "/";
-  if (next.startsWith("//") || next.startsWith("/\\")) return "/";
-  return next;
-}
 
 export default async function LoginPage({
   searchParams,

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { signIn, signUp } from "@/lib/auth-client";
+import { sanitizeNext } from "@/lib/safe-next";
 
 type Mode = "sign-in" | "sign-up";
 
@@ -41,7 +42,9 @@ export function LoginForm({
           return;
         }
       }
-      router.push(next);
+      // Re-sanitize at the navigation site: never trust the prop blindly,
+      // so an open-redirect target can't slip through if the caller changes.
+      router.push(sanitizeNext(next));
       router.refresh();
     } finally {
       setPending(false);
