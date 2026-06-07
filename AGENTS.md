@@ -44,3 +44,10 @@ commit or fail together — never write one without the other.
   Do not "fix" this by adding a cascade.
 - New mutating core functions and new MCP tools are not complete until they
   record audit. Treat a missing audit row as a bug.
+
+# Review
+
+PRs are reviewed automatically by **Cubic** (https://cubic.dev), an AI reviewer
+that posts inline comments on the diff. It runs on every PR alongside CI — you
+don't invoke it. When it comments, treat its findings like a human reviewer's:
+address them or push back explicitly in the thread, don't silently ignore them.
