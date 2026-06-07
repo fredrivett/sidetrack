@@ -6,7 +6,19 @@
  * insert, ensureCategory, backup) sit outside a transaction callback and are
  * intentionally exempt.
  *
- * Tested in audit-in-transaction.test.ts — both directions, plus the exemption.
+ * The check only sees an inline callback's body, so it also *requires* the
+ * callback to be inline: an extracted callback (`db.transaction(cb)`) would
+ * otherwise slip its mutations past enforcement. Current code always inlines,
+ * so this only forecloses the bypass.
+ *
+ * `recordAudit` is matched by name — a fast heuristic, not a binding check. A
+ * deliberately shadowed local `recordAudit` could spoof it, but that is out of
+ * scope: this rule guards *accidental* omission (and a determined bypass can
+ * just `eslint-disable` it). The real guarantee — that a row is actually
+ * written — is covered by the behavioural tests in src/core/*.test.ts.
+ *
+ * Tested in audit-in-transaction.test.mjs — both directions, the exemption,
+ * and the inline-callback requirement.
  */
 export const auditInTransaction = {
   meta: {
@@ -19,6 +31,8 @@ export const auditInTransaction = {
     messages: {
       missingAudit:
         "Mutation inside db.transaction() without recordAudit(). Every state-changing DB op must write an audit_log row in the same transaction — see AGENTS.md.",
+      inlineCallback:
+        "Pass the db.transaction() callback inline. An extracted callback can't be checked for recordAudit, so it would bypass the audit-log invariant — see AGENTS.md.",
     },
   },
   create(context) {
@@ -40,11 +54,21 @@ export const auditInTransaction = {
         context.report({ node, messageId: "missingAudit" });
       }
     };
+    const isInlineFn = (node) =>
+      node?.type === "ArrowFunctionExpression" ||
+      node?.type === "FunctionExpression";
     return {
       ArrowFunctionExpression: enter,
       "ArrowFunctionExpression:exit": exit,
       FunctionExpression: enter,
       "FunctionExpression:exit": exit,
+      // A transaction callback must be inline, or its mutations can't be seen.
+      "CallExpression[callee.property.name='transaction']"(node) {
+        const arg = node.arguments[0];
+        if (arg && !isInlineFn(arg)) {
+          context.report({ node: arg, messageId: "inlineCallback" });
+        }
+      },
       CallExpression(node) {
         if (!stack.length) return;
         const top = stack[stack.length - 1];

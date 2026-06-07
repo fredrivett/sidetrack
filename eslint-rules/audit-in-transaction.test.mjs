@@ -65,4 +65,24 @@ describe("audit-in-transaction", () => {
     `);
     expect(messages).toHaveLength(1);
   });
+
+  it("flags an extracted (non-inline) transaction callback", () => {
+    // The mutation can't be seen, so requiring inline forecloses the bypass.
+    const messages = lint(`
+      const cb = (tx) => { tx.delete(items).run(); };
+      db.transaction(cb);
+    `);
+    expect(messages).toHaveLength(1);
+    expect(messages[0].messageId).toBe("inlineCallback");
+  });
+
+  it("flags a non-inline callback even if it would audit", () => {
+    // We can't verify an extracted callback, so it's rejected regardless.
+    const messages = lint(`
+      function run(tx) { tx.insert(items).values({}).run(); recordAudit(tx, {}); }
+      db.transaction(run);
+    `);
+    expect(messages).toHaveLength(1);
+    expect(messages[0].messageId).toBe("inlineCallback");
+  });
 });
