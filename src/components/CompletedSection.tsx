@@ -9,7 +9,7 @@ export function CompletedSection({ items }: { items: Item[] }) {
   if (items.length === 0) return null;
   // items are sorted by position ASC; newest-completed (closest to active
   // boundary) is the LAST one in the completed range.
-  const newest = items.at(-1)!;
+  const newest = items[items.length - 1];
   const shown = expanded ? items : [newest];
 
   return (

@@ -24,6 +24,17 @@ export function getProject(db: Db, id: string): Project | undefined {
   return db.select().from(projects).where(eq(projects.id, id)).get();
 }
 
+/**
+ * Read a project back after a mutation that just created or updated it inside
+ * the same transaction. The row is guaranteed to exist; a miss means an
+ * invariant broke, so fail loudly rather than handing back `undefined`.
+ */
+function getProjectOrThrow(db: Db, id: string): Project {
+  const project = getProject(db, id);
+  if (!project) throw new Error(`project not found: ${id}`);
+  return project;
+}
+
 export function getProjectWithItems(
   db: Db,
   id: string,
@@ -78,7 +89,7 @@ export function createProject(
       detail: `created project "${name}"`,
     });
   });
-  return getProject(db, id)!;
+  return getProjectOrThrow(db, id);
 }
 
 export function updateProject(
@@ -119,7 +130,7 @@ export function updateProject(
       detail: `${existing.name}: ${changes.join(", ")}`,
     });
   });
-  return getProject(db, id)!;
+  return getProjectOrThrow(db, id);
 }
 
 export function reorderProject(
@@ -144,7 +155,7 @@ export function reorderProject(
       detail: `reordered project "${existing.name}"`,
     });
   });
-  return getProject(db, id)!;
+  return getProjectOrThrow(db, id);
 }
 
 export function deleteProject(db: Db, id: string, source: AuditSource): void {

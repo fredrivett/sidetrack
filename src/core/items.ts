@@ -89,11 +89,22 @@ export function addItem(
     });
   });
 
-  return getItem(db, id)!;
+  return getItemOrThrow(db, id);
 }
 
 export function getItem(db: Db, id: string): Item | undefined {
   return db.select().from(items).where(eq(items.id, id)).get();
+}
+
+/**
+ * Read an item back after a mutation that just created or updated it inside the
+ * same transaction. The row is guaranteed to exist; a miss means an invariant
+ * broke, so fail loudly rather than handing back `undefined`.
+ */
+function getItemOrThrow(db: Db, id: string): Item {
+  const item = getItem(db, id);
+  if (!item) throw new Error(`item not found: ${id}`);
+  return item;
 }
 
 export function updateItem(
@@ -142,7 +153,7 @@ export function updateItem(
     });
   });
 
-  return getItem(db, id)!;
+  return getItemOrThrow(db, id);
 }
 
 export function completeItem(db: Db, id: string, source: AuditSource): Item {
@@ -166,7 +177,7 @@ export function completeItem(db: Db, id: string, source: AuditSource): Item {
       detail: `completed "${existing.title}"`,
     });
   });
-  return getItem(db, id)!;
+  return getItemOrThrow(db, id);
 }
 
 export function uncompleteItem(db: Db, id: string, source: AuditSource): Item {
@@ -190,7 +201,7 @@ export function uncompleteItem(db: Db, id: string, source: AuditSource): Item {
       detail: `reopened "${existing.title}"`,
     });
   });
-  return getItem(db, id)!;
+  return getItemOrThrow(db, id);
 }
 
 export function reorderItem(
@@ -217,7 +228,7 @@ export function reorderItem(
       detail: `reordered "${existing.title}"`,
     });
   });
-  return getItem(db, id)!;
+  return getItemOrThrow(db, id);
 }
 
 export function deleteItem(db: Db, id: string, source: AuditSource): void {
