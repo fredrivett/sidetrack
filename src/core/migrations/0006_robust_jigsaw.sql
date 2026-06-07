@@ -1,0 +1,1 @@
+CREATE INDEX `api_keys_user_created` ON `api_keys` (`user_id`,`created_at`);

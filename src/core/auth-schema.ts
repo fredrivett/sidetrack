@@ -1,4 +1,5 @@
 import {
+  index,
   integer,
   sqliteTable,
   text,
@@ -86,7 +87,12 @@ export const apiKeys = sqliteTable(
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }),
   },
-  (t) => [uniqueIndex("api_keys_key_hash").on(t.keyHash)],
+  (t) => [
+    uniqueIndex("api_keys_key_hash").on(t.keyHash),
+    // listApiKeys filters by user_id and orders by created_at desc; this
+    // composite serves the per-user key listing without a full-table scan.
+    index("api_keys_user_created").on(t.userId, t.createdAt),
+  ],
 );
 
 export type User = typeof users.$inferSelect;
