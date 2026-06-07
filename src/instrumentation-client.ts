@@ -1,4 +1,5 @@
 import posthog from "posthog-js";
+import { RELEASE } from "./lib/release";
 
 // Client-side capture: pageviews, autocapture, and unhandled errors.
 //
@@ -13,4 +14,6 @@ if (key) {
     api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com",
     defaults: "2026-01-30",
   });
+  // Tag every event (errors included) with the deployed commit.
+  if (RELEASE) posthog.register({ release: RELEASE });
 }

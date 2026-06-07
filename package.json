@@ -10,6 +10,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
+    "test:mutation": "stryker run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/core/migrate.ts"
   },
@@ -19,6 +20,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@posthog/nextjs-config": "^1.9.52",
     "better-sqlite3": "^12.10.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -37,6 +39,8 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/vitest-runner": "^9.6.1",
     "@tailwindcss/postcss": "^4",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20",

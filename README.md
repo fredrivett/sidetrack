@@ -75,6 +75,17 @@ it (the default `docker compose up`) ships zero analytics. **Do not bake a
 `NEXT_PUBLIC_POSTHOG_KEY` into a published/prebuilt image**, or every instance
 running that image would report into your PostHog project.
 
+The following are **build-time only** and used for tying errors back to the
+commit that shipped them. They are entirely optional; without them a build is
+unaffected. They power the hosted deploy and are not needed for self-hosting.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `SOURCE_COMMIT` | `$GITHUB_SHA` | Commit SHA, inlined as `NEXT_PUBLIC_RELEASE` and tagged onto every PostHog capture |
+| `POSTHOG_API_KEY` | _(unset)_ | Personal API key. When set with `POSTHOG_PROJECT_ID`, `next build` uploads source maps to PostHog (and deletes them after) so stack traces symbolicate |
+| `POSTHOG_PROJECT_ID` | _(unset)_ | PostHog project id for the source-map upload |
+| `POSTHOG_API_HOST` | `https://us.posthog.com` | API host for the upload (note: not the `us.i.` ingestion host) |
+
 ## Connecting an MCP client
 
 The MCP server is exposed at `/mcp` and authenticates with `MCP_TOKEN`. Point an

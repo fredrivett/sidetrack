@@ -10,6 +10,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - `pnpm build` / `pnpm start` — production build + serve
 - `pnpm lint` — ESLint (run after edits; PostToolUse hook does this automatically)
 - `pnpm test` — Vitest, real `better-sqlite3` in-memory, no mocks of `src/core`
+- `pnpm test:mutation` — Stryker over the high-stakes domain logic (`src/core`:
+  audit, fractional indexing, items, projects, categories). On-demand, not CI;
+  surviving mutants show where a test asserts structure but not behaviour.
 - `pnpm db:generate` — drizzle-kit, after editing `src/core/schema.ts`
 - `pnpm db:migrate` — apply pending migrations to the local DB
 
@@ -44,3 +47,14 @@ commit or fail together — never write one without the other.
   Do not "fix" this by adding a cascade.
 - New mutating core functions and new MCP tools are not complete until they
   record audit. Treat a missing audit row as a bug.
+- Enforced in-loop: the `audit/audit-in-transaction` ESLint rule fails any
+  `db.transaction` that mutates without calling `recordAudit` in the same
+  transaction. Direct, un-transactioned writes (e.g. `ensureCategory`) are
+  exempt by design — keep deliberate non-audited writes outside a transaction.
+
+# Review
+
+PRs are reviewed automatically by **Cubic** (https://cubic.dev), an AI reviewer
+that posts inline comments on the diff. It runs on every PR alongside CI — you
+don't invoke it. When it comments, treat its findings like a human reviewer's:
+address them or push back explicitly in the thread, don't silently ignore them.

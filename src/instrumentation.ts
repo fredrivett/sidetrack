@@ -16,6 +16,7 @@ export const onRequestError: Instrumentation.onRequestError = async (
 ) => {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
   const { getPostHog } = await import("./lib/posthog");
+  const { RELEASE } = await import("./lib/release");
   const posthog = getPostHog();
   if (!posthog) return;
   await posthog.captureExceptionImmediate(err, undefined, {
@@ -26,5 +27,7 @@ export const onRequestError: Instrumentation.onRequestError = async (
     router_kind: context.routerKind,
     route_path: context.routePath,
     route_type: context.routeType,
+    // The commit that shipped this failure, when the build provided one.
+    ...(RELEASE ? { release: RELEASE } : {}),
   });
 };
