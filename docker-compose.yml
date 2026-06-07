@@ -10,8 +10,10 @@ services:
       # Required. Generate with: openssl rand -hex 32
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET is required}
       # Required. The URL the app is reachable at — set-cookie domain depends
-      # on this matching the host you actually serve from.
-      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
+      # on this matching the host you actually serve from. No localhost
+      # default: a silent fallback would misconfigure the auth origin on a
+      # real deployment (cookies wouldn't stick) with no error.
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?BETTER_AUTH_URL is required}
       # Optional. unset/false → first signup wins, then signup is locked.
       # true → signup stays open (multi-tenant instances).
       ALLOW_SIGNUP: ${ALLOW_SIGNUP:-false}
