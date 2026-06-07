@@ -58,6 +58,23 @@ In Docker, `/data` is mounted as a persistent volume. Any host with a
 persistent filesystem works (e.g. a VPS or Railway); SQLite rules out serverless
 platforms without durable disk.
 
+**Optional** — analytics and error tracking via [PostHog](https://posthog.com).
+Entirely opt-in: with no keys set, nothing is sent anywhere. There are two
+independent halves:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `POSTHOG_KEY` | _(unset)_ | Server key for server-side error tracking. Read at runtime |
+| `NEXT_PUBLIC_POSTHOG_KEY` | _(unset)_ | Client key for pageviews, autocapture, and client-side errors |
+| `POSTHOG_HOST` / `NEXT_PUBLIC_POSTHOG_HOST` | `https://us.i.posthog.com` | Ingestion host (use `https://eu.i.posthog.com` for EU Cloud) |
+
+`POSTHOG_KEY` is read at runtime, so it never enters the build output. The
+`NEXT_PUBLIC_` key, however, is **inlined into the client bundle at build
+time** — that is how all browser analytics work. Building from source without
+it (the default `docker compose up`) ships zero analytics. **Do not bake a
+`NEXT_PUBLIC_POSTHOG_KEY` into a published/prebuilt image**, or every instance
+running that image would report into your PostHog project.
+
 ## Connecting an MCP client
 
 The MCP server is exposed at `/mcp` and authenticates with `MCP_TOKEN`. Point an
