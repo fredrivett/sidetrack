@@ -10,6 +10,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - `pnpm build` / `pnpm start` — production build + serve
 - `pnpm lint` — ESLint (run after edits; PostToolUse hook does this automatically)
 - `pnpm test` — Vitest, real `better-sqlite3` in-memory, no mocks of `src/core`
+- `pnpm test:mutation` — Stryker over the high-stakes domain logic (`src/core`:
+  audit, fractional indexing, items, projects, categories). On-demand, not CI;
+  surviving mutants show where a test asserts structure but not behaviour.
 - `pnpm db:generate` — drizzle-kit, after editing `src/core/schema.ts`
 - `pnpm db:migrate` — apply pending migrations to the local DB
 
