@@ -58,6 +58,16 @@ In Docker, `/data` is mounted as a persistent volume. Any host with a
 persistent filesystem works (e.g. a VPS or Railway); SQLite rules out serverless
 platforms without durable disk.
 
+**Optional** — server-side error tracking via [PostHog](https://posthog.com).
+Disabled unless you set your own key; with `POSTHOG_KEY` unset, nothing is sent
+anywhere. The key is read at runtime (never compiled into the build), so it
+stays specific to your deployment:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `POSTHOG_KEY` | _(unset)_ | PostHog project API key. Unset = error tracking off |
+| `POSTHOG_HOST` | `https://us.i.posthog.com` | PostHog ingestion host (use `https://eu.i.posthog.com` for EU Cloud) |
+
 ## Connecting an MCP client
 
 The MCP server is exposed at `/mcp` and authenticates with `MCP_TOKEN`. Point an

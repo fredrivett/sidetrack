@@ -10,6 +10,10 @@ services:
       # Required. Generate with: openssl rand -hex 32
       WEB_TOKEN: ${WEB_TOKEN:?WEB_TOKEN is required}
       MCP_TOKEN: ${MCP_TOKEN:?MCP_TOKEN is required}
+      # Optional. Set your own PostHog key to enable server-side error tracking.
+      # Unset = disabled, nothing is sent anywhere.
+      POSTHOG_KEY: ${POSTHOG_KEY:-}
+      POSTHOG_HOST: ${POSTHOG_HOST:-https://us.i.posthog.com}
     volumes:
       - sidetrack-data:/data
     healthcheck:
