@@ -87,6 +87,20 @@ describe("audit", () => {
     expect(alicesView.some((e) => e.detail.includes("Alice"))).toBe(true);
   });
 
+  it("all-projects view excludes your own rows on a project you don't own", () => {
+    const { db } = createTestDb();
+    const alice = createTestUser(db, { email: "alice@test.local" });
+    const bob = createTestUser(db, { email: "bob@test.local" });
+    const bobsProject = createProject(db, bob, { name: "Bob" }, "web");
+    // A row alice authored on bob's still-live project must not leak into
+    // alice's feed via the actor fallback — bob owns the project.
+    recordOnProject(db, alice, bobsProject.id);
+
+    expect(
+      listAudit(db, alice).every((e) => e.projectId !== bobsProject.id),
+    ).toBe(true);
+  });
+
   it("all-projects view includes the user's account-level events", () => {
     const { db } = createTestDb();
     const alice = createTestUser(db, { email: "alice@test.local" });

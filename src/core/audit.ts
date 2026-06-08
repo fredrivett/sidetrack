@@ -1,4 +1,4 @@
-import { and, desc, eq, or } from "drizzle-orm";
+import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { users } from "./auth-schema";
 import type { Db } from "./db";
@@ -69,16 +69,17 @@ export function listAudit(
     if (!owned) return [];
     filters.push(eq(auditLog.projectId, opts.projectId));
   } else {
-    // All-projects view: everything relevant to the user — any actor's
-    // activity on a project they own, plus their own account-level events
-    // (e.g. API keys, which have no projectId) and rows whose project has
-    // since been deleted (kept visible via the actor match). The projects
-    // left-join is the ownership boundary; the actor match is the personal
-    // fallback. audit_log has no FK, so a deleted project simply yields a
-    // null join and falls back to the actor check.
+    // All-projects view: any actor's activity on a project the user owns,
+    // plus the user's own *orphaned* rows — events with no live project, i.e.
+    // account-level events (API keys, no projectId) and history of projects
+    // they deleted. `projects.id IS NULL` (audit_log has no FK, so a missing
+    // or deleted project yields a null left-join) scopes the actor fallback
+    // to exactly those orphaned rows, so it can't leak rows the user authored
+    // on a project they don't own. (When sharing lands, the first arm becomes
+    // a membership check rather than ownership.)
     const ownedOrMine = or(
       eq(projects.userId, userId),
-      eq(auditLog.actor, userId),
+      and(isNull(projects.id), eq(auditLog.actor, userId)),
     );
     if (ownedOrMine) filters.push(ownedOrMine);
   }
