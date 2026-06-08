@@ -15,26 +15,66 @@ import {
   type ItemKind,
   ITEM_KINDS,
   items,
+  projects,
 } from "./schema";
+
+// Items are owned transitively through their project. Every read joins the
+// projects table so a user only ever sees items in their own projects, and
+// every write that takes an existing item id goes through getItem() which
+// applies the same join.
+
+// itemId is required, not optional: a falsy guard here once let an empty
+// string drop the id filter and match an arbitrary owned item. The only
+// caller always has an id, so require it and always filter on it.
+function ownedItemWhere(userId: string, itemId: string) {
+  return and(eq(projects.userId, userId), eq(items.id, itemId));
+}
+
+function ownedProjectWhere(userId: string, projectId: string) {
+  return and(eq(projects.id, projectId), eq(projects.userId, userId));
+}
+
+function projectExistsForUser(db: Db, userId: string, projectId: string): boolean {
+  const row = db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(ownedProjectWhere(userId, projectId))
+    .get();
+  return !!row;
+}
 
 export function listItems(
   db: Db,
+  userId: string,
   projectId: string,
   opts: { includeCompleted?: boolean } = {},
 ): Item[] {
-  const where = opts.includeCompleted
-    ? eq(items.projectId, projectId)
-    : and(eq(items.projectId, projectId), isNull(items.completedAt));
-  return db.select().from(items).where(where).orderBy(asc(items.position)).all();
+  const baseConds = [
+    eq(items.projectId, projectId),
+    eq(projects.userId, userId),
+  ];
+  if (!opts.includeCompleted) baseConds.push(isNull(items.completedAt));
+  return db
+    .select({ items })
+    .from(items)
+    .innerJoin(projects, eq(projects.id, items.projectId))
+    .where(and(...baseConds))
+    .orderBy(asc(items.position))
+    .all()
+    .map((row) => row.items);
 }
 
-function getAllSiblings(db: Db, projectId: string): Item[] {
+function getAllSiblings(db: Db, userId: string, projectId: string): Item[] {
   return db
-    .select()
+    .select({ items })
     .from(items)
-    .where(eq(items.projectId, projectId))
+    .innerJoin(projects, eq(projects.id, items.projectId))
+    .where(
+      and(eq(items.projectId, projectId), eq(projects.userId, userId)),
+    )
     .orderBy(asc(items.position))
-    .all();
+    .all()
+    .map((row) => row.items);
 }
 
 function assertKind(kind: string): asserts kind is ItemKind {
@@ -45,6 +85,7 @@ function assertKind(kind: string): asserts kind is ItemKind {
 
 export function addItem(
   db: Db,
+  userId: string,
   input: {
     projectId: string;
     kind: ItemKind;
@@ -56,8 +97,11 @@ export function addItem(
   source: AuditSource,
 ): Item {
   assertKind(input.kind);
+  if (!projectExistsForUser(db, userId, input.projectId)) {
+    throw new Error(`project not found: ${input.projectId}`);
+  }
   const ref = parseRef(input.positionRef);
-  const siblings = getAllSiblings(db, input.projectId);
+  const siblings = getAllSiblings(db, userId, input.projectId);
   const position = resolveItemPosition(siblings, ref);
   const category = input.category?.trim() || null;
   const description = input.description?.trim() || null;
@@ -80,6 +124,7 @@ export function addItem(
       })
       .run();
     recordAudit(tx as unknown as Db, {
+      actor: userId,
       source,
       action: "create",
       entityType: "item",
@@ -89,11 +134,16 @@ export function addItem(
     });
   });
 
-  return getItemOrThrow(db, id);
+  return getItemOrThrow(db, userId, id);
 }
 
-export function getItem(db: Db, id: string): Item | undefined {
-  return db.select().from(items).where(eq(items.id, id)).get();
+export function getItem(db: Db, userId: string, id: string): Item | undefined {
+  return db
+    .select({ items })
+    .from(items)
+    .innerJoin(projects, eq(projects.id, items.projectId))
+    .where(ownedItemWhere(userId, id))
+    .get()?.items;
 }
 
 /**
@@ -101,19 +151,20 @@ export function getItem(db: Db, id: string): Item | undefined {
  * same transaction. The row is guaranteed to exist; a miss means an invariant
  * broke, so fail loudly rather than handing back `undefined`.
  */
-function getItemOrThrow(db: Db, id: string): Item {
-  const item = getItem(db, id);
+function getItemOrThrow(db: Db, userId: string, id: string): Item {
+  const item = getItem(db, userId, id);
   if (!item) throw new Error(`item not found: ${id}`);
   return item;
 }
 
 export function updateItem(
   db: Db,
+  userId: string,
   id: string,
   patch: { title?: string; description?: string | null; category?: string | null },
   source: AuditSource,
 ): Item {
-  const existing = getItem(db, id);
+  const existing = getItem(db, userId, id);
   if (!existing) throw new Error(`item not found: ${id}`);
 
   const next: Partial<Item> = {};
@@ -144,6 +195,7 @@ export function updateItem(
     }
     tx.update(items).set(next).where(eq(items.id, id)).run();
     recordAudit(tx as unknown as Db, {
+      actor: userId,
       source,
       action: "update",
       entityType: "item",
@@ -153,15 +205,20 @@ export function updateItem(
     });
   });
 
-  return getItemOrThrow(db, id);
+  return getItemOrThrow(db, userId, id);
 }
 
-export function completeItem(db: Db, id: string, source: AuditSource): Item {
-  const existing = getItem(db, id);
+export function completeItem(
+  db: Db,
+  userId: string,
+  id: string,
+  source: AuditSource,
+): Item {
+  const existing = getItem(db, userId, id);
   if (!existing) throw new Error(`item not found: ${id}`);
   if (existing.completedAt !== null) return existing;
 
-  const siblings = getAllSiblings(db, existing.projectId);
+  const siblings = getAllSiblings(db, userId, existing.projectId);
   const position = resolveCompletePosition(siblings, id);
   db.transaction((tx) => {
     tx.update(items)
@@ -169,6 +226,7 @@ export function completeItem(db: Db, id: string, source: AuditSource): Item {
       .where(eq(items.id, id))
       .run();
     recordAudit(tx as unknown as Db, {
+      actor: userId,
       source,
       action: "complete",
       entityType: "item",
@@ -177,15 +235,20 @@ export function completeItem(db: Db, id: string, source: AuditSource): Item {
       detail: `completed "${existing.title}"`,
     });
   });
-  return getItemOrThrow(db, id);
+  return getItemOrThrow(db, userId, id);
 }
 
-export function uncompleteItem(db: Db, id: string, source: AuditSource): Item {
-  const existing = getItem(db, id);
+export function uncompleteItem(
+  db: Db,
+  userId: string,
+  id: string,
+  source: AuditSource,
+): Item {
+  const existing = getItem(db, userId, id);
   if (!existing) throw new Error(`item not found: ${id}`);
   if (existing.completedAt === null) return existing;
 
-  const siblings = getAllSiblings(db, existing.projectId);
+  const siblings = getAllSiblings(db, userId, existing.projectId);
   const position = resolveUncompletePosition(siblings, id);
   db.transaction((tx) => {
     tx.update(items)
@@ -193,6 +256,7 @@ export function uncompleteItem(db: Db, id: string, source: AuditSource): Item {
       .where(eq(items.id, id))
       .run();
     recordAudit(tx as unknown as Db, {
+      actor: userId,
       source,
       action: "uncomplete",
       entityType: "item",
@@ -201,25 +265,27 @@ export function uncompleteItem(db: Db, id: string, source: AuditSource): Item {
       detail: `reopened "${existing.title}"`,
     });
   });
-  return getItemOrThrow(db, id);
+  return getItemOrThrow(db, userId, id);
 }
 
 export function reorderItem(
   db: Db,
+  userId: string,
   id: string,
   refRaw: string,
   source: AuditSource,
 ): Item {
-  const existing = getItem(db, id);
+  const existing = getItem(db, userId, id);
   if (!existing) throw new Error(`item not found: ${id}`);
   const ref = parseRef(refRaw);
-  const siblings = getAllSiblings(db, existing.projectId).filter(
+  const siblings = getAllSiblings(db, userId, existing.projectId).filter(
     (s) => s.id !== id,
   );
   const position = resolveItemPosition(siblings, ref);
   db.transaction((tx) => {
     tx.update(items).set({ position }).where(eq(items.id, id)).run();
     recordAudit(tx as unknown as Db, {
+      actor: userId,
       source,
       action: "reorder",
       entityType: "item",
@@ -228,15 +294,21 @@ export function reorderItem(
       detail: `reordered "${existing.title}"`,
     });
   });
-  return getItemOrThrow(db, id);
+  return getItemOrThrow(db, userId, id);
 }
 
-export function deleteItem(db: Db, id: string, source: AuditSource): void {
-  const existing = getItem(db, id);
+export function deleteItem(
+  db: Db,
+  userId: string,
+  id: string,
+  source: AuditSource,
+): void {
+  const existing = getItem(db, userId, id);
   if (!existing) return;
   db.transaction((tx) => {
     tx.delete(items).where(eq(items.id, id)).run();
     recordAudit(tx as unknown as Db, {
+      actor: userId,
       source,
       action: "delete",
       entityType: "item",

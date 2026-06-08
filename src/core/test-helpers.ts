@@ -1,8 +1,14 @@
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import { nanoid } from "nanoid";
 import { resolve } from "node:path";
-import * as schema from "./schema";
+import * as appSchema from "./schema";
+import * as authSchema from "./auth-schema";
+
+// Mirror db.ts: the combined schema makes the test Db type match the one
+// core functions are typed against (which now includes the auth tables).
+const schema = { ...appSchema, ...authSchema };
 
 /**
  * Fresh in-memory SQLite DB with migrations applied. Use per test — do not
@@ -17,4 +23,29 @@ export function createTestDb() {
     migrationsFolder: resolve(process.cwd(), "src/core/migrations"),
   });
   return { sqlite, db };
+}
+
+/**
+ * Insert a user row directly and return its id. Core reads/writes now require
+ * a userId; tests use this to get a valid owner without spinning up Better
+ * Auth. The projects.user_id / audit_log.actor columns have no FK to users,
+ * but creating a real row keeps the api_keys FK (and any future ones) happy.
+ */
+export function createTestUser(
+  db: ReturnType<typeof createTestDb>["db"],
+  overrides: { email?: string; name?: string } = {},
+): string {
+  const id = nanoid(12);
+  const now = new Date();
+  db.insert(authSchema.users)
+    .values({
+      id,
+      name: overrides.name ?? "Test User",
+      email: overrides.email ?? `${id}@test.local`,
+      emailVerified: false,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run();
+  return id;
 }

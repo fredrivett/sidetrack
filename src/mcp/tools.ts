@@ -59,7 +59,12 @@ function notFound(kind: string, id: string) {
   };
 }
 
-export function registerTools(server: McpServer) {
+export function registerTools(
+  server: McpServer,
+  ctx: { userId: string },
+) {
+  const { userId } = ctx;
+
   server.registerTool(
     "list_projects",
     {
@@ -70,7 +75,7 @@ export function registerTools(server: McpServer) {
     },
     async () => {
       const { db } = getDb();
-      return json(listProjects(db));
+      return json(listProjects(db, userId));
     },
   );
 
@@ -87,7 +92,7 @@ export function registerTools(server: McpServer) {
     },
     async ({ id, include_completed }) => {
       const { db } = getDb();
-      const result = getProjectWithItems(db, id, {
+      const result = getProjectWithItems(db, userId, id, {
         includeCompleted: include_completed,
       });
       if (!result) return notFound("project", id);
@@ -117,7 +122,9 @@ export function registerTools(server: McpServer) {
     async ({ include_completed }) => {
       const { db } = getDb();
       return json(
-        listAllProjectsWithItems(db, { includeCompleted: include_completed }),
+        listAllProjectsWithItems(db, userId, {
+          includeCompleted: include_completed,
+        }),
       );
     },
   );
@@ -134,7 +141,7 @@ export function registerTools(server: McpServer) {
     },
     async ({ name, status }) => {
       const { db } = getDb();
-      return json(createProject(db, { name, status }, SOURCE));
+      return json(createProject(db, userId, { name, status }, SOURCE));
     },
   );
 
@@ -153,8 +160,8 @@ export function registerTools(server: McpServer) {
     },
     async ({ id, ...patch }) => {
       const { db } = getDb();
-      if (!getProject(db, id)) return notFound("project", id);
-      return json(updateProject(db, id, patch, SOURCE));
+      if (!getProject(db, userId, id)) return notFound("project", id);
+      return json(updateProject(db, userId, id, patch, SOURCE));
     },
   );
 
@@ -171,8 +178,8 @@ export function registerTools(server: McpServer) {
     },
     async ({ id, position }) => {
       const { db } = getDb();
-      if (!getProject(db, id)) return notFound("project", id);
-      return json(reorderProject(db, id, position, SOURCE));
+      if (!getProject(db, userId, id)) return notFound("project", id);
+      return json(reorderProject(db, userId, id, position, SOURCE));
     },
   );
 
@@ -185,7 +192,7 @@ export function registerTools(server: McpServer) {
     },
     async ({ id }) => {
       const { db } = getDb();
-      deleteProject(db, id, SOURCE);
+      deleteProject(db, userId, id, SOURCE);
       return json({ ok: true });
     },
   );
@@ -216,9 +223,10 @@ export function registerTools(server: McpServer) {
     },
     async ({ project_id, kind, title, description, category, position }) => {
       const { db } = getDb();
-      if (!getProject(db, project_id)) return notFound("project", project_id);
+      if (!getProject(db, userId, project_id)) return notFound("project", project_id);
       const created = addItem(
         db,
+        userId,
         {
           projectId: project_id,
           kind,
@@ -229,7 +237,7 @@ export function registerTools(server: McpServer) {
         },
         SOURCE,
       );
-      return json({ created, items: listItems(db, project_id) });
+      return json({ created, items: listItems(db, userId, project_id) });
     },
   );
 
@@ -248,8 +256,8 @@ export function registerTools(server: McpServer) {
     },
     async ({ id, ...patch }) => {
       const { db } = getDb();
-      if (!getItem(db, id)) return notFound("item", id);
-      return json(updateItem(db, id, patch, SOURCE));
+      if (!getItem(db, userId, id)) return notFound("item", id);
+      return json(updateItem(db, userId, id, patch, SOURCE));
     },
   );
 
@@ -263,8 +271,8 @@ export function registerTools(server: McpServer) {
     },
     async ({ id }) => {
       const { db } = getDb();
-      if (!getItem(db, id)) return notFound("item", id);
-      return json(completeItem(db, id, SOURCE));
+      if (!getItem(db, userId, id)) return notFound("item", id);
+      return json(completeItem(db, userId, id, SOURCE));
     },
   );
 
@@ -277,8 +285,8 @@ export function registerTools(server: McpServer) {
     },
     async ({ id }) => {
       const { db } = getDb();
-      if (!getItem(db, id)) return notFound("item", id);
-      return json(uncompleteItem(db, id, SOURCE));
+      if (!getItem(db, userId, id)) return notFound("item", id);
+      return json(uncompleteItem(db, userId, id, SOURCE));
     },
   );
 
@@ -292,8 +300,8 @@ export function registerTools(server: McpServer) {
     },
     async ({ id, position }) => {
       const { db } = getDb();
-      if (!getItem(db, id)) return notFound("item", id);
-      return json(reorderItem(db, id, position, SOURCE));
+      if (!getItem(db, userId, id)) return notFound("item", id);
+      return json(reorderItem(db, userId, id, position, SOURCE));
     },
   );
 
@@ -306,7 +314,7 @@ export function registerTools(server: McpServer) {
     },
     async ({ id }) => {
       const { db } = getDb();
-      deleteItem(db, id, SOURCE);
+      deleteItem(db, userId, id, SOURCE);
       return json({ ok: true });
     },
   );
@@ -323,8 +331,8 @@ export function registerTools(server: McpServer) {
     },
     async ({ item_id, pr_url }) => {
       const { db } = getDb();
-      if (!getItem(db, item_id)) return notFound("item", item_id);
-      return json(linkItemToPr(db, item_id, pr_url, SOURCE));
+      if (!getItem(db, userId, item_id)) return notFound("item", item_id);
+      return json(linkItemToPr(db, userId, item_id, pr_url, SOURCE));
     },
   );
 
@@ -338,8 +346,8 @@ export function registerTools(server: McpServer) {
     },
     async ({ item_id, pr_url }) => {
       const { db } = getDb();
-      if (!getItem(db, item_id)) return notFound("item", item_id);
-      unlinkItemFromPr(db, item_id, pr_url, SOURCE);
+      if (!getItem(db, userId, item_id)) return notFound("item", item_id);
+      unlinkItemFromPr(db, userId, item_id, pr_url, SOURCE);
       return json({ ok: true });
     },
   );
@@ -353,8 +361,8 @@ export function registerTools(server: McpServer) {
     },
     async ({ item_id }) => {
       const { db } = getDb();
-      if (!getItem(db, item_id)) return notFound("item", item_id);
-      return json(listPrLinksForItem(db, item_id));
+      if (!getItem(db, userId, item_id)) return notFound("item", item_id);
+      return json(listPrLinksForItem(db, userId, item_id));
     },
   );
 
@@ -367,7 +375,7 @@ export function registerTools(server: McpServer) {
     },
     async ({ project_id }) => {
       const { db } = getDb();
-      return json(listCategories(db, project_id));
+      return json(listCategories(db, userId, project_id));
     },
   );
 
@@ -381,8 +389,8 @@ export function registerTools(server: McpServer) {
     },
     async ({ project_id, name }) => {
       const { db } = getDb();
-      if (!getProject(db, project_id)) return notFound("project", project_id);
-      return json(addCategory(db, project_id, name, SOURCE));
+      if (!getProject(db, userId, project_id)) return notFound("project", project_id);
+      return json(addCategory(db, userId, project_id, name, SOURCE));
     },
   );
 
@@ -400,7 +408,11 @@ export function registerTools(server: McpServer) {
     },
     async ({ project_id, source, limit }) => {
       const { db } = getDb();
-      const rows = listAudit(db, { projectId: project_id, source, limit });
+      const rows = listAudit(db, userId, {
+        projectId: project_id,
+        source,
+        limit,
+      });
       return json(
         rows.map(({ ts, ...rest }) => ({
           ts,

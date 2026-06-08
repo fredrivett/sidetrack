@@ -2,7 +2,10 @@ import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import * as schema from "./schema";
+import * as appSchema from "./schema";
+import * as authSchema from "./auth-schema";
+
+const schema = { ...appSchema, ...authSchema };
 
 const DB_PATH = process.env.DB_PATH ?? "./data/sidetrack.db";
 

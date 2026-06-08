@@ -1,29 +1,23 @@
+import { getSessionCookie } from "better-auth/cookies";
 import { type NextRequest, NextResponse } from "next/server";
-import { safeCompare, WEB_COOKIE } from "./lib/auth";
 
-// Proxy must not import shared modules with mutable state. Token check is
-// pure: env var compared in constant time.
+// Proxy must not import shared modules with mutable state. Web auth is a
+// cookie-presence check (the route handlers do real validation). MCP auth
+// is enforced inside the /mcp route handler — it needs a DB lookup, which
+// we keep out of the proxy. The proxy just lets /mcp requests through.
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (pathname.startsWith("/mcp")) {
-    // Prefer the Authorization header (curl, scripts). Fall back to a
-    // ?key= query param because claude.ai custom connectors only support
-    // OAuth — there is no header field — so the token must ride in the URL.
-    const header = request.headers.get("authorization");
-    const headerToken = header?.startsWith("Bearer ")
-      ? header.slice("Bearer ".length)
-      : undefined;
-    const queryToken = request.nextUrl.searchParams.get("key") ?? undefined;
-    const token = headerToken ?? queryToken;
-    if (!safeCompare(token, process.env.MCP_TOKEN)) {
-      return new NextResponse("unauthorized", { status: 401 });
-    }
-    return NextResponse.next();
-  }
+  // MCP endpoint is publicly reachable; the route handler verifies the
+  // per-user API key and returns 401 if missing or unknown.
+  if (pathname.startsWith("/mcp")) return NextResponse.next();
 
-  if (pathname === "/login" || pathname.startsWith("/login/")) {
+  if (
+    pathname === "/login" ||
+    pathname.startsWith("/login/") ||
+    pathname.startsWith("/api/auth/")
+  ) {
     return NextResponse.next();
   }
 
@@ -36,8 +30,11 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const cookie = request.cookies.get(WEB_COOKIE)?.value;
-  if (!safeCompare(cookie, process.env.WEB_TOKEN)) {
+  // Presence check only — the real session validation happens in route
+  // handlers / RSCs via auth.api.getSession (which hits the DB). The proxy
+  // just bounces unauthenticated traffic to /login so we don't render any
+  // app shell first.
+  if (!getSessionCookie(request)) {
     const loginUrl = new URL("/login", request.url);
     if (pathname !== "/") loginUrl.searchParams.set("next", pathname);
     return NextResponse.redirect(loginUrl);
