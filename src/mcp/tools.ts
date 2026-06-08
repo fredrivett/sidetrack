@@ -331,8 +331,8 @@ export function registerTools(
     },
     async ({ item_id, pr_url }) => {
       const { db } = getDb();
-      if (!getItem(db, item_id)) return notFound("item", item_id);
-      return json(linkItemToPr(db, item_id, pr_url, SOURCE));
+      if (!getItem(db, userId, item_id)) return notFound("item", item_id);
+      return json(linkItemToPr(db, userId, item_id, pr_url, SOURCE));
     },
   );
 
@@ -346,8 +346,8 @@ export function registerTools(
     },
     async ({ item_id, pr_url }) => {
       const { db } = getDb();
-      if (!getItem(db, item_id)) return notFound("item", item_id);
-      unlinkItemFromPr(db, item_id, pr_url, SOURCE);
+      if (!getItem(db, userId, item_id)) return notFound("item", item_id);
+      unlinkItemFromPr(db, userId, item_id, pr_url, SOURCE);
       return json({ ok: true });
     },
   );
@@ -361,8 +361,8 @@ export function registerTools(
     },
     async ({ item_id }) => {
       const { db } = getDb();
-      if (!getItem(db, item_id)) return notFound("item", item_id);
-      return json(listPrLinksForItem(db, item_id));
+      if (!getItem(db, userId, item_id)) return notFound("item", item_id);
+      return json(listPrLinksForItem(db, userId, item_id));
     },
   );
 

@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "c2c6390a-1b6c-4a98-8f90-932248dacf79",
-  "prevId": "ae6986f3-8dde-4420-8279-2f4a0e1fc218",
+  "id": "b2d10c6a-b930-4417-9e05-99028e61d7d6",
+  "prevId": "fc699f68-44b1-4535-9c9c-6b4502be64f7",
   "tables": {
     "audit_log": {
       "name": "audit_log",
@@ -144,6 +144,82 @@
           "tableTo": "projects",
           "columnsFrom": [
             "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "item_pr_links": {
+      "name": "item_pr_links",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "item_id": {
+          "name": "item_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "pr_url": {
+          "name": "pr_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "linked_by_source": {
+          "name": "linked_by_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(unixepoch() * 1000)"
+        }
+      },
+      "indexes": {
+        "item_pr_links_item_pr": {
+          "name": "item_pr_links_item_pr",
+          "columns": [
+            "item_id",
+            "pr_url"
+          ],
+          "isUnique": true
+        },
+        "item_pr_links_pr": {
+          "name": "item_pr_links_pr",
+          "columns": [
+            "pr_url"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "item_pr_links_item_id_items_id_fk": {
+          "name": "item_pr_links_item_id_items_id_fk",
+          "tableFrom": "item_pr_links",
+          "tableTo": "items",
+          "columnsFrom": [
+            "item_id"
           ],
           "columnsTo": [
             "id"
@@ -521,6 +597,14 @@
             "key_hash"
           ],
           "isUnique": true
+        },
+        "api_keys_user_created": {
+          "name": "api_keys_user_created",
+          "columns": [
+            "user_id",
+            "created_at"
+          ],
+          "isUnique": false
         }
       },
       "foreignKeys": {

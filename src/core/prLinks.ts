@@ -6,8 +6,14 @@ import { getItem } from "./items";
 import {
   type AuditSource,
   type ItemPrLink,
+  items,
   itemPrLinks,
+  projects,
 } from "./schema";
+
+// PR links are owned transitively through their item → project. Reads join
+// items+projects and filter projects.user_id so a user only ever sees links
+// on their own items; writes verify item ownership via getItem() first.
 
 const GITHUB_PR_PATH = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/.*)?$/;
 
@@ -45,29 +51,47 @@ export function canonicalizePrUrl(raw: string): string {
   return `https://github.com/${owner.toLowerCase()}/${repo.toLowerCase()}/pull/${number}`;
 }
 
-export function listAllPrLinks(db: Db): ItemPrLink[] {
+export function listAllPrLinks(db: Db, userId: string): ItemPrLink[] {
   return db
-    .select()
+    .select({ itemPrLinks })
     .from(itemPrLinks)
+    .innerJoin(items, eq(items.id, itemPrLinks.itemId))
+    .innerJoin(projects, eq(projects.id, items.projectId))
+    .where(eq(projects.userId, userId))
     .orderBy(asc(itemPrLinks.createdAt))
-    .all();
+    .all()
+    .map((row) => row.itemPrLinks);
 }
 
-export function listPrLinksForItem(db: Db, itemId: string): ItemPrLink[] {
+export function listPrLinksForItem(
+  db: Db,
+  userId: string,
+  itemId: string,
+): ItemPrLink[] {
   return db
-    .select()
+    .select({ itemPrLinks })
     .from(itemPrLinks)
-    .where(eq(itemPrLinks.itemId, itemId))
+    .innerJoin(items, eq(items.id, itemPrLinks.itemId))
+    .innerJoin(projects, eq(projects.id, items.projectId))
+    .where(and(eq(itemPrLinks.itemId, itemId), eq(projects.userId, userId)))
     .orderBy(asc(itemPrLinks.createdAt))
-    .all();
+    .all()
+    .map((row) => row.itemPrLinks);
 }
 
-export function listItemsForPr(db: Db, prUrl: string): ItemPrLink[] {
+export function listItemsForPr(
+  db: Db,
+  userId: string,
+  prUrl: string,
+): ItemPrLink[] {
   return db
-    .select()
+    .select({ itemPrLinks })
     .from(itemPrLinks)
-    .where(eq(itemPrLinks.prUrl, prUrl))
-    .all();
+    .innerJoin(items, eq(items.id, itemPrLinks.itemId))
+    .innerJoin(projects, eq(projects.id, items.projectId))
+    .where(and(eq(itemPrLinks.prUrl, prUrl), eq(projects.userId, userId)))
+    .all()
+    .map((row) => row.itemPrLinks);
 }
 
 /**
@@ -76,11 +100,12 @@ export function listItemsForPr(db: Db, prUrl: string): ItemPrLink[] {
  */
 export function linkItemToPr(
   db: Db,
+  userId: string,
   itemId: string,
   prUrlRaw: string,
   source: AuditSource,
 ): ItemPrLink {
-  const item = getItem(db, itemId);
+  const item = getItem(db, userId, itemId);
   if (!item) throw new Error(`item not found: ${itemId}`);
   const prUrl = canonicalizePrUrl(prUrlRaw);
 
@@ -97,6 +122,7 @@ export function linkItemToPr(
       .values({ id, itemId, prUrl, linkedBySource: source })
       .run();
     recordAudit(tx as unknown as Db, {
+      actor: userId,
       source,
       action: "link",
       entityType: "item",
@@ -120,11 +146,12 @@ export function linkItemToPr(
 /** No-op (no audit) if the link doesn't exist. */
 export function unlinkItemFromPr(
   db: Db,
+  userId: string,
   itemId: string,
   prUrlRaw: string,
   source: AuditSource,
 ): void {
-  const item = getItem(db, itemId);
+  const item = getItem(db, userId, itemId);
   if (!item) throw new Error(`item not found: ${itemId}`);
   const prUrl = canonicalizePrUrl(prUrlRaw);
 
@@ -140,6 +167,7 @@ export function unlinkItemFromPr(
       .where(and(eq(itemPrLinks.itemId, itemId), eq(itemPrLinks.prUrl, prUrl)))
       .run();
     recordAudit(tx as unknown as Db, {
+      actor: userId,
       source,
       action: "unlink",
       entityType: "item",

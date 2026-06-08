@@ -31,17 +31,10 @@
       "breakpoints": true
     },
     {
-      "idx": 5,
+      "idx": 4,
       "version": "6",
-      "when": 1780844102345,
-      "tag": "0005_steep_stardust",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "6",
-      "when": 1780844254869,
-      "tag": "0006_robust_jigsaw",
+      "when": 1780913590626,
+      "tag": "0004_regular_warhawk",
       "breakpoints": true
     }
   ]

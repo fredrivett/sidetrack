@@ -9,13 +9,19 @@ import {
   unlinkItemFromPr,
 } from "./prLinks";
 import { createProject } from "./projects";
-import { createTestDb } from "./test-helpers";
+import { createTestDb, createTestUser } from "./test-helpers";
 
 function seedItem() {
   const { db } = createTestDb();
-  const p = createProject(db, { name: "P" }, "web");
-  const item = addItem(db, { projectId: p.id, kind: "task", title: "t" }, "web");
-  return { db, projectId: p.id, itemId: item.id };
+  const userId = createTestUser(db);
+  const p = createProject(db, userId, { name: "P" }, "web");
+  const item = addItem(
+    db,
+    userId,
+    { projectId: p.id, kind: "task", title: "t" },
+    "web",
+  );
+  return { db, userId, projectId: p.id, itemId: item.id };
 }
 
 const PR = "https://github.com/owner/repo/pull/42";
@@ -70,13 +76,13 @@ describe("canonicalizePrUrl", () => {
 
 describe("prLinks", () => {
   it("links an item to a PR and logs it with the caller's source", () => {
-    const { db, projectId, itemId } = seedItem();
-    const link = linkItemToPr(db, itemId, PR, "mcp");
+    const { db, userId, projectId, itemId } = seedItem();
+    const link = linkItemToPr(db, userId, itemId, PR, "mcp");
     expect(link.itemId).toBe(itemId);
     expect(link.prUrl).toBe(PR);
     expect(link.linkedBySource).toBe("mcp");
 
-    const last = listAudit(db, { projectId }).find(
+    const last = listAudit(db, userId, { projectId }).find(
       (e) => e.action === "link" && e.entityId === itemId,
     );
     expect(last?.source).toBe("mcp");
@@ -84,61 +90,61 @@ describe("prLinks", () => {
   });
 
   it("canonicalizes the url before persisting", () => {
-    const { db, itemId } = seedItem();
-    const link = linkItemToPr(db, itemId, `${PR}/files#diff`, "web");
+    const { db, userId, itemId } = seedItem();
+    const link = linkItemToPr(db, userId, itemId, `${PR}/files#diff`, "web");
     expect(link.prUrl).toBe(PR);
   });
 
   it("is idempotent: relinking the same pair writes no second audit row", () => {
-    const { db, itemId } = seedItem();
-    linkItemToPr(db, itemId, PR, "web");
-    const before = listAudit(db).length;
-    const again = linkItemToPr(db, itemId, `${PR}?x=1`, "web");
+    const { db, userId, itemId } = seedItem();
+    linkItemToPr(db, userId, itemId, PR, "web");
+    const before = listAudit(db, userId).length;
+    const again = linkItemToPr(db, userId, itemId, `${PR}?x=1`, "web");
     expect(again.prUrl).toBe(PR);
-    expect(listAudit(db).length).toBe(before);
-    expect(listPrLinksForItem(db, itemId)).toHaveLength(1);
+    expect(listAudit(db, userId).length).toBe(before);
+    expect(listPrLinksForItem(db, userId, itemId)).toHaveLength(1);
   });
 
   it("supports many-to-many links", () => {
-    const { db, projectId } = seedItem();
-    const a = addItem(db, { projectId, kind: "task", title: "a" }, "web");
-    const b = addItem(db, { projectId, kind: "task", title: "b" }, "web");
-    linkItemToPr(db, a.id, PR, "web");
-    linkItemToPr(db, b.id, PR, "web");
-    linkItemToPr(db, a.id, "https://github.com/owner/repo/pull/43", "web");
+    const { db, userId, projectId } = seedItem();
+    const a = addItem(db, userId, { projectId, kind: "task", title: "a" }, "web");
+    const b = addItem(db, userId, { projectId, kind: "task", title: "b" }, "web");
+    linkItemToPr(db, userId, a.id, PR, "web");
+    linkItemToPr(db, userId, b.id, PR, "web");
+    linkItemToPr(db, userId, a.id, "https://github.com/owner/repo/pull/43", "web");
 
-    expect(listItemsForPr(db, PR).map((l) => l.itemId).sort()).toEqual(
+    expect(listItemsForPr(db, userId, PR).map((l) => l.itemId).sort()).toEqual(
       [a.id, b.id].sort(),
     );
-    expect(listPrLinksForItem(db, a.id)).toHaveLength(2);
+    expect(listPrLinksForItem(db, userId, a.id)).toHaveLength(2);
   });
 
   it("unlinks and logs it", () => {
-    const { db, itemId } = seedItem();
-    linkItemToPr(db, itemId, PR, "web");
-    unlinkItemFromPr(db, itemId, `${PR}/files`, "github");
-    expect(listPrLinksForItem(db, itemId)).toEqual([]);
-    const last = listAudit(db).find((e) => e.entityId === itemId);
+    const { db, userId, itemId } = seedItem();
+    linkItemToPr(db, userId, itemId, PR, "web");
+    unlinkItemFromPr(db, userId, itemId, `${PR}/files`, "github");
+    expect(listPrLinksForItem(db, userId, itemId)).toEqual([]);
+    const last = listAudit(db, userId).find((e) => e.entityId === itemId);
     expect(last?.action).toBe("unlink");
     expect(last?.source).toBe("github");
   });
 
   it("unlinking a missing link is a no-op with no audit row", () => {
-    const { db, itemId } = seedItem();
-    const before = listAudit(db).length;
-    unlinkItemFromPr(db, itemId, PR, "web");
-    expect(listAudit(db).length).toBe(before);
+    const { db, userId, itemId } = seedItem();
+    const before = listAudit(db, userId).length;
+    unlinkItemFromPr(db, userId, itemId, PR, "web");
+    expect(listAudit(db, userId).length).toBe(before);
   });
 
   it("throws when linking a non-existent item", () => {
-    const { db } = seedItem();
-    expect(() => linkItemToPr(db, "nope", PR, "web")).toThrow();
+    const { db, userId } = seedItem();
+    expect(() => linkItemToPr(db, userId, "nope", PR, "web")).toThrow();
   });
 
   it("cascades: deleting the item removes its PR links", () => {
-    const { db, itemId } = seedItem();
-    linkItemToPr(db, itemId, PR, "web");
-    deleteItem(db, itemId, "web");
-    expect(listItemsForPr(db, PR)).toEqual([]);
+    const { db, userId, itemId } = seedItem();
+    linkItemToPr(db, userId, itemId, PR, "web");
+    deleteItem(db, userId, itemId, "web");
+    expect(listItemsForPr(db, userId, PR)).toEqual([]);
   });
 });

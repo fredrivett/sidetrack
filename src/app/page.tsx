@@ -23,7 +23,7 @@ export default async function Home() {
     projects.map((p) => [p.id, listCategories(db, userId, p.id)]),
   );
   const prLinksByItem: Record<string, ItemPrLink[]> = {};
-  for (const link of listAllPrLinks(db)) {
+  for (const link of listAllPrLinks(db, userId)) {
     (prLinksByItem[link.itemId] ??= []).push(link);
   }
 
