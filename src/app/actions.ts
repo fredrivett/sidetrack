@@ -26,7 +26,7 @@ import {
   updateProject as updateProjectCore,
 } from "@/core/projects";
 import type { AuditSource, ItemKind, ProjectStatus } from "@/core/schema";
-import { requireUserId } from "@/lib/session";
+import { requireUserId } from "@/auth/session";
 
 const SOURCE: AuditSource = "web";
 

@@ -64,7 +64,7 @@ const eslintConfig = defineConfig([
     files: [
       "src/core/backup.ts",
       "src/core/migrate.ts",
-      "src/lib/better-auth.ts",
+      "src/auth/better-auth.ts",
       "scripts/**/*.ts",
     ],
     rules: { "no-console": "off" },

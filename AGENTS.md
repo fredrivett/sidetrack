@@ -22,7 +22,11 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - `src/mcp/` — MCP tool surface. See `src/mcp/AGENTS.md`.
 - `src/app/` — Next.js App Router (pages + Server Actions). See `src/app/AGENTS.md`.
 - `src/components/` — React UI (shadcn-style primitives in `src/components/ui/`).
-- `src/lib/` — small framework-agnostic helpers (auth stub, time formatting).
+- `src/auth/` — Better Auth wiring. Framework-coupled by nature (Next.js
+  server config, React client, session helpers); kept out of `src/lib` so
+  that boundary stays clean.
+- `src/lib/` — small framework-agnostic helpers (time formatting, redirect
+  sanitizing, PostHog). No `next/*` or `react` imports.
 - `scripts/` — operational scripts (smoke, backup). Not part of the app bundle.
 
 # Boundaries

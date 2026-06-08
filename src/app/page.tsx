@@ -5,7 +5,7 @@ import { listItems } from "@/core/items";
 import { listAllPrLinks } from "@/core/prLinks";
 import { listProjects } from "@/core/projects";
 import type { ItemPrLink } from "@/core/schema";
-import { requireUserId } from "@/lib/session";
+import { requireUserId } from "@/auth/session";
 
 export const dynamic = "force-dynamic";
 

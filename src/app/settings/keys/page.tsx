@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ApiKeysPanel } from "@/components/ApiKeysPanel";
 import { listApiKeys } from "@/core/api-keys";
 import { getDb } from "@/core/db";
-import { requireUserId } from "@/lib/session";
+import { requireUserId } from "@/auth/session";
 
 export const dynamic = "force-dynamic";
 

@@ -3,7 +3,7 @@ import { LoginForm } from "@/components/LoginForm";
 import { users as authUsers } from "@/core/auth-schema";
 import { getDb } from "@/core/db";
 import { sanitizeNext } from "@/lib/safe-next";
-import { getCurrentSession } from "@/lib/session";
+import { getCurrentSession } from "@/auth/session";
 
 export const dynamic = "force-dynamic";
 

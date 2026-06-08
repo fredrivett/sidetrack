@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { signOut } from "@/lib/auth-client";
+import { signOut } from "@/auth/client";
 
 export function UserMenu() {
   const router = useRouter();

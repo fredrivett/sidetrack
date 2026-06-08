@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { signIn, signUp } from "@/lib/auth-client";
+import { signIn, signUp } from "@/auth/client";
 import { sanitizeNext } from "@/lib/safe-next";
 
 type Mode = "sign-in" | "sign-up";
