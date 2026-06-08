@@ -8,9 +8,10 @@ import { getDb } from "@/core/db";
 import { auditLog, meta, projects } from "@/core/schema";
 import { assertAuthSecret } from "./assert-auth-secret";
 
-// Fail fast at module load if the production secret is missing or left at the
-// insecure default, rather than letting Better Auth throw lazily on the first
-// auth request with no stack trace.
+// Backstop for the boot-time check in instrumentation.ts: that's the primary
+// gate (a missing production secret fails the server boot), but assert here too
+// in case auth is imported via a path that bypasses instrumentation. Either way
+// we fail with an actionable message rather than Better Auth's opaque lazy throw.
 assertAuthSecret({
   secret: process.env.BETTER_AUTH_SECRET,
   nodeEnv: process.env.NODE_ENV,
