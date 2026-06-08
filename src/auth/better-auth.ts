@@ -6,6 +6,16 @@ import { nextCookies } from "better-auth/next-js";
 import { users as authUsers } from "@/core/auth-schema";
 import { getDb } from "@/core/db";
 import { auditLog, meta, projects } from "@/core/schema";
+import { assertAuthSecret } from "./assert-auth-secret";
+
+// Fail fast at module load if the production secret is missing or left at the
+// insecure default, rather than letting Better Auth throw lazily on the first
+// auth request with no stack trace.
+assertAuthSecret({
+  secret: process.env.BETTER_AUTH_SECRET,
+  nodeEnv: process.env.NODE_ENV,
+  nextPhase: process.env.NEXT_PHASE,
+});
 
 const { db } = getDb();
 
