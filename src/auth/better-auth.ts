@@ -7,6 +7,7 @@ import { username } from "better-auth/plugins";
 import { users as authUsers } from "@/core/auth-schema";
 import { getDb } from "@/core/db";
 import { auditLog, meta, projects } from "@/core/schema";
+import { USERNAME_RE } from "@/lib/username";
 import { assertAuthSecret } from "./assert-auth-secret";
 
 // Backstop for the boot-time check in instrumentation.ts: that's the primary
@@ -173,9 +174,15 @@ export const auth = betterAuth({
     username({
       minUsernameLength: USERNAME_MIN_LENGTH,
       maxUsernameLength: USERNAME_MAX_LENGTH,
-      // Default validationOrder is pre-normalization, so `value` may still be
-      // mixed-case here; lowercase before the reserved-name check.
-      usernameValidator: (value) => !RESERVED_USERNAMES.has(value.toLowerCase()),
+      // A custom usernameValidator *replaces* the plugin's built-in charset
+      // check (it's `options.usernameValidator || defaultValidator`), so we
+      // must re-assert the allowed charset here — otherwise disallowed chars
+      // like `-` or `/` (which would break the `username/ENG-42` ref qualifier)
+      // would slip through. USERNAME_RE is the shared client/server source of
+      // truth. Default validationOrder is pre-normalization, so the value may
+      // still be mixed-case; lowercase before the reserved-name check.
+      usernameValidator: (value) =>
+        USERNAME_RE.test(value) && !RESERVED_USERNAMES.has(value.toLowerCase()),
     }),
     // nextCookies must stay last so it can attach Set-Cookie headers after
     // every other plugin's response hooks have run.
