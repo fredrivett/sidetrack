@@ -58,6 +58,7 @@ the data paths to `/data`, so self-hosters can ignore those:
 | Variable | Default | Description |
 | --- | --- | --- |
 | `ALLOW_SIGNUP` | `false` | `true` keeps signup open after the first user (multi-tenant instances) |
+| `SIDETRACK_SEED` | `false` | `true` seeds a fresh DB with a demo user + sample data. For ephemeral envs (local, previews) only — never set it in production/staging |
 | `DB_PATH` | `./data/sidetrack.db` | SQLite database path |
 | `BACKUP_DIR` | `./data/backups` | Where periodic backups are written |
 
@@ -125,16 +126,26 @@ To run Sidetrack locally to make changes, you'll need
 pnpm install
 ```
 
-Add auth config to `.env.local`, then start the dev server:
+Add an auth secret to `.env.local`, then start the dev server:
 
 ```bash
 echo "BETTER_AUTH_SECRET=$(openssl rand -hex 32)" >> .env.local
-echo "BETTER_AUTH_URL=http://localhost:3000" >> .env.local
 pnpm dev
 ```
 
 The app starts at [http://localhost:3000](http://localhost:3000), creating a
 SQLite database at `./data/sidetrack.db` and running migrations automatically.
+`BETTER_AUTH_URL` is optional locally — Better Auth infers the origin from each
+request, which also keeps things working when the dev server runs on a
+non-default port (e.g. one per git worktree). Set it only for a fixed
+deployment origin.
+
+To start with a populated board instead of an empty one, seed a fresh DB with
+a demo user and sample projects:
+
+```bash
+SIDETRACK_SEED=true pnpm db:seed   # then log in as demo@sidetrack.local / sidetrack-demo
+```
 
 After changing the schema in `src/core/schema.ts`, generate a migration with
 `pnpm db:generate` (it's then applied on the next startup).
@@ -148,6 +159,7 @@ After changing the schema in `src/core/schema.ts`, generate a migration with
 | `pnpm test` | Run the Vitest suite |
 | `pnpm db:generate` | Generate Drizzle migrations from schema changes |
 | `pnpm db:migrate` | Apply pending migrations manually |
+| `pnpm db:seed` | Seed a fresh DB with demo data (needs `SIDETRACK_SEED=true`) |
 
 Built with [Next.js 16](https://nextjs.org), [React 19](https://react.dev),
 [SQLite](https://www.sqlite.org) via
