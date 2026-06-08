@@ -152,6 +152,22 @@ describe("backfillUsernames", () => {
     expect(row?.username).toBe("dave2"); // skips the taken "dave"
   });
 
+  it("keeps suffixed handles within the max length", () => {
+    const { db } = createTestDb();
+    const local = "a".repeat(40); // derives a base truncated to the 30-char max
+    insertPlaceholder(db, "p1", `${local}@a.com`, 1);
+    insertPlaceholder(db, "p2", `${local}@b.com`, 2); // same base → collides
+
+    backfillUsernames(db);
+
+    const rows = db.select().from(users).orderBy(asc(users.id)).all();
+    const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
+    expect(byId.p1.username).toBe("a".repeat(30));
+    // base trimmed to make room for the "2" suffix; total stays <= 30.
+    expect(byId.p2.username).toBe(`${"a".repeat(29)}2`);
+    for (const r of rows) expect(r.username.length).toBeLessThanOrEqual(30);
+  });
+
   it("is idempotent — a second run changes nothing", () => {
     const { db } = createTestDb();
     insertPlaceholder(db, "p1", "bob@a.com", 1);

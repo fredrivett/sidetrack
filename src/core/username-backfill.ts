@@ -1,5 +1,5 @@
 import { asc, eq, like } from "drizzle-orm";
-import { deriveUsername } from "../lib/username";
+import { USERNAME_MAX, deriveUsername } from "../lib/username";
 import { users } from "./auth-schema";
 import type { Db } from "./db";
 
@@ -45,7 +45,10 @@ export function backfillUsernames(db: Db): void {
     let handle = base;
     let n = 2;
     while (taken.has(handle)) {
-      handle = `${base}${n}`;
+      const suffix = String(n);
+      // Trim the base to make room for the suffix so a collision can never
+      // persist a handle longer than the max (base is already <= max).
+      handle = base.slice(0, USERNAME_MAX - suffix.length) + suffix;
       n += 1;
     }
     taken.add(handle);
