@@ -33,16 +33,23 @@ export function createTestDb() {
  */
 export function createTestUser(
   db: ReturnType<typeof createTestDb>["db"],
-  overrides: { email?: string; name?: string } = {},
+  overrides: { email?: string; name?: string; username?: string } = {},
 ): string {
   const id = nanoid(12);
   const now = new Date();
+  // username is NOT NULL + unique; derive a valid, collision-free default from
+  // the (unique) id when the caller doesn't care. nanoid's alphabet includes
+  // `-`, which isn't allowed in handles, so strip it.
+  const username =
+    overrides.username ?? `u${id.replace(/[^a-z0-9]/gi, "").toLowerCase()}`;
   db.insert(authSchema.users)
     .values({
       id,
       name: overrides.name ?? "Test User",
       email: overrides.email ?? `${id}@test.local`,
       emailVerified: false,
+      username,
+      displayUsername: username,
       createdAt: now,
       updatedAt: now,
     })

@@ -35,6 +35,7 @@ export function UserMenu() {
         }
       />
       <DropdownMenuContent align="end">
+        <DropdownMenuItem render={<Link href="/settings/profile">Profile</Link>} />
         <DropdownMenuItem render={<Link href="/settings/keys">API keys</Link>} />
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onSignOut} disabled={pending}>

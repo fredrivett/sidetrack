@@ -1,13 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { signIn, signUp } from "@/auth/client";
+import { authClient, signIn, signUp } from "@/auth/client";
 import { sanitizeNext } from "@/lib/safe-next";
+import { USERNAME_MAX, USERNAME_MIN, validateUsername } from "@/lib/username";
 
 type Mode = "sign-in" | "sign-up";
+
+type UsernameStatus =
+  | { kind: "idle" }
+  | { kind: "checking" }
+  | { kind: "available" }
+  | { kind: "taken" }
+  | { kind: "invalid"; message: string };
 
 export function LoginForm({
   allowSignUp,
@@ -20,6 +28,42 @@ export function LoginForm({
   const [mode, setMode] = useState<Mode>("sign-in");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [username, setUsername] = useState("");
+  // Async availability result, tagged with the handle it was checked for so a
+  // stale result is never shown against newer input.
+  const [avail, setAvail] = useState<{ handle: string; ok: boolean } | null>(
+    null,
+  );
+
+  const formatError =
+    mode === "sign-up" && username !== "" ? validateUsername(username) : null;
+
+  // Debounced availability check while signing up. Only the async callback
+  // sets state; the synchronous status is derived during render below.
+  useEffect(() => {
+    if (mode !== "sign-up" || username === "" || validateUsername(username))
+      return;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      const res = await authClient.isUsernameAvailable({ username });
+      if (cancelled) return;
+      setAvail(
+        res.error ? null : { handle: username, ok: !!res.data?.available },
+      );
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [username, mode]);
+
+  let usernameStatus: UsernameStatus;
+  if (mode !== "sign-up" || username === "") usernameStatus = { kind: "idle" };
+  else if (formatError)
+    usernameStatus = { kind: "invalid", message: formatError };
+  else if (avail && avail.handle === username)
+    usernameStatus = avail.ok ? { kind: "available" } : { kind: "taken" };
+  else usernameStatus = { kind: "checking" };
 
   async function onSubmit(formData: FormData) {
     setPending(true);
@@ -30,7 +74,12 @@ export function LoginForm({
 
     try {
       if (mode === "sign-up") {
-        const res = await signUp.email({ email, password, name: name || email });
+        const res = await signUp.email({
+          email,
+          password,
+          name: name || email,
+          username,
+        });
         if (res.error) {
           setError(res.error.message ?? "Sign up failed.");
           return;
@@ -50,6 +99,13 @@ export function LoginForm({
       setPending(false);
     }
   }
+
+  const usernameBlocksSubmit =
+    mode === "sign-up" &&
+    (usernameStatus.kind === "taken" ||
+      usernameStatus.kind === "invalid" ||
+      usernameStatus.kind === "checking" ||
+      username === "");
 
   return (
     <form action={onSubmit} className="space-y-3">
@@ -78,6 +134,40 @@ export function LoginForm({
       {mode === "sign-up" && (
         <Input name="name" autoComplete="name" placeholder="Name (optional)" />
       )}
+      {mode === "sign-up" && (
+        <div className="space-y-1">
+          <Input
+            name="username"
+            autoComplete="username"
+            placeholder="Username"
+            required
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            minLength={USERNAME_MIN}
+            maxLength={USERNAME_MAX}
+            aria-invalid={
+              usernameStatus.kind === "taken" ||
+              usernameStatus.kind === "invalid"
+            }
+          />
+          {usernameStatus.kind === "checking" && (
+            <p className="text-xs text-muted-foreground">Checking…</p>
+          )}
+          {usernameStatus.kind === "available" && (
+            <p className="text-xs text-emerald-600 dark:text-emerald-500">
+              {username} is available.
+            </p>
+          )}
+          {usernameStatus.kind === "taken" && (
+            <p className="text-xs text-destructive">
+              {username} is taken.
+            </p>
+          )}
+          {usernameStatus.kind === "invalid" && (
+            <p className="text-xs text-destructive">{usernameStatus.message}</p>
+          )}
+        </div>
+      )}
       <Input
         name="email"
         type="email"
@@ -95,7 +185,11 @@ export function LoginForm({
         minLength={8}
       />
       {error && <p className="text-sm text-destructive">{error}</p>}
-      <Button type="submit" disabled={pending} className="w-full">
+      <Button
+        type="submit"
+        disabled={pending || usernameBlocksSubmit}
+        className="w-full"
+      >
         {pending ? "…" : mode === "sign-up" ? "Create account" : "Sign in"}
       </Button>
     </form>

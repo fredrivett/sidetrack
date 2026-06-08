@@ -3,6 +3,7 @@ import { APIError } from "better-auth/api";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
+import { username } from "better-auth/plugins";
 import { users as authUsers } from "@/core/auth-schema";
 import { getDb } from "@/core/db";
 import { auditLog, meta, projects } from "@/core/schema";
@@ -19,6 +20,37 @@ assertAuthSecret({
 });
 
 const { db } = getDb();
+
+// Handles that would collide with routes, the legacy single-user placeholder,
+// or future qualified item refs (`username/ENG-42`). Checked case-insensitively
+// against the normalized (lowercased) username at sign-up and on rename.
+const RESERVED_USERNAMES = new Set([
+  "me",
+  "admin",
+  "administrator",
+  "root",
+  "support",
+  "help",
+  "api",
+  "mcp",
+  "app",
+  "settings",
+  "login",
+  "logout",
+  "signin",
+  "signup",
+  "auth",
+  "system",
+  "null",
+  "undefined",
+]);
+
+// Username rules: 3–30 chars (the plugin also enforces its allowed charset of
+// alphanumerics, underscores, and dots — notably no `-` or `/`, which keeps
+// handles from ever colliding with item-ref separators). The validator runs
+// against the normalized handle, so reserved-name checks are case-insensitive.
+const USERNAME_MIN_LENGTH = 3;
+const USERNAME_MAX_LENGTH = 30;
 
 // Sign-up gate:
 //   ALLOW_SIGNUP=true  → signup always enabled (open instance, intentional).
@@ -137,7 +169,18 @@ export const auth = betterAuth({
       },
     },
   },
-  plugins: [nextCookies()],
+  plugins: [
+    username({
+      minUsernameLength: USERNAME_MIN_LENGTH,
+      maxUsernameLength: USERNAME_MAX_LENGTH,
+      // Default validationOrder is pre-normalization, so `value` may still be
+      // mixed-case here; lowercase before the reserved-name check.
+      usernameValidator: (value) => !RESERVED_USERNAMES.has(value.toLowerCase()),
+    }),
+    // nextCookies must stay last so it can attach Set-Cookie headers after
+    // every other plugin's response hooks have run.
+    nextCookies(),
+  ],
   secret: process.env.BETTER_AUTH_SECRET,
   baseURL: process.env.BETTER_AUTH_URL,
 });

@@ -1,0 +1,20 @@
+// Client-side username rules, mirrored from the Better Auth `username` plugin
+// config in src/auth/better-auth.ts. The server is the source of truth (the
+// plugin re-validates and owns uniqueness); this just gives instant feedback
+// before a round-trip. Framework-agnostic so both the sign-up form and the
+// settings panel can share it.
+
+export const USERNAME_MIN = 3;
+export const USERNAME_MAX = 30;
+// Allowed charset: alphanumerics, underscores, dots. Notably no `-` or `/`,
+// which keeps handles from ever colliding with item-ref separators.
+export const USERNAME_RE = /^[a-zA-Z0-9_.]+$/;
+
+/** Returns a human-readable error string, or null if the handle is well-formed. */
+export function validateUsername(value: string): string | null {
+  if (value.length < USERNAME_MIN) return `At least ${USERNAME_MIN} characters.`;
+  if (value.length > USERNAME_MAX) return `At most ${USERNAME_MAX} characters.`;
+  if (!USERNAME_RE.test(value))
+    return "Letters, numbers, dots and underscores only.";
+  return null;
+}
