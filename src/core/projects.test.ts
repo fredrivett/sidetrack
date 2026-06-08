@@ -46,7 +46,11 @@ describe("projects", () => {
     const p = createProject(db, u, { name: "Doomed" }, "web");
     deleteProject(db, u, p.id, "web");
 
-    const rows = listAudit(db, u, { projectId: p.id });
+    // The project-scoped view can't authorize a now-deleted project, but the
+    // rows survive (no cascade) and stay visible in the owner's all-projects
+    // feed via the actor fallback — so the deletion itself remains auditable.
+    expect(listAudit(db, u, { projectId: p.id })).toEqual([]);
+    const rows = listAudit(db, u).filter((r) => r.entityId === p.id);
     const actions = rows.map((r) => r.action).sort();
     expect(actions).toEqual(["create", "delete"]);
   });

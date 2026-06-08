@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { listAuditAction } from "@/app/actions";
-import type { AuditEntry, AuditSource, Project } from "@/core/schema";
+import type { AuditEntryWithActor } from "@/core/audit";
+import type { AuditSource, Project } from "@/core/schema";
 import { dayLabel, formatRelative } from "@/lib/time";
 import {
   Sheet,
@@ -46,7 +47,7 @@ export function AuditDrawer({
 }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [limit, setLimit] = useState(PAGE);
-  const [entries, setEntries] = useState<AuditEntry[]>([]);
+  const [entries, setEntries] = useState<AuditEntryWithActor[]>([]);
   const [pending, start] = useTransition();
 
   // Reset filter + limit when the drawer opens, or when the user switches
@@ -85,7 +86,7 @@ export function AuditDrawer({
   }, [open, projectId, filter, limit]);
 
   const groups = useMemo(() => {
-    const out: { label: string; rows: AuditEntry[] }[] = [];
+    const out: { label: string; rows: AuditEntryWithActor[] }[] = [];
     for (const e of entries) {
       const label = dayLabel(e.ts);
       const last = out.at(-1);
@@ -172,6 +173,7 @@ export function AuditDrawer({
                       </p>
                       <p className="mt-0.5 text-[11px] text-neutral-400">
                         {formatRelative(e.ts)}
+                        {` · ${e.actorName ?? "Unknown"}`}
                         {!projectId && e.projectId && nameById.get(e.projectId)
                           ? ` · ${nameById.get(e.projectId)}`
                           : ""}
