@@ -2,7 +2,8 @@
 
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useTransition } from "react";
+import { Trash2 } from "lucide-react";
+import { useState, useTransition } from "react";
 import {
   completeItemAction,
   deleteItemAction,
@@ -10,6 +11,12 @@ import {
   updateItemAction,
 } from "@/app/actions";
 import type { Item, ItemPrLink } from "@/core/schema";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { EditableText } from "./EditableText";
 
 function prLabel(url: string): string {
@@ -31,6 +38,7 @@ export function ItemRow({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     sortable;
   const [pending, start] = useTransition();
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const completed = item.completedAt !== null;
 
   const style = {
@@ -45,7 +53,10 @@ export function ItemRow({
     });
   }
   function del() {
-    if (!confirm(`Delete "${item.title}"?`)) return;
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      return;
+    }
     start(() => {
       void deleteItemAction(item.id);
     });
@@ -119,14 +130,35 @@ export function ItemRow({
         )}
       </div>
 
-      <button
-        type="button"
-        aria-label="Delete"
-        onClick={del}
-        className="shrink-0 self-start rounded p-1 text-neutral-300 opacity-0 transition hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 dark:hover:bg-red-950/30"
+      <DropdownMenu
+        onOpenChange={(open) => {
+          if (!open) setConfirmingDelete(false);
+        }}
       >
-        ×
-      </button>
+        <DropdownMenuTrigger
+          aria-label="Item options"
+          disabled={pending}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="shrink-0 self-start rounded p-1 text-neutral-300 opacity-0 transition hover:bg-neutral-100 hover:text-neutral-600 group-hover:opacity-100 disabled:opacity-50 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+        >
+          ⋯
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-40">
+          <DropdownMenuItem
+            variant="destructive"
+            closeOnClick={false}
+            onClick={del}
+            className={
+              confirmingDelete
+                ? "bg-destructive! text-white! focus:bg-destructive! focus:text-white!"
+                : undefined
+            }
+          >
+            <Trash2 className={confirmingDelete ? "text-white!" : "opacity-70"} />
+            {confirmingDelete ? "Confirm delete?" : "Delete item"}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
