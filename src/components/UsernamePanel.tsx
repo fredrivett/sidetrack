@@ -14,6 +14,9 @@ type Status =
   | { kind: "taken" }
   | { kind: "invalid"; message: string }
   | { kind: "current" }
+  // Same normalized handle, different casing (fred -> Fred) — a real change to
+  // the display name, so it's saveable even though availability is moot.
+  | { kind: "recase" }
   // Availability request failed (network/server). Non-blocking: updateUser
   // re-validates on save, so let the user try rather than locking the button.
   | { kind: "error" };
@@ -34,14 +37,19 @@ export function UsernamePanel({ initial }: { initial: string }) {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  const unchanged = value.toLowerCase() === initial.toLowerCase();
+  // `sameHandle` = same normalized handle (possibly re-cased); `identical` =
+  // byte-for-byte unchanged. A case-only edit changes display_username, so the
+  // save gate keys off `identical`, while the availability check skips
+  // `sameHandle` (checking your own handle would always report "taken").
+  const sameHandle = value.toLowerCase() === initial.toLowerCase();
+  const identical = value === initial;
   const formatError = value === "" ? null : validateUsername(value);
 
   // Debounced availability check, skipping the user's own current handle.
   // Only the async callback sets state — the synchronous status is derived
   // during render below.
   useEffect(() => {
-    if (value === "" || unchanged || validateUsername(value)) return;
+    if (value === "" || sameHandle || validateUsername(value)) return;
     let cancelled = false;
     const t = setTimeout(async () => {
       const res = await authClient.isUsernameAvailable({ username: value });
@@ -59,19 +67,27 @@ export function UsernamePanel({ initial }: { initial: string }) {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [value, unchanged]);
+  }, [value, sameHandle]);
 
   let status: Status;
   if (value === "") status = { kind: "idle" };
-  else if (unchanged) status = { kind: "current" };
   else if (formatError) status = { kind: "invalid", message: formatError };
+  else if (identical) status = { kind: "current" };
+  else if (sameHandle) status = { kind: "recase" };
   else if (avail && avail.handle === value) status = { kind: avail.result };
   else status = { kind: "checking" };
 
   function onSave() {
     setError(null);
     startTransition(async () => {
-      const res = await authClient.updateUser({ username: value });
+      // Send displayUsername too: /update-user (unlike sign-up) does not
+      // cross-fill it from username, so without this the display casing would
+      // never change. `username` is normalized to lowercase server-side;
+      // `displayUsername` keeps the casing the user typed.
+      const res = await authClient.updateUser({
+        username: value,
+        displayUsername: value,
+      });
       if (res.error) {
         setError(res.error.message ?? "Couldn't update username.");
         return;
@@ -85,9 +101,11 @@ export function UsernamePanel({ initial }: { initial: string }) {
   // server-side and surfaces "taken"/"invalid" as an error if it really is.
   const canSave =
     !pending &&
-    !unchanged &&
+    !identical &&
     value !== "" &&
-    (status.kind === "available" || status.kind === "error");
+    (status.kind === "available" ||
+      status.kind === "error" ||
+      status.kind === "recase");
 
   return (
     <div className="space-y-3 rounded-lg border border-border p-4">
@@ -124,6 +142,11 @@ export function UsernamePanel({ initial }: { initial: string }) {
       {status.kind === "current" && (
         <p className="text-xs text-muted-foreground">
           This is your current username.
+        </p>
+      )}
+      {status.kind === "recase" && (
+        <p className="text-xs text-muted-foreground">
+          Updates how your username is capitalized.
         </p>
       )}
       {status.kind === "error" && (
