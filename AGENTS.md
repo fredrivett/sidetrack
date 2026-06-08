@@ -15,6 +15,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
   surviving mutants show where a test asserts structure but not behaviour.
 - `pnpm db:generate` — drizzle-kit, after editing `src/core/schema.ts`
 - `pnpm db:migrate` — apply pending migrations to the local DB
+- `pnpm db:seed` — seed a fresh DB with a demo user + sample data. No-op
+  unless `SIDETRACK_SEED=true` and the DB has no users. Ephemeral envs only
+  (local, previews) — never production/staging.
 
 # Project structure
 
@@ -27,7 +30,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
   that boundary stays clean.
 - `src/lib/` — small framework-agnostic helpers (time formatting, redirect
   sanitizing, PostHog). No `next/*` or `react` imports.
-- `scripts/` — operational scripts (smoke, backup). Not part of the app bundle.
+- `scripts/` — operational scripts (backup, seed). Not part of the app bundle.
 
 # UI conventions
 
