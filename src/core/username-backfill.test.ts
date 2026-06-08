@@ -152,6 +152,16 @@ describe("backfillUsernames", () => {
     expect(row?.username).toBe("dave2"); // skips the taken "dave"
   });
 
+  it("never assigns a reserved handle", () => {
+    const { db } = createTestDb();
+    insertPlaceholder(db, "p", "admin@x.com", 1); // derives base "admin"
+
+    backfillUsernames(db);
+
+    const row = db.select().from(users).all().find((r) => r.id === "p");
+    expect(row?.username).toBe("admin2"); // bumped off the reserved "admin"
+  });
+
   it("keeps suffixed handles within the max length", () => {
     const { db } = createTestDb();
     const local = "a".repeat(40); // derives a base truncated to the 30-char max

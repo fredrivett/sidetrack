@@ -10,6 +10,36 @@ export const USERNAME_MAX = 30;
 // which keeps handles from ever colliding with item-ref separators.
 export const USERNAME_RE = /^[a-zA-Z0-9_.]+$/;
 
+// Handles that would collide with routes, the legacy single-user placeholder,
+// or future qualified item refs (`username/ENG-42`). Lowercased; compare
+// case-insensitively. Single source of truth for both the sign-up/rename
+// validator (better-auth.ts) and the migration backfill (which seeds these as
+// "taken" so a derived handle never lands on one).
+export const RESERVED_USERNAMES = new Set([
+  "me",
+  "admin",
+  "administrator",
+  "root",
+  "support",
+  "help",
+  "api",
+  "mcp",
+  "app",
+  "settings",
+  "login",
+  "logout",
+  "signin",
+  "signup",
+  "auth",
+  "system",
+  "null",
+  "undefined",
+]);
+
+export function isReservedUsername(value: string): boolean {
+  return RESERVED_USERNAMES.has(value.toLowerCase());
+}
+
 /** Returns a human-readable error string, or null if the handle is well-formed. */
 export function validateUsername(value: string): string | null {
   if (value.length < USERNAME_MIN) return `At least ${USERNAME_MIN} characters.`;

@@ -7,7 +7,7 @@ import { username } from "better-auth/plugins";
 import { users as authUsers } from "@/core/auth-schema";
 import { getDb } from "@/core/db";
 import { auditLog, meta, projects } from "@/core/schema";
-import { USERNAME_RE } from "@/lib/username";
+import { isReservedUsername, USERNAME_RE } from "@/lib/username";
 import { assertAuthSecret } from "./assert-auth-secret";
 
 // Backstop for the boot-time check in instrumentation.ts: that's the primary
@@ -21,30 +21,6 @@ assertAuthSecret({
 });
 
 const { db } = getDb();
-
-// Handles that would collide with routes, the legacy single-user placeholder,
-// or future qualified item refs (`username/ENG-42`). Checked case-insensitively
-// against the normalized (lowercased) username at sign-up and on rename.
-const RESERVED_USERNAMES = new Set([
-  "me",
-  "admin",
-  "administrator",
-  "root",
-  "support",
-  "help",
-  "api",
-  "mcp",
-  "app",
-  "settings",
-  "login",
-  "logout",
-  "signin",
-  "signup",
-  "auth",
-  "system",
-  "null",
-  "undefined",
-]);
 
 // Username rules: 3–30 chars (the plugin also enforces its allowed charset of
 // alphanumerics, underscores, and dots — notably no `-` or `/`, which keeps
@@ -180,9 +156,9 @@ export const auth = betterAuth({
       // like `-` or `/` (which would break the `username/ENG-42` ref qualifier)
       // would slip through. USERNAME_RE is the shared client/server source of
       // truth. Default validationOrder is pre-normalization, so the value may
-      // still be mixed-case; lowercase before the reserved-name check.
+      // still be mixed-case; isReservedUsername lowercases internally.
       usernameValidator: (value) =>
-        USERNAME_RE.test(value) && !RESERVED_USERNAMES.has(value.toLowerCase()),
+        USERNAME_RE.test(value) && !isReservedUsername(value),
     }),
     // nextCookies must stay last so it can attach Set-Cookie headers after
     // every other plugin's response hooks have run.

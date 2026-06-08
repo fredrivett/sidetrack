@@ -1,5 +1,9 @@
 import { asc, eq, like } from "drizzle-orm";
-import { USERNAME_MAX, deriveUsername } from "../lib/username";
+import {
+  RESERVED_USERNAMES,
+  USERNAME_MAX,
+  deriveUsername,
+} from "../lib/username";
 import { users } from "./auth-schema";
 import type { Db } from "./db";
 
@@ -28,17 +32,15 @@ export function backfillUsernames(db: Db): void {
     .all();
   if (pending.length === 0) return;
 
-  // Seed the taken set with handles already finalized (real sign-ups), so a
-  // backfilled handle never collides with one a user actually chose.
-  const taken = new Set<string>(
-    db
-      .select({ username: users.username })
-      .from(users)
-      .all()
-      .map((r) => r.username)
-      .filter((u) => !u.startsWith(PLACEHOLDER_PREFIX))
-      .map((u) => u.toLowerCase()),
-  );
+  // Seed the taken set with reserved handles (so a backfill never assigns
+  // `admin`, `settings`, etc. — the suffix loop bumps it to `admin2`) plus all
+  // handles already finalized by real sign-ups (so we never steal a chosen one).
+  const taken = new Set<string>(RESERVED_USERNAMES);
+  for (const r of db.select({ username: users.username }).from(users).all()) {
+    if (!r.username.startsWith(PLACEHOLDER_PREFIX)) {
+      taken.add(r.username.toLowerCase());
+    }
+  }
 
   for (const user of pending) {
     const base = deriveUsername(user.email);
