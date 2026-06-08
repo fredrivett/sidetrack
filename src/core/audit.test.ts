@@ -1,8 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { listAudit } from "./audit";
+import { listAudit, recordAudit } from "./audit";
 import { addItem } from "./items";
 import { createProject } from "./projects";
 import { createTestDb, createTestUser } from "./test-helpers";
+
+// The write-path ownership checks stop one user mutating another's project,
+// so a foreign actor on your project can't arise through the public core API
+// today (it's the seam for future shared projects / webhook bots). To test
+// the read-scoping directly, insert such rows with recordAudit.
+function recordOnProject(
+  db: ReturnType<typeof createTestDb>["db"],
+  actor: string,
+  projectId: string,
+) {
+  recordAudit(db, {
+    actor,
+    source: "web",
+    action: "update",
+    entityType: "item",
+    entityId: "x",
+    projectId,
+    detail: "foreign actor touched this project",
+  });
+}
 
 describe("audit", () => {
   it("filters by source", () => {
@@ -43,14 +63,86 @@ describe("audit", () => {
     expect(listAudit(db, u, { limit: 0 }).length).toBeGreaterThanOrEqual(1);
   });
 
-  it("scopes audit rows to the acting user", () => {
+  it("all-projects view shows every actor's activity on your projects", () => {
+    const { db } = createTestDb();
+    const alice = createTestUser(db, { email: "alice@test.local" });
+    const bob = createTestUser(db, { email: "bob@test.local" });
+    const p = createProject(db, alice, { name: "Alice" }, "web");
+    recordOnProject(db, bob, p.id); // bob acts on alice's project
+
+    const actors = listAudit(db, alice).map((e) => e.actor);
+    expect(actors).toContain(alice);
+    expect(actors).toContain(bob);
+  });
+
+  it("all-projects view hides activity on other users' projects", () => {
     const { db } = createTestDb();
     const alice = createTestUser(db, { email: "alice@test.local" });
     const bob = createTestUser(db, { email: "bob@test.local" });
     createProject(db, alice, { name: "Alice" }, "web");
-    createProject(db, bob, { name: "Bob" }, "web");
+    const bobsProject = createProject(db, bob, { name: "Bob" }, "web");
 
-    expect(listAudit(db, alice).every((e) => e.actor === alice)).toBe(true);
-    expect(listAudit(db, bob).every((e) => e.actor === bob)).toBe(true);
+    const alicesView = listAudit(db, alice);
+    expect(alicesView.every((e) => e.projectId !== bobsProject.id)).toBe(true);
+    expect(alicesView.some((e) => e.detail.includes("Alice"))).toBe(true);
+  });
+
+  it("all-projects view excludes your own rows on a project you don't own", () => {
+    const { db } = createTestDb();
+    const alice = createTestUser(db, { email: "alice@test.local" });
+    const bob = createTestUser(db, { email: "bob@test.local" });
+    const bobsProject = createProject(db, bob, { name: "Bob" }, "web");
+    // A row alice authored on bob's still-live project must not leak into
+    // alice's feed via the actor fallback — bob owns the project.
+    recordOnProject(db, alice, bobsProject.id);
+
+    expect(
+      listAudit(db, alice).every((e) => e.projectId !== bobsProject.id),
+    ).toBe(true);
+  });
+
+  it("all-projects view includes the user's account-level events", () => {
+    const { db } = createTestDb();
+    const alice = createTestUser(db, { email: "alice@test.local" });
+    // An event with no project (e.g. an API key mint) still belongs to alice.
+    recordAudit(db, {
+      actor: alice,
+      source: "web",
+      action: "create",
+      entityType: "api_key",
+      entityId: "k1",
+      detail: "minted API key",
+    });
+    const rows = listAudit(db, alice);
+    expect(rows.some((e) => e.entityType === "api_key")).toBe(true);
+  });
+
+  it("resolves the actor's display name (null for an unknown actor)", () => {
+    const { db } = createTestDb();
+    const alice = createTestUser(db, {
+      email: "alice@test.local",
+      name: "Alice Example",
+    });
+    const p = createProject(db, alice, { name: "Alice" }, "web");
+    recordOnProject(db, "ghost-user", p.id); // actor not in users table
+
+    const rows = listAudit(db, alice);
+    expect(rows.find((e) => e.actor === alice)?.actorName).toBe("Alice Example");
+    expect(rows.find((e) => e.actor === "ghost-user")?.actorName).toBeNull();
+  });
+
+  it("project view shows all actors but only to the project's owner", () => {
+    const { db } = createTestDb();
+    const alice = createTestUser(db, { email: "alice@test.local" });
+    const bob = createTestUser(db, { email: "bob@test.local" });
+    const p = createProject(db, alice, { name: "Alice" }, "web");
+    recordOnProject(db, bob, p.id);
+
+    // Owner sees every actor's activity on the project.
+    const ownerView = listAudit(db, alice, { projectId: p.id });
+    expect(ownerView.map((e) => e.actor)).toContain(bob);
+
+    // A non-owner gets nothing, not another user's history.
+    expect(listAudit(db, bob, { projectId: p.id })).toEqual([]);
   });
 });
