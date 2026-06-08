@@ -2,6 +2,15 @@ import { type Instrumentation } from "next";
 
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
+  // Validate required config before the server accepts any traffic, so a
+  // missing production secret fails the boot loudly (container won't start)
+  // instead of 500-ing on the first auth request with the cause buried in logs.
+  const { assertAuthSecret } = await import("./auth/assert-auth-secret");
+  assertAuthSecret({
+    secret: process.env.BETTER_AUTH_SECRET,
+    nodeEnv: process.env.NODE_ENV,
+    nextPhase: process.env.NEXT_PHASE,
+  });
   const { runMigrations } = await import("./core/migrate");
   const { scheduleBackups } = await import("./core/backup");
   runMigrations();
