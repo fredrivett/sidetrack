@@ -1,16 +1,15 @@
 -- Add the Better Auth `username` plugin fields (`username`, `display_username`)
 -- to `users` as NOT NULL. drizzle-kit's default output is a bare
--- `ALTER TABLE ... ADD ... NOT NULL`, which fails on a populated table and
--- leaves existing users without a handle. Instead we do the standard SQLite
--- table-rebuild so the columns land NOT NULL *and* every existing row is
--- backfilled in the same statement.
+-- `ALTER TABLE ... ADD ... NOT NULL`, which fails on a populated table, so we
+-- do the standard SQLite table-rebuild instead.
 --
--- Backfill rule: derive a handle from the email local-part (the bit before
--- `@`), lowercased, with `+`/`-` stripped (kept out so handles never collide
--- with item-ref separators), padded to the 3-char minimum, and de-duplicated
--- by suffixing a number on collision. These are deterministic defaults;
--- users can rename in settings. Go-forward sign-ups are validated/normalized
--- by the plugin itself, so this SQL is one-time only.
+-- Existing rows are backfilled with a *placeholder* (`!` + id): guaranteed
+-- unique (id is the PK) and impossible to mistake for a real handle (`!` is
+-- outside the allowed charset). This lets the columns land NOT NULL + unique
+-- immediately; the real, human-friendly handles are derived in TS right after
+-- migration by backfillUsernames() — where de-duplication is trivially correct
+-- (a pure-SQL suffix scheme could emit a suffixed handle that collides with a
+-- different base, e.g. `bob`+2 vs an existing `bob2`).
 --
 -- FK enforcement is OFF during migrations (see runMigrations in migrate.ts),
 -- so DROP TABLE `users` does not cascade into sessions/accounts/api_keys; the
@@ -27,27 +26,9 @@ CREATE TABLE `__new_users` (
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-WITH `derived` AS (
-	SELECT
-		`id`, `name`, `email`, `email_verified`, `image`, `created_at`, `updated_at`,
-		CASE WHEN length(`cleaned`) >= 3 THEN `cleaned` ELSE substr(`cleaned` || '000', 1, 3) END AS `base`
-	FROM (
-		SELECT *,
-			replace(replace(lower(substr(`email`, 1, instr(`email`, '@') - 1)), '+', ''), '-', '') AS `cleaned`
-		FROM `users`
-	)
-),
-`numbered` AS (
-	SELECT *, ROW_NUMBER() OVER (PARTITION BY `base` ORDER BY `created_at`, `id`) AS `rn`
-	FROM `derived`
-)
 INSERT INTO `__new_users` (`id`, `name`, `email`, `email_verified`, `image`, `username`, `display_username`, `created_at`, `updated_at`)
-SELECT
-	`id`, `name`, `email`, `email_verified`, `image`,
-	`base` || CASE WHEN `rn` = 1 THEN '' ELSE CAST(`rn` AS TEXT) END,
-	`base` || CASE WHEN `rn` = 1 THEN '' ELSE CAST(`rn` AS TEXT) END,
-	`created_at`, `updated_at`
-FROM `numbered`;
+SELECT `id`, `name`, `email`, `email_verified`, `image`, '!' || `id`, '!' || `id`, `created_at`, `updated_at`
+FROM `users`;
 --> statement-breakpoint
 DROP TABLE `users`;
 --> statement-breakpoint

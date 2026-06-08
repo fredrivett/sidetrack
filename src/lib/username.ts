@@ -18,3 +18,19 @@ export function validateUsername(value: string): string | null {
     return "Letters, numbers, dots and underscores only.";
   return null;
 }
+
+/**
+ * Derive a *base* handle from an email, normalized to the allowed charset:
+ * the local-part (before `@`), lowercased, with disallowed characters stripped,
+ * padded to the minimum length and truncated to the maximum. The result is not
+ * guaranteed unique — callers de-duplicate against the existing set (see
+ * backfillUsernames). Used for migration backfill today and OAuth defaults
+ * later, where a handle must be invented rather than chosen.
+ */
+export function deriveUsername(email: string): string {
+  const local = (email.split("@")[0] ?? "").toLowerCase();
+  const base = local.replace(/[^a-z0-9_.]/g, "");
+  if (base.length < USERNAME_MIN) return (base + "000").slice(0, USERNAME_MIN);
+  if (base.length > USERNAME_MAX) return base.slice(0, USERNAME_MAX);
+  return base;
+}
