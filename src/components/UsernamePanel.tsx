@@ -13,17 +13,24 @@ type Status =
   | { kind: "available" }
   | { kind: "taken" }
   | { kind: "invalid"; message: string }
-  | { kind: "current" };
+  | { kind: "current" }
+  // Availability request failed (network/server). Non-blocking: updateUser
+  // re-validates on save, so let the user try rather than locking the button.
+  | { kind: "error" };
 
 export function UsernamePanel({ initial }: { initial: string }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [value, setValue] = useState(initial);
   // Async availability result, tagged with the handle it was checked for so a
-  // stale result is never shown against a newer input.
-  const [avail, setAvail] = useState<{ handle: string; ok: boolean } | null>(
-    null,
-  );
+  // stale result is never shown against a newer input. `result` captures the
+  // errored case explicitly so it's distinguishable from "still in flight" —
+  // otherwise a failed check would look like a perpetual "checking" and lock
+  // the Save button.
+  const [avail, setAvail] = useState<{
+    handle: string;
+    result: "available" | "taken" | "error";
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
@@ -39,7 +46,14 @@ export function UsernamePanel({ initial }: { initial: string }) {
     const t = setTimeout(async () => {
       const res = await authClient.isUsernameAvailable({ username: value });
       if (cancelled) return;
-      setAvail(res.error ? null : { handle: value, ok: !!res.data?.available });
+      setAvail({
+        handle: value,
+        result: res.error
+          ? "error"
+          : res.data?.available
+            ? "available"
+            : "taken",
+      });
     }, 350);
     return () => {
       cancelled = true;
@@ -51,8 +65,7 @@ export function UsernamePanel({ initial }: { initial: string }) {
   if (value === "") status = { kind: "idle" };
   else if (unchanged) status = { kind: "current" };
   else if (formatError) status = { kind: "invalid", message: formatError };
-  else if (avail && avail.handle === value)
-    status = avail.ok ? { kind: "available" } : { kind: "taken" };
+  else if (avail && avail.handle === value) status = { kind: avail.result };
   else status = { kind: "checking" };
 
   function onSave() {
@@ -68,8 +81,13 @@ export function UsernamePanel({ initial }: { initial: string }) {
     });
   }
 
+  // Allow saving on a failed availability check too — updateUser re-validates
+  // server-side and surfaces "taken"/"invalid" as an error if it really is.
   const canSave =
-    !pending && !unchanged && value !== "" && status.kind === "available";
+    !pending &&
+    !unchanged &&
+    value !== "" &&
+    (status.kind === "available" || status.kind === "error");
 
   return (
     <div className="space-y-3 rounded-lg border border-border p-4">
@@ -106,6 +124,11 @@ export function UsernamePanel({ initial }: { initial: string }) {
       {status.kind === "current" && (
         <p className="text-xs text-muted-foreground">
           This is your current username.
+        </p>
+      )}
+      {status.kind === "error" && (
+        <p className="text-xs text-muted-foreground">
+          Couldn&apos;t check availability — you can still try to save.
         </p>
       )}
       {error && <p className="text-sm text-destructive">{error}</p>}

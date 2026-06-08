@@ -15,7 +15,10 @@ type UsernameStatus =
   | { kind: "checking" }
   | { kind: "available" }
   | { kind: "taken" }
-  | { kind: "invalid"; message: string };
+  | { kind: "invalid"; message: string }
+  // The availability request itself failed (network/server). Non-blocking:
+  // the server re-validates uniqueness on submit, so let the user proceed.
+  | { kind: "error" };
 
 export function LoginForm({
   allowSignUp,
@@ -30,10 +33,14 @@ export function LoginForm({
   const [error, setError] = useState<string | null>(null);
   const [username, setUsername] = useState("");
   // Async availability result, tagged with the handle it was checked for so a
-  // stale result is never shown against newer input.
-  const [avail, setAvail] = useState<{ handle: string; ok: boolean } | null>(
-    null,
-  );
+  // stale result is never shown against newer input. `result` captures the
+  // errored case explicitly so it's distinguishable from "still in flight"
+  // (a missing result for the current handle) — otherwise a failed check
+  // would look like a perpetual "checking" and block submit forever.
+  const [avail, setAvail] = useState<{
+    handle: string;
+    result: "available" | "taken" | "error";
+  } | null>(null);
 
   const formatError =
     mode === "sign-up" && username !== "" ? validateUsername(username) : null;
@@ -47,9 +54,14 @@ export function LoginForm({
     const t = setTimeout(async () => {
       const res = await authClient.isUsernameAvailable({ username });
       if (cancelled) return;
-      setAvail(
-        res.error ? null : { handle: username, ok: !!res.data?.available },
-      );
+      setAvail({
+        handle: username,
+        result: res.error
+          ? "error"
+          : res.data?.available
+            ? "available"
+            : "taken",
+      });
     }, 350);
     return () => {
       cancelled = true;
@@ -62,7 +74,7 @@ export function LoginForm({
   else if (formatError)
     usernameStatus = { kind: "invalid", message: formatError };
   else if (avail && avail.handle === username)
-    usernameStatus = avail.ok ? { kind: "available" } : { kind: "taken" };
+    usernameStatus = { kind: avail.result };
   else usernameStatus = { kind: "checking" };
 
   async function onSubmit(formData: FormData) {
@@ -165,6 +177,11 @@ export function LoginForm({
           )}
           {usernameStatus.kind === "invalid" && (
             <p className="text-xs text-destructive">{usernameStatus.message}</p>
+          )}
+          {usernameStatus.kind === "error" && (
+            <p className="text-xs text-muted-foreground">
+              Couldn&apos;t check availability — you can still try.
+            </p>
           )}
         </div>
       )}
