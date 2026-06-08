@@ -20,6 +20,7 @@ const { db } = getDb();
 // `userCount() === 0` check racey).
 const ALLOW_SIGNUP = process.env.ALLOW_SIGNUP === "true";
 const SIGNUP_LOCK_KEY = "signups_first_claimed";
+const ME_ADOPTION_KEY = "me_data_adopted";
 
 function userCount(): number {
   try {
@@ -27,6 +28,21 @@ function userCount(): number {
   } catch {
     // Migrations may not have run yet on the very first boot.
     return 0;
+  }
+}
+
+// Atomically claim a one-time sentinel row in `meta`. Returns true if this
+// caller won the claim, false if it was already held (SQLite's PK constraint
+// serializes concurrent inserts — exactly one wins). Real DB errors propagate
+// rather than being silently treated as "already claimed".
+function claimSentinel(key: string): boolean {
+  try {
+    db.insert(meta).values({ key, value: "1" }).run();
+    return true;
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code?.startsWith("SQLITE_CONSTRAINT")) return false;
+    throw error;
   }
 }
 
@@ -43,13 +59,8 @@ try {
   if (!haveUsers) {
     db.delete(meta).where(eq(meta.key, SIGNUP_LOCK_KEY)).run();
   } else {
-    try {
-      db.insert(meta)
-        .values({ key: SIGNUP_LOCK_KEY, value: "1" })
-        .run();
-    } catch {
-      // Lock already present — fine, leave it.
-    }
+    // Ensure the lock exists; claimSentinel ignores an existing one.
+    claimSentinel(SIGNUP_LOCK_KEY);
   }
 } catch {
   // Migrations may not have run yet on the very first boot.
@@ -96,31 +107,21 @@ export const auth = betterAuth({
       create: {
         before: async () => {
           if (ALLOW_SIGNUP) return;
-          // Atomic claim: SQLite's PK constraint on meta.key serializes
-          // concurrent inserts — exactly one survives, everyone else gets a
-          // CONSTRAINT error. No userCount() race.
-          try {
-            db.insert(meta)
-              .values({ key: SIGNUP_LOCK_KEY, value: "1" })
-              .run();
-          } catch (error) {
-            // Only a constraint violation means the lock was already claimed
-            // (signup closed). Anything else is a real DB failure and must
-            // surface, not be masked as "signup closed".
-            const code = (error as { code?: string }).code;
-            if (code?.startsWith("SQLITE_CONSTRAINT")) {
-              throw new APIError("FORBIDDEN", {
-                message: "Sign-up is closed on this instance.",
-              });
-            }
-            throw error;
+          // First signup wins the lock; everyone after is rejected. A lost
+          // claim (false) means it's already held → closed.
+          if (!claimSentinel(SIGNUP_LOCK_KEY)) {
+            throw new APIError("FORBIDDEN", {
+              message: "Sign-up is closed on this instance.",
+            });
           }
         },
         after: async (user) => {
-          // Race-free with the sentinel gate above: only one signup can
-          // reach here when ALLOW_SIGNUP is unset, so count === 1 reliably
-          // identifies the first-ever user.
-          if (userCount() === 1) adoptMeRows(user.id);
+          // First-ever signup adopts legacy 'me' data. Gated by its own
+          // atomic sentinel rather than userCount(), which races under
+          // ALLOW_SIGNUP=true (concurrent first signups could both observe
+          // count > 1 and skip adoption entirely). Exactly one signup wins
+          // the claim and adopts, in either signup mode.
+          if (claimSentinel(ME_ADOPTION_KEY)) adoptMeRows(user.id);
         },
       },
     },
