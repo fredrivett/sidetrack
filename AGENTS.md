@@ -25,6 +25,18 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - `src/lib/` — small framework-agnostic helpers (auth stub, time formatting).
 - `scripts/` — operational scripts (smoke, backup). Not part of the app bundle.
 
+# UI conventions
+
+- Build UI from the shadcn-style primitives in `src/components/ui/` (button,
+  dropdown-menu, sheet, input, …). Reach for an existing primitive before
+  hand-rolling markup; add a new one via the shadcn pattern rather than ad-hoc
+  components.
+- Row/card actions belong in a `⋯` dropdown menu (`DropdownMenu` +
+  `DropdownMenuTrigger`/`Content`/`Item`), with destructive actions marked
+  `variant="destructive"` — see `ProjectMenu.tsx` and `ItemRow.tsx` for the
+  canonical shape. Inside a draggable element, `stopPropagation` the trigger's
+  `onPointerDown` so opening the menu doesn't start a drag.
+
 # Boundaries
 
 ## Audit log invariant
