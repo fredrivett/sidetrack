@@ -103,10 +103,17 @@ export const auth = betterAuth({
             db.insert(meta)
               .values({ key: SIGNUP_LOCK_KEY, value: "1" })
               .run();
-          } catch {
-            throw new APIError("FORBIDDEN", {
-              message: "Sign-up is closed on this instance.",
-            });
+          } catch (error) {
+            // Only a constraint violation means the lock was already claimed
+            // (signup closed). Anything else is a real DB failure and must
+            // surface, not be masked as "signup closed".
+            const code = (error as { code?: string }).code;
+            if (code?.startsWith("SQLITE_CONSTRAINT")) {
+              throw new APIError("FORBIDDEN", {
+                message: "Sign-up is closed on this instance.",
+              });
+            }
+            throw error;
           }
         },
         after: async (user) => {
