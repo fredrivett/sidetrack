@@ -2,12 +2,13 @@ import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { getEnv } from "../lib/env";
 import * as appSchema from "./schema";
 import * as authSchema from "./auth-schema";
 
 const schema = { ...appSchema, ...authSchema };
 
-const DB_PATH = process.env.DB_PATH ?? "./data/sidetrack.db";
+const DB_PATH = getEnv().DB_PATH;
 
 declare global {
   var __sidetrackDb: ReturnType<typeof createDb> | undefined;

@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { getEnv } from "../lib/env";
 import { getDb } from "./db";
 import { meta } from "./schema";
 
@@ -14,7 +15,7 @@ declare global {
 }
 
 function backupDir(): string {
-  return process.env.BACKUP_DIR ?? "./data/backups";
+  return getEnv().BACKUP_DIR;
 }
 
 function readLastBackupAt(): number | null {

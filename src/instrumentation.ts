@@ -3,14 +3,12 @@ import { type Instrumentation } from "next";
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
   // Validate required config before the server accepts any traffic, so a
-  // missing production secret fails the boot loudly (container won't start)
-  // instead of 500-ing on the first auth request with the cause buried in logs.
-  const { assertAuthSecret } = await import("./auth/assert-auth-secret");
-  assertAuthSecret({
-    secret: process.env.BETTER_AUTH_SECRET,
-    nodeEnv: process.env.NODE_ENV,
-    nextPhase: process.env.NEXT_PHASE,
-  });
+  // misconfigured deploy fails the boot loudly (container won't start) instead
+  // of silently failing on the first auth request — e.g. a missing secret, or a
+  // missing BETTER_AUTH_URL that surfaces only as a 403 INVALID_ORIGIN behind a
+  // proxy. getEnv() throws one aggregated, actionable error listing every gap.
+  const { getEnv } = await import("./lib/env");
+  getEnv();
   const { runMigrations } = await import("./core/migrate");
   const { scheduleBackups } = await import("./core/backup");
   runMigrations();
