@@ -1,6 +1,7 @@
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { resolve } from "node:path";
 import { getDb } from "./db";
+import { backfillUsernames } from "./username-backfill";
 
 let migrated = false;
 
@@ -31,6 +32,9 @@ export function runMigrations() {
   } finally {
     sqlite.pragma("foreign_keys = ON");
   }
+  // Turn the 0005 placeholder usernames into real, de-duplicated handles.
+  // Idempotent (only placeholder rows are touched), so safe on every boot.
+  backfillUsernames(db);
   migrated = true;
 }
 

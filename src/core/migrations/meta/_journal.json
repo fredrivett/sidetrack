@@ -36,6 +36,13 @@
       "when": 1780913590626,
       "tag": "0004_regular_warhawk",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1780917748945,
+      "tag": "0005_slippery_the_santerians",
+      "breakpoints": true
     }
   ]
 }

@@ -19,6 +19,15 @@ export const users = sqliteTable("users", {
     .notNull()
     .default(false),
   image: text("image"),
+  // Better Auth `username` plugin fields. `username` is the normalized
+  // (lowercased) handle used for lookups and uniqueness; `displayUsername`
+  // preserves the original casing for display. Both are NOT NULL: every user
+  // is required to pick a handle at sign-up (the plugin injects it into the
+  // create before the row is inserted), and the migration backfills existing
+  // users from their email. The unique index gives case-insensitive
+  // uniqueness for free since `username` is already normalized.
+  username: text("username").notNull().unique(),
+  displayUsername: text("display_username").notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });

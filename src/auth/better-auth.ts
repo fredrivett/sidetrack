@@ -3,9 +3,11 @@ import { APIError } from "better-auth/api";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
+import { username } from "better-auth/plugins";
 import { users as authUsers } from "@/core/auth-schema";
 import { getDb } from "@/core/db";
 import { auditLog, meta, projects } from "@/core/schema";
+import { isReservedUsername, USERNAME_RE } from "@/lib/username";
 import { assertAuthSecret } from "./assert-auth-secret";
 
 // Backstop for the boot-time check in instrumentation.ts: that's the primary
@@ -19,6 +21,13 @@ assertAuthSecret({
 });
 
 const { db } = getDb();
+
+// Username rules: 3–30 chars (the plugin also enforces its allowed charset of
+// alphanumerics, underscores, and dots — notably no `-` or `/`, which keeps
+// handles from ever colliding with item-ref separators). The validator runs
+// against the normalized handle, so reserved-name checks are case-insensitive.
+const USERNAME_MIN_LENGTH = 3;
+const USERNAME_MAX_LENGTH = 30;
 
 // Sign-up gate:
 //   ALLOW_SIGNUP=true  → signup always enabled (open instance, intentional).
@@ -137,7 +146,24 @@ export const auth = betterAuth({
       },
     },
   },
-  plugins: [nextCookies()],
+  plugins: [
+    username({
+      minUsernameLength: USERNAME_MIN_LENGTH,
+      maxUsernameLength: USERNAME_MAX_LENGTH,
+      // A custom usernameValidator *replaces* the plugin's built-in charset
+      // check (it's `options.usernameValidator || defaultValidator`), so we
+      // must re-assert the allowed charset here — otherwise disallowed chars
+      // like `-` or `/` (which would break the `username/ENG-42` ref qualifier)
+      // would slip through. USERNAME_RE is the shared client/server source of
+      // truth. Default validationOrder is pre-normalization, so the value may
+      // still be mixed-case; isReservedUsername lowercases internally.
+      usernameValidator: (value) =>
+        USERNAME_RE.test(value) && !isReservedUsername(value),
+    }),
+    // nextCookies must stay last so it can attach Set-Cookie headers after
+    // every other plugin's response hooks have run.
+    nextCookies(),
+  ],
   secret: process.env.BETTER_AUTH_SECRET,
   baseURL: process.env.BETTER_AUTH_URL,
 });
