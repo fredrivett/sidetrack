@@ -7,18 +7,14 @@ import { username } from "better-auth/plugins";
 import { users as authUsers } from "@/core/auth-schema";
 import { getDb } from "@/core/db";
 import { auditLog, meta, projects } from "@/core/schema";
+import { getEnv } from "@/lib/env";
 import { isReservedUsername, USERNAME_RE } from "@/lib/username";
-import { assertAuthSecret } from "./assert-auth-secret";
 
-// Backstop for the boot-time check in instrumentation.ts: that's the primary
-// gate (a missing production secret fails the server boot), but assert here too
-// in case auth is imported via a path that bypasses instrumentation. Either way
-// we fail with an actionable message rather than Better Auth's opaque lazy throw.
-assertAuthSecret({
-  secret: process.env.BETTER_AUTH_SECRET,
-  nodeEnv: process.env.NODE_ENV,
-  nextPhase: process.env.NEXT_PHASE,
-});
+// Reading validated config here doubles as a backstop for the boot-time check
+// in instrumentation.ts: if auth is imported via a path that bypasses
+// instrumentation, getEnv() still throws an actionable error for a missing
+// secret / BETTER_AUTH_URL rather than Better Auth's opaque lazy failure.
+const env = getEnv();
 
 const { db } = getDb();
 
@@ -38,7 +34,7 @@ const USERNAME_MAX_LENGTH = 30;
 // so concurrent first-signup requests can't both pass the check (Better
 // Auth runs hooks across async boundaries, which is what made the naive
 // `userCount() === 0` check racey).
-const ALLOW_SIGNUP = process.env.ALLOW_SIGNUP === "true";
+const ALLOW_SIGNUP = env.ALLOW_SIGNUP;
 const SIGNUP_LOCK_KEY = "signups_first_claimed";
 const ME_ADOPTION_KEY = "me_data_adopted";
 
@@ -164,6 +160,6 @@ export const auth = betterAuth({
     // every other plugin's response hooks have run.
     nextCookies(),
   ],
-  secret: process.env.BETTER_AUTH_SECRET,
-  baseURL: process.env.BETTER_AUTH_URL,
+  secret: env.BETTER_AUTH_SECRET,
+  baseURL: env.BETTER_AUTH_URL,
 });
