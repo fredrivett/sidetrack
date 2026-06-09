@@ -128,7 +128,8 @@ export function LoginForm({
           <button
             type="button"
             onClick={() => setMode("sign-in")}
-            className={`flex-1 rounded-md py-1 ${
+            disabled={pending}
+            className={`flex-1 rounded-md py-1 disabled:pointer-events-none disabled:opacity-50 ${
               mode === "sign-in" ? "bg-background shadow-sm" : "text-muted-foreground"
             }`}
           >
@@ -137,7 +138,8 @@ export function LoginForm({
           <button
             type="button"
             onClick={() => setMode("sign-up")}
-            className={`flex-1 rounded-md py-1 ${
+            disabled={pending}
+            className={`flex-1 rounded-md py-1 disabled:pointer-events-none disabled:opacity-50 ${
               mode === "sign-up" ? "bg-background shadow-sm" : "text-muted-foreground"
             }`}
           >
