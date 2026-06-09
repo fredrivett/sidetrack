@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { LoadingEllipsis } from "@/components/ui/loading-ellipsis";
 import { authClient, signIn, signUp } from "@/auth/client";
 import { sanitizeNext } from "@/lib/safe-next";
 import { USERNAME_MAX, USERNAME_MIN, validateUsername } from "@/lib/username";
@@ -126,7 +128,8 @@ export function LoginForm({
           <button
             type="button"
             onClick={() => setMode("sign-in")}
-            className={`flex-1 rounded-md py-1 ${
+            disabled={pending}
+            className={`flex-1 rounded-md py-1 disabled:pointer-events-none disabled:opacity-50 ${
               mode === "sign-in" ? "bg-background shadow-sm" : "text-muted-foreground"
             }`}
           >
@@ -135,7 +138,8 @@ export function LoginForm({
           <button
             type="button"
             onClick={() => setMode("sign-up")}
-            className={`flex-1 rounded-md py-1 ${
+            disabled={pending}
+            className={`flex-1 rounded-md py-1 disabled:pointer-events-none disabled:opacity-50 ${
               mode === "sign-up" ? "bg-background shadow-sm" : "text-muted-foreground"
             }`}
           >
@@ -207,7 +211,19 @@ export function LoginForm({
         disabled={pending || usernameBlocksSubmit}
         className="w-full"
       >
-        {pending ? "…" : mode === "sign-up" ? "Create account" : "Sign in"}
+        {pending ? (
+          <>
+            <Loader2 className="animate-spin" />
+            <span>
+              {mode === "sign-up" ? "Creating account" : "Signing in"}
+              <LoadingEllipsis />
+            </span>
+          </>
+        ) : mode === "sign-up" ? (
+          "Create account"
+        ) : (
+          "Sign in"
+        )}
       </Button>
     </form>
   );

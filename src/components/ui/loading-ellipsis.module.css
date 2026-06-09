@@ -1,0 +1,50 @@
+/* Tailwind v4: a CSS module is compiled in isolation, so `@apply` below can't
+   see core utilities (or theme tokens) unless we pull them in by reference.
+   `@reference` makes them available for `@apply` without emitting any CSS. */
+@reference "tailwindcss";
+
+@keyframes ellipsis-dot1 {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  25%,
+  75% {
+    opacity: 1;
+  }
+}
+@keyframes ellipsis-dot2 {
+  0%,
+  50%,
+  100% {
+    opacity: 0;
+  }
+  51%,
+  75% {
+    opacity: 1;
+  }
+}
+@keyframes ellipsis-dot3 {
+  0%,
+  74%,
+  100% {
+    opacity: 0;
+  }
+  75% {
+    opacity: 1;
+  }
+}
+
+.dot {
+  @apply relative inline-block opacity-0;
+}
+
+.animate-dot1 {
+  animation: ellipsis-dot1 2s steps(1, end) infinite;
+}
+.animate-dot2 {
+  animation: ellipsis-dot2 2s steps(1, end) infinite;
+}
+.animate-dot3 {
+  animation: ellipsis-dot3 2s steps(1, end) infinite;
+}
