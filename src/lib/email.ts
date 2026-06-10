@@ -21,8 +21,10 @@ export interface EmailDeps {
 
 /**
  * Pure-dependency core, exported for tests; app code uses
- * `sendPasswordResetEmail` below. Throws on a failed Resend call so the
- * caller's request fails loudly instead of silently dropping the email.
+ * `sendPasswordResetEmail` below. Throws on a failed Resend call — callers
+ * decide how loudly to surface that (the password-reset wiring logs it
+ * server-side only, since its HTTP response must stay identical whether or
+ * not the account exists).
  */
 export async function deliverPasswordResetEmail(
   { to, url }: { to: string; url: string },

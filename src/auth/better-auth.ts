@@ -121,9 +121,14 @@ export const auth = betterAuth({
     // Delivery is environment-dependent (Resend when configured, otherwise
     // the link is logged to the server console) — see src/lib/email.ts.
     // Better Auth answers "check your email" regardless of whether the
-    // address exists, so this only runs for real accounts.
+    // address exists, but this callback only runs for real accounts — so it
+    // is deliberately NOT awaited: awaiting would let response latency (or a
+    // failed send surfacing as a 500) reveal that the account exists.
+    // Failures are logged for the operator instead.
     sendResetPassword: async ({ user, url }) => {
-      await sendPasswordResetEmail({ to: user.email, url });
+      void sendPasswordResetEmail({ to: user.email, url }).catch((error) => {
+        console.error("[auth] failed to send password reset email:", error);
+      });
     },
     // A reset usually means the old password (and any session it opened) can
     // no longer be trusted; sign everything out so the new password is the

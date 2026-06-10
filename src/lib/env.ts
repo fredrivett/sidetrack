@@ -66,6 +66,17 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
+// Optional string where blank means unset: `EMAIL_FROM=" "` would otherwise
+// slip past the RESEND_API_KEY/EMAIL_FROM pairing check below and only fail
+// at send time.
+const optionalTrimmed = z
+  .string()
+  .optional()
+  .transform((value) => {
+    const trimmed = value?.trim();
+    return trimmed ? trimmed : undefined;
+  });
+
 function schemaFor(mode: EnvMode) {
   const enforce = enforcesProduction(mode);
   return z
@@ -75,8 +86,8 @@ function schemaFor(mode: EnvMode) {
       ALLOW_SIGNUP: z.string().optional(),
       DB_PATH: z.string().optional(),
       BACKUP_DIR: z.string().optional(),
-      RESEND_API_KEY: z.string().optional(),
-      EMAIL_FROM: z.string().optional(),
+      RESEND_API_KEY: optionalTrimmed,
+      EMAIL_FROM: optionalTrimmed,
     })
     .superRefine((env, ctx) => {
       if (enforce) {

@@ -99,6 +99,24 @@ describe("parseServerEnv", () => {
     expect(env.EMAIL_FROM).toBeUndefined();
   });
 
+  it("treats whitespace-only email vars as unset", () => {
+    // A blank EMAIL_FROM must still trip the pairing check…
+    expect(() =>
+      parseServerEnv(
+        { RESEND_API_KEY: "re_123", EMAIL_FROM: "   " },
+        { nodeEnv: "development", nextPhase: undefined },
+      ),
+    ).toThrow(/EMAIL_FROM is required/);
+
+    // …and a blank key means "not configured", not a garbage Bearer token.
+    const env = parseServerEnv(
+      { RESEND_API_KEY: "   ", EMAIL_FROM: "  Sidetrack <no-reply@sidetrack.it>  " },
+      { nodeEnv: "development", nextPhase: undefined },
+    );
+    expect(env.RESEND_API_KEY).toBeUndefined();
+    expect(env.EMAIL_FROM).toBe("Sidetrack <no-reply@sidetrack.it>");
+  });
+
   it("normalizes ALLOW_SIGNUP and applies path defaults", () => {
     const off = parseServerEnv({}, { nodeEnv: "test", nextPhase: undefined });
     expect(off.ALLOW_SIGNUP).toBe(false);
