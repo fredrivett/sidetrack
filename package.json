@@ -13,7 +13,8 @@
     "test:mutation": "stryker run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/core/migrate.ts",
-    "db:seed": "ALLOW_SIGNUP=true tsx scripts/seed.ts"
+    "db:seed": "ALLOW_SIGNUP=true tsx scripts/seed.ts",
+    "mailpit": "docker compose -f docker-compose.dev.yml up"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
@@ -31,6 +32,7 @@
     "lucide-react": "^1.16.0",
     "nanoid": "^5.1.11",
     "next": "16.2.6",
+    "nodemailer": "^8.0.10",
     "posthog-js": "^1.382.0",
     "posthog-node": "^5.36.3",
     "react": "19.2.4",
@@ -46,6 +48,7 @@
     "@tailwindcss/postcss": "^4",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20",
+    "@types/nodemailer": "^8.0.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "drizzle-kit": "^0.31.10",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deliverPasswordResetEmail } from "./email";
+import { deliverPasswordResetEmail, type OutboundEmail } from "./email";
 
 const RESET = { to: "fred@example.com", url: "https://s.example.com/reset" };
 
@@ -17,31 +17,104 @@ function fetchStub(response: Partial<Response>) {
   return { fn, calls };
 }
 
+function smtpStub() {
+  const calls: { smtpUrl: string; message: OutboundEmail }[] = [];
+  const fn = async (smtpUrl: string, message: OutboundEmail) => {
+    calls.push({ smtpUrl, message });
+  };
+  return { fn, calls };
+}
+
+const noEnv = {
+  SMTP_URL: undefined,
+  RESEND_API_KEY: undefined,
+  EMAIL_FROM: undefined,
+};
+
 describe("deliverPasswordResetEmail", () => {
-  it("logs the link (and sends nothing) when RESEND_API_KEY is unset", async () => {
+  it("logs the link (and sends nothing) when no transport is configured", async () => {
     const { fn, calls } = fetchStub({});
+    const smtp = smtpStub();
     const logged: string[] = [];
     await deliverPasswordResetEmail(RESET, {
-      env: { RESEND_API_KEY: undefined, EMAIL_FROM: undefined },
+      env: noEnv,
       fetchFn: fn,
       log: (m) => logged.push(m),
+      sendSmtp: smtp.fn,
     });
     expect(calls).toHaveLength(0);
+    expect(smtp.calls).toHaveLength(0);
     expect(logged).toHaveLength(1);
     expect(logged[0]).toContain(RESET.to);
     expect(logged[0]).toContain(RESET.url);
   });
 
-  it("posts to Resend with the configured key and from address", async () => {
+  it("sends over SMTP when SMTP_URL is set, defaulting the from address", async () => {
     const { fn, calls } = fetchStub({});
+    const smtp = smtpStub();
+    await deliverPasswordResetEmail(RESET, {
+      env: { ...noEnv, SMTP_URL: "smtp://localhost:1025" },
+      fetchFn: fn,
+      log: () => {},
+      sendSmtp: smtp.fn,
+    });
+    expect(calls).toHaveLength(0); // never touches Resend
+    expect(smtp.calls).toHaveLength(1);
+    expect(smtp.calls[0].smtpUrl).toBe("smtp://localhost:1025");
+    expect(smtp.calls[0].message.to).toBe(RESET.to);
+    expect(smtp.calls[0].message.from).toBe(
+      "Sidetrack <no-reply@sidetrack.local>",
+    );
+    expect(smtp.calls[0].message.text).toContain(RESET.url);
+  });
+
+  it("uses EMAIL_FROM over SMTP when one is provided", async () => {
+    const { fn } = fetchStub({});
+    const smtp = smtpStub();
     await deliverPasswordResetEmail(RESET, {
       env: {
+        ...noEnv,
+        SMTP_URL: "smtp://localhost:1025",
+        EMAIL_FROM: "Custom <hi@example.com>",
+      },
+      fetchFn: fn,
+      log: () => {},
+      sendSmtp: smtp.fn,
+    });
+    expect(smtp.calls[0].message.from).toBe("Custom <hi@example.com>");
+  });
+
+  it("prefers SMTP over Resend so a stray key can't leak real mail in dev", async () => {
+    const { fn, calls } = fetchStub({});
+    const smtp = smtpStub();
+    await deliverPasswordResetEmail(RESET, {
+      env: {
+        SMTP_URL: "smtp://localhost:1025",
         RESEND_API_KEY: "re_123",
         EMAIL_FROM: "Sidetrack <no-reply@sidetrack.it>",
       },
       fetchFn: fn,
       log: () => {},
+      sendSmtp: smtp.fn,
     });
+    expect(smtp.calls).toHaveLength(1);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("posts to Resend with the configured key and from address", async () => {
+    const { fn, calls } = fetchStub({});
+    const smtp = smtpStub();
+    await deliverPasswordResetEmail(RESET, {
+      env: {
+        SMTP_URL: undefined,
+        RESEND_API_KEY: "re_123",
+        EMAIL_FROM: "Sidetrack <no-reply@sidetrack.it>",
+      },
+      fetchFn: fn,
+      log: () => {},
+      sendSmtp: smtp.fn,
+    });
+    expect(smtp.calls).toHaveLength(0);
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toBe("https://api.resend.com/emails");
     expect(calls[0].init.headers).toMatchObject({
@@ -59,11 +132,13 @@ describe("deliverPasswordResetEmail", () => {
       status: 422,
       text: async () => "invalid from",
     });
+    const smtp = smtpStub();
     await expect(
       deliverPasswordResetEmail(RESET, {
-        env: { RESEND_API_KEY: "re_123", EMAIL_FROM: "bad" },
+        env: { SMTP_URL: undefined, RESEND_API_KEY: "re_123", EMAIL_FROM: "bad" },
         fetchFn: fn,
         log: () => {},
+        sendSmtp: smtp.fn,
       }),
     ).rejects.toThrow(/Resend rejected.*422.*invalid from/);
   });

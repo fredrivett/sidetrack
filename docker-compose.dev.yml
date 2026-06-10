@@ -1,0 +1,19 @@
+# Local-dev mail catcher. Not part of the deployment — `docker-compose.yml`
+# (root) is the production self-host stack. Start it with `pnpm mailpit`.
+#
+# A single shared catcher on fixed ports, intentionally NOT per-workspace: a
+# mail catcher is a passive sink with nothing workspace-specific about it, so
+# every Conductor workspace's dev server points at this one instance. In
+# development the app defaults SMTP_URL to smtp://localhost:1025 (see
+# src/lib/env.ts), so outbound mail is always captured here — nothing leaves
+# your machine — and visible in the web UI. The fixed ports also self-enforce
+# "only one": a second `pnpm mailpit` just fails on the port already being in
+# use, which is the correct outcome.
+services:
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: sidetrack-mailpit
+    restart: unless-stopped
+    ports:
+      - "8025:8025" # web UI → http://localhost:8025
+      - "1025:1025" # SMTP

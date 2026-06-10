@@ -118,8 +118,9 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     autoSignIn: true,
-    // Delivery is environment-dependent (Resend when configured, otherwise
-    // the link is logged to the server console) — see src/lib/email.ts.
+    // Delivery is environment-dependent (the local Mailpit catcher in dev,
+    // Resend when configured, otherwise the link is logged to the server
+    // console) — see src/lib/email.ts.
     // Better Auth answers "check your email" regardless of whether the
     // address exists, but this callback only runs for real accounts — so it
     // is deliberately NOT awaited: awaiting would let response latency (or a

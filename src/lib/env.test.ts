@@ -117,6 +117,78 @@ describe("parseServerEnv", () => {
     expect(env.EMAIL_FROM).toBe("Sidetrack <no-reply@sidetrack.it>");
   });
 
+  it("accepts a valid SMTP_URL without requiring EMAIL_FROM", () => {
+    const env = parseServerEnv(
+      { SMTP_URL: "smtp://localhost:1025" },
+      { nodeEnv: "development", nextPhase: undefined },
+    );
+    expect(env.SMTP_URL).toBe("smtp://localhost:1025");
+    expect(env.EMAIL_FROM).toBeUndefined();
+  });
+
+  it("rejects a malformed SMTP_URL in any mode", () => {
+    expect(() =>
+      parseServerEnv(
+        { SMTP_URL: "localhost:1025" },
+        { nodeEnv: "development", nextPhase: undefined },
+      ),
+    ).toThrow(/smtp\(s\):\/\/ URL/);
+    // http(s) is the wrong scheme for SMTP
+    expect(() =>
+      parseServerEnv(
+        { SMTP_URL: "http://localhost:1025" },
+        { nodeEnv: "development", nextPhase: undefined },
+      ),
+    ).toThrow(/smtp\(s\):\/\/ URL/);
+  });
+
+  it("treats a whitespace-only SMTP_URL as unset", () => {
+    // Use test mode so the development default (below) doesn't fill it back in.
+    const env = parseServerEnv(
+      { SMTP_URL: "   " },
+      { nodeEnv: "test", nextPhase: undefined },
+    );
+    expect(env.SMTP_URL).toBeUndefined();
+  });
+
+  it("defaults SMTP_URL to the local catcher in development", () => {
+    const env = parseServerEnv(
+      {},
+      { nodeEnv: "development", nextPhase: undefined },
+    );
+    expect(env.SMTP_URL).toBe("smtp://localhost:1025");
+  });
+
+  it("does not default SMTP_URL outside development", () => {
+    for (const nodeEnv of ["production", "test"]) {
+      const env = parseServerEnv(
+        { BETTER_AUTH_SECRET: GOOD_SECRET, BETTER_AUTH_URL: GOOD_URL },
+        { nodeEnv, nextPhase: undefined },
+      );
+      expect(env.SMTP_URL).toBeUndefined();
+    }
+  });
+
+  it("lets RESEND_API_KEY opt a dev box out of the catcher default", () => {
+    const env = parseServerEnv(
+      {
+        RESEND_API_KEY: "re_123",
+        EMAIL_FROM: "Sidetrack <no-reply@sidetrack.it>",
+      },
+      { nodeEnv: "development", nextPhase: undefined },
+    );
+    expect(env.SMTP_URL).toBeUndefined();
+    expect(env.RESEND_API_KEY).toBe("re_123");
+  });
+
+  it("lets an explicit SMTP_URL override the development default", () => {
+    const env = parseServerEnv(
+      { SMTP_URL: "smtp://localhost:2525" },
+      { nodeEnv: "development", nextPhase: undefined },
+    );
+    expect(env.SMTP_URL).toBe("smtp://localhost:2525");
+  });
+
   it("normalizes ALLOW_SIGNUP and applies path defaults", () => {
     const off = parseServerEnv({}, { nodeEnv: "test", nextPhase: undefined });
     expect(off.ALLOW_SIGNUP).toBe(false);

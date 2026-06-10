@@ -30,6 +30,17 @@ const URL_INVALID_MESSAGE =
 const EMAIL_FROM_MESSAGE =
   "EMAIL_FROM is required when RESEND_API_KEY is set. Resend rejects sends " +
   'without a verified from address (e.g. "Sidetrack <no-reply@sidetrack.it>").';
+const SMTP_URL_MESSAGE =
+  "SMTP_URL must be an smtp(s):// URL (e.g. smtp://localhost:1025 for a local " +
+  "mail catcher like Mailpit).";
+
+// In development, outbound mail always goes to the local Mailpit catcher
+// (`pnpm mailpit`) rather than out to a real provider — so a dev box can never
+// send live email, and resets are viewable in Mailpit's web UI. This is the
+// default when neither SMTP_URL nor RESEND_API_KEY is set explicitly; set
+// RESEND_API_KEY locally to opt into real sends, or SMTP_URL to point at a
+// different catcher. Matches the fixed port in docker-compose.dev.yml.
+const DEV_SMTP_URL = "smtp://localhost:1025";
 
 export interface EnvMode {
   nodeEnv: string | undefined;
@@ -44,8 +55,10 @@ export interface ServerEnv {
   ALLOW_SIGNUP: boolean;
   DB_PATH: string;
   BACKUP_DIR: string;
-  // Email delivery (password resets). Unset → links are logged to the server
-  // console instead, the self-hosted fallback.
+  // Email delivery (password resets). With none set, links are logged to the
+  // server console — the self-hosted fallback. SMTP_URL points at a mail
+  // catcher (Mailpit) for local dev and takes precedence over Resend.
+  SMTP_URL: string | undefined;
   RESEND_API_KEY: string | undefined;
   EMAIL_FROM: string | undefined;
 }
@@ -61,6 +74,15 @@ function isHttpUrl(value: string): boolean {
   try {
     const url = new URL(value);
     return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function isSmtpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "smtp:" || url.protocol === "smtps:";
   } catch {
     return false;
   }
@@ -86,6 +108,7 @@ function schemaFor(mode: EnvMode) {
       ALLOW_SIGNUP: z.string().optional(),
       DB_PATH: z.string().optional(),
       BACKUP_DIR: z.string().optional(),
+      SMTP_URL: optionalTrimmed,
       RESEND_API_KEY: optionalTrimmed,
       EMAIL_FROM: optionalTrimmed,
     })
@@ -127,6 +150,15 @@ function schemaFor(mode: EnvMode) {
           message: EMAIL_FROM_MESSAGE,
         });
       }
+      // A malformed SMTP_URL would only blow up at send time, so reject it up
+      // front. EMAIL_FROM is NOT required here — the SMTP/dev path defaults it.
+      if (env.SMTP_URL && !isSmtpUrl(env.SMTP_URL)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["SMTP_URL"],
+          message: SMTP_URL_MESSAGE,
+        });
+      }
     })
     .transform((env) => ({
       BETTER_AUTH_SECRET: env.BETTER_AUTH_SECRET,
@@ -134,6 +166,13 @@ function schemaFor(mode: EnvMode) {
       ALLOW_SIGNUP: env.ALLOW_SIGNUP === "true",
       DB_PATH: env.DB_PATH ?? "./data/sidetrack.db",
       BACKUP_DIR: env.BACKUP_DIR ?? "./data/backups",
+      // Development with no explicit mail config → the local Mailpit catcher.
+      // An explicit SMTP_URL or RESEND_API_KEY (real sends) opts out.
+      SMTP_URL:
+        env.SMTP_URL ??
+        (mode.nodeEnv === "development" && !env.RESEND_API_KEY
+          ? DEV_SMTP_URL
+          : undefined),
       RESEND_API_KEY: env.RESEND_API_KEY,
       EMAIL_FROM: env.EMAIL_FROM,
     }));
