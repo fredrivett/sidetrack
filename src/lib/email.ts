@@ -108,6 +108,18 @@ export async function deliverPasswordResetEmail(
   }
 }
 
+// Drop any embedded credentials (smtp://user:pass@host) before a URL reaches
+// a log line, keeping only scheme + host:port for diagnostics. Falls back to a
+// generic label if the value somehow doesn't parse as a URL.
+export function redactSmtpUrl(smtpUrl: string): string {
+  try {
+    const { protocol, host } = new URL(smtpUrl);
+    return `${protocol}//${host}`;
+  } catch {
+    return "the configured SMTP server";
+  }
+}
+
 // Memoized transport: nodemailer pools connections, so reusing one transport
 // across sends avoids reconnecting to the catcher on every password reset.
 let smtpTransport: { url: string; transport: nodemailer.Transporter } | null =
@@ -129,7 +141,7 @@ async function sendViaSmtp(
     const code = (cause as { code?: string })?.code;
     if (code === "ECONNREFUSED" || code === "ESOCKET") {
       throw new Error(
-        `Could not reach the SMTP mail catcher at ${smtpUrl}. ` +
+        `Could not reach the SMTP mail catcher at ${redactSmtpUrl(smtpUrl)}. ` +
           "Is it running? Start it with `pnpm mailpit`.",
         { cause },
       );

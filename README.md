@@ -162,11 +162,11 @@ After changing the schema in `src/core/schema.ts`, generate a migration with
 
 ### Email in development
 
-In development, outbound mail (e.g. password resets) always goes to a local
+By default, development sends outbound mail (e.g. password resets) to a local
 [Mailpit](https://mailpit.axllent.org) mail catcher rather than a real
-provider — so a dev box can never send live email, and you can read the
-rendered messages in a web UI. Start it (requires Docker) before you trigger a
-send:
+provider — so a dev box won't send live email unless you opt in, and you can
+read the rendered messages in a web UI. Start it (requires Docker) before you
+trigger a send:
 
 ```bash
 pnpm mailpit   # web UI at http://localhost:8025

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { deliverPasswordResetEmail, type OutboundEmail } from "./email";
+import {
+  deliverPasswordResetEmail,
+  redactSmtpUrl,
+  type OutboundEmail,
+} from "./email";
 
 const RESET = { to: "fred@example.com", url: "https://s.example.com/reset" };
 
@@ -141,5 +145,22 @@ describe("deliverPasswordResetEmail", () => {
         sendSmtp: smtp.fn,
       }),
     ).rejects.toThrow(/Resend rejected.*422.*invalid from/);
+  });
+});
+
+describe("redactSmtpUrl", () => {
+  it("keeps scheme and host:port", () => {
+    expect(redactSmtpUrl("smtp://localhost:1025")).toBe("smtp://localhost:1025");
+  });
+
+  it("strips embedded credentials so they can't leak into logs", () => {
+    const redacted = redactSmtpUrl("smtp://user:s3cret@mail.example.com:587");
+    expect(redacted).toBe("smtp://mail.example.com:587");
+    expect(redacted).not.toContain("s3cret");
+    expect(redacted).not.toContain("user");
+  });
+
+  it("falls back to a generic label when the value isn't a URL", () => {
+    expect(redactSmtpUrl("not a url")).toBe("the configured SMTP server");
   });
 });
