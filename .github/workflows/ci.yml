@@ -38,6 +38,22 @@ jobs:
       - name: Test
         run: pnpm test
 
+      # Run the seed end-to-end against a throwaway DB so schema/gate drift
+      # (e.g. a new required column, or a change to the signup gate) fails the
+      # build here rather than silently in a worktree/preview setup. The seed
+      # exits non-zero on any error; the row check guards against it skipping
+      # silently (e.g. an inverted "fresh DB" guard).
+      - name: Seed smoke test
+        env:
+          DB_PATH: /tmp/seed-ci.db
+          SIDETRACK_SEED: "true"
+          BETTER_AUTH_SECRET: ci-seed-smoke-test-secret-0123456789abcdef
+        run: |
+          pnpm db:migrate
+          pnpm db:seed
+          count=$(sqlite3 "$DB_PATH" "SELECT count(*) FROM users;")
+          [ "$count" -ge 2 ] || { echo "seed smoke test: expected >= 2 users, got $count"; exit 1; }
+
   security:
     name: semgrep (owasp top ten)
     runs-on: ubuntu-latest
