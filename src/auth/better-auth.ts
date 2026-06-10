@@ -7,6 +7,7 @@ import { username } from "better-auth/plugins";
 import { users as authUsers } from "@/core/auth-schema";
 import { getDb } from "@/core/db";
 import { auditLog, meta, projects } from "@/core/schema";
+import { sendPasswordResetEmail } from "@/lib/email";
 import { getEnv } from "@/lib/env";
 import { isReservedUsername, USERNAME_RE } from "@/lib/username";
 
@@ -117,6 +118,22 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     autoSignIn: true,
+    // Delivery is environment-dependent (Resend when configured, otherwise
+    // the link is logged to the server console) — see src/lib/email.ts.
+    // Better Auth answers "check your email" regardless of whether the
+    // address exists, but this callback only runs for real accounts — so it
+    // is deliberately NOT awaited: awaiting would let response latency (or a
+    // failed send surfacing as a 500) reveal that the account exists.
+    // Failures are logged for the operator instead.
+    sendResetPassword: async ({ user, url }) => {
+      void sendPasswordResetEmail({ to: user.email, url }).catch((error) => {
+        console.error("[auth] failed to send password reset email:", error);
+      });
+    },
+    // A reset usually means the old password (and any session it opened) can
+    // no longer be trusted; sign everything out so the new password is the
+    // only way in.
+    revokeSessionsOnPasswordReset: true,
   },
   databaseHooks: {
     user: {

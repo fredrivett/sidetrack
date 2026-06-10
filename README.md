@@ -62,6 +62,15 @@ the data paths to `/data`, so self-hosters can ignore those:
 | `DB_PATH` | `./data/sidetrack.db` | SQLite database path |
 | `BACKUP_DIR` | `./data/backups` | Where periodic backups are written |
 
+**Optional** — outbound email, used for password resets. With no key set,
+reset links are printed to the server console instead (run `docker compose
+logs` / check your process output and pass the link to the user):
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `RESEND_API_KEY` | unset | [Resend](https://resend.com) API key. Set it to deliver password reset emails |
+| `EMAIL_FROM` | unset | From address for outbound email, e.g. `Sidetrack <no-reply@your-domain.com>`. Required when `RESEND_API_KEY` is set; the domain must be verified in Resend |
+
 In Docker, `/data` is mounted as a persistent volume. Any host with a
 persistent filesystem works (e.g. a VPS or Railway); SQLite rules out serverless
 platforms without durable disk.
