@@ -62,7 +62,7 @@ the data paths to `/data`, so self-hosters can ignore those:
 | `DB_PATH` | `./data/sidetrack.db` | SQLite database path |
 | `BACKUP_DIR` | `./data/backups` | Where periodic backups are written |
 
-**Optional** — outbound email, used for password resets. With no key set,
+**Optional** — outbound email, used for password resets. With nothing set,
 reset links are printed to the server console instead (run `docker compose
 logs` / check your process output and pass the link to the user):
 
@@ -70,6 +70,7 @@ logs` / check your process output and pass the link to the user):
 | --- | --- | --- |
 | `RESEND_API_KEY` | unset | [Resend](https://resend.com) API key. Set it to deliver password reset emails |
 | `EMAIL_FROM` | unset | From address for outbound email, e.g. `Sidetrack <no-reply@your-domain.com>`. Required when `RESEND_API_KEY` is set; the domain must be verified in Resend |
+| `SMTP_URL` | unset (auto in dev) | Send over SMTP instead of Resend, e.g. `smtp://localhost:1025`. Takes precedence over `RESEND_API_KEY`. In development it defaults to a local mail catcher — see [Development](#development) |
 
 In Docker, `/data` is mounted as a persistent volume. Any host with a
 persistent filesystem works (e.g. a VPS or Railway); SQLite rules out serverless
@@ -159,9 +160,30 @@ SIDETRACK_SEED=true pnpm db:seed   # then log in as demo@sidetrack.local / sidet
 After changing the schema in `src/core/schema.ts`, generate a migration with
 `pnpm db:generate` (it's then applied on the next startup).
 
+### Email in development
+
+By default, development sends outbound mail (e.g. password resets) to a local
+[Mailpit](https://mailpit.axllent.org) mail catcher rather than a real
+provider — so a dev box won't send live email unless you opt in, and you can
+read the rendered messages in a web UI. Start it (requires Docker) before you
+trigger a send:
+
+```bash
+pnpm mailpit   # web UI at http://localhost:8025
+```
+
+It's a single shared catcher on fixed ports — one instance serves every
+Conductor workspace, so there's nothing per-workspace to configure. The app
+defaults to `smtp://localhost:1025` in development automatically; no env var
+needed. **If Mailpit isn't running, sends fail** (the server logs a message
+pointing you back here) — that's the cost of guaranteeing dev never sends real
+mail. To opt a dev box out and send for real, set `RESEND_API_KEY` (and
+`EMAIL_FROM`); to point at a different catcher, set `SMTP_URL` explicitly.
+
 | Command | Description |
 | --- | --- |
 | `pnpm dev` | Start the development server |
+| `pnpm mailpit` | Start a local Mailpit mail catcher for outbound email |
 | `pnpm build` | Production build |
 | `pnpm start` | Serve the production build |
 | `pnpm lint` | Run ESLint |
