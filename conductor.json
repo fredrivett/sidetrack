@@ -1,8 +1,0 @@
-{
-  "scripts": {
-    "setup": "pnpm install\nln -sfn \"$CONDUCTOR_ROOT_PATH/.env.local\" .env.local\nmkdir -p data\npnpm db:migrate\nSIDETRACK_SEED=true pnpm db:seed",
-    "run": "pnpm dev --port \"$CONDUCTOR_PORT\"",
-    "archive": ""
-  },
-  "runScriptMode": "concurrent"
-}
