@@ -19,6 +19,13 @@ This version has breaking changes — APIs, conventions, and file structure may 
   unless `SIDETRACK_SEED=true` and the DB has no users. Ephemeral envs only
   (local, previews) — never production/staging.
 
+# Deployment
+
+Deployed on **Railway**, not Vercel — built from the root `Dockerfile`.
+Environment variables (`ALLOW_SIGNUP`, `POSTHOG_*`, `BETTER_AUTH_*`, etc.) are
+managed in the Railway dashboard, not via `vercel env`. Ignore Vercel-specific
+tooling/config suggestions; there is no Vercel project.
+
 # Project structure
 
 - `src/core/` — domain layer (DB, items, projects, audit, fractional indexing). Pure, no React/Next/MCP imports. See `src/core/AGENTS.md`.
