@@ -1,0 +1,11 @@
+"$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
+
+[scripts]
+setup = """
+pnpm install
+ln -sfn "$CONDUCTOR_ROOT_PATH/.env.local" .env.local
+mkdir -p data
+pnpm db:migrate
+SIDETRACK_SEED=true pnpm db:seed"""
+run = "pnpm dev --port \"$CONDUCTOR_PORT\""
+run_mode = "concurrent"
