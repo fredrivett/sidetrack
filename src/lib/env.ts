@@ -27,6 +27,9 @@ const URL_MISSING_MESSAGE =
   "the public URL you serve from (e.g. https://app.example.com).";
 const URL_INVALID_MESSAGE =
   "BETTER_AUTH_URL must be an absolute http(s) URL (e.g. https://app.example.com).";
+const EMAIL_FROM_MESSAGE =
+  "EMAIL_FROM is required when RESEND_API_KEY is set. Resend rejects sends " +
+  'without a verified from address (e.g. "Sidetrack <no-reply@sidetrack.it>").';
 
 export interface EnvMode {
   nodeEnv: string | undefined;
@@ -41,6 +44,10 @@ export interface ServerEnv {
   ALLOW_SIGNUP: boolean;
   DB_PATH: string;
   BACKUP_DIR: string;
+  // Email delivery (password resets). Unset → links are logged to the server
+  // console instead, the self-hosted fallback.
+  RESEND_API_KEY: string | undefined;
+  EMAIL_FROM: string | undefined;
 }
 
 // Production-required vars are enforced only when actually running in
@@ -68,6 +75,8 @@ function schemaFor(mode: EnvMode) {
       ALLOW_SIGNUP: z.string().optional(),
       DB_PATH: z.string().optional(),
       BACKUP_DIR: z.string().optional(),
+      RESEND_API_KEY: z.string().optional(),
+      EMAIL_FROM: z.string().optional(),
     })
     .superRefine((env, ctx) => {
       if (enforce) {
@@ -98,6 +107,15 @@ function schemaFor(mode: EnvMode) {
           message: URL_INVALID_MESSAGE,
         });
       }
+      // Setting the Resend key signals intent to send real email, so an
+      // unusable from address is a misconfiguration in every mode.
+      if (env.RESEND_API_KEY && !env.EMAIL_FROM) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["EMAIL_FROM"],
+          message: EMAIL_FROM_MESSAGE,
+        });
+      }
     })
     .transform((env) => ({
       BETTER_AUTH_SECRET: env.BETTER_AUTH_SECRET,
@@ -105,6 +123,8 @@ function schemaFor(mode: EnvMode) {
       ALLOW_SIGNUP: env.ALLOW_SIGNUP === "true",
       DB_PATH: env.DB_PATH ?? "./data/sidetrack.db",
       BACKUP_DIR: env.BACKUP_DIR ?? "./data/backups",
+      RESEND_API_KEY: env.RESEND_API_KEY,
+      EMAIL_FROM: env.EMAIL_FROM,
     }));
 }
 

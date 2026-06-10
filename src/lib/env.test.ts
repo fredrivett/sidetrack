@@ -69,6 +69,36 @@ describe("parseServerEnv", () => {
     ).not.toThrow();
   });
 
+  it("requires EMAIL_FROM whenever RESEND_API_KEY is set, in any mode", () => {
+    expect(() =>
+      parseServerEnv(
+        { RESEND_API_KEY: "re_123" },
+        { nodeEnv: "development", nextPhase: undefined },
+      ),
+    ).toThrow(/EMAIL_FROM is required/);
+
+    const env = parseServerEnv(
+      {
+        BETTER_AUTH_SECRET: GOOD_SECRET,
+        BETTER_AUTH_URL: GOOD_URL,
+        RESEND_API_KEY: "re_123",
+        EMAIL_FROM: "Sidetrack <no-reply@sidetrack.it>",
+      },
+      PROD,
+    );
+    expect(env.RESEND_API_KEY).toBe("re_123");
+    expect(env.EMAIL_FROM).toBe("Sidetrack <no-reply@sidetrack.it>");
+  });
+
+  it("treats email vars as optional (console fallback)", () => {
+    const env = parseServerEnv(
+      { BETTER_AUTH_SECRET: GOOD_SECRET, BETTER_AUTH_URL: GOOD_URL },
+      PROD,
+    );
+    expect(env.RESEND_API_KEY).toBeUndefined();
+    expect(env.EMAIL_FROM).toBeUndefined();
+  });
+
   it("normalizes ALLOW_SIGNUP and applies path defaults", () => {
     const off = parseServerEnv({}, { nodeEnv: "test", nextPhase: undefined });
     expect(off.ALLOW_SIGNUP).toBe(false);

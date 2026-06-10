@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -205,6 +206,16 @@ export function LoginForm({
         required
         minLength={8}
       />
+      {mode === "sign-in" && (
+        <p className="text-right text-xs">
+          <Link
+            href="/forgot-password"
+            className="text-muted-foreground hover:text-foreground hover:underline"
+          >
+            Forgot password?
+          </Link>
+        </p>
+      )}
       {error && <p className="text-sm text-destructive">{error}</p>}
       <Button
         type="submit"

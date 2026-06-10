@@ -13,9 +13,13 @@ export function proxy(request: NextRequest) {
   // per-user API key and returns 401 if missing or unknown.
   if (pathname.startsWith("/mcp")) return NextResponse.next();
 
+  // Password reset pages must work signed-out: /forgot-password requests the
+  // email, /reset-password is where the emailed link lands (with ?token=).
   if (
     pathname === "/login" ||
     pathname.startsWith("/login/") ||
+    pathname === "/forgot-password" ||
+    pathname === "/reset-password" ||
     pathname.startsWith("/api/auth/")
   ) {
     return NextResponse.next();

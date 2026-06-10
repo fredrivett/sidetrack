@@ -60,11 +60,14 @@ const eslintConfig = defineConfig([
   // Operational CLI entrypoints log progress to the console by design.
   // better-auth.ts logs once when the first user adopts legacy 'me' data —
   // a one-time data migration the operator should see in the logs.
+  // email.ts logs password-reset links when no email provider is configured —
+  // the self-hosted delivery channel, not leftover debugging.
   {
     files: [
       "src/core/backup.ts",
       "src/core/migrate.ts",
       "src/auth/better-auth.ts",
+      "src/lib/email.ts",
       "scripts/**/*.ts",
     ],
     rules: { "no-console": "off" },
