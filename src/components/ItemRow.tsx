@@ -8,22 +8,16 @@ import {
   completeItemAction,
   deleteItemAction,
   uncompleteItemAction,
-  updateItemAction,
 } from "@/app/actions";
 import type { Item, ItemPrLink } from "@/core/schema";
+import { prLabel } from "@/lib/pr";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { EditableText } from "./EditableText";
-
-function prLabel(url: string): string {
-  const m = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
-  if (m) return `${m[1]}/${m[2]}#${m[3]}`;
-  return url;
-}
+import { ItemDetailSheet } from "./ItemDetailSheet";
 
 export function ItemRow({
   item,
@@ -39,6 +33,7 @@ export function ItemRow({
     sortable;
   const [pending, start] = useTransition();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
   const completed = item.completedAt !== null;
 
   const style = {
@@ -85,33 +80,29 @@ export function ItemRow({
       />
 
       <div className="min-w-0 flex-1 space-y-0.5">
-        <EditableText
-          value={item.title}
-          onSave={(next) => updateItemAction(item.id, { title: next })}
-          className={`block w-full break-words text-sm ${
-            completed ? "text-neutral-400 line-through" : ""
-          } ${item.kind === "milestone" ? "font-medium" : ""}`}
-          inputClassName="w-full text-sm"
-        />
-        <EditableText
-          value={item.description ?? ""}
-          onSave={(next) =>
-            updateItemAction(item.id, { description: next || null })
-          }
-          multiline
-          placeholder="Add description…"
-          className={`block w-full whitespace-pre-wrap break-words text-xs ${
-            item.description
-              ? "text-neutral-500 dark:text-neutral-400"
-              : "hidden text-neutral-400 group-hover:block"
-          }`}
-          inputClassName="w-full text-xs"
-        />
-        {item.category && (
-          <span className="inline-block rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-neutral-500 dark:bg-neutral-800">
-            {item.category}
+        <button
+          type="button"
+          onClick={() => setDetailOpen(true)}
+          className="block w-full space-y-0.5 text-left"
+        >
+          <span
+            className={`block w-full break-words text-sm ${
+              completed ? "text-neutral-400 line-through" : ""
+            } ${item.kind === "milestone" ? "font-medium" : ""}`}
+          >
+            {item.title}
           </span>
-        )}
+          {item.description && (
+            <span className="block w-full whitespace-pre-wrap break-words text-xs text-neutral-500 dark:text-neutral-400">
+              {item.description}
+            </span>
+          )}
+          {item.category && (
+            <span className="inline-block rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-neutral-500 dark:bg-neutral-800">
+              {item.category}
+            </span>
+          )}
+        </button>
         {prLinks.length > 0 && (
           <div className="flex flex-wrap gap-1 pt-0.5">
             {prLinks.map((link) => (
@@ -159,6 +150,13 @@ export function ItemRow({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <ItemDetailSheet
+        item={item}
+        prLinks={prLinks}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+      />
     </div>
   );
 }
