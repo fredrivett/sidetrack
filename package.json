@@ -13,7 +13,7 @@
     "test:mutation": "stryker run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/core/migrate.ts",
-    "db:seed": "tsx scripts/seed.ts"
+    "db:seed": "ALLOW_SIGNUP=true tsx scripts/seed.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

@@ -37,6 +37,7 @@ interface SeedProject {
 }
 interface SeedUser {
   email: string;
+  username: string;
   name: string;
   projects: SeedProject[];
 }
@@ -46,6 +47,7 @@ function plan(): SeedUser[] {
   return [
     {
       email: primaryEmail,
+      username: "demo",
       name: "Demo User",
       projects: [
         {
@@ -77,6 +79,7 @@ function plan(): SeedUser[] {
     },
     {
       email: "alex@sidetrack.local",
+      username: "alex",
       name: "Alex Rivera",
       projects: [
         {
@@ -120,17 +123,16 @@ async function seed() {
   }
 
   // The signup gate locks after the first user, which would reject the second
-  // demo signup. Open it for the seed run only. Must be set before
-  // better-auth.ts is imported (it reads ALLOW_SIGNUP at module load), hence
-  // the dynamic import below.
-  process.env.ALLOW_SIGNUP = "true";
+  // demo signup, so `pnpm db:seed` runs with ALLOW_SIGNUP=true (baked into the
+  // npm script — it must be in the process env before @/lib/env reads it).
+  // Imported after migrations so better-auth's boot-time work sees the schema.
   const { auth } = await import("@/auth/better-auth");
 
   const password = process.env.SEED_PASSWORD ?? "sidetrack-demo";
 
   for (const u of plan()) {
     const { user } = await auth.api.signUpEmail({
-      body: { email: u.email, password, name: u.name },
+      body: { email: u.email, password, name: u.name, username: u.username },
     });
     for (const proj of u.projects) {
       const project = createProject(
