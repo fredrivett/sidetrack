@@ -14,11 +14,13 @@ import { projectMembers } from "./schema";
 
 type Db = ReturnType<typeof createTestDb>["db"];
 
-// Insert a membership row directly. There is no addMember core fn yet (that's
-// the next step); this exercises the hasProjectAccess seam on its own.
+// Insert an *accepted* membership row directly, exercising the
+// hasProjectAccess seam without going through the invite/accept flow (covered
+// in members.test.ts). Pending rows grant no access, so accepted is the
+// relevant state here.
 function addMember(db: Db, projectId: string, userId: string) {
   db.insert(projectMembers)
-    .values({ id: nanoid(12), projectId, userId })
+    .values({ id: nanoid(12), projectId, userId, status: "accepted" })
     .run();
 }
 

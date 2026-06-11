@@ -40,8 +40,15 @@ export const AUDIT_ENTITIES = [
   "item",
   "category",
   "api_key",
+  "member",
 ] as const;
 export type AuditEntity = (typeof AUDIT_ENTITIES)[number];
+
+// A membership starts `pending` (an invite the target hasn't answered) and
+// becomes `accepted` once they accept. Only `accepted` rows grant access —
+// see hasProjectAccess. Declining/removing deletes the row outright.
+export const MEMBERSHIP_STATUSES = ["pending", "accepted"] as const;
+export type MembershipStatus = (typeof MEMBERSHIP_STATUSES)[number];
 
 export const projects = sqliteTable(
   "projects",
@@ -79,6 +86,8 @@ export const projects = sqliteTable(
 // one); this table holds the additional editors (zero or more). There is no
 // role column — every member has the same read+edit access as the owner,
 // except for owner-only actions (delete, prefix change, managing members).
+// `status` is the invite lifecycle: a row is `pending` until the target
+// accepts, and only `accepted` rows grant access (see hasProjectAccess).
 // Cascades on project delete; deliberately NO foreign key on user_id, matching
 // projects.user_id / audit_log.actor — a deleted user must not break the
 // project for its other members.
@@ -90,6 +99,10 @@ export const projectMembers = sqliteTable(
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
     userId: text("user_id").notNull(),
+    status: text("status")
+      .$type<MembershipStatus>()
+      .notNull()
+      .default("pending"),
     createdAt: integer("created_at")
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
