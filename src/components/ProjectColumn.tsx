@@ -75,6 +75,7 @@ export function ProjectColumn({
             onOpenDetail={detail.openDetail}
           />
           <ItemList
+            projectId={project.id}
             items={active}
             prLinksByItem={prLinksByItem}
             onOpenDetail={detail.openDetail}
