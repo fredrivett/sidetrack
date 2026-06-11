@@ -45,6 +45,10 @@ export function ItemRow({
   const completed = item.completedAt !== null;
   const ref = formatItemRef(prefix, item.number);
 
+  const firstLine = item.description?.split("\n", 1)[0] ?? "";
+  const descriptionHasMore =
+    item.description != null && item.description.length > firstLine.length;
+
   async function copyId() {
     if (!navigator.clipboard) return;
     try {
@@ -112,8 +116,9 @@ export function ItemRow({
             {item.title}
           </span>
           {item.description && (
-            <span className="block w-full whitespace-pre-wrap break-words text-xs text-neutral-500 dark:text-neutral-400">
-              {item.description}
+            <span className="block w-full truncate text-xs text-neutral-500 dark:text-neutral-400">
+              {firstLine}
+              {descriptionHasMore && "…"}
             </span>
           )}
           {item.category && <CategoryBadge category={item.category} />}
