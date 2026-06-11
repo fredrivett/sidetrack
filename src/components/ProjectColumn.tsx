@@ -1,8 +1,7 @@
 "use client";
 
 import { updateProjectAction } from "@/app/actions";
-import type { Category, Item, ItemPrLink, Project } from "@/core/schema";
-import { AddItemForm } from "./AddItemForm";
+import type { Item, ItemPrLink, Project } from "@/core/schema";
 import { CompletedSection } from "./CompletedSection";
 import { EditableText } from "./EditableText";
 import { ItemDetailSheet } from "./ItemDetailSheet";
@@ -15,19 +14,19 @@ import { useItemDetailSheet } from "./use-item-detail-sheet";
 export function ProjectColumn({
   project,
   items,
-  categories,
   prLinksByItem,
   prevId,
   nextId,
   onShowActivity,
+  onAddItem,
 }: {
   project: Project;
   items: Item[];
-  categories: Category[];
   prLinksByItem: Record<string, ItemPrLink[]>;
   prevId: string | null;
   nextId: string | null;
   onShowActivity: (projectId: string) => void;
+  onAddItem: (projectId: string) => void;
 }) {
   const completed = items.filter((i) => i.completedAt !== null);
   const active = items.filter((i) => i.completedAt === null);
@@ -59,6 +58,7 @@ export function ProjectColumn({
           nextId={nextId}
           name={project.name}
           onShowActivity={onShowActivity}
+          onAddItem={onAddItem}
         />
       </header>
 
@@ -82,10 +82,6 @@ export function ProjectColumn({
             onOpenDetail={detail.openDetail}
           />
         </div>
-      </div>
-
-      <div className="shrink-0">
-        <AddItemForm projectId={project.id} categories={categories} />
       </div>
 
       {detail.item && (

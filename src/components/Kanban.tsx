@@ -1,11 +1,20 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Category, Item, ItemPrLink, Project } from "@/core/schema";
+import { isEditableTarget, matchesShortcut } from "@/lib/keyboard";
 import { AddProjectButton } from "./AddProjectButton";
 import { AuditDrawer } from "./AuditDrawer";
+import { NewItemSheet } from "./NewItemSheet";
+import { NewProjectSheet } from "./NewProjectSheet";
 import { ProjectColumn } from "./ProjectColumn";
 import { UserMenu } from "./UserMenu";
+
+/** The project currently centred in the rail, tracked in `?p=<id>`. */
+function centredProjectId(): string | null {
+  if (typeof window === "undefined") return null;
+  return new URLSearchParams(window.location.search).get("p");
+}
 
 export function Kanban({
   projects,
@@ -23,6 +32,45 @@ export function Kanban({
   const [audit, setAudit] = useState<{ open: boolean; projectId?: string }>({
     open: false,
   });
+  const [newItem, setNewItem] = useState<{
+    open: boolean;
+    projectId: string | null;
+  }>({ open: false, projectId: null });
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
+
+  // Open the new-item sheet, seeding its project from the caller, falling back
+  // to the centred column then the first project. With no projects at all,
+  // there's nowhere to add an item — start a project instead.
+  const openNewItem = useCallback(
+    (projectId?: string) => {
+      if (projects.length === 0) {
+        setNewProjectOpen(true);
+        return;
+      }
+      const pid = projectId ?? centredProjectId() ?? projects[0].id;
+      setNewItem({ open: true, projectId: pid });
+    },
+    [projects],
+  );
+
+  // Global shortcuts (Linear-style bare keys): C → new item, ⇧C → new project.
+  // Skipped while typing in a field, and when a command modifier is held so we
+  // don't shadow ⌘C / Ctrl+C copy.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (isEditableTarget(e.target)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (matchesShortcut(e, { key: "c", shift: true })) {
+        e.preventDefault();
+        setNewProjectOpen(true);
+      } else if (matchesShortcut(e, { key: "c", shift: false })) {
+        e.preventDefault();
+        openNewItem();
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [openNewItem]);
 
   // On first paint: scroll to ?p=<id> if present.
   useEffect(() => {
@@ -99,14 +147,14 @@ export function Kanban({
             key={p.id}
             project={p}
             items={itemsByProject[p.id] ?? []}
-            categories={categoriesByProject[p.id] ?? []}
             prLinksByItem={prLinksByItem}
             prevId={projects[idx - 1]?.id ?? null}
             nextId={projects[idx + 1]?.id ?? null}
             onShowActivity={(pid) => setAudit({ open: true, projectId: pid })}
+            onAddItem={openNewItem}
           />
         ))}
-        <AddProjectButton />
+        <AddProjectButton onClick={() => setNewProjectOpen(true)} />
       </div>
 
       <AuditDrawer
@@ -115,6 +163,16 @@ export function Kanban({
         projects={projects}
         onClose={() => setAudit({ open: false })}
       />
+
+      <NewItemSheet
+        open={newItem.open}
+        onOpenChange={(open) => setNewItem((s) => ({ ...s, open }))}
+        projects={projects}
+        categoriesByProject={categoriesByProject}
+        initialProjectId={newItem.projectId}
+      />
+
+      <NewProjectSheet open={newProjectOpen} onOpenChange={setNewProjectOpen} />
     </main>
   );
 }
