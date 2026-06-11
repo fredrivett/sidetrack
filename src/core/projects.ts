@@ -81,6 +81,14 @@ function assertStatus(status: string): asserts status is ProjectStatus {
   }
 }
 
+// A nameless project is unusable; reject blank at the boundary (web or MCP)
+// and return the trimmed value.
+function assertName(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("project name cannot be empty");
+  return trimmed;
+}
+
 export function createProject(
   db: Db,
   userId: string,
@@ -93,7 +101,7 @@ export function createProject(
   const position = resolveProjectPosition(all, "end");
   const id = nanoid(12);
   const now = Date.now();
-  const name = input.name.trim();
+  const name = assertName(input.name);
   db.transaction((tx) => {
     tx.insert(projects)
       .values({ id, userId, name, status, position, createdAt: now })
@@ -123,9 +131,12 @@ export function updateProject(
 
   const next: Partial<Project> = {};
   const changes: string[] = [];
-  if (patch.name !== undefined && patch.name.trim() !== existing.name) {
-    next.name = patch.name.trim();
-    changes.push(`renamed to "${next.name}"`);
+  if (patch.name !== undefined) {
+    const name = assertName(patch.name);
+    if (name !== existing.name) {
+      next.name = name;
+      changes.push(`renamed to "${name}"`);
+    }
   }
   if (patch.status !== undefined && patch.status !== existing.status) {
     assertStatus(patch.status);

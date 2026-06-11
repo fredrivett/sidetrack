@@ -83,6 +83,15 @@ function assertKind(kind: string): asserts kind is ItemKind {
   }
 }
 
+// Title is NOT NULL in the schema, but blank is just as broken as null —
+// an item with no title is unusable. Reject it at the boundary so neither the
+// web UI nor an MCP tool can persist one, and return the trimmed value.
+function assertTitle(title: string): string {
+  const trimmed = title.trim();
+  if (!trimmed) throw new Error("item title cannot be empty");
+  return trimmed;
+}
+
 export function addItem(
   db: Db,
   userId: string,
@@ -105,7 +114,7 @@ export function addItem(
   const position = resolveItemPosition(siblings, ref);
   const category = input.category?.trim() || null;
   const description = input.description?.trim() || null;
-  const title = input.title.trim();
+  const title = assertTitle(input.title);
   const id = nanoid(12);
   const now = Date.now();
 
@@ -169,9 +178,12 @@ export function updateItem(
 
   const next: Partial<Item> = {};
   const changes: string[] = [];
-  if (patch.title !== undefined && patch.title.trim() !== existing.title) {
-    next.title = patch.title.trim();
-    changes.push(`renamed to "${next.title}"`);
+  if (patch.title !== undefined) {
+    const title = assertTitle(patch.title);
+    if (title !== existing.title) {
+      next.title = title;
+      changes.push(`renamed to "${title}"`);
+    }
   }
   if (patch.description !== undefined) {
     const d = patch.description?.trim() || null;

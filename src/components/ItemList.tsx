@@ -19,11 +19,15 @@ import type { Item, ItemPrLink } from "@/core/schema";
 import { ItemRow } from "./ItemRow";
 
 export function ItemList({
+  projectId,
   items,
   prLinksByItem,
+  onOpenDetail,
 }: {
+  projectId: string;
   items: Item[];
   prLinksByItem: Record<string, ItemPrLink[]>;
+  onOpenDetail: (item: Item) => void;
 }) {
   const [optimistic, setOptimistic] = useState<Item[] | null>(null);
   const [, start] = useTransition();
@@ -71,6 +75,10 @@ export function ItemList({
 
   return (
     <DndContext
+      // Stable, unique id so dnd-kit's aria-describedby is deterministic
+      // across SSR and client. Without it, dnd-kit falls back to a global
+      // counter that diverges between server and client and warns on hydration.
+      id={`item-list-${projectId}`}
       sensors={sensors}
       collisionDetection={closestCenter}
       onDragEnd={onDragEnd}
@@ -86,6 +94,7 @@ export function ItemList({
               item={item}
               prLinks={prLinksByItem[item.id] ?? []}
               draggable
+              onOpenDetail={() => onOpenDetail(item)}
             />
           ))}
         </div>
