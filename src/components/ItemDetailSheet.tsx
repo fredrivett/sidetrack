@@ -1,6 +1,6 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
+import { CheckCircle2, Circle, Trash2 } from "lucide-react";
 import { useState, useTransition } from "react";
 import {
   completeItemAction,
@@ -93,7 +93,7 @@ export function ItemDetailSheet({
             : "max-h-[85vh] gap-0 rounded-t-xl p-0"
         }
       >
-        <SheetHeader className="gap-2 border-b border-neutral-200 px-4 py-3 pr-12 dark:border-neutral-800">
+        <SheetHeader className="gap-2 border-b border-neutral-200 px-4 py-3 pr-14 dark:border-neutral-800">
           <div className="flex items-center gap-2">
             <span
               className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
@@ -104,16 +104,22 @@ export function ItemDetailSheet({
             >
               {item.kind}
             </span>
-            <label className="ml-auto flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400">
-              <input
-                type="checkbox"
-                checked={completed}
-                onChange={toggle}
-                disabled={pending}
-                className="h-4 w-4"
-              />
-              {completed ? "Completed" : "Mark complete"}
-            </label>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={toggle}
+              disabled={pending}
+              aria-pressed={completed}
+              className={`ml-auto ${
+                completed
+                  ? "border-green-600/30 bg-green-50 text-green-700 hover:bg-green-100 dark:border-green-500/30 dark:bg-green-950/40 dark:text-green-400 dark:hover:bg-green-950/70"
+                  : ""
+              }`}
+            >
+              {completed ? <CheckCircle2 /> : <Circle />}
+              {completed ? "Completed" : "Complete"}
+            </Button>
           </div>
           <SheetTitle className="text-base">
             <EditableText
