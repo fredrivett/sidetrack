@@ -4,6 +4,7 @@ import { useTransition } from "react";
 import {
   deleteProjectAction,
   reorderProjectAction,
+  updateProjectAction,
 } from "@/app/actions";
 import {
   DropdownMenu,
@@ -14,12 +15,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Kbd } from "@/components/ui/kbd";
+import { validatePrefix } from "@/lib/itemRef";
 
 export function ProjectMenu({
   projectId,
   prevId,
   nextId,
   name,
+  prefix,
   onShowActivity,
   onAddItem,
 }: {
@@ -27,6 +30,7 @@ export function ProjectMenu({
   prevId: string | null;
   nextId: string | null;
   name: string;
+  prefix: string;
   onShowActivity: (projectId: string) => void;
   onAddItem: (projectId: string) => void;
 }) {
@@ -35,6 +39,28 @@ export function ProjectMenu({
   function run(fn: () => Promise<unknown>) {
     start(() => {
       void fn();
+    });
+  }
+
+  function editPrefix() {
+    const input = prompt(
+      `Item ID prefix for "${name}" (2–5 letters):`,
+      prefix,
+    );
+    if (input === null) return;
+    const normalized = input.trim().toUpperCase();
+    if (normalized === prefix) return;
+    const err = validatePrefix(normalized);
+    if (err) {
+      alert(err);
+      return;
+    }
+    run(async () => {
+      try {
+        await updateProjectAction(projectId, { prefix: normalized });
+      } catch {
+        alert("Couldn't update the prefix. Please try again.");
+      }
     });
   }
 
@@ -73,6 +99,9 @@ export function ProjectMenu({
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => onShowActivity(projectId)}>
           Activity
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={editPrefix}>
+          Edit ID prefix
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem

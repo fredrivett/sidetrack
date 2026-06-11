@@ -1,6 +1,7 @@
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { resolve } from "node:path";
 import { getDb } from "./db";
+import { backfillItemPrefixes } from "./item-ref-backfill";
 import { backfillUsernames } from "./username-backfill";
 
 let migrated = false;
@@ -35,6 +36,9 @@ export function runMigrations() {
   // Turn the 0005 placeholder usernames into real, de-duplicated handles.
   // Idempotent (only placeholder rows are touched), so safe on every boot.
   backfillUsernames(db);
+  // Likewise turn the 0006 placeholder project prefixes into real, de-duplicated
+  // ones derived from each project name. Idempotent for the same reason.
+  backfillItemPrefixes(db);
   migrated = true;
 }
 

@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { recordAudit } from "./audit";
 import { ensureCategory } from "./categories";
@@ -120,6 +120,17 @@ export function addItem(
 
   db.transaction((tx) => {
     if (category) ensureCategory(tx as unknown as Db, input.projectId, category);
+    // Bump the project's counter and read the new value back in one atomic
+    // statement, so the allocated number can't drift and we avoid a separate
+    // read-modify-write. Monotonic — a deleted item's number is never reused.
+    // Ownership was already verified above, so filter on the project id alone.
+    const seqRow = tx
+      .update(projects)
+      .set({ itemSeq: sql`${projects.itemSeq} + 1` })
+      .where(eq(projects.id, input.projectId))
+      .returning({ seq: projects.itemSeq })
+      .get();
+    const number = seqRow?.seq ?? 1;
     tx.insert(items)
       .values({
         id,
@@ -129,6 +140,7 @@ export function addItem(
         description,
         category,
         position,
+        number,
         createdAt: now,
       })
       .run();

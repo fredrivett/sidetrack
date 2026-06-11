@@ -43,18 +43,30 @@ export const AUDIT_ENTITIES = [
 ] as const;
 export type AuditEntity = (typeof AUDIT_ENTITIES)[number];
 
-export const projects = sqliteTable("projects", {
-  id: text("id").primaryKey(),
-  userId: text("user_id").notNull(),
-  name: text("name").notNull(),
-  status: text("status").$type<ProjectStatus>().notNull().default("idea"),
-  summary: text("summary").notNull().default(""),
-  summaryUpdatedAt: integer("summary_updated_at"),
-  position: text("position").notNull(),
-  createdAt: integer("created_at")
-    .notNull()
-    .default(sql`(unixepoch() * 1000)`),
-});
+export const projects = sqliteTable(
+  "projects",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    name: text("name").notNull(),
+    status: text("status").$type<ProjectStatus>().notNull().default("idea"),
+    summary: text("summary").notNull().default(""),
+    summaryUpdatedAt: integer("summary_updated_at"),
+    position: text("position").notNull(),
+    // Short human-friendly ID prefix (e.g. "SID"). Derived display data, never
+    // an identity anchor — the nanoid PK stays the FK/audit target. Uniqueness
+    // is scoped to the owner so `SID-42` is unambiguous within a user's board.
+    prefix: text("prefix").notNull(),
+    // Monotonic per-project counter for item numbers. Bumped in addItem's
+    // transaction and never decremented, so a deleted item's number is never
+    // reused (Linear-style). Stored, not derived from MAX(number).
+    itemSeq: integer("item_seq").notNull().default(0),
+    createdAt: integer("created_at")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => [uniqueIndex("projects_user_prefix").on(t.userId, t.prefix)],
+);
 
 export const items = sqliteTable(
   "items",
@@ -68,12 +80,18 @@ export const items = sqliteTable(
     description: text("description"),
     category: text("category"),
     position: text("position").notNull(),
+    // Per-project sequence value (from projects.item_seq) behind the display
+    // ref `${prefix}-${number}`. Unique within a project; monotonic.
+    number: integer("number").notNull(),
     completedAt: integer("completed_at"),
     createdAt: integer("created_at")
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
   },
-  (t) => [index("items_project_position").on(t.projectId, t.position)],
+  (t) => [
+    index("items_project_position").on(t.projectId, t.position),
+    uniqueIndex("items_project_number").on(t.projectId, t.number),
+  ],
 );
 
 // Many-to-many link between items and GitHub pull requests. Explicit, agent-set

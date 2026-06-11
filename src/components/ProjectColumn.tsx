@@ -50,13 +50,19 @@ export function ProjectColumn({
             className="block w-full truncate text-base font-semibold"
             inputClassName="w-full text-base font-semibold"
           />
-          <StatusBadge projectId={project.id} status={project.status} />
+          <div className="flex items-center gap-1.5">
+            <StatusBadge projectId={project.id} status={project.status} />
+            <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-[10px] tracking-wide text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
+              {project.prefix}
+            </span>
+          </div>
         </div>
         <ProjectMenu
           projectId={project.id}
           prevId={prevId}
           nextId={nextId}
           name={project.name}
+          prefix={project.prefix}
           onShowActivity={onShowActivity}
           onAddItem={onAddItem}
         />
@@ -72,12 +78,14 @@ export function ProjectColumn({
         <div className="space-y-3 pt-3">
           <CompletedSection
             items={completed}
+            prefix={project.prefix}
             prLinksByItem={prLinksByItem}
             onOpenDetail={detail.openDetail}
           />
           <ItemList
             projectId={project.id}
             items={active}
+            prefix={project.prefix}
             prLinksByItem={prLinksByItem}
             onOpenDetail={detail.openDetail}
           />

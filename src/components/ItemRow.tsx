@@ -2,7 +2,7 @@
 
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Trash2 } from "lucide-react";
+import { Check, Copy, Trash2 } from "lucide-react";
 import { useState, useTransition } from "react";
 import {
   completeItemAction,
@@ -15,17 +15,22 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { formatItemRef } from "@/lib/itemRef";
 import { CategoryBadge } from "./CategoryBadge";
 
 export function ItemRow({
   item,
+  prefix,
   prLinks,
   draggable,
   onOpenDetail,
 }: {
   item: Item;
+  prefix: string;
   prLinks: ItemPrLink[];
   draggable: boolean;
   onOpenDetail: () => void;
@@ -35,7 +40,19 @@ export function ItemRow({
     sortable;
   const [pending, start] = useTransition();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [copied, setCopied] = useState(false);
   const completed = item.completedAt !== null;
+  const ref = formatItemRef(prefix, item.number);
+
+  async function copyId() {
+    if (!navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(ref);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  }
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -120,7 +137,10 @@ export function ItemRow({
 
       <DropdownMenu
         onOpenChange={(open) => {
-          if (!open) setConfirmingDelete(false);
+          if (!open) {
+            setConfirmingDelete(false);
+            setCopied(false);
+          }
         }}
       >
         <DropdownMenuTrigger
@@ -131,7 +151,19 @@ export function ItemRow({
         >
           ⋯
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-40">
+        <DropdownMenuContent align="end" className="w-44">
+          <DropdownMenuLabel className="font-mono text-[11px] tracking-wide text-neutral-400">
+            {ref}
+          </DropdownMenuLabel>
+          <DropdownMenuItem closeOnClick={false} onClick={copyId}>
+            {copied ? (
+              <Check className="opacity-70" />
+            ) : (
+              <Copy className="opacity-70" />
+            )}
+            {copied ? "Copied" : "Copy ID"}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem
             variant="destructive"
             closeOnClick={false}

@@ -130,6 +130,33 @@ describe("items", () => {
     expect(getItem(db, userId, "nope")).toBeUndefined();
   });
 
+  it("numbers items monotonically per project, never reusing after delete", () => {
+    const { db, userId, projectId } = seedProject();
+    const a = addItem(db, userId, { projectId, kind: "task", title: "a" }, "web");
+    const b = addItem(db, userId, { projectId, kind: "task", title: "b" }, "web");
+    expect([a.number, b.number]).toEqual([1, 2]);
+
+    // Deleting b must not hand its number back to the next item.
+    deleteItem(db, userId, b.id, "web");
+    const c = addItem(db, userId, { projectId, kind: "task", title: "c" }, "web");
+    expect(c.number).toBe(3);
+  });
+
+  it("numbers each project independently", () => {
+    const { db, userId, projectId } = seedProject();
+    const other = createProject(db, userId, { name: "Other" }, "web");
+    const a = addItem(db, userId, { projectId, kind: "task", title: "a" }, "web");
+    const b = addItem(
+      db,
+      userId,
+      { projectId: other.id, kind: "task", title: "b" },
+      "web",
+    );
+    // Both projects start their own sequence at 1.
+    expect(a.number).toBe(1);
+    expect(b.number).toBe(1);
+  });
+
   it("deletes an item and logs it", () => {
     const { db, userId, projectId } = seedProject();
     const item = addItem(
