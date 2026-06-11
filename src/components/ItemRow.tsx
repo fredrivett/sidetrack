@@ -10,6 +10,7 @@ import {
   uncompleteItemAction,
 } from "@/app/actions";
 import type { Item, ItemPrLink } from "@/core/schema";
+import { modifierSymbol } from "@/lib/keyboard";
 import { prLabel } from "@/lib/pr";
 import {
   DropdownMenu,
@@ -18,10 +19,13 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Kbd } from "@/components/ui/kbd";
 import { formatItemRef } from "@/lib/itemRef";
 import { CategoryBadge } from "./CategoryBadge";
+import { useCopyItemRef } from "./useCopyItemRef";
 
 export function ItemRow({
   item,
@@ -41,7 +45,7 @@ export function ItemRow({
     sortable;
   const [pending, start] = useTransition();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const completed = item.completedAt !== null;
   const ref = formatItemRef(prefix, item.number);
 
@@ -49,15 +53,12 @@ export function ItemRow({
   const descriptionHasMore =
     item.description != null && item.description.length > firstLine.length;
 
-  async function copyId() {
-    if (!navigator.clipboard) return;
-    try {
-      await navigator.clipboard.writeText(ref);
-      setCopied(true);
-    } catch {
-      setCopied(false);
-    }
-  }
+  // ⌘./Ctrl+. copies the ref while the card is hovered (Linear's shortcut),
+  // deferring to an open detail sheet so we don't copy the wrong ref.
+  const { copied, copy } = useCopyItemRef(ref, {
+    active: hovered,
+    deferToDialog: true,
+  });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -86,6 +87,8 @@ export function ItemRow({
       style={style}
       {...(draggable ? attributes : {})}
       {...(draggable ? listeners : {})}
+      onPointerEnter={() => setHovered(true)}
+      onPointerLeave={() => setHovered(false)}
       className={`group relative flex items-start gap-2 rounded-lg border border-neutral-200 bg-white p-2 dark:border-neutral-800 dark:bg-neutral-900 ${
         draggable ? "cursor-grab touch-manipulation active:cursor-grabbing" : ""
       } ${
@@ -143,10 +146,7 @@ export function ItemRow({
 
       <DropdownMenu
         onOpenChange={(open) => {
-          if (!open) {
-            setConfirmingDelete(false);
-            setCopied(false);
-          }
+          if (!open) setConfirmingDelete(false);
         }}
       >
         <DropdownMenuTrigger
@@ -164,13 +164,16 @@ export function ItemRow({
             <DropdownMenuLabel className="font-mono text-[11px] tracking-wide text-neutral-400">
               {ref}
             </DropdownMenuLabel>
-            <DropdownMenuItem closeOnClick={false} onClick={copyId}>
+            <DropdownMenuItem closeOnClick={false} onClick={() => void copy()}>
               {copied ? (
                 <Check className="opacity-70" />
               ) : (
                 <Copy className="opacity-70" />
               )}
               {copied ? "Copied" : "Copy ID"}
+              <DropdownMenuShortcut>
+                <Kbd>{modifierSymbol()}.</Kbd>
+              </DropdownMenuShortcut>
             </DropdownMenuItem>
           </DropdownMenuGroup>
           <DropdownMenuSeparator />

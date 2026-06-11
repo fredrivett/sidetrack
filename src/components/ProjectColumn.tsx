@@ -95,6 +95,7 @@ export function ProjectColumn({
       {detail.item && (
         <ItemDetailSheet
           item={detail.item}
+          prefix={project.prefix}
           prLinks={prLinksByItem[detail.item.id] ?? []}
           open={detail.open}
           onOpenChange={detail.onOpenChange}

@@ -76,3 +76,25 @@ describe("ItemRow menu", () => {
     expect(screen.getByText("Copy ID")).toBeTruthy();
   });
 });
+
+describe("ItemRow copy-ref shortcut", () => {
+  it("copies the ref on mod+. only while the card is hovered", () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+
+    const { container } = renderRow();
+    const card = container.querySelector(".group") as HTMLElement;
+
+    // Not hovered: the shortcut is unarmed, so nothing is copied.
+    fireEvent.keyDown(document, { key: ".", ctrlKey: true });
+    expect(writeText).not.toHaveBeenCalled();
+
+    // Hovered: ⌘./Ctrl+. copies the ref.
+    fireEvent.pointerEnter(card);
+    fireEvent.keyDown(document, { key: ".", ctrlKey: true });
+    expect(writeText).toHaveBeenCalledWith("ENG-42");
+  });
+});
