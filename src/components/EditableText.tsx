@@ -9,6 +9,7 @@ export function EditableText({
   placeholder,
   className = "",
   inputClassName = "",
+  renderValue,
 }: {
   value: string;
   onSave: (next: string) => void | Promise<unknown>;
@@ -16,6 +17,9 @@ export function EditableText({
   placeholder?: string;
   className?: string;
   inputClassName?: string;
+  // Custom rendering for the non-editing display of a non-empty value (e.g. a
+  // badge). The empty state still falls back to the muted placeholder text.
+  renderValue?: (value: string) => React.ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -57,7 +61,7 @@ export function EditableText({
         onClick={startEditing}
         className={`text-left ${value ? "" : "text-neutral-400"} ${className}`}
       >
-        {value || placeholder || ""}
+        {value ? (renderValue ? renderValue(value) : value) : placeholder || ""}
       </button>
     );
   }

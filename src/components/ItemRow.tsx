@@ -17,6 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { CategoryBadge } from "./CategoryBadge";
 import { ItemDetailSheet } from "./ItemDetailSheet";
 
 export function ItemRow({
@@ -97,11 +98,7 @@ export function ItemRow({
               {item.description}
             </span>
           )}
-          {item.category && (
-            <span className="inline-block rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-neutral-500 dark:bg-neutral-800">
-              {item.category}
-            </span>
-          )}
+          {item.category && <CategoryBadge category={item.category} />}
         </button>
         {prLinks.length > 0 && (
           <div className="flex flex-wrap gap-1 pt-0.5">

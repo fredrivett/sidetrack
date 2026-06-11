@@ -21,6 +21,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { useMediaQuery } from "@/components/ui/use-media-query";
+import { CategoryBadge } from "./CategoryBadge";
 import { EditableText } from "./EditableText";
 
 function Field({
@@ -152,6 +153,7 @@ export function ItemDetailSheet({
               placeholder="Add category…"
               className="block w-full break-words text-sm text-neutral-600 dark:text-neutral-300"
               inputClassName="w-full text-sm"
+              renderValue={(category) => <CategoryBadge category={category} />}
             />
           </Field>
 
