@@ -21,11 +21,13 @@ import { ItemRow } from "./ItemRow";
 export function ItemList({
   projectId,
   items,
+  prefix,
   prLinksByItem,
   onOpenDetail,
 }: {
   projectId: string;
   items: Item[];
+  prefix: string;
   prLinksByItem: Record<string, ItemPrLink[]>;
   onOpenDetail: (item: Item) => void;
 }) {
@@ -92,6 +94,7 @@ export function ItemList({
             <ItemRow
               key={item.id}
               item={item}
+              prefix={prefix}
               prLinks={prLinksByItem[item.id] ?? []}
               draggable
               onOpenDetail={() => onOpenDetail(item)}

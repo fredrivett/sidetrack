@@ -1,5 +1,6 @@
 import { and, asc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { derivePrefix, dedupePrefix, validatePrefix } from "../lib/itemRef";
 import { recordAudit } from "./audit";
 import type { Db } from "./db";
 import {
@@ -89,6 +90,25 @@ function assertName(name: string): string {
   return trimmed;
 }
 
+/**
+ * Resolve a base prefix to one unique within the owner's namespace, auto-
+ * suffixing on collision (`ENG` → `ENG2`). Uniqueness is also enforced by the
+ * `(user_id, prefix)` unique index; this keeps creation from ever hard-failing.
+ */
+function ensureUniquePrefix(
+  db: Db,
+  userId: string,
+  base: string,
+  excludeId?: string,
+): string {
+  const taken = new Set(
+    listProjects(db, userId)
+      .filter((p) => p.id !== excludeId)
+      .map((p) => p.prefix),
+  );
+  return dedupePrefix(base, taken);
+}
+
 export function createProject(
   db: Db,
   userId: string,
@@ -102,9 +122,10 @@ export function createProject(
   const id = nanoid(12);
   const now = Date.now();
   const name = assertName(input.name);
+  const prefix = ensureUniquePrefix(db, userId, derivePrefix(name));
   db.transaction((tx) => {
     tx.insert(projects)
-      .values({ id, userId, name, status, position, createdAt: now })
+      .values({ id, userId, name, status, position, prefix, createdAt: now })
       .run();
     recordAudit(tx as unknown as Db, {
       actor: userId,
@@ -123,7 +144,12 @@ export function updateProject(
   db: Db,
   userId: string,
   id: string,
-  patch: { name?: string; status?: ProjectStatus; summary?: string },
+  patch: {
+    name?: string;
+    status?: ProjectStatus;
+    summary?: string;
+    prefix?: string;
+  },
   source: AuditSource,
 ): Project {
   const existing = getProject(db, userId, id);
@@ -136,6 +162,19 @@ export function updateProject(
     if (name !== existing.name) {
       next.name = name;
       changes.push(`renamed to "${name}"`);
+    }
+  }
+  if (patch.prefix !== undefined) {
+    const normalized = patch.prefix.trim().toUpperCase();
+    const err = validatePrefix(normalized);
+    if (err) throw new Error(`invalid prefix: ${err}`);
+    if (normalized !== existing.prefix) {
+      // Auto-suffix on collision rather than reject, matching create. The ref
+      // is derived display data, so changing the prefix never renumbers items
+      // or touches the nanoid PK — it's a pure display change.
+      const unique = ensureUniquePrefix(db, userId, normalized, id);
+      next.prefix = unique;
+      changes.push(`prefix ${existing.prefix}→${unique}`);
     }
   }
   if (patch.status !== undefined && patch.status !== existing.status) {

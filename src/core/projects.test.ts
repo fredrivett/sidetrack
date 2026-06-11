@@ -75,6 +75,58 @@ describe("projects", () => {
     expect(actions).toEqual(["create", "delete"]);
   });
 
+  it("derives a prefix from the name on create", () => {
+    const { db } = createTestDb();
+    const u = createTestUser(db);
+    const p = createProject(db, u, { name: "Sidetrack" }, "web");
+    expect(p.prefix).toBe("SID");
+  });
+
+  it("auto-suffixes a colliding prefix within an owner", () => {
+    const { db } = createTestDb();
+    const u = createTestUser(db);
+    const a = createProject(db, u, { name: "Sidetrack" }, "web");
+    const b = createProject(db, u, { name: "Sidequest" }, "web");
+    expect(a.prefix).toBe("SID");
+    expect(b.prefix).toBe("SID2");
+  });
+
+  it("lets different owners share a prefix", () => {
+    const { db } = createTestDb();
+    const alice = createTestUser(db, { email: "alice@test.local" });
+    const bob = createTestUser(db, { email: "bob@test.local" });
+    const a = createProject(db, alice, { name: "Engineering" }, "web");
+    const b = createProject(db, bob, { name: "Engineering" }, "web");
+    expect(a.prefix).toBe("ENG");
+    expect(b.prefix).toBe("ENG");
+  });
+
+  it("edits the prefix (uppercased), audits it, and rejects bad input", () => {
+    const { db } = createTestDb();
+    const u = createTestUser(db);
+    const p = createProject(db, u, { name: "Sidetrack" }, "web");
+
+    const updated = updateProject(db, u, p.id, { prefix: "plt" }, "web");
+    expect(updated.prefix).toBe("PLT");
+    const entry = listAudit(db, u).find(
+      (e) => e.entityId === p.id && e.detail.includes("prefix"),
+    );
+    expect(entry?.detail).toContain("SID→PLT");
+
+    expect(() => updateProject(db, u, p.id, { prefix: "x" }, "web")).toThrow(
+      /invalid prefix/,
+    );
+  });
+
+  it("auto-suffixes a colliding prefix on edit", () => {
+    const { db } = createTestDb();
+    const u = createTestUser(db);
+    createProject(db, u, { name: "Engineering" }, "web");
+    const b = createProject(db, u, { name: "Marketing" }, "web");
+    const updated = updateProject(db, u, b.id, { prefix: "ENG" }, "web");
+    expect(updated.prefix).toBe("ENG2");
+  });
+
   it("scopes projects to their owner", () => {
     const { db } = createTestDb();
     const alice = createTestUser(db, { email: "alice@test.local" });

@@ -120,6 +120,19 @@ export function addItem(
 
   db.transaction((tx) => {
     if (category) ensureCategory(tx as unknown as Db, input.projectId, category);
+    // Allocate the next monotonic number from the project's counter, in-txn so
+    // it can never collide or reuse a deleted item's number. Ownership was
+    // already verified above, so filter on the project id alone here.
+    const seqRow = tx
+      .select({ seq: projects.itemSeq })
+      .from(projects)
+      .where(eq(projects.id, input.projectId))
+      .get();
+    const number = (seqRow?.seq ?? 0) + 1;
+    tx.update(projects)
+      .set({ itemSeq: number })
+      .where(eq(projects.id, input.projectId))
+      .run();
     tx.insert(items)
       .values({
         id,
@@ -129,6 +142,7 @@ export function addItem(
         description,
         category,
         position,
+        number,
         createdAt: now,
       })
       .run();

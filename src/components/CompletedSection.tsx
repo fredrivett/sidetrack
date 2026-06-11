@@ -6,10 +6,12 @@ import { ItemRow } from "./ItemRow";
 
 export function CompletedSection({
   items,
+  prefix,
   prLinksByItem,
   onOpenDetail,
 }: {
   items: Item[];
+  prefix: string;
   prLinksByItem: Record<string, ItemPrLink[]>;
   onOpenDetail: (item: Item) => void;
 }) {
@@ -27,6 +29,7 @@ export function CompletedSection({
           <ItemRow
             key={it.id}
             item={it}
+            prefix={prefix}
             prLinks={prLinksByItem[it.id] ?? []}
             draggable={false}
             onOpenDetail={() => onOpenDetail(it)}
