@@ -5,6 +5,14 @@ import { addCategory, listCategories } from "@/core/categories";
 import { getDb } from "@/core/db";
 import { resolveItemRef } from "@/core/itemRef";
 import {
+  acceptInvite,
+  declineInvite,
+  inviteMember,
+  listMembers,
+  listPendingInvites,
+  removeMember,
+} from "@/core/members";
+import {
   addItem,
   completeItem,
   deleteItem,
@@ -524,6 +532,129 @@ export function registerTools(
           ...rest,
         })),
       );
+    },
+  );
+
+  server.registerTool(
+    "list_members",
+    {
+      title: "List project members",
+      description:
+        "List a project's collaborators and pending invites (the owner is not " +
+        "included — it's the project's owner separately). Each row has user_id, " +
+        "username, name, email, and status (\"accepted\" or \"pending\"). Use a " +
+        "row's user_id with remove_member.",
+      inputSchema: { project_id: z.string() },
+    },
+    async ({ project_id }) => {
+      const { db } = getDb();
+      if (!getProject(db, userId, project_id)) {
+        return notFound("project", project_id);
+      }
+      return json(listMembers(db, userId, project_id));
+    },
+  );
+
+  server.registerTool(
+    "invite_member",
+    {
+      title: "Invite a member",
+      description:
+        "Invite an existing user to collaborate on a project (owner only). " +
+        "person is a username (\"alice\" or \"@alice\") or an email. The target " +
+        "must already have an account — there is no invite-by-email-to-sign-up. " +
+        "Lands a pending invite they must accept before they gain access; " +
+        "accepted members can edit everything except owner-only actions " +
+        "(delete, prefix, managing members).",
+      inputSchema: { project_id: z.string(), person: z.string().min(1) },
+    },
+    async ({ project_id, person }) => {
+      const { db } = getDb();
+      if (!getProject(db, userId, project_id)) {
+        return notFound("project", project_id);
+      }
+      return json(inviteMember(db, userId, project_id, person, SOURCE));
+    },
+  );
+
+  server.registerTool(
+    "remove_member",
+    {
+      title: "Remove a member",
+      description:
+        "Remove a collaborator or revoke a pending invite (owner only). " +
+        "user_id is the value from list_members. To leave a project yourself, " +
+        "use leave_project instead.",
+      inputSchema: { project_id: z.string(), user_id: z.string() },
+    },
+    async ({ project_id, user_id }) => {
+      const { db } = getDb();
+      removeMember(db, userId, project_id, user_id, SOURCE);
+      return json({ ok: true });
+    },
+  );
+
+  server.registerTool(
+    "list_pending_invites",
+    {
+      title: "List my pending invites",
+      description:
+        "List invites awaiting your response: each has project_id, " +
+        "project_name, and owner_name. Accept with accept_invite or dismiss " +
+        "with decline_invite.",
+      inputSchema: {},
+    },
+    async () => {
+      const { db } = getDb();
+      return json(listPendingInvites(db, userId));
+    },
+  );
+
+  server.registerTool(
+    "accept_invite",
+    {
+      title: "Accept an invite",
+      description:
+        "Accept a pending invite to a project, gaining edit access. " +
+        "project_id comes from list_pending_invites.",
+      inputSchema: { project_id: z.string() },
+    },
+    async ({ project_id }) => {
+      const { db } = getDb();
+      acceptInvite(db, userId, project_id, SOURCE);
+      return json({ ok: true });
+    },
+  );
+
+  server.registerTool(
+    "decline_invite",
+    {
+      title: "Decline an invite",
+      description:
+        "Decline a pending invite, removing it. project_id comes from " +
+        "list_pending_invites.",
+      inputSchema: { project_id: z.string() },
+    },
+    async ({ project_id }) => {
+      const { db } = getDb();
+      declineInvite(db, userId, project_id, SOURCE);
+      return json({ ok: true });
+    },
+  );
+
+  server.registerTool(
+    "leave_project",
+    {
+      title: "Leave a project",
+      description:
+        "Remove yourself from a project you were invited to (you keep nothing). " +
+        "The owner can't leave their own project — delete it instead.",
+      inputSchema: { project_id: z.string() },
+    },
+    async ({ project_id }) => {
+      const { db } = getDb();
+      removeMember(db, userId, project_id, userId, SOURCE);
+      return json({ ok: true });
     },
   );
 }
