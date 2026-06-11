@@ -38,6 +38,21 @@ describe("resolveItemRef", () => {
     expect(r).toEqual({ status: "not_found", reason: "user" });
   });
 
+  it("resolves a ref whose prefix was auto-suffixed on collision", () => {
+    const { db, userId } = seed(); // owns "Engineering" → ENG
+    const second = createProject(db, userId, { name: "Engineering" }, "web");
+    expect(second.prefix).toBe("ENG2");
+    const item = addItem(
+      db,
+      userId,
+      { projectId: second.id, kind: "task", title: "x" },
+      "web",
+    );
+    const r = resolveItemRef(db, userId, "ENG2-1");
+    expect(r.status).toBe("ok");
+    if (r.status === "ok") expect(r.item.id).toBe(item.id);
+  });
+
   it("falls back to a raw nanoid id", () => {
     const { db, userId, item } = seed();
     const r = resolveItemRef(db, userId, item.id);

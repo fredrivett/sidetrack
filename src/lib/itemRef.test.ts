@@ -4,6 +4,7 @@ import {
   derivePrefix,
   formatItemRef,
   parseItemRef,
+  PREFIX_MAX,
   validatePrefix,
 } from "./itemRef";
 
@@ -42,6 +43,18 @@ describe("dedupePrefix", () => {
     // base is already at the 5-char cap; suffix must not push it to 6.
     expect(dedupePrefix("ABCDE", new Set(["ABCDE"]))).toBe("ABCD2");
   });
+
+  it("stays within PREFIX_MAX even with many-digit suffixes", () => {
+    // Feed every result back in so suffixes escalate into 3–4 digits, where a
+    // naive trim that floored at PREFIX_MIN would overflow to 6 chars.
+    const taken = new Set(["ABCDE"]);
+    for (let i = 0; i < 1200; i++) {
+      const p = dedupePrefix("ABCDE", taken);
+      expect(p.length).toBeLessThanOrEqual(PREFIX_MAX);
+      expect(taken.has(p)).toBe(false);
+      taken.add(p);
+    }
+  });
 });
 
 describe("validatePrefix", () => {
@@ -78,6 +91,14 @@ describe("parseItemRef", () => {
       username: null,
       prefix: "ENG",
       number: 7,
+    });
+  });
+
+  it("parses a digit-suffixed prefix (auto-suffix collision case)", () => {
+    expect(parseItemRef("ENG2-1")).toEqual({
+      username: null,
+      prefix: "ENG2",
+      number: 1,
     });
   });
 

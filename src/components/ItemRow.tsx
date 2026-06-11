@@ -44,9 +44,14 @@ export function ItemRow({
   const completed = item.completedAt !== null;
   const ref = formatItemRef(prefix, item.number);
 
-  function copyId() {
-    void navigator.clipboard?.writeText(ref);
-    setCopied(true);
+  async function copyId() {
+    if (!navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(ref);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
   }
 
   const style = {

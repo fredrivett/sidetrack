@@ -25,8 +25,10 @@ export function derivePrefix(name: string): string {
 /**
  * Given a base prefix and the set of already-taken prefixes (same namespace),
  * return the base if free, otherwise the base with a numeric suffix (`ENG`,
- * `ENG2`, `ENG3`, …). The base is trimmed so a suffixed prefix never exceeds
- * PREFIX_MAX. `taken` is matched verbatim, so callers pass uppercase values.
+ * `ENG2`, `ENG3`, …). The base is trimmed to keep the result within PREFIX_MAX
+ * — even below PREFIX_MIN if a long suffix demands it, since honouring the max
+ * length matters more than the minimum for a collision fallback. `taken` is
+ * matched verbatim, so callers pass uppercase values.
  */
 export function dedupePrefix(base: string, taken: Set<string>): string {
   if (!taken.has(base)) return base;
@@ -34,7 +36,7 @@ export function dedupePrefix(base: string, taken: Set<string>): string {
   for (;;) {
     const suffix = String(n);
     const candidate =
-      base.slice(0, Math.max(PREFIX_MIN, PREFIX_MAX - suffix.length)) + suffix;
+      base.slice(0, Math.max(0, PREFIX_MAX - suffix.length)) + suffix;
     if (!taken.has(candidate)) return candidate;
     n += 1;
   }
@@ -61,10 +63,12 @@ export type ParsedItemRef = {
   number: number;
 };
 
-// Bare ref: 2–5 letters, a dash, an optional `#`, optional space, then digits.
-// Case-insensitive and whitespace-tolerant so a pasted "eng-42" / "ENG-#42"
-// still resolves. The qualifier (`username/…`) is split off first.
-const BARE_RE = /^([A-Za-z]{2,5})-#?\s*(\d+)$/;
+// Bare ref: a 2–5 char prefix (a letter then letters/digits — the digits let
+// auto-suffixed prefixes like `ENG2` resolve), a dash, an optional `#`, optional
+// space, then digits. Case-insensitive and whitespace-tolerant so a pasted
+// "eng-42" / "ENG-#42" still resolves. The qualifier (`username/…`) is split off
+// first.
+const BARE_RE = /^([A-Za-z][A-Za-z0-9]{1,4})-#?\s*(\d+)$/;
 
 /**
  * Parse a possibly-qualified ref string into its parts, or null if it isn't a
