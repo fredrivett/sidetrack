@@ -44,13 +44,16 @@ describe("dedupePrefix", () => {
     expect(dedupePrefix("ABCDE", new Set(["ABCDE"]))).toBe("ABCD2");
   });
 
-  it("stays within PREFIX_MAX even with many-digit suffixes", () => {
-    // Feed every result back in so suffixes escalate into 3–4 digits, where a
-    // naive trim that floored at PREFIX_MIN would overflow to 6 chars.
+  it("stays within PREFIX_MAX and parseable even with many-digit suffixes", () => {
+    // Feed every result back in so suffixes escalate into 3–4 digits. Each must
+    // stay within the max length AND keep a leading letter — a digit-only or
+    // over-length prefix would be unresolvable by parseItemRef.
     const taken = new Set(["ABCDE"]);
     for (let i = 0; i < 1200; i++) {
       const p = dedupePrefix("ABCDE", taken);
       expect(p.length).toBeLessThanOrEqual(PREFIX_MAX);
+      expect(p).toMatch(/^[A-Z]/);
+      expect(parseItemRef(`${p}-1`)).not.toBeNull();
       expect(taken.has(p)).toBe(false);
       taken.add(p);
     }

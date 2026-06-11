@@ -25,10 +25,10 @@ export function derivePrefix(name: string): string {
 /**
  * Given a base prefix and the set of already-taken prefixes (same namespace),
  * return the base if free, otherwise the base with a numeric suffix (`ENG`,
- * `ENG2`, `ENG3`, …). The base is trimmed to keep the result within PREFIX_MAX
- * — even below PREFIX_MIN if a long suffix demands it, since honouring the max
- * length matters more than the minimum for a collision fallback. `taken` is
- * matched verbatim, so callers pass uppercase values.
+ * `ENG2`, `ENG3`, …). The base is trimmed to fit the suffix within PREFIX_MAX,
+ * but its leading letter is always kept so the result stays a parseable,
+ * letter-led prefix (never digit-only) — both invariants hold for any realistic
+ * collision count. `taken` is matched verbatim, so callers pass uppercase values.
  */
 export function dedupePrefix(base: string, taken: Set<string>): string {
   if (!taken.has(base)) return base;
@@ -36,7 +36,7 @@ export function dedupePrefix(base: string, taken: Set<string>): string {
   for (;;) {
     const suffix = String(n);
     const candidate =
-      base.slice(0, Math.max(0, PREFIX_MAX - suffix.length)) + suffix;
+      base.slice(0, Math.max(1, PREFIX_MAX - suffix.length)) + suffix;
     if (!taken.has(candidate)) return candidate;
     n += 1;
   }
