@@ -3,11 +3,11 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { listAudit } from "@/core/audit";
 import { addCategory, listCategories } from "@/core/categories";
 import { getDb } from "@/core/db";
+import { resolveItemRef } from "@/core/itemRef";
 import {
   addItem,
   completeItem,
   deleteItem,
-  getItem,
   listItems,
   reorderItem,
   uncompleteItem,
@@ -28,7 +28,13 @@ import {
   reorderProject,
   updateProject,
 } from "@/core/projects";
-import { AUDIT_SOURCES, ITEM_KINDS, PROJECT_STATUSES } from "@/core/schema";
+import {
+  AUDIT_SOURCES,
+  ITEM_KINDS,
+  type Item,
+  PROJECT_STATUSES,
+} from "@/core/schema";
+import { formatItemRef } from "@/lib/itemRef";
 import { formatRelativeLong } from "@/lib/time";
 
 const SOURCE = "mcp" as const;
@@ -57,6 +63,49 @@ function notFound(kind: string, id: string) {
       { type: "text" as const, text: `${kind} not found: ${id}` },
     ],
   };
+}
+
+type Db = ReturnType<typeof getDb>["db"];
+
+// Item targeting accepts a pasted short ref (e.g. "ENG-42") or the internal
+// nanoid. Resolution is fail-closed: an ambiguous or unknown ref yields an
+// error and the caller performs no mutation — the tool never guesses an item.
+function resolveItemArg(db: Db, userId: string, raw: string) {
+  const r = resolveItemRef(db, userId, raw);
+  if (r.status === "ok") return { item: r.item, error: null as null };
+  if (r.status === "ambiguous") {
+    const names = r.candidates.map((c) => `"${c.projectName}"`).join(", ");
+    return {
+      item: null,
+      error: {
+        isError: true,
+        content: [
+          {
+            type: "text" as const,
+            text:
+              `Ambiguous item ref "${raw}": its prefix matches multiple projects ` +
+              `(${names}). Re-specify with a qualified ref (username/PREFIX-N) or ` +
+              `the item's id — no change was made.`,
+          },
+        ],
+      },
+    };
+  }
+  return { item: null, error: notFound("item", raw) };
+}
+
+// Items are stored without their (project-owned) prefix; attach the display
+// `ref` at the edge so agents can echo "ENG-42" back to the user.
+function withItemRef(db: Db, userId: string, item: Item) {
+  const project = getProject(db, userId, item.projectId);
+  return {
+    ...item,
+    ref: project ? formatItemRef(project.prefix, item.number) : null,
+  };
+}
+
+function withRefs(prefix: string, list: Item[]) {
+  return list.map((i) => ({ ...i, ref: formatItemRef(prefix, i.number) }));
 }
 
 export function registerTools(
@@ -96,7 +145,10 @@ export function registerTools(
         includeCompleted: include_completed,
       });
       if (!result) return notFound("project", id);
-      return json(result);
+      return json({
+        project: result.project,
+        items: withRefs(result.project.prefix, result.items),
+      });
     },
   );
 
@@ -124,7 +176,10 @@ export function registerTools(
       return json(
         listAllProjectsWithItems(db, userId, {
           includeCompleted: include_completed,
-        }),
+        }).map(({ project, items }) => ({
+          project,
+          items: withRefs(project.prefix, items),
+        })),
       );
     },
   );
@@ -150,12 +205,15 @@ export function registerTools(
     {
       title: "Update project",
       description:
-        "Patch name/status/summary. Setting summary stamps summary_updated_at.",
+        "Patch name/status/summary/prefix. Setting summary stamps summary_updated_at. " +
+        "prefix is the short item-ID prefix (2–5 letters, e.g. \"ENG\" → items like ENG-42); " +
+        "it is uppercased, and an auto-suffix is applied if it collides with another project.",
       inputSchema: {
         id: z.string(),
         name: z.string().optional(),
         status: Status.optional(),
         summary: z.string().optional(),
+        prefix: z.string().optional(),
       },
     },
     async ({ id, ...patch }) => {
@@ -223,7 +281,8 @@ export function registerTools(
     },
     async ({ project_id, kind, title, description, category, position }) => {
       const { db } = getDb();
-      if (!getProject(db, userId, project_id)) return notFound("project", project_id);
+      const project = getProject(db, userId, project_id);
+      if (!project) return notFound("project", project_id);
       const created = addItem(
         db,
         userId,
@@ -237,7 +296,10 @@ export function registerTools(
         },
         SOURCE,
       );
-      return json({ created, items: listItems(db, userId, project_id) });
+      return json({
+        created: { ...created, ref: formatItemRef(project.prefix, created.number) },
+        items: withRefs(project.prefix, listItems(db, userId, project_id)),
+      });
     },
   );
 
@@ -246,7 +308,8 @@ export function registerTools(
     {
       title: "Update item",
       description:
-        "Patch title/description/category on an item. Pass description or category as null to clear it.",
+        "Patch title/description/category on an item. Pass description or category as null to clear it. " +
+        "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: {
         id: z.string(),
         title: z.string().optional(),
@@ -256,8 +319,11 @@ export function registerTools(
     },
     async ({ id, ...patch }) => {
       const { db } = getDb();
-      if (!getItem(db, userId, id)) return notFound("item", id);
-      return json(updateItem(db, userId, id, patch, SOURCE));
+      const { item, error } = resolveItemArg(db, userId, id);
+      if (error) return error;
+      return json(
+        withItemRef(db, userId, updateItem(db, userId, item.id, patch, SOURCE)),
+      );
     },
   );
 
@@ -266,13 +332,17 @@ export function registerTools(
     {
       title: "Complete item",
       description:
-        "Mark an item as completed. It moves to the upper completed range, sitting closest to the active boundary.",
+        "Mark an item as completed. It moves to the upper completed range, sitting closest to the active boundary. " +
+        "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: { id: z.string() },
     },
     async ({ id }) => {
       const { db } = getDb();
-      if (!getItem(db, userId, id)) return notFound("item", id);
-      return json(completeItem(db, userId, id, SOURCE));
+      const { item, error } = resolveItemArg(db, userId, id);
+      if (error) return error;
+      return json(
+        withItemRef(db, userId, completeItem(db, userId, item.id, SOURCE)),
+      );
     },
   );
 
@@ -280,13 +350,18 @@ export function registerTools(
     "uncomplete_item",
     {
       title: "Uncomplete item",
-      description: "Restore a completed item. It lands at the top of the active range.",
+      description:
+        "Restore a completed item. It lands at the top of the active range. " +
+        "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: { id: z.string() },
     },
     async ({ id }) => {
       const { db } = getDb();
-      if (!getItem(db, userId, id)) return notFound("item", id);
-      return json(uncompleteItem(db, userId, id, SOURCE));
+      const { item, error } = resolveItemArg(db, userId, id);
+      if (error) return error;
+      return json(
+        withItemRef(db, userId, uncompleteItem(db, userId, item.id, SOURCE)),
+      );
     },
   );
 
@@ -295,13 +370,17 @@ export function registerTools(
     {
       title: "Reorder item",
       description:
-        "Move an item within its project. position is top | end | after:<id> | before:<id>.",
+        "Move an item within its project. position is top | end | after:<id> | before:<id>. " +
+        "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: { id: z.string(), position: PosRef },
     },
     async ({ id, position }) => {
       const { db } = getDb();
-      if (!getItem(db, userId, id)) return notFound("item", id);
-      return json(reorderItem(db, userId, id, position, SOURCE));
+      const { item, error } = resolveItemArg(db, userId, id);
+      if (error) return error;
+      return json(
+        withItemRef(db, userId, reorderItem(db, userId, item.id, position, SOURCE)),
+      );
     },
   );
 
@@ -309,13 +388,17 @@ export function registerTools(
     "delete_item",
     {
       title: "Delete item",
-      description: "Delete an item.",
+      description:
+        "Delete an item. id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: { id: z.string() },
     },
     async ({ id }) => {
       const { db } = getDb();
-      deleteItem(db, userId, id, SOURCE);
-      return json({ ok: true });
+      const { item, error } = resolveItemArg(db, userId, id);
+      if (error) return error;
+      const { ref } = withItemRef(db, userId, item);
+      deleteItem(db, userId, item.id, SOURCE);
+      return json({ ok: true, ref });
     },
   );
 
@@ -326,13 +409,15 @@ export function registerTools(
       description:
         "Associate an item with a GitHub pull request URL. Idempotent: linking the same item/PR pair twice is a no-op. " +
         "Items can have many linked PRs and PRs can be linked from many items. " +
-        "Call this after raising the PR so a later merge can resolve it back to the item(s) it closes.",
+        "Call this after raising the PR so a later merge can resolve it back to the item(s) it closes. " +
+        "item_id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: { item_id: z.string(), pr_url: z.string().min(1) },
     },
     async ({ item_id, pr_url }) => {
       const { db } = getDb();
-      if (!getItem(db, userId, item_id)) return notFound("item", item_id);
-      return json(linkItemToPr(db, userId, item_id, pr_url, SOURCE));
+      const { item, error } = resolveItemArg(db, userId, item_id);
+      if (error) return error;
+      return json(linkItemToPr(db, userId, item.id, pr_url, SOURCE));
     },
   );
 
@@ -341,13 +426,15 @@ export function registerTools(
     {
       title: "Unlink item from PR",
       description:
-        "Remove a previously-set item↔PR link. No-op if the link doesn't exist.",
+        "Remove a previously-set item↔PR link. No-op if the link doesn't exist. " +
+        "item_id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: { item_id: z.string(), pr_url: z.string().min(1) },
     },
     async ({ item_id, pr_url }) => {
       const { db } = getDb();
-      if (!getItem(db, userId, item_id)) return notFound("item", item_id);
-      unlinkItemFromPr(db, userId, item_id, pr_url, SOURCE);
+      const { item, error } = resolveItemArg(db, userId, item_id);
+      if (error) return error;
+      unlinkItemFromPr(db, userId, item.id, pr_url, SOURCE);
       return json({ ok: true });
     },
   );
@@ -356,13 +443,16 @@ export function registerTools(
     "list_item_pr_links",
     {
       title: "List PR links for item",
-      description: "Return all PR URLs linked to an item (oldest first).",
+      description:
+        "Return all PR URLs linked to an item (oldest first). " +
+        "item_id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: { item_id: z.string() },
     },
     async ({ item_id }) => {
       const { db } = getDb();
-      if (!getItem(db, userId, item_id)) return notFound("item", item_id);
-      return json(listPrLinksForItem(db, userId, item_id));
+      const { item, error } = resolveItemArg(db, userId, item_id);
+      if (error) return error;
+      return json(listPrLinksForItem(db, userId, item.id));
     },
   );
 

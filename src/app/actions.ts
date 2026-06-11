@@ -44,7 +44,7 @@ export async function createProjectAction(name: string) {
 
 export async function updateProjectAction(
   id: string,
-  patch: { name?: string; status?: ProjectStatus; summary?: string },
+  patch: { name?: string; status?: ProjectStatus; summary?: string; prefix?: string },
 ) {
   const userId = await requireUserId();
   const { db } = getDb();
