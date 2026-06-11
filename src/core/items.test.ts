@@ -90,6 +90,27 @@ describe("items", () => {
     expect(listAudit(db, userId).length).toBe(before);
   });
 
+  it("rejects a blank title on create", () => {
+    const { db, userId, projectId } = seedProject();
+    expect(() =>
+      addItem(db, userId, { projectId, kind: "task", title: "   " }, "web"),
+    ).toThrow(/title cannot be empty/);
+  });
+
+  it("rejects clearing the title on update and leaves it unchanged", () => {
+    const { db, userId, projectId } = seedProject();
+    const item = addItem(
+      db,
+      userId,
+      { projectId, kind: "task", title: "keep me" },
+      "web",
+    );
+    expect(() =>
+      updateItem(db, userId, item.id, { title: "  " }, "web"),
+    ).toThrow(/title cannot be empty/);
+    expect(getItem(db, userId, item.id)?.title).toBe("keep me");
+  });
+
   it("reorders to end", () => {
     const { db, userId, projectId } = seedProject();
     const a = addItem(db, userId, { projectId, kind: "task", title: "a" }, "web");

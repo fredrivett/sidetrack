@@ -47,6 +47,7 @@ export function ProjectColumn({
           <EditableText
             value={project.name}
             onSave={(next) => updateProjectAction(project.id, { name: next })}
+            required
             className="block w-full truncate text-base font-semibold"
             inputClassName="w-full text-base font-semibold"
           />

@@ -7,6 +7,7 @@ export function EditableText({
   onSave,
   multiline = false,
   placeholder,
+  required = false,
   className = "",
   inputClassName = "",
   renderValue,
@@ -15,6 +16,9 @@ export function EditableText({
   onSave: (next: string) => void | Promise<unknown>;
   multiline?: boolean;
   placeholder?: string;
+  // When true, an empty value is rejected: blanking the field reverts to the
+  // current value instead of saving (mirrors the core's non-empty guard).
+  required?: boolean;
   className?: string;
   inputClassName?: string;
   // Custom rendering for the non-editing display of a non-empty value (e.g. a
@@ -42,6 +46,11 @@ export function EditableText({
   function commit() {
     setEditing(false);
     const trimmed = draft.trim();
+    // A required field can't be blanked — discard the edit and revert.
+    if (required && !trimmed) {
+      setDraft(value);
+      return;
+    }
     if (trimmed !== value.trim()) {
       void onSave(trimmed);
     } else {

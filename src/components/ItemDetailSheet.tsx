@@ -125,6 +125,7 @@ export function ItemDetailSheet({
             <EditableText
               value={item.title}
               onSave={(next) => updateItemAction(item.id, { title: next })}
+              required
               className={`block w-full break-words text-base font-medium ${
                 completed ? "text-neutral-400 line-through" : ""
               }`}

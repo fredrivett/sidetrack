@@ -3,8 +3,10 @@ import { listAudit } from "./audit";
 import {
   createProject,
   deleteProject,
+  getProject,
   listProjects,
   reorderProject,
+  updateProject,
 } from "./projects";
 import { createTestDb, createTestUser } from "./test-helpers";
 
@@ -16,6 +18,24 @@ describe("projects", () => {
     createProject(db, u, { name: "B" }, "mcp");
     createProject(db, u, { name: "C" }, "web");
     expect(listProjects(db, u).map((p) => p.name)).toEqual(["A", "B", "C"]);
+  });
+
+  it("rejects a blank name on create", () => {
+    const { db } = createTestDb();
+    const u = createTestUser(db);
+    expect(() => createProject(db, u, { name: "   " }, "web")).toThrow(
+      /name cannot be empty/,
+    );
+  });
+
+  it("rejects clearing the name on update and leaves it unchanged", () => {
+    const { db } = createTestDb();
+    const u = createTestUser(db);
+    const p = createProject(db, u, { name: "keep me" }, "web");
+    expect(() => updateProject(db, u, p.id, { name: " " }, "web")).toThrow(
+      /name cannot be empty/,
+    );
+    expect(getProject(db, u, p.id)?.name).toBe("keep me");
   });
 
   it("reorders a project after another", () => {
