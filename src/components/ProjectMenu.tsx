@@ -11,8 +11,10 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Kbd } from "@/components/ui/kbd";
 import { validatePrefix } from "@/lib/itemRef";
 
 export function ProjectMenu({
@@ -22,6 +24,7 @@ export function ProjectMenu({
   name,
   prefix,
   onShowActivity,
+  onAddItem,
 }: {
   projectId: string;
   prevId: string | null;
@@ -29,6 +32,7 @@ export function ProjectMenu({
   name: string;
   prefix: string;
   onShowActivity: (projectId: string) => void;
+  onAddItem: (projectId: string) => void;
 }) {
   const [pending, start] = useTransition();
 
@@ -70,6 +74,13 @@ export function ProjectMenu({
         ⋯
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
+        <DropdownMenuItem onClick={() => onAddItem(projectId)}>
+          Add new item
+          <DropdownMenuShortcut>
+            <Kbd>C</Kbd>
+          </DropdownMenuShortcut>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         <DropdownMenuItem
           disabled={!prevId}
           onClick={() =>

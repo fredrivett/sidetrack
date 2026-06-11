@@ -1,11 +1,11 @@
 "$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
 
 [scripts]
+# Migrate + seed run via the `predev` hook on `pnpm dev`, so they apply to the
+# root repo and every workspace (and self-heal if a DB is recreated).
 setup = """
 pnpm install
 ln -sfn "$CONDUCTOR_ROOT_PATH/.env.local" .env.local
-mkdir -p data
-pnpm db:migrate
-SIDETRACK_SEED=true pnpm db:seed"""
-run = "pnpm dev --port \"$CONDUCTOR_PORT\""
+mkdir -p data"""
+run = "BETTER_AUTH_URL=\"http://localhost:$CONDUCTOR_PORT\" pnpm dev --port \"$CONDUCTOR_PORT\""
 run_mode = "concurrent"
