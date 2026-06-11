@@ -1,5 +1,6 @@
 import { and, asc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { hasProjectAccess } from "./access";
 import { recordAudit } from "./audit";
 import type { Db } from "./db";
 import { getItem } from "./items";
@@ -11,9 +12,10 @@ import {
   projects,
 } from "./schema";
 
-// PR links are owned transitively through their item → project. Reads join
-// items+projects and filter projects.user_id so a user only ever sees links
-// on their own items; writes verify item ownership via getItem() first.
+// PR links are accessed transitively through their item → project. Reads join
+// items+projects and filter via hasProjectAccess so a user only ever sees links
+// on items in projects they have access to; writes verify item access via
+// getItem() first.
 
 const GITHUB_PR_PATH = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/.*)?$/;
 
@@ -57,7 +59,7 @@ export function listAllPrLinks(db: Db, userId: string): ItemPrLink[] {
     .from(itemPrLinks)
     .innerJoin(items, eq(items.id, itemPrLinks.itemId))
     .innerJoin(projects, eq(projects.id, items.projectId))
-    .where(eq(projects.userId, userId))
+    .where(hasProjectAccess(userId))
     .orderBy(asc(itemPrLinks.createdAt))
     .all()
     .map((row) => row.itemPrLinks);
@@ -73,7 +75,7 @@ export function listPrLinksForItem(
     .from(itemPrLinks)
     .innerJoin(items, eq(items.id, itemPrLinks.itemId))
     .innerJoin(projects, eq(projects.id, items.projectId))
-    .where(and(eq(itemPrLinks.itemId, itemId), eq(projects.userId, userId)))
+    .where(and(eq(itemPrLinks.itemId, itemId), hasProjectAccess(userId)))
     .orderBy(asc(itemPrLinks.createdAt))
     .all()
     .map((row) => row.itemPrLinks);
@@ -89,7 +91,7 @@ export function listItemsForPr(
     .from(itemPrLinks)
     .innerJoin(items, eq(items.id, itemPrLinks.itemId))
     .innerJoin(projects, eq(projects.id, items.projectId))
-    .where(and(eq(itemPrLinks.prUrl, prUrl), eq(projects.userId, userId)))
+    .where(and(eq(itemPrLinks.prUrl, prUrl), hasProjectAccess(userId)))
     .all()
     .map((row) => row.itemPrLinks);
 }

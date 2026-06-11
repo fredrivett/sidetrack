@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 import { derivePrefix, dedupePrefix, validatePrefix } from "../lib/itemRef";
 import { normalizeProjectIcon } from "../lib/projectIcon";
 import { normalizeHomepageUrl } from "../lib/url";
+import { hasProjectAccess } from "./access";
 import { recordAudit } from "./audit";
 import type { Db } from "./db";
 import {
@@ -23,7 +24,7 @@ export function listProjects(db: Db, userId: string): Project[] {
   return db
     .select()
     .from(projects)
-    .where(eq(projects.userId, userId))
+    .where(hasProjectAccess(userId))
     .orderBy(asc(projects.position))
     .all();
 }
@@ -36,7 +37,7 @@ export function getProject(
   return db
     .select()
     .from(projects)
-    .where(and(eq(projects.id, id), eq(projects.userId, userId)))
+    .where(and(eq(projects.id, id), hasProjectAccess(userId)))
     .get();
 }
 
