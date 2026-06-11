@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, Circle, Trash2 } from "lucide-react";
+import { CheckCircle2, Circle, Copy, Trash2 } from "lucide-react";
 import { useState, useTransition } from "react";
 import {
   completeItemAction,
@@ -9,9 +9,12 @@ import {
   updateItemAction,
 } from "@/app/actions";
 import type { Item, ItemPrLink } from "@/core/schema";
+import { formatItemRef } from "@/lib/itemRef";
+import { modifierSymbol } from "@/lib/keyboard";
 import { prLabel } from "@/lib/pr";
 import { dayLabel } from "@/lib/time";
 import { Button } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
 import {
   Sheet,
   SheetContent,
@@ -23,6 +26,7 @@ import {
 import { useMediaQuery } from "@/components/ui/use-media-query";
 import { CategoryBadge } from "./CategoryBadge";
 import { EditableText } from "./EditableText";
+import { useCopyItemRef } from "./useCopyItemRef";
 
 function Field({
   label,
@@ -43,11 +47,13 @@ function Field({
 
 export function ItemDetailSheet({
   item,
+  prefix,
   prLinks,
   open,
   onOpenChange,
 }: {
   item: Item;
+  prefix: string;
   prLinks: ItemPrLink[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -58,6 +64,10 @@ export function ItemDetailSheet({
   const [pending, start] = useTransition();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const completed = item.completedAt !== null;
+  const ref = formatItemRef(prefix, item.number);
+
+  // While the sheet is open, ⌘./Ctrl+. copies the ref (Linear's shortcut).
+  const { copy } = useCopyItemRef(ref, { active: open });
 
   function change(next: boolean) {
     if (!next) setConfirmingDelete(false);
@@ -104,6 +114,16 @@ export function ItemDetailSheet({
             >
               {item.kind}
             </span>
+            <button
+              type="button"
+              onClick={() => void copy()}
+              title="Copy ID"
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[11px] tracking-wide text-neutral-500 transition hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
+            >
+              <Copy className="size-3 opacity-70" />
+              {ref}
+              <Kbd className="ml-0.5">{modifierSymbol()}.</Kbd>
+            </button>
             <Button
               type="button"
               variant="outline"
