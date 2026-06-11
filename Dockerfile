@@ -18,6 +18,18 @@ RUN pnpm install --frozen-lockfile --config.node-linker=hoisted
 # ---------- Build ----------
 FROM base AS builder
 ENV NEXT_TELEMETRY_DISABLED=1
+# NEXT_PUBLIC_* values are inlined into the client bundle during `next build`,
+# so they must be present AT BUILD TIME — a runtime-only env var is too late.
+# Railway passes a service variable into a Dockerfile build only when a matching
+# ARG is declared, so declare the public PostHog key here and promote it to ENV
+# before the build. Without this the client bundle ships no key, posthog never
+# initializes, and client-side error capture is a silent no-op.
+# Only the key: instrumentation-client guards it with `if (key)`, so an empty
+# value is safely treated as "unset". We deliberately do NOT thread the host the
+# same way — it's read with `?? default`, where an empty string would clobber
+# the default with "".
+ARG NEXT_PUBLIC_POSTHOG_KEY
+ENV NEXT_PUBLIC_POSTHOG_KEY=$NEXT_PUBLIC_POSTHOG_KEY
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN pnpm build
