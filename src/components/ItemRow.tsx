@@ -18,23 +18,23 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { CategoryBadge } from "./CategoryBadge";
-import { ItemDetailSheet } from "./ItemDetailSheet";
 
 export function ItemRow({
   item,
   prLinks,
   draggable,
+  onOpenDetail,
 }: {
   item: Item;
   prLinks: ItemPrLink[];
   draggable: boolean;
+  onOpenDetail: () => void;
 }) {
   const sortable = useSortable({ id: item.id, disabled: !draggable });
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     sortable;
   const [pending, start] = useTransition();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [detailOpen, setDetailOpen] = useState(false);
   const completed = item.completedAt !== null;
 
   const style = {
@@ -83,7 +83,7 @@ export function ItemRow({
       <div className="min-w-0 flex-1 space-y-0.5">
         <button
           type="button"
-          onClick={() => setDetailOpen(true)}
+          onClick={onOpenDetail}
           className="block w-full space-y-0.5 text-left"
         >
           <span
@@ -147,13 +147,6 @@ export function ItemRow({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-
-      <ItemDetailSheet
-        item={item}
-        prLinks={prLinks}
-        open={detailOpen}
-        onOpenChange={setDetailOpen}
-      />
     </div>
   );
 }

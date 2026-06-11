@@ -5,10 +5,12 @@ import type { Category, Item, ItemPrLink, Project } from "@/core/schema";
 import { AddItemForm } from "./AddItemForm";
 import { CompletedSection } from "./CompletedSection";
 import { EditableText } from "./EditableText";
+import { ItemDetailSheet } from "./ItemDetailSheet";
 import { ItemList } from "./ItemList";
 import { ProjectMenu } from "./ProjectMenu";
 import { StatusBadge } from "./StatusBadge";
 import { SummaryBlock } from "./SummaryBlock";
+import { useItemDetailSheet } from "./use-item-detail-sheet";
 
 export function ProjectColumn({
   project,
@@ -29,6 +31,11 @@ export function ProjectColumn({
 }) {
   const completed = items.filter((i) => i.completedAt !== null);
   const active = items.filter((i) => i.completedAt === null);
+
+  // Lives above the active/completed split so it survives an item moving
+  // between ItemList and CompletedSection when it's (un)completed — see the
+  // hook for the live-lookup / closing-snapshot details.
+  const detail = useItemDetailSheet(items);
 
   return (
     <article
@@ -62,14 +69,31 @@ export function ProjectColumn({
         />
 
         <div className="space-y-3 pt-3">
-          <CompletedSection items={completed} prLinksByItem={prLinksByItem} />
-          <ItemList items={active} prLinksByItem={prLinksByItem} />
+          <CompletedSection
+            items={completed}
+            prLinksByItem={prLinksByItem}
+            onOpenDetail={detail.openDetail}
+          />
+          <ItemList
+            items={active}
+            prLinksByItem={prLinksByItem}
+            onOpenDetail={detail.openDetail}
+          />
         </div>
       </div>
 
       <div className="shrink-0">
         <AddItemForm projectId={project.id} categories={categories} />
       </div>
+
+      {detail.item && (
+        <ItemDetailSheet
+          item={detail.item}
+          prLinks={prLinksByItem[detail.item.id] ?? []}
+          open={detail.open}
+          onOpenChange={detail.onOpenChange}
+        />
+      )}
     </article>
   );
 }

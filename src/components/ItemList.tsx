@@ -21,9 +21,11 @@ import { ItemRow } from "./ItemRow";
 export function ItemList({
   items,
   prLinksByItem,
+  onOpenDetail,
 }: {
   items: Item[];
   prLinksByItem: Record<string, ItemPrLink[]>;
+  onOpenDetail: (item: Item) => void;
 }) {
   const [optimistic, setOptimistic] = useState<Item[] | null>(null);
   const [, start] = useTransition();
@@ -86,6 +88,7 @@ export function ItemList({
               item={item}
               prLinks={prLinksByItem[item.id] ?? []}
               draggable
+              onOpenDetail={() => onOpenDetail(item)}
             />
           ))}
         </div>

@@ -7,9 +7,11 @@ import { ItemRow } from "./ItemRow";
 export function CompletedSection({
   items,
   prLinksByItem,
+  onOpenDetail,
 }: {
   items: Item[];
   prLinksByItem: Record<string, ItemPrLink[]>;
+  onOpenDetail: (item: Item) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   if (items.length === 0) return null;
@@ -27,6 +29,7 @@ export function CompletedSection({
             item={it}
             prLinks={prLinksByItem[it.id] ?? []}
             draggable={false}
+            onOpenDetail={() => onOpenDetail(it)}
           />
         ))}
       </div>
