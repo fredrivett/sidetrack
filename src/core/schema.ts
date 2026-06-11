@@ -75,6 +75,28 @@ export const projects = sqliteTable(
   (t) => [uniqueIndex("projects_user_prefix").on(t.userId, t.prefix)],
 );
 
+// Collaborators on a project. The owner is projects.userId (always exactly
+// one); this table holds the additional editors (zero or more). There is no
+// role column — every member has the same read+edit access as the owner,
+// except for owner-only actions (delete, prefix change, managing members).
+// Cascades on project delete; deliberately NO foreign key on user_id, matching
+// projects.user_id / audit_log.actor — a deleted user must not break the
+// project for its other members.
+export const projectMembers = sqliteTable(
+  "project_members",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    createdAt: integer("created_at")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => [uniqueIndex("project_members_project_user").on(t.projectId, t.userId)],
+);
+
 export const items = sqliteTable(
   "items",
   {
@@ -169,6 +191,8 @@ export const auditLog = sqliteTable(
 
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
+export type ProjectMember = typeof projectMembers.$inferSelect;
+export type NewProjectMember = typeof projectMembers.$inferInsert;
 export type Item = typeof items.$inferSelect;
 export type NewItem = typeof items.$inferInsert;
 export type Category = typeof categories.$inferSelect;
