@@ -14,6 +14,7 @@ import { prLabel } from "@/lib/pr";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -152,17 +153,21 @@ export function ItemRow({
           ⋯
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-44">
-          <DropdownMenuLabel className="font-mono text-[11px] tracking-wide text-neutral-400">
-            {ref}
-          </DropdownMenuLabel>
-          <DropdownMenuItem closeOnClick={false} onClick={copyId}>
-            {copied ? (
-              <Check className="opacity-70" />
-            ) : (
-              <Copy className="opacity-70" />
-            )}
-            {copied ? "Copied" : "Copy ID"}
-          </DropdownMenuItem>
+          {/* Label + Copy ID share a Group: base-ui's GroupLabel throws if it
+              isn't rendered inside a Menu.Group. */}
+          <DropdownMenuGroup>
+            <DropdownMenuLabel className="font-mono text-[11px] tracking-wide text-neutral-400">
+              {ref}
+            </DropdownMenuLabel>
+            <DropdownMenuItem closeOnClick={false} onClick={copyId}>
+              {copied ? (
+                <Check className="opacity-70" />
+              ) : (
+                <Copy className="opacity-70" />
+              )}
+              {copied ? "Copied" : "Copy ID"}
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
           <DropdownMenuSeparator />
           <DropdownMenuItem
             variant="destructive"
