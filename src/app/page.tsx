@@ -3,7 +3,7 @@ import { listCategories } from "@/core/categories";
 import { getDb } from "@/core/db";
 import { projectRefPrefixes } from "@/core/itemRef";
 import { listItems } from "@/core/items";
-import { listPendingInvites } from "@/core/members";
+import { listAssignees, listPendingInvites } from "@/core/members";
 import { listAllPrLinks } from "@/core/prLinks";
 import { listProjects } from "@/core/projects";
 import type { ItemPrLink } from "@/core/schema";
@@ -34,6 +34,10 @@ export default async function Home() {
   const categoriesByProject = Object.fromEntries(
     projects.map((p) => [p.id, listCategories(db, userId, p.id)]),
   );
+  // Who each project's items can be assigned to: its owner + accepted members.
+  const assigneesByProject = Object.fromEntries(
+    projects.map((p) => [p.id, listAssignees(db, userId, p.id)]),
+  );
   const prLinksByItem: Record<string, ItemPrLink[]> = {};
   for (const link of listAllPrLinks(db, userId)) {
     (prLinksByItem[link.itemId] ??= []).push(link);
@@ -44,6 +48,7 @@ export default async function Home() {
       projects={projects}
       itemsByProject={itemsByProject}
       categoriesByProject={categoriesByProject}
+      assigneesByProject={assigneesByProject}
       prLinksByItem={prLinksByItem}
       pendingInvites={pendingInvites}
     />

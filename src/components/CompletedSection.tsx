@@ -1,17 +1,20 @@
 "use client";
 
 import { useState } from "react";
+import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { ItemRow } from "./ItemRow";
 
 export function CompletedSection({
   items,
   prefix,
+  assignees,
   prLinksByItem,
   onOpenDetail,
 }: {
   items: Item[];
   prefix: string;
+  assignees: AssigneeView[];
   prLinksByItem: Record<string, ItemPrLink[]>;
   onOpenDetail: (item: Item) => void;
 }) {
@@ -30,6 +33,7 @@ export function CompletedSection({
             key={it.id}
             item={it}
             prefix={prefix}
+            assignees={assignees}
             prLinks={prLinksByItem[it.id] ?? []}
             draggable={false}
             onOpenDetail={() => onOpenDetail(it)}

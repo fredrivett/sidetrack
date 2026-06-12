@@ -12,6 +12,7 @@ vi.mock("@/app/actions", () => ({
   completeItemAction: vi.fn(),
   uncompleteItemAction: vi.fn(),
   deleteItemAction: vi.fn(),
+  updateItemAction: vi.fn(),
 }));
 
 beforeAll(() => {
@@ -39,6 +40,7 @@ const item: Item = {
   title: "Write docs",
   description: null,
   category: null,
+  assigneeId: null,
   position: "a0",
   number: 42,
   completedAt: null,
@@ -52,6 +54,7 @@ function renderRow() {
         <ItemRow
           item={item}
           prefix="ENG"
+          assignees={[]}
           prLinks={[]}
           draggable={false}
           onOpenDetail={() => {}}

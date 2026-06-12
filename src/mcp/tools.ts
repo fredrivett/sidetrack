@@ -383,21 +383,33 @@ export function registerTools(
     {
       title: "Update item",
       description:
-        "Patch title/description/category on an item. Pass description or category as null to clear it. " +
-        "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
+        "Patch title/description/category/assignee on an item. Pass description or category as null to clear it. " +
+        "assignee_id assigns the item to a user — the project owner or an accepted member (get a user_id from list_members); " +
+        "pass null to unassign. id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: {
         id: z.string(),
         title: z.string().optional(),
         description: z.string().nullable().optional(),
         category: z.string().nullable().optional(),
+        assignee_id: z.string().nullable().optional(),
       },
     },
-    async ({ id, ...patch }) => {
+    async ({ id, assignee_id, ...patch }) => {
       const { db } = getDb();
       const { item, error } = resolveItemArg(db, userId, id);
       if (error) return error;
       return json(
-        withItemRef(db, userId, updateItem(db, userId, item.id, patch, SOURCE)),
+        withItemRef(
+          db,
+          userId,
+          updateItem(
+            db,
+            userId,
+            item.id,
+            { ...patch, assigneeId: assignee_id },
+            SOURCE,
+          ),
+        ),
       );
     },
   );

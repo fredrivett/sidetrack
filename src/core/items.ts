@@ -1,6 +1,7 @@
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { hasProjectAccess } from "./access";
+import { users } from "./auth-schema";
 import { recordAudit } from "./audit";
 import { ensureCategory } from "./categories";
 import type { Db } from "./db";
@@ -97,6 +98,21 @@ function assertTitle(title: string): string {
   return trimmed;
 }
 
+// Human-readable label for an assignee in an audit detail: their `@username`,
+// falling back to name, email, then the raw id (a removed/unknown user).
+function assigneeLabel(db: Db, id: string): string {
+  const u = db
+    .select({
+      username: users.username,
+      name: users.name,
+      email: users.email,
+    })
+    .from(users)
+    .where(eq(users.id, id))
+    .get();
+  return u?.username ? `@${u.username}` : (u?.name ?? u?.email ?? id);
+}
+
 export function addItem(
   db: Db,
   userId: string,
@@ -187,7 +203,12 @@ export function updateItem(
   db: Db,
   userId: string,
   id: string,
-  patch: { title?: string; description?: string | null; category?: string | null },
+  patch: {
+    title?: string;
+    description?: string | null;
+    category?: string | null;
+    assigneeId?: string | null;
+  },
   source: AuditSource,
 ): Item {
   const existing = getItem(db, userId, id);
@@ -214,6 +235,19 @@ export function updateItem(
     if (c !== existing.category) {
       next.category = c;
       changes.push(c ? `category → ${c}` : "category cleared");
+    }
+  }
+  if (patch.assigneeId !== undefined) {
+    const a = patch.assigneeId || null;
+    // An assignee must have access to the project (be its owner or an accepted
+    // member). projectAccessibleForUser is exactly that predicate applied to
+    // the assignee rather than the caller.
+    if (a && !projectAccessibleForUser(db, a, existing.projectId)) {
+      throw new Error(`assignee does not have access to the project: ${a}`);
+    }
+    if (a !== existing.assigneeId) {
+      next.assigneeId = a;
+      changes.push(a ? `assigned to ${assigneeLabel(db, a)}` : "unassigned");
     }
   }
   if (Object.keys(next).length === 0) return existing;

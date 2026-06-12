@@ -1,6 +1,13 @@
 "use client";
 
-import { CheckCircle2, Circle, Copy, Trash2 } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronDown,
+  Circle,
+  CircleDashed,
+  Copy,
+  Trash2,
+} from "lucide-react";
 import { useState, useTransition } from "react";
 import {
   completeItemAction,
@@ -8,12 +15,18 @@ import {
   uncompleteItemAction,
   updateItemAction,
 } from "@/app/actions";
+import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { formatItemRef } from "@/lib/itemRef";
 import { modifierSymbol } from "@/lib/keyboard";
 import { prLabel } from "@/lib/pr";
 import { dayLabel } from "@/lib/time";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Kbd } from "@/components/ui/kbd";
 import {
   Sheet,
@@ -24,9 +37,11 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { useMediaQuery } from "@/components/ui/use-media-query";
+import { AssigneeOptions } from "./AssigneeOptions";
 import { CategoryBadge } from "./CategoryBadge";
 import { EditableText } from "./EditableText";
 import { useCopyItemRef } from "./useCopyItemRef";
+import { assigneeName, UserAvatar } from "./UserAvatar";
 
 function Field({
   label,
@@ -48,12 +63,14 @@ function Field({
 export function ItemDetailSheet({
   item,
   prefix,
+  assignees,
   prLinks,
   open,
   onOpenChange,
 }: {
   item: Item;
   prefix: string;
+  assignees: AssigneeView[];
   prLinks: ItemPrLink[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -65,6 +82,13 @@ export function ItemDetailSheet({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const completed = item.completedAt !== null;
   const ref = formatItemRef(prefix, item.number);
+  const assignee = assignees.find((a) => a.userId === item.assigneeId);
+
+  function assign(assigneeId: string | null) {
+    start(() => {
+      void updateItemAction(item.id, { assigneeId });
+    });
+  }
 
   // While the sheet is open, ⌘./Ctrl+. copies the ref (Linear's shortcut).
   const { copy } = useCopyItemRef(ref, { active: open });
@@ -182,6 +206,37 @@ export function ItemDetailSheet({
               inputClassName="w-full text-sm"
               renderValue={(category) => <CategoryBadge category={category} />}
             />
+          </Field>
+
+          <Field label="Assignee">
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                disabled={pending}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-neutral-100 disabled:opacity-50 dark:hover:bg-neutral-800"
+              >
+                {assignee ? (
+                  <>
+                    <UserAvatar user={assignee} size={20} />
+                    <span className="truncate text-neutral-700 dark:text-neutral-200">
+                      {assigneeName(assignee)}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <CircleDashed className="size-5 text-neutral-400" />
+                    <span className="text-neutral-500">Unassigned</span>
+                  </>
+                )}
+                <ChevronDown className="ml-auto size-4 opacity-50" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <AssigneeOptions
+                  currentId={item.assigneeId}
+                  assignees={assignees}
+                  onPick={assign}
+                />
+              </DropdownMenuContent>
+            </DropdownMenu>
           </Field>
 
           {prLinks.length > 0 && (

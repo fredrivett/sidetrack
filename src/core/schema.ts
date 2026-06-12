@@ -145,6 +145,12 @@ export const items = sqliteTable(
     title: text("title").notNull(),
     description: text("description"),
     category: text("category"),
+    // The user this item is assigned to (the project owner or an accepted
+    // member); null = unassigned, the default. Deliberately NO foreign key on
+    // user_id, matching projects.user_id / project_members.user_id — a deleted
+    // user must not break the item for the rest of the project. Assignment to a
+    // non-member is rejected in updateItem, not at the DB layer.
+    assigneeId: text("assignee_id"),
     position: text("position").notNull(),
     // Per-project sequence value (from projects.item_seq) behind the display
     // ref `${prefix}-${number}`. Unique within a project; monotonic.

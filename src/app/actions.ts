@@ -173,7 +173,12 @@ export async function addItemAction(input: {
 
 export async function updateItemAction(
   id: string,
-  patch: { title?: string; description?: string | null; category?: string | null },
+  patch: {
+    title?: string;
+    description?: string | null;
+    category?: string | null;
+    assigneeId?: string | null;
+  },
 ) {
   const userId = await requireUserId();
   const { db } = getDb();
