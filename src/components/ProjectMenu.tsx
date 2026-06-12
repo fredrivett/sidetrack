@@ -24,6 +24,7 @@ export function ProjectMenu({
   name,
   prefix,
   onShowActivity,
+  onShowDetails,
   onAddItem,
 }: {
   projectId: string;
@@ -32,6 +33,7 @@ export function ProjectMenu({
   name: string;
   prefix: string;
   onShowActivity: (projectId: string) => void;
+  onShowDetails: () => void;
   onAddItem: (projectId: string) => void;
 }) {
   const [pending, start] = useTransition();
@@ -74,6 +76,9 @@ export function ProjectMenu({
         ⋯
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
+        <DropdownMenuItem onClick={onShowDetails}>
+          Project details
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={() => onAddItem(projectId)}>
           Add new item
           <DropdownMenuShortcut>
