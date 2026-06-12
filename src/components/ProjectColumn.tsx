@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { updateProjectAction } from "@/app/actions";
-import type { Item, ItemPrLink, Project } from "@/core/schema";
+import type { Item, ItemPrLink } from "@/core/schema";
 import { CompletedSection } from "./CompletedSection";
+import type { ProjectView } from "./Kanban";
 import { EditableText } from "./EditableText";
 import { ItemDetailSheet } from "./ItemDetailSheet";
 import { ItemList } from "./ItemList";
@@ -22,14 +23,16 @@ export function ProjectColumn({
   nextId,
   onShowActivity,
   onAddItem,
+  onShare,
 }: {
-  project: Project;
+  project: ProjectView;
   items: Item[];
   prLinksByItem: Record<string, ItemPrLink[]>;
   prevId: string | null;
   nextId: string | null;
   onShowActivity: (projectId: string) => void;
   onAddItem: (projectId: string) => void;
+  onShare: (projectId: string, projectName: string) => void;
 }) {
   const completed = items.filter((i) => i.completedAt !== null);
   const active = items.filter((i) => i.completedAt === null);
@@ -63,6 +66,11 @@ export function ProjectColumn({
             <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-[10px] tracking-wide text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
               {project.prefix}
             </span>
+            {!project.isOwner && (
+              <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sky-700 dark:bg-sky-950 dark:text-sky-400">
+                Shared
+              </span>
+            )}
           </div>
         </div>
         <ProjectMenu
@@ -71,9 +79,11 @@ export function ProjectColumn({
           nextId={nextId}
           name={project.name}
           prefix={project.prefix}
+          isOwner={project.isOwner}
           onShowActivity={onShowActivity}
           onShowDetails={() => setDetailsOpen(true)}
           onAddItem={onAddItem}
+          onShare={onShare}
         />
       </header>
 
@@ -87,14 +97,14 @@ export function ProjectColumn({
         <div className="space-y-3 pt-3">
           <CompletedSection
             items={completed}
-            prefix={project.prefix}
+            prefix={project.refPrefix}
             prLinksByItem={prLinksByItem}
             onOpenDetail={detail.openDetail}
           />
           <ItemList
             projectId={project.id}
             items={active}
-            prefix={project.prefix}
+            prefix={project.refPrefix}
             prLinksByItem={prLinksByItem}
             onOpenDetail={detail.openDetail}
           />

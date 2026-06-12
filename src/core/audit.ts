@@ -1,5 +1,6 @@
 import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { hasProjectAccess } from "./access";
 import { users } from "./auth-schema";
 import type { Db } from "./db";
 import {
@@ -58,30 +59,30 @@ export function listAudit(
 
   if (opts.projectId) {
     // Project-scoped view: every actor's activity on this one project. The
-    // projectId comes from the client, so authorize it here — only the
-    // project's owner may read its history. A non-owner (or unknown id)
-    // gets nothing rather than another user's audit trail.
-    const owned = db
+    // projectId comes from the client, so authorize it here — only someone
+    // with access to the project (owner or member) may read its history. A
+    // non-member (or unknown id) gets nothing rather than another user's
+    // audit trail.
+    const accessible = db
       .select({ id: projects.id })
       .from(projects)
-      .where(and(eq(projects.id, opts.projectId), eq(projects.userId, userId)))
+      .where(and(eq(projects.id, opts.projectId), hasProjectAccess(userId)))
       .get();
-    if (!owned) return [];
+    if (!accessible) return [];
     filters.push(eq(auditLog.projectId, opts.projectId));
   } else {
-    // All-projects view: any actor's activity on a project the user owns,
+    // All-projects view: any actor's activity on a project the user can access,
     // plus the user's own *orphaned* rows — events with no live project, i.e.
     // account-level events (API keys, no projectId) and history of projects
     // they deleted. `projects.id IS NULL` (audit_log has no FK, so a missing
     // or deleted project yields a null left-join) scopes the actor fallback
     // to exactly those orphaned rows, so it can't leak rows the user authored
-    // on a project they don't own. (When sharing lands, the first arm becomes
-    // a membership check rather than ownership.)
-    const ownedOrMine = or(
-      eq(projects.userId, userId),
+    // on a project they no longer have access to.
+    const accessibleOrMine = or(
+      hasProjectAccess(userId),
       and(isNull(projects.id), eq(auditLog.actor, userId)),
     );
-    if (ownedOrMine) filters.push(ownedOrMine);
+    if (accessibleOrMine) filters.push(accessibleOrMine);
   }
 
   if (opts.source) filters.push(eq(auditLog.source, opts.source));

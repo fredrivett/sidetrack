@@ -43,31 +43,29 @@ export interface EmailDeps {
   sendSmtp: (smtpUrl: string, message: OutboundEmail) => Promise<void>;
 }
 
-// Single source of truth for the reset email's copy, shared by every transport
-// so the SMTP and Resend paths can never drift.
-function passwordResetMessage(url: string): { subject: string; text: string } {
-  return {
-    subject: "Reset your Sidetrack password",
-    text:
-      "Someone (hopefully you) asked to reset the password for this " +
-      `Sidetrack account.\n\nReset it here: ${url}\n\nThe link expires in ` +
-      "1 hour. If you didn't ask for this, you can ignore this email — " +
-      "your password is unchanged.",
-  };
+// A ready-to-send message plus the two per-message strings the transport needs:
+// `logLine` (the no-transport console fallback, carrying the actionable URL so a
+// self-hosted operator can copy it) and `errorLabel` (the noun in a Resend
+// rejection, e.g. "password reset email").
+interface DeliverableEmail {
+  to: string;
+  subject: string;
+  text: string;
+  logLine: string;
+  errorLabel: string;
 }
 
 /**
- * Pure-dependency core, exported for tests; app code uses
- * `sendPasswordResetEmail` below. Throws on a failed Resend/SMTP call — callers
- * decide how loudly to surface that (the password-reset wiring logs it
- * server-side only, since its HTTP response must stay identical whether or
- * not the account exists).
+ * Shared transport: SMTP if configured, else Resend, else log the fallback.
+ * The message-specific copy is built by the per-email builders below, so the
+ * SMTP and Resend paths can never drift. Throws on a failed Resend/SMTP call —
+ * callers decide how loudly to surface that.
  */
-export async function deliverPasswordResetEmail(
-  { to, url }: { to: string; url: string },
+async function deliverEmail(
+  message: DeliverableEmail,
   { env, fetchFn, log, sendSmtp }: EmailDeps,
 ): Promise<void> {
-  const { subject, text } = passwordResetMessage(url);
+  const { to, subject, text } = message;
 
   if (env.SMTP_URL) {
     await sendSmtp(env.SMTP_URL, {
@@ -80,9 +78,7 @@ export async function deliverPasswordResetEmail(
   }
 
   if (!env.RESEND_API_KEY) {
-    log(
-      `[email] no SMTP_URL or RESEND_API_KEY set — password reset link for ${to}: ${url}`,
-    );
+    log(message.logLine);
     return;
   }
 
@@ -103,9 +99,87 @@ export async function deliverPasswordResetEmail(
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(
-      `Resend rejected the password reset email (${res.status}): ${body.slice(0, 200)}`,
+      `Resend rejected the ${message.errorLabel} (${res.status}): ${body.slice(0, 200)}`,
     );
   }
+}
+
+// Single source of truth for the reset email's copy.
+function passwordResetMessage(url: string): { subject: string; text: string } {
+  return {
+    subject: "Reset your Sidetrack password",
+    text:
+      "Someone (hopefully you) asked to reset the password for this " +
+      `Sidetrack account.\n\nReset it here: ${url}\n\nThe link expires in ` +
+      "1 hour. If you didn't ask for this, you can ignore this email — " +
+      "your password is unchanged.",
+  };
+}
+
+/**
+ * Pure-dependency core, exported for tests; app code uses
+ * `sendPasswordResetEmail` below. The password-reset wiring logs a Resend
+ * failure server-side only, since its HTTP response must stay identical
+ * whether or not the account exists.
+ */
+export async function deliverPasswordResetEmail(
+  { to, url }: { to: string; url: string },
+  deps: EmailDeps,
+): Promise<void> {
+  const { subject, text } = passwordResetMessage(url);
+  await deliverEmail(
+    {
+      to,
+      subject,
+      text,
+      logLine: `[email] no SMTP_URL or RESEND_API_KEY set — password reset link for ${to}: ${url}`,
+      errorLabel: "password reset email",
+    },
+    deps,
+  );
+}
+
+// Single source of truth for the project-invite email's copy.
+function inviteMessage({
+  inviterName,
+  projectName,
+  url,
+}: {
+  inviterName: string;
+  projectName: string;
+  url: string;
+}): { subject: string; text: string } {
+  return {
+    subject: `${inviterName} invited you to a Sidetrack project`,
+    text:
+      `${inviterName} invited you to collaborate on "${projectName}" in ` +
+      `Sidetrack.\n\nOpen Sidetrack to accept: ${url}\n\nIf you weren't ` +
+      "expecting this, you can ignore this email — nothing changes until you " +
+      "accept.",
+  };
+}
+
+/** Pure-dependency core for the invite email; app code uses `sendInviteEmail`. */
+export async function deliverInviteEmail(
+  {
+    to,
+    inviterName,
+    projectName,
+    url,
+  }: { to: string; inviterName: string; projectName: string; url: string },
+  deps: EmailDeps,
+): Promise<void> {
+  const { subject, text } = inviteMessage({ inviterName, projectName, url });
+  await deliverEmail(
+    {
+      to,
+      subject,
+      text,
+      logLine: `[email] no SMTP_URL or RESEND_API_KEY set — project invite for ${to}: ${url}`,
+      errorLabel: "invite email",
+    },
+    deps,
+  );
 }
 
 // Drop any embedded credentials (smtp://user:pass@host) before a URL reaches
@@ -150,12 +224,9 @@ async function sendViaSmtp(
   }
 }
 
-export async function sendPasswordResetEmail(opts: {
-  to: string;
-  url: string;
-}): Promise<void> {
+function liveDeps(): EmailDeps {
   const env = getEnv();
-  await deliverPasswordResetEmail(opts, {
+  return {
     env: {
       SMTP_URL: env.SMTP_URL,
       RESEND_API_KEY: env.RESEND_API_KEY,
@@ -164,5 +235,40 @@ export async function sendPasswordResetEmail(opts: {
     fetchFn: fetch,
     log: console.log,
     sendSmtp: sendViaSmtp,
-  });
+  };
+}
+
+export async function sendPasswordResetEmail(opts: {
+  to: string;
+  url: string;
+}): Promise<void> {
+  await deliverPasswordResetEmail(opts, liveDeps());
+}
+
+export async function sendInviteEmail(opts: {
+  to: string;
+  inviterName: string;
+  projectName: string;
+  url: string;
+}): Promise<void> {
+  await deliverInviteEmail(opts, liveDeps());
+}
+
+/**
+ * Best-effort invite notification: sends the email but never throws — a
+ * delivery failure is logged and swallowed, because the invitee's in-app
+ * invite banner is the source of truth, not the email. Both the web action and
+ * the MCP tool call this after the invite is already persisted.
+ */
+export async function notifyInvite(opts: {
+  to: string;
+  inviterName: string;
+  projectName: string;
+  url: string;
+}): Promise<void> {
+  try {
+    await sendInviteEmail(opts);
+  } catch (err) {
+    console.error("[invite] email send failed:", err);
+  }
 }

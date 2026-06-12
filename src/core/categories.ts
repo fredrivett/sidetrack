@@ -1,5 +1,6 @@
 import { and, asc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { hasProjectAccess } from "./access";
 import { recordAudit } from "./audit";
 import type { Db } from "./db";
 import {
@@ -19,7 +20,7 @@ export function listCategories(
     .from(categories)
     .innerJoin(projects, eq(projects.id, categories.projectId))
     .where(
-      and(eq(categories.projectId, projectId), eq(projects.userId, userId)),
+      and(eq(categories.projectId, projectId), hasProjectAccess(userId)),
     )
     .orderBy(asc(categories.name))
     .all()
@@ -62,12 +63,12 @@ export function addCategory(
 ): Category {
   const trimmed = name.trim();
   if (!trimmed) throw new Error("category name required");
-  const ownedProject = db
+  const accessibleProject = db
     .select({ id: projects.id })
     .from(projects)
-    .where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
+    .where(and(eq(projects.id, projectId), hasProjectAccess(userId)))
     .get();
-  if (!ownedProject) throw new Error(`project not found: ${projectId}`);
+  if (!accessibleProject) throw new Error(`project not found: ${projectId}`);
 
   const existing = db
     .select()

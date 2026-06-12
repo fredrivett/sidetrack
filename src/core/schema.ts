@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   index,
   integer,
+  primaryKey,
   sqliteTable,
   text,
   uniqueIndex,
@@ -40,8 +41,15 @@ export const AUDIT_ENTITIES = [
   "item",
   "category",
   "api_key",
+  "member",
 ] as const;
 export type AuditEntity = (typeof AUDIT_ENTITIES)[number];
+
+// A membership starts `pending` (an invite the target hasn't answered) and
+// becomes `accepted` once they accept. Only `accepted` rows grant access —
+// see hasProjectAccess. Declining/removing deletes the row outright.
+export const MEMBERSHIP_STATUSES = ["pending", "accepted"] as const;
+export type MembershipStatus = (typeof MEMBERSHIP_STATUSES)[number];
 
 export const projects = sqliteTable(
   "projects",
@@ -59,7 +67,6 @@ export const projects = sqliteTable(
     // absolute http(s) image URL. Null falls back to the homepage favicon
     // when a homepageUrl is set, else a generic glyph. See lib/projectIcon.ts.
     icon: text("icon"),
-    position: text("position").notNull(),
     // Short human-friendly ID prefix (e.g. "SID"). Derived display data, never
     // an identity anchor — the nanoid PK stays the FK/audit target. Uniqueness
     // is scoped to the owner so `SID-42` is unambiguous within a user's board.
@@ -73,6 +80,58 @@ export const projects = sqliteTable(
       .default(sql`(unixepoch() * 1000)`),
   },
   (t) => [uniqueIndex("projects_user_prefix").on(t.userId, t.prefix)],
+);
+
+// Collaborators on a project. The owner is projects.userId (always exactly
+// one); this table holds the additional editors (zero or more). There is no
+// role column — every member has the same read+edit access as the owner,
+// except for owner-only actions (delete, prefix change, managing members).
+// `status` is the invite lifecycle: a row is `pending` until the target
+// accepts, and only `accepted` rows grant access (see hasProjectAccess).
+// Cascades on project delete; deliberately NO foreign key on user_id, matching
+// projects.user_id / audit_log.actor — a deleted user must not break the
+// project for its other members.
+export const projectMembers = sqliteTable(
+  "project_members",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    status: text("status")
+      .$type<MembershipStatus>()
+      .notNull()
+      .default("pending"),
+    createdAt: integer("created_at")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => [
+    uniqueIndex("project_members_project_user").on(t.projectId, t.userId),
+    // listPendingInvites filters by (user_id, status) and orders by created_at;
+    // this composite serves a user's pending-invite read without scanning the
+    // whole table. The unique index above (project-first) can't serve it.
+    index("project_members_user_status").on(t.userId, t.status, t.createdAt),
+  ],
+);
+
+// Per-user ordering of the kanban board. Each viewer (the owner AND every
+// accepted member) has one row per project they can see, holding *their* own
+// fractional-index position — so reordering a shared project moves it only on
+// the board of whoever dragged it. The owner's row is created with the project;
+// a member's is created when they accept. Cascades on project delete; a row is
+// removed explicitly when a member leaves (no user FK to cascade on).
+export const projectPositions = sqliteTable(
+  "project_positions",
+  {
+    userId: text("user_id").notNull(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    position: text("position").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.projectId] })],
 );
 
 export const items = sqliteTable(
@@ -169,6 +228,10 @@ export const auditLog = sqliteTable(
 
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
+export type ProjectMember = typeof projectMembers.$inferSelect;
+export type NewProjectMember = typeof projectMembers.$inferInsert;
+export type ProjectPosition = typeof projectPositions.$inferSelect;
+export type NewProjectPosition = typeof projectPositions.$inferInsert;
 export type Item = typeof items.$inferSelect;
 export type NewItem = typeof items.$inferInsert;
 export type Category = typeof categories.$inferSelect;

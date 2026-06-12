@@ -3,7 +3,16 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { listAudit } from "@/core/audit";
 import { addCategory, listCategories } from "@/core/categories";
 import { getDb } from "@/core/db";
-import { resolveItemRef } from "@/core/itemRef";
+import { projectRefPrefixes, resolveItemRef } from "@/core/itemRef";
+import {
+  acceptInvite,
+  declineInvite,
+  getUserName,
+  inviteMember,
+  listMembers,
+  listPendingInvites,
+  removeMember,
+} from "@/core/members";
 import {
   addItem,
   completeItem,
@@ -37,6 +46,8 @@ import {
   type Item,
   PROJECT_STATUSES,
 } from "@/core/schema";
+import { notifyInvite } from "@/lib/email";
+import { getEnv } from "@/lib/env";
 import { formatItemRef } from "@/lib/itemRef";
 import { formatRelativeLong } from "@/lib/time";
 
@@ -77,7 +88,13 @@ function resolveItemArg(db: Db, userId: string, raw: string) {
   const r = resolveItemRef(db, userId, raw);
   if (r.status === "ok") return { item: r.item, error: null as null };
   if (r.status === "ambiguous") {
-    const names = r.candidates.map((c) => `"${c.projectName}"`).join(", ");
+    // Suggest the concrete qualified refs (owner/PREFIX), since a shared prefix
+    // is disambiguated by the owner's username.
+    const options = r.candidates
+      .map((c) =>
+        c.ownerUsername ? `${c.ownerUsername}/${c.prefix}-N` : `"${c.projectName}"`,
+      )
+      .join(", ");
     return {
       item: null,
       error: {
@@ -87,8 +104,8 @@ function resolveItemArg(db: Db, userId: string, raw: string) {
             type: "text" as const,
             text:
               `Ambiguous item ref "${raw}": its prefix matches multiple projects ` +
-              `(${names}). Re-specify with a qualified ref (username/PREFIX-N) or ` +
-              `the item's id — no change was made.`,
+              `you can access. Qualify it with the owner (${options}) or use the ` +
+              `item's id — no change was made.`,
           },
         ],
       },
@@ -98,17 +115,36 @@ function resolveItemArg(db: Db, userId: string, raw: string) {
 }
 
 // Items are stored without their (project-owned) prefix; attach the display
-// `ref` at the edge so agents can echo "ENG-42" back to the user.
+// `ref` at the edge so agents can echo "ENG-42" back to the user — qualified
+// ("alice/ENG-42") when the prefix clashes on the viewer's board.
 function withItemRef(db: Db, userId: string, item: Item) {
-  const project = getProject(db, userId, item.projectId);
+  const refPrefix = projectRefPrefixes(db, userId)[item.projectId];
   return {
     ...item,
-    ref: project ? formatItemRef(project.prefix, item.number) : null,
+    ref: refPrefix ? formatItemRef(refPrefix, item.number) : null,
   };
 }
 
 function withRefs(prefix: string, list: Item[]) {
   return list.map((i) => ({ ...i, ref: formatItemRef(prefix, i.number) }));
+}
+
+// Notify an invitee by email (best-effort; notifyInvite never throws). The
+// link is the app root (BETTER_AUTH_URL); with no transport set, the email
+// layer logs it server-side.
+async function sendInviteNotification(
+  db: Db,
+  inviterId: string,
+  projectName: string,
+  toEmail: string | null,
+) {
+  if (!toEmail) return;
+  await notifyInvite({
+    to: toEmail,
+    inviterName: getUserName(db, inviterId) ?? "Someone",
+    projectName,
+    url: getEnv().BETTER_AUTH_URL?.replace(/\/$/, "") ?? "",
+  });
 }
 
 export function registerTools(
@@ -122,7 +158,7 @@ export function registerTools(
     {
       title: "List projects",
       description:
-        "List every project in kanban order (left to right). Returns id, name, status, summary, summary_updated_at, position.",
+        "List every project in kanban order (left to right, per your own board). Returns id, name, status, summary, summary_updated_at.",
       inputSchema: {},
     },
     async () => {
@@ -148,9 +184,11 @@ export function registerTools(
         includeCompleted: include_completed,
       });
       if (!result) return notFound("project", id);
+      const refPrefix =
+        projectRefPrefixes(db, userId)[result.project.id] ?? result.project.prefix;
       return json({
         project: result.project,
-        items: withRefs(result.project.prefix, result.items),
+        items: withRefs(refPrefix, result.items),
       });
     },
   );
@@ -176,12 +214,13 @@ export function registerTools(
     },
     async ({ include_completed }) => {
       const { db } = getDb();
+      const refs = projectRefPrefixes(db, userId);
       return json(
         listAllProjectsWithItems(db, userId, {
           includeCompleted: include_completed,
         }).map(({ project, items }) => ({
           project,
-          items: withRefs(project.prefix, items),
+          items: withRefs(refs[project.id] ?? project.prefix, items),
         })),
       );
     },
@@ -331,9 +370,10 @@ export function registerTools(
         },
         SOURCE,
       );
+      const refPrefix = projectRefPrefixes(db, userId)[project_id] ?? project.prefix;
       return json({
-        created: { ...created, ref: formatItemRef(project.prefix, created.number) },
-        items: withRefs(project.prefix, listItems(db, userId, project_id)),
+        created: { ...created, ref: formatItemRef(refPrefix, created.number) },
+        items: withRefs(refPrefix, listItems(db, userId, project_id)),
       });
     },
   );
@@ -580,6 +620,130 @@ export function registerTools(
           ...rest,
         })),
       );
+    },
+  );
+
+  server.registerTool(
+    "list_members",
+    {
+      title: "List project members",
+      description:
+        "List a project's collaborators and pending invites (the owner is not " +
+        "included — it's the project's owner separately). Each row has user_id, " +
+        "username, name, email, and status (\"accepted\" or \"pending\"). Use a " +
+        "row's user_id with remove_member.",
+      inputSchema: { project_id: z.string() },
+    },
+    async ({ project_id }) => {
+      const { db } = getDb();
+      if (!getProject(db, userId, project_id)) {
+        return notFound("project", project_id);
+      }
+      return json(listMembers(db, userId, project_id));
+    },
+  );
+
+  server.registerTool(
+    "invite_member",
+    {
+      title: "Invite a member",
+      description:
+        "Invite an existing user to collaborate on a project (owner only). " +
+        "person is a username (\"alice\" or \"@alice\") or an email. The target " +
+        "must already have an account — there is no invite-by-email-to-sign-up. " +
+        "Lands a pending invite they must accept before they gain access; " +
+        "accepted members can edit everything except owner-only actions " +
+        "(delete, prefix, managing members).",
+      inputSchema: { project_id: z.string(), person: z.string().min(1) },
+    },
+    async ({ project_id, person }) => {
+      const { db } = getDb();
+      const project = getProject(db, userId, project_id);
+      if (!project) return notFound("project", project_id);
+      const member = inviteMember(db, userId, project_id, person, SOURCE);
+      await sendInviteNotification(db, userId, project.name, member.email);
+      return json(member);
+    },
+  );
+
+  server.registerTool(
+    "remove_member",
+    {
+      title: "Remove a member",
+      description:
+        "Remove a collaborator or revoke a pending invite (owner only). " +
+        "user_id is the value from list_members. To leave a project yourself, " +
+        "use leave_project instead.",
+      inputSchema: { project_id: z.string(), user_id: z.string() },
+    },
+    async ({ project_id, user_id }) => {
+      const { db } = getDb();
+      removeMember(db, userId, project_id, user_id, SOURCE);
+      return json({ ok: true });
+    },
+  );
+
+  server.registerTool(
+    "list_pending_invites",
+    {
+      title: "List my pending invites",
+      description:
+        "List invites awaiting your response: each has project_id, " +
+        "project_name, and owner_name. Accept with accept_invite or dismiss " +
+        "with decline_invite.",
+      inputSchema: {},
+    },
+    async () => {
+      const { db } = getDb();
+      return json(listPendingInvites(db, userId));
+    },
+  );
+
+  server.registerTool(
+    "accept_invite",
+    {
+      title: "Accept an invite",
+      description:
+        "Accept a pending invite to a project, gaining edit access. " +
+        "project_id comes from list_pending_invites.",
+      inputSchema: { project_id: z.string() },
+    },
+    async ({ project_id }) => {
+      const { db } = getDb();
+      acceptInvite(db, userId, project_id, SOURCE);
+      return json({ ok: true });
+    },
+  );
+
+  server.registerTool(
+    "decline_invite",
+    {
+      title: "Decline an invite",
+      description:
+        "Decline a pending invite, removing it. project_id comes from " +
+        "list_pending_invites.",
+      inputSchema: { project_id: z.string() },
+    },
+    async ({ project_id }) => {
+      const { db } = getDb();
+      declineInvite(db, userId, project_id, SOURCE);
+      return json({ ok: true });
+    },
+  );
+
+  server.registerTool(
+    "leave_project",
+    {
+      title: "Leave a project",
+      description:
+        "Remove yourself from a project you were invited to (you keep nothing). " +
+        "The owner can't leave their own project — delete it instead.",
+      inputSchema: { project_id: z.string() },
+    },
+    async ({ project_id }) => {
+      const { db } = getDb();
+      removeMember(db, userId, project_id, userId, SOURCE);
+      return json({ ok: true });
     },
   );
 }

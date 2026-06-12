@@ -1,5 +1,6 @@
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { hasProjectAccess } from "./access";
 import { recordAudit } from "./audit";
 import { ensureCategory } from "./categories";
 import type { Db } from "./db";
@@ -18,27 +19,31 @@ import {
   projects,
 } from "./schema";
 
-// Items are owned transitively through their project. Every read joins the
-// projects table so a user only ever sees items in their own projects, and
-// every write that takes an existing item id goes through getItem() which
-// applies the same join.
+// Items are accessed transitively through their project. Every read joins the
+// projects table so a user only ever sees items in projects they have access
+// to (owner or member, via hasProjectAccess), and every write that takes an
+// existing item id goes through getItem() which applies the same join.
 
 // itemId is required, not optional: a falsy guard here once let an empty
-// string drop the id filter and match an arbitrary owned item. The only
+// string drop the id filter and match an arbitrary accessible item. The only
 // caller always has an id, so require it and always filter on it.
-function ownedItemWhere(userId: string, itemId: string) {
-  return and(eq(projects.userId, userId), eq(items.id, itemId));
+function accessibleItemWhere(userId: string, itemId: string) {
+  return and(hasProjectAccess(userId), eq(items.id, itemId));
 }
 
-function ownedProjectWhere(userId: string, projectId: string) {
-  return and(eq(projects.id, projectId), eq(projects.userId, userId));
+function accessibleProjectWhere(userId: string, projectId: string) {
+  return and(eq(projects.id, projectId), hasProjectAccess(userId));
 }
 
-function projectExistsForUser(db: Db, userId: string, projectId: string): boolean {
+function projectAccessibleForUser(
+  db: Db,
+  userId: string,
+  projectId: string,
+): boolean {
   const row = db
     .select({ id: projects.id })
     .from(projects)
-    .where(ownedProjectWhere(userId, projectId))
+    .where(accessibleProjectWhere(userId, projectId))
     .get();
   return !!row;
 }
@@ -51,7 +56,7 @@ export function listItems(
 ): Item[] {
   const baseConds = [
     eq(items.projectId, projectId),
-    eq(projects.userId, userId),
+    hasProjectAccess(userId),
   ];
   if (!opts.includeCompleted) baseConds.push(isNull(items.completedAt));
   return db
@@ -70,7 +75,7 @@ function getAllSiblings(db: Db, userId: string, projectId: string): Item[] {
     .from(items)
     .innerJoin(projects, eq(projects.id, items.projectId))
     .where(
-      and(eq(items.projectId, projectId), eq(projects.userId, userId)),
+      and(eq(items.projectId, projectId), hasProjectAccess(userId)),
     )
     .orderBy(asc(items.position))
     .all()
@@ -106,7 +111,7 @@ export function addItem(
   source: AuditSource,
 ): Item {
   assertKind(input.kind);
-  if (!projectExistsForUser(db, userId, input.projectId)) {
+  if (!projectAccessibleForUser(db, userId, input.projectId)) {
     throw new Error(`project not found: ${input.projectId}`);
   }
   const ref = parseRef(input.positionRef);
@@ -123,7 +128,7 @@ export function addItem(
     // Bump the project's counter and read the new value back in one atomic
     // statement, so the allocated number can't drift and we avoid a separate
     // read-modify-write. Monotonic — a deleted item's number is never reused.
-    // Ownership was already verified above, so filter on the project id alone.
+    // Access was already verified above, so filter on the project id alone.
     const seqRow = tx
       .update(projects)
       .set({ itemSeq: sql`${projects.itemSeq} + 1` })
@@ -163,7 +168,7 @@ export function getItem(db: Db, userId: string, id: string): Item | undefined {
     .select({ items })
     .from(items)
     .innerJoin(projects, eq(projects.id, items.projectId))
-    .where(ownedItemWhere(userId, id))
+    .where(accessibleItemWhere(userId, id))
     .get()?.items;
 }
 

@@ -3,6 +3,7 @@
 import { useTransition } from "react";
 import {
   deleteProjectAction,
+  leaveProjectAction,
   reorderProjectAction,
   updateProjectAction,
 } from "@/app/actions";
@@ -23,18 +24,22 @@ export function ProjectMenu({
   nextId,
   name,
   prefix,
+  isOwner,
   onShowActivity,
   onShowDetails,
   onAddItem,
+  onShare,
 }: {
   projectId: string;
   prevId: string | null;
   nextId: string | null;
   name: string;
   prefix: string;
+  isOwner: boolean;
   onShowActivity: (projectId: string) => void;
   onShowDetails: () => void;
   onAddItem: (projectId: string) => void;
+  onShare: (projectId: string, projectName: string) => void;
 }) {
   const [pending, start] = useTransition();
 
@@ -105,19 +110,38 @@ export function ProjectMenu({
         <DropdownMenuItem onClick={() => onShowActivity(projectId)}>
           Activity
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={editPrefix}>
-          Edit ID prefix
-        </DropdownMenuItem>
+        {isOwner && (
+          <DropdownMenuItem onClick={() => onShare(projectId, name)}>
+            Share…
+          </DropdownMenuItem>
+        )}
+        {isOwner && (
+          <DropdownMenuItem onClick={editPrefix}>
+            Edit ID prefix
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          variant="destructive"
-          onClick={() => {
-            if (!confirm(`Delete project "${name}" and all its items?`)) return;
-            run(() => deleteProjectAction(projectId));
-          }}
-        >
-          Delete project
-        </DropdownMenuItem>
+        {isOwner ? (
+          <DropdownMenuItem
+            variant="destructive"
+            onClick={() => {
+              if (!confirm(`Delete project "${name}" and all its items?`)) return;
+              run(() => deleteProjectAction(projectId));
+            }}
+          >
+            Delete project
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem
+            variant="destructive"
+            onClick={() => {
+              if (!confirm(`Leave project "${name}"?`)) return;
+              run(() => leaveProjectAction(projectId));
+            }}
+          >
+            Leave project
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

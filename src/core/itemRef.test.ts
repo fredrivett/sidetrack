@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { resolveItemRef } from "./itemRef";
+import { projectRefPrefixes, resolveItemRef } from "./itemRef";
 import { addItem } from "./items";
+import { acceptInvite, inviteMember } from "./members";
 import { createProject } from "./projects";
 import { createTestDb, createTestUser } from "./test-helpers";
 
@@ -88,5 +89,83 @@ describe("resolveItemRef", () => {
       status: "not_found",
       reason: "format",
     });
+  });
+});
+
+// fred owns "Engineering" (ENG) with one item; bob is an accepted member.
+function seedShared() {
+  const { db } = createTestDb();
+  const fred = createTestUser(db, { username: "fred" });
+  const bob = createTestUser(db, { username: "bob", email: "bob@test.local" });
+  const project = createProject(db, fred, { name: "Engineering" }, "web");
+  const item = addItem(
+    db,
+    fred,
+    { projectId: project.id, kind: "task", title: "shared task" },
+    "web",
+  );
+  inviteMember(db, fred, project.id, "bob", "web");
+  acceptInvite(db, bob, project.id, "web");
+  return { db, fred, bob, project, item };
+}
+
+describe("resolveItemRef with shared projects", () => {
+  it("a member resolves a shared item by bare ref when there's no clash", () => {
+    const { db, bob, item } = seedShared();
+    const r = resolveItemRef(db, bob, "ENG-1");
+    expect(r.status).toBe("ok");
+    if (r.status === "ok") expect(r.item.id).toBe(item.id);
+  });
+
+  it("a member resolves a shared item by the owner-qualified ref", () => {
+    const { db, bob, item } = seedShared();
+    const r = resolveItemRef(db, bob, "fred/ENG-1");
+    expect(r.status).toBe("ok");
+    if (r.status === "ok") expect(r.item.id).toBe(item.id);
+  });
+
+  it("a bare ref is ambiguous when the member's own prefix clashes", () => {
+    const { db, bob } = seedShared();
+    // Bob also owns an ENG project → "ENG-1" now matches two accessible boards.
+    const own = createProject(db, bob, { name: "Engineering" }, "web");
+    const mine = addItem(
+      db,
+      bob,
+      { projectId: own.id, kind: "task", title: "mine" },
+      "web",
+    );
+
+    const r = resolveItemRef(db, bob, "ENG-1");
+    expect(r.status).toBe("ambiguous");
+    if (r.status === "ambiguous") {
+      expect(r.candidates.map((c) => c.ownerUsername).sort()).toEqual([
+        "bob",
+        "fred",
+      ]);
+    }
+
+    // Qualifying with each owner pins it unambiguously.
+    const fredRef = resolveItemRef(db, bob, "fred/ENG-1");
+    const bobRef = resolveItemRef(db, bob, "bob/ENG-1");
+    expect(fredRef.status).toBe("ok");
+    expect(bobRef.status).toBe("ok");
+    if (bobRef.status === "ok") expect(bobRef.item.id).toBe(mine.id);
+  });
+});
+
+describe("projectRefPrefixes", () => {
+  it("is bare with no clash, owner-qualified on a clash, per viewer", () => {
+    const { db, fred, bob, project } = seedShared();
+    // No clash yet: both see a single ENG, so it stays bare for everyone.
+    expect(projectRefPrefixes(db, fred)[project.id]).toBe("ENG");
+    expect(projectRefPrefixes(db, bob)[project.id]).toBe("ENG");
+
+    // Bob adds his own ENG → clash on bob's board only.
+    const own = createProject(db, bob, { name: "Engineering" }, "web");
+    const bobPrefixes = projectRefPrefixes(db, bob);
+    expect(bobPrefixes[project.id]).toBe("fred/ENG");
+    expect(bobPrefixes[own.id]).toBe("bob/ENG");
+    // Fred's board is unaffected — he still sees only his own ENG.
+    expect(projectRefPrefixes(db, fred)[project.id]).toBe("ENG");
   });
 });

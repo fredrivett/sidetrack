@@ -1,14 +1,24 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { PendingInviteView } from "@/core/members";
 import type { Category, Item, ItemPrLink, Project } from "@/core/schema";
 import { isEditableTarget, matchesShortcut } from "@/lib/keyboard";
 import { AddProjectButton } from "./AddProjectButton";
 import { AuditDrawer } from "./AuditDrawer";
+import { InvitesBanner } from "./InvitesBanner";
 import { NewItemSheet } from "./NewItemSheet";
 import { NewProjectSheet } from "./NewProjectSheet";
 import { ProjectColumn } from "./ProjectColumn";
+import { ShareSheet } from "./ShareSheet";
 import { UserMenu } from "./UserMenu";
+
+/**
+ * A project plus per-viewer display data: whether the viewer owns it (vs. it
+ * being shared with them), and its display ref-prefix (qualified `alice/SID`
+ * when the prefix clashes on this board, bare `SID` otherwise).
+ */
+export type ProjectView = Project & { isOwner: boolean; refPrefix: string };
 
 /** The project currently centred in the rail, tracked in `?p=<id>`. */
 function centredProjectId(): string | null {
@@ -21,11 +31,13 @@ export function Kanban({
   itemsByProject,
   categoriesByProject,
   prLinksByItem,
+  pendingInvites,
 }: {
-  projects: Project[];
+  projects: ProjectView[];
   itemsByProject: Record<string, Item[]>;
   categoriesByProject: Record<string, Category[]>;
   prLinksByItem: Record<string, ItemPrLink[]>;
+  pendingInvites: PendingInviteView[];
 }) {
   const railRef = useRef<HTMLDivElement>(null);
   const initialised = useRef(false);
@@ -37,6 +49,17 @@ export function Kanban({
     projectId: string | null;
   }>({ open: false, projectId: null });
   const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [share, setShare] = useState<{
+    open: boolean;
+    projectId: string | null;
+    projectName: string;
+  }>({ open: false, projectId: null, projectName: "" });
+
+  const openShare = useCallback(
+    (projectId: string, projectName: string) =>
+      setShare({ open: true, projectId, projectName }),
+    [],
+  );
 
   // Open the new-item sheet, seeding its project from the caller, falling back
   // to the centred column then the first project. With no projects at all,
@@ -133,6 +156,7 @@ export function Kanban({
           <UserMenu />
         </div>
       </div>
+      <InvitesBanner invites={pendingInvites} />
       <div
         ref={railRef}
         className="kanban-rail flex flex-1 snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-hidden p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
@@ -152,6 +176,7 @@ export function Kanban({
             nextId={projects[idx + 1]?.id ?? null}
             onShowActivity={(pid) => setAudit({ open: true, projectId: pid })}
             onAddItem={openNewItem}
+            onShare={openShare}
           />
         ))}
         <AddProjectButton onClick={() => setNewProjectOpen(true)} />
@@ -173,6 +198,13 @@ export function Kanban({
       />
 
       <NewProjectSheet open={newProjectOpen} onOpenChange={setNewProjectOpen} />
+
+      <ShareSheet
+        open={share.open}
+        onOpenChange={(open) => setShare((s) => ({ ...s, open }))}
+        projectId={share.projectId}
+        projectName={share.projectName}
+      />
     </main>
   );
 }

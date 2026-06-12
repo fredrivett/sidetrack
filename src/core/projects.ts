@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 import { derivePrefix, dedupePrefix, validatePrefix } from "../lib/itemRef";
 import { normalizeProjectIcon } from "../lib/projectIcon";
 import { normalizeHomepageUrl } from "../lib/url";
+import { hasProjectAccess } from "./access";
 import { recordAudit } from "./audit";
 import type { Db } from "./db";
 import {
@@ -16,16 +17,46 @@ import {
   type Project,
   PROJECT_STATUSES,
   type ProjectStatus,
+  projectPositions,
   projects,
 } from "./schema";
 
+/** The acting user's project ordering: {id, position} rows, sorted ascending.
+ * One row per project they can see (owner row at create, member row at accept),
+ * so this is the viewer's board — never anyone else's. */
+function viewerPositions(
+  db: Db,
+  userId: string,
+): { id: string; position: string }[] {
+  return db
+    .select({ id: projectPositions.projectId, position: projectPositions.position })
+    .from(projectPositions)
+    .where(eq(projectPositions.userId, userId))
+    .orderBy(asc(projectPositions.position))
+    .all();
+}
+
+/** Position for a project appended to the end of `userId`'s board. Used when a
+ * project is created (owner) and when an invite is accepted (member). */
+export function nextProjectPosition(db: Db, userId: string): string {
+  return resolveProjectPosition(viewerPositions(db, userId), "end");
+}
+
 export function listProjects(db: Db, userId: string): Project[] {
   return db
-    .select()
+    .select({ project: projects })
     .from(projects)
-    .where(eq(projects.userId, userId))
-    .orderBy(asc(projects.position))
-    .all();
+    .innerJoin(
+      projectPositions,
+      and(
+        eq(projectPositions.projectId, projects.id),
+        eq(projectPositions.userId, userId),
+      ),
+    )
+    .where(hasProjectAccess(userId))
+    .orderBy(asc(projectPositions.position))
+    .all()
+    .map((r) => r.project);
 }
 
 export function getProject(
@@ -36,7 +67,7 @@ export function getProject(
   return db
     .select()
     .from(projects)
-    .where(and(eq(projects.id, id), eq(projects.userId, userId)))
+    .where(and(eq(projects.id, id), hasProjectAccess(userId)))
     .get();
 }
 
@@ -94,8 +125,11 @@ function assertName(name: string): string {
 
 /**
  * Resolve a base prefix to one unique within the owner's namespace, auto-
- * suffixing on collision (`ENG` → `ENG2`). Uniqueness is also enforced by the
- * `(user_id, prefix)` unique index; this keeps creation from ever hard-failing.
+ * suffixing on collision (`ENG` → `ENG2`). Scoped to the owner's *own* projects
+ * — matching the `(user_id, prefix)` unique index — NOT the access-scoped
+ * listProjects: a member may independently own an `ENG` while a shared `ENG` is
+ * on their board, and that intentional clash is what the qualified ref
+ * (`owner/ENG-42`) disambiguates. This keeps creation from ever hard-failing.
  */
 function ensureUniquePrefix(
   db: Db,
@@ -103,10 +137,13 @@ function ensureUniquePrefix(
   base: string,
   excludeId?: string,
 ): string {
+  const owned = db
+    .select({ id: projects.id, prefix: projects.prefix })
+    .from(projects)
+    .where(eq(projects.userId, userId))
+    .all();
   const taken = new Set(
-    listProjects(db, userId)
-      .filter((p) => p.id !== excludeId)
-      .map((p) => p.prefix),
+    owned.filter((p) => p.id !== excludeId).map((p) => p.prefix),
   );
   return dedupePrefix(base, taken);
 }
@@ -119,16 +156,16 @@ export function createProject(
 ): Project {
   const status = input.status ?? "idea";
   assertStatus(status);
-  const all = listProjects(db, userId);
-  const position = resolveProjectPosition(all, "end");
+  const position = nextProjectPosition(db, userId);
   const id = nanoid(12);
   const now = Date.now();
   const name = assertName(input.name);
   const prefix = ensureUniquePrefix(db, userId, derivePrefix(name));
   db.transaction((tx) => {
     tx.insert(projects)
-      .values({ id, userId, name, status, position, prefix, createdAt: now })
+      .values({ id, userId, name, status, prefix, createdAt: now })
       .run();
+    tx.insert(projectPositions).values({ userId, projectId: id, position }).run();
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
@@ -158,6 +195,9 @@ export function updateProject(
 ): Project {
   const existing = getProject(db, userId, id);
   if (!existing) throw new Error(`project not found: ${id}`);
+  // getProject authorizes any member; the editable fields below (name, status,
+  // summary, homepage) are open to members, but the prefix is owner-only.
+  const isOwner = existing.userId === userId;
 
   const next: Partial<Project> = {};
   const changes: string[] = [];
@@ -173,6 +213,11 @@ export function updateProject(
     const err = validatePrefix(normalized);
     if (err) throw new Error(`invalid prefix: ${err}`);
     if (normalized !== existing.prefix) {
+      // The prefix is the owner's item-ID namespace — owner-only. Reject a
+      // member's change loudly rather than letting the write silently no-op.
+      if (!isOwner) {
+        throw new Error("only the project owner can change the prefix");
+      }
       // Auto-suffix on collision rather than reject, matching create. The ref
       // is derived display data, so changing the prefix never renumbers items
       // or touches the nanoid PK — it's a pure display change.
@@ -224,10 +269,10 @@ export function updateProject(
   if (Object.keys(next).length === 0) return existing;
 
   db.transaction((tx) => {
-    tx.update(projects)
-      .set(next)
-      .where(and(eq(projects.id, id), eq(projects.userId, userId)))
-      .run();
+    // Access was authorized by getProject above (and prefix changes are
+    // owner-gated), so filter by id alone — matching how item mutations trust
+    // their getItem precheck rather than re-scoping the write.
+    tx.update(projects).set(next).where(eq(projects.id, id)).run();
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
@@ -251,12 +296,19 @@ export function reorderProject(
   const existing = getProject(db, userId, id);
   if (!existing) throw new Error(`project not found: ${id}`);
   const ref = parseProjectRef(refRaw) as ProjectPositionRef;
-  const others = listProjects(db, userId).filter((p) => p.id !== id);
+  const others = viewerPositions(db, userId).filter((p) => p.id !== id);
   const position = resolveProjectPosition(others, ref);
   db.transaction((tx) => {
-    tx.update(projects)
+    // Reordering moves the project only on the acting user's board — update
+    // their own position row, never the owner's or another member's.
+    tx.update(projectPositions)
       .set({ position })
-      .where(and(eq(projects.id, id), eq(projects.userId, userId)))
+      .where(
+        and(
+          eq(projectPositions.userId, userId),
+          eq(projectPositions.projectId, id),
+        ),
+      )
       .run();
     recordAudit(tx as unknown as Db, {
       actor: userId,
@@ -279,10 +331,14 @@ export function deleteProject(
 ): void {
   const existing = getProject(db, userId, id);
   if (!existing) return;
+  // Deleting is owner-only. getProject authorizes members too, so reject a
+  // member explicitly rather than letting the delete silently no-op while still
+  // writing a "deleted project" audit row. (Members leave via removeMember.)
+  if (existing.userId !== userId) {
+    throw new Error("only the project owner can delete the project");
+  }
   db.transaction((tx) => {
-    tx.delete(projects)
-      .where(and(eq(projects.id, id), eq(projects.userId, userId)))
-      .run();
+    tx.delete(projects).where(eq(projects.id, id)).run();
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
