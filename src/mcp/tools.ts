@@ -8,13 +8,16 @@ import {
   addItem,
   completeItem,
   deleteItem,
+  getItem,
   listItems,
   reorderItem,
   uncompleteItem,
   updateItem,
 } from "@/core/items";
 import {
+  canonicalizePrUrl,
   linkItemToPr,
+  listItemsForPr,
   listPrLinksForItem,
   unlinkItemFromPr,
 } from "@/core/prLinks";
@@ -270,6 +273,24 @@ export function registerTools(
   );
 
   server.registerTool(
+    "get_item",
+    {
+      title: "Get item",
+      description:
+        "Fetch a single item by reference — its title, description, category, kind, and completion state. " +
+        "Use this to answer a question about one item without pulling its whole project. " +
+        "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id; the result carries its display `ref`.",
+      inputSchema: { id: z.string() },
+    },
+    async ({ id }) => {
+      const { db } = getDb();
+      const { item, error } = resolveItemArg(db, userId, id);
+      if (error) return error;
+      return json(withItemRef(db, userId, item));
+    },
+  );
+
+  server.registerTool(
     "add_item",
     {
       title: "Add item",
@@ -467,6 +488,41 @@ export function registerTools(
       const { item, error } = resolveItemArg(db, userId, item_id);
       if (error) return error;
       return json(listPrLinksForItem(db, userId, item.id));
+    },
+  );
+
+  server.registerTool(
+    "list_items_for_pr",
+    {
+      title: "List items for PR",
+      description:
+        "Resolve a GitHub pull request URL back to the item(s) linked to it. " +
+        "This is the merge-time companion to link_item_to_pr: when a PR merges, call this to find the " +
+        "item(s) it closes, then complete_item each one. " +
+        "Returns the full items (with their display `ref`), in no particular order; an empty array means no item is linked to that PR.",
+      inputSchema: { pr_url: z.string().min(1) },
+    },
+    async ({ pr_url }) => {
+      const { db } = getDb();
+      let prUrl: string;
+      try {
+        prUrl = canonicalizePrUrl(pr_url);
+      } catch (e) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text" as const,
+              text: e instanceof Error ? e.message : `invalid pr_url: ${pr_url}`,
+            },
+          ],
+        };
+      }
+      const items = listItemsForPr(db, userId, prUrl)
+        .map((link) => getItem(db, userId, link.itemId))
+        .filter((item): item is Item => item !== undefined)
+        .map((item) => withItemRef(db, userId, item));
+      return json(items);
     },
   );
 
