@@ -5,7 +5,6 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { updateProjectAction } from "@/app/actions";
 import type { Project } from "@/core/schema";
-import { faviconUrl } from "@/lib/projectIcon";
 import { normalizeWebUrl } from "@/lib/url";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -32,10 +31,10 @@ export function ProjectIconPicker({
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
   const [imageUrl, setImageUrl] = useState("");
-  const favicon = project.homepageUrl ? faviconUrl(project.homepageUrl) : null;
+  const hasHomepage = Boolean(project.homepageUrl);
   // No explicit icon + a homepage means the favicon is what's showing — so the
   // favicon row reads as the active selection.
-  const faviconActive = !project.icon && Boolean(favicon);
+  const faviconActive = !project.icon && hasHomepage;
 
   function save(next: string | null, errorMsg: string) {
     setOpen(false);
@@ -104,7 +103,7 @@ export function ProjectIconPicker({
         </EmojiPicker>
 
         <div className="space-y-2 border-t p-2">
-          {favicon && (
+          {hasHomepage && (
             <button
               type="button"
               onClick={() => save(null, "Couldn't use the favicon.")}

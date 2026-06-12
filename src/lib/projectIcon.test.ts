@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  faviconUrl,
+  faviconCandidates,
   isEmoji,
   normalizeProjectIcon,
   resolveProjectIcon,
@@ -53,15 +53,17 @@ describe("normalizeProjectIcon", () => {
   });
 });
 
-describe("faviconUrl", () => {
-  it("derives a Google s2 favicon URL from the host", () => {
-    expect(faviconUrl("https://sidetrack.it/app")).toBe(
+describe("faviconCandidates", () => {
+  it("lists the site's own svg then ico, then the Google service", () => {
+    expect(faviconCandidates("https://sidetrack.it/app")).toEqual([
+      "https://sidetrack.it/favicon.svg",
+      "https://sidetrack.it/favicon.ico",
       "https://www.google.com/s2/favicons?domain=sidetrack.it&sz=64",
-    );
+    ]);
   });
 
-  it("returns null for an unparseable URL", () => {
-    expect(faviconUrl("not a url")).toBeNull();
+  it("returns [] for an unparseable URL", () => {
+    expect(faviconCandidates("not a url")).toEqual([]);
   });
 });
 
@@ -73,17 +75,21 @@ describe("resolveProjectIcon", () => {
     });
   });
 
-  it("treats an explicit URL icon as an image", () => {
+  it("treats an explicit URL icon as a single-candidate image", () => {
     expect(resolveProjectIcon("https://x.com/a.png", null)).toEqual({
       kind: "image",
-      src: "https://x.com/a.png",
+      srcs: ["https://x.com/a.png"],
     });
   });
 
-  it("falls back to the homepage favicon when no icon is set", () => {
+  it("falls back to the homepage favicon candidates when no icon is set", () => {
     expect(resolveProjectIcon(null, "https://sidetrack.it")).toEqual({
       kind: "image",
-      src: "https://www.google.com/s2/favicons?domain=sidetrack.it&sz=64",
+      srcs: [
+        "https://sidetrack.it/favicon.svg",
+        "https://sidetrack.it/favicon.ico",
+        "https://www.google.com/s2/favicons?domain=sidetrack.it&sz=64",
+      ],
     });
   });
 
