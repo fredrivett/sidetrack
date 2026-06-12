@@ -4,6 +4,65 @@ import { useState } from "react";
 import { resolveProjectIcon } from "@/lib/projectIcon";
 import { cn } from "@/lib/utils";
 
+const BOX = "inline-flex shrink-0 items-center justify-center overflow-hidden";
+
+function LetterIcon({
+  name,
+  size,
+  className,
+}: {
+  name: string;
+  size: number;
+  className?: string;
+}) {
+  const letter = name.trim().charAt(0).toUpperCase() || "•";
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        BOX,
+        "rounded-[4px] bg-neutral-100 font-semibold text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400",
+        className,
+      )}
+      style={{ width: size, height: size, fontSize: Math.round(size * 0.55) }}
+    >
+      {letter}
+    </span>
+  );
+}
+
+/**
+ * Image icon that degrades to the letter glyph on load failure. Its error state
+ * is local and keyed by `src` (the parent remounts it via `key={src}`), so a
+ * broken URL doesn't poison a later retry of the same or a different source.
+ */
+function ImageIcon({
+  src,
+  size,
+  className,
+  fallback,
+}: {
+  src: string;
+  size: number;
+  className?: string;
+  fallback: React.ReactNode;
+}) {
+  const [errored, setErrored] = useState(false);
+  if (errored) return <>{fallback}</>;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- external/user URLs and favicons; domains aren't known ahead of time so next/image config can't cover them
+    <img
+      src={src}
+      alt=""
+      width={size}
+      height={size}
+      onError={() => setErrored(true)}
+      className={cn(BOX, "rounded-[4px] object-contain", className)}
+      style={{ width: size, height: size }}
+    />
+  );
+}
+
 /**
  * Renders a project's icon from its stored value, applying the resolve chain
  * (explicit emoji/image → homepage favicon → the project's initial letter).
@@ -24,17 +83,13 @@ export function ProjectIcon({
   size?: number;
   className?: string;
 }) {
-  // Track which src failed (not a bare boolean) so swapping to a new image
-  // isn't treated as already-errored.
-  const [erroredSrc, setErroredSrc] = useState<string | null>(null);
   const resolved = resolveProjectIcon(icon, homepageUrl);
-  const box = "inline-flex shrink-0 items-center justify-center overflow-hidden";
 
   if (resolved.kind === "emoji") {
     return (
       <span
         aria-hidden
-        className={cn(box, "leading-none", className)}
+        className={cn(BOX, "leading-none", className)}
         style={{ width: size, height: size, fontSize: Math.round(size * 0.82) }}
       >
         {resolved.emoji}
@@ -42,33 +97,17 @@ export function ProjectIcon({
     );
   }
 
-  if (resolved.kind === "image" && erroredSrc !== resolved.src) {
+  if (resolved.kind === "image") {
     return (
-      // eslint-disable-next-line @next/next/no-img-element -- external/user URLs and favicons; domains aren't known ahead of time so next/image config can't cover them
-      <img
+      <ImageIcon
+        key={resolved.src}
         src={resolved.src}
-        alt=""
-        width={size}
-        height={size}
-        onError={() => setErroredSrc(resolved.src)}
-        className={cn(box, "rounded-[4px] object-contain", className)}
-        style={{ width: size, height: size }}
+        size={size}
+        className={className}
+        fallback={<LetterIcon name={name} size={size} className={className} />}
       />
     );
   }
 
-  const letter = name.trim().charAt(0).toUpperCase() || "•";
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        box,
-        "rounded-[4px] bg-neutral-100 font-semibold text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400",
-        className,
-      )}
-      style={{ width: size, height: size, fontSize: Math.round(size * 0.55) }}
-    >
-      {letter}
-    </span>
-  );
+  return <LetterIcon name={name} size={size} className={className} />;
 }

@@ -7,14 +7,20 @@ import {
 } from "./projectIcon";
 
 describe("isEmoji", () => {
-  it("accepts emoji, including ZWJ sequences and flags", () => {
+  it("accepts emoji, including ZWJ sequences, skin tones, and flags", () => {
     expect(isEmoji("🚀")).toBe(true);
     expect(isEmoji("👩‍💻")).toBe(true);
+    expect(isEmoji("👍🏽")).toBe(true);
+    expect(isEmoji("❤️")).toBe(true);
     expect(isEmoji("🇬🇧")).toBe(true);
   });
 
-  it("rejects plain text and URLs", () => {
+  it("rejects plain text, mixed text+emoji, and URLs", () => {
     expect(isEmoji("hello")).toBe(false);
+    // Anchored end-to-end: a stray emoji inside text must not pass.
+    expect(isEmoji("a🚀")).toBe(false);
+    expect(isEmoji("🚀 launch")).toBe(false);
+    expect(isEmoji("1")).toBe(false);
     expect(isEmoji("https://example.com/a.png")).toBe(false);
     expect(isEmoji("")).toBe(false);
   });

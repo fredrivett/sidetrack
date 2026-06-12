@@ -6,21 +6,16 @@
 
 import { normalizeWebUrl } from "./url";
 
-// An Extended_Pictographic or Regional_Indicator code point marks a value as an
-// emoji; together these cover plain emoji, skin-tone/ZWJ sequences, and flags
-// (which are pairs of regional indicators, not pictographic) without
-// enumerating them. The length cap keeps a pasted sentence from being mistaken
-// for an emoji (the longest realistic sequences stay well under 16 UTF-16 units).
-const EMOJI_RE = /\p{Extended_Pictographic}|\p{Regional_Indicator}/u;
+// Match exactly ONE emoji, anchored end-to-end so mixed text ("a🚀") or plain
+// short text can't slip through as an icon: a flag (two regional indicators),
+// or a pictographic base with optional skin-tone modifier and variation
+// selector, plus any ZWJ-joined continuations (👩‍💻, 👨‍👩‍👧). Anchoring makes
+// this a whole-string test, not a substring search.
+const EMOJI_RE =
+  /^(?:\p{Regional_Indicator}{2}|\p{Extended_Pictographic}\p{Emoji_Modifier}?\uFE0F?(?:\u200D\p{Extended_Pictographic}\p{Emoji_Modifier}?\uFE0F?)*)$/u;
 
 export function isEmoji(value: string): boolean {
-  const trimmed = value.trim();
-  return (
-    trimmed.length > 0 &&
-    trimmed.length <= 16 &&
-    !/^https?:\/\//i.test(trimmed) &&
-    EMOJI_RE.test(trimmed)
-  );
+  return EMOJI_RE.test(value.trim());
 }
 
 /**
