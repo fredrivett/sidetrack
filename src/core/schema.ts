@@ -52,6 +52,9 @@ export const projects = sqliteTable(
     status: text("status").$type<ProjectStatus>().notNull().default("idea"),
     summary: text("summary").notNull().default(""),
     summaryUpdatedAt: integer("summary_updated_at"),
+    // Optional public homepage / landing URL. Normalized to an absolute
+    // http(s) URL on write (see normalizeHomepageUrl); null when unset.
+    homepageUrl: text("homepage_url"),
     position: text("position").notNull(),
     // Short human-friendly ID prefix (e.g. "SID"). Derived display data, never
     // an identity anchor — the nanoid PK stays the FK/audit target. Uniqueness
