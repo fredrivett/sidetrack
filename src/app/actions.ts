@@ -20,6 +20,13 @@ import {
   updateItem as updateItemCore,
 } from "@/core/items";
 import {
+  acceptInvite as acceptInviteCore,
+  declineInvite as declineInviteCore,
+  inviteMember as inviteMemberCore,
+  listMembers as listMembersCore,
+  removeMember as removeMemberCore,
+} from "@/core/members";
+import {
   createProject as createProjectCore,
   deleteProject as deleteProjectCore,
   reorderProject as reorderProjectCore,
@@ -72,6 +79,49 @@ export async function deleteProjectAction(id: string) {
   const userId = await requireUserId();
   const { db } = getDb();
   deleteProjectCore(db, userId, id, SOURCE);
+  refresh();
+}
+
+export async function listMembersAction(projectId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  return listMembersCore(db, userId, projectId);
+}
+
+export async function inviteMemberAction(projectId: string, person: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const member = inviteMemberCore(db, userId, projectId, person, SOURCE);
+  refresh();
+  return member;
+}
+
+export async function removeMemberAction(projectId: string, targetUserId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  removeMemberCore(db, userId, projectId, targetUserId, SOURCE);
+  refresh();
+}
+
+export async function acceptInviteAction(projectId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  acceptInviteCore(db, userId, projectId, SOURCE);
+  refresh();
+}
+
+export async function declineInviteAction(projectId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  declineInviteCore(db, userId, projectId, SOURCE);
+  refresh();
+}
+
+/** Leave a project you were invited to (remove your own membership). */
+export async function leaveProjectAction(projectId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  removeMemberCore(db, userId, projectId, userId, SOURCE);
   refresh();
 }
 

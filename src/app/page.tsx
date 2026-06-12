@@ -2,6 +2,7 @@ import { Kanban } from "@/components/Kanban";
 import { listCategories } from "@/core/categories";
 import { getDb } from "@/core/db";
 import { listItems } from "@/core/items";
+import { listPendingInvites } from "@/core/members";
 import { listAllPrLinks } from "@/core/prLinks";
 import { listProjects } from "@/core/projects";
 import type { ItemPrLink } from "@/core/schema";
@@ -12,7 +13,13 @@ export const dynamic = "force-dynamic";
 export default async function Home() {
   const userId = await requireUserId();
   const { db } = getDb();
-  const projects = listProjects(db, userId);
+  // Tag each project with whether the viewer owns it (vs. it being shared with
+  // them), so the UI can badge shared projects and gate owner-only actions.
+  const projects = listProjects(db, userId).map((p) => ({
+    ...p,
+    isOwner: p.userId === userId,
+  }));
+  const pendingInvites = listPendingInvites(db, userId);
   const itemsByProject = Object.fromEntries(
     projects.map((p) => [
       p.id,
@@ -33,6 +40,7 @@ export default async function Home() {
       itemsByProject={itemsByProject}
       categoriesByProject={categoriesByProject}
       prLinksByItem={prLinksByItem}
+      pendingInvites={pendingInvites}
     />
   );
 }
