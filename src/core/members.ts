@@ -63,6 +63,13 @@ function getUserById(db: Db, id: string) {
   return db.select().from(users).where(eq(users.id, id)).get();
 }
 
+/** A user's display name (falls back to their email, then null). Used by the
+ * MCP invite tool to name the inviter in the notification email. */
+export function getUserName(db: Db, id: string): string | null {
+  const user = getUserById(db, id);
+  return user?.name ?? user?.email ?? null;
+}
+
 /** Display handle for an audit detail: `@username`, falling back to the id. */
 function handleFor(user: { username: string | null } | undefined, id: string) {
   return user?.username ? `@${user.username}` : id;

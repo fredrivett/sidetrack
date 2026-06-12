@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import {
   createApiKey as createApiKeyCore,
   revokeApiKey as revokeApiKeyCore,
@@ -29,11 +31,14 @@ import {
 import {
   createProject as createProjectCore,
   deleteProject as deleteProjectCore,
+  getProject as getProjectCore,
   reorderProject as reorderProjectCore,
   updateProject as updateProjectCore,
 } from "@/core/projects";
 import type { AuditSource, ItemKind, ProjectStatus } from "@/core/schema";
-import { requireUserId } from "@/auth/session";
+import { getCurrentSession, requireUserId } from "@/auth/session";
+import { notifyInvite } from "@/lib/email";
+import { getEnv } from "@/lib/env";
 
 const SOURCE: AuditSource = "web";
 
@@ -88,10 +93,36 @@ export async function listMembersAction(projectId: string) {
   return listMembersCore(db, userId, projectId);
 }
 
+/** Absolute base URL for links in outgoing email: the configured
+ * BETTER_AUTH_URL, else derived from the incoming request's headers. */
+async function appBaseUrl(): Promise<string> {
+  const configured = getEnv().BETTER_AUTH_URL;
+  if (configured) return configured.replace(/\/$/, "");
+  const h = await headers();
+  const host = h.get("host");
+  const proto = h.get("x-forwarded-proto") ?? "https";
+  return host ? `${proto}://${host}` : "";
+}
+
 export async function inviteMemberAction(projectId: string, person: string) {
-  const userId = await requireUserId();
+  const session = await getCurrentSession();
+  if (!session) redirect("/login");
+  const userId = session.user.id;
   const { db } = getDb();
   const member = inviteMemberCore(db, userId, projectId, person, SOURCE);
+
+  // Notify the invitee by email (best-effort; the in-app banner is the source
+  // of truth, so notifyInvite never throws).
+  const project = getProjectCore(db, userId, projectId);
+  if (member.email && project) {
+    await notifyInvite({
+      to: member.email,
+      inviterName: session.user.name,
+      projectName: project.name,
+      url: await appBaseUrl(),
+    });
+  }
+
   refresh();
   return member;
 }

@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  deliverInviteEmail,
   deliverPasswordResetEmail,
   redactSmtpUrl,
   type OutboundEmail,
 } from "./email";
 
 const RESET = { to: "fred@example.com", url: "https://s.example.com/reset" };
+const INVITE = {
+  to: "bob@example.com",
+  inviterName: "Fred",
+  projectName: "Engineering",
+  url: "https://s.example.com",
+};
 
 function fetchStub(response: Partial<Response>) {
   const calls: { url: string; init: RequestInit }[] = [];
@@ -145,6 +152,57 @@ describe("deliverPasswordResetEmail", () => {
         sendSmtp: smtp.fn,
       }),
     ).rejects.toThrow(/Resend rejected.*422.*invalid from/);
+  });
+});
+
+describe("deliverInviteEmail", () => {
+  it("logs the link (and sends nothing) when no transport is configured", async () => {
+    const { fn, calls } = fetchStub({});
+    const smtp = smtpStub();
+    const logged: string[] = [];
+    await deliverInviteEmail(INVITE, {
+      env: noEnv,
+      fetchFn: fn,
+      log: (m) => logged.push(m),
+      sendSmtp: smtp.fn,
+    });
+    expect(calls).toHaveLength(0);
+    expect(smtp.calls).toHaveLength(0);
+    expect(logged[0]).toContain(INVITE.to);
+    expect(logged[0]).toContain(INVITE.url);
+  });
+
+  it("sends over SMTP, naming the inviter and project in the body", async () => {
+    const { fn } = fetchStub({});
+    const smtp = smtpStub();
+    await deliverInviteEmail(INVITE, {
+      env: { ...noEnv, SMTP_URL: "smtp://localhost:1025" },
+      fetchFn: fn,
+      log: () => {},
+      sendSmtp: smtp.fn,
+    });
+    expect(smtp.calls).toHaveLength(1);
+    expect(smtp.calls[0].message.to).toBe(INVITE.to);
+    expect(smtp.calls[0].message.subject).toContain("Fred");
+    expect(smtp.calls[0].message.text).toContain("Engineering");
+    expect(smtp.calls[0].message.text).toContain(INVITE.url);
+  });
+
+  it("labels a Resend rejection as the invite email", async () => {
+    const { fn } = fetchStub({
+      ok: false,
+      status: 422,
+      text: async () => "bad",
+    });
+    const smtp = smtpStub();
+    await expect(
+      deliverInviteEmail(INVITE, {
+        env: { SMTP_URL: undefined, RESEND_API_KEY: "re_123", EMAIL_FROM: "x" },
+        fetchFn: fn,
+        log: () => {},
+        sendSmtp: smtp.fn,
+      }),
+    ).rejects.toThrow(/Resend rejected the invite email.*422/);
   });
 });
 

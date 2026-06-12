@@ -7,6 +7,7 @@ import { projectRefPrefixes, resolveItemRef } from "@/core/itemRef";
 import {
   acceptInvite,
   declineInvite,
+  getUserName,
   inviteMember,
   listMembers,
   listPendingInvites,
@@ -42,6 +43,8 @@ import {
   type Item,
   PROJECT_STATUSES,
 } from "@/core/schema";
+import { notifyInvite } from "@/lib/email";
+import { getEnv } from "@/lib/env";
 import { formatItemRef } from "@/lib/itemRef";
 import { formatRelativeLong } from "@/lib/time";
 
@@ -121,6 +124,24 @@ function withItemRef(db: Db, userId: string, item: Item) {
 
 function withRefs(prefix: string, list: Item[]) {
   return list.map((i) => ({ ...i, ref: formatItemRef(prefix, i.number) }));
+}
+
+// Notify an invitee by email (best-effort; notifyInvite never throws). The
+// link is the app root (BETTER_AUTH_URL); with no transport set, the email
+// layer logs it server-side.
+async function sendInviteNotification(
+  db: Db,
+  inviterId: string,
+  projectName: string,
+  toEmail: string | null,
+) {
+  if (!toEmail) return;
+  await notifyInvite({
+    to: toEmail,
+    inviterName: getUserName(db, inviterId) ?? "Someone",
+    projectName,
+    url: getEnv().BETTER_AUTH_URL?.replace(/\/$/, "") ?? "",
+  });
 }
 
 export function registerTools(
@@ -581,10 +602,11 @@ export function registerTools(
     },
     async ({ project_id, person }) => {
       const { db } = getDb();
-      if (!getProject(db, userId, project_id)) {
-        return notFound("project", project_id);
-      }
-      return json(inviteMember(db, userId, project_id, person, SOURCE));
+      const project = getProject(db, userId, project_id);
+      if (!project) return notFound("project", project_id);
+      const member = inviteMember(db, userId, project_id, person, SOURCE);
+      await sendInviteNotification(db, userId, project.name, member.email);
+      return json(member);
     },
   );
 
