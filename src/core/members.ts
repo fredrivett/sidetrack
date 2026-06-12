@@ -189,10 +189,25 @@ export function acceptInvite(
   // board, so the shared project sorts sensibly among their own projects.
   const position = nextProjectPosition(db, userId);
   db.transaction((tx) => {
-    tx.update(projectMembers)
+    // Re-assert pending status inside the transaction and only proceed if a
+    // row actually flips. The pre-check above is racy on its own: if the invite
+    // were revoked between it and here, an unconditional update would no-op
+    // while we still inserted an orphan project_positions row — which then
+    // breaks a later re-accept with a PK conflict. The conditional update +
+    // changes check makes accept atomic with the status it observed.
+    const flipped = tx
+      .update(projectMembers)
       .set({ status: "accepted" })
-      .where(eq(projectMembers.id, membership.id))
+      .where(
+        and(
+          eq(projectMembers.id, membership.id),
+          eq(projectMembers.status, "pending"),
+        ),
+      )
       .run();
+    if (flipped.changes === 0) {
+      throw new Error("no pending invite for this project");
+    }
     tx.insert(projectPositions)
       .values({ userId, projectId, position })
       .run();

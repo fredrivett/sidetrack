@@ -10,9 +10,11 @@ import {
 } from "./members";
 import {
   createProject,
+  deleteProject,
   getProject,
   listProjects,
   reorderProject,
+  updateProject,
 } from "./projects";
 import { createTestDb, createTestUser } from "./test-helpers";
 
@@ -206,6 +208,46 @@ describe("project membership", () => {
       removeMember(db, owner, projectId, alice, "web");
       expect(listProjects(db, alice)).toHaveLength(0);
       expect(listProjects(db, owner).map((p) => p.name)).toEqual(["Shared"]);
+    });
+  });
+
+  describe("member edit permissions", () => {
+    beforeEach(() => {
+      inviteMember(db, owner, projectId, "alice", "web");
+      acceptInvite(db, alice, projectId, "web");
+    });
+
+    it("a member can edit name, status, and summary", () => {
+      updateProject(
+        db,
+        alice,
+        projectId,
+        { name: "Renamed", status: "launched", summary: "by alice" },
+        "web",
+      );
+      const p = getProject(db, owner, projectId);
+      expect(p?.name).toBe("Renamed");
+      expect(p?.status).toBe("launched");
+      expect(p?.summary).toBe("by alice");
+    });
+
+    it("a member cannot change the prefix or delete — and writes no audit", () => {
+      expect(() =>
+        updateProject(db, alice, projectId, { prefix: "NEW" }, "web"),
+      ).toThrow(/only the project owner/);
+      expect(() => deleteProject(db, alice, projectId, "web")).toThrow(
+        /only the project owner/,
+      );
+
+      // The project is untouched and no misleading prefix/delete audit landed.
+      expect(getProject(db, owner, projectId)).toBeDefined();
+      const actions = listAudit(db, owner, { projectId }).map((e) => e.action);
+      expect(actions).not.toContain("delete");
+      expect(
+        listAudit(db, owner, { projectId }).some((e) =>
+          e.detail.includes("prefix"),
+        ),
+      ).toBe(false);
     });
   });
 });

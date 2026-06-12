@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 // production upgrade path, which a fresh-DB test (no rows to backfill) misses.
 
 const MIGRATIONS_DIR = resolve(process.cwd(), "src/core/migrations");
-const ORDERING_MIGRATION = "0008_mushy_avengers.sql";
+const ORDERING_MIGRATION = "0008_blushing_valkyrie.sql";
 
 function migrationFiles() {
   return readdirSync(MIGRATIONS_DIR)

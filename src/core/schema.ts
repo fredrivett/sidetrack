@@ -107,7 +107,13 @@ export const projectMembers = sqliteTable(
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
   },
-  (t) => [uniqueIndex("project_members_project_user").on(t.projectId, t.userId)],
+  (t) => [
+    uniqueIndex("project_members_project_user").on(t.projectId, t.userId),
+    // listPendingInvites filters by (user_id, status) and orders by created_at;
+    // this composite serves a user's pending-invite read without scanning the
+    // whole table. The unique index above (project-first) can't serve it.
+    index("project_members_user_status").on(t.userId, t.status, t.createdAt),
+  ],
 );
 
 // Per-user ordering of the kanban board. Each viewer (the owner AND every

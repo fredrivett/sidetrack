@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import {
   inviteMemberAction,
   listMembersAction,
@@ -44,6 +44,12 @@ export function ShareSheet({
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
+  // Always holds the currently-open project (synced in the load effect below).
+  // An invite/remove fetches the roster for the project it was issued against;
+  // if the sheet has since moved to another project, that late response must
+  // not overwrite the new roster.
+  const latestProjectId = useRef(projectId);
+
   // Clear the form when the sheet opens (or switches project) — the render-time
   // reset pattern, so we don't setState synchronously inside the load effect.
   const [opened, setOpened] = useState({ open, projectId });
@@ -55,6 +61,7 @@ export function ShareSheet({
 
   // Load the roster whenever the sheet opens for a project.
   useEffect(() => {
+    latestProjectId.current = projectId;
     if (!open || !projectId) return;
     let active = true;
     listMembersAction(projectId).then((rows) => {
@@ -73,9 +80,12 @@ export function ShareSheet({
     start(async () => {
       try {
         await inviteMemberAction(projectId, trimmed);
+        const rows = await listMembersAction(projectId);
+        if (latestProjectId.current !== projectId) return;
         setPerson("");
-        setMembers(await listMembersAction(projectId));
+        setMembers(rows);
       } catch (err) {
+        if (latestProjectId.current !== projectId) return;
         setError(err instanceof Error ? err.message : "Couldn't send the invite.");
       }
     });
@@ -86,8 +96,11 @@ export function ShareSheet({
     start(async () => {
       try {
         await removeMemberAction(projectId, targetUserId);
-        setMembers(await listMembersAction(projectId));
+        const rows = await listMembersAction(projectId);
+        if (latestProjectId.current !== projectId) return;
+        setMembers(rows);
       } catch {
+        if (latestProjectId.current !== projectId) return;
         setError("Couldn't remove that person. Please try again.");
       }
     });

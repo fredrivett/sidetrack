@@ -195,6 +195,9 @@ export function updateProject(
 ): Project {
   const existing = getProject(db, userId, id);
   if (!existing) throw new Error(`project not found: ${id}`);
+  // getProject authorizes any member; the editable fields below (name, status,
+  // summary, homepage) are open to members, but the prefix is owner-only.
+  const isOwner = existing.userId === userId;
 
   const next: Partial<Project> = {};
   const changes: string[] = [];
@@ -210,6 +213,11 @@ export function updateProject(
     const err = validatePrefix(normalized);
     if (err) throw new Error(`invalid prefix: ${err}`);
     if (normalized !== existing.prefix) {
+      // The prefix is the owner's item-ID namespace — owner-only. Reject a
+      // member's change loudly rather than letting the write silently no-op.
+      if (!isOwner) {
+        throw new Error("only the project owner can change the prefix");
+      }
       // Auto-suffix on collision rather than reject, matching create. The ref
       // is derived display data, so changing the prefix never renumbers items
       // or touches the nanoid PK — it's a pure display change.
@@ -261,10 +269,10 @@ export function updateProject(
   if (Object.keys(next).length === 0) return existing;
 
   db.transaction((tx) => {
-    tx.update(projects)
-      .set(next)
-      .where(and(eq(projects.id, id), eq(projects.userId, userId)))
-      .run();
+    // Access was authorized by getProject above (and prefix changes are
+    // owner-gated), so filter by id alone — matching how item mutations trust
+    // their getItem precheck rather than re-scoping the write.
+    tx.update(projects).set(next).where(eq(projects.id, id)).run();
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
@@ -323,10 +331,14 @@ export function deleteProject(
 ): void {
   const existing = getProject(db, userId, id);
   if (!existing) return;
+  // Deleting is owner-only. getProject authorizes members too, so reject a
+  // member explicitly rather than letting the delete silently no-op while still
+  // writing a "deleted project" audit row. (Members leave via removeMember.)
+  if (existing.userId !== userId) {
+    throw new Error("only the project owner can delete the project");
+  }
   db.transaction((tx) => {
-    tx.delete(projects)
-      .where(and(eq(projects.id, id), eq(projects.userId, userId)))
-      .run();
+    tx.delete(projects).where(eq(projects.id, id)).run();
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
