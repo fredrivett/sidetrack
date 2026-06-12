@@ -1,6 +1,7 @@
 import { Kanban } from "@/components/Kanban";
 import { listCategories } from "@/core/categories";
 import { getDb } from "@/core/db";
+import { projectRefPrefixes } from "@/core/itemRef";
 import { listItems } from "@/core/items";
 import { listPendingInvites } from "@/core/members";
 import { listAllPrLinks } from "@/core/prLinks";
@@ -14,10 +15,14 @@ export default async function Home() {
   const userId = await requireUserId();
   const { db } = getDb();
   // Tag each project with whether the viewer owns it (vs. it being shared with
-  // them), so the UI can badge shared projects and gate owner-only actions.
+  // them) for the badge and owner-only gating, plus its display ref-prefix —
+  // qualified (alice/SID) only when a shared project's prefix clashes on this
+  // viewer's board, bare (SID) otherwise.
+  const refPrefixes = projectRefPrefixes(db, userId);
   const projects = listProjects(db, userId).map((p) => ({
     ...p,
     isOwner: p.userId === userId,
+    refPrefix: refPrefixes[p.id] ?? p.prefix,
   }));
   const pendingInvites = listPendingInvites(db, userId);
   const itemsByProject = Object.fromEntries(

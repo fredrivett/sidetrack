@@ -125,8 +125,11 @@ function assertName(name: string): string {
 
 /**
  * Resolve a base prefix to one unique within the owner's namespace, auto-
- * suffixing on collision (`ENG` → `ENG2`). Uniqueness is also enforced by the
- * `(user_id, prefix)` unique index; this keeps creation from ever hard-failing.
+ * suffixing on collision (`ENG` → `ENG2`). Scoped to the owner's *own* projects
+ * — matching the `(user_id, prefix)` unique index — NOT the access-scoped
+ * listProjects: a member may independently own an `ENG` while a shared `ENG` is
+ * on their board, and that intentional clash is what the qualified ref
+ * (`owner/ENG-42`) disambiguates. This keeps creation from ever hard-failing.
  */
 function ensureUniquePrefix(
   db: Db,
@@ -134,10 +137,13 @@ function ensureUniquePrefix(
   base: string,
   excludeId?: string,
 ): string {
+  const owned = db
+    .select({ id: projects.id, prefix: projects.prefix })
+    .from(projects)
+    .where(eq(projects.userId, userId))
+    .all();
   const taken = new Set(
-    listProjects(db, userId)
-      .filter((p) => p.id !== excludeId)
-      .map((p) => p.prefix),
+    owned.filter((p) => p.id !== excludeId).map((p) => p.prefix),
   );
   return dedupePrefix(base, taken);
 }

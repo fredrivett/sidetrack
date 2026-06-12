@@ -13,8 +13,12 @@ import { ProjectColumn } from "./ProjectColumn";
 import { ShareSheet } from "./ShareSheet";
 import { UserMenu } from "./UserMenu";
 
-/** A project plus whether the viewer owns it (vs. it being shared with them). */
-export type ProjectView = Project & { isOwner: boolean };
+/**
+ * A project plus per-viewer display data: whether the viewer owns it (vs. it
+ * being shared with them), and its display ref-prefix (qualified `alice/SID`
+ * when the prefix clashes on this board, bare `SID` otherwise).
+ */
+export type ProjectView = Project & { isOwner: boolean; refPrefix: string };
 
 /** The project currently centred in the rail, tracked in `?p=<id>`. */
 function centredProjectId(): string | null {

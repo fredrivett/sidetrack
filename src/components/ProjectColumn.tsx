@@ -97,14 +97,14 @@ export function ProjectColumn({
         <div className="space-y-3 pt-3">
           <CompletedSection
             items={completed}
-            prefix={project.prefix}
+            prefix={project.refPrefix}
             prLinksByItem={prLinksByItem}
             onOpenDetail={detail.openDetail}
           />
           <ItemList
             projectId={project.id}
             items={active}
-            prefix={project.prefix}
+            prefix={project.refPrefix}
             prLinksByItem={prLinksByItem}
             onOpenDetail={detail.openDetail}
           />

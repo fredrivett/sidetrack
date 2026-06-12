@@ -3,7 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { listAudit } from "@/core/audit";
 import { addCategory, listCategories } from "@/core/categories";
 import { getDb } from "@/core/db";
-import { resolveItemRef } from "@/core/itemRef";
+import { projectRefPrefixes, resolveItemRef } from "@/core/itemRef";
 import {
   acceptInvite,
   declineInvite,
@@ -82,7 +82,13 @@ function resolveItemArg(db: Db, userId: string, raw: string) {
   const r = resolveItemRef(db, userId, raw);
   if (r.status === "ok") return { item: r.item, error: null as null };
   if (r.status === "ambiguous") {
-    const names = r.candidates.map((c) => `"${c.projectName}"`).join(", ");
+    // Suggest the concrete qualified refs (owner/PREFIX), since a shared prefix
+    // is disambiguated by the owner's username.
+    const options = r.candidates
+      .map((c) =>
+        c.ownerUsername ? `${c.ownerUsername}/${c.prefix}-N` : `"${c.projectName}"`,
+      )
+      .join(", ");
     return {
       item: null,
       error: {
@@ -92,8 +98,8 @@ function resolveItemArg(db: Db, userId: string, raw: string) {
             type: "text" as const,
             text:
               `Ambiguous item ref "${raw}": its prefix matches multiple projects ` +
-              `(${names}). Re-specify with a qualified ref (username/PREFIX-N) or ` +
-              `the item's id — no change was made.`,
+              `you can access. Qualify it with the owner (${options}) or use the ` +
+              `item's id — no change was made.`,
           },
         ],
       },
@@ -103,12 +109,13 @@ function resolveItemArg(db: Db, userId: string, raw: string) {
 }
 
 // Items are stored without their (project-owned) prefix; attach the display
-// `ref` at the edge so agents can echo "ENG-42" back to the user.
+// `ref` at the edge so agents can echo "ENG-42" back to the user — qualified
+// ("alice/ENG-42") when the prefix clashes on the viewer's board.
 function withItemRef(db: Db, userId: string, item: Item) {
-  const project = getProject(db, userId, item.projectId);
+  const refPrefix = projectRefPrefixes(db, userId)[item.projectId];
   return {
     ...item,
-    ref: project ? formatItemRef(project.prefix, item.number) : null,
+    ref: refPrefix ? formatItemRef(refPrefix, item.number) : null,
   };
 }
 
@@ -153,9 +160,11 @@ export function registerTools(
         includeCompleted: include_completed,
       });
       if (!result) return notFound("project", id);
+      const refPrefix =
+        projectRefPrefixes(db, userId)[result.project.id] ?? result.project.prefix;
       return json({
         project: result.project,
-        items: withRefs(result.project.prefix, result.items),
+        items: withRefs(refPrefix, result.items),
       });
     },
   );
@@ -181,12 +190,13 @@ export function registerTools(
     },
     async ({ include_completed }) => {
       const { db } = getDb();
+      const refs = projectRefPrefixes(db, userId);
       return json(
         listAllProjectsWithItems(db, userId, {
           includeCompleted: include_completed,
         }).map(({ project, items }) => ({
           project,
-          items: withRefs(project.prefix, items),
+          items: withRefs(refs[project.id] ?? project.prefix, items),
         })),
       );
     },
@@ -318,9 +328,10 @@ export function registerTools(
         },
         SOURCE,
       );
+      const refPrefix = projectRefPrefixes(db, userId)[project_id] ?? project.prefix;
       return json({
-        created: { ...created, ref: formatItemRef(project.prefix, created.number) },
-        items: withRefs(project.prefix, listItems(db, userId, project_id)),
+        created: { ...created, ref: formatItemRef(refPrefix, created.number) },
+        items: withRefs(refPrefix, listItems(db, userId, project_id)),
       });
     },
   );
