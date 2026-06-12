@@ -3,14 +3,14 @@ import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-// The 0008 migration introduces shared projects + per-user ordering: it creates
+// The 0009 migration introduces shared projects + per-user ordering: it creates
 // project_members and project_positions, backfills one position row per existing
 // project for its owner (from the old projects.position), then drops
-// projects.position. This exercises that data migration on pre-0008 data — the
+// projects.position. This exercises that data migration on pre-0009 data — the
 // production upgrade path, which a fresh-DB test (no rows to backfill) misses.
 
 const MIGRATIONS_DIR = resolve(process.cwd(), "src/core/migrations");
-const ORDERING_MIGRATION = "0008_blushing_valkyrie.sql";
+const ORDERING_MIGRATION = "0009_perfect_jimmy_woo.sql";
 
 function migrationFiles() {
   return readdirSync(MIGRATIONS_DIR)
@@ -22,7 +22,7 @@ function applyFile(sqlite: Database.Database, file: string) {
   sqlite.exec(readFileSync(resolve(MIGRATIONS_DIR, file), "utf8"));
 }
 
-describe("0008 shared-projects / per-user ordering migration", () => {
+describe("0009 shared-projects / per-user ordering migration", () => {
   it("backfills owner position rows, then drops projects.position", () => {
     const sqlite = new Database(":memory:");
     // FK enforcement OFF for the whole batch — earlier rebuild migrations
@@ -32,7 +32,7 @@ describe("0008 shared-projects / per-user ordering migration", () => {
       applyFile(sqlite, f);
     }
 
-    // Two projects for one owner, plus one for another — pre-0008 schema still
+    // Two projects for one owner, plus one for another — pre-0009 schema still
     // has projects.position (user_id has no FK, so no users row is needed).
     const insert = sqlite.prepare(
       "INSERT INTO projects (id, user_id, name, position, prefix) VALUES (?, ?, ?, ?, ?)",
