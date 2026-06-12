@@ -208,7 +208,8 @@ export function registerTools(
         "Patch name/status/summary/prefix/homepage_url. Setting summary stamps summary_updated_at. " +
         "prefix is the short item-ID prefix (2–5 letters, e.g. \"ENG\" → items like ENG-42); " +
         "it is uppercased, and an auto-suffix is applied if it collides with another project. " +
-        "homepage_url is the project's public landing URL — a bare host gains an https:// scheme; pass null to clear it.",
+        "homepage_url is the project's public landing URL — a bare host gains an https:// scheme; pass null to clear it. " +
+        "icon is the project icon: an emoji (e.g. \"🚀\") or an http(s) image URL; pass null to clear it (falls back to the homepage favicon).",
       inputSchema: {
         id: z.string(),
         name: z.string().optional(),
@@ -216,6 +217,7 @@ export function registerTools(
         summary: z.string().optional(),
         prefix: z.string().optional(),
         homepage_url: z.string().nullable().optional(),
+        icon: z.string().nullable().optional(),
       },
     },
     async ({ id, homepage_url, ...patch }) => {

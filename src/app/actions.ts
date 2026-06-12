@@ -50,6 +50,7 @@ export async function updateProjectAction(
     summary?: string;
     prefix?: string;
     homepageUrl?: string | null;
+    icon?: string | null;
   },
 ) {
   const userId = await requireUserId();
