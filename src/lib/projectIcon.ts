@@ -33,26 +33,36 @@ export function normalizeProjectIcon(raw: string): string | null {
 }
 
 /**
- * Google's public favicon service for a homepage URL, sized for a crisp small
- * glyph. Returns null when the URL has no parseable host. It's loaded as a
- * plain <img>, so there's no CORS concern and nothing to store server-side.
+ * Ordered favicon candidates for a homepage URL, best-first, to be tried in
+ * turn (the UI advances on image load error). The site's own icons come first —
+ * the conventional /favicon.svg (crisp, scales to any size) then /favicon.ico —
+ * needing no third party, with Google's favicon service as a backup for sites
+ * that only declare an icon at a non-conventional path. Returns [] when the URL
+ * has no parseable host. Loaded as plain <img>, so no CORS concern and nothing
+ * to store server-side.
  */
-export function faviconUrl(homepageUrl: string): string | null {
-  let hostname: string;
+export function faviconCandidates(homepageUrl: string): string[] {
+  let url: URL;
   try {
-    hostname = new URL(homepageUrl).hostname;
+    url = new URL(homepageUrl);
   } catch {
-    return null;
+    return [];
   }
-  if (!hostname) return null;
-  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(
-    hostname,
-  )}&sz=64`;
+  if (!url.hostname) return [];
+  return [
+    `${url.origin}/favicon.svg`,
+    `${url.origin}/favicon.ico`,
+    `https://www.google.com/s2/favicons?domain=${encodeURIComponent(
+      url.hostname,
+    )}&sz=64`,
+  ];
 }
 
 export type ResolvedIcon =
   | { kind: "emoji"; emoji: string }
-  | { kind: "image"; src: string }
+  // `srcs` is an ordered candidate list; the renderer falls to the next on a
+  // load error, then to the letter glyph once exhausted.
+  | { kind: "image"; srcs: string[] }
   | { kind: "none" };
 
 /**
@@ -66,12 +76,12 @@ export function resolveProjectIcon(
 ): ResolvedIcon {
   if (icon) {
     return /^https?:\/\//i.test(icon)
-      ? { kind: "image", src: icon }
+      ? { kind: "image", srcs: [icon] }
       : { kind: "emoji", emoji: icon };
   }
   if (homepageUrl) {
-    const fav = faviconUrl(homepageUrl);
-    if (fav) return { kind: "image", src: fav };
+    const srcs = faviconCandidates(homepageUrl);
+    if (srcs.length > 0) return { kind: "image", srcs };
   }
   return { kind: "none" };
 }

@@ -32,31 +32,34 @@ function LetterIcon({
 }
 
 /**
- * Image icon that degrades to the letter glyph on load failure. Its error state
- * is local and keyed by `src` (the parent remounts it via `key={src}`), so a
- * broken URL doesn't poison a later retry of the same or a different source.
+ * Image icon that tries an ordered list of candidate sources (e.g. a site's own
+ * /favicon.ico, then a favicon service) and degrades to the letter glyph once
+ * all fail. State is local and the parent remounts it via `key` when the
+ * candidate list changes, so a broken URL doesn't poison a later retry.
  */
 function ImageIcon({
-  src,
+  srcs,
   size,
   className,
   fallback,
 }: {
-  src: string;
+  srcs: string[];
   size: number;
   className?: string;
   fallback: React.ReactNode;
 }) {
-  const [errored, setErrored] = useState(false);
-  if (errored) return <>{fallback}</>;
+  const [index, setIndex] = useState(0);
+  const src = srcs[index];
+  if (src === undefined) return <>{fallback}</>;
   return (
     // eslint-disable-next-line @next/next/no-img-element -- external/user URLs and favicons; domains aren't known ahead of time so next/image config can't cover them
     <img
+      key={src}
       src={src}
       alt=""
       width={size}
       height={size}
-      onError={() => setErrored(true)}
+      onError={() => setIndex((i) => i + 1)}
       className={cn(BOX, "rounded-[4px] object-contain", className)}
       style={{ width: size, height: size }}
     />
@@ -100,8 +103,8 @@ export function ProjectIcon({
   if (resolved.kind === "image") {
     return (
       <ImageIcon
-        key={resolved.src}
-        src={resolved.src}
+        key={resolved.srcs.join("|")}
+        srcs={resolved.srcs}
         size={size}
         className={className}
         fallback={<LetterIcon name={name} size={size} className={className} />}
