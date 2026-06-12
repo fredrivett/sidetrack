@@ -44,7 +44,13 @@ export async function createProjectAction(name: string) {
 
 export async function updateProjectAction(
   id: string,
-  patch: { name?: string; status?: ProjectStatus; summary?: string; prefix?: string },
+  patch: {
+    name?: string;
+    status?: ProjectStatus;
+    summary?: string;
+    prefix?: string;
+    homepageUrl?: string | null;
+  },
 ) {
   const userId = await requireUserId();
   const { db } = getDb();

@@ -127,6 +127,48 @@ describe("projects", () => {
     expect(updated.prefix).toBe("ENG2");
   });
 
+  it("normalizes and audits a homepage URL, then clears it", () => {
+    const { db } = createTestDb();
+    const u = createTestUser(db);
+    const p = createProject(db, u, { name: "Sidetrack" }, "web");
+
+    // A bare host gains an https:// scheme on the way in.
+    const set = updateProject(
+      db,
+      u,
+      p.id,
+      { homepageUrl: "sidetrack.it" },
+      "web",
+    );
+    expect(set.homepageUrl).toBe("https://sidetrack.it/");
+    expect(
+      listAudit(db, u).find((e) => e.detail.includes("set homepage")),
+    ).toBeTruthy();
+
+    // null clears it and audits the clear.
+    const cleared = updateProject(
+      db,
+      u,
+      p.id,
+      { homepageUrl: null },
+      "web",
+    );
+    expect(cleared.homepageUrl).toBeNull();
+    expect(
+      listAudit(db, u).find((e) => e.detail.includes("cleared homepage")),
+    ).toBeTruthy();
+  });
+
+  it("rejects an invalid homepage URL and leaves the project unchanged", () => {
+    const { db } = createTestDb();
+    const u = createTestUser(db);
+    const p = createProject(db, u, { name: "Sidetrack" }, "web");
+    expect(() =>
+      updateProject(db, u, p.id, { homepageUrl: "not a url" }, "web"),
+    ).toThrow(/invalid homepage URL/);
+    expect(getProject(db, u, p.id)?.homepageUrl).toBeNull();
+  });
+
   it("scopes projects to their owner", () => {
     const { db } = createTestDb();
     const alice = createTestUser(db, { email: "alice@test.local" });

@@ -205,21 +205,33 @@ export function registerTools(
     {
       title: "Update project",
       description:
-        "Patch name/status/summary/prefix. Setting summary stamps summary_updated_at. " +
+        "Patch name/status/summary/prefix/homepage_url. Setting summary stamps summary_updated_at. " +
         "prefix is the short item-ID prefix (2–5 letters, e.g. \"ENG\" → items like ENG-42); " +
-        "it is uppercased, and an auto-suffix is applied if it collides with another project.",
+        "it is uppercased, and an auto-suffix is applied if it collides with another project. " +
+        "homepage_url is the project's public landing URL — a bare host gains an https:// scheme; pass null to clear it.",
       inputSchema: {
         id: z.string(),
         name: z.string().optional(),
         status: Status.optional(),
         summary: z.string().optional(),
         prefix: z.string().optional(),
+        homepage_url: z.string().nullable().optional(),
       },
     },
-    async ({ id, ...patch }) => {
+    async ({ id, homepage_url, ...patch }) => {
       const { db } = getDb();
       if (!getProject(db, userId, id)) return notFound("project", id);
-      return json(updateProject(db, userId, id, patch, SOURCE));
+      return json(
+        updateProject(
+          db,
+          userId,
+          id,
+          homepage_url === undefined
+            ? patch
+            : { ...patch, homepageUrl: homepage_url },
+          SOURCE,
+        ),
+      );
     },
   );
 

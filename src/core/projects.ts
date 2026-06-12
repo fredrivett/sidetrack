@@ -1,6 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { derivePrefix, dedupePrefix, validatePrefix } from "../lib/itemRef";
+import { normalizeHomepageUrl } from "../lib/url";
 import { recordAudit } from "./audit";
 import type { Db } from "./db";
 import {
@@ -149,6 +150,7 @@ export function updateProject(
     status?: ProjectStatus;
     summary?: string;
     prefix?: string;
+    homepageUrl?: string | null;
   },
   source: AuditSource,
 ): Project {
@@ -186,6 +188,22 @@ export function updateProject(
     next.summary = patch.summary;
     next.summaryUpdatedAt = Date.now();
     changes.push("edited summary");
+  }
+  if (patch.homepageUrl !== undefined) {
+    const normalized =
+      patch.homepageUrl === null
+        ? null
+        : normalizeHomepageUrl(patch.homepageUrl);
+    if (normalized !== existing.homepageUrl) {
+      next.homepageUrl = normalized;
+      changes.push(
+        normalized === null
+          ? "cleared homepage"
+          : existing.homepageUrl
+            ? "edited homepage"
+            : "set homepage",
+      );
+    }
   }
   if (Object.keys(next).length === 0) return existing;
 

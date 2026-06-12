@@ -1,11 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import { updateProjectAction } from "@/app/actions";
 import type { Item, ItemPrLink, Project } from "@/core/schema";
 import { CompletedSection } from "./CompletedSection";
 import { EditableText } from "./EditableText";
 import { ItemDetailSheet } from "./ItemDetailSheet";
 import { ItemList } from "./ItemList";
+import { ProjectDetailSheet } from "./ProjectDetailSheet";
 import { ProjectMenu } from "./ProjectMenu";
 import { StatusBadge } from "./StatusBadge";
 import { SummaryBlock } from "./SummaryBlock";
@@ -35,6 +37,10 @@ export function ProjectColumn({
   // between ItemList and CompletedSection when it's (un)completed — see the
   // hook for the live-lookup / closing-snapshot details.
   const detail = useItemDetailSheet(items);
+  // The column re-renders with fresh server props on every edit and only
+  // unmounts when the project is deleted, so plain open-state is enough — no
+  // live-lookup/closing-snapshot dance like the item sheet needs.
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   return (
     <article
@@ -64,6 +70,7 @@ export function ProjectColumn({
           name={project.name}
           prefix={project.prefix}
           onShowActivity={onShowActivity}
+          onShowDetails={() => setDetailsOpen(true)}
           onAddItem={onAddItem}
         />
       </header>
@@ -101,6 +108,12 @@ export function ProjectColumn({
           onOpenChange={detail.onOpenChange}
         />
       )}
+
+      <ProjectDetailSheet
+        project={project}
+        open={detailsOpen}
+        onOpenChange={setDetailsOpen}
+      />
     </article>
   );
 }
