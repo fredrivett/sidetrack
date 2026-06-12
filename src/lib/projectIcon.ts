@@ -7,12 +7,13 @@
 import { normalizeWebUrl } from "./url";
 
 // Match exactly ONE emoji, anchored end-to-end so mixed text ("a🚀") or plain
-// short text can't slip through as an icon: a flag (two regional indicators),
-// or a pictographic base with optional skin-tone modifier and variation
-// selector, plus any ZWJ-joined continuations (👩‍💻, 👨‍👩‍👧). Anchoring makes
-// this a whole-string test, not a substring search.
+// short text can't slip through as an icon: a flag (two regional indicators), a
+// keycap ([0-9#*] + enclosing keycap, e.g. 1️⃣), or a pictographic base with
+// optional skin-tone modifier and variation selector, plus any ZWJ-joined
+// continuations (👩‍💻, 👨‍👩‍👧). Anchoring makes this a whole-string test, not a
+// substring search.
 const EMOJI_RE =
-  /^(?:\p{Regional_Indicator}{2}|\p{Extended_Pictographic}\p{Emoji_Modifier}?\uFE0F?(?:\u200D\p{Extended_Pictographic}\p{Emoji_Modifier}?\uFE0F?)*)$/u;
+  /^(?:\p{Regional_Indicator}{2}|[0-9#*]\uFE0F?\u20E3|\p{Extended_Pictographic}\p{Emoji_Modifier}?\uFE0F?(?:\u200D\p{Extended_Pictographic}\p{Emoji_Modifier}?\uFE0F?)*)$/u;
 
 export function isEmoji(value: string): boolean {
   return EMOJI_RE.test(value.trim());

@@ -7,12 +7,14 @@ import {
 } from "./projectIcon";
 
 describe("isEmoji", () => {
-  it("accepts emoji, including ZWJ sequences, skin tones, and flags", () => {
+  it("accepts emoji, including ZWJ sequences, skin tones, flags, and keycaps", () => {
     expect(isEmoji("🚀")).toBe(true);
     expect(isEmoji("👩‍💻")).toBe(true);
     expect(isEmoji("👍🏽")).toBe(true);
     expect(isEmoji("❤️")).toBe(true);
     expect(isEmoji("🇬🇧")).toBe(true);
+    expect(isEmoji("1️⃣")).toBe(true);
+    expect(isEmoji("#️⃣")).toBe(true);
   });
 
   it("rejects plain text, mixed text+emoji, and URLs", () => {
@@ -20,7 +22,10 @@ describe("isEmoji", () => {
     // Anchored end-to-end: a stray emoji inside text must not pass.
     expect(isEmoji("a🚀")).toBe(false);
     expect(isEmoji("🚀 launch")).toBe(false);
+    // A bare digit/hash is not a keycap (no enclosing-keycap mark).
     expect(isEmoji("1")).toBe(false);
+    expect(isEmoji("#")).toBe(false);
+    expect(isEmoji("12")).toBe(false);
     expect(isEmoji("https://example.com/a.png")).toBe(false);
     expect(isEmoji("")).toBe(false);
   });
