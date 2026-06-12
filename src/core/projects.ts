@@ -1,6 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { derivePrefix, dedupePrefix, validatePrefix } from "../lib/itemRef";
+import { normalizeProjectIcon } from "../lib/projectIcon";
 import { normalizeHomepageUrl } from "../lib/url";
 import { recordAudit } from "./audit";
 import type { Db } from "./db";
@@ -151,6 +152,7 @@ export function updateProject(
     summary?: string;
     prefix?: string;
     homepageUrl?: string | null;
+    icon?: string | null;
   },
   source: AuditSource,
 ): Project {
@@ -202,6 +204,20 @@ export function updateProject(
           : existing.homepageUrl
             ? "edited homepage"
             : "set homepage",
+      );
+    }
+  }
+  if (patch.icon !== undefined) {
+    const normalized =
+      patch.icon === null ? null : normalizeProjectIcon(patch.icon);
+    if (normalized !== existing.icon) {
+      next.icon = normalized;
+      changes.push(
+        normalized === null
+          ? "cleared icon"
+          : existing.icon
+            ? "changed icon"
+            : "set icon",
       );
     }
   }

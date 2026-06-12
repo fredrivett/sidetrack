@@ -8,6 +8,7 @@ import { EditableText } from "./EditableText";
 import { ItemDetailSheet } from "./ItemDetailSheet";
 import { ItemList } from "./ItemList";
 import { ProjectDetailSheet } from "./ProjectDetailSheet";
+import { ProjectIconPicker } from "./ProjectIconPicker";
 import { ProjectMenu } from "./ProjectMenu";
 import { StatusBadge } from "./StatusBadge";
 import { SummaryBlock } from "./SummaryBlock";
@@ -48,6 +49,7 @@ export function ProjectColumn({
       className="flex h-full snap-center shrink-0 flex-col gap-3 overflow-hidden rounded-2xl border border-neutral-200 bg-white p-3 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 w-[92vw] sm:w-80"
     >
       <header className="flex items-start gap-2 shrink-0">
+        <ProjectIconPicker project={project} size={22} />
         <div className="min-w-0 flex-1 space-y-1">
           <EditableText
             value={project.name}

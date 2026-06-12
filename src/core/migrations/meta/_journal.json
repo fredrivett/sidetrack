@@ -57,6 +57,13 @@
       "when": 1781253345575,
       "tag": "0007_faulty_pete_wisdom",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1781254193215,
+      "tag": "0008_odd_titania",
+      "breakpoints": true
     }
   ]
 }
