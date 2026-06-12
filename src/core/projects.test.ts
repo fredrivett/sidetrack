@@ -169,6 +169,46 @@ describe("projects", () => {
     expect(getProject(db, u, p.id)?.homepageUrl).toBeNull();
   });
 
+  it("sets an emoji icon, normalizes an image-URL icon, then clears it", () => {
+    const { db } = createTestDb();
+    const u = createTestUser(db);
+    const p = createProject(db, u, { name: "Sidetrack" }, "web");
+
+    const emoji = updateProject(db, u, p.id, { icon: "🚀" }, "web");
+    expect(emoji.icon).toBe("🚀");
+    expect(
+      listAudit(db, u).find((e) => e.detail.includes("set icon")),
+    ).toBeTruthy();
+
+    const image = updateProject(
+      db,
+      u,
+      p.id,
+      { icon: "cdn.example.com/logo.png" },
+      "web",
+    );
+    expect(image.icon).toBe("https://cdn.example.com/logo.png");
+    expect(
+      listAudit(db, u).find((e) => e.detail.includes("changed icon")),
+    ).toBeTruthy();
+
+    const cleared = updateProject(db, u, p.id, { icon: null }, "web");
+    expect(cleared.icon).toBeNull();
+    expect(
+      listAudit(db, u).find((e) => e.detail.includes("cleared icon")),
+    ).toBeTruthy();
+  });
+
+  it("rejects an invalid icon and leaves the project unchanged", () => {
+    const { db } = createTestDb();
+    const u = createTestUser(db);
+    const p = createProject(db, u, { name: "Sidetrack" }, "web");
+    expect(() =>
+      updateProject(db, u, p.id, { icon: "definitely not an icon" }, "web"),
+    ).toThrow(/invalid project icon/);
+    expect(getProject(db, u, p.id)?.icon).toBeNull();
+  });
+
   it("scopes projects to their owner", () => {
     const { db } = createTestDb();
     const alice = createTestUser(db, { email: "alice@test.local" });

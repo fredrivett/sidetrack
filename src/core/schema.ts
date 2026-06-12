@@ -55,6 +55,10 @@ export const projects = sqliteTable(
     // Optional public homepage / landing URL. Normalized to an absolute
     // http(s) URL on write (see normalizeHomepageUrl); null when unset.
     homepageUrl: text("homepage_url"),
+    // Optional project icon: either an emoji grapheme (e.g. "🚀") or an
+    // absolute http(s) image URL. Null falls back to the homepage favicon
+    // when a homepageUrl is set, else a generic glyph. See lib/projectIcon.ts.
+    icon: text("icon"),
     position: text("position").notNull(),
     // Short human-friendly ID prefix (e.g. "SID"). Derived display data, never
     // an identity anchor — the nanoid PK stays the FK/audit target. Uniqueness

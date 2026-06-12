@@ -10,7 +10,7 @@
  * in the host (likely a typo) or a non-http scheme (e.g. `javascript:`) is
  * rejected so the stored value is always a safe external link.
  */
-export function normalizeHomepageUrl(raw: string): string | null {
+export function normalizeWebUrl(raw: string, label = "URL"): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
   const withScheme = /^https?:\/\//i.test(trimmed)
@@ -20,15 +20,19 @@ export function normalizeHomepageUrl(raw: string): string | null {
   try {
     parsed = new URL(withScheme);
   } catch {
-    throw new Error(`invalid homepage URL: ${raw}`);
+    throw new Error(`invalid ${label}: ${raw}`);
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error(`invalid homepage URL: ${raw}`);
+    throw new Error(`invalid ${label}: ${raw}`);
   }
   // A scheme-only or single-word value parses but isn't a real host; require a
   // dot so "foo" doesn't silently become "https://foo/".
   if (!parsed.hostname.includes(".")) {
-    throw new Error(`invalid homepage URL: ${raw}`);
+    throw new Error(`invalid ${label}: ${raw}`);
   }
   return parsed.toString();
+}
+
+export function normalizeHomepageUrl(raw: string): string | null {
+  return normalizeWebUrl(raw, "homepage URL");
 }
