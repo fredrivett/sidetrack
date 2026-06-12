@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   index,
   integer,
+  primaryKey,
   sqliteTable,
   text,
   uniqueIndex,
@@ -66,7 +67,6 @@ export const projects = sqliteTable(
     // absolute http(s) image URL. Null falls back to the homepage favicon
     // when a homepageUrl is set, else a generic glyph. See lib/projectIcon.ts.
     icon: text("icon"),
-    position: text("position").notNull(),
     // Short human-friendly ID prefix (e.g. "SID"). Derived display data, never
     // an identity anchor — the nanoid PK stays the FK/audit target. Uniqueness
     // is scoped to the owner so `SID-42` is unambiguous within a user's board.
@@ -108,6 +108,24 @@ export const projectMembers = sqliteTable(
       .default(sql`(unixepoch() * 1000)`),
   },
   (t) => [uniqueIndex("project_members_project_user").on(t.projectId, t.userId)],
+);
+
+// Per-user ordering of the kanban board. Each viewer (the owner AND every
+// accepted member) has one row per project they can see, holding *their* own
+// fractional-index position — so reordering a shared project moves it only on
+// the board of whoever dragged it. The owner's row is created with the project;
+// a member's is created when they accept. Cascades on project delete; a row is
+// removed explicitly when a member leaves (no user FK to cascade on).
+export const projectPositions = sqliteTable(
+  "project_positions",
+  {
+    userId: text("user_id").notNull(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    position: text("position").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.projectId] })],
 );
 
 export const items = sqliteTable(
@@ -206,6 +224,8 @@ export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 export type ProjectMember = typeof projectMembers.$inferSelect;
 export type NewProjectMember = typeof projectMembers.$inferInsert;
+export type ProjectPosition = typeof projectPositions.$inferSelect;
+export type NewProjectPosition = typeof projectPositions.$inferInsert;
 export type Item = typeof items.$inferSelect;
 export type NewItem = typeof items.$inferInsert;
 export type Category = typeof categories.$inferSelect;

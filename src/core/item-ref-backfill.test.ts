@@ -93,7 +93,6 @@ describe("backfillItemPrefixes", () => {
         id,
         userId,
         name,
-        position: `a${createdAt}`,
         prefix: `!${id}`,
         createdAt,
       })
@@ -136,7 +135,7 @@ describe("backfillItemPrefixes", () => {
     const u = createTestUser(db);
     // A finalized project (non-placeholder) already owns "ENG".
     db.insert(projects)
-      .values({ id: "real", userId: u, name: "Engineering", position: "a0", prefix: "ENG" })
+      .values({ id: "real", userId: u, name: "Engineering", prefix: "ENG" })
       .run();
     insertPlaceholder(db, "p", u, "Engineering", 2); // derives base "ENG"
 

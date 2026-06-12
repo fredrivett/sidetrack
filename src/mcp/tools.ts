@@ -127,7 +127,7 @@ export function registerTools(
     {
       title: "List projects",
       description:
-        "List every project in kanban order (left to right). Returns id, name, status, summary, summary_updated_at, position.",
+        "List every project in kanban order (left to right, per your own board). Returns id, name, status, summary, summary_updated_at.",
       inputSchema: {},
     },
     async () => {

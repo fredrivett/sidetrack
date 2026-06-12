@@ -17,16 +17,46 @@ import {
   type Project,
   PROJECT_STATUSES,
   type ProjectStatus,
+  projectPositions,
   projects,
 } from "./schema";
 
+/** The acting user's project ordering: {id, position} rows, sorted ascending.
+ * One row per project they can see (owner row at create, member row at accept),
+ * so this is the viewer's board — never anyone else's. */
+function viewerPositions(
+  db: Db,
+  userId: string,
+): { id: string; position: string }[] {
+  return db
+    .select({ id: projectPositions.projectId, position: projectPositions.position })
+    .from(projectPositions)
+    .where(eq(projectPositions.userId, userId))
+    .orderBy(asc(projectPositions.position))
+    .all();
+}
+
+/** Position for a project appended to the end of `userId`'s board. Used when a
+ * project is created (owner) and when an invite is accepted (member). */
+export function nextProjectPosition(db: Db, userId: string): string {
+  return resolveProjectPosition(viewerPositions(db, userId), "end");
+}
+
 export function listProjects(db: Db, userId: string): Project[] {
   return db
-    .select()
+    .select({ project: projects })
     .from(projects)
+    .innerJoin(
+      projectPositions,
+      and(
+        eq(projectPositions.projectId, projects.id),
+        eq(projectPositions.userId, userId),
+      ),
+    )
     .where(hasProjectAccess(userId))
-    .orderBy(asc(projects.position))
-    .all();
+    .orderBy(asc(projectPositions.position))
+    .all()
+    .map((r) => r.project);
 }
 
 export function getProject(
@@ -120,16 +150,16 @@ export function createProject(
 ): Project {
   const status = input.status ?? "idea";
   assertStatus(status);
-  const all = listProjects(db, userId);
-  const position = resolveProjectPosition(all, "end");
+  const position = nextProjectPosition(db, userId);
   const id = nanoid(12);
   const now = Date.now();
   const name = assertName(input.name);
   const prefix = ensureUniquePrefix(db, userId, derivePrefix(name));
   db.transaction((tx) => {
     tx.insert(projects)
-      .values({ id, userId, name, status, position, prefix, createdAt: now })
+      .values({ id, userId, name, status, prefix, createdAt: now })
       .run();
+    tx.insert(projectPositions).values({ userId, projectId: id, position }).run();
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
@@ -252,12 +282,19 @@ export function reorderProject(
   const existing = getProject(db, userId, id);
   if (!existing) throw new Error(`project not found: ${id}`);
   const ref = parseProjectRef(refRaw) as ProjectPositionRef;
-  const others = listProjects(db, userId).filter((p) => p.id !== id);
+  const others = viewerPositions(db, userId).filter((p) => p.id !== id);
   const position = resolveProjectPosition(others, ref);
   db.transaction((tx) => {
-    tx.update(projects)
+    // Reordering moves the project only on the acting user's board — update
+    // their own position row, never the owner's or another member's.
+    tx.update(projectPositions)
       .set({ position })
-      .where(and(eq(projects.id, id), eq(projects.userId, userId)))
+      .where(
+        and(
+          eq(projectPositions.userId, userId),
+          eq(projectPositions.projectId, id),
+        ),
+      )
       .run();
     recordAudit(tx as unknown as Db, {
       actor: userId,

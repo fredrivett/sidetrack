@@ -3,11 +3,12 @@ import { nanoid } from "nanoid";
 import { users } from "./auth-schema";
 import { recordAudit } from "./audit";
 import type { Db } from "./db";
-import { getProject } from "./projects";
+import { getProject, nextProjectPosition } from "./projects";
 import {
   type AuditSource,
   type MembershipStatus,
   projectMembers,
+  projectPositions,
   projects,
 } from "./schema";
 
@@ -177,10 +178,16 @@ export function acceptInvite(
   if (!membership || membership.status !== "pending") {
     throw new Error("no pending invite for this project");
   }
+  // Give the new member their own ordering slot, appended to the end of their
+  // board, so the shared project sorts sensibly among their own projects.
+  const position = nextProjectPosition(db, userId);
   db.transaction((tx) => {
     tx.update(projectMembers)
       .set({ status: "accepted" })
       .where(eq(projectMembers.id, membership.id))
+      .run();
+    tx.insert(projectPositions)
+      .values({ userId, projectId, position })
       .run();
     recordAudit(tx as unknown as Db, {
       actor: userId,
@@ -264,6 +271,16 @@ export function removeMember(
   db.transaction((tx) => {
     tx.delete(projectMembers)
       .where(eq(projectMembers.id, membership.id))
+      .run();
+    // Drop their ordering slot too (no user FK to cascade it). A pending
+    // member never had one, so this is a harmless no-op in that case.
+    tx.delete(projectPositions)
+      .where(
+        and(
+          eq(projectPositions.userId, targetUserId),
+          eq(projectPositions.projectId, projectId),
+        ),
+      )
       .run();
     recordAudit(tx as unknown as Db, {
       actor: userId,

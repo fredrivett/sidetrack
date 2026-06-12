@@ -10,17 +10,21 @@ import {
   getProjectWithItems,
   listProjects,
 } from "./projects";
-import { projectMembers } from "./schema";
+import { projectMembers, projectPositions } from "./schema";
 
 type Db = ReturnType<typeof createTestDb>["db"];
 
-// Insert an *accepted* membership row directly, exercising the
-// hasProjectAccess seam without going through the invite/accept flow (covered
-// in members.test.ts). Pending rows grant no access, so accepted is the
-// relevant state here.
+// Insert an *accepted* membership directly, exercising the hasProjectAccess
+// seam without going through the invite/accept flow (covered in
+// members.test.ts). Mirrors acceptInvite: an accepted member also needs a
+// project_positions row, since listProjects orders by the viewer's own board.
+// Pending rows grant no access, so accepted is the relevant state here.
 function addMember(db: Db, projectId: string, userId: string) {
   db.insert(projectMembers)
     .values({ id: nanoid(12), projectId, userId, status: "accepted" })
+    .run();
+  db.insert(projectPositions)
+    .values({ userId, projectId, position: "a0" })
     .run();
 }
 

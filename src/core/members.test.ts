@@ -8,7 +8,12 @@ import {
   listPendingInvites,
   removeMember,
 } from "./members";
-import { createProject, getProject, listProjects } from "./projects";
+import {
+  createProject,
+  getProject,
+  listProjects,
+  reorderProject,
+} from "./projects";
 import { createTestDb, createTestUser } from "./test-helpers";
 
 type Db = ReturnType<typeof createTestDb>["db"];
@@ -163,6 +168,44 @@ describe("project membership", () => {
       // Once accepted it's no longer pending.
       acceptInvite(db, alice, projectId, "web");
       expect(listPendingInvites(db, alice)).toHaveLength(0);
+    });
+  });
+
+  describe("per-user ordering", () => {
+    it("each user orders shared projects on their own board independently", () => {
+      // owner board so far: [Shared]. Add two more.
+      createProject(db, owner, { name: "A" }, "web");
+      const b = createProject(db, owner, { name: "B" }, "web");
+      // alice accepts B (appended to her empty board), then makes her own C.
+      inviteMember(db, owner, b.id, "alice", "web");
+      acceptInvite(db, alice, b.id, "web");
+      const c = createProject(db, alice, { name: "C" }, "web");
+
+      expect(listProjects(db, owner).map((p) => p.name)).toEqual([
+        "Shared",
+        "A",
+        "B",
+      ]);
+      expect(listProjects(db, alice).map((p) => p.name)).toEqual(["B", "C"]);
+
+      // Alice moves B after C on her board; the owner's board is untouched.
+      reorderProject(db, alice, b.id, `after:${c.id}`, "web");
+      expect(listProjects(db, alice).map((p) => p.name)).toEqual(["C", "B"]);
+      expect(listProjects(db, owner).map((p) => p.name)).toEqual([
+        "Shared",
+        "A",
+        "B",
+      ]);
+    });
+
+    it("leaving or being removed drops only that user's ordering slot", () => {
+      inviteMember(db, owner, projectId, "alice", "web");
+      acceptInvite(db, alice, projectId, "web");
+      expect(listProjects(db, alice).map((p) => p.name)).toEqual(["Shared"]);
+
+      removeMember(db, owner, projectId, alice, "web");
+      expect(listProjects(db, alice)).toHaveLength(0);
+      expect(listProjects(db, owner).map((p) => p.name)).toEqual(["Shared"]);
     });
   });
 });
