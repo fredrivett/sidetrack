@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/sheet";
 import { useMediaQuery } from "@/components/ui/use-media-query";
 import { EditableText } from "./EditableText";
+import { ProjectIconPicker } from "./ProjectIconPicker";
 import { StatusBadge } from "./StatusBadge";
 
 function Field({
@@ -107,6 +108,7 @@ export function ProjectDetailSheet({
       >
         <SheetHeader className="gap-2 border-b border-neutral-200 px-4 py-3 pr-14 dark:border-neutral-800">
           <div className="flex items-center gap-2">
+            <ProjectIconPicker project={project} size={22} />
             <StatusBadge projectId={project.id} status={project.status} />
           </div>
           <SheetTitle className="text-base">
