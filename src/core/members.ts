@@ -6,6 +6,7 @@ import type { Db } from "./db";
 import { getProject, nextProjectPosition } from "./projects";
 import {
   type AuditSource,
+  items,
   type MembershipStatus,
   projectMembers,
   projectPositions,
@@ -307,6 +308,16 @@ export function removeMember(
   db.transaction((tx) => {
     tx.delete(projectMembers)
       .where(eq(projectMembers.id, membership.id))
+      .run();
+    // Unassign them from any items they held here: once they lose access they
+    // can't action that work, so leaving it assigned would be a lie. Like the
+    // ordering-slot cleanup below, this is a mechanical consequence of the
+    // (audited) removal, not its own event — so no per-item audit row.
+    tx.update(items)
+      .set({ assigneeId: null })
+      .where(
+        and(eq(items.projectId, projectId), eq(items.assigneeId, targetUserId)),
+      )
       .run();
     // Drop their ordering slot too (no user FK to cascade it). A pending
     // member never had one, so this is a harmless no-op in that case.
