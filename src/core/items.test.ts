@@ -10,6 +10,7 @@ import {
   uncompleteItem,
   updateItem,
 } from "./items";
+import { acceptInvite, inviteMember, listAssignees } from "./members";
 import { createProject } from "./projects";
 import { createTestDb, createTestUser } from "./test-helpers";
 
@@ -170,5 +171,112 @@ describe("items", () => {
     const last = listAudit(db, userId).find((e) => e.entityId === item.id);
     expect(last?.action).toBe("delete");
     expect(last?.source).toBe("mcp");
+  });
+});
+
+describe("item assignment", () => {
+  // Owner + an accepted member (alice) + a stranger (bob) with no access.
+  function seedShared() {
+    const { db } = createTestDb();
+    const owner = createTestUser(db, { username: "owner" });
+    const alice = createTestUser(db, { username: "alice" });
+    const bob = createTestUser(db, { username: "bob" });
+    const projectId = createProject(db, owner, { name: "P" }, "web").id;
+    inviteMember(db, owner, projectId, "alice", "web");
+    acceptInvite(db, alice, projectId, "web");
+    const item = addItem(
+      db,
+      owner,
+      { projectId, kind: "task", title: "do it" },
+      "web",
+    );
+    return { db, owner, alice, bob, projectId, item };
+  }
+
+  it("is unassigned by default", () => {
+    const { item } = seedShared();
+    expect(item.assigneeId).toBeNull();
+  });
+
+  it("assigns to an accepted member and audits with their handle", () => {
+    const { db, owner, alice, item } = seedShared();
+    const updated = updateItem(db, owner, item.id, { assigneeId: alice }, "web");
+    expect(updated.assigneeId).toBe(alice);
+    const last = listAudit(db, owner).find((e) => e.entityId === item.id);
+    expect(last?.action).toBe("update");
+    expect(last?.detail).toContain("assigned to @alice");
+  });
+
+  it("lets the owner assign to themselves", () => {
+    const { db, owner, item } = seedShared();
+    expect(
+      updateItem(db, owner, item.id, { assigneeId: owner }, "web").assigneeId,
+    ).toBe(owner);
+  });
+
+  it("rejects assigning to a user without project access", () => {
+    const { db, owner, bob, item } = seedShared();
+    expect(() =>
+      updateItem(db, owner, item.id, { assigneeId: bob }, "web"),
+    ).toThrow(/does not have access/);
+  });
+
+  it("rejects assigning to a pending (not-yet-accepted) invitee", () => {
+    const { db } = createTestDb();
+    const owner = createTestUser(db, { username: "owner" });
+    const carol = createTestUser(db, { username: "carol" });
+    const projectId = createProject(db, owner, { name: "P" }, "web").id;
+    inviteMember(db, owner, projectId, "carol", "web");
+    const item = addItem(
+      db,
+      owner,
+      { projectId, kind: "task", title: "x" },
+      "web",
+    );
+    expect(() =>
+      updateItem(db, owner, item.id, { assigneeId: carol }, "web"),
+    ).toThrow(/does not have access/);
+  });
+
+  it("unassigns and audits the clear", () => {
+    const { db, owner, alice, item } = seedShared();
+    updateItem(db, owner, item.id, { assigneeId: alice }, "web");
+    const cleared = updateItem(db, owner, item.id, { assigneeId: null }, "web");
+    expect(cleared.assigneeId).toBeNull();
+    const last = listAudit(db, owner).find((e) => e.entityId === item.id);
+    expect(last?.detail).toContain("unassigned");
+  });
+
+  it("treats re-assigning the same user as a no-op (no audit row)", () => {
+    const { db, owner, alice, item } = seedShared();
+    updateItem(db, owner, item.id, { assigneeId: alice }, "web");
+    const before = listAudit(db, owner).filter(
+      (e) => e.entityId === item.id,
+    ).length;
+    updateItem(db, owner, item.id, { assigneeId: alice }, "web");
+    const after = listAudit(db, owner).filter(
+      (e) => e.entityId === item.id,
+    ).length;
+    expect(after).toBe(before);
+  });
+
+  it("listAssignees returns the owner first, then accepted members only", () => {
+    const { db, owner, alice, projectId } = seedShared();
+    // A pending invitee must not appear in the assignable pool.
+    const dave = createTestUser(db, { username: "dave" });
+    inviteMember(db, owner, projectId, "dave", "web");
+    const assignees = listAssignees(db, owner, projectId);
+    expect(assignees.map((a) => a.userId)).toEqual([owner, alice]);
+    expect(assignees[0].isOwner).toBe(true);
+    expect(assignees[1].isOwner).toBe(false);
+    expect(assignees.some((a) => a.userId === dave)).toBe(false);
+  });
+
+  it("a member can assign within a shared project", () => {
+    const { db, alice, owner, item } = seedShared();
+    // alice (an accepted member) assigns the item to the owner.
+    expect(
+      updateItem(db, alice, item.id, { assigneeId: owner }, "web").assigneeId,
+    ).toBe(owner);
   });
 });

@@ -6,6 +6,7 @@ import type { Db } from "./db";
 import { getProject, nextProjectPosition } from "./projects";
 import {
   type AuditSource,
+  items,
   type MembershipStatus,
   projectMembers,
   projectPositions,
@@ -21,6 +22,20 @@ export interface MemberView {
   email: string | null;
   status: MembershipStatus;
   createdAt: number;
+}
+
+/**
+ * A user who can be assigned items on a project: the owner or an accepted
+ * member. Carries the display fields the assignee picker needs (avatar + name).
+ */
+export interface AssigneeView {
+  userId: string;
+  username: string | null;
+  displayUsername: string | null;
+  name: string | null;
+  email: string | null;
+  image: string | null;
+  isOwner: boolean;
 }
 
 /** A pending invite from the invitee's perspective: which project, whose. */
@@ -294,6 +309,16 @@ export function removeMember(
     tx.delete(projectMembers)
       .where(eq(projectMembers.id, membership.id))
       .run();
+    // Unassign them from any items they held here: once they lose access they
+    // can't action that work, so leaving it assigned would be a lie. Like the
+    // ordering-slot cleanup below, this is a mechanical consequence of the
+    // (audited) removal, not its own event — so no per-item audit row.
+    tx.update(items)
+      .set({ assigneeId: null })
+      .where(
+        and(eq(items.projectId, projectId), eq(items.assigneeId, targetUserId)),
+      )
+      .run();
     // Drop their ordering slot too (no user FK to cascade it). A pending
     // member never had one, so this is a harmless no-op in that case.
     tx.delete(projectPositions)
@@ -342,6 +367,60 @@ export function listMembers(
       status: r.membership.status,
       createdAt: r.membership.createdAt,
     }));
+}
+
+/**
+ * The users who can be assigned items on a project: the owner first, then every
+ * accepted member in invite order (pending invites are excluded — they have no
+ * access yet, so they can't hold work). Visible to anyone with access; empty
+ * for a project the caller can't see.
+ */
+export function listAssignees(
+  db: Db,
+  userId: string,
+  projectId: string,
+): AssigneeView[] {
+  const project = getProject(db, userId, projectId);
+  if (!project) return [];
+
+  const out: AssigneeView[] = [];
+  const owner = getUserById(db, project.userId);
+  if (owner) {
+    out.push({
+      userId: owner.id,
+      username: owner.username,
+      displayUsername: owner.displayUsername,
+      name: owner.name,
+      email: owner.email,
+      image: owner.image,
+      isOwner: true,
+    });
+  }
+
+  const rows = db
+    .select({ user: users })
+    .from(projectMembers)
+    .innerJoin(users, eq(users.id, projectMembers.userId))
+    .where(
+      and(
+        eq(projectMembers.projectId, projectId),
+        eq(projectMembers.status, "accepted"),
+      ),
+    )
+    .orderBy(asc(projectMembers.createdAt))
+    .all();
+  for (const { user } of rows) {
+    out.push({
+      userId: user.id,
+      username: user.username,
+      displayUsername: user.displayUsername,
+      name: user.name,
+      email: user.email,
+      image: user.image,
+      isOwner: false,
+    });
+  }
+  return out;
 }
 
 /** The caller's own pending invites, with the project name and owner. */

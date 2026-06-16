@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { listAudit } from "./audit";
+import { addItem, getItem, updateItem } from "./items";
 import {
   acceptInvite,
   declineInvite,
@@ -142,6 +143,30 @@ describe("project membership", () => {
       expect(() =>
         removeMember(db, owner, projectId, bob, "web"),
       ).not.toThrow();
+    });
+
+    it("unassigns the removed member from items they held", () => {
+      const item = addItem(
+        db,
+        owner,
+        { projectId, kind: "task", title: "t" },
+        "web",
+      );
+      updateItem(db, owner, item.id, { assigneeId: alice }, "web");
+      removeMember(db, owner, projectId, alice, "web");
+      expect(getItem(db, owner, item.id)?.assigneeId).toBeNull();
+    });
+
+    it("unassigns a member's items when they leave", () => {
+      const item = addItem(
+        db,
+        owner,
+        { projectId, kind: "task", title: "t" },
+        "web",
+      );
+      updateItem(db, owner, item.id, { assigneeId: alice }, "web");
+      removeMember(db, alice, projectId, alice, "web");
+      expect(getItem(db, owner, item.id)?.assigneeId).toBeNull();
     });
   });
 

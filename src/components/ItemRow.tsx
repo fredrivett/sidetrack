@@ -2,13 +2,15 @@
 
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Check, Copy, Trash2 } from "lucide-react";
+import { Check, Copy, Eye, Trash2, UserRound } from "lucide-react";
 import { useState, useTransition } from "react";
 import {
   completeItemAction,
   deleteItemAction,
   uncompleteItemAction,
+  updateItemAction,
 } from "@/app/actions";
+import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { modifierSymbol } from "@/lib/keyboard";
 import { prLabel } from "@/lib/pr";
@@ -20,22 +22,29 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Kbd } from "@/components/ui/kbd";
 import { formatItemRef } from "@/lib/itemRef";
+import { AssigneeOptions } from "./AssigneeOptions";
 import { CategoryBadge } from "./CategoryBadge";
 import { useCopyItemRef } from "./useCopyItemRef";
+import { UserAvatar } from "./UserAvatar";
 
 export function ItemRow({
   item,
   prefix,
+  assignees,
   prLinks,
   draggable,
   onOpenDetail,
 }: {
   item: Item;
   prefix: string;
+  assignees: AssigneeView[];
   prLinks: ItemPrLink[];
   draggable: boolean;
   onOpenDetail: () => void;
@@ -48,6 +57,7 @@ export function ItemRow({
   const [hovered, setHovered] = useState(false);
   const completed = item.completedAt !== null;
   const ref = formatItemRef(prefix, item.number);
+  const assignee = assignees.find((a) => a.userId === item.assigneeId);
 
   const firstLine = item.description?.split("\n", 1)[0] ?? "";
   const descriptionHasMore =
@@ -78,6 +88,11 @@ export function ItemRow({
     }
     start(() => {
       void deleteItemAction(item.id);
+    });
+  }
+  function assign(assigneeId: string | null) {
+    start(() => {
+      void updateItemAction(item.id, { assigneeId });
     });
   }
 
@@ -144,6 +159,14 @@ export function ItemRow({
         )}
       </div>
 
+      {assignee && (
+        <UserAvatar
+          user={assignee}
+          size={20}
+          className="mt-0.5 self-start"
+        />
+      )}
+
       <DropdownMenu
         onOpenChange={(open) => {
           if (!open) setConfirmingDelete(false);
@@ -158,6 +181,11 @@ export function ItemRow({
           ⋯
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-44">
+          <DropdownMenuItem onClick={onOpenDetail}>
+            <Eye className="opacity-70" />
+            View item
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           {/* Label + Copy ID share a Group: base-ui's GroupLabel throws if it
               isn't rendered inside a Menu.Group. */}
           <DropdownMenuGroup>
@@ -176,6 +204,20 @@ export function ItemRow({
               </DropdownMenuShortcut>
             </DropdownMenuItem>
           </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <UserRound className="opacity-70" />
+              {assignee ? "Reassign" : "Assign to"}
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-52">
+              <AssigneeOptions
+                currentId={item.assigneeId}
+                assignees={assignees}
+                onPick={assign}
+              />
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
           <DropdownMenuSeparator />
           <DropdownMenuItem
             variant="destructive"

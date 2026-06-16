@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { PendingInviteView } from "@/core/members";
+import type { AssigneeView, PendingInviteView } from "@/core/members";
 import type { Category, Item, ItemPrLink, Project } from "@/core/schema";
 import { isEditableTarget, matchesShortcut } from "@/lib/keyboard";
 import { AddProjectButton } from "./AddProjectButton";
@@ -30,12 +30,14 @@ export function Kanban({
   projects,
   itemsByProject,
   categoriesByProject,
+  assigneesByProject,
   prLinksByItem,
   pendingInvites,
 }: {
   projects: ProjectView[];
   itemsByProject: Record<string, Item[]>;
   categoriesByProject: Record<string, Category[]>;
+  assigneesByProject: Record<string, AssigneeView[]>;
   prLinksByItem: Record<string, ItemPrLink[]>;
   pendingInvites: PendingInviteView[];
 }) {
@@ -171,6 +173,7 @@ export function Kanban({
             key={p.id}
             project={p}
             items={itemsByProject[p.id] ?? []}
+            assignees={assigneesByProject[p.id] ?? []}
             prLinksByItem={prLinksByItem}
             prevId={projects[idx - 1]?.id ?? null}
             nextId={projects[idx + 1]?.id ?? null}

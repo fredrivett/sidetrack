@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { updateProjectAction } from "@/app/actions";
+import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { CompletedSection } from "./CompletedSection";
 import type { ProjectView } from "./Kanban";
@@ -18,6 +19,7 @@ import { useItemDetailSheet } from "./use-item-detail-sheet";
 export function ProjectColumn({
   project,
   items,
+  assignees,
   prLinksByItem,
   prevId,
   nextId,
@@ -27,6 +29,7 @@ export function ProjectColumn({
 }: {
   project: ProjectView;
   items: Item[];
+  assignees: AssigneeView[];
   prLinksByItem: Record<string, ItemPrLink[]>;
   prevId: string | null;
   nextId: string | null;
@@ -98,6 +101,7 @@ export function ProjectColumn({
           <CompletedSection
             items={completed}
             prefix={project.refPrefix}
+            assignees={assignees}
             prLinksByItem={prLinksByItem}
             onOpenDetail={detail.openDetail}
           />
@@ -105,6 +109,7 @@ export function ProjectColumn({
             projectId={project.id}
             items={active}
             prefix={project.refPrefix}
+            assignees={assignees}
             prLinksByItem={prLinksByItem}
             onOpenDetail={detail.openDetail}
           />
@@ -115,6 +120,7 @@ export function ProjectColumn({
         <ItemDetailSheet
           item={detail.item}
           prefix={project.prefix}
+          assignees={assignees}
           prLinks={prLinksByItem[detail.item.id] ?? []}
           open={detail.open}
           onOpenChange={detail.onOpenChange}

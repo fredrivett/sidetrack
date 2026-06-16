@@ -15,6 +15,7 @@ import {
 } from "@dnd-kit/sortable";
 import { useState, useTransition } from "react";
 import { reorderItemAction } from "@/app/actions";
+import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { ItemRow } from "./ItemRow";
 
@@ -22,12 +23,14 @@ export function ItemList({
   projectId,
   items,
   prefix,
+  assignees,
   prLinksByItem,
   onOpenDetail,
 }: {
   projectId: string;
   items: Item[];
   prefix: string;
+  assignees: AssigneeView[];
   prLinksByItem: Record<string, ItemPrLink[]>;
   onOpenDetail: (item: Item) => void;
 }) {
@@ -95,6 +98,7 @@ export function ItemList({
               key={item.id}
               item={item}
               prefix={prefix}
+              assignees={assignees}
               prLinks={prLinksByItem[item.id] ?? []}
               draggable
               onOpenDetail={() => onOpenDetail(item)}
