@@ -24,6 +24,7 @@ export function ItemList({
   items,
   prefix,
   assignees,
+  viewerId,
   prLinksByItem,
   onOpenDetail,
 }: {
@@ -31,6 +32,7 @@ export function ItemList({
   items: Item[];
   prefix: string;
   assignees: AssigneeView[];
+  viewerId: string;
   prLinksByItem: Record<string, ItemPrLink[]>;
   onOpenDetail: (item: Item) => void;
 }) {
@@ -99,6 +101,7 @@ export function ItemList({
               item={item}
               prefix={prefix}
               assignees={assignees}
+              viewerId={viewerId}
               prLinks={prLinksByItem[item.id] ?? []}
               draggable
               onOpenDetail={() => onOpenDetail(item)}

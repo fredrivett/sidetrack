@@ -3,6 +3,7 @@ import { DndContext } from "@dnd-kit/core";
 import { SortableContext } from "@dnd-kit/sortable";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { updateItemAction } from "@/app/actions";
 import type { Item } from "@/core/schema";
 import { ItemRow } from "./ItemRow";
 
@@ -47,14 +48,39 @@ const item: Item = {
   createdAt: 0,
 };
 
-function renderRow(onOpenDetail: () => void = () => {}) {
+const viewer = {
+  userId: "u1",
+  username: null,
+  displayUsername: null,
+  name: "Me",
+  email: "me@example.com",
+  image: null,
+  isOwner: true,
+};
+
+const alex = {
+  userId: "u2",
+  username: null,
+  displayUsername: null,
+  name: "Alex",
+  email: "alex@example.com",
+  image: null,
+  isOwner: false,
+};
+
+function renderRow(
+  assignees = [viewer],
+  rowItem: Item = item,
+  onOpenDetail: () => void = () => {},
+) {
   return render(
     <DndContext>
-      <SortableContext items={[item.id]}>
+      <SortableContext items={[rowItem.id]}>
         <ItemRow
-          item={item}
+          item={rowItem}
           prefix="ENG"
-          assignees={[]}
+          assignees={assignees}
+          viewerId="u1"
           prLinks={[]}
           draggable={false}
           onOpenDetail={onOpenDetail}
@@ -83,7 +109,7 @@ describe("ItemRow menu", () => {
 describe("ItemRow open-detail", () => {
   it("opens the detail sheet when the row is clicked", () => {
     const onOpenDetail = vi.fn();
-    const { container } = renderRow(onOpenDetail);
+    const { container } = renderRow([viewer], item, onOpenDetail);
     const card = container.querySelector(".group") as HTMLElement;
 
     fireEvent.click(card);
@@ -92,7 +118,7 @@ describe("ItemRow open-detail", () => {
 
   it("does not open the detail sheet when the checkbox is clicked", () => {
     const onOpenDetail = vi.fn();
-    renderRow(onOpenDetail);
+    renderRow([viewer], item, onOpenDetail);
 
     fireEvent.click(screen.getByLabelText("Complete"));
     expect(onOpenDetail).not.toHaveBeenCalled();
@@ -100,11 +126,25 @@ describe("ItemRow open-detail", () => {
 
   it("does not open the detail sheet when the options menu is clicked", () => {
     const onOpenDetail = vi.fn();
-    renderRow(onOpenDetail);
+    renderRow([viewer], item, onOpenDetail);
 
     const trigger = screen.getByLabelText("Item options");
     fireEvent.pointerDown(trigger);
     fireEvent.click(trigger);
+    expect(onOpenDetail).not.toHaveBeenCalled();
+  });
+
+  it("assigns via the avatar picker without opening the detail sheet", () => {
+    vi.mocked(updateItemAction).mockClear();
+    const onOpenDetail = vi.fn();
+    renderRow([viewer], item, onOpenDetail);
+
+    const trigger = screen.getByLabelText("Assign");
+    fireEvent.pointerDown(trigger);
+    fireEvent.click(trigger);
+    // Picking an assignee assigns but must not bubble to the row's open-detail.
+    fireEvent.click(screen.getByText("Me"));
+    expect(updateItemAction).toHaveBeenCalledWith("i1", { assigneeId: "u1" });
     expect(onOpenDetail).not.toHaveBeenCalled();
   });
 });
@@ -128,5 +168,72 @@ describe("ItemRow copy-ref shortcut", () => {
     fireEvent.pointerEnter(card);
     fireEvent.keyDown(document, { key: ".", ctrlKey: true });
     expect(writeText).toHaveBeenCalledWith("ENG-42");
+  });
+});
+
+describe("ItemRow assign shortcuts", () => {
+  it("opens the assignee picker on 'a' only while hovered", () => {
+    const { container } = renderRow();
+    const card = container.querySelector(".group") as HTMLElement;
+
+    // Not hovered: unarmed, picker stays closed.
+    fireEvent.keyDown(document, { key: "a" });
+    expect(screen.queryByText("Unassigned")).toBeNull();
+
+    // Hovered: 'a' opens the picker, with the viewer ("Me") in the list.
+    fireEvent.pointerEnter(card);
+    fireEvent.keyDown(document, { key: "a" });
+    expect(screen.getByText("Unassigned")).toBeTruthy();
+    expect(screen.getByText("Me")).toBeTruthy();
+  });
+
+  it("assigns to the viewer on 'i' while hovered", () => {
+    vi.mocked(updateItemAction).mockClear();
+    const { container } = renderRow();
+    const card = container.querySelector(".group") as HTMLElement;
+
+    fireEvent.pointerEnter(card);
+    fireEvent.keyDown(document, { key: "i" });
+    expect(updateItemAction).toHaveBeenCalledWith("i1", { assigneeId: "u1" });
+  });
+
+  it("does not bind 'i' when the viewer can't be assigned", () => {
+    vi.mocked(updateItemAction).mockClear();
+    const { container } = renderRow([]); // viewer not a candidate
+    const card = container.querySelector(".group") as HTMLElement;
+
+    fireEvent.pointerEnter(card);
+    fireEvent.keyDown(document, { key: "i" });
+    expect(updateItemAction).not.toHaveBeenCalled();
+  });
+
+  it("lists the viewer first with the 'I' hint", () => {
+    // Viewer passed last to prove the picker sorts them to the top.
+    const { container } = renderRow([alex, viewer]);
+    fireEvent.pointerEnter(container.querySelector(".group") as HTMLElement);
+    fireEvent.keyDown(document, { key: "a" });
+
+    const labels = screen.getAllByRole("menuitem").map((el) => el.textContent);
+    // Unassigned first (the clear action), then the viewer ahead of Alex.
+    expect(labels[0]).toContain("Unassigned");
+    expect(labels[1]).toContain("Me");
+    expect(labels[2]).toContain("Alex");
+    expect(
+      screen.getByText("I", { selector: '[data-slot="kbd"]' }),
+    ).toBeTruthy();
+  });
+
+  it("marks the viewer with a check (and no hint) when already assigned", () => {
+    const { container } = renderRow([alex, viewer], {
+      ...item,
+      assigneeId: "u1",
+    });
+    fireEvent.pointerEnter(container.querySelector(".group") as HTMLElement);
+    fireEvent.keyDown(document, { key: "a" });
+
+    // The current-selection check takes the row's trailing slot, not the hint.
+    expect(
+      screen.queryByText("I", { selector: '[data-slot="kbd"]' }),
+    ).toBeNull();
   });
 });

@@ -45,6 +45,7 @@ export default async function Home() {
 
   return (
     <Kanban
+      viewerId={userId}
       projects={projects}
       itemsByProject={itemsByProject}
       categoriesByProject={categoriesByProject}
