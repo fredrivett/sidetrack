@@ -47,7 +47,7 @@ const item: Item = {
   createdAt: 0,
 };
 
-function renderRow() {
+function renderRow(onOpenDetail: () => void = () => {}) {
   return render(
     <DndContext>
       <SortableContext items={[item.id]}>
@@ -57,7 +57,7 @@ function renderRow() {
           assignees={[]}
           prLinks={[]}
           draggable={false}
-          onOpenDetail={() => {}}
+          onOpenDetail={onOpenDetail}
         />
       </SortableContext>
     </DndContext>,
@@ -77,6 +77,35 @@ describe("ItemRow menu", () => {
     // moment the menu opened.
     expect(screen.getByText("ENG-42")).toBeTruthy();
     expect(screen.getByText("Copy ID")).toBeTruthy();
+  });
+});
+
+describe("ItemRow open-detail", () => {
+  it("opens the detail sheet when the row is clicked", () => {
+    const onOpenDetail = vi.fn();
+    const { container } = renderRow(onOpenDetail);
+    const card = container.querySelector(".group") as HTMLElement;
+
+    fireEvent.click(card);
+    expect(onOpenDetail).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not open the detail sheet when the checkbox is clicked", () => {
+    const onOpenDetail = vi.fn();
+    renderRow(onOpenDetail);
+
+    fireEvent.click(screen.getByLabelText("Complete"));
+    expect(onOpenDetail).not.toHaveBeenCalled();
+  });
+
+  it("does not open the detail sheet when the options menu is clicked", () => {
+    const onOpenDetail = vi.fn();
+    renderRow(onOpenDetail);
+
+    const trigger = screen.getByLabelText("Item options");
+    fireEvent.pointerDown(trigger);
+    fireEvent.click(trigger);
+    expect(onOpenDetail).not.toHaveBeenCalled();
   });
 });
 

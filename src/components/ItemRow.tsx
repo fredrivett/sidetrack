@@ -3,7 +3,7 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Check, Copy, Eye, Trash2, UserRound } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import {
   completeItemAction,
   deleteItemAction,
@@ -55,6 +55,14 @@ export function ItemRow({
   const [pending, start] = useTransition();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [hovered, setHovered] = useState(false);
+
+  // Clicking anywhere on the row opens the detail sheet, but a drag must not.
+  // Track whether dnd-kit treated this gesture as a drag (per its sensors'
+  // activation constraints) and swallow the click that follows a drop.
+  const draggedRef = useRef(false);
+  useEffect(() => {
+    if (isDragging) draggedRef.current = true;
+  }, [isDragging]);
   const completed = item.completedAt !== null;
   const ref = formatItemRef(prefix, item.number);
   const assignee = assignees.find((a) => a.userId === item.assigneeId);
@@ -95,6 +103,14 @@ export function ItemRow({
       void updateItemAction(item.id, { assigneeId });
     });
   }
+  function openDetail() {
+    // The click that fires after a drop must not open the sheet.
+    if (draggedRef.current) {
+      draggedRef.current = false;
+      return;
+    }
+    onOpenDetail();
+  }
 
   return (
     <div
@@ -102,10 +118,16 @@ export function ItemRow({
       style={style}
       {...(draggable ? attributes : {})}
       {...(draggable ? listeners : {})}
+      onPointerDownCapture={() => {
+        draggedRef.current = false;
+      }}
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}
+      onClick={openDetail}
       className={`group relative flex items-start gap-2 rounded-lg border border-neutral-200 bg-white p-2 dark:border-neutral-800 dark:bg-neutral-900 ${
-        draggable ? "cursor-grab touch-manipulation active:cursor-grabbing" : ""
+        draggable
+          ? "cursor-grab touch-manipulation active:cursor-grabbing"
+          : "cursor-pointer"
       } ${
         item.kind === "milestone"
           ? "border-l-4 border-l-amber-400 dark:border-l-amber-500"
@@ -116,16 +138,16 @@ export function ItemRow({
         type="checkbox"
         checked={completed}
         onChange={toggle}
+        onClick={(e) => e.stopPropagation()}
         className="mt-1 h-4 w-4 shrink-0"
         aria-label={completed ? "Uncomplete" : "Complete"}
       />
 
       <div className="min-w-0 flex-1 space-y-0.5">
-        <button
-          type="button"
-          onClick={onOpenDetail}
-          className="block w-full space-y-0.5 text-left"
-        >
+        {/* Keyboard-focusable affordance for opening the detail sheet; the
+            click bubbles to the row's onClick so mouse and keyboard share the
+            same drag-guarded handler. */}
+        <button type="button" className="block w-full space-y-0.5 text-left">
           <span
             className={`block w-full break-words text-sm ${
               completed ? "text-neutral-400 line-through" : ""
@@ -150,6 +172,7 @@ export function ItemRow({
                 target="_blank"
                 rel="noreferrer noopener"
                 onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
                 className="inline-block rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 hover:bg-blue-100 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/70"
               >
                 {prLabel(link.prUrl)}
@@ -176,6 +199,7 @@ export function ItemRow({
           aria-label="Item options"
           disabled={pending}
           onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
           className="shrink-0 self-start rounded p-1 text-neutral-300 opacity-0 transition hover:bg-neutral-100 hover:text-neutral-600 group-hover:opacity-100 disabled:opacity-50 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
         >
           ⋯
