@@ -3,7 +3,14 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Check, Copy, Eye, Trash2, UserRound } from "lucide-react";
-import { useEffect, useRef, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import {
   completeItemAction,
   deleteItemAction,
@@ -31,13 +38,15 @@ import { Kbd } from "@/components/ui/kbd";
 import { formatItemRef } from "@/lib/itemRef";
 import { AssigneeOptions } from "./AssigneeOptions";
 import { CategoryBadge } from "./CategoryBadge";
+import { useAssignShortcuts } from "./useAssignShortcuts";
 import { useCopyItemRef } from "./useCopyItemRef";
-import { UserAvatar } from "./UserAvatar";
+import { assigneeName, UserAvatar } from "./UserAvatar";
 
 export function ItemRow({
   item,
   prefix,
   assignees,
+  viewerId,
   prLinks,
   draggable,
   onOpenDetail,
@@ -45,6 +54,7 @@ export function ItemRow({
   item: Item;
   prefix: string;
   assignees: AssigneeView[];
+  viewerId: string;
   prLinks: ItemPrLink[];
   draggable: boolean;
   onOpenDetail: () => void;
@@ -55,6 +65,7 @@ export function ItemRow({
   const [pending, start] = useTransition();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [hovered, setHovered] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
 
   // Clicking anywhere on the row opens the detail sheet, but a drag must not.
   // Track whether dnd-kit treated this gesture as a drag (per its sensors'
@@ -66,6 +77,10 @@ export function ItemRow({
   const completed = item.completedAt !== null;
   const ref = formatItemRef(prefix, item.number);
   const assignee = assignees.find((a) => a.userId === item.assigneeId);
+  const canAssignSelf = useMemo(
+    () => assignees.some((a) => a.userId === viewerId),
+    [assignees, viewerId],
+  );
 
   const firstLine = item.description?.split("\n", 1)[0] ?? "";
   const descriptionHasMore =
@@ -98,11 +113,27 @@ export function ItemRow({
       void deleteItemAction(item.id);
     });
   }
-  function assign(assigneeId: string | null) {
-    start(() => {
-      void updateItemAction(item.id, { assigneeId });
-    });
-  }
+  const assign = useCallback(
+    (assigneeId: string | null) => {
+      start(() => {
+        void updateItemAction(item.id, { assigneeId });
+      });
+    },
+    [item.id],
+  );
+  const openPicker = useCallback(() => setAssignOpen(true), []);
+  const assignToMe = useCallback(() => assign(viewerId), [assign, viewerId]);
+
+  // Linear's assignment shortcuts while the card is hovered: A opens the picker,
+  // I assigns to me. Disarmed while the picker is open (the menu owns keys then)
+  // and deferred to an open detail sheet so we don't assign the wrong item.
+  useAssignShortcuts({
+    active: hovered && !assignOpen,
+    deferToDialog: true,
+    onOpenPicker: openPicker,
+    onAssignToMe: canAssignSelf ? assignToMe : undefined,
+  });
+
   function openDetail() {
     // The click that fires after a drop must not open the sheet.
     if (draggedRef.current) {
@@ -182,13 +213,46 @@ export function ItemRow({
         )}
       </div>
 
-      {assignee && (
-        <UserAvatar
-          user={assignee}
-          size={20}
-          className="mt-0.5 self-start"
-        />
-      )}
+      {/* Assignee avatar doubles as the picker trigger (click, or A while
+          hovered). Unassigned items show a faint add-assignee button on hover. */}
+      <DropdownMenu open={assignOpen} onOpenChange={setAssignOpen}>
+        <DropdownMenuTrigger
+          aria-label={
+            assignee
+              ? `Assigned to ${assigneeName(assignee)}. Reassign`
+              : "Assign"
+          }
+          disabled={pending}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          className={
+            assignee
+              ? "mt-0.5 shrink-0 self-start rounded-full outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-400 disabled:opacity-50"
+              : "mt-0.5 shrink-0 self-start rounded p-1 text-neutral-300 opacity-0 transition hover:bg-neutral-100 hover:text-neutral-600 group-hover:opacity-100 data-[popup-open]:opacity-100 disabled:opacity-50 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+          }
+        >
+          {assignee ? (
+            <UserAvatar user={assignee} size={20} />
+          ) : (
+            <UserRound className="size-4" />
+          )}
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="end"
+          className="w-52"
+          // Portaled out of the row in the DOM, but React events still bubble
+          // through the component tree — stop them so picking an assignee doesn't
+          // also open the detail sheet via the row's onClick.
+          onClick={(e) => e.stopPropagation()}
+        >
+          <AssigneeOptions
+            currentId={item.assigneeId}
+            assignees={assignees}
+            viewerId={viewerId}
+            onPick={assign}
+          />
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       <DropdownMenu
         onOpenChange={(open) => {
@@ -240,11 +304,15 @@ export function ItemRow({
             <DropdownMenuSubTrigger>
               <UserRound className="opacity-70" />
               {assignee ? "Reassign" : "Assign to"}
+              <DropdownMenuShortcut>
+                <Kbd>A</Kbd>
+              </DropdownMenuShortcut>
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="w-52">
               <AssigneeOptions
                 currentId={item.assigneeId}
                 assignees={assignees}
+                viewerId={viewerId}
                 onPick={assign}
               />
             </DropdownMenuSubContent>

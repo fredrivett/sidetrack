@@ -8,7 +8,7 @@ import {
   Copy,
   Trash2,
 } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useCallback, useMemo, useState, useTransition } from "react";
 import {
   completeItemAction,
   deleteItemAction,
@@ -41,6 +41,7 @@ import { AssigneeOptions } from "./AssigneeOptions";
 import { CategoryBadge } from "./CategoryBadge";
 import { EditableText } from "./EditableText";
 import { InlineCode, Markdown } from "./Markdown";
+import { useAssignShortcuts } from "./useAssignShortcuts";
 import { useCopyItemRef } from "./useCopyItemRef";
 import { assigneeName, UserAvatar } from "./UserAvatar";
 
@@ -65,6 +66,7 @@ export function ItemDetailSheet({
   item,
   prefix,
   assignees,
+  viewerId,
   prLinks,
   open,
   onOpenChange,
@@ -72,6 +74,7 @@ export function ItemDetailSheet({
   item: Item;
   prefix: string;
   assignees: AssigneeView[];
+  viewerId: string;
   prLinks: ItemPrLink[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -81,21 +84,45 @@ export function ItemDetailSheet({
   const isDesktop = useMediaQuery("(min-width: 768px)", true);
   const [pending, start] = useTransition();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
   const completed = item.completedAt !== null;
   const ref = formatItemRef(prefix, item.number);
   const assignee = assignees.find((a) => a.userId === item.assigneeId);
+  const canAssignSelf = useMemo(
+    () => assignees.some((a) => a.userId === viewerId),
+    [assignees, viewerId],
+  );
 
-  function assign(assigneeId: string | null) {
-    start(() => {
-      void updateItemAction(item.id, { assigneeId });
-    });
-  }
+  const assign = useCallback(
+    (assigneeId: string | null) => {
+      start(() => {
+        void updateItemAction(item.id, { assigneeId });
+      });
+    },
+    [item.id],
+  );
+  const openPicker = useCallback(() => setAssignOpen(true), []);
+  const assignToMe = useCallback(() => assign(viewerId), [assign, viewerId]);
 
   // While the sheet is open, ⌘./Ctrl+. copies the ref (Linear's shortcut).
   const { copy } = useCopyItemRef(ref, { active: open });
 
+  // Linear's assignment shortcuts while the sheet owns the screen: A opens the
+  // picker, I assigns to me. Disarmed while the picker is open (the menu owns
+  // keys then). No deferToDialog — the sheet IS the dialog and should respond.
+  useAssignShortcuts({
+    active: open && !assignOpen,
+    onOpenPicker: openPicker,
+    onAssignToMe: canAssignSelf ? assignToMe : undefined,
+  });
+
   function change(next: boolean) {
-    if (!next) setConfirmingDelete(false);
+    if (!next) {
+      setConfirmingDelete(false);
+      // Reset the picker so a closed sheet never reopens with it already open
+      // (which would also disarm the A/I shortcuts).
+      setAssignOpen(false);
+    }
     onOpenChange(next);
   }
 
@@ -212,7 +239,7 @@ export function ItemDetailSheet({
           </Field>
 
           <Field label="Assignee">
-            <DropdownMenu>
+            <DropdownMenu open={assignOpen} onOpenChange={setAssignOpen}>
               <DropdownMenuTrigger
                 disabled={pending}
                 className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-neutral-100 disabled:opacity-50 dark:hover:bg-neutral-800"
@@ -230,12 +257,14 @@ export function ItemDetailSheet({
                     <span className="text-neutral-500">Unassigned</span>
                   </>
                 )}
-                <ChevronDown className="ml-auto size-4 opacity-50" />
+                <Kbd className="ml-auto">A</Kbd>
+                <ChevronDown className="size-4 opacity-50" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-56">
                 <AssigneeOptions
                   currentId={item.assigneeId}
                   assignees={assignees}
+                  viewerId={viewerId}
                   onPick={assign}
                 />
               </DropdownMenuContent>

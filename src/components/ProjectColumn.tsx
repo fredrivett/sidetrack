@@ -18,6 +18,7 @@ import { useItemDetailSheet } from "./use-item-detail-sheet";
 
 export function ProjectColumn({
   project,
+  viewerId,
   items,
   assignees,
   prLinksByItem,
@@ -28,6 +29,7 @@ export function ProjectColumn({
   onShare,
 }: {
   project: ProjectView;
+  viewerId: string;
   items: Item[];
   assignees: AssigneeView[];
   prLinksByItem: Record<string, ItemPrLink[]>;
@@ -102,6 +104,7 @@ export function ProjectColumn({
             items={completed}
             prefix={project.refPrefix}
             assignees={assignees}
+            viewerId={viewerId}
             prLinksByItem={prLinksByItem}
             onOpenDetail={detail.openDetail}
           />
@@ -110,6 +113,7 @@ export function ProjectColumn({
             items={active}
             prefix={project.refPrefix}
             assignees={assignees}
+            viewerId={viewerId}
             prLinksByItem={prLinksByItem}
             onOpenDetail={detail.openDetail}
           />
@@ -121,6 +125,7 @@ export function ProjectColumn({
           item={detail.item}
           prefix={project.prefix}
           assignees={assignees}
+          viewerId={viewerId}
           prLinks={prLinksByItem[detail.item.id] ?? []}
           open={detail.open}
           onOpenChange={detail.onOpenChange}

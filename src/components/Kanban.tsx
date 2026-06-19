@@ -27,6 +27,7 @@ function centredProjectId(): string | null {
 }
 
 export function Kanban({
+  viewerId,
   projects,
   itemsByProject,
   categoriesByProject,
@@ -34,6 +35,7 @@ export function Kanban({
   prLinksByItem,
   pendingInvites,
 }: {
+  viewerId: string;
   projects: ProjectView[];
   itemsByProject: Record<string, Item[]>;
   categoriesByProject: Record<string, Category[]>;
@@ -172,6 +174,7 @@ export function Kanban({
           <ProjectColumn
             key={p.id}
             project={p}
+            viewerId={viewerId}
             items={itemsByProject[p.id] ?? []}
             assignees={assigneesByProject[p.id] ?? []}
             prLinksByItem={prLinksByItem}

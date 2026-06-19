@@ -9,12 +9,14 @@ export function CompletedSection({
   items,
   prefix,
   assignees,
+  viewerId,
   prLinksByItem,
   onOpenDetail,
 }: {
   items: Item[];
   prefix: string;
   assignees: AssigneeView[];
+  viewerId: string;
   prLinksByItem: Record<string, ItemPrLink[]>;
   onOpenDetail: (item: Item) => void;
 }) {
@@ -34,6 +36,7 @@ export function CompletedSection({
             item={it}
             prefix={prefix}
             assignees={assignees}
+            viewerId={viewerId}
             prLinks={prLinksByItem[it.id] ?? []}
             draggable={false}
             onOpenDetail={() => onOpenDetail(it)}
