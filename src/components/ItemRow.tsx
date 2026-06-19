@@ -204,7 +204,14 @@ export function ItemRow({
         >
           ⋯
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-44">
+        <DropdownMenuContent
+          align="end"
+          className="w-44"
+          // base-ui portals the menu out of the row in the DOM, but React
+          // events still bubble through the component tree — without this a
+          // click on any item would reach the row's onClick and open detail.
+          onClick={(e) => e.stopPropagation()}
+        >
           <DropdownMenuItem onClick={onOpenDetail}>
             <Eye className="opacity-70" />
             View item
