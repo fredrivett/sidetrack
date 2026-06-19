@@ -122,13 +122,18 @@ export function ItemRow({
     [item.id],
   );
   const openPicker = useCallback(() => setAssignOpen(true), []);
-  const assignToMe = useCallback(() => assign(viewerId), [assign, viewerId]);
+  const assignToMe = useCallback(() => {
+    assign(viewerId);
+    setAssignOpen(false);
+  }, [assign, viewerId]);
 
-  // Linear's assignment shortcuts while the card is hovered: A opens the picker,
-  // I assigns to me. Disarmed while the picker is open (the menu owns keys then)
-  // and deferred to an open detail sheet so we don't assign the wrong item.
+  // Linear's assignment shortcuts: A opens the picker, I assigns to me. Armed
+  // while the card is hovered, and kept armed while the picker is open so the I
+  // hint on the "me" row works there too — opening the picker drops `hovered`
+  // (its modal backdrop swallows the pointer), so we OR in `assignOpen`.
+  // Deferred to an open detail sheet so we don't assign the wrong item.
   useAssignShortcuts({
-    active: hovered && !assignOpen,
+    active: hovered || assignOpen,
     deferToDialog: true,
     onOpenPicker: openPicker,
     onAssignToMe: canAssignSelf ? assignToMe : undefined,

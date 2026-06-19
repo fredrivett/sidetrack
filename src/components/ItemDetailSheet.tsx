@@ -102,16 +102,21 @@ export function ItemDetailSheet({
     [item.id],
   );
   const openPicker = useCallback(() => setAssignOpen(true), []);
-  const assignToMe = useCallback(() => assign(viewerId), [assign, viewerId]);
+  const assignToMe = useCallback(() => {
+    assign(viewerId);
+    setAssignOpen(false);
+  }, [assign, viewerId]);
 
   // While the sheet is open, ⌘./Ctrl+. copies the ref (Linear's shortcut).
   const { copy } = useCopyItemRef(ref, { active: open });
 
   // Linear's assignment shortcuts while the sheet owns the screen: A opens the
-  // picker, I assigns to me. Disarmed while the picker is open (the menu owns
-  // keys then). No deferToDialog — the sheet IS the dialog and should respond.
+  // picker, I assigns to me. Stays armed while the picker is open so the I hint
+  // shown on the "me" row actually works there — base-ui's menu doesn't consume
+  // letter keys, so we won't fight its typeahead. No deferToDialog: the sheet IS
+  // the dialog and should respond.
   useAssignShortcuts({
-    active: open && !assignOpen,
+    active: open,
     onOpenPicker: openPicker,
     onAssignToMe: canAssignSelf ? assignToMe : undefined,
   });

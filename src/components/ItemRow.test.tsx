@@ -197,6 +197,22 @@ describe("ItemRow assign shortcuts", () => {
     expect(updateItemAction).toHaveBeenCalledWith("i1", { assigneeId: "u1" });
   });
 
+  it("still assigns on 'i' once the picker is open and hover is lost", () => {
+    // Regression: opening the picker drops `hovered` (modal backdrop), and the
+    // shortcut used to disarm while open, so the I hint on the "me" row did
+    // nothing. It must stay armed via `assignOpen`.
+    vi.mocked(updateItemAction).mockClear();
+    const { container } = renderRow();
+    const card = container.querySelector(".group") as HTMLElement;
+
+    fireEvent.pointerEnter(card);
+    fireEvent.keyDown(document, { key: "a" }); // open the picker
+    expect(screen.getByText("Me")).toBeTruthy();
+    fireEvent.pointerLeave(card); // backdrop swallows the pointer
+    fireEvent.keyDown(document, { key: "i" });
+    expect(updateItemAction).toHaveBeenCalledWith("i1", { assigneeId: "u1" });
+  });
+
   it("does not bind 'i' when the viewer can't be assigned", () => {
     vi.mocked(updateItemAction).mockClear();
     const { container } = renderRow([]); // viewer not a candidate
