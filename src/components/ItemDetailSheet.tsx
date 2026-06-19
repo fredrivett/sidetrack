@@ -40,7 +40,7 @@ import { useMediaQuery } from "@/components/ui/use-media-query";
 import { AssigneeOptions } from "./AssigneeOptions";
 import { CategoryBadge } from "./CategoryBadge";
 import { EditableText } from "./EditableText";
-import { Markdown } from "./Markdown";
+import { InlineCode, Markdown } from "./Markdown";
 import { useCopyItemRef } from "./useCopyItemRef";
 import { assigneeName, UserAvatar } from "./UserAvatar";
 
@@ -175,6 +175,7 @@ export function ItemDetailSheet({
                 completed ? "text-neutral-400 line-through" : ""
               }`}
               inputClassName="w-full text-base"
+              renderValue={(title) => <InlineCode>{title}</InlineCode>}
             />
           </SheetTitle>
           <SheetDescription className="sr-only">
