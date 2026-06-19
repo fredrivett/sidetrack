@@ -40,6 +40,7 @@ import { useMediaQuery } from "@/components/ui/use-media-query";
 import { AssigneeOptions } from "./AssigneeOptions";
 import { CategoryBadge } from "./CategoryBadge";
 import { EditableText } from "./EditableText";
+import { Markdown } from "./Markdown";
 import { useCopyItemRef } from "./useCopyItemRef";
 import { assigneeName, UserAvatar } from "./UserAvatar";
 
@@ -190,8 +191,9 @@ export function ItemDetailSheet({
               }
               multiline
               placeholder="Add description…"
-              className="block w-full whitespace-pre-wrap break-words text-sm text-neutral-600 dark:text-neutral-300"
+              className="block w-full break-words text-sm text-neutral-600 dark:text-neutral-300"
               inputClassName="w-full text-sm"
+              renderValue={(description) => <Markdown>{description}</Markdown>}
             />
           </Field>
 
