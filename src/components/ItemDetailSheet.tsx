@@ -117,7 +117,12 @@ export function ItemDetailSheet({
   });
 
   function change(next: boolean) {
-    if (!next) setConfirmingDelete(false);
+    if (!next) {
+      setConfirmingDelete(false);
+      // Reset the picker so a closed sheet never reopens with it already open
+      // (which would also disarm the A/I shortcuts).
+      setAssignOpen(false);
+    }
     onOpenChange(next);
   }
 
