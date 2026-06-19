@@ -99,6 +99,17 @@ describe("ItemDetailSheet assign shortcuts", () => {
     expect(updateItemAction).toHaveBeenCalledWith("i1", { assigneeId: "u1" });
   });
 
+  it("still assigns to the viewer on 'i' while the picker is open", () => {
+    // Regression: the shortcut used to disarm itself while the picker was open,
+    // so the I hint shown on the "me" row did nothing.
+    vi.mocked(updateItemAction).mockClear();
+    renderSheet();
+    fireEvent.keyDown(document, { key: "a" }); // open the picker
+    expect(screen.getByRole("menuitem", { name: /Me/ })).toBeTruthy();
+    fireEvent.keyDown(document, { key: "i" });
+    expect(updateItemAction).toHaveBeenCalledWith("i1", { assigneeId: "u1" });
+  });
+
   it("does not act on shortcuts while the sheet is closed", () => {
     vi.mocked(updateItemAction).mockClear();
     renderSheet(false);
