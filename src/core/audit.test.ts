@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createApiKey, revokeApiKey, verifyApiKey } from "./api-keys";
 import { listAudit, recordAudit } from "./audit";
 import { addItem } from "./items";
 import { createProject } from "./projects";
@@ -37,6 +38,38 @@ describe("audit", () => {
     const mcpOnly = listAudit(db, u, { source: "mcp" });
     expect(mcpOnly.every((e) => e.source === "mcp")).toBe(true);
     expect(webOnly.length + mcpOnly.length).toBe(listAudit(db, u).length);
+  });
+
+  it("records which agent made a change, and keeps it after the key is revoked", () => {
+    const { db } = createTestDb();
+    const u = createTestUser(db);
+    const { record, plaintext } = createApiKey(db, u, "Claude desktop", "web");
+    const caller = verifyApiKey(db, plaintext);
+    expect(caller).toEqual({ userId: u, keyId: record.id, name: "Claude desktop" });
+
+    const p = createProject(db, u, { name: "Home" }, "web");
+    addItem(
+      db,
+      u,
+      { projectId: p.id, kind: "task", title: "Water plants" },
+      { source: "mcp", agent: { keyId: record.id, name: record.name } },
+    );
+    // Revoking deletes the key row; the log must still name the agent.
+    revokeApiKey(db, u, record.id, "web");
+
+    const entries = listAudit(db, u);
+    expect(
+      entries.find((e) => e.entityType === "item" && e.action === "create"),
+    ).toMatchObject({
+      source: "mcp",
+      agentKeyId: record.id,
+      agentName: "Claude desktop",
+    });
+    expect(entries.find((e) => e.entityType === "project")).toMatchObject({
+      source: "web",
+      agentKeyId: null,
+      agentName: null,
+    });
   });
 
   it("returns rows newest first", () => {

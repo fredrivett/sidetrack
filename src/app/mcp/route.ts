@@ -28,10 +28,13 @@ async function handle(request: Request): Promise<Response> {
   if (!key) return new Response("unauthorized", { status: 401 });
 
   const { db } = getDb();
-  const userId = verifyApiKey(db, key);
-  if (!userId) return new Response("unauthorized", { status: 401 });
+  const caller = verifyApiKey(db, key);
+  if (!caller) return new Response("unauthorized", { status: 401 });
 
-  const server = buildServer({ userId });
+  const server = buildServer({
+    userId: caller.userId,
+    agent: { keyId: caller.keyId, name: caller.name },
+  });
   const transport = new WebStandardStreamableHTTPServerTransport({
     enableJsonResponse: true,
   });

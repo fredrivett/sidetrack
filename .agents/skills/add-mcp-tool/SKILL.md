@@ -8,7 +8,8 @@ description: Add a new MCP tool that exposes a core mutation, with audit logging
 Use when adding a tool to `src/mcp/tools.ts` that mutates state. The point of
 this skill is to make sure the audit-log invariant (see root `AGENTS.md`) is
 satisfied — every state-changing tool MUST write an `audit_log` row in the
-same transaction as the mutation, with `source: "mcp"`.
+same transaction as the mutation, with the tool's `SOURCE` (`"mcp"` plus the
+calling agent's API key).
 
 Follow each step in order. Don't skip the test — a tool without a test that
 asserts the audit row was written is incomplete.
@@ -23,7 +24,7 @@ asserts the audit row was written is incomplete.
 
 2. **Core function.** Add to the relevant file under `src/core/` (or create
    a new one if the entity is new). The signature follows
-   `(db: Db, input, source: AuditSource)` and returns the concrete entity type
+   `(db: Db, input, source: AuditOrigin)` and returns the concrete entity type
    for the mutation — e.g. `Item` (`addItem`), `Project` (`createProject`), or
    `void` (`deleteItem`). The body MUST wrap the mutation and `recordAudit(...)`
    in `db.transaction((tx) => { ... })`. Copy the pattern from `addItem` in
@@ -35,7 +36,8 @@ asserts the audit row was written is incomplete.
    - Reuse existing Zod schemas (`Status`, `Kind`, `PosRef`, `ProjectPosRef`)
      where applicable.
    - Use `json(value)` for success, `notFound(kind, id)` for missing entities.
-   - Pass `SOURCE` (declared at top of file as `"mcp"`) to the core fn.
+   - Pass `SOURCE` to the core fn. It's an `AuditOrigin` built at the top of
+     `registerTools()` as `{ source: "mcp", agent: ctx.agent }`.
    - Write the `description` field as instructions for the calling agent —
      how to render or use the result. See `list_all_items` / `add_item` for
      the rendering convention.

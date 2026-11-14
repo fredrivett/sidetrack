@@ -18,10 +18,19 @@ export interface AuditEntryWithActor extends AuditEntry {
   actorName: string | null;
 }
 
+/**
+ * Where a change came from: a bare source ("web", "mcp", …), or, for an agent
+ * call, the source plus the API key the agent authenticated with, so the log
+ * can say which agent made the change.
+ */
+export type AuditOrigin =
+  | AuditSource
+  | { source: "mcp"; agent: { keyId: string; name: string } };
+
 export interface AuditInput {
   /** User id of whoever performed the action. */
   actor: string;
-  source: AuditSource;
+  source: AuditOrigin;
   action: AuditAction;
   entityType: AuditEntity;
   entityId: string;
@@ -34,12 +43,17 @@ export interface AuditInput {
  * describes so the log can never drift from the data.
  */
 export function recordAudit(db: Db, input: AuditInput): void {
+  const origin =
+    typeof input.source === "string" ? { source: input.source } : input.source;
+  const agent = "agent" in origin ? origin.agent : null;
   db.insert(auditLog)
     .values({
       id: nanoid(12),
       ts: Date.now(),
       actor: input.actor,
-      source: input.source,
+      source: origin.source,
+      agentKeyId: agent?.keyId ?? null,
+      agentName: agent?.name ?? null,
       action: input.action,
       entityType: input.entityType,
       entityId: input.entityId,

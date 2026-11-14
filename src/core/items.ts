@@ -2,7 +2,7 @@ import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { hasProjectAccess } from "./access";
 import { users } from "./auth-schema";
-import { recordAudit } from "./audit";
+import { type AuditOrigin, recordAudit } from "./audit";
 import { ensureCategory } from "./categories";
 import type { Db } from "./db";
 import {
@@ -12,7 +12,6 @@ import {
   resolveUncompletePosition,
 } from "./fracidx";
 import {
-  type AuditSource,
   type Item,
   type ItemKind,
   ITEM_KINDS,
@@ -124,7 +123,7 @@ export function addItem(
     category?: string | null;
     positionRef?: string;
   },
-  source: AuditSource,
+  source: AuditOrigin,
 ): Item {
   assertKind(input.kind);
   if (!projectAccessibleForUser(db, userId, input.projectId)) {
@@ -209,7 +208,7 @@ export function updateItem(
     category?: string | null;
     assigneeId?: string | null;
   },
-  source: AuditSource,
+  source: AuditOrigin,
 ): Item {
   const existing = getItem(db, userId, id);
   if (!existing) throw new Error(`item not found: ${id}`);
@@ -275,7 +274,7 @@ export function completeItem(
   db: Db,
   userId: string,
   id: string,
-  source: AuditSource,
+  source: AuditOrigin,
 ): Item {
   const existing = getItem(db, userId, id);
   if (!existing) throw new Error(`item not found: ${id}`);
@@ -305,7 +304,7 @@ export function uncompleteItem(
   db: Db,
   userId: string,
   id: string,
-  source: AuditSource,
+  source: AuditOrigin,
 ): Item {
   const existing = getItem(db, userId, id);
   if (!existing) throw new Error(`item not found: ${id}`);
@@ -336,7 +335,7 @@ export function reorderItem(
   userId: string,
   id: string,
   refRaw: string,
-  source: AuditSource,
+  source: AuditOrigin,
 ): Item {
   const existing = getItem(db, userId, id);
   if (!existing) throw new Error(`item not found: ${id}`);
@@ -364,7 +363,7 @@ export function deleteItem(
   db: Db,
   userId: string,
   id: string,
-  source: AuditSource,
+  source: AuditOrigin,
 ): void {
   const existing = getItem(db, userId, id);
   if (!existing) return;

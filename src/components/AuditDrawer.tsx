@@ -174,6 +174,7 @@ export function AuditDrawer({
                       <p className="mt-0.5 text-[11px] text-neutral-400">
                         {formatRelative(e.ts)}
                         {` · ${e.actorName ?? "Unknown"}`}
+                        {e.agentName ? ` via ${e.agentName}` : ""}
                         {!projectId && e.projectId && nameById.get(e.projectId)
                           ? ` · ${nameById.get(e.projectId)}`
                           : ""}

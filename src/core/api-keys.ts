@@ -2,9 +2,8 @@ import { createHash, randomBytes } from "node:crypto";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { type ApiKey, apiKeys } from "./auth-schema";
-import { recordAudit } from "./audit";
+import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
-import type { AuditSource } from "./schema";
 
 // API keys are issued from the web UI, stored as sha256(key), and passed in
 // MCP requests either via Authorization: Bearer <key> or ?key=<key>.
@@ -27,7 +26,7 @@ export function createApiKey(
   db: Db,
   userId: string,
   name: string,
-  source: AuditSource,
+  source: AuditOrigin,
 ): { record: Omit<ApiKey, "keyHash">; plaintext: string } {
   const trimmed = name.trim();
   if (!trimmed) throw new Error("key name required");
@@ -96,7 +95,7 @@ export function revokeApiKey(
   db: Db,
   userId: string,
   id: string,
-  source: AuditSource,
+  source: AuditOrigin,
 ): boolean {
   // Pre-read so the audit detail can name the key being revoked. The
   // ownership filter lives on both this read and the delete to make sure
@@ -125,7 +124,8 @@ export function revokeApiKey(
 }
 
 /**
- * Resolve a plaintext key to its owning user id. Returns null if the key
+ * Resolve a plaintext key to its owning user id and the key's own id and
+ * name (the agent's identity in the audit log). Returns null if the key
  * is unknown. Also bumps last_used_at as a best-effort side effect — a write
  * failure there is swallowed so it can't fail auth for a valid key. Constant-
  * time isn't needed: the lookup is by sha256(key), which is a uniformly-
@@ -134,10 +134,13 @@ export function revokeApiKey(
  * Intentionally NOT audited: this fires on every MCP request and would
  * drown the meaningful events. Same carve-out as ensureCategory.
  */
-export function verifyApiKey(db: Db, key: string): string | null {
+export function verifyApiKey(
+  db: Db,
+  key: string,
+): { userId: string; keyId: string; name: string } | null {
   if (!key || !key.startsWith(KEY_PREFIX)) return null;
   const row = db
-    .select({ id: apiKeys.id, userId: apiKeys.userId })
+    .select({ id: apiKeys.id, userId: apiKeys.userId, name: apiKeys.name })
     .from(apiKeys)
     .where(eq(apiKeys.keyHash, hash(key)))
     .get();
@@ -152,5 +155,5 @@ export function verifyApiKey(db: Db, key: string): string | null {
   } catch {
     // ignore — usage tracking is not load-bearing for auth.
   }
-  return row.userId;
+  return { userId: row.userId, keyId: row.id, name: row.name };
 }

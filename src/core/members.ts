@@ -1,11 +1,10 @@
 import { and, asc, eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { users } from "./auth-schema";
-import { recordAudit } from "./audit";
+import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
 import { getProject, nextProjectPosition } from "./projects";
 import {
-  type AuditSource,
   items,
   type MembershipStatus,
   projectMembers,
@@ -101,7 +100,7 @@ export function inviteMember(
   userId: string,
   projectId: string,
   handle: string,
-  source: AuditSource,
+  source: AuditOrigin,
 ): MemberView {
   const project = getProject(db, userId, projectId);
   if (!project) throw new Error(`project not found: ${projectId}`);
@@ -194,7 +193,7 @@ export function acceptInvite(
   db: Db,
   userId: string,
   projectId: string,
-  source: AuditSource,
+  source: AuditOrigin,
 ): void {
   const membership = ownMembership(db, userId, projectId);
   if (!membership || membership.status !== "pending") {
@@ -243,7 +242,7 @@ export function declineInvite(
   db: Db,
   userId: string,
   projectId: string,
-  source: AuditSource,
+  source: AuditOrigin,
 ): void {
   const membership = ownMembership(db, userId, projectId);
   if (!membership || membership.status !== "pending") {
@@ -275,7 +274,7 @@ export function removeMember(
   userId: string,
   projectId: string,
   targetUserId: string,
-  source: AuditSource,
+  source: AuditOrigin,
 ): void {
   const leaving = targetUserId === userId;
   if (!leaving) {

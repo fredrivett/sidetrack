@@ -1,10 +1,9 @@
 import { and, asc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { hasProjectAccess } from "./access";
-import { recordAudit } from "./audit";
+import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
 import {
-  type AuditSource,
   type Category,
   categories,
   projects,
@@ -59,7 +58,7 @@ export function addCategory(
   userId: string,
   projectId: string,
   name: string,
-  source: AuditSource,
+  source: AuditOrigin,
 ): Category {
   const trimmed = name.trim();
   if (!trimmed) throw new Error("category name required");

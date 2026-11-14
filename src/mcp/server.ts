@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerTools } from "./tools";
+import { type McpContext, registerTools } from "./tools";
 
-export function buildServer(ctx: { userId: string }) {
+export function buildServer(ctx: McpContext) {
   const server = new McpServer(
     { name: "sidetrack", version: "0.1.0" },
     { capabilities: { tools: {} } },

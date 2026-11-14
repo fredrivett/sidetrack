@@ -78,6 +78,13 @@
       "when": 1781297274586,
       "tag": "0010_volatile_enchantress",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1794682806427,
+      "tag": "0011_curious_onslaught",
+      "breakpoints": true
     }
   ]
 }
