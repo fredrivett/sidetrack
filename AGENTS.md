@@ -98,3 +98,6 @@ and for every review thread to be resolved, so follow up on each event:
 - **CI failure caused by the change:** fix it and push.
 - **CI failure not caused by the change:** confirm the same check fails on
   `main`, say so on the PR, and ask the user before working around it.
+- **Stop and ask** after 3 fix pushes for the same failing check or comment,
+  or as soon as a push leaves the failure unchanged. Report what you tried and
+  what still fails. A fix loop that isn't converging only burns CI and tokens.
