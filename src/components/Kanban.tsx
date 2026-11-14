@@ -145,7 +145,24 @@ export function Kanban({
   return (
     <main className="flex h-dvh flex-col">
       <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
-        <h1 className="text-sm font-semibold tracking-tight">Sidetrack</h1>
+        <h1 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+          {/* The logo mark from scripts/icons/icon.svg, cropped to the cards
+              and drawn at 1/16 scale so every edge lands on a whole pixel. */}
+          <svg
+            viewBox="112 96 288 304"
+            width="18"
+            height="19"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <rect x="144" y="96" width="256" height="48" rx="12" />
+            <rect x="112" y="160" width="128" height="48" rx="12" />
+            <rect x="128" y="224" width="256" height="48" rx="12" />
+            <rect x="272" y="288" width="128" height="48" rx="12" />
+            <rect x="112" y="352" width="256" height="48" rx="12" />
+          </svg>
+          Sidetrack
+        </h1>
         <div className="flex items-center gap-3">
           <span className="text-xs text-neutral-400">
             {projects.length} project{projects.length === 1 ? "" : "s"}
