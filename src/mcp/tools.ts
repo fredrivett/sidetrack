@@ -387,6 +387,12 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       const timeZone = savedZone ?? "UTC";
       const { today, lists } = listNoDate(db, userId, { timeZone });
       const refs = projectRefPrefixes(db, userId);
+      // Siblings share a parent, so look each parent's title up once.
+      const titles = new Map<string, string | null>();
+      const parentTitle = (id: string) => {
+        if (!titles.has(id)) titles.set(id, getItem(db, userId, id)?.title ?? null);
+        return titles.get(id) ?? null;
+      };
       return json({
         today,
         timeZone,
@@ -403,7 +409,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
               list: project,
               items: withRefs(refs[project.id] ?? project.prefix, keep).map((it) =>
                 it.parentId
-                  ? { ...it, parentTitle: getItem(db, userId, it.parentId)?.title ?? null }
+                  ? { ...it, parentTitle: parentTitle(it.parentId) }
                   : it,
               ),
             },

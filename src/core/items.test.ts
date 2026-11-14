@@ -13,7 +13,13 @@ import {
   updateItem,
 } from "./items";
 import { acceptInvite, inviteMember, listAssignees } from "./members";
-import { createProject, listNoDate, listToday, updateProject } from "./projects";
+import {
+  createProject,
+  listNoDate,
+  listToday,
+  reorderProject,
+  updateProject,
+} from "./projects";
 import { items } from "./schema";
 import { nestItems } from "../lib/itemTree";
 import { createTestDb, createTestUser } from "./test-helpers";
@@ -693,6 +699,10 @@ describe("due dates and Today", () => {
     const empty = createProject(db, userId, { name: "All dated" }, "web");
     const paused = createProject(db, userId, { name: "Later" }, "web");
     updateProject(db, userId, paused.id, { status: "paused" }, "web");
+    const archived = createProject(db, userId, { name: "Old" }, "web");
+    updateProject(db, userId, archived.id, { status: "archived" }, "web");
+    // Board order, not creation order: Buy moves to the front.
+    reorderProject(db, userId, buy.id, "start", "web");
     const add = (
       projectId: string,
       title: string,
@@ -719,6 +729,7 @@ describe("due dates and Today", () => {
     add(home.id, "fred's sim", null, { parentId: plan.id });
     add(empty.id, "dated", "2026-11-15");
     add(paused.id, "paused undated", null);
+    add(archived.id, "archived undated", null);
     const doneOld = add(home.id, "done yesterday", null);
     const doneNow = add(home.id, "done today", null);
     db.update(items).set({ completedAt: Date.UTC(2026, 10, 13, 9) }).where(eq(items.id, doneOld.id)).run();
@@ -726,10 +737,11 @@ describe("due dates and Today", () => {
 
     const r = listNoDate(db, userId, { timeZone: tz, now });
     expect(r.today).toBe("2026-11-14");
-    // Board order (Home before Buy), list order within; lists with nothing undated go.
+    // Board order (Buy before Home), list order within; lists with nothing
+    // undated, paused lists and archived lists go.
     expect(r.lists.map((l) => [l.project.name, l.items.map((i) => i.title)])).toEqual([
-      ["Home", ["tiling", "tidy flat", "lounge", "done today"]],
       ["Buy", ["slippers"]],
+      ["Home", ["tiling", "tidy flat", "lounge", "done today"]],
     ]);
   });
 });

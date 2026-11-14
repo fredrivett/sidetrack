@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, isNotNull, isNull, lte, or } from "drizzle-orm";
+import { and, asc, eq, gte, isNotNull, isNull, lte, or, type SQL } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { derivePrefix, dedupePrefix, validatePrefix } from "../lib/itemRef";
 import { nestItems } from "../lib/itemTree";
@@ -109,6 +109,38 @@ export function listAllProjectsWithItems(
 }
 
 /**
+ * Items in the user's active lists, in list order, that are open or were
+ * finished recently enough to land on `today` in some zone: the 4am start of
+ * today is never before midnight UTC the day before, even at UTC+14. The
+ * views across lists (Today, No date) narrow this further.
+ */
+function activeItemsForDay(
+  db: Db,
+  userId: string,
+  today: string,
+  ...where: SQL[]
+): Item[] {
+  return db
+    .select({ items })
+    .from(items)
+    .innerJoin(projects, eq(projects.id, items.projectId))
+    .where(
+      and(
+        hasProjectAccess(userId),
+        eq(projects.status, "active"),
+        or(
+          isNull(items.completedAt),
+          gte(items.completedAt, Date.parse(`${addDays(today, -1)}T00:00:00Z`)),
+        ),
+        ...where,
+      ),
+    )
+    .orderBy(asc(items.position), asc(items.id))
+    .all()
+    .map((row) => row.items);
+}
+
+/**
  * The Today view across every active list the user can see: items due on or
  * before `today` that are open or were finished today, overdue first, then by
  * board order and list order. Paused and archived lists are left out.
@@ -126,29 +158,13 @@ export function listToday(
       .filter((p) => p.status === "active")
       .map((p, i) => [p.id, i]),
   );
-  const due = db
-    .select({ items })
-    .from(items)
-    .innerJoin(projects, eq(projects.id, items.projectId))
-    .where(
-      and(
-        hasProjectAccess(userId),
-        eq(projects.status, "active"),
-        isNotNull(items.dueDate),
-        lte(items.dueDate, today),
-        // Only open items, or ones finished recently enough to land on today
-        // in some zone: the 4am start of today is never before midnight UTC
-        // the day before, even at UTC+14.
-        or(
-          isNull(items.completedAt),
-          gte(items.completedAt, Date.parse(`${addDays(today, -1)}T00:00:00Z`)),
-        ),
-      ),
-    )
-    .orderBy(asc(items.position), asc(items.id))
-    .all()
-    .map((row) => row.items)
-    .filter((it) => isOnToday(it, today, opts.timeZone));
+  const due = activeItemsForDay(
+    db,
+    userId,
+    today,
+    isNotNull(items.dueDate),
+    lte(items.dueDate, today),
+  ).filter((it) => isOnToday(it, today, opts.timeZone));
   // Stable sort: due date, then the list's place on the board; ties keep list order.
   due.sort(
     (a, b) =>
@@ -162,8 +178,7 @@ export function listToday(
  * The No date view across every active list the user can see: tasks with no
  * due date that are open or were finished today (see isOnNoDate), grouped by
  * list in board order, each list's items in list order (a parent, then its
- * sub-items). Lists with
- * nothing undated are left out, as are paused and archived lists. A sub-item
+ * sub-items). Lists with nothing undated are left out, as are paused and archived lists. A sub-item
  * of a dated parent is planned with its parent, so stays out. `timeZone` and
  * `today` work as in listToday.
  */
@@ -173,26 +188,8 @@ export function listNoDate(
   opts: { timeZone?: string; today?: string; now?: number } = {},
 ): { today: string; lists: Array<{ project: Project; items: Item[] }> } {
   const today = opts.today ?? dayOf(opts.now ?? Date.now(), opts.timeZone);
-  // Every open or recently finished item in an active list, dated or not:
-  // a sub-item's place here depends on its parent's date. (The cutoff is
-  // listToday's.)
-  const rows = db
-    .select({ items })
-    .from(items)
-    .innerJoin(projects, eq(projects.id, items.projectId))
-    .where(
-      and(
-        hasProjectAccess(userId),
-        eq(projects.status, "active"),
-        or(
-          isNull(items.completedAt),
-          gte(items.completedAt, Date.parse(`${addDays(today, -1)}T00:00:00Z`)),
-        ),
-      ),
-    )
-    .orderBy(asc(items.position), asc(items.id))
-    .all()
-    .map((row) => row.items);
+  // Dated items too: a sub-item's place here depends on its parent's date.
+  const rows = activeItemsForDay(db, userId, today);
   const byId = new Map(rows.map((it) => [it.id, it]));
   const undated = rows.filter((it) =>
     isOnNoDate(
