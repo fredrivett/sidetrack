@@ -96,9 +96,10 @@ export function NewItemSheet({
       await addItemAction({ projectId, kind, title: t, description: d, category: c });
       if (session.current !== startedIn) return;
       // Stay open for the next item: clear what's per-item, keep the list,
-      // type and category, and put the cursor back in the title. The fields
-      // stay editable while the add is in flight, so only clear them if they
-      // still hold what was submitted — never text typed for the next item.
+      // type and category, and put the cursor back in the title. You can type
+      // the next item while this one saves (submitting waits; the button
+      // shows "Adding…"), so only clear fields that still hold what was
+      // submitted — never text typed for the next item.
       setTitle((cur) => (cur.trim() === t ? "" : cur));
       setDescription((cur) => ((cur.trim() || null) === d ? "" : cur));
       setLastAdded(t);
@@ -212,7 +213,7 @@ export function NewItemSheet({
               {lastAdded ? "Done" : "Cancel"}
             </Button>
             <Button type="submit" size="sm" disabled={!title.trim() || !projectId || pending}>
-              Add item
+              {pending ? "Adding…" : "Add item"}
             </Button>
           </SheetFooter>
         </form>

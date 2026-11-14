@@ -53,8 +53,16 @@ export function ProjectMenu({
     });
   }
 
+  // Pause, Resume and Undo-archive all wait for the change and say so if it
+  // fails, rather than leaving the list in the wrong state silently.
   function setStatus(next: ProjectStatus) {
-    run(() => updateProjectAction(projectId, { status: next }));
+    start(async () => {
+      try {
+        await updateProjectAction(projectId, { status: next });
+      } catch {
+        toast.error(`Couldn't update "${name}". Please try again.`);
+      }
+    });
   }
 
   function archive() {
