@@ -77,3 +77,89 @@ export function dayLabel(ts: number): string {
     year: "numeric",
   });
 }
+
+// Calendar days are "YYYY-MM-DD" strings (due dates, "today"). They compare
+// correctly as strings, and date maths on them runs in UTC so no timezone or
+// DST shift can move a day.
+const DAY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** True for a real calendar day written "YYYY-MM-DD" (not 2026-02-30). */
+export function isDay(s: string): boolean {
+  const m = DAY_RE.exec(s);
+  if (!m) return false;
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  return d.toISOString().slice(0, 10) === s;
+}
+
+/** The day `n` days after `day` (before, for negative `n`). */
+export function addDays(day: string, n: number): string {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+
+/** 0 = Sunday … 6 = Saturday. */
+function weekday(day: string): number {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
+/**
+ * The day `ts` falls in, with the same DAY_START_HOUR turnover as
+ * startOfDay: 1am on the 15th is still the 14th. `timeZone` is an IANA zone;
+ * leave it out for the runtime's own (the browser's, on the web).
+ */
+export function dayOf(ts: number, timeZone?: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(ts));
+  const part = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  const day = `${part("year")}-${part("month")}-${part("day")}`;
+  return Number(part("hour")) < DAY_START_HOUR ? addDays(day, -1) : day;
+}
+
+/** "This weekend" from `today`: today on a Saturday or Sunday, else Saturday. */
+export function thisWeekend(today: string): string {
+  const w = weekday(today);
+  return w === 0 || w === 6 ? today : addDays(today, 6 - w);
+}
+
+/**
+ * Short label for a due day relative to `today`: "Today", "Tomorrow",
+ * "Yesterday", a weekday within the coming week ("Sat"), else "21 Nov" (with
+ * the year when it isn't this year's).
+ */
+export function dueLabel(due: string, today: string): string {
+  if (due === today) return "Today";
+  if (due === addDays(today, 1)) return "Tomorrow";
+  if (due === addDays(today, -1)) return "Yesterday";
+  const [y, m, d] = due.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  if (due > today && due < addDays(today, 7)) {
+    return date.toLocaleDateString(undefined, { weekday: "short", timeZone: "UTC" });
+  }
+  return date.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: due.slice(0, 4) === today.slice(0, 4) ? undefined : "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/**
+ * Whether an item belongs in the Today view on `today`: it's due on or before
+ * today, and it's either still open or was finished today (shown crossed out,
+ * like the lists). `timeZone` decides which day a completion fell on.
+ */
+export function isOnToday(
+  item: { dueDate: string | null; completedAt: number | null },
+  today: string,
+  timeZone?: string,
+): boolean {
+  if (!item.dueDate || item.dueDate > today) return false;
+  return item.completedAt === null || dayOf(item.completedAt, timeZone) === today;
+}

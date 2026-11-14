@@ -1,5 +1,6 @@
 "use client";
 
+import { Archive } from "lucide-react";
 import { useTransition } from "react";
 import { toast } from "sonner";
 import { updateProjectAction } from "@/app/actions";
@@ -29,8 +30,15 @@ export function ArchivedListsMenu({ lists }: { lists: Project[] }) {
       <DropdownMenuTrigger
         disabled={pending}
         render={
-          <Button variant="outline" size="sm">
-            Archived ({lists.length})
+          // An icon and count on phones, where the header is full.
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label={`Archived lists (${lists.length})`}
+          >
+            <Archive className="sm:hidden" />
+            <span className="sm:hidden">{lists.length}</span>
+            <span className="hidden sm:inline">Archived ({lists.length})</span>
           </Button>
         }
       />

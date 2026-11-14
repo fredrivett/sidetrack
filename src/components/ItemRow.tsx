@@ -54,6 +54,7 @@ import { useMediaQuery } from "@/components/ui/use-media-query";
 import { formatItemRef } from "@/lib/itemRef";
 import { AssigneeOptions } from "./AssigneeOptions";
 import { CategoryBadge } from "./CategoryBadge";
+import { DueBadge } from "./DueBadge";
 import { useAssignShortcuts } from "./useAssignShortcuts";
 import { useCopyItemRef } from "./useCopyItemRef";
 import { assigneeName, UserAvatar } from "./UserAvatar";
@@ -83,6 +84,7 @@ export function ItemRow({
   checklist,
   nestUnder,
   parentTitle,
+  context,
   onOpenDetail,
 }: {
   item: Item;
@@ -97,6 +99,8 @@ export function ItemRow({
   nestUnder?: { id: string; title: string };
   /** For a sub-item, its parent's title (offers "Move out of …"). */
   parentTitle?: string;
+  /** Where the item lives, shown above its title in views across lists. */
+  context?: string;
   onOpenDetail: () => void;
 }) {
   const isDragging = drag?.isDragging ?? false;
@@ -241,13 +245,26 @@ export function ItemRow({
             >
               {item.title}
             </span>
+            {/* Below the title, so the checkbox stays on the title's line. */}
+            {context && (
+              <span className="block w-full truncate text-[11px] text-neutral-400">
+                {context}
+              </span>
+            )}
             {item.description && (
               <span className="block w-full truncate text-xs text-neutral-500 dark:text-neutral-400">
                 {firstLine}
                 {descriptionHasMore && "…"}
               </span>
             )}
-            {item.category && <CategoryBadge category={item.category} />}
+            {(item.category || item.dueDate) && (
+              <span className="flex flex-wrap items-center gap-1">
+                {item.dueDate && (
+                  <DueBadge due={item.dueDate} done={completed} />
+                )}
+                {item.category && <CategoryBadge category={item.category} />}
+              </span>
+            )}
           </button>
           {prLinks.length > 0 && (
             <div className="flex flex-wrap gap-1 pt-0.5">

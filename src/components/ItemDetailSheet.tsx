@@ -31,7 +31,7 @@ import type { Item, ItemPrLink } from "@/core/schema";
 import { formatItemRef } from "@/lib/itemRef";
 import { modifierSymbol } from "@/lib/keyboard";
 import { prLabel } from "@/lib/pr";
-import { dayLabel } from "@/lib/time";
+import { addDays, dayLabel, thisWeekend } from "@/lib/time";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -51,6 +51,8 @@ import {
 import { useMediaQuery } from "@/components/ui/use-media-query";
 import { AssigneeOptions } from "./AssigneeOptions";
 import { CategoryBadge } from "./CategoryBadge";
+import { DueBadge } from "./DueBadge";
+import { useToday } from "./use-day-start";
 import { EditableText } from "./EditableText";
 import { InlineCode, Markdown } from "./Markdown";
 import { useAssignShortcuts } from "./useAssignShortcuts";
@@ -196,6 +198,76 @@ function Checklist({
         placeholder={items.length ? "Add another…" : "Add a step…"}
         aria-label={`Add a sub-item to ${parent.title}`}
       />
+    </div>
+  );
+}
+
+/** Quick due-date buttons, a date picker for anything else, and Clear. */
+function DueDatePicker({
+  due,
+  done,
+  disabled,
+  onChange,
+}: {
+  due: string | null;
+  done: boolean;
+  disabled: boolean;
+  onChange: (due: string | null) => void;
+}) {
+  const today = useToday();
+  // On Friday to Sunday "This weekend" is today or tomorrow, so it drops out.
+  const quick: Array<[string, string]> = (
+    today
+      ? ([
+          ["Today", today],
+          ["Tomorrow", addDays(today, 1)],
+          ["This weekend", thisWeekend(today)],
+        ] as Array<[string, string]>)
+      : []
+  ).filter(([, day], i, all) => all.findIndex(([, d]) => d === day) === i);
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {/* A pressed quick button already says when it's due. */}
+      {due && !quick.some(([, day]) => day === due) && (
+        <DueBadge due={due} done={done} />
+      )}
+      {quick.map(([label, day]) => (
+        <Button
+          key={label}
+          type="button"
+          variant="outline"
+          size="xs"
+          disabled={disabled}
+          aria-pressed={due === day}
+          onClick={() => onChange(day)}
+          className={
+            due === day
+              ? "border-neutral-900 bg-neutral-900 text-white hover:bg-neutral-800 hover:text-white dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900"
+              : ""
+          }
+        >
+          {label}
+        </Button>
+      ))}
+      <input
+        type="date"
+        value={due ?? ""}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value || null)}
+        aria-label="Pick a due date"
+        className="h-6 rounded-md border border-neutral-200 bg-transparent px-1.5 text-xs text-neutral-600 dark:border-neutral-800 dark:text-neutral-300"
+      />
+      {due && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          disabled={disabled}
+          onClick={() => onChange(null)}
+        >
+          Clear
+        </Button>
+      )}
     </div>
   );
 }
@@ -440,6 +512,19 @@ export function ItemDetailSheet({
                 />
               </DropdownMenuContent>
             </DropdownMenu>
+          </Field>
+
+          <Field label="Due">
+            <DueDatePicker
+              due={item.dueDate}
+              done={completed}
+              disabled={pending}
+              onChange={(dueDate) =>
+                start(() => {
+                  void updateItemAction(item.id, { dueDate });
+                })
+              }
+            />
           </Field>
 
           {parent ? (

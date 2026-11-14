@@ -5,6 +5,7 @@ import { users } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
 import { ensureCategory } from "./categories";
 import type { Db } from "./db";
+import { isDay } from "../lib/time";
 import { parseRef, resolvePosition } from "./fracidx";
 import {
   type Item,
@@ -103,6 +104,13 @@ function assertTitle(title: string): string {
   return trimmed;
 }
 
+// A due date is a calendar day, "YYYY-MM-DD"; blank clears it.
+function assertDueDate(due: string | null | undefined): string | null {
+  const d = due?.trim() || null;
+  if (d && !isDay(d)) throw new Error(`invalid due date: ${d} (expected YYYY-MM-DD)`);
+  return d;
+}
+
 /** An item's sub-items, in order, for a user who can see the item. */
 export function listSubItems(db: Db, userId: string, parentId: string): Item[] {
   return db
@@ -197,10 +205,12 @@ export function addItem(
     category?: string | null;
     positionRef?: string;
     parentId?: string | null;
+    dueDate?: string | null;
   },
   source: AuditOrigin,
 ): Item {
   assertKind(input.kind);
+  const dueDate = assertDueDate(input.dueDate);
   if (!projectAccessibleForUser(db, userId, input.projectId)) {
     throw new Error(`list not found: ${input.projectId}`);
   }
@@ -246,6 +256,7 @@ export function addItem(
         description,
         category,
         parentId: parent?.id ?? null,
+        dueDate,
         position,
         number,
         createdAt: now,
@@ -297,6 +308,7 @@ export function updateItem(
     description?: string | null;
     category?: string | null;
     assigneeId?: string | null;
+    dueDate?: string | null;
   },
   source: AuditOrigin,
 ): Item {
@@ -337,6 +349,13 @@ export function updateItem(
     if (a !== existing.assigneeId) {
       next.assigneeId = a;
       changes.push(a ? `assigned to ${assigneeLabel(db, a)}` : "unassigned");
+    }
+  }
+  if (patch.dueDate !== undefined) {
+    const d = assertDueDate(patch.dueDate);
+    if (d !== existing.dueDate) {
+      next.dueDate = d;
+      changes.push(d ? `due ${d}` : "due date cleared");
     }
   }
   if (Object.keys(next).length === 0) return existing;

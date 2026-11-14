@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type AuditOrigin, listAudit } from "@/core/audit";
 import { addCategory, listCategories } from "@/core/categories";
 import { getDb } from "@/core/db";
+import { getTimeZone } from "@/core/users";
 import { nestItems } from "@/lib/itemTree";
 import { projectRefPrefixes, resolveItemRef } from "@/core/itemRef";
 import {
@@ -39,6 +40,7 @@ import {
   getProject,
   getProjectWithItems,
   listAllProjectsWithItems,
+  listToday,
   listProjects,
   reorderProject,
   updateProject,
@@ -65,6 +67,9 @@ const Kind = z.enum(ITEM_KINDS);
 const PosRef = z
   .string()
   .regex(/^(top|end|after:.+|before:.+)$/, "expected top|end|after:<item>|before:<item>");
+const DueDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "expected a calendar day, YYYY-MM-DD");
 const ListPosRef = z
   .string()
   .regex(/^(start|end|after:.+|before:.+)$/, "expected start|end|after:<id>|before:<id>");
@@ -311,6 +316,59 @@ export function registerTools(server: McpServer, ctx: McpContext) {
   );
 
   server.registerTool(
+    "list_today",
+    {
+      title: "List today",
+      description:
+        "The user's Today view: items across their active lists (not paused or archived) that are due today or overdue, " +
+        "plus items finished today, which the user sees crossed out. Overdue items come first, then by board order. " +
+        "Returns { today, timeZone, items }. today is the user's current day (YYYY-MM-DD) in timeZone, which their browser reports; " +
+        "the day turns over at 4am, so at 1am it's still the day before. Use today to work out dates like tomorrow for due_date. " +
+        "Each item carries its ref, listName and, for a sub-item, parentTitle. " +
+        "filter narrows to items assigned to the user (mine), to someone else (theirs), or to nobody (unassigned).\n" +
+        "Show the user open items as a list with the list name and anything overdue marked; leave finished ones out unless they ask.",
+      inputSchema: {
+        filter: z.enum(["all", "mine", "theirs", "unassigned"]).optional(),
+      },
+    },
+    async ({ filter }) => {
+      const { db } = getDb();
+      const savedZone = getTimeZone(db, userId);
+      const timeZone = savedZone ?? "UTC";
+      const { today, items } = listToday(db, userId, { timeZone });
+      const keep = items.filter((it) =>
+        filter === "mine"
+          ? it.assigneeId === userId
+          : filter === "theirs"
+            ? it.assigneeId !== null && it.assigneeId !== userId
+            : filter === "unassigned"
+              ? it.assigneeId === null
+              : true,
+      );
+      const refs = projectRefPrefixes(db, userId);
+      const names = new Map(listProjects(db, userId).map((p) => [p.id, p.name]));
+      const titles = new Map<string, string>();
+      for (const it of keep) {
+        if (it.parentId && !titles.has(it.parentId)) {
+          titles.set(it.parentId, getItem(db, userId, it.parentId)?.title ?? "");
+        }
+      }
+      return json({
+        today,
+        timeZone: savedZone
+          ? timeZone
+          : "UTC (the user's timezone isn't known until they open Sidetrack in a browser)",
+        items: keep.map((it) => ({
+          ...it,
+          ref: formatItemRef(refs[it.projectId] ?? "", it.number),
+          listName: names.get(it.projectId) ?? null,
+          ...(it.parentId ? { parentTitle: titles.get(it.parentId) } : {}),
+        })),
+      });
+    },
+  );
+
+  server.registerTool(
     "create_list",
     {
       title: "Create list",
@@ -432,6 +490,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "parent (a short ref or id) adds the task as a sub-item of that task, one step in its checklist: " +
         "e.g. \"Tidy up flat\" with sub-items Lounge, Kitchen and Bedroom. Sub-items are one level deep and tasks only; " +
         "each is a full item with its own ref and assignee. Adding one to a finished parent reopens the parent. " +
+        "due_date is the calendar day it's due, YYYY-MM-DD (no time); call list_today first if you need today's date in the user's timezone. " +
         "position defaults to end (the bottom of the list, or of the parent's sub-items); top|end|after:<item>|before:<item> are also valid, " +
         "where <item> is a short ref (e.g. \"HOM-12\") or an id of a sibling (same list, same parent). " +
         "Returns { created, items } where items is every incomplete item in the list in position order.\n" +
@@ -449,10 +508,11 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         description: z.string().optional(),
         category: z.string().optional(),
         parent: z.string().optional(),
+        due_date: DueDate.optional(),
         position: PosRef.optional(),
       },
     },
-    async ({ list_id, kind, title, description, category, parent, position }) => {
+    async ({ list_id, kind, title, description, category, parent, due_date, position }) => {
       const { db } = getDb();
       const project = getProject(db, userId, list_id);
       if (!project) return notFound("list", list_id);
@@ -479,6 +539,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           description,
           category,
           parentId,
+          dueDate: due_date,
           positionRef: pos.position,
         },
         SOURCE,
@@ -498,16 +559,18 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       description:
         "Patch title/description/category/assignee on an item. Pass description or category as null to clear it. " +
         "assignee_id assigns the item to a user — the list owner or an accepted member (get a user_id from list_members); " +
-        "pass null to unassign. id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
+        "pass null to unassign. due_date sets the calendar day it's due (YYYY-MM-DD, no time); pass null to clear it. " +
+        "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: {
         id: z.string(),
         title: z.string().optional(),
         description: z.string().nullable().optional(),
         category: z.string().nullable().optional(),
         assignee_id: z.string().nullable().optional(),
+        due_date: DueDate.nullable().optional(),
       },
     },
-    async ({ id, assignee_id, ...patch }) => {
+    async ({ id, assignee_id, due_date, ...patch }) => {
       const { db } = getDb();
       const { item, error } = resolveItemArg(db, userId, id);
       if (error) return error;
@@ -519,7 +582,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
             db,
             userId,
             item.id,
-            { ...patch, assigneeId: assignee_id },
+            { ...patch, assigneeId: assignee_id, dueDate: due_date },
             SOURCE,
           ),
         ),

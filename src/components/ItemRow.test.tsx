@@ -57,6 +57,7 @@ const item: Item = {
   category: null,
   assigneeId: null,
   parentId: null,
+  dueDate: null,
   position: "a0",
   number: 42,
   completedAt: null,

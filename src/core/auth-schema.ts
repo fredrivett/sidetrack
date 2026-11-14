@@ -28,6 +28,10 @@ export const users = sqliteTable("users", {
   // uniqueness for free since `username` is already normalized.
   username: text("username").notNull().unique(),
   displayUsername: text("display_username").notNull(),
+  // IANA timezone ("Europe/London") last reported by the user's browser, so
+  // agents work out "today" the way the user's own screen does. null until
+  // they first open the app.
+  timeZone: text("time_zone"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
