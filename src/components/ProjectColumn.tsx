@@ -153,13 +153,17 @@ export function ProjectColumn({
               Hide items
             </button>
           )}
-          <SummaryBlock
-            projectId={project.id}
-            summary={project.summary}
-            summaryUpdatedAt={project.summaryUpdatedAt}
-          />
+          {/* Only shown once written; an empty summary is added from the
+              details sheet, so it doesn't take up room on every card. */}
+          {project.summary.trim() && (
+            <SummaryBlock
+              projectId={project.id}
+              summary={project.summary}
+              summaryUpdatedAt={project.summaryUpdatedAt}
+            />
+          )}
 
-          <div className="space-y-3 pt-3">
+          <div className="space-y-3 pt-1.5">
             <ItemList
               projectId={project.id}
               groups={inList}

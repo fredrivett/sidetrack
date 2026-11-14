@@ -14,7 +14,7 @@ export function SummaryBlock({
   summaryUpdatedAt: number | null;
 }) {
   return (
-    <div className="space-y-1">
+    <div className="space-y-1 pb-1.5">
       <EditableText
         value={summary}
         onSave={(next) => updateProjectAction(projectId, { summary: next })}
