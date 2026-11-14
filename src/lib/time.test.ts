@@ -6,6 +6,8 @@ import {
   dueLabel,
   isDay,
   isOnToday,
+  nextWeek,
+  quickDueDays,
   nextDayStart,
   startOfDay,
   thisWeekend,
@@ -77,6 +79,20 @@ describe("calendar days", () => {
     expect(thisWeekend("2026-11-18")).toBe("2026-11-21"); // Wed → Sat
     expect(thisWeekend("2026-11-21")).toBe("2026-11-21"); // Sat → today
     expect(thisWeekend("2026-11-22")).toBe("2026-11-22"); // Sun → today
+  });
+
+  it("picks next week and dedupes the quick due days", () => {
+    expect(nextWeek("2026-11-18")).toBe("2026-11-23"); // Wed → Mon
+    expect(nextWeek("2026-11-23")).toBe("2026-11-30"); // Mon → next Mon
+    expect(quickDueDays("2026-11-18")).toEqual([
+      ["Today", "2026-11-18"],
+      ["Tomorrow", "2026-11-19"],
+      ["This weekend", "2026-11-21"],
+      ["Next week", "2026-11-23"],
+    ]);
+    // Saturday: This weekend is today. Sunday: it's today, and Next week is tomorrow.
+    expect(quickDueDays("2026-11-21").map(([l]) => l)).toEqual(["Today", "Tomorrow", "Next week"]);
+    expect(quickDueDays("2026-11-22").map(([l]) => l)).toEqual(["Today", "Tomorrow"]);
   });
 
   it("labels due days relative to today", () => {

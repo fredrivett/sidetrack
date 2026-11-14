@@ -13,6 +13,7 @@ import { AuditDrawer } from "./AuditDrawer";
 import { BoardHeader, BoardMain, BoardRail } from "./BoardLayout";
 import { InvitesBanner } from "./InvitesBanner";
 import { NewItemSheet } from "./NewItemSheet";
+import { NoDateView } from "./NoDateView";
 import { NewProjectSheet } from "./NewProjectSheet";
 import { ProjectColumn } from "./ProjectColumn";
 import { ShareSheet } from "./ShareSheet";
@@ -32,7 +33,13 @@ function centredProjectId(): string | null {
   return new URLSearchParams(window.location.search).get("p");
 }
 
-export type BoardView = "board" | "today";
+/** The header's views; the board's is the default, and has no `?view=`. */
+const BOARD_VIEWS = [
+  ["board", "Board"],
+  ["today", "Today"],
+  ["no-date", "No date"],
+] as const;
+export type BoardView = (typeof BOARD_VIEWS)[number][0];
 
 export function Kanban({
   viewerId,
@@ -62,8 +69,8 @@ export function Kanban({
   function switchView(next: BoardView) {
     setView(next);
     const url = new URL(window.location.href);
-    if (next === "today") url.searchParams.set("view", "today");
-    else url.searchParams.delete("view");
+    if (next === "board") url.searchParams.delete("view");
+    else url.searchParams.set("view", next);
     window.history.replaceState(null, "", url.toString());
   }
 
@@ -154,7 +161,8 @@ export function Kanban({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [openNewItem]);
 
-  // On first paint, and on coming back from Today (which unmounts the rail):
+  // On first paint, and on coming back from Today or No date (which unmount
+  // the rail):
   // scroll to ?p=<id> if present.
   useEffect(() => {
     if (view !== "board") return;
@@ -206,26 +214,26 @@ export function Kanban({
             aria-label="View"
             className="flex rounded-md border border-neutral-200 p-0.5 text-xs font-medium dark:border-neutral-800"
           >
-            {(["board", "today"] as const).map((v) => (
+            {BOARD_VIEWS.map(([v, label]) => (
               <button
                 key={v}
                 type="button"
                 aria-pressed={view === v}
                 onClick={() => switchView(v)}
-                className={`rounded px-2 py-0.5 transition ${
+                className={`whitespace-nowrap rounded px-1.5 py-0.5 transition sm:px-2 ${
                   view === v
                     ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
                     : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
                 }`}
               >
-                {v === "board" ? "Board" : "Today"}
+                {label}
               </button>
             ))}
           </div>
         }
       >
-        {/* The count gives way on phones, where the header is full. */}
-        <span className="hidden whitespace-nowrap text-xs text-neutral-400 sm:inline">
+        {/* The count gives way on phones and small tablets, where the header is full. */}
+        <span className="hidden whitespace-nowrap text-xs text-neutral-400 md:inline">
           {onBoard.length} list{onBoard.length === 1 ? "" : "s"}
         </span>
         <ArchivedListsMenu lists={archived} />
@@ -244,6 +252,14 @@ export function Kanban({
       <InvitesBanner invites={pendingInvites} />
       {view === "today" ? (
         <TodayView
+          projects={active}
+          itemsByProject={itemsByProject}
+          assigneesByProject={assigneesByProject}
+          prLinksByItem={prLinksByItem}
+          viewerId={viewerId}
+        />
+      ) : view === "no-date" ? (
+        <NoDateView
           projects={active}
           itemsByProject={itemsByProject}
           assigneesByProject={assigneesByProject}

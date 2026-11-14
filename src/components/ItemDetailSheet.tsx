@@ -33,7 +33,7 @@ import type { Item, ItemPrLink } from "@/core/schema";
 import { formatItemRef } from "@/lib/itemRef";
 import { modifierSymbol } from "@/lib/keyboard";
 import { prLabel } from "@/lib/pr";
-import { addDays, dayLabel, thisWeekend } from "@/lib/time";
+import { dayLabel, quickDueDays } from "@/lib/time";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -270,16 +270,7 @@ function DueDatePicker({
   onChange: (due: string | null) => void;
 }) {
   const today = useToday();
-  // On Friday to Sunday "This weekend" is today or tomorrow, so it drops out.
-  const quick: Array<[string, string]> = (
-    today
-      ? ([
-          ["Today", today],
-          ["Tomorrow", addDays(today, 1)],
-          ["This weekend", thisWeekend(today)],
-        ] as Array<[string, string]>)
-      : []
-  ).filter(([, day], i, all) => all.findIndex(([, d]) => d === day) === i);
+  const quick = today ? quickDueDays(today) : [];
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {/* A pressed quick button already says when it's due. */}

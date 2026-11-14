@@ -13,7 +13,7 @@ import {
   updateItem,
 } from "./items";
 import { acceptInvite, inviteMember, listAssignees } from "./members";
-import { createProject, listToday, updateProject } from "./projects";
+import { createProject, listNoDate, listToday, updateProject } from "./projects";
 import { items } from "./schema";
 import { nestItems } from "../lib/itemTree";
 import { createTestDb, createTestUser } from "./test-helpers";
@@ -683,5 +683,53 @@ describe("due dates and Today", () => {
     expect(listToday(db, userId, { timeZone: tz, now: Date.UTC(2026, 10, 15, 2) }).today).toBe(
       "2026-11-14",
     );
+  });
+
+  it("lists No date across active lists: undated tasks by list, dated parents' checklists left out", () => {
+    const { db } = createTestDb();
+    const userId = createTestUser(db);
+    const home = createProject(db, userId, { name: "Home" }, "web");
+    const buy = createProject(db, userId, { name: "Buy" }, "web");
+    const empty = createProject(db, userId, { name: "All dated" }, "web");
+    const paused = createProject(db, userId, { name: "Later" }, "web");
+    updateProject(db, userId, paused.id, { status: "paused" }, "web");
+    const add = (
+      projectId: string,
+      title: string,
+      dueDate: string | null,
+      more: { parentId?: string; kind?: "task" | "milestone" } = {},
+    ) =>
+      addItem(
+        db,
+        userId,
+        { projectId, kind: more.kind ?? "task", title, dueDate, parentId: more.parentId },
+        "web",
+      );
+
+    const tz = "Europe/London";
+    const now = Date.UTC(2026, 10, 14, 12);
+    add(buy.id, "slippers", null);
+    add(home.id, "tiling", null);
+    add(home.id, "bins", "2026-11-14");
+    add(home.id, "v1", null, { kind: "milestone" });
+    const tidy = add(home.id, "tidy flat", null);
+    add(home.id, "lounge", null, { parentId: tidy.id });
+    add(home.id, "kitchen", "2026-11-20", { parentId: tidy.id });
+    const plan = add(home.id, "phone plan", "2026-11-18");
+    add(home.id, "fred's sim", null, { parentId: plan.id });
+    add(empty.id, "dated", "2026-11-15");
+    add(paused.id, "paused undated", null);
+    const doneOld = add(home.id, "done yesterday", null);
+    const doneNow = add(home.id, "done today", null);
+    db.update(items).set({ completedAt: Date.UTC(2026, 10, 13, 9) }).where(eq(items.id, doneOld.id)).run();
+    db.update(items).set({ completedAt: Date.UTC(2026, 10, 14, 9) }).where(eq(items.id, doneNow.id)).run();
+
+    const r = listNoDate(db, userId, { timeZone: tz, now });
+    expect(r.today).toBe("2026-11-14");
+    // Board order (Home before Buy), list order within; lists with nothing undated go.
+    expect(r.lists.map((l) => [l.project.name, l.items.map((i) => i.title)])).toEqual([
+      ["Home", ["tiling", "tidy flat", "lounge", "done today"]],
+      ["Buy", ["slippers"]],
+    ]);
   });
 });

@@ -1,8 +1,9 @@
 import { and, asc, eq, gte, isNotNull, isNull, lte, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { derivePrefix, dedupePrefix, validatePrefix } from "../lib/itemRef";
+import { nestItems } from "../lib/itemTree";
 import { normalizeProjectIcon } from "../lib/projectIcon";
-import { addDays, dayOf, isOnToday } from "../lib/time";
+import { addDays, dayOf, isOnNoDate, isOnToday } from "../lib/time";
 import { normalizeHomepageUrl } from "../lib/url";
 import { hasProjectAccess } from "./access";
 import { type AuditOrigin, recordAudit } from "./audit";
@@ -155,6 +156,64 @@ export function listToday(
       (boardOrder.get(a.projectId) ?? 0) - (boardOrder.get(b.projectId) ?? 0),
   );
   return { today, items: due };
+}
+
+/**
+ * The No date view across every active list the user can see: tasks with no
+ * due date that are open or were finished today (see isOnNoDate), grouped by
+ * list in board order, each list's items in list order (a parent, then its
+ * sub-items). Lists with
+ * nothing undated are left out, as are paused and archived lists. A sub-item
+ * of a dated parent is planned with its parent, so stays out. `timeZone` and
+ * `today` work as in listToday.
+ */
+export function listNoDate(
+  db: Db,
+  userId: string,
+  opts: { timeZone?: string; today?: string; now?: number } = {},
+): { today: string; lists: Array<{ project: Project; items: Item[] }> } {
+  const today = opts.today ?? dayOf(opts.now ?? Date.now(), opts.timeZone);
+  // Every open or recently finished item in an active list, dated or not:
+  // a sub-item's place here depends on its parent's date. (The cutoff is
+  // listToday's.)
+  const rows = db
+    .select({ items })
+    .from(items)
+    .innerJoin(projects, eq(projects.id, items.projectId))
+    .where(
+      and(
+        hasProjectAccess(userId),
+        eq(projects.status, "active"),
+        or(
+          isNull(items.completedAt),
+          gte(items.completedAt, Date.parse(`${addDays(today, -1)}T00:00:00Z`)),
+        ),
+      ),
+    )
+    .orderBy(asc(items.position), asc(items.id))
+    .all()
+    .map((row) => row.items);
+  const byId = new Map(rows.map((it) => [it.id, it]));
+  const undated = rows.filter((it) =>
+    isOnNoDate(
+      it,
+      it.parentId ? byId.get(it.parentId) : undefined,
+      today,
+      opts.timeZone,
+    ),
+  );
+  const lists = listProjects(db, userId)
+    .filter((p) => p.status === "active")
+    .map((project) => ({
+      project,
+      // Sub-item positions are scoped to their parent, so list each parent
+      // followed by its sub-items.
+      items: nestItems(undated.filter((it) => it.projectId === project.id)).flatMap(
+        ({ children, ...it }) => [it, ...children],
+      ),
+    }))
+    .filter((l) => l.items.length > 0);
+  return { today, lists };
 }
 
 function assertStatus(status: string): asserts status is ProjectStatus {
