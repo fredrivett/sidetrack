@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { listAudit } from "./audit";
 import {
@@ -12,6 +13,7 @@ import {
 } from "./items";
 import { acceptInvite, inviteMember, listAssignees } from "./members";
 import { createProject } from "./projects";
+import { items } from "./schema";
 import { createTestDb, createTestUser } from "./test-helpers";
 
 function seedProject() {
@@ -45,6 +47,77 @@ describe("items", () => {
       "above",
       "first",
     ]);
+  });
+
+  it("keeps a completed item in place, and reopening leaves it there", () => {
+    const { db, userId, projectId } = seedProject();
+    const add = (title: string) =>
+      addItem(db, userId, { projectId, kind: "task", title }, "web");
+    add("a");
+    const b = add("b");
+    add("c");
+    const all = () =>
+      listItems(db, userId, projectId, { includeCompleted: true }).map(
+        (i) => i.title,
+      );
+
+    completeItem(db, userId, b.id, "web");
+    expect(getItem(db, userId, b.id)?.position).toBe(b.position);
+    expect(all()).toEqual(["a", "b", "c"]);
+
+    uncompleteItem(db, userId, b.id, "web");
+    expect(getItem(db, userId, b.id)?.position).toBe(b.position);
+    expect(all()).toEqual(["a", "b", "c"]);
+  });
+
+  it("'top' lands first even above finished items", () => {
+    const { db, userId, projectId } = seedProject();
+    const done = addItem(
+      db,
+      userId,
+      { projectId, kind: "task", title: "done" },
+      "web",
+    );
+    const open = addItem(
+      db,
+      userId,
+      { projectId, kind: "task", title: "open" },
+      "web",
+    );
+    completeItem(db, userId, done.id, "web");
+    addItem(
+      db,
+      userId,
+      { projectId, kind: "task", title: "new", positionRef: "top" },
+      "web",
+    );
+    reorderItem(db, userId, open.id, "top", "web");
+    expect(
+      listItems(db, userId, projectId, { includeCompleted: true }).map(
+        (i) => i.title,
+      ),
+    ).toEqual(["open", "new", "done"]);
+  });
+
+  it("orders tied positions by id and can still place next to them", () => {
+    const { db, userId, projectId } = seedProject();
+    const add = (title: string) =>
+      addItem(db, userId, { projectId, kind: "task", title }, "web");
+    const a = add("a");
+    const b = add("b");
+    const c = add("c");
+    // Two concurrent inserts into the same gap can produce equal keys.
+    db.update(items).set({ position: a.position }).where(eq(items.id, b.id)).run();
+    const [first, second] = [a, b].sort((x, y) => (x.id < y.id ? -1 : 1));
+    const titles = () => listItems(db, userId, projectId).map((i) => i.title);
+    expect(titles()).toEqual([first.title, second.title, "c"]);
+
+    // No key sorts strictly between two equal ones, so these land beyond the
+    // tied run rather than throwing.
+    reorderItem(db, userId, c.id, `after:${first.id}`, "web");
+    expect(titles()).toEqual([first.title, second.title, "c"]);
+    reorderItem(db, userId, c.id, `before:${second.id}`, "web");
+    expect(titles()).toEqual(["c", first.title, second.title]);
   });
 
   it("auto-creates inline categories without auditing them", () => {
@@ -121,6 +194,30 @@ describe("items", () => {
       "b",
       "a",
     ]);
+  });
+
+  it("places next to a middle item, and rejects unknown anchors and bad refs", () => {
+    const { db, userId, projectId } = seedProject();
+    const add = (title: string) =>
+      addItem(db, userId, { projectId, kind: "task", title }, "web");
+    add("a");
+    const b = add("b");
+    add("c");
+    const d = add("d");
+    const titles = () => listItems(db, userId, projectId).map((i) => i.title);
+
+    reorderItem(db, userId, d.id, `after:${b.id}`, "web");
+    expect(titles()).toEqual(["a", "b", "d", "c"]);
+    reorderItem(db, userId, d.id, `before:${b.id}`, "web");
+    expect(titles()).toEqual(["a", "d", "b", "c"]);
+
+    expect(() => reorderItem(db, userId, d.id, "after:nope", "web")).toThrow(
+      /anchor not found/,
+    );
+    expect(() => reorderItem(db, userId, d.id, "middle", "web")).toThrow(
+      /invalid position ref/,
+    );
+    expect(titles()).toEqual(["a", "d", "b", "c"]);
   });
 
   it("returns undefined for an empty or unknown id", () => {

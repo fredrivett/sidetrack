@@ -5,12 +5,7 @@ import { users } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
 import { ensureCategory } from "./categories";
 import type { Db } from "./db";
-import {
-  parseRef,
-  resolveCompletePosition,
-  resolveItemPosition,
-  resolveUncompletePosition,
-} from "./fracidx";
+import { parseRef, resolvePosition } from "./fracidx";
 import {
   type Item,
   type ItemKind,
@@ -64,7 +59,7 @@ export function listItems(
     .from(items)
     .innerJoin(projects, eq(projects.id, items.projectId))
     .where(and(...baseConds))
-    .orderBy(asc(items.position))
+    .orderBy(asc(items.position), asc(items.id))
     .all()
     .map((row) => row.items);
 }
@@ -77,7 +72,7 @@ function getAllSiblings(db: Db, userId: string, projectId: string): Item[] {
     .where(
       and(eq(items.projectId, projectId), hasProjectAccess(userId)),
     )
-    .orderBy(asc(items.position))
+    .orderBy(asc(items.position), asc(items.id))
     .all()
     .map((row) => row.items);
 }
@@ -131,7 +126,7 @@ export function addItem(
   }
   const ref = parseRef(input.positionRef);
   const siblings = getAllSiblings(db, userId, input.projectId);
-  const position = resolveItemPosition(siblings, ref);
+  const position = resolvePosition(siblings, ref);
   const category = input.category?.trim() || null;
   const description = input.description?.trim() || null;
   const title = assertTitle(input.title);
@@ -280,11 +275,11 @@ export function completeItem(
   if (!existing) throw new Error(`item not found: ${id}`);
   if (existing.completedAt !== null) return existing;
 
-  const siblings = getAllSiblings(db, userId, existing.projectId);
-  const position = resolveCompletePosition(siblings, id);
+  // Completing never moves the item: it keeps its place in the list, and the
+  // UI decides how to show it (crossed out today, in Done after that).
   db.transaction((tx) => {
     tx.update(items)
-      .set({ completedAt: Date.now(), position })
+      .set({ completedAt: Date.now() })
       .where(eq(items.id, id))
       .run();
     recordAudit(tx as unknown as Db, {
@@ -310,11 +305,10 @@ export function uncompleteItem(
   if (!existing) throw new Error(`item not found: ${id}`);
   if (existing.completedAt === null) return existing;
 
-  const siblings = getAllSiblings(db, userId, existing.projectId);
-  const position = resolveUncompletePosition(siblings, id);
+  // Reopening returns it to the same place, since completing never moved it.
   db.transaction((tx) => {
     tx.update(items)
-      .set({ completedAt: null, position })
+      .set({ completedAt: null })
       .where(eq(items.id, id))
       .run();
     recordAudit(tx as unknown as Db, {
@@ -343,7 +337,7 @@ export function reorderItem(
   const siblings = getAllSiblings(db, userId, existing.projectId).filter(
     (s) => s.id !== id,
   );
-  const position = resolveItemPosition(siblings, ref);
+  const position = resolvePosition(siblings, ref);
   db.transaction((tx) => {
     tx.update(items).set({ position }).where(eq(items.id, id)).run();
     recordAudit(tx as unknown as Db, {

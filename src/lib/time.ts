@@ -29,6 +29,36 @@ export function formatRelativeLong(ts: number): string {
   return ago(Math.floor(diff / year), "year");
 }
 
+/**
+ * Hour (local time) at which "today" turns over. Items ticked off at 1am
+ * still count as part of the evening before, so 4am rather than midnight.
+ */
+export const DAY_START_HOUR = 4;
+
+/**
+ * Start of the "today" that `now` falls in, in the runtime's local timezone:
+ * the most recent DAY_START_HOUR at or before `now`. Each device uses its own
+ * current timezone, so a traveller's day follows them.
+ */
+export function startOfDay(now: number): number {
+  const d = new Date(now);
+  const start = new Date(
+    d.getFullYear(),
+    d.getMonth(),
+    d.getDate(),
+    DAY_START_HOUR,
+  );
+  if (start.getTime() > now) start.setDate(start.getDate() - 1);
+  return start.getTime();
+}
+
+/** The next turnover after `now`: when startOfDay(now) next changes. */
+export function nextDayStart(now: number): number {
+  const d = new Date(startOfDay(now));
+  d.setDate(d.getDate() + 1);
+  return d.getTime();
+}
+
 /** Local calendar-day bucket label: "Today", "Yesterday", else "16 May 2026". */
 export function dayLabel(ts: number): string {
   const d = new Date(ts);

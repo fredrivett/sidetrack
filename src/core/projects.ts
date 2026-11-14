@@ -6,11 +6,7 @@ import { normalizeHomepageUrl } from "../lib/url";
 import { hasProjectAccess } from "./access";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
-import {
-  type ProjectPositionRef,
-  parseProjectRef,
-  resolveProjectPosition,
-} from "./fracidx";
+import { parseProjectRef, resolvePosition } from "./fracidx";
 import { listItems } from "./items";
 import {
   type Project,
@@ -31,14 +27,14 @@ function viewerPositions(
     .select({ id: projectPositions.projectId, position: projectPositions.position })
     .from(projectPositions)
     .where(eq(projectPositions.userId, userId))
-    .orderBy(asc(projectPositions.position))
+    .orderBy(asc(projectPositions.position), asc(projectPositions.projectId))
     .all();
 }
 
 /** Position for a project appended to the end of `userId`'s board. Used when a
  * project is created (owner) and when an invite is accepted (member). */
 export function nextProjectPosition(db: Db, userId: string): string {
-  return resolveProjectPosition(viewerPositions(db, userId), "end");
+  return resolvePosition(viewerPositions(db, userId), "last");
 }
 
 export function listProjects(db: Db, userId: string): Project[] {
@@ -53,7 +49,7 @@ export function listProjects(db: Db, userId: string): Project[] {
       ),
     )
     .where(hasProjectAccess(userId))
-    .orderBy(asc(projectPositions.position))
+    .orderBy(asc(projectPositions.position), asc(projectPositions.projectId))
     .all()
     .map((r) => r.project);
 }
@@ -294,9 +290,9 @@ export function reorderProject(
 ): Project {
   const existing = getProject(db, userId, id);
   if (!existing) throw new Error(`list not found: ${id}`);
-  const ref = parseProjectRef(refRaw) as ProjectPositionRef;
+  const ref = parseProjectRef(refRaw);
   const others = viewerPositions(db, userId).filter((p) => p.id !== id);
-  const position = resolveProjectPosition(others, ref);
+  const position = resolvePosition(others, ref);
   db.transaction((tx) => {
     // Reordering moves the project only on the acting user's board — update
     // their own position row, never the owner's or another member's.

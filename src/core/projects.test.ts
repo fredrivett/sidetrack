@@ -67,6 +67,8 @@ describe("projects", () => {
 
     reorderProject(db, u, c.id, "after:" + a.id, "web");
     expect(listProjects(db, u).map((p) => p.name)).toEqual(["A", "C", "B"]);
+    reorderProject(db, u, c.id, "start", "web");
+    expect(listProjects(db, u).map((p) => p.name)).toEqual(["C", "A", "B"]);
   });
 
   it("threads source through to audit", () => {

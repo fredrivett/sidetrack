@@ -60,7 +60,8 @@ export function ItemList({
     setOptimistic(next);
 
     // Resolve position: place after the previous sibling in the new order,
-    // or 'top' if it now sits first.
+    // or 'top' if it now sits first. Items finished today are in `ordered`
+    // too, so this lands exactly where it was dropped.
     const prev = next[newIdx - 1];
     const ref = prev ? `after:${prev.id}` : "top";
     start(async () => {
@@ -75,7 +76,7 @@ export function ItemList({
   if (ordered.length === 0) {
     return (
       <p className="px-1 py-4 text-center text-xs text-neutral-400">
-        No items yet — add one below.
+        Nothing to do — add one below.
       </p>
     );
   }

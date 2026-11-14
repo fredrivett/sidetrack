@@ -61,7 +61,7 @@ const Status = z.enum(PROJECT_STATUSES);
 const Kind = z.enum(ITEM_KINDS);
 const PosRef = z
   .string()
-  .regex(/^(top|end|after:.+|before:.+)$/, "expected top|end|after:<id>|before:<id>");
+  .regex(/^(top|end|after:.+|before:.+)$/, "expected top|end|after:<item>|before:<item>");
 const ListPosRef = z
   .string()
   .regex(/^(start|end|after:.+|before:.+)$/, "expected start|end|after:<id>|before:<id>");
@@ -138,6 +138,16 @@ function resolveItemArg(db: Db, userId: string, raw: string) {
     };
   }
   return { item: null, error: notFound("item", raw) };
+}
+
+// A position may name its sibling by ref ("after:HOM-12") as well as by id.
+// Resolve it the same fail-closed way as item targets, and hand the core an id.
+function resolvePositionArg(db: Db, userId: string, raw: string | undefined) {
+  const m = raw?.match(/^(after|before):(.+)$/);
+  if (!m) return { position: raw, error: null };
+  const { item, error } = resolveItemArg(db, userId, m[2]);
+  if (error) return { position: undefined, error };
+  return { position: `${m[1]}:${item.id}`, error: null };
 }
 
 // Items are stored without their (project-owned) prefix; attach the display
@@ -377,7 +387,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       description:
         "Add a task or milestone to a list. description is optional free-text. " +
         "category is free-text and is auto-created if new. " +
-        "position defaults to end of the active range; top|end|after:<id>|before:<id> are also valid. " +
+        "position defaults to end (the bottom of the list); top|end|after:<item>|before:<item> are also valid, " +
+        "where <item> is a short ref (e.g. \"HOM-12\") or an id in the same list. " +
         "Returns { created, items } where items is every incomplete item in the list in position order.\n" +
         "After adding, show the user the list's updated items (the items array) so they can see where " +
         "the new item landed, unless the user asked you not to:\n" +
@@ -398,6 +409,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       const { db } = getDb();
       const project = getProject(db, userId, list_id);
       if (!project) return notFound("list", list_id);
+      const pos = resolvePositionArg(db, userId, position);
+      if (pos.error) return pos.error;
       const created = addItem(
         db,
         userId,
@@ -407,7 +420,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           title,
           description,
           category,
-          positionRef: position,
+          positionRef: pos.position,
         },
         SOURCE,
       );
@@ -460,7 +473,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Complete item",
       description:
-        "Mark an item as completed. It moves to the upper completed range, sitting closest to the active boundary. " +
+        "Mark an item as completed. It keeps its place in the list: the user sees it crossed out for the rest of the day " +
+        "(the day turns over at 4am their time), then it moves to the list's Done section. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: { id: z.string() },
     },
@@ -479,7 +493,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Uncomplete item",
       description:
-        "Restore a completed item. It lands at the top of the active range. " +
+        "Reopen a completed item. It returns to the same place in the list it had before. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: { id: z.string() },
     },
@@ -498,7 +512,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Reorder item",
       description:
-        "Move an item within its list. position is top | end | after:<id> | before:<id>. " +
+        "Move an item within its list. position is top | end | after:<item> | before:<item>, " +
+        "where <item> is a short ref (e.g. \"HOM-12\") or an id in the same list. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: { id: z.string(), position: PosRef },
     },
@@ -506,8 +521,14 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       const { db } = getDb();
       const { item, error } = resolveItemArg(db, userId, id);
       if (error) return error;
+      const pos = resolvePositionArg(db, userId, position);
+      if (pos.error) return pos.error;
       return json(
-        withItemRef(db, userId, reorderItem(db, userId, item.id, position, SOURCE)),
+        withItemRef(
+          db,
+          userId,
+          reorderItem(db, userId, item.id, pos.position ?? "end", SOURCE),
+        ),
       );
     },
   );
