@@ -1,13 +1,16 @@
 import type { NextConfig } from "next";
 import { withPostHogConfig } from "@posthog/nextjs-config";
 
-// The commit this build came from. The deploy pipeline sets SOURCE_COMMIT (CI
-// builds fall back to GITHUB_SHA); empty when unknown, in which case captures
-// simply carry no release tag — same opt-in posture as the PostHog key itself.
+// The commit this build came from: SOURCE_COMMIT when the deploy pipeline sets
+// it, else the SHA the platform provides (Railway, GitHub Actions, Vercel).
+// Empty when unknown, in which case captures simply carry no release tag —
+// same opt-in posture as the PostHog key itself. `||`, not `??`: a Docker ARG
+// passed through empty must fall through to the next source.
 const release =
-  process.env.SOURCE_COMMIT ??
-  process.env.GITHUB_SHA ??
-  process.env.VERCEL_GIT_COMMIT_SHA ??
+  process.env.SOURCE_COMMIT ||
+  process.env.RAILWAY_GIT_COMMIT_SHA ||
+  process.env.GITHUB_SHA ||
+  process.env.VERCEL_GIT_COMMIT_SHA ||
   "";
 
 const nextConfig: NextConfig = {
@@ -35,7 +38,8 @@ export default personalApiKey && projectId
   ? withPostHogConfig(nextConfig, {
       personalApiKey,
       projectId,
-      host: process.env.POSTHOG_API_HOST ?? "https://us.posthog.com",
+      // `||`: an empty Docker ARG must fall back to the default host.
+      host: process.env.POSTHOG_API_HOST || "https://us.posthog.com",
       sourcemaps: {
         enabled: true,
         releaseName: "sidetrack",
