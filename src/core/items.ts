@@ -517,7 +517,10 @@ export function deleteItem(
 /**
  * Make an item a sub-item of `parentId`, or move it back out to the top level
  * with null. Nesting puts it last among the parent's sub-items; moving out puts
- * it straight after its old parent.
+ * it straight after its old parent. `positionRef` (top | end | after:<id> |
+ * before:<id>, anchored on a sibling at the destination) places it elsewhere,
+ * as a drop does. When the parent is unchanged this does nothing; moving within
+ * one level is `reorderItem`.
  */
 export function setItemParent(
   db: Db,
@@ -525,6 +528,7 @@ export function setItemParent(
   id: string,
   parentId: string | null,
   source: AuditOrigin,
+  positionRef?: string,
 ): Item {
   const existing = getItem(db, userId, id);
   if (!existing) throw new Error(`item not found: ${id}`);
@@ -543,7 +547,7 @@ export function setItemParent(
     }
     position = resolvePosition(
       getAllSiblings(db, userId, existing.projectId, parent.id),
-      "last",
+      parseRef(positionRef),
     );
     detail = `made "${existing.title}" a sub-item of "${parent.title}"`;
   } else {
@@ -552,7 +556,11 @@ export function setItemParent(
       : undefined;
     position = resolvePosition(
       getAllSiblings(db, userId, existing.projectId, null),
-      oldParent ? { after: oldParent.id } : "last",
+      positionRef !== undefined
+        ? parseRef(positionRef)
+        : oldParent
+          ? { after: oldParent.id }
+          : "last",
     );
     detail = `moved "${existing.title}" out of "${oldParent?.title ?? "its parent"}"`;
   }

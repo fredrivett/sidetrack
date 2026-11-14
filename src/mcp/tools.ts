@@ -676,11 +676,17 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       description:
         "Make an item a sub-item of another task in the same list (it goes to the end of that task's checklist), " +
         "or pass parent: null to move it back out to the top level, straight after its old parent. " +
+        "position places it elsewhere at its destination: top | end | after:<ref> | before:<ref>, where the anchor is one of the new parent's sub-items (or a top-level item when moving out). " +
+        "If the item already has that parent, nothing changes; use reorder_item to move it among its siblings. " +
         "Sub-items are one level deep: the parent can't itself be a sub-item, and an item that has sub-items can't become one. " +
         "id and parent accept a short ref (e.g. \"ENG-42\") or an internal id.",
-      inputSchema: { id: z.string(), parent: z.string().nullable() },
+      inputSchema: {
+        id: z.string(),
+        parent: z.string().nullable(),
+        position: PosRef.optional(),
+      },
     },
-    async ({ id, parent }) => {
+    async ({ id, parent, position }) => {
       const { db } = getDb();
       const { item, error } = resolveItemArg(db, userId, id);
       if (error) return error;
@@ -690,9 +696,15 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         if (r.error) return r.error;
         parentId = r.item.id;
       }
+      const pos = resolvePositionArg(db, userId, position, item.projectId, parentId);
+      if (pos.error) return pos.error;
       try {
         return json(
-          withItemRef(db, userId, setItemParent(db, userId, item.id, parentId, SOURCE)),
+          withItemRef(
+            db,
+            userId,
+            setItemParent(db, userId, item.id, parentId, SOURCE, pos.position),
+          ),
         );
       } catch (e) {
         return errorText(`${(e as Error).message} — no change was made.`);

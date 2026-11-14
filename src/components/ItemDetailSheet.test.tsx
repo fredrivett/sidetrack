@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { updateItemAction } from "@/app/actions";
+import { setItemParentAction, updateItemAction } from "@/app/actions";
 import type { Item } from "@/core/schema";
 import { ItemDetailSheet } from "./ItemDetailSheet";
 
@@ -11,6 +11,7 @@ vi.mock("@/app/actions", () => ({
   uncompleteItemAction: vi.fn(),
   deleteItemAction: vi.fn(),
   updateItemAction: vi.fn(),
+  setItemParentAction: vi.fn(),
 }));
 
 beforeAll(() => {
@@ -70,12 +71,13 @@ const viewer = {
   isOwner: true,
 };
 
-function renderSheet(open = true, checklist: Item[] = []) {
+function renderSheet(open = true, checklist: Item[] = [], nestTargets: Item[] = []) {
   return render(
     <ItemDetailSheet
       item={item}
       parent={null}
       checklist={checklist}
+      nestTargets={nestTargets}
       onOpenItem={() => {}}
       prefix="ENG"
       assignees={[viewer]}
@@ -135,5 +137,24 @@ describe("ItemDetailSheet assign shortcuts", () => {
     fireEvent.keyDown(document, { key: "i" });
     expect(screen.queryByRole("menuitem", { name: /Unassigned/ })).toBeNull();
     expect(updateItemAction).not.toHaveBeenCalled();
+  });
+});
+
+describe("ItemDetailSheet nesting", () => {
+  const other: Item = { ...item, id: "i2", title: "Tidy up flat", number: 7 };
+
+  it("makes a plain task a sub-item of the task picked", () => {
+    renderSheet(true, [], [other]);
+    const trigger = screen.getByRole("button", { name: /make it a sub-item of/ });
+    fireEvent.pointerDown(trigger);
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Tidy up flat" }));
+    expect(setItemParentAction).toHaveBeenCalledWith("i1", "i2");
+  });
+
+  it("isn't offered for a task with sub-items, which can't become one", () => {
+    const child: Item = { ...item, id: "c1", title: "Lounge", parentId: "i1", number: 43 };
+    renderSheet(true, [child], [other]);
+    expect(screen.queryByRole("button", { name: /make it a sub-item of/ })).toBeNull();
   });
 });

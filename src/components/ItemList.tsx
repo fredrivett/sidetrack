@@ -1,24 +1,41 @@
 "use client";
 
 import {
-  closestCenter,
+  type Announcements,
+  type CollisionDescriptor,
+  type CollisionDetection,
   DndContext,
   type DragEndEvent,
+  type DragMoveEvent,
+  DragOverlay,
+  type KeyboardCoordinateGetter,
+  KeyboardSensor,
+  MeasuringStrategy,
+  type Modifier,
   MouseSensor,
   TouchSensor,
+  type UniqueIdentifier,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
 import {
   SortableContext,
+  sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { type ReactNode, useState, useTransition } from "react";
-import { reorderItemAction } from "@/app/actions";
+import {
+  type ReactNode,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
+import { reorderItemAction, setItemParentAction } from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
+import { type DropTarget, projectDrop, type TreeRow } from "@/lib/itemTree";
 import { ItemRow, type RowDrag } from "./ItemRow";
 
 /** A top-level item with its sub-items, in list order. */
@@ -32,115 +49,9 @@ type RowProps = {
   onOpenDetail: (item: Item) => void;
 };
 
-/**
- * One draggable list: top-level items, or one parent's sub-items. Each level
- * gets its own DndContext, so a sub-item only drags within its parent and a
- * parent drags with its whole checklist.
- */
-function SortableList<T extends Item>({
-  id,
-  items,
-  render,
-}: {
-  id: string;
-  items: T[];
-  /** `prev` is the item above in the order shown, which may be mid-reorder. */
-  render: (item: T, drag: RowDrag, at: { prev?: T; last: boolean }) => ReactNode;
-}) {
-  const [optimistic, setOptimistic] = useState<T[] | null>(null);
-  const [, start] = useTransition();
-  const ordered = optimistic ?? items;
-
-  const sensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, {
-      activationConstraint: { delay: 200, tolerance: 5 },
-    }),
-  );
-
-  function onDragEnd(e: DragEndEvent) {
-    const { active, over } = e;
-    if (!over || active.id === over.id) return;
-    const oldIdx = ordered.findIndex((i) => i.id === active.id);
-    const newIdx = ordered.findIndex((i) => i.id === over.id);
-    if (oldIdx === -1 || newIdx === -1) return;
-
-    const next = [...ordered];
-    const [moved] = next.splice(oldIdx, 1);
-    next.splice(newIdx, 0, moved);
-    setOptimistic(next);
-
-    // Resolve position: place after the previous sibling in the new order,
-    // or 'top' if it now sits first. Items finished today are in `ordered`
-    // too, so this lands exactly where it was dropped.
-    const prev = next[newIdx - 1];
-    const ref = prev ? `after:${prev.id}` : "top";
-    start(async () => {
-      try {
-        await reorderItemAction(String(active.id), ref);
-      } finally {
-        setOptimistic(null);
-      }
-    });
-  }
-
-  return (
-    <DndContext
-      // Stable, unique id so dnd-kit's aria-describedby is deterministic
-      // across SSR and client. Without it, dnd-kit falls back to a global
-      // counter that diverges between server and client and warns on hydration.
-      id={id}
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      onDragEnd={onDragEnd}
-    >
-      <SortableContext
-        items={ordered.map((i) => i.id)}
-        strategy={verticalListSortingStrategy}
-      >
-        <div className="space-y-1.5">
-          {ordered.map((item, i) => (
-            <Sortable key={item.id} id={item.id}>
-              {(drag) =>
-                render(item, drag, {
-                  prev: ordered[i - 1],
-                  last: i === ordered.length - 1,
-                })
-              }
-            </Sortable>
-          ))}
-        </div>
-      </SortableContext>
-    </DndContext>
-  );
-}
-
-// The sortable node wraps the row and, for a parent, its sub-items, so they
-// move together; the row itself carries the drag listeners.
-function Sortable({
-  id,
-  children,
-}: {
-  id: string;
-  children: (drag: RowDrag) => ReactNode;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id });
-  return (
-    <div
-      ref={setNodeRef}
-      style={{
-        // Translate, not Transform: groups differ in height, and a scale would
-        // stretch a parent with its checklist into a neighbour's size.
-        transform: CSS.Translate.toString(transform),
-        transition,
-        opacity: isDragging ? 0.4 : 1,
-      }}
-    >
-      {children({ attributes, listeners, isDragging })}
-    </div>
-  );
-}
+// How far a sub-item sits in from its parent (ml-4 + pl-5), which is also how
+// far sideways a row is dragged to nest or un-nest it.
+const INDENT = 36;
 
 // A tree line from the parent's checkbox down to each sub-item, bending into
 // it at its first line: an elbow from the gap above into the row, plus, for
@@ -152,23 +63,12 @@ const BRANCH =
 const TRUNK =
   "after:absolute after:top-0 after:-bottom-1.5 after:-left-5 after:border-l-2 after:border-neutral-200 dark:after:border-neutral-700";
 
-/**
- * A top-level row followed by its sub-items, indented. Sub-items are draggable
- * among themselves when the parent is (the open list), and static in Done.
- */
-export function ItemGroupView({
-  group,
-  drag,
-  nestUnder,
-  ...row
-}: RowProps & {
-  group: ItemGroup;
-  drag?: RowDrag;
-  nestUnder?: { id: string; title: string };
-}) {
-  const [expanded, setExpanded] = useState(true);
-  const { children } = group;
-  const rowFor = (item: Item, extra: Partial<Parameters<typeof ItemRow>[0]>) => (
+function rowFor(
+  row: RowProps,
+  item: Item,
+  extra: Partial<Parameters<typeof ItemRow>[0]> = {},
+) {
+  return (
     <ItemRow
       item={item}
       prefix={row.prefix}
@@ -179,58 +79,156 @@ export function ItemGroupView({
       {...extra}
     />
   );
-  const branch = (last: boolean, node: ReactNode) => (
-    <div className={last ? BRANCH : `${BRANCH} ${TRUNK}`}>{node}</div>
-  );
+}
 
+// The margin puts the tree line under the parent's checkbox; pl-5 leaves room
+// for each branch to bend into its row. (ItemList draws the same, inline.)
+function SubItem({ last, children }: { last: boolean; children: ReactNode }) {
+  return (
+    <div className="ml-4 pl-5">
+      <div className={last ? BRANCH : `${BRANCH} ${TRUNK}`}>{children}</div>
+    </div>
+  );
+}
+
+// The dragged card moves only up and down; sideways it snaps to the depth it
+// would land at (see the DragOverlay below), rather than sliding freely.
+const lockX: Modifier = ({ transform }) => ({ ...transform, x: 0 });
+
+// The row whose middle is nearest the dragged row's middle, by height alone.
+// The dragged card's box can't stand in for the row: dnd-kit measures it with
+// a parent's checklist (so its middle sits rows lower), and sideways it snaps
+// to an indent, which mustn't change the row it's over. The row's own height
+// comes from its placeholder in the list.
+const closestRow: CollisionDetection = ({
+  active,
+  collisionRect,
+  droppableRects,
+  droppableContainers,
+}) => {
+  const height = droppableRects.get(active.id)?.height ?? collisionRect.height;
+  const middle = collisionRect.top + height / 2;
+  const hits: CollisionDescriptor[] = [];
+  for (const c of droppableContainers) {
+    const r = droppableRects.get(c.id);
+    if (!r) continue;
+    const value = Math.abs(r.top + r.height / 2 - middle);
+    hits.push({ id: c.id, data: { droppableContainer: c, value } });
+  }
+  return hits.sort((a, b) => a.data.value - b.data.value);
+};
+
+const progress = (children: Item[]) => ({
+  done: children.filter((c) => c.completedAt !== null).length,
+  total: children.length,
+});
+
+/**
+ * A top-level row followed by its sub-items, indented and static: Done, and
+ * the copy of a dragged parent that follows the pointer.
+ */
+export function ItemGroupView({
+  group,
+  defaultExpanded = true,
+  ...row
+}: RowProps & { group: ItemGroup; defaultExpanded?: boolean }) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const { children } = group;
   return (
     <div className="space-y-1.5">
-      {rowFor(group, {
-        drag,
-        nestUnder,
+      {rowFor(row, group, {
         checklist:
           children.length > 0
             ? {
-                done: children.filter((c) => c.completedAt !== null).length,
-                total: children.length,
+                ...progress(children),
                 expanded,
                 onToggle: () => setExpanded((v) => !v),
               }
             : undefined,
       })}
-      {expanded && children.length > 0 && (
-        // The margin puts the tree line under the parent's checkbox; pl-5 leaves
-        // room for each branch to bend into its row.
-        <div className="ml-4 pl-5">
-          {drag ? (
-            <SortableList
-              id={`item-children-${group.id}`}
-              items={children}
-              render={(child, childDrag, { last }) =>
-                branch(
-                  last,
-                  rowFor(child, { drag: childDrag, parentTitle: group.title }),
-                )
-              }
-            />
-          ) : (
-            <div className="space-y-1.5">
-              {children.map((child, i) => (
-                <div key={child.id}>
-                  {branch(
-                    i === children.length - 1,
-                    rowFor(child, { parentTitle: group.title }),
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {expanded &&
+        children.map((child, i) => (
+          <SubItem key={child.id} last={i === children.length - 1}>
+            {rowFor(row, child, { parentTitle: group.title })}
+          </SubItem>
+        ))}
     </div>
   );
 }
 
+/** A row of the list in the order shown, with the parent it shows under. */
+type Flat = { item: Item; parentId: string | null };
+
+const flatten = (groups: ItemGroup[]): Flat[] =>
+  groups.flatMap(({ children, ...g }) => [
+    { item: g, parentId: null },
+    ...children.map((c) => ({ item: c, parentId: g.id })),
+  ]);
+
+/** The order after a drop: the item (and a parent's checklist) at `target`. */
+function applyDrop(full: Flat[], id: string, target: DropTarget): Flat[] {
+  const block = full
+    .filter((f) => f.item.id === id || f.parentId === id)
+    .map((f) => (f.item.id === id ? { ...f, parentId: target.parentId } : f));
+  const rest = full.filter((f) => f.item.id !== id && f.parentId !== id);
+  let at = 0;
+  if (target.position === "top") {
+    if (target.parentId) {
+      at = rest.findIndex((f) => f.item.id === target.parentId) + 1;
+    }
+  } else {
+    // After the anchor and its checklist, if it has one ("end" anchors on the
+    // parent, landing after its last sub-item).
+    const anchor =
+      target.position === "end"
+        ? target.parentId
+        : target.position.slice("after:".length);
+    at = rest.findIndex((f) => f.item.id === anchor) + 1;
+    while (at < rest.length && rest[at].parentId === anchor) at++;
+  }
+  return [...rest.slice(0, at), ...block, ...rest.slice(at)];
+}
+
+function Sortable({
+  id,
+  children,
+}: {
+  id: string;
+  children: (drag: RowDrag) => ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        // Translate, not Transform: rows differ in height, and a scale would
+        // stretch one into its neighbour's size.
+        transform: CSS.Translate.toString(transform),
+        transition,
+        opacity: isDragging ? 0.4 : 1,
+      }}
+    >
+      {children({ attributes, listeners, setActivatorNodeRef, isDragging })}
+    </div>
+  );
+}
+
+/**
+ * The open list as one sortable tree: top-level items with their sub-items
+ * under them. Dragging a row up or down moves it; dragging it sideways by an
+ * indent nests it in the checklist it's dropped in or moves it out to the top
+ * level (see `projectDrop` for what each spot allows). A parent drags with its
+ * checklist. From the keyboard: Space picks up a focused row, the arrows move
+ * and indent it, and Space drops it.
+ */
 export function ItemList({
   projectId,
   groups,
@@ -239,6 +237,128 @@ export function ItemList({
   projectId: string;
   groups: ItemGroup[];
 }) {
+  // The order just dropped, shown until the server's refresh lands.
+  const [optimistic, setOptimistic] = useState<Flat[] | null>(null);
+  const [, start] = useTransition();
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
+  const [offsetX, setOffsetX] = useState(0);
+
+  const full = optimistic ?? flatten(groups);
+  // Indexed once per render: a drag re-renders on every pointer move.
+  const kids = new Map<string, Item[]>();
+  for (const f of full) {
+    if (!f.parentId) continue;
+    const siblings = kids.get(f.parentId);
+    if (siblings) siblings.push(f.item);
+    else kids.set(f.parentId, [f.item]);
+  }
+  const childrenOf = (id: string) => kids.get(id) ?? [];
+  const byId = new Map(full.map((f) => [f.item.id, f]));
+
+  // Rows as shown. A dragged parent's sub-items travel with it, so they leave
+  // the list while it's dragged.
+  const visible = full.filter(
+    (f) =>
+      f.parentId === null ||
+      (!collapsed.has(f.parentId) && f.parentId !== activeId),
+  );
+  const treeRows: TreeRow[] = visible.map((f) => ({
+    id: f.item.id,
+    depth: f.parentId ? 1 : 0,
+    parentId: f.parentId,
+    isTask: f.item.kind === "task",
+    hasChildren: kids.has(f.item.id),
+    collapsed: collapsed.has(f.item.id),
+  }));
+  const project = (active: string, over: string, dx: number) =>
+    projectDrop(treeRows, active, over, Math.round(dx / INDENT));
+  const projection =
+    activeId && overId ? project(activeId, overId, offsetX) : null;
+
+  // The keyboard sensor and the screen-reader announcements read the drag as
+  // it is now: dnd-kit announces a move in the same tick as onDragMove, before
+  // this re-renders with the new offset.
+  const live = useRef({ offsetX: 0, projection, activeDepth: 0, project });
+  useLayoutEffect(() => {
+    live.current.projection = projection;
+    live.current.project = project;
+  });
+
+  const coordinateGetter: KeyboardCoordinateGetter = (event, args) => {
+    const { currentCoordinates: at } = args;
+    if (event.code === "ArrowRight" || event.code === "ArrowLeft") {
+      event.preventDefault();
+      const p = live.current.projection;
+      const depth = (p?.depth ?? 0) + (event.code === "ArrowRight" ? 1 : -1);
+      if (!p || depth < p.minDepth || depth > p.maxDepth) return undefined;
+      // Set the sideways offset to exactly that depth.
+      return {
+        x: at.x - live.current.offsetX + (depth - live.current.activeDepth) * INDENT,
+        y: at.y,
+      };
+    }
+    // Up and down move between rows; keep the sideways offset as it was, so
+    // the depth picked carries over to the new spot.
+    const next = sortableKeyboardCoordinates(event, args);
+    return next && { x: at.x, y: next.y };
+  };
+
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 200, tolerance: 5 },
+    }),
+    useSensor(KeyboardSensor, { coordinateGetter }),
+  );
+
+  const title = (id: UniqueIdentifier) => byId.get(String(id))?.item.title ?? "item";
+  function describe(active: UniqueIdentifier, over: UniqueIdentifier | undefined) {
+    const p = over
+      ? live.current.project(String(active), String(over), live.current.offsetX)
+      : null;
+    if (!p) return `“${title(active)}” can't go here.`;
+    if (!p.parentId) return `“${title(active)}” is at the top level.`;
+    return `“${title(active)}” is in “${title(p.parentId)}”’s checklist.`;
+  }
+  const announcements: Announcements = {
+    onDragStart: ({ active }) => `Picked up “${title(active.id)}”.`,
+    onDragMove: ({ active, over }) => describe(active.id, over?.id),
+    onDragOver: ({ active, over }) => describe(active.id, over?.id),
+    onDragEnd: ({ active, over }) =>
+      `Dropped. ${describe(active.id, over?.id)}`,
+    onDragCancel: ({ active }) => `Put “${title(active.id)}” back.`,
+  };
+
+  function reset() {
+    setActiveId(null);
+    setOverId(null);
+    setOffsetX(0);
+  }
+
+  function onDragEnd({ active, over }: DragEndEvent) {
+    const id = String(active.id);
+    const target = over ? project(id, String(over.id), offsetX) : null;
+    reset();
+    const from = byId.get(id);
+    if (!over || !target || !from) return;
+    const sameParent = target.parentId === from.parentId;
+    // Dropped where it started.
+    if (sameParent && over.id === active.id) return;
+
+    setOptimistic(applyDrop(full, id, target));
+    start(async () => {
+      try {
+        await (sameParent
+          ? reorderItemAction(id, target.position)
+          : setItemParentAction(id, target.parentId, target.position));
+      } finally {
+        setOptimistic(null);
+      }
+    });
+  }
+
   if (groups.length === 0) {
     return (
       <p className="px-1 py-4 text-center text-xs text-neutral-400">
@@ -247,26 +367,150 @@ export function ItemList({
     );
   }
 
+  const active = activeId ? byId.get(activeId) : undefined;
+  // How far in the dragged card sits: the depth it would land at, or its own
+  // where it can't land. (Each row's sortable node spans the full width.)
+  const shift = (projection?.depth ?? (active?.parentId ? 1 : 0)) * INDENT;
+  // The top-level task above each top-level row, for the row menu's "Sub-item of".
+  const above = new Map<string, Item>();
+  let prevTop: Item | undefined;
+  for (const f of visible) {
+    if (f.parentId) continue;
+    if (prevTop) above.set(f.item.id, prevTop);
+    prevTop = f.item;
+  }
+
   return (
-    <SortableList
+    <DndContext
+      // Stable, unique id so dnd-kit's aria-describedby is deterministic
+      // across SSR and client. Without it, dnd-kit falls back to a global
+      // counter that diverges between server and client and warns on hydration.
       id={`item-list-${projectId}`}
-      items={groups}
-      render={(group, drag, { prev: above }) => {
-        // A plain task can become a sub-item of the task just above it, as
-        // shown (so mid-reorder it's the visual neighbour, not the stale one).
-        const canNest =
-          group.kind === "task" &&
-          group.children.length === 0 &&
-          above?.kind === "task";
-        return (
-          <ItemGroupView
-            {...row}
-            group={group}
-            drag={drag}
-            nestUnder={canNest ? { id: above.id, title: above.title } : undefined}
-          />
-        );
+      sensors={sensors}
+      collisionDetection={closestRow}
+      // A dragged parent's sub-items leave the list, so re-measure the rows.
+      measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
+      accessibility={{
+        announcements,
+        screenReaderInstructions: {
+          draggable:
+            "To move an item, press Space. Use the up and down arrows to move it, right to make it a sub-item of the task above and left to move it out of a checklist. Press Space to drop it, or Escape to cancel.",
+        },
       }}
-    />
+      onDragStart={({ active }) => {
+        const id = String(active.id);
+        setActiveId(id);
+        setOverId(id);
+        live.current.offsetX = 0;
+        live.current.activeDepth = byId.get(id)?.parentId ? 1 : 0;
+      }}
+      onDragMove={({ delta }: DragMoveEvent) => {
+        live.current.offsetX = delta.x;
+        setOffsetX(delta.x);
+      }}
+      onDragOver={({ over }) => setOverId(over ? String(over.id) : null)}
+      onDragEnd={onDragEnd}
+      onDragCancel={reset}
+    >
+      <SortableContext
+        items={visible.map((f) => f.item.id)}
+        strategy={verticalListSortingStrategy}
+      >
+        <div className="space-y-1.5">
+          {visible.map((f, i) => {
+            const { item } = f;
+            const isActive = item.id === activeId;
+            const children = childrenOf(item.id);
+            const node = (drag: RowDrag) => {
+              if (f.parentId) {
+                return rowFor(row, item, {
+                  drag,
+                  parentTitle: byId.get(f.parentId)?.item.title,
+                });
+              }
+              // A plain task can become a sub-item of the task just above it.
+              const prev = above.get(item.id);
+              const canNest =
+                item.kind === "task" &&
+                children.length === 0 &&
+                prev?.kind === "task";
+              return rowFor(row, item, {
+                drag,
+                nestUnder: canNest ? { id: prev.id, title: prev.title } : undefined,
+                checklist:
+                  children.length > 0
+                    ? {
+                        ...progress(children),
+                        expanded: !collapsed.has(item.id),
+                        onToggle: () =>
+                          setCollapsed((s) => {
+                            const next = new Set(s);
+                            if (!next.delete(item.id)) next.add(item.id);
+                            return next;
+                          }),
+                      }
+                    : undefined,
+              });
+            };
+            return (
+              <Sortable key={item.id} id={item.id}>
+                {(drag) => {
+                  // The dragged row stays in the list as the drop placeholder,
+                  // indented to the depth it would land at, without tree lines.
+                  const depth = isActive
+                    ? (projection?.depth ?? (f.parentId ? 1 : 0))
+                    : f.parentId
+                      ? 1
+                      : 0;
+                  const next = visible[i + 1];
+                  const last =
+                    !next ||
+                    next.parentId !== f.parentId ||
+                    (next.item.id === activeId &&
+                      visible[i + 2]?.parentId !== f.parentId);
+                  const lines =
+                    f.parentId && !isActive
+                      ? last
+                        ? BRANCH
+                        : `${BRANCH} ${TRUNK}`
+                      : undefined;
+                  // The same elements at every depth, so a row that's nested or
+                  // moved out keeps its DOM node, and keyboard focus with it.
+                  return (
+                    <div className={depth ? "ml-4 pl-5" : undefined}>
+                      <div className={lines}>{node(drag)}</div>
+                    </div>
+                  );
+                }}
+              </Sortable>
+            );
+          })}
+        </div>
+      </SortableContext>
+      {/* What follows the pointer: the row, with a parent's checklist. */}
+      <DragOverlay modifiers={[lockX]}>
+        {active && (
+          <div
+            // The column's own background, so rows under a parent's checklist
+            // don't show through the gaps between its rows.
+            className="cursor-grabbing rounded-lg bg-white shadow-lg transition-[margin,width] duration-150 dark:bg-neutral-900"
+            style={{
+              marginLeft: shift,
+              width: `calc(100% - ${shift}px)`,
+            }}
+          >
+            {active.parentId ? (
+              rowFor(row, active.item)
+            ) : (
+              <ItemGroupView
+                {...row}
+                group={{ ...active.item, children: childrenOf(active.item.id) }}
+                defaultExpanded={!collapsed.has(active.item.id)}
+              />
+            )}
+          </div>
+        )}
+      </DragOverlay>
+    </DndContext>
   );
 }

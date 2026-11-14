@@ -529,6 +529,45 @@ describe("checklists (sub-items)", () => {
     expect(() => setItemParent(db, userId, b.id, b.id, "web")).toThrow(/own sub-item/);
   });
 
+  it("nests and moves out at a given position, as a drop does", () => {
+    const { db, userId, projectId, add, tree } = setup();
+    const a = add("a");
+    const a1 = add("a1", { parentId: a.id });
+    add("a2", { parentId: a.id });
+    const b = add("b");
+    const c = add("c");
+    const d = add("d");
+
+    // Into a's checklist between a1 and a2, not at its end.
+    setItemParent(db, userId, c.id, a.id, "web", `after:${a1.id}`);
+    expect(tree()).toEqual([
+      ["a", ["a1", "c", "a2"]],
+      ["b", []],
+      ["d", []],
+    ]);
+    // Straight from one checklist into another, at its top rather than its end.
+    setItemParent(db, userId, d.id, b.id, "web");
+    setItemParent(db, userId, a1.id, b.id, "web", "top");
+    // Out to the top level after b, rather than after its old parent a.
+    setItemParent(db, userId, c.id, null, "web", `after:${b.id}`);
+    expect(tree()).toEqual([
+      ["a", ["a2"]],
+      ["b", ["a1", "d"]],
+      ["c", []],
+    ]);
+    // Each move is one audited update.
+    const updates = () =>
+      listAudit(db, userId, { projectId }).filter((e) => e.action === "update").length;
+    expect(updates()).toBe(4);
+
+    // The anchor must be a sibling at the destination; nothing changes otherwise.
+    expect(() => setItemParent(db, userId, c.id, a.id, "web", `after:${b.id}`)).toThrow(
+      /anchor not found/,
+    );
+    expect(getItem(db, userId, c.id)?.parentId).toBeNull();
+    expect(updates()).toBe(4);
+  });
+
   it("reorders a sub-item only among its siblings", () => {
     const { db, userId, add, tree } = setup();
     const a = add("a");
