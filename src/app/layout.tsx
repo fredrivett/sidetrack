@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 import { ServiceWorker } from "@/components/ServiceWorker";
 import { Toaster } from "@/components/ui/sonner";
+import { STARTUP_IMAGES } from "@/lib/startupImages";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -17,6 +18,10 @@ export const metadata: Metadata = {
     capable: true,
     title: "Sidetrack",
     statusBarStyle: "default",
+    startupImage: STARTUP_IMAGES.map(({ name, media }) => ({
+      url: `/icons/startup/${name}`,
+      media,
+    })),
   },
   icons: {
     apple: "/icons/apple-touch-icon.png",
