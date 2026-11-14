@@ -14,8 +14,9 @@ import { assigneeName, UserAvatar } from "./UserAvatar";
  * owner + accepted members) with a check on the current selection. The viewer
  * sorts to the top of the candidate list and carries the `I` ("assign to me")
  * shortcut hint, unless they're already the assignee (where the check wins).
- * Render inside either a DropdownMenuContent (item sheet) or a
- * DropdownMenuSubContent (row ⋯ menu); both take DropdownMenuItem children.
+ * Render inside a DropdownMenuContent (avatar picker, item sheet) or the row's
+ * ContextMenuSubContent; all are base-ui Menus, so DropdownMenuItem children
+ * work in each.
  */
 export function AssigneeOptions({
   currentId,

@@ -48,11 +48,14 @@ tooling/config suggestions; there is no Vercel project.
   dropdown-menu, sheet, input, …). Reach for an existing primitive before
   hand-rolling markup; add a new one via the shadcn pattern rather than ad-hoc
   components.
-- Row/card actions belong in a `⋯` dropdown menu (`DropdownMenu` +
+- Card actions belong in a `⋯` dropdown menu (`DropdownMenu` +
   `DropdownMenuTrigger`/`Content`/`Item`), with destructive actions marked
-  `variant="destructive"` — see `ProjectMenu.tsx` and `ItemRow.tsx` for the
-  canonical shape. Inside a draggable element, `stopPropagation` the trigger's
-  `onPointerDown` so opening the menu doesn't start a drag.
+  `variant="destructive"` — see `ProjectMenu.tsx` for the canonical shape.
+  Inside a draggable element, `stopPropagation` the trigger's `onPointerDown`
+  so opening the menu doesn't start a drag.
+- Item rows have no `⋯` button: their actions are a right-click `ContextMenu`
+  (`ItemRow.tsx`), disabled on touch, where tapping the row opens the detail
+  sheet with the same actions. Keep the row to checkbox, title and avatar.
 
 # Boundaries
 
