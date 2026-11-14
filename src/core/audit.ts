@@ -25,7 +25,7 @@ export interface AuditEntryWithActor extends AuditEntry {
  */
 export type AuditOrigin =
   | AuditSource
-  | { source: AuditSource; agent: { keyId: string; name: string } };
+  | { source: "mcp"; agent: { keyId: string; name: string } };
 
 export interface AuditInput {
   /** User id of whoever performed the action. */

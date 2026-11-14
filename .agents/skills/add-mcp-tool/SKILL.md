@@ -36,7 +36,8 @@ asserts the audit row was written is incomplete.
    - Reuse existing Zod schemas (`Status`, `Kind`, `PosRef`, `ProjectPosRef`)
      where applicable.
    - Use `json(value)` for success, `notFound(kind, id)` for missing entities.
-   - Pass `SOURCE` (declared at top of file as `"mcp"`) to the core fn.
+   - Pass `SOURCE` to the core fn. It's an `AuditOrigin` built at the top of
+     `registerTools()` as `{ source: "mcp", agent: ctx.agent }`.
    - Write the `description` field as instructions for the calling agent —
      how to render or use the result. See `list_all_items` / `add_item` for
      the rendering convention.

@@ -64,7 +64,8 @@ must never be able to drift from the data, so a mutation and its audit row
 commit or fail together — never write one without the other.
 
 - Thread `source: AuditOrigin` from the caller. Server Actions pass `'web'`;
-  MCP tools pass `{ source: 'mcp', agent }` (the API key the agent used), so
+  MCP tools pass `{ source: 'mcp', agent: { keyId, name } }`, the id and name
+  of the API key the agent authenticated with (never the plaintext key), so
   the log records which agent made the change. Never silently default it —
   the whole point is knowing who changed what.
 - Audit the meaningful user action, not low-level helpers. e.g. `ensureCategory`
