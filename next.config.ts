@@ -38,7 +38,8 @@ export default personalApiKey && projectId
   ? withPostHogConfig(nextConfig, {
       personalApiKey,
       projectId,
-      host: process.env.POSTHOG_API_HOST ?? "https://us.posthog.com",
+      // `||`: an empty Docker ARG must fall back to the default host.
+      host: process.env.POSTHOG_API_HOST || "https://us.posthog.com",
       sourcemaps: {
         enabled: true,
         releaseName: "sidetrack",
