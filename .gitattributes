@@ -1,0 +1,2 @@
+# drizzle-kit regenerates a full schema snapshot per migration; collapse them in GitHub diffs.
+src/core/migrations/meta/*_snapshot.json linguist-generated=true
