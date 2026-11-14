@@ -53,8 +53,9 @@ self.addEventListener("fetch", (event) => {
     url.pathname.startsWith("/_next/static/") &&
     /\.(?:css|woff2)$/.test(url.pathname)
   ) {
-    // Only the launch page's assets are cached; the rest fall through to the
-    // network. That includes the board's CSS and font, which are the same files.
+    // Only the launch page's CSS and font are cached, and they're served from
+    // the cache whichever page asks, including the board, which uses the same
+    // files. Any other CSS or font goes to the network.
     event.respondWith(
       caches.match(request).then((cached) => cached ?? fetch(request)),
     );

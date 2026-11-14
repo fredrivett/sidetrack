@@ -63,16 +63,19 @@ export function BoardSkeleton() {
             </span>
             <div className="space-y-1.5 pt-3">
               {titles.map((width, row) => (
-                // A one-line item row: checkbox, then title. 50px is its real
-                // height, set by its tallest child, the ⋯ menu trigger.
+                // A one-line item row: checkbox, title, then the space of the
+                // assignee and ⋯ menu triggers. The ⋯ trigger, the tallest
+                // child, sets the row's height.
                 <div
                   key={row}
-                  className="flex h-[50px] items-start gap-2 rounded-lg border border-neutral-200 bg-white p-2 dark:border-neutral-800 dark:bg-neutral-900"
+                  className="flex items-start gap-2 rounded-lg border border-neutral-200 bg-white p-2 dark:border-neutral-800 dark:bg-neutral-900"
                 >
                   <Bone className="mt-1 size-4 shrink-0" />
                   <span className="block flex-1 py-1">
                     <Bone className={`h-3 ${width}`} />
                   </span>
+                  <span className="mt-0.5 size-6 shrink-0" />
+                  <span className="h-8 w-6 shrink-0" />
                 </div>
               ))}
             </div>

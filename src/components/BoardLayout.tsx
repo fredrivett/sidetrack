@@ -51,7 +51,7 @@ export function ColumnCard({
   header,
   children,
   ...props
-}: ComponentProps<"article"> & { header: ReactNode }) {
+}: Omit<ComponentProps<"article">, "className"> & { header: ReactNode }) {
   return (
     <article
       className="flex h-full snap-center shrink-0 flex-col gap-3 overflow-hidden rounded-2xl border border-neutral-200 bg-white p-3 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 w-[92vw] sm:w-80"

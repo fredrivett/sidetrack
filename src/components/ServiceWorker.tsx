@@ -1,5 +1,6 @@
 "use client";
 
+import posthog from "posthog-js";
 import { useEffect } from "react";
 
 // Registers public/sw.js, which caches the /launch skeleton for the installed
@@ -11,7 +12,7 @@ export function ServiceWorker() {
     if (!("serviceWorker" in navigator)) return;
     navigator.serviceWorker
       .register("/sw.js", { updateViaCache: "none" })
-      .catch(() => {});
+      .catch((error) => posthog.captureException(error));
   }, []);
   return null;
 }

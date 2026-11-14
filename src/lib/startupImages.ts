@@ -22,7 +22,7 @@ const IPHONES: [width: number, height: number, ratio: number][] = [
   [375, 667, 2], // 6s, 7, 8, SE (2nd and 3rd gen)
 ];
 
-const IPADS: [width: number, height: number, ratio: number][] = [
+const IPADS: typeof IPHONES = [
   [1032, 1376, 2], // Pro 13" (M4)
   [1024, 1366, 2], // Pro 12.9", Air 13"
   [834, 1210, 2], // Pro 11" (M4)
@@ -64,12 +64,7 @@ function images(
   }));
 }
 
-// iPhones only get portrait, the way their home screen launches apps. Landscape
-// would add 24 more links to every page's <head> for a rare case.
-export const STARTUP_IMAGES: StartupImage[] = [
-  ...IPHONES.flatMap((screen) => images(screen, "portrait")),
-  ...IPADS.flatMap((screen) => [
-    ...images(screen, "portrait"),
-    ...images(screen, "landscape"),
-  ]),
-];
+// Both orientations: the manifest allows any, so an app can launch held sideways.
+export const STARTUP_IMAGES: StartupImage[] = [...IPHONES, ...IPADS].flatMap(
+  (screen) => [...images(screen, "portrait"), ...images(screen, "landscape")],
+);
