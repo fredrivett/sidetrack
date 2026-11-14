@@ -1,138 +1,62 @@
 import { generateKeyBetween } from "fractional-indexing";
 
 /**
- * Position convention: lower position string sorts first (ASC) and renders
- * topmost in the UI. For items within a project:
- *   - completed items occupy the upper UI range (= smallest positions)
- *   - newest-completed has the LARGEST position among completed items
- *     (closest to the active boundary)
- *   - active items follow (= larger positions than any completed item)
- *   - within active, the top active item has the smallest active position
+ * Ordering for items within a list and for lists on a viewer's board.
+ *
+ * `position` is a fractional-index string: lower sorts first (ASC) and renders
+ * first (topmost for items, leftmost for lists). It means only "where this sits
+ * in the order". Completing an item never changes it — the UI decides how to
+ * show finished items from `completedAt`, so reopening one returns it to the
+ * same spot.
+ *
+ * Two inserts into the same gap at once can produce equal strings, so readers
+ * sort by (position, id) to keep that order stable.
  */
 
-export type PositionRef =
-  | "top"
-  | "end"
-  | { after: string }
-  | { before: string };
+/** Where to put something: first, last, or next to a sibling (by id). */
+export type PositionRef = "first" | "last" | { after: string } | { before: string };
 
-export type ProjectPositionRef =
-  | "start"
-  | "end"
-  | { after: string }
-  | { before: string };
+function parse(raw: string | undefined, firstWord: string): PositionRef {
+  if (!raw || raw === "end") return "last";
+  if (raw === firstWord) return "first";
+  if (raw.startsWith("after:")) return { after: raw.slice("after:".length) };
+  if (raw.startsWith("before:")) return { before: raw.slice("before:".length) };
+  throw new Error(`invalid position ref: ${raw}`);
+}
 
+/** Item refs: top | end | after:<id> | before:<id>. Missing means end. */
 export function parseRef(raw: string | undefined): PositionRef {
-  if (!raw || raw === "end") return "end";
-  if (raw === "top") return "top";
-  if (raw.startsWith("after:")) return { after: raw.slice("after:".length) };
-  if (raw.startsWith("before:")) return { before: raw.slice("before:".length) };
-  throw new Error(`invalid position ref: ${raw}`);
+  return parse(raw, "top");
 }
 
-export function parseProjectRef(raw: string | undefined): ProjectPositionRef {
-  if (!raw || raw === "end") return "end";
-  if (raw === "start") return "start";
-  if (raw.startsWith("after:")) return { after: raw.slice("after:".length) };
-  if (raw.startsWith("before:")) return { before: raw.slice("before:".length) };
-  throw new Error(`invalid position ref: ${raw}`);
-}
-
-export function between(a: string | null, b: string | null): string {
-  return generateKeyBetween(a, b);
-}
-
-interface PositionedSibling {
-  id: string;
-  position: string;
-  completedAt: number | null;
+/** List refs: start | end | after:<id> | before:<id>. Missing means end. */
+export function parseProjectRef(raw: string | undefined): PositionRef {
+  return parse(raw, "start");
 }
 
 /**
- * Resolve a position ref against the current siblings of an item.
- * Siblings must be sorted by position ASC.
+ * Resolve a ref against the siblings it is placed among (the thing being
+ * moved excluded), sorted by position ASC.
  */
-export function resolveItemPosition(
-  siblings: PositionedSibling[],
+export function resolvePosition(
+  siblings: Array<{ id: string; position: string }>,
   ref: PositionRef,
 ): string {
-  const completed = siblings.filter((s) => s.completedAt !== null);
-  const active = siblings.filter((s) => s.completedAt === null);
-  const maxCompleted = completed.at(-1)?.position ?? null;
-  const minActive = active[0]?.position ?? null;
-  const maxActive = active.at(-1)?.position ?? null;
-
-  if (ref === "top") {
-    // Top of active range: just below max-completed (or at the global top if
-    // no completed) and just above the current top active item.
-    return between(maxCompleted, minActive);
+  if (ref === "first") {
+    return generateKeyBetween(null, siblings[0]?.position ?? null);
   }
-  if (ref === "end") {
-    // Bottom of active range: just below the current last active item.
-    // If there are no active items, this is between maxCompleted and null.
-    return between(maxActive ?? maxCompleted, null);
+  if (ref === "last") {
+    return generateKeyBetween(siblings.at(-1)?.position ?? null, null);
   }
-
   const targetId = "after" in ref ? ref.after : ref.before;
-  const idx = siblings.findIndex((s) => s.id === targetId);
-  if (idx === -1) {
-    throw new Error(`sibling not found: ${targetId}`);
-  }
+  const anchor = siblings.find((s) => s.id === targetId);
+  if (!anchor) throw new Error(`position anchor not found: ${targetId}`);
+  // There's no key strictly between two equal strings, so when the anchor
+  // shares its position with neighbours, place beyond that whole tied run.
   if ("after" in ref) {
-    const next = siblings[idx + 1]?.position ?? null;
-    return between(siblings[idx].position, next);
+    const next = siblings.find((s) => s.position > anchor.position);
+    return generateKeyBetween(anchor.position, next?.position ?? null);
   }
-  const prev = idx > 0 ? siblings[idx - 1].position : null;
-  return between(prev, siblings[idx].position);
-}
-
-/**
- * Position for a newly-completed item: just above the current top active
- * item, just below the previous newest-completed (= the new boundary slot
- * on the completed side).
- */
-export function resolveCompletePosition(
-  siblings: PositionedSibling[],
-  completingId: string,
-): string {
-  const others = siblings.filter((s) => s.id !== completingId);
-  const completed = others.filter((s) => s.completedAt !== null);
-  const active = others.filter((s) => s.completedAt === null);
-  const maxCompleted = completed.at(-1)?.position ?? null;
-  const minActive = active[0]?.position ?? null;
-  return between(maxCompleted, minActive);
-}
-
-/**
- * Position for an item being uncompleted: top of the active range
- * (= same boundary slot as a fresh complete, but on the active side now).
- */
-export function resolveUncompletePosition(
-  siblings: PositionedSibling[],
-  uncompletingId: string,
-): string {
-  const others = siblings.filter((s) => s.id !== uncompletingId);
-  const completed = others.filter((s) => s.completedAt !== null);
-  const active = others.filter((s) => s.completedAt === null);
-  const maxCompleted = completed.at(-1)?.position ?? null;
-  const minActive = active[0]?.position ?? null;
-  return between(maxCompleted, minActive);
-}
-
-/** Project list positions — no completed/active distinction. */
-export function resolveProjectPosition(
-  projects: Array<{ id: string; position: string }>,
-  ref: ProjectPositionRef,
-): string {
-  const sorted = projects;
-  if (ref === "start") return between(null, sorted[0]?.position ?? null);
-  if (ref === "end") return between(sorted.at(-1)?.position ?? null, null);
-
-  const targetId = "after" in ref ? ref.after : ref.before;
-  const idx = sorted.findIndex((p) => p.id === targetId);
-  if (idx === -1) throw new Error(`list not found: ${targetId}`);
-  if ("after" in ref) {
-    return between(sorted[idx].position, sorted[idx + 1]?.position ?? null);
-  }
-  return between(idx > 0 ? sorted[idx - 1].position : null, sorted[idx].position);
+  const prev = siblings.findLast((s) => s.position < anchor.position);
+  return generateKeyBetween(prev?.position ?? null, anchor.position);
 }

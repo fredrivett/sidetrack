@@ -4,9 +4,10 @@ import { useState } from "react";
 import type { Item } from "@/core/schema";
 
 /**
- * Open-state for the item detail sheet, lifted above the active/completed
- * split so it survives an item moving between lists when it's (un)completed —
- * the row that triggered the sheet unmounts, but this state does not.
+ * Open-state for the item detail sheet, lifted above the list/done split so
+ * it survives an item moving between them (reopened from Done, or the day
+ * turning over) — the row that triggered the sheet unmounts, but this state
+ * does not.
  *
  * `item` is looked up live by id against the current `items`, so edits and
  * complete-toggles show in the open sheet immediately. `closingItem` keeps the

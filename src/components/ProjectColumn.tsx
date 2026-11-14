@@ -5,7 +5,7 @@ import { updateProjectAction } from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { ColumnCard } from "./BoardLayout";
-import { CompletedSection } from "./CompletedSection";
+import { DoneSection } from "./DoneSection";
 import type { ProjectView } from "./Kanban";
 import { EditableText } from "./EditableText";
 import { ItemDetailSheet } from "./ItemDetailSheet";
@@ -15,6 +15,7 @@ import { ProjectIconPicker } from "./ProjectIconPicker";
 import { ProjectMenu } from "./ProjectMenu";
 import { StatusBadge } from "./StatusBadge";
 import { SummaryBlock } from "./SummaryBlock";
+import { useDayStart } from "./use-day-start";
 import { useItemDetailSheet } from "./use-item-detail-sheet";
 
 export function ProjectColumn({
@@ -40,12 +41,21 @@ export function ProjectColumn({
   onAddItem: (projectId: string) => void;
   onShare: (projectId: string, projectName: string) => void;
 }) {
-  const completed = items.filter((i) => i.completedAt !== null);
+  // Items arrive in list order. Open items and items finished today share the
+  // list (today's crossed out, in place); anything finished before today goes
+  // to Done, newest first.
+  const dayStart = useDayStart();
   const active = items.filter((i) => i.completedAt === null);
+  const inList = items.filter(
+    (i) => i.completedAt === null || i.completedAt >= dayStart,
+  );
+  const done = items
+    .filter((i) => i.completedAt !== null && i.completedAt < dayStart)
+    .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
 
-  // Lives above the active/completed split so it survives an item moving
-  // between ItemList and CompletedSection when it's (un)completed — see the
-  // hook for the live-lookup / closing-snapshot details.
+  // Lives above the list/done split so it survives an item moving between
+  // ItemList and DoneSection when it's reopened or the day turns over — see
+  // the hook for the live-lookup / closing-snapshot details.
   const detail = useItemDetailSheet(items);
   // The column re-renders with fresh server props on every edit. It unmounts
   // when the list is deleted, archived, or moves between the active and paused
@@ -133,23 +143,25 @@ export function ProjectColumn({
           />
 
           <div className="space-y-3 pt-3">
-            <CompletedSection
-              items={completed}
-              prefix={project.refPrefix}
-              assignees={assignees}
-              viewerId={viewerId}
-              prLinksByItem={prLinksByItem}
-              onOpenDetail={detail.openDetail}
-            />
             <ItemList
               projectId={project.id}
-              items={active}
+              items={inList}
               prefix={project.refPrefix}
               assignees={assignees}
               viewerId={viewerId}
               prLinksByItem={prLinksByItem}
               onOpenDetail={detail.openDetail}
             />
+            {done.length > 0 && (
+              <DoneSection
+                items={done}
+                prefix={project.refPrefix}
+                assignees={assignees}
+                viewerId={viewerId}
+                prLinksByItem={prLinksByItem}
+                onOpenDetail={detail.openDetail}
+              />
+            )}
           </div>
         </>
       )}
