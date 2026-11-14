@@ -144,6 +144,16 @@ export function TodayView({
           item={detail.item}
           parent={all.find((i) => i.id === detail.item?.parentId) ?? null}
           checklist={all.filter((i) => i.parentId === detail.item?.id)}
+          // The same rule as the board's sheet (ProjectColumn), within the
+          // item's own list.
+          nestTargets={all.filter(
+            (i) =>
+              i.projectId === detail.item?.projectId &&
+              i.kind === "task" &&
+              i.parentId === null &&
+              i.completedAt === null &&
+              i.id !== detail.item?.id,
+          )}
           onOpenItem={detail.openDetail}
           prefix={detailProject.prefix}
           assignees={assigneesByProject[detail.item.projectId] ?? []}
