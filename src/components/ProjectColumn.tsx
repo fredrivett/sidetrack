@@ -78,7 +78,9 @@ export function ProjectColumn({
           {/* Icon, title row and ⋯ menu are all 32px tall so they line up. */}
           <ProjectIconPicker project={project} size={24} />
           <div className="min-w-0 flex-1 space-y-1">
-            <div className="flex items-center gap-1">
+            {/* -ml-[7px] cancels the title's border + padding so its text sits
+                where it would without the hover box, close to the icon. */}
+            <div className="-ml-[7px] flex items-center gap-1">
               {/* The button and the input share height, padding and border, and
                   the input sizes to its text, so editing doesn't shift layout. */}
               <EditableText
