@@ -1,9 +1,10 @@
 // iOS doesn't build a launch screen from the manifest. Until an installed app
 // paints, it shows the apple-touch-startup-image whose media query matches the
 // device, and a blank screen when none matches, so there's one image per
-// screen size and colour scheme. Each image is the skeleton's page background
-// alone: the page starts below the status bar, whose height varies by model,
-// so anything drawn on the image would jump when the page replaces it.
+// screen size and colour scheme. Each image is the logo mark, centred, on the
+// skeleton's page background. Nothing lines up with the skeleton on purpose:
+// the page starts below the status bar, whose height varies by model, so
+// anything placed to match it would jump on some models.
 // Rendered by src/app/icons/startup/[name]/route.tsx, linked by layout.tsx.
 
 /** Screens in CSS pixels, portrait, with their pixel ratio. */
@@ -34,14 +35,22 @@ const IPADS: typeof IPHONES = [
   [744, 1133, 2], // mini (6th gen and later)
 ];
 
-/** The page background behind the board skeleton: neutral-50 and -950. */
-const BACKGROUNDS = { light: "#fafafa", dark: "#0a0a0a" } as const;
+/** The page background and text colour: neutral-50 on -900, -950 on -100. */
+const COLORS = {
+  light: { background: "#fafafa", foreground: "#171717" },
+  dark: { background: "#0a0a0a", foreground: "#f5f5f5" },
+} as const;
+
+/** The mark's width in points. */
+export const MARK_WIDTH = 64;
 
 export type StartupImage = {
   name: string;
   width: number;
   height: number;
+  ratio: number;
   background: string;
+  foreground: string;
   media: string;
 };
 
@@ -59,7 +68,8 @@ function images(
     name: `${w}x${h}-${scheme}.png`,
     width: w,
     height: h,
-    background: BACKGROUNDS[scheme],
+    ratio,
+    ...COLORS[scheme],
     media: `(device-width: ${width}px) and (-webkit-device-pixel-ratio: ${ratio}) and (orientation: ${orientation}) and (prefers-color-scheme: ${scheme})`,
   }));
 }

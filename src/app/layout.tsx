@@ -19,7 +19,8 @@ export const metadata: Metadata = {
     title: "Sidetrack",
     statusBarStyle: "default",
     startupImage: STARTUP_IMAGES.map(({ name, media }) => ({
-      url: `/icons/startup/${name}`,
+      // Bump v when the images change: Cloudflare and browsers cache them by URL.
+      url: `/icons/startup/${name}?v=2`,
       media,
     })),
   },
