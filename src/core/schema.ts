@@ -160,6 +160,9 @@ export const items = sqliteTable(
     // Per-project sequence value (from projects.item_seq) behind the display
     // ref `${prefix}-${number}`. Unique within a project; monotonic.
     number: integer("number").notNull(),
+    // The calendar day it's due, as "YYYY-MM-DD", with no time or timezone:
+    // "due Saturday" means Saturday wherever you are. null = no date.
+    dueDate: text("due_date"),
     completedAt: integer("completed_at"),
     createdAt: integer("created_at")
       .notNull()

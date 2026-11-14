@@ -37,6 +37,7 @@ import {
   updateProject as updateProjectCore,
 } from "@/core/projects";
 import type { AuditSource, ItemKind, ProjectStatus } from "@/core/schema";
+import { setTimeZone as setTimeZoneCore } from "@/core/users";
 import { getCurrentSession, requireUserId } from "@/auth/session";
 import { notifyInvite } from "@/lib/email";
 import { getEnv } from "@/lib/env";
@@ -165,6 +166,7 @@ export async function addItemAction(input: {
   category?: string | null;
   positionRef?: string;
   parentId?: string | null;
+  dueDate?: string | null;
 }) {
   const userId = await requireUserId();
   const { db } = getDb();
@@ -180,6 +182,7 @@ export async function updateItemAction(
     description?: string | null;
     category?: string | null;
     assigneeId?: string | null;
+    dueDate?: string | null;
   },
 ) {
   const userId = await requireUserId();
@@ -226,6 +229,13 @@ export async function deleteItemAction(id: string) {
   const { db } = getDb();
   deleteItemCore(db, userId, id, SOURCE);
   refresh();
+}
+
+/** Save the browser's timezone for agents' "today". No refresh: nothing shown changes. */
+export async function setTimeZoneAction(timeZone: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  setTimeZoneCore(db, userId, timeZone);
 }
 
 export async function addCategoryAction(projectId: string, name: string) {

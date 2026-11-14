@@ -1,25 +1,41 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { nextDayStart, startOfDay } from "@/lib/time";
+import { dayOf, nextDayStart, startOfDay } from "@/lib/time";
+
+// One timer and one visibility listener for every component on the page
+// (each due badge reads the day), fanned out to subscribers.
+const listeners = new Set<() => void>();
+let timer: ReturnType<typeof setTimeout> | undefined;
+
+function notify() {
+  for (const l of listeners) l();
+}
+
+function schedule() {
+  clearTimeout(timer);
+  timer = setTimeout(
+    () => {
+      notify();
+      schedule();
+    },
+    nextDayStart(Date.now()) - Date.now() + 1000,
+  );
+}
 
 function subscribe(onChange: () => void) {
-  let timer: ReturnType<typeof setTimeout>;
-  const schedule = () => {
-    timer = setTimeout(
-      () => {
-        onChange();
-        schedule();
-      },
-      nextDayStart(Date.now()) - Date.now() + 1000,
-    );
-  };
-  schedule();
-  // Timers stall while a laptop or phone sleeps; re-check when the tab returns.
-  document.addEventListener("visibilitychange", onChange);
+  listeners.add(onChange);
+  if (listeners.size === 1) {
+    schedule();
+    // Timers stall while a laptop or phone sleeps; re-check when the tab returns.
+    document.addEventListener("visibilitychange", notify);
+  }
   return () => {
-    clearTimeout(timer);
-    document.removeEventListener("visibilitychange", onChange);
+    listeners.delete(onChange);
+    if (listeners.size === 0) {
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", notify);
+    }
   };
 }
 
@@ -39,4 +55,13 @@ export function useDayStart(): number {
     () => startOfDay(Date.now()),
     () => Infinity,
   );
+}
+
+/**
+ * The viewer's current day as "YYYY-MM-DD" (4am turnover, local time), or
+ * null during the server render and hydration, where it isn't known.
+ */
+export function useToday(): string | null {
+  const start = useDayStart();
+  return Number.isFinite(start) ? dayOf(start) : null;
 }

@@ -1,7 +1,8 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, gte, isNotNull, isNull, lte, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { derivePrefix, dedupePrefix, validatePrefix } from "../lib/itemRef";
 import { normalizeProjectIcon } from "../lib/projectIcon";
+import { addDays, dayOf, isOnToday } from "../lib/time";
 import { normalizeHomepageUrl } from "../lib/url";
 import { hasProjectAccess } from "./access";
 import { type AuditOrigin, recordAudit } from "./audit";
@@ -9,6 +10,8 @@ import type { Db } from "./db";
 import { parseProjectRef, resolvePosition } from "./fracidx";
 import { listItems } from "./items";
 import {
+  type Item,
+  items,
   type Project,
   PROJECT_STATUSES,
   type ProjectStatus,
@@ -102,6 +105,56 @@ export function listAllProjectsWithItems(
       includeCompleted: opts.includeCompleted,
     }),
   }));
+}
+
+/**
+ * The Today view across every active list the user can see: items due on or
+ * before `today` that are open or were finished today, overdue first, then by
+ * board order and list order. Paused and archived lists are left out.
+ * `timeZone` decides which day a completion fell on, and the default `today`
+ * is the current day there (with the 4am turnover).
+ */
+export function listToday(
+  db: Db,
+  userId: string,
+  opts: { timeZone?: string; today?: string; now?: number } = {},
+): { today: string; items: Item[] } {
+  const today = opts.today ?? dayOf(opts.now ?? Date.now(), opts.timeZone);
+  const boardOrder = new Map(
+    listProjects(db, userId)
+      .filter((p) => p.status === "active")
+      .map((p, i) => [p.id, i]),
+  );
+  const due = db
+    .select({ items })
+    .from(items)
+    .innerJoin(projects, eq(projects.id, items.projectId))
+    .where(
+      and(
+        hasProjectAccess(userId),
+        eq(projects.status, "active"),
+        isNotNull(items.dueDate),
+        lte(items.dueDate, today),
+        // Only open items, or ones finished recently enough to land on today
+        // in some zone: the 4am start of today is never before midnight UTC
+        // the day before, even at UTC+14.
+        or(
+          isNull(items.completedAt),
+          gte(items.completedAt, Date.parse(`${addDays(today, -1)}T00:00:00Z`)),
+        ),
+      ),
+    )
+    .orderBy(asc(items.position), asc(items.id))
+    .all()
+    .map((row) => row.items)
+    .filter((it) => isOnToday(it, today, opts.timeZone));
+  // Stable sort: due date, then the list's place on the board; ties keep list order.
+  due.sort(
+    (a, b) =>
+      (a.dueDate ?? "").localeCompare(b.dueDate ?? "") ||
+      (boardOrder.get(a.projectId) ?? 0) - (boardOrder.get(b.projectId) ?? 0),
+  );
+  return { today, items: due };
 }
 
 function assertStatus(status: string): asserts status is ProjectStatus {

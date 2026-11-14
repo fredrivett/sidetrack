@@ -6,12 +6,18 @@ import { listItems } from "@/core/items";
 import { listAssignees, listPendingInvites } from "@/core/members";
 import { listAllPrLinks } from "@/core/prLinks";
 import { listProjects } from "@/core/projects";
+import { getTimeZone } from "@/core/users";
 import type { ItemPrLink } from "@/core/schema";
 import { requireUserId } from "@/auth/session";
 
 export const dynamic = "force-dynamic";
 
-export default async function Home() {
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string | string[] }>;
+}) {
+  const { view } = await searchParams;
   const userId = await requireUserId();
   const { db } = getDb();
   // Tag each project with whether the viewer owns it (vs. it being shared with
@@ -46,6 +52,8 @@ export default async function Home() {
   return (
     <Kanban
       viewerId={userId}
+      timeZone={getTimeZone(db, userId)}
+      initialView={view === "today" ? "today" : "board"}
       projects={projects}
       itemsByProject={itemsByProject}
       categoriesByProject={categoriesByProject}

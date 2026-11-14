@@ -9,21 +9,34 @@ export function BoardMain({ children }: { children: ReactNode }) {
   return <main className="flex h-dvh flex-col">{children}</main>;
 }
 
-/** The top bar: logo and title on the left, `children` on the right. */
-export function BoardHeader({ children }: { children: ReactNode }) {
+/**
+ * The top bar: logo and title on the left, then `nav` (the Board/Today
+ * switch), and `children` on the right.
+ */
+export function BoardHeader({
+  nav,
+  children,
+}: {
+  nav?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
-      <h1 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
-        {/* The logo mark, generated from scripts/icons/icon.svg, in the text
-            colour. 18×19px is 1/16 of the icon, so every edge lands on a
-            whole pixel. */}
-        <span
-          aria-hidden="true"
-          className="h-[19px] w-[18px] shrink-0 bg-current [mask:url(/icons/mark.svg)_center/contain_no-repeat]"
-        />
-        Sidetrack
-      </h1>
-      <div className="flex items-center gap-3">{children}</div>
+    <div className="flex items-center justify-between gap-2 border-b border-neutral-200 px-4 py-2 sm:gap-3 dark:border-neutral-800">
+      <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+        <h1 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+          {/* The logo mark, generated from scripts/icons/icon.svg, in the text
+              colour. 18×19px is 1/16 of the icon, so every edge lands on a
+              whole pixel. */}
+          <span
+            aria-hidden="true"
+            className="h-[19px] w-[18px] shrink-0 bg-current [mask:url(/icons/mark.svg)_center/contain_no-repeat]"
+          />
+          {/* The name gives way to the Board/Today switch on phones. */}
+          <span className={nav ? "sr-only sm:not-sr-only" : undefined}>Sidetrack</span>
+        </h1>
+        {nav}
+      </div>
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 sm:gap-3">{children}</div>
     </div>
   );
 }
