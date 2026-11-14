@@ -269,9 +269,10 @@ export function addItem(
       entityType: "item",
       entityId: id,
       projectId: input.projectId,
-      detail: parent
-        ? `added "${title}" to "${parent.title}"`
-        : `added ${input.kind} "${title}"`,
+      detail:
+        (parent
+          ? `added "${title}" to "${parent.title}"`
+          : `added ${input.kind} "${title}"`) + (dueDate ? `, due ${dueDate}` : ""),
     });
     if (parent) reopenParentIfDone(tx as unknown as Db, userId, parent, source);
   });

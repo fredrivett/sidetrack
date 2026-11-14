@@ -54,7 +54,7 @@ import {
 import { notifyInvite } from "@/lib/email";
 import { getEnv } from "@/lib/env";
 import { formatItemRef } from "@/lib/itemRef";
-import { formatRelativeLong } from "@/lib/time";
+import { formatRelativeLong, isDay } from "@/lib/time";
 
 /** The authenticated caller: the key's owner and the key itself (the agent). */
 export interface McpContext {
@@ -67,9 +67,7 @@ const Kind = z.enum(ITEM_KINDS);
 const PosRef = z
   .string()
   .regex(/^(top|end|after:.+|before:.+)$/, "expected top|end|after:<item>|before:<item>");
-const DueDate = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "expected a calendar day, YYYY-MM-DD");
+const DueDate = z.string().refine(isDay, "expected a calendar day, YYYY-MM-DD");
 const ListPosRef = z
   .string()
   .regex(/^(start|end|after:.+|before:.+)$/, "expected start|end|after:<id>|before:<id>");
@@ -322,11 +320,11 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       description:
         "The user's Today view: items across their active lists (not paused or archived) that are due today or overdue, " +
         "plus items finished today, which the user sees crossed out. Overdue items come first, then by board order. " +
-        "Returns { today, timeZone, items }. today is the user's current day (YYYY-MM-DD) in timeZone, which their browser reports; " +
+        "Returns { today, timeZone, items }, plus a note when the timezone is a UTC fallback. today is the user's current day (YYYY-MM-DD) in timeZone, which their browser reports; " +
         "the day turns over at 4am, so at 1am it's still the day before. Use today to work out dates like tomorrow for due_date. " +
         "Each item carries its ref, listName and, for a sub-item, parentTitle. " +
         "filter narrows to items assigned to the user (mine), to someone else (theirs), or to nobody (unassigned).\n" +
-        "Show the user open items as a list with the list name and anything overdue marked; leave finished ones out unless they ask.",
+        "Show the user the items as a list with the list name, anything overdue marked, and finished ones crossed out, as on their screen.",
       inputSchema: {
         filter: z.enum(["all", "mine", "theirs", "unassigned"]).optional(),
       },
@@ -355,9 +353,12 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       }
       return json({
         today,
-        timeZone: savedZone
-          ? timeZone
-          : "UTC (the user's timezone isn't known until they open Sidetrack in a browser)",
+        timeZone,
+        ...(savedZone
+          ? {}
+          : {
+              note: "The user's timezone isn't known until they open Sidetrack in a browser, so today is the day in UTC.",
+            }),
         items: keep.map((it) => ({
           ...it,
           ref: formatItemRef(refs[it.projectId] ?? "", it.number),
@@ -508,7 +509,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         description: z.string().optional(),
         category: z.string().optional(),
         parent: z.string().optional(),
-        due_date: DueDate.optional(),
+        due_date: DueDate.nullable().optional(),
         position: PosRef.optional(),
       },
     },

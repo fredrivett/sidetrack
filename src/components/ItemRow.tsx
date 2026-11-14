@@ -99,7 +99,7 @@ export function ItemRow({
   nestUnder?: { id: string; title: string };
   /** For a sub-item, its parent's title (offers "Move out of …"). */
   parentTitle?: string;
-  /** Where the item lives, shown above its title in views across lists. */
+  /** Where the item lives, shown below its title in views across lists. */
   context?: string;
   onOpenDetail: () => void;
 }) {

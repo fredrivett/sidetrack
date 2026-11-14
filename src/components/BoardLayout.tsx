@@ -36,7 +36,7 @@ export function BoardHeader({
         </h1>
         {nav}
       </div>
-      <div className="flex min-w-0 items-center gap-2 sm:gap-3">{children}</div>
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 sm:gap-3">{children}</div>
     </div>
   );
 }

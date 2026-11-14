@@ -66,14 +66,22 @@ export function Kanban({
   }
 
   // Agents work out "today" in the viewer's timezone (list_today), so save
-  // the browser's whenever it differs, e.g. after travelling.
+  // the browser's whenever it differs, e.g. after travelling. A tab left open
+  // across a flight rechecks when it comes back into view.
   useEffect(() => {
-    const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    if (browserZone && browserZone !== timeZone) {
-      void setTimeZoneAction(browserZone);
+    function sync() {
+      const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (browserZone && browserZone !== timeZone) {
+        void setTimeZoneAction(browserZone);
+      }
     }
+    sync();
+    function onVisible() {
+      if (document.visibilityState === "visible") sync();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, [timeZone]);
-  const initialised = useRef(false);
   const [audit, setAudit] = useState<{ open: boolean; projectId?: string }>({
     open: false,
   });
@@ -144,10 +152,10 @@ export function Kanban({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [openNewItem]);
 
-  // On first paint: scroll to ?p=<id> if present.
+  // On first paint, and on coming back from Today (which unmounts the rail):
+  // scroll to ?p=<id> if present.
   useEffect(() => {
-    if (initialised.current) return;
-    initialised.current = true;
+    if (view !== "board") return;
     const params = new URLSearchParams(window.location.search);
     const targetId = params.get("p");
     if (!targetId) return;
@@ -157,7 +165,7 @@ export function Kanban({
     if (el instanceof HTMLElement) {
       el.scrollIntoView({ behavior: "instant", inline: "center" });
     }
-  }, []);
+  }, [view]);
 
   // Observe which column is most centred; reflect in ?p=<id> via replaceState.
   useEffect(() => {

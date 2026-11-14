@@ -13,6 +13,7 @@ import {
 import { toast } from "sonner";
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -202,6 +203,55 @@ function Checklist({
   );
 }
 
+/**
+ * The date input. Typing a date fires a change per segment (the year alone
+ * passes through 0002, 0020, 0202), so it keeps a draft and saves once the
+ * date settles: on a pause, on blur, or when the sheet closes.
+ */
+function DueDateInput({
+  due,
+  disabled,
+  onChange,
+}: {
+  due: string | null;
+  disabled: boolean;
+  onChange: (due: string | null) => void;
+}) {
+  const [draft, setDraft] = useState(due ?? "");
+  // A save or a quick button changed the date: show it.
+  const [shown, setShown] = useState(due);
+  if (due !== shown) {
+    setShown(due);
+    setDraft(due ?? "");
+  }
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const flush = useRef(() => {});
+  useEffect(() => () => flush.current(), []);
+
+  function change(value: string) {
+    setDraft(value);
+    clearTimeout(timer.current);
+    flush.current = () => {
+      clearTimeout(timer.current);
+      flush.current = () => {};
+      if ((value || null) !== due) onChange(value || null);
+    };
+    timer.current = setTimeout(() => flush.current(), 800);
+  }
+
+  return (
+    <input
+      type="date"
+      value={draft}
+      disabled={disabled}
+      onChange={(e) => change(e.target.value)}
+      onBlur={() => flush.current()}
+      aria-label="Pick a due date"
+      className="h-6 rounded-md border border-neutral-200 bg-transparent px-1.5 text-xs text-neutral-600 dark:border-neutral-800 dark:text-neutral-300"
+    />
+  );
+}
+
 /** Quick due-date buttons, a date picker for anything else, and Clear. */
 function DueDatePicker({
   due,
@@ -249,14 +299,7 @@ function DueDatePicker({
           {label}
         </Button>
       ))}
-      <input
-        type="date"
-        value={due ?? ""}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.value || null)}
-        aria-label="Pick a due date"
-        className="h-6 rounded-md border border-neutral-200 bg-transparent px-1.5 text-xs text-neutral-600 dark:border-neutral-800 dark:text-neutral-300"
-      />
+      <DueDateInput due={due} disabled={disabled} onChange={onChange} />
       {due && (
         <Button
           type="button"

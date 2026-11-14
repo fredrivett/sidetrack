@@ -1,8 +1,8 @@
-import { and, asc, eq, isNotNull, lte } from "drizzle-orm";
+import { and, asc, eq, gte, isNotNull, isNull, lte, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { derivePrefix, dedupePrefix, validatePrefix } from "../lib/itemRef";
 import { normalizeProjectIcon } from "../lib/projectIcon";
-import { dayOf, isOnToday } from "../lib/time";
+import { addDays, dayOf, isOnToday } from "../lib/time";
 import { normalizeHomepageUrl } from "../lib/url";
 import { hasProjectAccess } from "./access";
 import { type AuditOrigin, recordAudit } from "./audit";
@@ -135,6 +135,13 @@ export function listToday(
         eq(projects.status, "active"),
         isNotNull(items.dueDate),
         lte(items.dueDate, today),
+        // Only open items, or ones finished recently enough to land on today
+        // in some zone: the 4am start of today is never before midnight UTC
+        // the day before, even at UTC+14.
+        or(
+          isNull(items.completedAt),
+          gte(items.completedAt, Date.parse(`${addDays(today, -1)}T00:00:00Z`)),
+        ),
       ),
     )
     .orderBy(asc(items.position), asc(items.id))

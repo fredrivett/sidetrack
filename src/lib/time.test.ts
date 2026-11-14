@@ -84,9 +84,26 @@ describe("calendar days", () => {
     expect(dueLabel("2026-11-14", today)).toBe("Today");
     expect(dueLabel("2026-11-15", today)).toBe("Tomorrow");
     expect(dueLabel("2026-11-13", today)).toBe("Yesterday");
-    expect(dueLabel("2026-11-20", today)).toMatch(/Fri/);
-    expect(dueLabel("2026-11-21", today)).toMatch(/21/);
-    expect(dueLabel("2027-01-05", today)).toMatch(/2027/);
+    // Further out it's the runtime's locale, so build the expected text the same way.
+    const utc = { timeZone: "UTC" } as const;
+    expect(dueLabel("2026-11-20", today)).toBe(
+      new Date(Date.UTC(2026, 10, 20)).toLocaleDateString(undefined, { ...utc, weekday: "short" }),
+    );
+    expect(dueLabel("2026-11-21", today)).toBe(
+      new Date(Date.UTC(2026, 10, 21)).toLocaleDateString(undefined, {
+        ...utc,
+        day: "numeric",
+        month: "short",
+      }),
+    );
+    expect(dueLabel("2027-01-05", today)).toBe(
+      new Date(Date.UTC(2027, 0, 5)).toLocaleDateString(undefined, {
+        ...utc,
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      }),
+    );
   });
 
   it("puts open due-or-overdue items, and ones finished today, on Today", () => {

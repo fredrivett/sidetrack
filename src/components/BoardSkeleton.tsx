@@ -24,7 +24,7 @@ const COLUMNS = [
 export function BoardSkeleton() {
   return (
     <BoardMain>
-      <BoardHeader>
+      <BoardHeader nav={<Bone className="h-[26px] w-[105px] rounded-md" />}>
         {/* List count, Activity, Account. */}
         <Bone className="h-4 w-14" />
         <Bone className="h-[26px] w-[61px] rounded-md" />

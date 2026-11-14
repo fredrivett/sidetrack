@@ -568,6 +568,11 @@ describe("due dates and Today", () => {
       "web",
     );
     expect(it1.dueDate).toBe("2026-11-14");
+    expect(
+      listAudit(db, userId, { projectId }).find(
+        (e) => e.entityId === it1.id && e.action === "create",
+      )?.detail,
+    ).toBe('added task "bins", due 2026-11-14');
     expect(() =>
       updateItem(db, userId, it1.id, { dueDate: "2026-02-30" }, "web"),
     ).toThrow(/invalid due date/);
@@ -597,6 +602,8 @@ describe("due dates and Today", () => {
     const work = createProject(db, userId, { name: "Work" }, "web");
     const paused = createProject(db, userId, { name: "Later" }, "web");
     updateProject(db, userId, paused.id, { status: "paused" }, "web");
+    const archived = createProject(db, userId, { name: "Old" }, "web");
+    updateProject(db, userId, archived.id, { status: "archived" }, "web");
     const add = (projectId: string, title: string, dueDate: string | null) =>
       addItem(db, userId, { projectId, kind: "task", title, dueDate }, "web");
 
@@ -608,6 +615,7 @@ describe("due dates and Today", () => {
     add(home.id, "tomorrow", "2026-11-15");
     add(home.id, "no date", null);
     add(paused.id, "paused list", "2026-11-14");
+    add(archived.id, "archived list", "2026-11-14");
     const doneOld = add(home.id, "done before today", "2026-11-12");
     const doneNow = add(home.id, "done today", "2026-11-13");
     db.update(items).set({ completedAt: Date.UTC(2026, 10, 13, 9) }).where(eq(items.id, doneOld.id)).run();
@@ -621,6 +629,17 @@ describe("due dates and Today", () => {
       "home today",
       "work today",
     ]);
+    // UTC+14: just after 4am on the 14th there is still the 13th in UTC.
+    const kiritimati = add(home.id, "done at dawn in Kiritimati", "2026-11-14");
+    db.update(items)
+      .set({ completedAt: Date.UTC(2026, 10, 13, 14, 30) })
+      .where(eq(items.id, kiritimati.id))
+      .run();
+    expect(
+      listToday(db, userId, { timeZone: "Pacific/Kiritimati", today: "2026-11-14" }).items.map(
+        (i) => i.title,
+      ),
+    ).toContain("done at dawn in Kiritimati");
     // At 2am on the 15th it's still the 14th.
     expect(listToday(db, userId, { timeZone: tz, now: Date.UTC(2026, 10, 15, 2) }).today).toBe(
       "2026-11-14",

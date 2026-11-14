@@ -103,20 +103,32 @@ function weekday(day: string): number {
   return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
 }
 
+// Building a formatter costs far more than using one, and the Today view
+// asks for every finished item's day, so keep one per zone.
+const dayFormats = new Map<string | undefined, Intl.DateTimeFormat>();
+function dayFormat(timeZone?: string): Intl.DateTimeFormat {
+  let f = dayFormats.get(timeZone);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      hourCycle: "h23",
+    });
+    dayFormats.set(timeZone, f);
+  }
+  return f;
+}
+
 /**
  * The day `ts` falls in, with the same DAY_START_HOUR turnover as
  * startOfDay: 1am on the 15th is still the 14th. `timeZone` is an IANA zone;
  * leave it out for the runtime's own (the browser's, on the web).
  */
 export function dayOf(ts: number, timeZone?: string): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date(ts));
+  const parts = dayFormat(timeZone).formatToParts(new Date(ts));
   const part = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
   const day = `${part("year")}-${part("month")}-${part("day")}`;
   return Number(part("hour")) < DAY_START_HOUR ? addDays(day, -1) : day;

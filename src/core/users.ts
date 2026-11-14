@@ -17,14 +17,17 @@ export function getTimeZone(db: Db, userId: string): string | null {
  * Save the timezone the user's browser reports, so agents work out "today"
  * the way the user's screen does. Not audited, deliberately: it's the device
  * reporting where it is, not something the user did, and logging every sync
- * would be noise (like ensureCategory). Rejects anything that isn't a zone the
- * runtime knows.
+ * would be noise (like ensureCategory). Saves the zone's canonical name and
+ * rejects anything that isn't an IANA zone the runtime knows.
  */
 export function setTimeZone(db: Db, userId: string, timeZone: string): void {
+  let canonical: string;
   try {
-    new Intl.DateTimeFormat("en", { timeZone });
+    canonical = new Intl.DateTimeFormat("en", { timeZone }).resolvedOptions().timeZone;
   } catch {
     throw new Error(`unknown timezone: ${timeZone}`);
   }
-  db.update(users).set({ timeZone }).where(eq(users.id, userId)).run();
+  // Fixed offsets like "+05:00" parse too, but they aren't zones: no DST.
+  if (/^[+-]/.test(canonical)) throw new Error(`unknown timezone: ${timeZone}`);
+  db.update(users).set({ timeZone: canonical }).where(eq(users.id, userId)).run();
 }
