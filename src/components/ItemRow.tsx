@@ -62,6 +62,8 @@ import { assigneeName, UserAvatar } from "./UserAvatar";
 export type RowDrag = {
   attributes: DraggableAttributes;
   listeners: DraggableSyntheticListeners;
+  /** The row itself, so Space on its checkbox or title doesn't pick it up. */
+  setActivatorNodeRef: (el: HTMLElement | null) => void;
   isDragging: boolean;
 };
 
@@ -203,13 +205,14 @@ export function ItemRow({
         style={{ opacity: pending ? 0.7 : 1 }}
         {...(drag ? drag.attributes : {})}
         {...(drag ? drag.listeners : {})}
+        ref={drag?.setActivatorNodeRef}
         onPointerDownCapture={() => {
           draggedRef.current = false;
         }}
         onPointerEnter={() => setHovered(true)}
         onPointerLeave={() => setHovered(false)}
         onClick={openDetail}
-        className={`group relative flex items-start gap-2 rounded-lg border border-neutral-200 bg-white p-2 dark:border-neutral-800 dark:bg-neutral-900 ${
+        className={`group relative flex items-start gap-2 rounded-lg border border-neutral-200 bg-white p-2 outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 ${
           drag
             ? "cursor-grab touch-manipulation active:cursor-grabbing"
             : "cursor-pointer"

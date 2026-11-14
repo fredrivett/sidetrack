@@ -213,10 +213,14 @@ export async function reorderItemAction(id: string, ref: string) {
   return it;
 }
 
-export async function setItemParentAction(id: string, parentId: string | null) {
+export async function setItemParentAction(
+  id: string,
+  parentId: string | null,
+  position?: string,
+) {
   const userId = await requireUserId();
   const { db } = getDb();
-  const it = setItemParentCore(db, userId, id, parentId, SOURCE);
+  const it = setItemParentCore(db, userId, id, parentId, SOURCE, position);
   refresh();
   return it;
 }

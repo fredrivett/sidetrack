@@ -185,6 +185,13 @@ export function ProjectColumn({
           item={detail.item}
           parent={items.find((i) => i.id === detail.item?.parentId) ?? null}
           checklist={items.filter((i) => i.parentId === detail.item?.id)}
+          nestTargets={items.filter(
+            (i) =>
+              i.kind === "task" &&
+              i.parentId === null &&
+              i.completedAt === null &&
+              i.id !== detail.item?.id,
+          )}
           onOpenItem={detail.openDetail}
           prefix={project.prefix}
           assignees={assignees}
