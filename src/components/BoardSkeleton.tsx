@@ -26,9 +26,9 @@ export function BoardSkeleton() {
     <BoardMain>
       <BoardHeader nav={<Bone className="h-[26px] w-[105px] rounded-md" />}>
         {/* List count, Activity, Account. */}
-        <Bone className="h-4 w-14" />
-        <Bone className="h-[26px] w-[61px] rounded-md" />
-        <Bone className="h-7 w-[72px] rounded-lg" />
+        <Bone className="hidden h-4 w-14 sm:block" />
+        <Bone className="h-7 w-9 rounded-lg sm:w-[86px]" />
+        <Bone className="h-7 w-9 rounded-lg sm:w-[90px]" />
       </BoardHeader>
       <BoardRail>
         <span className="sr-only" role="status">

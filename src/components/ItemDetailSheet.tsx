@@ -206,7 +206,8 @@ function Checklist({
 /**
  * The date input. Typing a date fires a change per segment (the year alone
  * passes through 0002, 0020, 0202), so it keeps a draft and saves once the
- * date settles: on a pause, on blur, or when the sheet closes.
+ * date settles: on a pause, on blur, or when the sheet closes. Keyed by item,
+ * so a draft never carries over to another item.
  */
 function DueDateInput({
   due,
@@ -234,7 +235,10 @@ function DueDateInput({
     flush.current = () => {
       clearTimeout(timer.current);
       flush.current = () => {};
-      if ((value || null) !== due) onChange(value || null);
+      // An unfinished date reads as "": put the saved one back rather than
+      // clearing it. Clear is the button's job.
+      if (!value) setDraft(due ?? "");
+      else if (value !== due) onChange(value);
     };
     timer.current = setTimeout(() => flush.current(), 800);
   }
@@ -559,6 +563,7 @@ export function ItemDetailSheet({
 
           <Field label="Due">
             <DueDatePicker
+              key={item.id}
               due={item.dueDate}
               done={completed}
               disabled={pending}

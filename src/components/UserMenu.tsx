@@ -1,5 +1,6 @@
 "use client";
 
+import { CircleUserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
@@ -29,8 +30,10 @@ export function UserMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
+          // Icon and label on desktop, just the icon on phones.
           <Button variant="outline" size="sm" aria-label="Account">
-            Account
+            <CircleUserRound />
+            <span className="hidden sm:inline">Account</span>
           </Button>
         }
       />

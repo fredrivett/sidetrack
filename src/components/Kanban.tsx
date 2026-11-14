@@ -1,10 +1,12 @@
 "use client";
 
+import { History } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AssigneeView, PendingInviteView } from "@/core/members";
 import { setTimeZoneAction } from "@/app/actions";
 import type { Category, Item, ItemPrLink, Project } from "@/core/schema";
 import { isEditableTarget, matchesShortcut } from "@/lib/keyboard";
+import { Button } from "@/components/ui/button";
 import { AddProjectButton } from "./AddProjectButton";
 import { ArchivedListsMenu } from "./ArchivedListsMenu";
 import { AuditDrawer } from "./AuditDrawer";
@@ -227,13 +229,16 @@ export function Kanban({
           {onBoard.length} list{onBoard.length === 1 ? "" : "s"}
         </span>
         <ArchivedListsMenu lists={archived} />
-        <button
-          type="button"
+        {/* Icon and label on desktop, just the icon on phones. */}
+        <Button
+          variant="outline"
+          size="sm"
+          aria-label="Activity"
           onClick={() => setAudit({ open: true })}
-          className="rounded-md border border-neutral-200 px-2 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-100 dark:border-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-800"
         >
-          Activity
-        </button>
+          <History />
+          <span className="hidden sm:inline">Activity</span>
+        </Button>
         <UserMenu />
       </BoardHeader>
       <InvitesBanner invites={pendingInvites} />

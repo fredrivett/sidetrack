@@ -67,7 +67,10 @@ const Kind = z.enum(ITEM_KINDS);
 const PosRef = z
   .string()
   .regex(/^(top|end|after:.+|before:.+)$/, "expected top|end|after:<item>|before:<item>");
-const DueDate = z.string().refine(isDay, "expected a calendar day, YYYY-MM-DD");
+const DueDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "expected a calendar day, YYYY-MM-DD")
+  .refine(isDay, "expected a calendar day, YYYY-MM-DD");
 const ListPosRef = z
   .string()
   .regex(/^(start|end|after:.+|before:.+)$/, "expected start|end|after:<id>|before:<id>");

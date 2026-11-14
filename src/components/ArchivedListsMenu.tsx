@@ -36,7 +36,7 @@ export function ArchivedListsMenu({ lists }: { lists: Project[] }) {
             size="sm"
             aria-label={`Archived (${lists.length})`}
           >
-            <Archive className="sm:hidden" />
+            <Archive />
             <span className="sm:hidden">{lists.length}</span>
             <span className="hidden sm:inline">Archived ({lists.length})</span>
           </Button>

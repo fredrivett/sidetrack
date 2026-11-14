@@ -103,11 +103,12 @@ function weekday(day: string): number {
   return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
 }
 
-// Building a formatter costs far more than using one, and the Today view
-// asks for every finished item's day, so keep one per zone.
-const dayFormats = new Map<string | undefined, Intl.DateTimeFormat>();
+// Building a formatter costs far more than using one, and list_today asks
+// for every finished item's day, so keep one per named zone. The runtime's
+// own zone isn't cached: the device can move to another one.
+const dayFormats = new Map<string, Intl.DateTimeFormat>();
 function dayFormat(timeZone?: string): Intl.DateTimeFormat {
-  let f = dayFormats.get(timeZone);
+  let f = timeZone ? dayFormats.get(timeZone) : undefined;
   if (!f) {
     f = new Intl.DateTimeFormat("en-CA", {
       timeZone,
@@ -117,7 +118,7 @@ function dayFormat(timeZone?: string): Intl.DateTimeFormat {
       hour: "2-digit",
       hourCycle: "h23",
     });
-    dayFormats.set(timeZone, f);
+    if (timeZone) dayFormats.set(timeZone, f);
   }
   return f;
 }
