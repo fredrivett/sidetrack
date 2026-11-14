@@ -246,8 +246,15 @@ export function ItemList({
   const [offsetX, setOffsetX] = useState(0);
 
   const full = optimistic ?? flatten(groups);
-  const childrenOf = (id: string) =>
-    full.filter((f) => f.parentId === id).map((f) => f.item);
+  // Indexed once per render: a drag re-renders on every pointer move.
+  const kids = new Map<string, Item[]>();
+  for (const f of full) {
+    if (!f.parentId) continue;
+    const siblings = kids.get(f.parentId);
+    if (siblings) siblings.push(f.item);
+    else kids.set(f.parentId, [f.item]);
+  }
+  const childrenOf = (id: string) => kids.get(id) ?? [];
   const byId = new Map(full.map((f) => [f.item.id, f]));
 
   // Rows as shown. A dragged parent's sub-items travel with it, so they leave
@@ -262,7 +269,7 @@ export function ItemList({
     depth: f.parentId ? 1 : 0,
     parentId: f.parentId,
     isTask: f.item.kind === "task",
-    hasChildren: full.some((c) => c.parentId === f.item.id),
+    hasChildren: kids.has(f.item.id),
     collapsed: collapsed.has(f.item.id),
   }));
   const project = (active: string, over: string, dx: number) =>
@@ -364,8 +371,14 @@ export function ItemList({
   // How far in the dragged card sits: the depth it would land at, or its own
   // where it can't land. (Each row's sortable node spans the full width.)
   const shift = (projection?.depth ?? (active?.parentId ? 1 : 0)) * INDENT;
-  // Top-level rows in order, for "the task above" in the row menu.
-  const tops = visible.filter((f) => f.parentId === null);
+  // The top-level task above each top-level row, for the row menu's "Sub-item of".
+  const above = new Map<string, Item>();
+  let prevTop: Item | undefined;
+  for (const f of visible) {
+    if (f.parentId) continue;
+    if (prevTop) above.set(f.item.id, prevTop);
+    prevTop = f.item;
+  }
 
   return (
     <DndContext
@@ -416,15 +429,14 @@ export function ItemList({
                 });
               }
               // A plain task can become a sub-item of the task just above it.
-              const top = tops.findIndex((t) => t.item.id === item.id);
-              const above = tops[top - 1]?.item;
+              const prev = above.get(item.id);
               const canNest =
                 item.kind === "task" &&
                 children.length === 0 &&
-                above?.kind === "task";
+                prev?.kind === "task";
               return rowFor(row, item, {
                 drag,
-                nestUnder: canNest ? { id: above.id, title: above.title } : undefined,
+                nestUnder: canNest ? { id: prev.id, title: prev.title } : undefined,
                 checklist:
                   children.length > 0
                     ? {
