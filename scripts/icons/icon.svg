@@ -1,11 +1,12 @@
 <svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
   <rect width="512" height="512" rx="96" fill="#0A0A0A"/>
-  <path
-    d="M 384 96 H 128 V 256 H 384 V 416 H 128"
-    fill="none"
-    stroke="#FAFAFA"
-    stroke-width="64"
-    stroke-linecap="square"
-    stroke-linejoin="miter"
-    stroke-miterlimit="4"/>
+  <!-- Five staggered cards forming an S. Every edge sits on a 16px grid so
+       the icon stays crisp when rendered at 32px and its multiples. -->
+  <g fill="#FAFAFA">
+    <rect x="144" y="96" width="256" height="48" rx="12"/>
+    <rect x="112" y="160" width="128" height="48" rx="12"/>
+    <rect x="128" y="224" width="256" height="48" rx="12"/>
+    <rect x="272" y="288" width="128" height="48" rx="12"/>
+    <rect x="112" y="352" width="256" height="48" rx="12"/>
+  </g>
 </svg>
