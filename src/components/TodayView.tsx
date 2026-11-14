@@ -107,12 +107,16 @@ export function TodayView({
           ([label, rows]) =>
             rows.length > 0 && (
               <section key={label} className="space-y-1.5">
-                <h2
-                  className={`px-1 text-xs font-semibold uppercase tracking-wide ${
-                    label === "Overdue" ? "text-red-600 dark:text-red-400" : "text-neutral-400"
-                  }`}
-                >
+                {/* Quiet, like a list's "Done (n)": the red due chips already
+                    say what's late, so Overdue only gets a dot. */}
+                <h2 className="flex items-center gap-1.5 px-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                  {label === "Overdue" && (
+                    <span aria-hidden="true" className="size-1.5 rounded-full bg-red-500" />
+                  )}
                   {label}
+                  <span className="tabular-nums text-neutral-400 dark:text-neutral-500">
+                    {rows.length}
+                  </span>
                 </h2>
                 {rows.map((item) => {
                   const project = projectOf.get(item.projectId);
