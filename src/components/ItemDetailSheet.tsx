@@ -6,12 +6,23 @@ import {
   Circle,
   CircleDashed,
   Copy,
+  IndentDecrease,
   Trash2,
+  UserRound,
 } from "lucide-react";
-import { useCallback, useMemo, useState, useTransition } from "react";
+import { toast } from "sonner";
 import {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
+import {
+  addItemAction,
   completeItemAction,
   deleteItemAction,
+  setItemParentAction,
   uncompleteItemAction,
   updateItemAction,
 } from "@/app/actions";
@@ -22,6 +33,7 @@ import { modifierSymbol } from "@/lib/keyboard";
 import { prLabel } from "@/lib/pr";
 import { dayLabel } from "@/lib/time";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -62,8 +74,137 @@ function Field({
   );
 }
 
+/**
+ * A task's sub-items, each ticked off in place, with an input that stays
+ * focused after Enter so a whole checklist goes in one line after another.
+ */
+function Checklist({
+  parent,
+  items,
+  assignees,
+  viewerId,
+  onOpenItem,
+  pickerFor,
+  onPickerFor,
+}: {
+  parent: Item;
+  items: Item[];
+  assignees: AssigneeView[];
+  viewerId: string;
+  onOpenItem: (item: Item) => void;
+  /** The sub-item whose assignee picker is open, if any (owned by the sheet,
+   * which hands its A/I shortcuts over while one is open). */
+  pickerFor: string | null;
+  onPickerFor: (id: string | null) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  // Checkboxes wait for the last toggle to land, so a quick second click
+  // doesn't repeat it from the stale state.
+  const [pending, start] = useTransition();
+  // Adds run one after another, so lines typed quickly land in typed order.
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+
+  function add() {
+    const title = draft.trim();
+    if (!title) return;
+    setDraft("");
+    queue.current = queue.current
+      .then(() =>
+        addItemAction({
+          projectId: parent.projectId,
+          kind: "task",
+          title,
+          parentId: parent.id,
+        }),
+      )
+      .catch(() => toast.error(`Couldn't add “${title}”. Please try again.`));
+  }
+
+  return (
+    <div className="space-y-1">
+      {items.map((child) => {
+        const done = child.completedAt !== null;
+        const assignee = assignees.find((a) => a.userId === child.assigneeId);
+        return (
+          <div key={child.id} className="flex items-center gap-2 px-1 py-0.5">
+            <input
+              type="checkbox"
+              checked={done}
+              disabled={pending}
+              onChange={() =>
+                start(() => {
+                  void (done
+                    ? uncompleteItemAction(child.id)
+                    : completeItemAction(child.id));
+                })
+              }
+              className="size-4 shrink-0"
+              aria-label={`${done ? "Uncomplete" : "Complete"} ${child.title}`}
+            />
+            <button
+              type="button"
+              onClick={() => onOpenItem(child)}
+              className={`min-w-0 flex-1 truncate text-left text-sm hover:underline ${
+                done ? "text-neutral-400 line-through" : ""
+              }`}
+            >
+              {child.title}
+            </button>
+            <DropdownMenu
+              open={pickerFor === child.id}
+              onOpenChange={(o) => onPickerFor(o ? child.id : null)}
+            >
+              <DropdownMenuTrigger
+                aria-label={
+                  assignee
+                    ? `${child.title}: assigned to ${assigneeName(assignee)}. Reassign`
+                    : `Assign ${child.title}`
+                }
+                className="flex size-6 shrink-0 items-center justify-center rounded-full text-neutral-300 transition hover:bg-neutral-100 hover:text-neutral-600 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+              >
+                {assignee ? (
+                  <UserAvatar user={assignee} size={18} />
+                ) : (
+                  <UserRound className="size-4" />
+                )}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <AssigneeOptions
+                  currentId={child.assigneeId}
+                  assignees={assignees}
+                  viewerId={viewerId}
+                  onPick={(assigneeId) =>
+                    start(() => {
+                      void updateItemAction(child.id, { assigneeId });
+                    })
+                  }
+                />
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        );
+      })}
+      <Input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            add();
+          }
+        }}
+        placeholder={items.length ? "Add another…" : "Add a step…"}
+        aria-label={`Add a sub-item to ${parent.title}`}
+      />
+    </div>
+  );
+}
+
 export function ItemDetailSheet({
   item,
+  parent,
+  checklist,
+  onOpenItem,
   prefix,
   assignees,
   viewerId,
@@ -72,6 +213,12 @@ export function ItemDetailSheet({
   onOpenChange,
 }: {
   item: Item;
+  /** For a sub-item, the task it belongs to. */
+  parent: Item | null;
+  /** This item's sub-items, in order. */
+  checklist: Item[];
+  /** Switch the sheet to another item (a sub-item or the parent). */
+  onOpenItem: (item: Item) => void;
   prefix: string;
   assignees: AssigneeView[];
   viewerId: string;
@@ -85,6 +232,8 @@ export function ItemDetailSheet({
   const [pending, start] = useTransition();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
+  // A sub-item's assignee picker in the checklist, when one is open.
+  const [childPickerFor, setChildPickerFor] = useState<string | null>(null);
   const completed = item.completedAt !== null;
   const ref = formatItemRef(prefix, item.number);
   const assignee = assignees.find((a) => a.userId === item.assigneeId);
@@ -115,10 +264,26 @@ export function ItemDetailSheet({
   // shown on the "me" row actually works there — base-ui's menu doesn't consume
   // letter keys, so we won't fight its typeahead. No deferToDialog: the sheet IS
   // the dialog and should respond.
+  // While a sub-item's picker is open, I assigns that sub-item (as its menu's
+  // hint says) and A does nothing, rather than both acting on this item.
+  const assignChildToMe = useCallback(() => {
+    if (!childPickerFor) return;
+    const id = childPickerFor;
+    start(() => {
+      void updateItemAction(id, { assigneeId: viewerId });
+    });
+    setChildPickerFor(null);
+  }, [childPickerFor, viewerId]);
+  const noop = useCallback(() => {}, []);
   useAssignShortcuts({
-    active: open,
+    active: open && childPickerFor === null,
     onOpenPicker: openPicker,
     onAssignToMe: canAssignSelf ? assignToMe : undefined,
+  });
+  useAssignShortcuts({
+    active: open && childPickerFor !== null,
+    onOpenPicker: noop,
+    onAssignToMe: canAssignSelf ? assignChildToMe : undefined,
   });
 
   function change(next: boolean) {
@@ -127,6 +292,7 @@ export function ItemDetailSheet({
       // Reset the picker so a closed sheet never reopens with it already open
       // (which would also disarm the A/I shortcuts).
       setAssignOpen(false);
+      setChildPickerFor(null);
     }
     onOpenChange(next);
   }
@@ -275,6 +441,57 @@ export function ItemDetailSheet({
               </DropdownMenuContent>
             </DropdownMenu>
           </Field>
+
+          {parent ? (
+            <Field label="Sub-item of">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onOpenItem(parent)}
+                  className="min-w-0 flex-1 truncate text-left text-sm text-neutral-700 hover:underline dark:text-neutral-200"
+                >
+                  {parent.title}
+                </button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={pending}
+                  onClick={() =>
+                    start(() => {
+                      void setItemParentAction(item.id, null);
+                    })
+                  }
+                >
+                  <IndentDecrease />
+                  Move out
+                </Button>
+              </div>
+            </Field>
+          ) : (
+            item.kind === "task" && (
+              <Field
+                label={
+                  checklist.length
+                    ? `Checklist · ${checklist.filter((c) => c.completedAt !== null).length}/${checklist.length}`
+                    : "Checklist"
+                }
+              >
+                <Checklist
+                  parent={item}
+                  items={checklist}
+                  assignees={assignees}
+                  viewerId={viewerId}
+                  onOpenItem={(child) => {
+                    setChildPickerFor(null);
+                    onOpenItem(child);
+                  }}
+                  pickerFor={childPickerFor}
+                  onPickerFor={setChildPickerFor}
+                />
+              </Field>
+            )
+          )}
 
           {prLinks.length > 0 && (
             <Field label="Pull requests">

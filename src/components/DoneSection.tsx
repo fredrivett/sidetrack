@@ -4,22 +4,22 @@ import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
-import { ItemRow } from "./ItemRow";
+import { type ItemGroup, ItemGroupView } from "./ItemList";
 
 /**
- * Items finished before today, collapsed at the bottom of the list. `items`
- * arrive newest-completed first. Items finished today stay in place in the
- * main list instead, crossed out, until the day turns over.
+ * Items finished before today, collapsed at the bottom of the list. `groups`
+ * arrive newest-completed first, each with its sub-items. Items finished today
+ * stay in place in the main list instead, crossed out, until the day turns over.
  */
 export function DoneSection({
-  items,
+  groups,
   prefix,
   assignees,
   viewerId,
   prLinksByItem,
   onOpenDetail,
 }: {
-  items: Item[];
+  groups: ItemGroup[];
   prefix: string;
   assignees: AssigneeView[];
   viewerId: string;
@@ -41,20 +41,19 @@ export function DoneSection({
         <ChevronRight
           className={`size-3.5 transition-transform ${expanded ? "rotate-90" : ""}`}
         />
-        Done ({items.length})
+        Done ({groups.length})
       </button>
       {expanded && (
         <div className="space-y-1.5">
-          {items.map((it) => (
-            <ItemRow
-              key={it.id}
-              item={it}
+          {groups.map((g) => (
+            <ItemGroupView
+              key={g.id}
+              group={g}
               prefix={prefix}
               assignees={assignees}
               viewerId={viewerId}
-              prLinks={prLinksByItem[it.id] ?? []}
-              draggable={false}
-              onOpenDetail={() => onOpenDetail(it)}
+              prLinksByItem={prLinksByItem}
+              onOpenDetail={onOpenDetail}
             />
           ))}
         </div>

@@ -3,7 +3,7 @@ import { DndContext } from "@dnd-kit/core";
 import { SortableContext } from "@dnd-kit/sortable";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { updateItemAction } from "@/app/actions";
+import { setItemParentAction, updateItemAction } from "@/app/actions";
 import type { Item } from "@/core/schema";
 import { ItemRow } from "./ItemRow";
 
@@ -14,6 +14,7 @@ vi.mock("@/app/actions", () => ({
   uncompleteItemAction: vi.fn(),
   deleteItemAction: vi.fn(),
   updateItemAction: vi.fn(),
+  setItemParentAction: vi.fn(),
 }));
 
 // Whether the emulated device has a hover-capable pointer; the item menu opens
@@ -55,6 +56,7 @@ const item: Item = {
   description: null,
   category: null,
   assigneeId: null,
+  parentId: null,
   position: "a0",
   number: 42,
   completedAt: null,
@@ -95,7 +97,6 @@ function renderRow(
           assignees={assignees}
           viewerId="u1"
           prLinks={[]}
-          draggable={false}
           onOpenDetail={onOpenDetail}
         />
       </SortableContext>
@@ -121,6 +122,50 @@ describe("ItemRow menu", () => {
     const { container } = renderRow();
     fireEvent.contextMenu(container.querySelector(".group") as HTMLElement);
     expect(screen.queryByText("Copy ID")).toBeNull();
+  });
+});
+
+describe("ItemRow checklist", () => {
+  function renderWith(props: Partial<Parameters<typeof ItemRow>[0]>) {
+    const onOpenDetail = vi.fn();
+    const { container } = render(
+      <ItemRow
+        item={item}
+        prefix="ENG"
+        assignees={[viewer]}
+        viewerId="u1"
+        prLinks={[]}
+        onOpenDetail={onOpenDetail}
+        {...props}
+      />,
+    );
+    return { row: container.querySelector(".group") as HTMLElement, onOpenDetail };
+  }
+
+  it("nests under the item above, or moves out of its parent, from the menu", () => {
+    vi.mocked(setItemParentAction).mockClear();
+    const above = renderWith({ nestUnder: { id: "p1", title: "Tidy up flat" } });
+    fireEvent.contextMenu(above.row);
+    fireEvent.click(screen.getByText("Sub-item of “Tidy up flat”"));
+    expect(setItemParentAction).toHaveBeenLastCalledWith("i1", "p1");
+    expect(above.onOpenDetail).not.toHaveBeenCalled();
+    cleanup();
+
+    const child = renderWith({ parentTitle: "Tidy up flat" });
+    fireEvent.contextMenu(child.row);
+    expect(screen.queryByText(/^Sub-item of/)).toBeNull();
+    fireEvent.click(screen.getByText("Move out of “Tidy up flat”"));
+    expect(setItemParentAction).toHaveBeenLastCalledWith("i1", null);
+  });
+
+  it("toggles the checklist from its progress without opening the item", () => {
+    const onToggle = vi.fn();
+    const { onOpenDetail } = renderWith({
+      checklist: { done: 1, total: 3, expanded: true, onToggle },
+    });
+    fireEvent.click(screen.getByLabelText("Hide checklist, 1 of 3 done"));
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    expect(onOpenDetail).not.toHaveBeenCalled();
   });
 });
 

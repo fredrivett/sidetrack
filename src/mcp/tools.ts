@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type AuditOrigin, listAudit } from "@/core/audit";
 import { addCategory, listCategories } from "@/core/categories";
 import { getDb } from "@/core/db";
+import { nestItems } from "@/lib/itemTree";
 import { projectRefPrefixes, resolveItemRef } from "@/core/itemRef";
 import {
   acceptInvite,
@@ -19,7 +20,9 @@ import {
   deleteItem,
   getItem,
   listItems,
+  listSubItems,
   reorderItem,
+  setItemParent,
   uncompleteItem,
   updateItem,
 } from "@/core/items";
@@ -140,14 +143,19 @@ function resolveItemArg(db: Db, userId: string, raw: string) {
   return { item: null, error: notFound("item", raw) };
 }
 
+function errorText(text: string) {
+  return { isError: true, content: [{ type: "text" as const, text }] };
+}
+
 // A position may name its sibling by ref ("after:HOM-12") as well as by id.
-// Resolve it the same fail-closed way as item targets, check it's in the list
-// being changed, and hand the core an id.
+// Resolve it the same fail-closed way as item targets, check it's a sibling
+// (same list, same parent) of the item being placed, and hand the core an id.
 function resolvePositionArg(
   db: Db,
   userId: string,
   raw: string | undefined,
   projectId: string,
+  parentId: string | null,
 ) {
   const m = raw?.match(/^(after|before):(.+)$/);
   if (!m) return { position: raw, error: null };
@@ -156,17 +164,20 @@ function resolvePositionArg(
   if (item.projectId !== projectId) {
     return {
       position: undefined,
-      error: {
-        isError: true,
-        content: [
-          {
-            type: "text" as const,
-            text:
-              `"${m[2]}" is in a different list, so nothing can be placed ` +
-              `${m[1]} it here — no change was made.`,
-          },
-        ],
-      },
+      error: errorText(
+        `"${m[2]}" is in a different list, so nothing can be placed ` +
+          `${m[1]} it here — no change was made.`,
+      ),
+    };
+  }
+  if (item.parentId !== parentId) {
+    return {
+      position: undefined,
+      error: errorText(
+        `"${m[2]}" is ${item.parentId ? "a sub-item of another item" : "a top-level item"}, ` +
+          `so this can't be placed ${m[1]} it: items only move among their siblings ` +
+          `(use set_item_parent to nest or un-nest) — no change was made.`,
+      ),
     };
   }
   return { position: `${m[1]}:${item.id}`, error: null };
@@ -183,8 +194,12 @@ function withItemRef(db: Db, userId: string, item: Item) {
   };
 }
 
+// Items with display refs, sub-items nested under their parent as `children`
+// (left off items that have none).
 function withRefs(prefix: string, list: Item[]) {
-  return list.map((i) => ({ ...i, ref: formatItemRef(prefix, i.number) }));
+  return nestItems(
+    list.map((i) => ({ ...i, ref: formatItemRef(prefix, i.number) })),
+  ).map(({ children, ...it }) => (children.length ? { ...it, children } : it));
 }
 
 // Notify an invitee by email (best-effort; notifyInvite never throws). The
@@ -271,6 +286,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "- Keep lists and items in the order returned; do not re-sort unless the user asked for a different order.\n" +
         "- Do not show completed items in the tree.\n" +
         "- A task is a box-drawing branch, e.g. `├── Write the docs`.\n" +
+        "- An item's sub-items (its checklist, in `children`) nest one level beneath it, e.g. `│   ├── Kitchen`.\n" +
         "- A milestone is a divider, not a task row: a single dashed line with its title centred in it, " +
         "e.g. `─ ─ ─  v1.0 launch  ─ ─ ─`. It marks a point in the list rather than something to check off.",
       inputSchema: {
@@ -389,7 +405,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Get item",
       description:
-        "Fetch a single item by reference — its title, description, category, kind, and completion state. " +
+        "Fetch a single item by reference — its title, description, category, kind, and completion state, " +
+        "plus its sub-items (its checklist) as `children`, finished ones included. A sub-item has a parentId. " +
         "Use this to answer a question about one item without pulling its whole list. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id; the result carries its display `ref`.",
       inputSchema: { id: z.string() },
@@ -398,7 +415,10 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       const { db } = getDb();
       const { item, error } = resolveItemArg(db, userId, id);
       if (error) return error;
-      return json(withItemRef(db, userId, item));
+      const withRef = withItemRef(db, userId, item);
+      const prefix = projectRefPrefixes(db, userId)[item.projectId] ?? "";
+      const children = listSubItems(db, userId, item.id);
+      return json({ ...withRef, children: withRefs(prefix, children) });
     },
   );
 
@@ -409,13 +429,17 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       description:
         "Add a task or milestone to a list. description is optional free-text. " +
         "category is free-text and is auto-created if new. " +
-        "position defaults to end (the bottom of the list); top|end|after:<item>|before:<item> are also valid, " +
-        "where <item> is a short ref (e.g. \"HOM-12\") or an id in the same list. " +
+        "parent (a short ref or id) adds the task as a sub-item of that task, one step in its checklist: " +
+        "e.g. \"Tidy up flat\" with sub-items Lounge, Kitchen and Bedroom. Sub-items are one level deep and tasks only; " +
+        "each is a full item with its own ref and assignee. Adding one to a finished parent reopens the parent. " +
+        "position defaults to end (the bottom of the list, or of the parent's sub-items); top|end|after:<item>|before:<item> are also valid, " +
+        "where <item> is a short ref (e.g. \"HOM-12\") or an id of a sibling (same list, same parent). " +
         "Returns { created, items } where items is every incomplete item in the list in position order.\n" +
         "After adding, show the user the list's updated items (the items array) so they can see where " +
         "the new item landed, unless the user asked you not to:\n" +
         "- Keep items in the order returned; do not re-sort unless the user asked for a different order.\n" +
         "- A task is a box-drawing branch, e.g. `├── Write the docs`.\n" +
+        "- Sub-items (in `children`) nest one level beneath their parent, e.g. `│   ├── Kitchen`.\n" +
         "- A milestone is a divider, not a task row: a single dashed line with its title centred in it, " +
         "e.g. `─ ─ ─  v1.0 launch  ─ ─ ─`.",
       inputSchema: {
@@ -424,14 +448,26 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         title: z.string().min(1),
         description: z.string().optional(),
         category: z.string().optional(),
+        parent: z.string().optional(),
         position: PosRef.optional(),
       },
     },
-    async ({ list_id, kind, title, description, category, position }) => {
+    async ({ list_id, kind, title, description, category, parent, position }) => {
       const { db } = getDb();
       const project = getProject(db, userId, list_id);
       if (!project) return notFound("list", list_id);
-      const pos = resolvePositionArg(db, userId, position, project.id);
+      let parentId: string | null = null;
+      if (parent) {
+        const r = resolveItemArg(db, userId, parent);
+        if (r.error) return r.error;
+        if (r.item.projectId !== project.id) {
+          return errorText(
+            `"${parent}" is in a different list; a sub-item must be in its parent's list — no change was made.`,
+          );
+        }
+        parentId = r.item.id;
+      }
+      const pos = resolvePositionArg(db, userId, position, project.id, parentId);
       if (pos.error) return pos.error;
       const created = addItem(
         db,
@@ -442,6 +478,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           title,
           description,
           category,
+          parentId,
           positionRef: pos.position,
         },
         SOURCE,
@@ -497,6 +534,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       description:
         "Mark an item as completed. It keeps its place in the list: the user sees it crossed out for the rest of the day " +
         "(the day turns over at 4am their time), then it moves to the list's Done section. " +
+        "Completing an item with sub-items also completes its open sub-items; completing the last sub-item does not complete the parent. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: { id: z.string() },
     },
@@ -516,6 +554,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       title: "Uncomplete item",
       description:
         "Reopen a completed item. It returns to the same place in the list it had before. " +
+        "Reopening a sub-item of a finished parent reopens the parent too; reopening a parent leaves its sub-items as they are. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: { id: z.string() },
     },
@@ -534,8 +573,10 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Reorder item",
       description:
-        "Move an item within its list. position is top | end | after:<item> | before:<item>, " +
-        "where <item> is a short ref (e.g. \"HOM-12\") or an id in the same list. " +
+        "Move an item within its list, among its siblings: top-level items among top-level items, " +
+        "a sub-item among its parent's sub-items. position is top | end | after:<item> | before:<item>, " +
+        "where <item> is a short ref (e.g. \"HOM-12\") or an id of a sibling. " +
+        "To nest or un-nest an item, use set_item_parent. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: { id: z.string(), position: PosRef },
     },
@@ -543,7 +584,13 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       const { db } = getDb();
       const { item, error } = resolveItemArg(db, userId, id);
       if (error) return error;
-      const pos = resolvePositionArg(db, userId, position, item.projectId);
+      const pos = resolvePositionArg(
+        db,
+        userId,
+        position,
+        item.projectId,
+        item.parentId,
+      );
       if (pos.error) return pos.error;
       return json(
         withItemRef(
@@ -556,11 +603,42 @@ export function registerTools(server: McpServer, ctx: McpContext) {
   );
 
   server.registerTool(
+    "set_item_parent",
+    {
+      title: "Set item parent",
+      description:
+        "Make an item a sub-item of another task in the same list (it goes to the end of that task's checklist), " +
+        "or pass parent: null to move it back out to the top level, straight after its old parent. " +
+        "Sub-items are one level deep: the parent can't itself be a sub-item, and an item that has sub-items can't become one. " +
+        "id and parent accept a short ref (e.g. \"ENG-42\") or an internal id.",
+      inputSchema: { id: z.string(), parent: z.string().nullable() },
+    },
+    async ({ id, parent }) => {
+      const { db } = getDb();
+      const { item, error } = resolveItemArg(db, userId, id);
+      if (error) return error;
+      let parentId: string | null = null;
+      if (parent) {
+        const r = resolveItemArg(db, userId, parent);
+        if (r.error) return r.error;
+        parentId = r.item.id;
+      }
+      try {
+        return json(
+          withItemRef(db, userId, setItemParent(db, userId, item.id, parentId, SOURCE)),
+        );
+      } catch (e) {
+        return errorText(`${(e as Error).message} — no change was made.`);
+      }
+    },
+  );
+
+  server.registerTool(
     "delete_item",
     {
       title: "Delete item",
       description:
-        "Delete an item. id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
+        "Delete an item, along with its sub-items if it has any. id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: { id: z.string() },
     },
     async ({ id }) => {

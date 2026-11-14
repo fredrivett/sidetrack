@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  type AnySQLiteColumn,
   index,
   integer,
   primaryKey,
@@ -149,6 +150,12 @@ export const items = sqliteTable(
     // app layer instead: updateItem rejects assigning to a non-member, and
     // removeMember clears a departing member's assignments here.
     assigneeId: text("assignee_id"),
+    // Checklists: a sub-item points at its parent, one level deep (a parent
+    // has no parent of its own). Positions are scoped to the parent, so a
+    // sub-item's position only orders it among its siblings.
+    parentId: text("parent_id").references((): AnySQLiteColumn => items.id, {
+      onDelete: "cascade",
+    }),
     position: text("position").notNull(),
     // Per-project sequence value (from projects.item_seq) behind the display
     // ref `${prefix}-${number}`. Unique within a project; monotonic.
@@ -160,6 +167,7 @@ export const items = sqliteTable(
   },
   (t) => [
     index("items_project_position").on(t.projectId, t.position),
+    index("items_parent").on(t.parentId),
     uniqueIndex("items_project_number").on(t.projectId, t.number),
   ],
 );

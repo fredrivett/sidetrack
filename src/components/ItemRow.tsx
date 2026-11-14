@@ -1,8 +1,17 @@
 "use client";
 
-import { useSortable } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { Check, Copy, Eye, Trash2, UserRound } from "lucide-react";
+import type { DraggableAttributes, DraggableSyntheticListeners } from "@dnd-kit/core";
+import {
+  Check,
+  ChevronRight,
+  Copy,
+  Eye,
+  IndentDecrease,
+  IndentIncrease,
+  ListChecks,
+  Trash2,
+  UserRound,
+} from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -14,6 +23,7 @@ import {
 import {
   completeItemAction,
   deleteItemAction,
+  setItemParentAction,
   uncompleteItemAction,
   updateItemAction,
 } from "@/app/actions";
@@ -48,13 +58,31 @@ import { useAssignShortcuts } from "./useAssignShortcuts";
 import { useCopyItemRef } from "./useCopyItemRef";
 import { assigneeName, UserAvatar } from "./UserAvatar";
 
+/** Drag wiring from the sortable wrapper that owns this row (see ItemList). */
+export type RowDrag = {
+  attributes: DraggableAttributes;
+  listeners: DraggableSyntheticListeners;
+  isDragging: boolean;
+};
+
+/** A parent's checklist progress, and whether its sub-items are showing. */
+export type RowChecklist = {
+  done: number;
+  total: number;
+  expanded: boolean;
+  onToggle: () => void;
+};
+
 export function ItemRow({
   item,
   prefix,
   assignees,
   viewerId,
   prLinks,
-  draggable,
+  drag,
+  checklist,
+  nestUnder,
+  parentTitle,
   onOpenDetail,
 }: {
   item: Item;
@@ -62,12 +90,16 @@ export function ItemRow({
   assignees: AssigneeView[];
   viewerId: string;
   prLinks: ItemPrLink[];
-  draggable: boolean;
+  /** Present when the row can be dragged. */
+  drag?: RowDrag;
+  checklist?: RowChecklist;
+  /** The task this row can become a sub-item of (the one above it). */
+  nestUnder?: { id: string; title: string };
+  /** For a sub-item, its parent's title (offers "Move out of …"). */
+  parentTitle?: string;
   onOpenDetail: () => void;
 }) {
-  const sortable = useSortable({ id: item.id, disabled: !draggable });
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    sortable;
+  const isDragging = drag?.isDragging ?? false;
   const [pending, start] = useTransition();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -100,11 +132,6 @@ export function ItemRow({
     deferToDialog: true,
   });
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.4 : pending ? 0.7 : 1,
-  };
 
   function toggle() {
     start(() => {
@@ -118,6 +145,11 @@ export function ItemRow({
     }
     start(() => {
       void deleteItemAction(item.id);
+    });
+  }
+  function setParent(parentId: string | null) {
+    start(() => {
+      void setItemParentAction(item.id, parentId);
     });
   }
   const assign = useCallback(
@@ -168,10 +200,9 @@ export function ItemRow({
       }}
     >
       <ContextMenuTrigger
-        ref={setNodeRef}
-        style={style}
-        {...(draggable ? attributes : {})}
-        {...(draggable ? listeners : {})}
+        style={{ opacity: pending ? 0.7 : 1 }}
+        {...(drag ? drag.attributes : {})}
+        {...(drag ? drag.listeners : {})}
         onPointerDownCapture={() => {
           draggedRef.current = false;
         }}
@@ -179,7 +210,7 @@ export function ItemRow({
         onPointerLeave={() => setHovered(false)}
         onClick={openDetail}
         className={`group relative flex items-start gap-2 rounded-lg border border-neutral-200 bg-white p-2 dark:border-neutral-800 dark:bg-neutral-900 ${
-          draggable
+          drag
             ? "cursor-grab touch-manipulation active:cursor-grabbing"
             : "cursor-pointer"
         } ${
@@ -237,9 +268,34 @@ export function ItemRow({
           )}
         </div>
 
-        {/* The avatar sits in a box one title-line tall so it centres on the
-            first line however many lines the title wraps to. */}
-        <div className="flex h-5 shrink-0 items-center">
+        {/* The checklist progress and avatar sit in a box one title-line tall
+            so they centre on the first line however many lines the title
+            wraps to, and a parent row is no taller than any other. */}
+        <div className="flex h-5 shrink-0 items-center gap-1">
+          {checklist && (
+            // Progress doubles as the show/hide toggle for the sub-items.
+            <button
+              type="button"
+              aria-expanded={checklist.expanded}
+              aria-label={`${checklist.expanded ? "Hide" : "Show"} checklist, ${checklist.done} of ${checklist.total} done`}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                checklist.onToggle();
+              }}
+              className={`inline-flex h-5 items-center gap-1 rounded px-1 text-[11px] font-medium tabular-nums transition hover:bg-neutral-100 dark:hover:bg-neutral-800 ${
+                checklist.done === checklist.total
+                  ? "text-green-600 dark:text-green-500"
+                  : "text-neutral-500 dark:text-neutral-400"
+              }`}
+            >
+              <ListChecks className="size-3.5" />
+              {checklist.done}/{checklist.total}
+              <ChevronRight
+                className={`size-3 transition-transform ${checklist.expanded ? "rotate-90" : ""}`}
+              />
+            </button>
+          )}
           {/* Assignee avatar doubles as the picker trigger (click, or A while
               hovered). Unassigned items show a faint add-assignee button on
               hover; without hover (touch) it's hidden rather than left as an
@@ -286,7 +342,7 @@ export function ItemRow({
       </ContextMenuTrigger>
       {/* A sibling of the trigger, not a child, so clicks in the (portaled) menu
           don't bubble through the React tree to the row's open-detail onClick. */}
-      <ContextMenuContent className="w-44">
+      <ContextMenuContent className="w-56">
         <ContextMenuItem onClick={onOpenDetail}>
           <Eye className="opacity-70" />
           View item
@@ -328,6 +384,23 @@ export function ItemRow({
             />
           </ContextMenuSubContent>
         </ContextMenuSub>
+        {(nestUnder || parentTitle) && (
+          <>
+            <ContextMenuSeparator />
+            {nestUnder && (
+              <ContextMenuItem onClick={() => setParent(nestUnder.id)}>
+                <IndentIncrease className="opacity-70" />
+                <span className="truncate">Sub-item of “{nestUnder.title}”</span>
+              </ContextMenuItem>
+            )}
+            {parentTitle && (
+              <ContextMenuItem onClick={() => setParent(null)}>
+                <IndentDecrease className="opacity-70" />
+                <span className="truncate">Move out of “{parentTitle}”</span>
+              </ContextMenuItem>
+            )}
+          </>
+        )}
         <ContextMenuSeparator />
         <ContextMenuItem
           variant="destructive"
