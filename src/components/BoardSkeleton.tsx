@@ -41,11 +41,11 @@ export function BoardSkeleton() {
             header={
               <>
                 {/* One 32px row, as in ProjectColumn: the icon inside its p-1
-                    button, the name inside its h-8 edit box (pulled left by
+                    button (pulled left by that padding), the name inside its h-8 edit box (pulled left by
                     the box's border and padding) followed by the prefix, then
                     the menu. A list's status and Shared badges get a second
                     row only when they apply, so most lists have none. */}
-                <span className="p-1">
+                <span className="-ml-1 p-1">
                   <Bone className="size-6 rounded-[4px]" />
                 </span>
                 <div className="-ml-[7px] flex h-8 min-w-0 flex-1 items-center gap-1">
@@ -58,11 +58,9 @@ export function BoardSkeleton() {
               </>
             }
           >
-            {/* Summary line. */}
-            <span className="block py-1">
-              <Bone className="h-3 w-1/2" />
-            </span>
-            <div className="space-y-1.5 pt-3">
+            {/* No summary line: like the status badges, a list's summary
+                only shows once written, so most lists have none. */}
+            <div className="space-y-1.5 pt-1.5">
               {titles.map((width, row) => (
                 // A one-line item row: checkbox, title, then the space of the
                 // assignee avatar. Each is one 20px title-line tall, as in

@@ -64,10 +64,12 @@ export function ProjectIconPicker({
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
+      {/* -ml-1 cancels the p-1 hover padding so the icon itself lines up
+          with the content below the header, not 4px in from it. */}
       <PopoverTrigger
         aria-label="Change list icon"
         disabled={pending}
-        className="inline-flex shrink-0 items-center justify-center rounded-md p-1 transition-colors hover:bg-muted aria-expanded:bg-muted disabled:opacity-60"
+        className="-ml-1 inline-flex shrink-0 items-center justify-center rounded-md p-1 transition-colors hover:bg-muted aria-expanded:bg-muted disabled:opacity-60"
       >
         <ProjectIcon
           icon={project.icon}

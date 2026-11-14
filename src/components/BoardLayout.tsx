@@ -65,9 +65,11 @@ export function ColumnCard({
   children,
   ...props
 }: Omit<ComponentProps<"article">, "className"> & { header: ReactNode }) {
+  // pt-2, not p-3: the header row is 32px tall around a 24px icon, so the
+  // icon already sits 4px down in it; this keeps it 12px from top and left.
   return (
     <article
-      className="flex h-full snap-center shrink-0 flex-col gap-3 overflow-hidden rounded-2xl border border-neutral-200 bg-white p-3 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 w-[92vw] sm:w-80"
+      className="flex h-full snap-center shrink-0 flex-col gap-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white p-3 pt-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 w-[92vw] sm:w-80"
       {...props}
     >
       <header className="flex items-start gap-2 shrink-0">{header}</header>
