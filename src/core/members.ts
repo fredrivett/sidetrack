@@ -103,15 +103,15 @@ export function inviteMember(
   source: AuditOrigin,
 ): MemberView {
   const project = getProject(db, userId, projectId);
-  if (!project) throw new Error(`project not found: ${projectId}`);
+  if (!project) throw new Error(`list not found: ${projectId}`);
   if (project.userId !== userId) {
-    throw new Error("only the project owner can invite members");
+    throw new Error("only the list owner can invite members");
   }
 
   const target = findUserByHandle(db, handle);
   if (!target) throw new Error(`no account found for "${handle.trim()}"`);
   if (target.id === project.userId) {
-    throw new Error("the owner already has access to this project");
+    throw new Error("the owner already has access to this list");
   }
 
   const existing = db
@@ -197,7 +197,7 @@ export function acceptInvite(
 ): void {
   const membership = ownMembership(db, userId, projectId);
   if (!membership || membership.status !== "pending") {
-    throw new Error("no pending invite for this project");
+    throw new Error("no pending invite for this list");
   }
   // Give the new member their own ordering slot, appended to the end of their
   // board, so the shared project sorts sensibly among their own projects.
@@ -220,7 +220,7 @@ export function acceptInvite(
       )
       .run();
     if (flipped.changes === 0) {
-      throw new Error("no pending invite for this project");
+      throw new Error("no pending invite for this list");
     }
     tx.insert(projectPositions)
       .values({ userId, projectId, position })
@@ -246,7 +246,7 @@ export function declineInvite(
 ): void {
   const membership = ownMembership(db, userId, projectId);
   if (!membership || membership.status !== "pending") {
-    throw new Error("no pending invite for this project");
+    throw new Error("no pending invite for this list");
   }
   db.transaction((tx) => {
     tx.delete(projectMembers)
@@ -279,9 +279,9 @@ export function removeMember(
   const leaving = targetUserId === userId;
   if (!leaving) {
     const project = getProject(db, userId, projectId);
-    if (!project) throw new Error(`project not found: ${projectId}`);
+    if (!project) throw new Error(`list not found: ${projectId}`);
     if (project.userId !== userId) {
-      throw new Error("only the project owner can remove members");
+      throw new Error("only the list owner can remove members");
     }
   }
 

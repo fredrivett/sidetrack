@@ -57,9 +57,9 @@ export function NewProjectSheet({
       >
         <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
           <SheetHeader className="border-b border-neutral-200 px-4 py-3 pr-14 dark:border-neutral-800">
-            <SheetTitle className="text-base">New project</SheetTitle>
+            <SheetTitle className="text-base">New list</SheetTitle>
             <SheetDescription className="sr-only">
-              Create a new project.
+              Create a new list.
             </SheetDescription>
           </SheetHeader>
 
@@ -71,7 +71,7 @@ export function NewProjectSheet({
               ref={nameRef}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Project name"
+              placeholder="List name, e.g. Home or Buy"
               disabled={pending}
             />
           </div>

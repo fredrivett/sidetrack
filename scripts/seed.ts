@@ -52,7 +52,7 @@ function plan(): SeedUser[] {
       projects: [
         {
           name: "Sidetrack",
-          status: "launched",
+          status: "active",
           items: [
             { kind: "milestone", title: "v1.0 launched" },
             {
@@ -67,13 +67,27 @@ function plan(): SeedUser[] {
           ],
         },
         {
+          name: "Home",
+          status: "active",
+          items: [
+            { kind: "task", title: "Water plants" },
+            { kind: "task", title: "Descale coffee machine" },
+            { kind: "task", title: "Refill salt", done: true },
+          ],
+        },
+        {
           name: "Mobile app",
-          status: "early-access",
+          status: "paused",
           items: [
             { kind: "task", title: "Cut a TestFlight build" },
             { kind: "task", title: "Wire push notifications" },
             { kind: "milestone", title: "Public beta" },
           ],
+        },
+        {
+          name: "Christmas 2025",
+          status: "archived",
+          items: [{ kind: "task", title: "Book trains", done: true }],
         },
       ],
     },
@@ -84,7 +98,7 @@ function plan(): SeedUser[] {
       projects: [
         {
           name: "Personal site",
-          status: "launched",
+          status: "active",
           items: [
             { kind: "task", title: "Ship the about page", done: true },
             { kind: "task", title: "Add a now page" },
@@ -92,7 +106,7 @@ function plan(): SeedUser[] {
         },
         {
           name: "Newsletter",
-          status: "idea",
+          status: "active",
           items: [
             { kind: "task", title: "Pick a sending platform" },
             { kind: "task", title: "Draft issue #1" },

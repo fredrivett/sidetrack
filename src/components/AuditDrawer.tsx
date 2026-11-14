@@ -107,7 +107,7 @@ export function AuditDrawer({
         <SheetHeader className="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
           <SheetTitle className="text-sm font-semibold">Activity</SheetTitle>
           <SheetDescription className="truncate text-xs">
-            {projectName ?? "All projects"}
+            {projectName ?? "All lists"}
           </SheetDescription>
         </SheetHeader>
 

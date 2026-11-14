@@ -123,7 +123,7 @@ export function ProjectDetailSheet({
             />
           </SheetTitle>
           <SheetDescription className="sr-only">
-            Project details for {project.name}
+            List details for {project.name}
           </SheetDescription>
         </SheetHeader>
 

@@ -130,7 +130,7 @@ export function resolveProjectPosition(
 
   const targetId = "after" in ref ? ref.after : ref.before;
   const idx = sorted.findIndex((p) => p.id === targetId);
-  if (idx === -1) throw new Error(`project not found: ${targetId}`);
+  if (idx === -1) throw new Error(`list not found: ${targetId}`);
   if ("after" in ref) {
     return between(sorted[idx].position, sorted[idx + 1]?.position ?? null);
   }

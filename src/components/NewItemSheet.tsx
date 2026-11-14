@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { addItemAction } from "@/app/actions";
 import type { Category, ItemKind, Project } from "@/core/schema";
 import { Button } from "@/components/ui/button";
@@ -53,9 +53,18 @@ export function NewItemSheet({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("");
+  // The last title added in this session: the sheet stays open after each
+  // add so you can enter a run of items, and this confirms each one landed.
+  const [lastAdded, setLastAdded] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const titleRef = useRef<HTMLInputElement>(null);
   const listId = useId();
+  // Bumped each time the sheet opens, so an add that finishes after the sheet
+  // was closed (and maybe reopened) can't write into the new session's form.
+  const session = useRef(0);
+  useEffect(() => {
+    if (open) session.current += 1;
+  }, [open]);
 
   // Reset and seed the form every time the sheet opens — the project comes
   // from the caller (the centred column for ⌘N, or the chosen column's menu).
@@ -70,6 +79,7 @@ export function NewItemSheet({
       setTitle("");
       setDescription("");
       setCategory("");
+      setLastAdded(null);
     }
   }
 
@@ -78,12 +88,22 @@ export function NewItemSheet({
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const t = title.trim();
-    if (!t || !projectId) return;
+    if (!t || !projectId || pending) return;
     const d = description.trim() || null;
     const c = kind === "task" ? category.trim() || null : null;
+    const startedIn = session.current;
     start(async () => {
       await addItemAction({ projectId, kind, title: t, description: d, category: c });
-      onOpenChange(false);
+      if (session.current !== startedIn) return;
+      // Stay open for the next item: clear what's per-item, keep the list,
+      // type and category, and put the cursor back in the title. You can type
+      // the next item while this one saves (submitting waits; the button
+      // shows "Adding…"), so only clear fields that still hold what was
+      // submitted — never text typed for the next item.
+      setTitle((cur) => (cur.trim() === t ? "" : cur));
+      setDescription((cur) => ((cur.trim() || null) === d ? "" : cur));
+      setLastAdded(t);
+      titleRef.current?.focus();
     });
   }
 
@@ -102,12 +122,12 @@ export function NewItemSheet({
           <SheetHeader className="border-b border-neutral-200 px-4 py-3 pr-14 dark:border-neutral-800">
             <SheetTitle className="text-base">New item</SheetTitle>
             <SheetDescription className="sr-only">
-              Create a new task or milestone in a project.
+              Create a new task or milestone in a list.
             </SheetDescription>
           </SheetHeader>
 
           <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
-            <Field label="Project">
+            <Field label="List">
               <select
                 value={projectId}
                 onChange={(e) => setProjectId(e.target.value)}
@@ -143,7 +163,6 @@ export function NewItemSheet({
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder={kind === "task" ? "Add a task…" : "Add a milestone…"}
-                disabled={pending}
               />
             </Field>
 
@@ -177,18 +196,24 @@ export function NewItemSheet({
             )}
           </div>
 
-          <SheetFooter className="mt-0 flex-row justify-end gap-2 border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
+          <SheetFooter className="mt-0 flex-row items-center justify-end gap-2 border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
+            {/* Always mounted so screen readers announce the first add too. */}
+            <p
+              role="status"
+              className="mr-auto min-w-0 truncate text-xs text-neutral-500"
+            >
+              {lastAdded && `Added “${lastAdded}”`}
+            </p>
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => onOpenChange(false)}
-              disabled={pending}
             >
-              Cancel
+              {lastAdded ? "Done" : "Cancel"}
             </Button>
             <Button type="submit" size="sm" disabled={!title.trim() || !projectId || pending}>
-              Add item
+              {pending ? "Adding…" : "Add item"}
             </Button>
           </SheetFooter>
         </form>

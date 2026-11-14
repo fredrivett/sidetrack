@@ -1,6 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
+import { toast } from "sonner";
 import {
   deleteProjectAction,
   leaveProjectAction,
@@ -16,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Kbd } from "@/components/ui/kbd";
+import type { ProjectStatus } from "@/core/schema";
 import { validatePrefix } from "@/lib/itemRef";
 
 export function ProjectMenu({
@@ -24,6 +26,7 @@ export function ProjectMenu({
   nextId,
   name,
   prefix,
+  status,
   isOwner,
   onShowActivity,
   onShowDetails,
@@ -35,6 +38,7 @@ export function ProjectMenu({
   nextId: string | null;
   name: string;
   prefix: string;
+  status: ProjectStatus;
   isOwner: boolean;
   onShowActivity: (projectId: string) => void;
   onShowDetails: () => void;
@@ -46,6 +50,33 @@ export function ProjectMenu({
   function run(fn: () => Promise<unknown>) {
     start(() => {
       void fn();
+    });
+  }
+
+  // Pause, Resume and Undo-archive all wait for the change and say so if it
+  // fails, rather than leaving the list in the wrong state silently.
+  function setStatus(next: ProjectStatus) {
+    start(async () => {
+      try {
+        await updateProjectAction(projectId, { status: next });
+      } catch {
+        toast.error(`Couldn't update "${name}". Please try again.`);
+      }
+    });
+  }
+
+  function archive() {
+    start(async () => {
+      try {
+        await updateProjectAction(projectId, { status: "archived" });
+      } catch {
+        toast.error(`Couldn't archive "${name}". Please try again.`);
+        return;
+      }
+      toast(`Archived "${name}"`, {
+        description: "Restore it any time from Archived in the header.",
+        action: { label: "Undo", onClick: () => setStatus(status) },
+      });
     });
   }
 
@@ -74,7 +105,7 @@ export function ProjectMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        aria-label="Project options"
+        aria-label="List options"
         disabled={pending}
         className="rounded p-1 text-neutral-500 hover:bg-neutral-100 disabled:opacity-50 dark:hover:bg-neutral-800"
       >
@@ -82,7 +113,7 @@ export function ProjectMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
         <DropdownMenuItem onClick={onShowDetails}>
-          Project details
+          List details
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => onAddItem(projectId)}>
           Add new item
@@ -110,6 +141,17 @@ export function ProjectMenu({
         <DropdownMenuItem onClick={() => onShowActivity(projectId)}>
           Activity
         </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {status === "paused" ? (
+          <DropdownMenuItem onClick={() => setStatus("active")}>
+            Resume list
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem onClick={() => setStatus("paused")}>
+            Pause list
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem onClick={archive}>Archive list</DropdownMenuItem>
         {isOwner && (
           <DropdownMenuItem onClick={() => onShare(projectId, name)}>
             Share…
@@ -125,21 +167,21 @@ export function ProjectMenu({
           <DropdownMenuItem
             variant="destructive"
             onClick={() => {
-              if (!confirm(`Delete project "${name}" and all its items?`)) return;
+              if (!confirm(`Delete list "${name}" and all its items? To keep them, archive it instead.`)) return;
               run(() => deleteProjectAction(projectId));
             }}
           >
-            Delete project
+            Delete list
           </DropdownMenuItem>
         ) : (
           <DropdownMenuItem
             variant="destructive"
             onClick={() => {
-              if (!confirm(`Leave project "${name}"?`)) return;
+              if (!confirm(`Leave list "${name}"?`)) return;
               run(() => leaveProjectAction(projectId));
             }}
           >
-            Leave project
+            Leave list
           </DropdownMenuItem>
         )}
       </DropdownMenuContent>

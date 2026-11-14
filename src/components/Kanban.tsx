@@ -5,6 +5,7 @@ import type { AssigneeView, PendingInviteView } from "@/core/members";
 import type { Category, Item, ItemPrLink, Project } from "@/core/schema";
 import { isEditableTarget, matchesShortcut } from "@/lib/keyboard";
 import { AddProjectButton } from "./AddProjectButton";
+import { ArchivedListsMenu } from "./ArchivedListsMenu";
 import { AuditDrawer } from "./AuditDrawer";
 import { BoardHeader, BoardMain, BoardRail } from "./BoardLayout";
 import { InvitesBanner } from "./InvitesBanner";
@@ -15,13 +16,13 @@ import { ShareSheet } from "./ShareSheet";
 import { UserMenu } from "./UserMenu";
 
 /**
- * A project plus per-viewer display data: whether the viewer owns it (vs. it
+ * A list (a "project" in code) plus per-viewer display data: whether the viewer owns it (vs. it
  * being shared with them), and its display ref-prefix (qualified `alice/SID`
  * when the prefix clashes on this board, bare `SID` otherwise).
  */
 export type ProjectView = Project & { isOwner: boolean; refPrefix: string };
 
-/** The project currently centred in the rail, tracked in `?p=<id>`. */
+/** The list currently centred in the rail, tracked in `?p=<id>`. */
 function centredProjectId(): string | null {
   if (typeof window === "undefined") return null;
   return new URLSearchParams(window.location.search).get("p");
@@ -60,28 +61,44 @@ export function Kanban({
     projectName: string;
   }>({ open: false, projectId: null, projectName: "" });
 
+  // Active lists keep the viewer's order; paused lists follow, collapsed at the
+  // end; archived lists leave the board for the Archived menu. Each group
+  // keeps its own neighbours for Move left/right, so a move never crosses
+  // into another group (where the position change wouldn't show).
+  const active = projects.filter((p) => p.status === "active");
+  const paused = projects.filter((p) => p.status === "paused");
+  const archived = projects.filter((p) => p.status === "archived");
+  const onBoard = [...active, ...paused];
+
   const openShare = useCallback(
     (projectId: string, projectName: string) =>
       setShare({ open: true, projectId, projectName }),
     [],
   );
 
-  // Open the new-item sheet, seeding its project from the caller, falling back
-  // to the centred column then the first project. With no projects at all,
-  // there's nowhere to add an item — start a project instead.
+  // Open the new-item sheet, seeding its list from the caller, falling back
+  // to the centred column then the first list on the board. With no lists on
+  // the board, there's nowhere to add an item — start a list instead.
   const openNewItem = useCallback(
     (projectId?: string) => {
-      if (projects.length === 0) {
+      const isOnBoard = (id: string | null) =>
+        projects.some((p) => p.id === id && p.status !== "archived");
+      const first =
+        projects.find((p) => p.status === "active") ??
+        projects.find((p) => p.status === "paused");
+      if (!first) {
         setNewProjectOpen(true);
         return;
       }
-      const pid = projectId ?? centredProjectId() ?? projects[0].id;
+      // ?p= can still name a list that was just archived; skip it then.
+      const centred = centredProjectId();
+      const pid = projectId ?? (isOnBoard(centred) ? centred : null) ?? first.id;
       setNewItem({ open: true, projectId: pid });
     },
     [projects],
   );
 
-  // Global shortcuts (Linear-style bare keys): C → new item, ⇧C → new project.
+  // Global shortcuts (Linear-style bare keys): C → new item, ⇧C → new list.
   // Skipped while typing in a field, and when a command modifier is held so we
   // don't shadow ⌘C / Ctrl+C copy.
   useEffect(() => {
@@ -146,9 +163,11 @@ export function Kanban({
   return (
     <BoardMain>
       <BoardHeader>
-        <span className="text-xs text-neutral-400">
-          {projects.length} project{projects.length === 1 ? "" : "s"}
+        {/* The count gives way on phones, where the header is full. */}
+        <span className="hidden whitespace-nowrap text-xs text-neutral-400 sm:inline">
+          {onBoard.length} list{onBoard.length === 1 ? "" : "s"}
         </span>
+        <ArchivedListsMenu lists={archived} />
         <button
           type="button"
           onClick={() => setAudit({ open: true })}
@@ -160,26 +179,30 @@ export function Kanban({
       </BoardHeader>
       <InvitesBanner invites={pendingInvites} />
       <BoardRail ref={railRef}>
-        {projects.length === 0 && (
+        {onBoard.length === 0 && (
           <div className="m-auto text-sm text-neutral-500">
-            No projects yet — tap + Add project to start.
+            {archived.length > 0
+              ? "Every list is archived — restore one from Archived, or tap + Add list."
+              : "No lists yet — tap + Add list to start."}
           </div>
         )}
-        {projects.map((p, idx) => (
-          <ProjectColumn
-            key={p.id}
-            project={p}
-            viewerId={viewerId}
-            items={itemsByProject[p.id] ?? []}
-            assignees={assigneesByProject[p.id] ?? []}
-            prLinksByItem={prLinksByItem}
-            prevId={projects[idx - 1]?.id ?? null}
-            nextId={projects[idx + 1]?.id ?? null}
-            onShowActivity={(pid) => setAudit({ open: true, projectId: pid })}
-            onAddItem={openNewItem}
-            onShare={openShare}
-          />
-        ))}
+        {[active, paused].map((group) =>
+          group.map((p, idx) => (
+            <ProjectColumn
+              key={p.id}
+              project={p}
+              viewerId={viewerId}
+              items={itemsByProject[p.id] ?? []}
+              assignees={assigneesByProject[p.id] ?? []}
+              prLinksByItem={prLinksByItem}
+              prevId={group[idx - 1]?.id ?? null}
+              nextId={group[idx + 1]?.id ?? null}
+              onShowActivity={(pid) => setAudit({ open: true, projectId: pid })}
+              onAddItem={openNewItem}
+              onShare={openShare}
+            />
+          )),
+        )}
         <AddProjectButton onClick={() => setNewProjectOpen(true)} />
       </BoardRail>
 
@@ -193,7 +216,7 @@ export function Kanban({
       <NewItemSheet
         open={newItem.open}
         onOpenChange={(open) => setNewItem((s) => ({ ...s, open }))}
-        projects={projects}
+        projects={onBoard}
         categoriesByProject={categoriesByProject}
         initialProjectId={newItem.projectId}
       />
