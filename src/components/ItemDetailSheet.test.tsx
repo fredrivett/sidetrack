@@ -69,12 +69,12 @@ const viewer = {
   isOwner: true,
 };
 
-function renderSheet(open = true) {
+function renderSheet(open = true, checklist: Item[] = []) {
   return render(
     <ItemDetailSheet
       item={item}
       parent={null}
-      checklist={[]}
+      checklist={checklist}
       onOpenItem={() => {}}
       prefix="ENG"
       assignees={[viewer]}
@@ -112,6 +112,19 @@ describe("ItemDetailSheet assign shortcuts", () => {
     expect(screen.getByRole("menuitem", { name: /Me/ })).toBeTruthy();
     fireEvent.keyDown(document, { key: "i" });
     expect(updateItemAction).toHaveBeenCalledWith("i1", { assigneeId: "u1" });
+  });
+
+  it("assigns the sub-item, not this item, on 'i' while its checklist picker is open", () => {
+    vi.mocked(updateItemAction).mockClear();
+    const child: Item = { ...item, id: "c1", title: "Lorna", parentId: "i1", number: 43 };
+    renderSheet(true, [child]);
+    const trigger = screen.getByLabelText("Assign Lorna");
+    fireEvent.pointerDown(trigger);
+    fireEvent.click(trigger);
+    expect(screen.getByRole("menuitem", { name: /Me/ })).toBeTruthy();
+    fireEvent.keyDown(document, { key: "i" });
+    expect(updateItemAction).toHaveBeenCalledTimes(1);
+    expect(updateItemAction).toHaveBeenCalledWith("c1", { assigneeId: "u1" });
   });
 
   it("does not act on shortcuts while the sheet is closed", () => {

@@ -84,12 +84,18 @@ function Checklist({
   assignees,
   viewerId,
   onOpenItem,
+  pickerFor,
+  onPickerFor,
 }: {
   parent: Item;
   items: Item[];
   assignees: AssigneeView[];
   viewerId: string;
   onOpenItem: (item: Item) => void;
+  /** The sub-item whose assignee picker is open, if any (owned by the sheet,
+   * which hands its A/I shortcuts over while one is open). */
+  pickerFor: string | null;
+  onPickerFor: (id: string | null) => void;
 }) {
   const [draft, setDraft] = useState("");
   // Checkboxes wait for the last toggle to land, so a quick second click
@@ -144,7 +150,10 @@ function Checklist({
             >
               {child.title}
             </button>
-            <DropdownMenu>
+            <DropdownMenu
+              open={pickerFor === child.id}
+              onOpenChange={(o) => onPickerFor(o ? child.id : null)}
+            >
               <DropdownMenuTrigger
                 aria-label={
                   assignee
@@ -223,6 +232,8 @@ export function ItemDetailSheet({
   const [pending, start] = useTransition();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
+  // A sub-item's assignee picker in the checklist, when one is open.
+  const [childPickerFor, setChildPickerFor] = useState<string | null>(null);
   const completed = item.completedAt !== null;
   const ref = formatItemRef(prefix, item.number);
   const assignee = assignees.find((a) => a.userId === item.assigneeId);
@@ -253,10 +264,26 @@ export function ItemDetailSheet({
   // shown on the "me" row actually works there — base-ui's menu doesn't consume
   // letter keys, so we won't fight its typeahead. No deferToDialog: the sheet IS
   // the dialog and should respond.
+  // While a sub-item's picker is open, I assigns that sub-item (as its menu's
+  // hint says) and A does nothing, rather than both acting on this item.
+  const assignChildToMe = useCallback(() => {
+    if (!childPickerFor) return;
+    const id = childPickerFor;
+    start(() => {
+      void updateItemAction(id, { assigneeId: viewerId });
+    });
+    setChildPickerFor(null);
+  }, [childPickerFor, viewerId]);
+  const noop = useCallback(() => {}, []);
   useAssignShortcuts({
-    active: open,
+    active: open && childPickerFor === null,
     onOpenPicker: openPicker,
     onAssignToMe: canAssignSelf ? assignToMe : undefined,
+  });
+  useAssignShortcuts({
+    active: open && childPickerFor !== null,
+    onOpenPicker: noop,
+    onAssignToMe: canAssignSelf ? assignChildToMe : undefined,
   });
 
   function change(next: boolean) {
@@ -265,6 +292,7 @@ export function ItemDetailSheet({
       // Reset the picker so a closed sheet never reopens with it already open
       // (which would also disarm the A/I shortcuts).
       setAssignOpen(false);
+      setChildPickerFor(null);
     }
     onOpenChange(next);
   }
@@ -454,7 +482,12 @@ export function ItemDetailSheet({
                   items={checklist}
                   assignees={assignees}
                   viewerId={viewerId}
-                  onOpenItem={onOpenItem}
+                  onOpenItem={(child) => {
+                    setChildPickerFor(null);
+                    onOpenItem(child);
+                  }}
+                  pickerFor={childPickerFor}
+                  onPickerFor={setChildPickerFor}
                 />
               </Field>
             )
