@@ -141,12 +141,34 @@ function resolveItemArg(db: Db, userId: string, raw: string) {
 }
 
 // A position may name its sibling by ref ("after:HOM-12") as well as by id.
-// Resolve it the same fail-closed way as item targets, and hand the core an id.
-function resolvePositionArg(db: Db, userId: string, raw: string | undefined) {
+// Resolve it the same fail-closed way as item targets, check it's in the list
+// being changed, and hand the core an id.
+function resolvePositionArg(
+  db: Db,
+  userId: string,
+  raw: string | undefined,
+  projectId: string,
+) {
   const m = raw?.match(/^(after|before):(.+)$/);
   if (!m) return { position: raw, error: null };
   const { item, error } = resolveItemArg(db, userId, m[2]);
   if (error) return { position: undefined, error };
+  if (item.projectId !== projectId) {
+    return {
+      position: undefined,
+      error: {
+        isError: true,
+        content: [
+          {
+            type: "text" as const,
+            text:
+              `"${m[2]}" is in a different list, so nothing can be placed ` +
+              `${m[1]} it here — no change was made.`,
+          },
+        ],
+      },
+    };
+  }
   return { position: `${m[1]}:${item.id}`, error: null };
 }
 
@@ -409,7 +431,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       const { db } = getDb();
       const project = getProject(db, userId, list_id);
       if (!project) return notFound("list", list_id);
-      const pos = resolvePositionArg(db, userId, position);
+      const pos = resolvePositionArg(db, userId, position, project.id);
       if (pos.error) return pos.error;
       const created = addItem(
         db,
@@ -521,7 +543,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       const { db } = getDb();
       const { item, error } = resolveItemArg(db, userId, id);
       if (error) return error;
-      const pos = resolvePositionArg(db, userId, position);
+      const pos = resolvePositionArg(db, userId, position, item.projectId);
       if (pos.error) return pos.error;
       return json(
         withItemRef(

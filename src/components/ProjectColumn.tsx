@@ -152,14 +152,16 @@ export function ProjectColumn({
               prLinksByItem={prLinksByItem}
               onOpenDetail={detail.openDetail}
             />
-            <DoneSection
-              items={done}
-              prefix={project.refPrefix}
-              assignees={assignees}
-              viewerId={viewerId}
-              prLinksByItem={prLinksByItem}
-              onOpenDetail={detail.openDetail}
-            />
+            {done.length > 0 && (
+              <DoneSection
+                items={done}
+                prefix={project.refPrefix}
+                assignees={assignees}
+                viewerId={viewerId}
+                prLinksByItem={prLinksByItem}
+                onOpenDetail={detail.openDetail}
+              />
+            )}
           </div>
         </>
       )}

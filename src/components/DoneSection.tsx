@@ -26,8 +26,9 @@ export function DoneSection({
   prLinksByItem: Record<string, ItemPrLink[]>;
   onOpenDetail: (item: Item) => void;
 }) {
+  // Rendered only while there are items, so it starts collapsed again each
+  // time the section reappears.
   const [expanded, setExpanded] = useState(false);
-  if (items.length === 0) return null;
 
   return (
     <section className="space-y-1.5">

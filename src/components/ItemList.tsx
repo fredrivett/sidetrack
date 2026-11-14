@@ -76,7 +76,7 @@ export function ItemList({
   if (ordered.length === 0) {
     return (
       <p className="px-1 py-4 text-center text-xs text-neutral-400">
-        Nothing to do — add one below.
+        Nothing to do — add an item from the list’s ⋯ menu.
       </p>
     );
   }
