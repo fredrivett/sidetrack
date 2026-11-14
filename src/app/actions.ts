@@ -18,6 +18,7 @@ import {
   completeItem as completeItemCore,
   deleteItem as deleteItemCore,
   reorderItem as reorderItemCore,
+  setItemParent as setItemParentCore,
   uncompleteItem as uncompleteItemCore,
   updateItem as updateItemCore,
 } from "@/core/items";
@@ -163,6 +164,7 @@ export async function addItemAction(input: {
   description?: string | null;
   category?: string | null;
   positionRef?: string;
+  parentId?: string | null;
 }) {
   const userId = await requireUserId();
   const { db } = getDb();
@@ -207,6 +209,14 @@ export async function reorderItemAction(id: string, ref: string) {
   const userId = await requireUserId();
   const { db } = getDb();
   const it = reorderItemCore(db, userId, id, ref, SOURCE);
+  refresh();
+  return it;
+}
+
+export async function setItemParentAction(id: string, parentId: string | null) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const it = setItemParentCore(db, userId, id, parentId, SOURCE);
   refresh();
   return it;
 }

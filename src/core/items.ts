@@ -64,13 +64,24 @@ export function listItems(
     .map((row) => row.items);
 }
 
-function getAllSiblings(db: Db, userId: string, projectId: string): Item[] {
+// Positions are scoped to a parent: top-level items order among themselves,
+// and each parent's sub-items order among themselves.
+function getAllSiblings(
+  db: Db,
+  userId: string,
+  projectId: string,
+  parentId: string | null,
+): Item[] {
   return db
     .select({ items })
     .from(items)
     .innerJoin(projects, eq(projects.id, items.projectId))
     .where(
-      and(eq(items.projectId, projectId), hasProjectAccess(userId)),
+      and(
+        eq(items.projectId, projectId),
+        parentId ? eq(items.parentId, parentId) : isNull(items.parentId),
+        hasProjectAccess(userId),
+      ),
     )
     .orderBy(asc(items.position), asc(items.id))
     .all()
@@ -90,6 +101,56 @@ function assertTitle(title: string): string {
   const trimmed = title.trim();
   if (!trimmed) throw new Error("item title cannot be empty");
   return trimmed;
+}
+
+function childrenOf(db: Db, parentId: string): Item[] {
+  return db
+    .select()
+    .from(items)
+    .where(eq(items.parentId, parentId))
+    .orderBy(asc(items.position), asc(items.id))
+    .all();
+}
+
+/**
+ * Check that `parent` can take `kind` as a sub-item in `projectId`. Checklists
+ * are one level deep and made of tasks: a milestone is a divider, not
+ * something with steps.
+ */
+function assertCanParent(parent: Item, projectId: string, kind: ItemKind) {
+  if (parent.projectId !== projectId) {
+    throw new Error("a sub-item must be in the same list as its parent");
+  }
+  if (parent.parentId !== null) {
+    throw new Error(`"${parent.title}" is already a sub-item; sub-items can't have their own`);
+  }
+  if (parent.kind !== "task" || kind !== "task") {
+    throw new Error("only tasks can have or be sub-items");
+  }
+}
+
+/**
+ * A finished parent never has open sub-items (completing a parent ticks them
+ * all), so adding or reopening a sub-item reopens a finished parent with it.
+ * Call inside the caller's transaction.
+ */
+function reopenParentIfDone(
+  tx: Db,
+  userId: string,
+  parent: Item,
+  source: AuditOrigin,
+) {
+  if (parent.completedAt === null) return;
+  tx.update(items).set({ completedAt: null }).where(eq(items.id, parent.id)).run();
+  recordAudit(tx, {
+    actor: userId,
+    source,
+    action: "uncomplete",
+    entityType: "item",
+    entityId: parent.id,
+    projectId: parent.projectId,
+    detail: `reopened "${parent.title}" for an open sub-item`,
+  });
 }
 
 // Human-readable label for an assignee in an audit detail: their `@username`,
@@ -117,6 +178,7 @@ export function addItem(
     description?: string | null;
     category?: string | null;
     positionRef?: string;
+    parentId?: string | null;
   },
   source: AuditOrigin,
 ): Item {
@@ -124,8 +186,19 @@ export function addItem(
   if (!projectAccessibleForUser(db, userId, input.projectId)) {
     throw new Error(`list not found: ${input.projectId}`);
   }
+  let parent: Item | null = null;
+  if (input.parentId) {
+    parent = getItem(db, userId, input.parentId) ?? null;
+    if (!parent) throw new Error(`item not found: ${input.parentId}`);
+    assertCanParent(parent, input.projectId, input.kind);
+  }
   const ref = parseRef(input.positionRef);
-  const siblings = getAllSiblings(db, userId, input.projectId);
+  const siblings = getAllSiblings(
+    db,
+    userId,
+    input.projectId,
+    parent?.id ?? null,
+  );
   const position = resolvePosition(siblings, ref);
   const category = input.category?.trim() || null;
   const description = input.description?.trim() || null;
@@ -154,6 +227,7 @@ export function addItem(
         title,
         description,
         category,
+        parentId: parent?.id ?? null,
         position,
         number,
         createdAt: now,
@@ -166,8 +240,11 @@ export function addItem(
       entityType: "item",
       entityId: id,
       projectId: input.projectId,
-      detail: `added ${input.kind} "${title}"`,
+      detail: parent
+        ? `added "${title}" to "${parent.title}"`
+        : `added ${input.kind} "${title}"`,
     });
+    if (parent) reopenParentIfDone(tx as unknown as Db, userId, parent, source);
   });
 
   return getItemOrThrow(db, userId, id);
@@ -277,20 +354,26 @@ export function completeItem(
 
   // Completing never moves the item: it keeps its place in the list, and the
   // UI decides how to show it (crossed out today, in Done after that).
+  // Completing a parent ticks its open sub-items too, each logged on its own
+  // so every item's history says when it was done.
+  const openChildren = childrenOf(db, id).filter((c) => c.completedAt === null);
+  const now = Date.now();
   db.transaction((tx) => {
-    tx.update(items)
-      .set({ completedAt: Date.now() })
-      .where(eq(items.id, id))
-      .run();
-    recordAudit(tx as unknown as Db, {
-      actor: userId,
-      source,
-      action: "complete",
-      entityType: "item",
-      entityId: id,
-      projectId: existing.projectId,
-      detail: `completed "${existing.title}"`,
-    });
+    for (const it of [existing, ...openChildren]) {
+      tx.update(items).set({ completedAt: now }).where(eq(items.id, it.id)).run();
+      recordAudit(tx as unknown as Db, {
+        actor: userId,
+        source,
+        action: "complete",
+        entityType: "item",
+        entityId: it.id,
+        projectId: existing.projectId,
+        detail:
+          it === existing
+            ? `completed "${it.title}"`
+            : `completed "${it.title}" with "${existing.title}"`,
+      });
+    }
   });
   return getItemOrThrow(db, userId, id);
 }
@@ -306,7 +389,11 @@ export function uncompleteItem(
   if (existing.completedAt === null) return existing;
 
   // Reopening returns it to the same place, since completing never moved it.
+  // Reopening a sub-item reopens a finished parent, so it can't end up hidden
+  // under a parent in Done. Reopening a parent leaves its sub-items as they are.
+  const parent = existing.parentId ? getItem(db, userId, existing.parentId) : undefined;
   db.transaction((tx) => {
+    if (parent) reopenParentIfDone(tx as unknown as Db, userId, parent, source);
     tx.update(items)
       .set({ completedAt: null })
       .where(eq(items.id, id))
@@ -334,9 +421,12 @@ export function reorderItem(
   const existing = getItem(db, userId, id);
   if (!existing) throw new Error(`item not found: ${id}`);
   const ref = parseRef(refRaw);
-  const siblings = getAllSiblings(db, userId, existing.projectId).filter(
-    (s) => s.id !== id,
-  );
+  const siblings = getAllSiblings(
+    db,
+    userId,
+    existing.projectId,
+    existing.parentId,
+  ).filter((s) => s.id !== id);
   const position = resolvePosition(siblings, ref);
   db.transaction((tx) => {
     tx.update(items).set({ position }).where(eq(items.id, id)).run();
@@ -361,16 +451,88 @@ export function deleteItem(
 ): void {
   const existing = getItem(db, userId, id);
   if (!existing) return;
+  // Sub-items go with their parent. Delete and log them explicitly rather than
+  // leaving it to the foreign key's cascade, so each one's history ends.
+  const children = childrenOf(db, id);
   db.transaction((tx) => {
-    tx.delete(items).where(eq(items.id, id)).run();
+    for (const it of [...children, existing]) {
+      tx.delete(items).where(eq(items.id, it.id)).run();
+      recordAudit(tx as unknown as Db, {
+        actor: userId,
+        source,
+        action: "delete",
+        entityType: "item",
+        entityId: it.id,
+        projectId: existing.projectId,
+        detail:
+          it === existing
+            ? `deleted "${it.title}"`
+            : `deleted "${it.title}" with "${existing.title}"`,
+      });
+    }
+  });
+}
+
+/**
+ * Make an item a sub-item of `parentId`, or move it back out to the top level
+ * with null. Nesting puts it last among the parent's sub-items; moving out puts
+ * it straight after its old parent.
+ */
+export function setItemParent(
+  db: Db,
+  userId: string,
+  id: string,
+  parentId: string | null,
+  source: AuditOrigin,
+): Item {
+  const existing = getItem(db, userId, id);
+  if (!existing) throw new Error(`item not found: ${id}`);
+  if ((parentId || null) === existing.parentId) return existing;
+
+  let parent: Item | null = null;
+  let position: string;
+  let detail: string;
+  if (parentId) {
+    if (parentId === id) throw new Error("an item can't be its own sub-item");
+    parent = getItem(db, userId, parentId) ?? null;
+    if (!parent) throw new Error(`item not found: ${parentId}`);
+    assertCanParent(parent, existing.projectId, existing.kind);
+    if (childrenOf(db, id).length > 0) {
+      throw new Error(`"${existing.title}" has sub-items, so it can't become one`);
+    }
+    position = resolvePosition(
+      getAllSiblings(db, userId, existing.projectId, parent.id),
+      "last",
+    );
+    detail = `made "${existing.title}" a sub-item of "${parent.title}"`;
+  } else {
+    const oldParent = existing.parentId
+      ? getItem(db, userId, existing.parentId)
+      : undefined;
+    position = resolvePosition(
+      getAllSiblings(db, userId, existing.projectId, null),
+      oldParent ? { after: oldParent.id } : "last",
+    );
+    detail = `moved "${existing.title}" out of "${oldParent?.title ?? "its parent"}"`;
+  }
+
+  db.transaction((tx) => {
+    tx.update(items)
+      .set({ parentId: parent?.id ?? null, position })
+      .where(eq(items.id, id))
+      .run();
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "delete",
+      action: "update",
       entityType: "item",
       entityId: id,
       projectId: existing.projectId,
-      detail: `deleted "${existing.title}"`,
+      detail,
     });
+    if (parent && existing.completedAt === null) {
+      reopenParentIfDone(tx as unknown as Db, userId, parent, source);
+    }
   });
+  return getItemOrThrow(db, userId, id);
 }

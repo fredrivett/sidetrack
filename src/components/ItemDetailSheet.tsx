@@ -6,12 +6,21 @@ import {
   Circle,
   CircleDashed,
   Copy,
+  IndentDecrease,
   Trash2,
 } from "lucide-react";
-import { useCallback, useMemo, useState, useTransition } from "react";
 import {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
+import {
+  addItemAction,
   completeItemAction,
   deleteItemAction,
+  setItemParentAction,
   uncompleteItemAction,
   updateItemAction,
 } from "@/app/actions";
@@ -22,6 +31,7 @@ import { modifierSymbol } from "@/lib/keyboard";
 import { prLabel } from "@/lib/pr";
 import { dayLabel } from "@/lib/time";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -62,8 +72,96 @@ function Field({
   );
 }
 
+/**
+ * A task's sub-items, each ticked off in place, with an input that stays
+ * focused after Enter so a whole checklist goes in one line after another.
+ */
+function Checklist({
+  parent,
+  items,
+  assignees,
+  onOpenItem,
+}: {
+  parent: Item;
+  items: Item[];
+  assignees: AssigneeView[];
+  onOpenItem: (item: Item) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const [, start] = useTransition();
+  // Adds run one after another, so lines typed quickly land in typed order.
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+
+  function add() {
+    const title = draft.trim();
+    if (!title) return;
+    setDraft("");
+    queue.current = queue.current
+      .then(() =>
+        addItemAction({
+          projectId: parent.projectId,
+          kind: "task",
+          title,
+          parentId: parent.id,
+        }),
+      )
+      .catch(() => setDraft((d) => d || title));
+  }
+
+  return (
+    <div className="space-y-1">
+      {items.map((child) => {
+        const done = child.completedAt !== null;
+        const assignee = assignees.find((a) => a.userId === child.assigneeId);
+        return (
+          <div key={child.id} className="flex items-center gap-2 px-1 py-0.5">
+            <input
+              type="checkbox"
+              checked={done}
+              onChange={() =>
+                start(() => {
+                  void (done
+                    ? uncompleteItemAction(child.id)
+                    : completeItemAction(child.id));
+                })
+              }
+              className="size-4 shrink-0"
+              aria-label={`${done ? "Uncomplete" : "Complete"} ${child.title}`}
+            />
+            <button
+              type="button"
+              onClick={() => onOpenItem(child)}
+              className={`min-w-0 flex-1 truncate text-left text-sm hover:underline ${
+                done ? "text-neutral-400 line-through" : ""
+              }`}
+            >
+              {child.title}
+            </button>
+            {assignee && <UserAvatar user={assignee} size={18} />}
+          </div>
+        );
+      })}
+      <Input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            add();
+          }
+        }}
+        placeholder={items.length ? "Add another…" : "Add a step…"}
+        aria-label={`Add a sub-item to ${parent.title}`}
+      />
+    </div>
+  );
+}
+
 export function ItemDetailSheet({
   item,
+  parent,
+  checklist,
+  onOpenItem,
   prefix,
   assignees,
   viewerId,
@@ -72,6 +170,12 @@ export function ItemDetailSheet({
   onOpenChange,
 }: {
   item: Item;
+  /** For a sub-item, the task it belongs to. */
+  parent: Item | null;
+  /** This item's sub-items, in order. */
+  checklist: Item[];
+  /** Switch the sheet to another item (a sub-item or the parent). */
+  onOpenItem: (item: Item) => void;
   prefix: string;
   assignees: AssigneeView[];
   viewerId: string;
@@ -275,6 +379,51 @@ export function ItemDetailSheet({
               </DropdownMenuContent>
             </DropdownMenu>
           </Field>
+
+          {parent ? (
+            <Field label="Sub-item of">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onOpenItem(parent)}
+                  className="min-w-0 flex-1 truncate text-left text-sm text-neutral-700 hover:underline dark:text-neutral-200"
+                >
+                  {parent.title}
+                </button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={pending}
+                  onClick={() =>
+                    start(() => {
+                      void setItemParentAction(item.id, null);
+                    })
+                  }
+                >
+                  <IndentDecrease />
+                  Move out
+                </Button>
+              </div>
+            </Field>
+          ) : (
+            item.kind === "task" && (
+              <Field
+                label={
+                  checklist.length
+                    ? `Checklist · ${checklist.filter((c) => c.completedAt !== null).length}/${checklist.length}`
+                    : "Checklist"
+                }
+              >
+                <Checklist
+                  parent={item}
+                  items={checklist}
+                  assignees={assignees}
+                  onOpenItem={onOpenItem}
+                />
+              </Field>
+            )
+          )}
 
           {prLinks.length > 0 && (
             <Field label="Pull requests">

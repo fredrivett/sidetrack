@@ -52,6 +52,7 @@ const item: Item = {
   description: null,
   category: null,
   assigneeId: null,
+  parentId: null,
   position: "a0",
   number: 42,
   completedAt: null,
@@ -72,6 +73,9 @@ function renderSheet(open = true) {
   return render(
     <ItemDetailSheet
       item={item}
+      parent={null}
+      checklist={[]}
+      onOpenItem={() => {}}
       prefix="ENG"
       assignees={[viewer]}
       viewerId="u1"

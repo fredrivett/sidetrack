@@ -8,12 +8,14 @@ import {
   getItem,
   listItems,
   reorderItem,
+  setItemParent,
   uncompleteItem,
   updateItem,
 } from "./items";
 import { acceptInvite, inviteMember, listAssignees } from "./members";
 import { createProject } from "./projects";
 import { items } from "./schema";
+import { nestItems } from "../lib/itemTree";
 import { createTestDb, createTestUser } from "./test-helpers";
 
 function seedProject() {
@@ -375,5 +377,183 @@ describe("item assignment", () => {
     expect(
       updateItem(db, alice, item.id, { assigneeId: owner }, "web").assigneeId,
     ).toBe(owner);
+  });
+});
+
+describe("checklists (sub-items)", () => {
+  function setup() {
+    const { db, userId, projectId } = seedProject();
+    const add = (title: string, opts: { parentId?: string; positionRef?: string; kind?: "task" | "milestone" } = {}) =>
+      addItem(
+        db,
+        userId,
+        { projectId, kind: opts.kind ?? "task", title, parentId: opts.parentId, positionRef: opts.positionRef },
+        "web",
+      );
+    const tree = () =>
+      nestItems(listItems(db, userId, projectId, { includeCompleted: true })).map(
+        (i) => [i.title, i.children.map((c) => c.title)],
+      );
+    return { db, userId, projectId, add, tree };
+  }
+
+  it("orders sub-items among their siblings only", () => {
+    const { add, tree } = setup();
+    const a = add("a");
+    add("b");
+    const a2 = add("a2", { parentId: a.id });
+    add("a1", { parentId: a.id, positionRef: "top" });
+    add("a1.5", { parentId: a.id, positionRef: `before:${a2.id}` });
+    add("c");
+    expect(tree()).toEqual([
+      ["a", ["a1", "a1.5", "a2"]],
+      ["b", []],
+      ["c", []],
+    ]);
+  });
+
+  it("completing a parent ticks its open sub-items, keeping earlier ticks", () => {
+    const { db, userId, projectId, add } = setup();
+    const p = add("tidy");
+    const lounge = add("lounge", { parentId: p.id });
+    const kitchen = add("kitchen", { parentId: p.id });
+    completeItem(db, userId, lounge.id, "web");
+    const loungeDoneAt = getItem(db, userId, lounge.id)?.completedAt;
+
+    completeItem(db, userId, p.id, "mcp");
+    expect(getItem(db, userId, kitchen.id)?.completedAt).not.toBeNull();
+    expect(getItem(db, userId, lounge.id)?.completedAt).toBe(loungeDoneAt);
+    const completes = listAudit(db, userId, { projectId })
+      .filter((e) => e.action === "complete")
+      .map((e) => e.entityId);
+    expect(completes.sort()).toEqual([lounge.id, kitchen.id, p.id].sort());
+  });
+
+  it("ticking every sub-item leaves the parent open", () => {
+    const { db, userId, add } = setup();
+    const p = add("tidy");
+    const c = add("lounge", { parentId: p.id });
+    completeItem(db, userId, c.id, "web");
+    expect(getItem(db, userId, p.id)?.completedAt).toBeNull();
+  });
+
+  it("reopening or adding a sub-item reopens a finished parent", () => {
+    const { db, userId, projectId, add } = setup();
+    const p = add("tidy");
+    const c = add("lounge", { parentId: p.id });
+    const reopens = () =>
+      listAudit(db, userId, { projectId }).filter(
+        (e) => e.action === "uncomplete" && e.entityId === p.id,
+      ).length;
+    // An open parent isn't "reopened".
+    expect(reopens()).toBe(0);
+    completeItem(db, userId, p.id, "web");
+
+    uncompleteItem(db, userId, c.id, "web");
+    expect(getItem(db, userId, p.id)?.completedAt).toBeNull();
+
+    expect(reopens()).toBe(1);
+
+    completeItem(db, userId, p.id, "web");
+    add("bedroom", { parentId: p.id });
+    expect(getItem(db, userId, p.id)?.completedAt).toBeNull();
+    expect(reopens()).toBe(2);
+    // The other sub-item stays ticked.
+    expect(getItem(db, userId, c.id)?.completedAt).not.toBeNull();
+  });
+
+  it("nesting an open item under a finished parent reopens it; a finished one doesn't", () => {
+    const { db, userId, add } = setup();
+    const p = add("tidy");
+    const done = add("hoover");
+    const open = add("dust");
+    completeItem(db, userId, p.id, "web");
+    completeItem(db, userId, done.id, "web");
+
+    setItemParent(db, userId, done.id, p.id, "web");
+    expect(getItem(db, userId, p.id)?.completedAt).not.toBeNull();
+    setItemParent(db, userId, open.id, p.id, "web");
+    expect(getItem(db, userId, p.id)?.completedAt).toBeNull();
+  });
+
+  it("reopening a parent leaves its sub-items ticked", () => {
+    const { db, userId, add } = setup();
+    const p = add("tidy");
+    const c = add("lounge", { parentId: p.id });
+    completeItem(db, userId, p.id, "web");
+    uncompleteItem(db, userId, p.id, "web");
+    expect(getItem(db, userId, c.id)?.completedAt).not.toBeNull();
+  });
+
+  it("is one level deep, tasks only, and within one list", () => {
+    const { db, userId, add } = setup();
+    const p = add("tidy");
+    const c = add("lounge", { parentId: p.id });
+    expect(() => add("rug", { parentId: c.id })).toThrow(/already a sub-item/);
+    expect(() => add("v1", { parentId: p.id, kind: "milestone" })).toThrow(/only tasks/);
+    const m = add("launch", { kind: "milestone" });
+    expect(() => add("x", { parentId: m.id })).toThrow(/only tasks/);
+
+    const other = createProject(db, userId, { name: "Other" }, "web");
+    expect(() =>
+      addItem(db, userId, { projectId: other.id, kind: "task", title: "x", parentId: p.id }, "web"),
+    ).toThrow(/same list/);
+  });
+
+  it("nests an item last under a parent and moves it back out after the parent", () => {
+    const { db, userId, projectId, add, tree } = setup();
+    const a = add("a");
+    add("a1", { parentId: a.id });
+    const b = add("b");
+    add("c");
+
+    setItemParent(db, userId, b.id, a.id, "web");
+    expect(tree()).toEqual([
+      ["a", ["a1", "b"]],
+      ["c", []],
+    ]);
+    setItemParent(db, userId, b.id, null, "web");
+    expect(tree()).toEqual([
+      ["a", ["a1"]],
+      ["b", []],
+      ["c", []],
+    ]);
+
+    // No-op: already top-level, so nothing is logged.
+    const before = listAudit(db, userId, { projectId }).length;
+    setItemParent(db, userId, b.id, null, "web");
+    expect(listAudit(db, userId, { projectId })).toHaveLength(before);
+
+    // An item with sub-items can't become one, and nothing nests under itself.
+    expect(() => setItemParent(db, userId, a.id, b.id, "web")).toThrow(/has sub-items/);
+    expect(() => setItemParent(db, userId, b.id, b.id, "web")).toThrow(/own sub-item/);
+  });
+
+  it("reorders a sub-item only among its siblings", () => {
+    const { db, userId, add, tree } = setup();
+    const a = add("a");
+    const a1 = add("a1", { parentId: a.id });
+    add("a2", { parentId: a.id });
+    const b = add("b");
+    reorderItem(db, userId, a1.id, "end", "web");
+    expect(tree()).toEqual([
+      ["a", ["a2", "a1"]],
+      ["b", []],
+    ]);
+    expect(() => reorderItem(db, userId, a1.id, `after:${b.id}`, "web")).toThrow(
+      /anchor not found/,
+    );
+  });
+
+  it("deleting a parent deletes and logs its sub-items", () => {
+    const { db, userId, projectId, add } = setup();
+    const p = add("tidy");
+    const c = add("lounge", { parentId: p.id });
+    deleteItem(db, userId, p.id, "web");
+    expect(getItem(db, userId, c.id)).toBeUndefined();
+    const deleted = listAudit(db, userId, { projectId })
+      .filter((e) => e.action === "delete")
+      .map((e) => e.entityId);
+    expect(deleted.sort()).toEqual([c.id, p.id].sort());
   });
 });

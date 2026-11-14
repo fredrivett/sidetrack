@@ -4,6 +4,7 @@ import { useState } from "react";
 import { updateProjectAction } from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
+import { nestItems } from "@/lib/itemTree";
 import { ColumnCard } from "./BoardLayout";
 import { DoneSection } from "./DoneSection";
 import type { ProjectView } from "./Kanban";
@@ -41,15 +42,17 @@ export function ProjectColumn({
   onAddItem: (projectId: string) => void;
   onShare: (projectId: string, projectName: string) => void;
 }) {
-  // Items arrive in list order. Open items and items finished today share the
-  // list (today's crossed out, in place); anything finished before today goes
-  // to Done, newest first.
+  // Items arrive in list order, flat. Group sub-items under their parent; the
+  // split below is by the top-level item, and its checklist goes with it.
+  // Open items and items finished today share the list (today's crossed out,
+  // in place); anything finished before today goes to Done, newest first.
   const dayStart = useDayStart();
-  const active = items.filter((i) => i.completedAt === null);
-  const inList = items.filter(
+  const groups = nestItems(items);
+  const active = groups.filter((i) => i.completedAt === null);
+  const inList = groups.filter(
     (i) => i.completedAt === null || i.completedAt >= dayStart,
   );
-  const done = items
+  const done = groups
     .filter((i) => i.completedAt !== null && i.completedAt < dayStart)
     .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
 
@@ -145,7 +148,7 @@ export function ProjectColumn({
           <div className="space-y-3 pt-3">
             <ItemList
               projectId={project.id}
-              items={inList}
+              groups={inList}
               prefix={project.refPrefix}
               assignees={assignees}
               viewerId={viewerId}
@@ -154,7 +157,7 @@ export function ProjectColumn({
             />
             {done.length > 0 && (
               <DoneSection
-                items={done}
+                groups={done}
                 prefix={project.refPrefix}
                 assignees={assignees}
                 viewerId={viewerId}
@@ -168,6 +171,9 @@ export function ProjectColumn({
       {detail.item && (
         <ItemDetailSheet
           item={detail.item}
+          parent={items.find((i) => i.id === detail.item?.parentId) ?? null}
+          checklist={items.filter((i) => i.parentId === detail.item?.id)}
+          onOpenItem={detail.openDetail}
           prefix={project.prefix}
           assignees={assignees}
           viewerId={viewerId}
