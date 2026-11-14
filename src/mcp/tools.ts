@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { listAudit } from "@/core/audit";
+import { type AuditOrigin, listAudit } from "@/core/audit";
 import { addCategory, listCategories } from "@/core/categories";
 import { getDb } from "@/core/db";
 import { projectRefPrefixes, resolveItemRef } from "@/core/itemRef";
@@ -51,7 +51,11 @@ import { getEnv } from "@/lib/env";
 import { formatItemRef } from "@/lib/itemRef";
 import { formatRelativeLong } from "@/lib/time";
 
-const SOURCE = "mcp" as const;
+/** The authenticated caller: the key's owner and the key itself (the agent). */
+export interface McpContext {
+  userId: string;
+  agent: { keyId: string; name: string };
+}
 
 const Status = z.enum(PROJECT_STATUSES);
 const Kind = z.enum(ITEM_KINDS);
@@ -147,11 +151,11 @@ async function sendInviteNotification(
   });
 }
 
-export function registerTools(
-  server: McpServer,
-  ctx: { userId: string },
-) {
+export function registerTools(server: McpServer, ctx: McpContext) {
   const { userId } = ctx;
+  // Every mutation is logged as "mcp" plus the API key the agent used, so the
+  // activity log can say which agent made each change.
+  const SOURCE: AuditOrigin = { source: "mcp", agent: ctx.agent };
 
   server.registerTool(
     "list_projects",

@@ -5,9 +5,9 @@ must be callable from both Server Actions (`src/app`) and MCP tools (`src/mcp`).
 
 ## Conventions
 
-- **Function signature for mutations:** `(db: Db, input, source: AuditSource)`.
+- **Function signature for mutations:** `(db: Db, input, source: AuditOrigin)`.
   The caller threads `source`; this file never knows whether it was called
-  from the web or MCP. See root `AGENTS.md` for the audit-log invariant.
+  from the web or MCP, or by which agent. See root `AGENTS.md` for the audit-log invariant.
 - **Transactions:** wrap the mutation + `recordAudit(...)` in
   `db.transaction((tx) => { ... })`. Pass `tx as unknown as Db` to helpers —
   drizzle's tx type isn't assignable to our `Db` alias but the runtime is the

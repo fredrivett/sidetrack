@@ -1,11 +1,10 @@
 import { and, asc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { hasProjectAccess } from "./access";
-import { recordAudit } from "./audit";
+import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
 import { getItem } from "./items";
 import {
-  type AuditSource,
   type ItemPrLink,
   items,
   itemPrLinks,
@@ -105,7 +104,7 @@ export function linkItemToPr(
   userId: string,
   itemId: string,
   prUrlRaw: string,
-  source: AuditSource,
+  source: AuditOrigin,
 ): ItemPrLink {
   const item = getItem(db, userId, itemId);
   if (!item) throw new Error(`item not found: ${itemId}`);
@@ -121,7 +120,12 @@ export function linkItemToPr(
   const id = nanoid(12);
   db.transaction((tx) => {
     tx.insert(itemPrLinks)
-      .values({ id, itemId, prUrl, linkedBySource: source })
+      .values({
+        id,
+        itemId,
+        prUrl,
+        linkedBySource: typeof source === "string" ? source : source.source,
+      })
       .run();
     recordAudit(tx as unknown as Db, {
       actor: userId,
@@ -151,7 +155,7 @@ export function unlinkItemFromPr(
   userId: string,
   itemId: string,
   prUrlRaw: string,
-  source: AuditSource,
+  source: AuditOrigin,
 ): void {
   const item = getItem(db, userId, itemId);
   if (!item) throw new Error(`item not found: ${itemId}`);

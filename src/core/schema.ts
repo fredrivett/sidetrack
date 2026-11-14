@@ -224,6 +224,12 @@ export const auditLog = sqliteTable(
     entityId: text("entity_id").notNull(),
     projectId: text("project_id"),
     detail: text("detail").notNull().default(""),
+    // The API key an agent (MCP) call came through, and that key's name at the
+    // time ("Claude desktop"). Null for web and other non-agent changes. The
+    // name is a snapshot, not a join: revoking a key deletes its row, and the
+    // history must still say which agent made the change.
+    agentKeyId: text("agent_key_id"),
+    agentName: text("agent_name"),
   },
   (t) => [
     index("audit_log_ts").on(t.ts),

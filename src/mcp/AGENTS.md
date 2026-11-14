@@ -1,7 +1,9 @@
 # src/mcp — MCP tool surface
 
 Thin wrapper exposing `src/core` functions as MCP tools. Every tool MUST pass
-`SOURCE = "mcp"` to the core function (declared once at the top of `tools.ts`).
+`SOURCE` to the core function. It's declared once at the top of
+`registerTools()` as `{ source: "mcp", agent }`, from the API key that
+authenticated the request, so the audit log records which agent acted.
 
 ## Conventions
 

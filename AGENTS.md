@@ -63,9 +63,10 @@ transaction** as the mutation (`recordAudit()` in `src/core/audit.ts`). The log
 must never be able to drift from the data, so a mutation and its audit row
 commit or fail together — never write one without the other.
 
-- Thread `source: AuditSource` ('web' | 'mcp') from the caller. Server Actions
-  pass `'web'`, MCP tools pass `'mcp'`. Never silently default it — the whole
-  point is knowing who changed what.
+- Thread `source: AuditOrigin` from the caller. Server Actions pass `'web'`;
+  MCP tools pass `{ source: 'mcp', agent }` (the API key the agent used), so
+  the log records which agent made the change. Never silently default it —
+  the whole point is knowing who changed what.
 - Audit the meaningful user action, not low-level helpers. e.g. `ensureCategory`
   (auto-creating an inline category as a side effect) is intentionally NOT
   audited — it would be noise; the parent item create/update is the logged

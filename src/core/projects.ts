@@ -4,7 +4,7 @@ import { derivePrefix, dedupePrefix, validatePrefix } from "../lib/itemRef";
 import { normalizeProjectIcon } from "../lib/projectIcon";
 import { normalizeHomepageUrl } from "../lib/url";
 import { hasProjectAccess } from "./access";
-import { recordAudit } from "./audit";
+import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
 import {
   type ProjectPositionRef,
@@ -13,7 +13,6 @@ import {
 } from "./fracidx";
 import { listItems } from "./items";
 import {
-  type AuditSource,
   type Project,
   PROJECT_STATUSES,
   type ProjectStatus,
@@ -152,7 +151,7 @@ export function createProject(
   db: Db,
   userId: string,
   input: { name: string; status?: ProjectStatus },
-  source: AuditSource,
+  source: AuditOrigin,
 ): Project {
   const status = input.status ?? "idea";
   assertStatus(status);
@@ -191,7 +190,7 @@ export function updateProject(
     homepageUrl?: string | null;
     icon?: string | null;
   },
-  source: AuditSource,
+  source: AuditOrigin,
 ): Project {
   const existing = getProject(db, userId, id);
   if (!existing) throw new Error(`project not found: ${id}`);
@@ -291,7 +290,7 @@ export function reorderProject(
   userId: string,
   id: string,
   refRaw: string,
-  source: AuditSource,
+  source: AuditOrigin,
 ): Project {
   const existing = getProject(db, userId, id);
   if (!existing) throw new Error(`project not found: ${id}`);
@@ -327,7 +326,7 @@ export function deleteProject(
   db: Db,
   userId: string,
   id: string,
-  source: AuditSource,
+  source: AuditOrigin,
 ): void {
   const existing = getProject(db, userId, id);
   if (!existing) return;
