@@ -199,15 +199,12 @@ export function isOnToday(
 }
 
 /**
- * Whether an item belongs in the No date view on `today`: a task with no due
+ * Whether an item belongs in the No date view on `today`: an item with no due
  * date that's open or was finished today (crossed out, as on Today). A
  * sub-item of a dated parent stays out, since it's planned with its parent.
- * Milestones mark a point in a list rather than something to do, so they
- * stay out too.
  */
 export function isOnNoDate(
   item: {
-    kind: string;
     dueDate: string | null;
     completedAt: number | null;
   },
@@ -215,6 +212,6 @@ export function isOnNoDate(
   today: string,
   timeZone?: string,
 ): boolean {
-  if (item.kind !== "task" || item.dueDate || parent?.dueDate) return false;
+  if (item.dueDate || parent?.dueDate) return false;
   return item.completedAt === null || dayOf(item.completedAt, timeZone) === today;
 }

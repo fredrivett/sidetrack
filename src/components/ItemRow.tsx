@@ -231,10 +231,6 @@ export function ItemRow({
           drag
             ? "cursor-grab touch-manipulation active:cursor-grabbing"
             : "cursor-pointer"
-        } ${
-          item.kind === "milestone"
-            ? "border-l-4 border-l-amber-400 dark:border-l-amber-500"
-            : ""
         }`}
       >
         {/* The wrapper stops the click, not the Checkbox: Base UI forwards it
@@ -257,7 +253,7 @@ export function ItemRow({
             <span
               className={`block w-full break-words text-sm ${
                 completed ? "text-neutral-400 line-through" : ""
-              } ${item.kind === "milestone" ? "font-medium" : ""}`}
+              }`}
             >
               {item.title}
             </span>

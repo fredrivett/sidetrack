@@ -1,13 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { projectDrop, type TreeRow } from "./itemTree";
 
-// Rows as shown: "A" with sub-items a1 and a2, then B, the milestone M, and C
-// with a collapsed checklist.
+// Rows as shown: "A" with sub-items a1 and a2, then B, and C with a collapsed
+// checklist.
 const task = (id: string, extra: Partial<TreeRow> = {}): TreeRow => ({
   id,
   depth: 0,
   parentId: null,
-  isTask: true,
   hasChildren: false,
   ...extra,
 });
@@ -17,7 +16,6 @@ const rows: TreeRow[] = [
   sub("a1", "A"),
   sub("a2", "A"),
   task("B"),
-  task("M", { isTask: false }),
   task("C", { hasChildren: true, collapsed: true }),
 ];
 const drop = (active: string, over: string, dx: number, list = rows) => {
@@ -32,10 +30,9 @@ describe("projectDrop", () => {
     expect(drop("B", "B", 0)).toEqual({ parentId: null, position: "after:A" });
   });
 
-  it("nests between two sub-items without a sideways move, but never a milestone", () => {
+  it("nests between two sub-items without a sideways move", () => {
     // Dropped over a2 from below: it lands between a1 and a2.
     expect(drop("B", "a2", 0)).toEqual({ parentId: "A", position: "after:a1" });
-    expect(drop("M", "a2", 0)).toBeNull();
     // A task with sub-items can't become one, so it can't land there either.
     expect(drop("C", "a2", 0)).toBeNull();
   });
@@ -46,13 +43,8 @@ describe("projectDrop", () => {
     expect(drop("a1", "a1", -1)).toEqual({ parentId: "A", position: "top" });
   });
 
-  it("only nests under a task, and keeps a parent with sub-items at the top level", () => {
-    // Under the milestone M there's nothing to nest into.
-    expect(drop("C", "C", 1, rows.filter((r) => r.id !== "B"))).toEqual({
-      parentId: null,
-      position: "after:M",
-    });
-    expect(drop("C", "M", 1)).toEqual({ parentId: null, position: "after:B" });
+  it("keeps a parent with sub-items at the top level", () => {
+    expect(drop("C", "C", 1)).toEqual({ parentId: null, position: "after:B" });
   });
 
   it("moves a sub-item into another checklist, at the end of a collapsed one", () => {

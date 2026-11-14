@@ -268,7 +268,6 @@ export function ItemList({
     id: f.item.id,
     depth: f.parentId ? 1 : 0,
     parentId: f.parentId,
-    isTask: f.item.kind === "task",
     hasChildren: kids.has(f.item.id),
     collapsed: collapsed.has(f.item.id),
   }));
@@ -430,10 +429,7 @@ export function ItemList({
               }
               // A plain task can become a sub-item of the task just above it.
               const prev = above.get(item.id);
-              const canNest =
-                item.kind === "task" &&
-                children.length === 0 &&
-                prev?.kind === "task";
+              const canNest = children.length === 0 && prev !== undefined;
               return rowFor(row, item, {
                 drag,
                 nestUnder: canNest ? { id: prev.id, title: prev.title } : undefined,

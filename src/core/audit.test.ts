@@ -30,8 +30,8 @@ describe("audit", () => {
     const { db } = createTestDb();
     const u = createTestUser(db);
     const p = createProject(db, u, { name: "P" }, "web");
-    addItem(db, u, { projectId: p.id, kind: "task", title: "via-web" }, "web");
-    addItem(db, u, { projectId: p.id, kind: "task", title: "via-mcp" }, "mcp");
+    addItem(db, u, { projectId: p.id, title: "via-web" }, "web");
+    addItem(db, u, { projectId: p.id, title: "via-mcp" }, "mcp");
 
     const webOnly = listAudit(db, u, { source: "web" });
     expect(webOnly.every((e) => e.source === "web")).toBe(true);
@@ -51,7 +51,7 @@ describe("audit", () => {
     addItem(
       db,
       u,
-      { projectId: p.id, kind: "task", title: "Water plants" },
+      { projectId: p.id, title: "Water plants" },
       { source: "mcp", agent: { keyId: record.id, name: record.name } },
     );
     // Revoking deletes the key row; the log must still name the agent.
@@ -76,8 +76,8 @@ describe("audit", () => {
     const { db } = createTestDb();
     const u = createTestUser(db);
     const p = createProject(db, u, { name: "P" }, "web");
-    addItem(db, u, { projectId: p.id, kind: "task", title: "older" }, "web");
-    addItem(db, u, { projectId: p.id, kind: "task", title: "newer" }, "web");
+    addItem(db, u, { projectId: p.id, title: "older" }, "web");
+    addItem(db, u, { projectId: p.id, title: "newer" }, "web");
 
     const rows = listAudit(db, u);
     for (let i = 1; i < rows.length; i++) {
@@ -89,8 +89,8 @@ describe("audit", () => {
     const { db } = createTestDb();
     const u = createTestUser(db);
     const p = createProject(db, u, { name: "P" }, "web");
-    addItem(db, u, { projectId: p.id, kind: "task", title: "x" }, "web");
-    addItem(db, u, { projectId: p.id, kind: "task", title: "y" }, "web");
+    addItem(db, u, { projectId: p.id, title: "x" }, "web");
+    addItem(db, u, { projectId: p.id, title: "y" }, "web");
 
     expect(listAudit(db, u, { limit: 1 }).length).toBe(1);
     expect(listAudit(db, u, { limit: 0 }).length).toBeGreaterThanOrEqual(1);

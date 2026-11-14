@@ -26,7 +26,7 @@ describe("projects", () => {
     const u = createTestUser(db);
     const p = createProject(db, u, { name: "Christmas trip" }, "web");
     expect(p.status).toBe("active");
-    addItem(db, u, { projectId: p.id, kind: "task", title: "Book trains" }, "web");
+    addItem(db, u, { projectId: p.id, title: "Book trains" }, "web");
 
     updateProject(db, u, p.id, { status: "archived" }, "web");
     expect(getProject(db, u, p.id)?.status).toBe("archived");

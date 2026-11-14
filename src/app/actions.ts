@@ -36,7 +36,7 @@ import {
   reorderProject as reorderProjectCore,
   updateProject as updateProjectCore,
 } from "@/core/projects";
-import type { AuditSource, ItemKind, ProjectStatus } from "@/core/schema";
+import type { AuditSource, ProjectStatus } from "@/core/schema";
 import { setTimeZone as setTimeZoneCore } from "@/core/users";
 import { getCurrentSession, requireUserId } from "@/auth/session";
 import { notifyInvite } from "@/lib/email";
@@ -160,7 +160,6 @@ export async function leaveProjectAction(projectId: string) {
 
 export async function addItemAction(input: {
   projectId: string;
-  kind: ItemKind;
   title: string;
   description?: string | null;
   category?: string | null;

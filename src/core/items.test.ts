@@ -34,8 +34,8 @@ function seedProject() {
 describe("items", () => {
   it("appends to the end of the active range by default", () => {
     const { db, userId, projectId } = seedProject();
-    addItem(db, userId, { projectId, kind: "task", title: "first" }, "web");
-    addItem(db, userId, { projectId, kind: "task", title: "second" }, "web");
+    addItem(db, userId, { projectId, title: "first" }, "web");
+    addItem(db, userId, { projectId, title: "second" }, "web");
     expect(listItems(db, userId, projectId).map((i) => i.title)).toEqual([
       "first",
       "second",
@@ -44,11 +44,11 @@ describe("items", () => {
 
   it("honours positionRef: 'top'", () => {
     const { db, userId, projectId } = seedProject();
-    addItem(db, userId, { projectId, kind: "task", title: "first" }, "web");
+    addItem(db, userId, { projectId, title: "first" }, "web");
     addItem(
       db,
       userId,
-      { projectId, kind: "task", title: "above", positionRef: "top" },
+      { projectId, title: "above", positionRef: "top" },
       "web",
     );
     expect(listItems(db, userId, projectId).map((i) => i.title)).toEqual([
@@ -60,7 +60,7 @@ describe("items", () => {
   it("keeps a completed item in place, and reopening leaves it there", () => {
     const { db, userId, projectId } = seedProject();
     const add = (title: string) =>
-      addItem(db, userId, { projectId, kind: "task", title }, "web");
+      addItem(db, userId, { projectId, title }, "web");
     add("a");
     const b = add("b");
     add("c");
@@ -83,20 +83,20 @@ describe("items", () => {
     const done = addItem(
       db,
       userId,
-      { projectId, kind: "task", title: "done" },
+      { projectId, title: "done" },
       "web",
     );
     const open = addItem(
       db,
       userId,
-      { projectId, kind: "task", title: "open" },
+      { projectId, title: "open" },
       "web",
     );
     completeItem(db, userId, done.id, "web");
     addItem(
       db,
       userId,
-      { projectId, kind: "task", title: "new", positionRef: "top" },
+      { projectId, title: "new", positionRef: "top" },
       "web",
     );
     reorderItem(db, userId, open.id, "top", "web");
@@ -110,7 +110,7 @@ describe("items", () => {
   it("orders tied positions by id and can still place next to them", () => {
     const { db, userId, projectId } = seedProject();
     const add = (title: string) =>
-      addItem(db, userId, { projectId, kind: "task", title }, "web");
+      addItem(db, userId, { projectId, title }, "web");
     const a = add("a");
     const b = add("b");
     const c = add("c");
@@ -133,7 +133,7 @@ describe("items", () => {
     const item = addItem(
       db,
       userId,
-      { projectId, kind: "task", title: "with cat", category: "infra" },
+      { projectId, title: "with cat", category: "infra" },
       "web",
     );
     const log = listAudit(db, userId);
@@ -148,7 +148,7 @@ describe("items", () => {
     const item = addItem(
       db,
       userId,
-      { projectId, kind: "task", title: "toggle" },
+      { projectId, title: "toggle" },
       "web",
     );
     completeItem(db, userId, item.id, "mcp");
@@ -164,7 +164,7 @@ describe("items", () => {
     const item = addItem(
       db,
       userId,
-      { projectId, kind: "task", title: "same" },
+      { projectId, title: "same" },
       "web",
     );
     const before = listAudit(db, userId).length;
@@ -175,7 +175,7 @@ describe("items", () => {
   it("rejects a blank title on create", () => {
     const { db, userId, projectId } = seedProject();
     expect(() =>
-      addItem(db, userId, { projectId, kind: "task", title: "   " }, "web"),
+      addItem(db, userId, { projectId, title: "   " }, "web"),
     ).toThrow(/title cannot be empty/);
   });
 
@@ -184,7 +184,7 @@ describe("items", () => {
     const item = addItem(
       db,
       userId,
-      { projectId, kind: "task", title: "keep me" },
+      { projectId, title: "keep me" },
       "web",
     );
     expect(() =>
@@ -195,8 +195,8 @@ describe("items", () => {
 
   it("reorders to end", () => {
     const { db, userId, projectId } = seedProject();
-    const a = addItem(db, userId, { projectId, kind: "task", title: "a" }, "web");
-    addItem(db, userId, { projectId, kind: "task", title: "b" }, "web");
+    const a = addItem(db, userId, { projectId, title: "a" }, "web");
+    addItem(db, userId, { projectId, title: "b" }, "web");
     reorderItem(db, userId, a.id, "end", "web");
     expect(listItems(db, userId, projectId).map((i) => i.title)).toEqual([
       "b",
@@ -207,7 +207,7 @@ describe("items", () => {
   it("places next to a middle item, and rejects unknown anchors and bad refs", () => {
     const { db, userId, projectId } = seedProject();
     const add = (title: string) =>
-      addItem(db, userId, { projectId, kind: "task", title }, "web");
+      addItem(db, userId, { projectId, title }, "web");
     add("a");
     const b = add("b");
     add("c");
@@ -230,7 +230,7 @@ describe("items", () => {
 
   it("returns undefined for an empty or unknown id", () => {
     const { db, userId, projectId } = seedProject();
-    addItem(db, userId, { projectId, kind: "task", title: "real" }, "web");
+    addItem(db, userId, { projectId, title: "real" }, "web");
     // An empty id must not fall through to "match any owned item".
     expect(getItem(db, userId, "")).toBeUndefined();
     expect(getItem(db, userId, "nope")).toBeUndefined();
@@ -238,24 +238,24 @@ describe("items", () => {
 
   it("numbers items monotonically per project, never reusing after delete", () => {
     const { db, userId, projectId } = seedProject();
-    const a = addItem(db, userId, { projectId, kind: "task", title: "a" }, "web");
-    const b = addItem(db, userId, { projectId, kind: "task", title: "b" }, "web");
+    const a = addItem(db, userId, { projectId, title: "a" }, "web");
+    const b = addItem(db, userId, { projectId, title: "b" }, "web");
     expect([a.number, b.number]).toEqual([1, 2]);
 
     // Deleting b must not hand its number back to the next item.
     deleteItem(db, userId, b.id, "web");
-    const c = addItem(db, userId, { projectId, kind: "task", title: "c" }, "web");
+    const c = addItem(db, userId, { projectId, title: "c" }, "web");
     expect(c.number).toBe(3);
   });
 
   it("numbers each project independently", () => {
     const { db, userId, projectId } = seedProject();
     const other = createProject(db, userId, { name: "Other" }, "web");
-    const a = addItem(db, userId, { projectId, kind: "task", title: "a" }, "web");
+    const a = addItem(db, userId, { projectId, title: "a" }, "web");
     const b = addItem(
       db,
       userId,
-      { projectId: other.id, kind: "task", title: "b" },
+      { projectId: other.id, title: "b" },
       "web",
     );
     // Both projects start their own sequence at 1.
@@ -268,7 +268,7 @@ describe("items", () => {
     const item = addItem(
       db,
       userId,
-      { projectId, kind: "task", title: "rm" },
+      { projectId, title: "rm" },
       "web",
     );
     deleteItem(db, userId, item.id, "mcp");
@@ -292,7 +292,7 @@ describe("item assignment", () => {
     const item = addItem(
       db,
       owner,
-      { projectId, kind: "task", title: "do it" },
+      { projectId, title: "do it" },
       "web",
     );
     return { db, owner, alice, bob, projectId, item };
@@ -335,7 +335,7 @@ describe("item assignment", () => {
     const item = addItem(
       db,
       owner,
-      { projectId, kind: "task", title: "x" },
+      { projectId, title: "x" },
       "web",
     );
     expect(() =>
@@ -389,11 +389,11 @@ describe("item assignment", () => {
 describe("checklists (sub-items)", () => {
   function setup() {
     const { db, userId, projectId } = seedProject();
-    const add = (title: string, opts: { parentId?: string; positionRef?: string; kind?: "task" | "milestone" } = {}) =>
+    const add = (title: string, opts: { parentId?: string; positionRef?: string } = {}) =>
       addItem(
         db,
         userId,
-        { projectId, kind: opts.kind ?? "task", title, parentId: opts.parentId, positionRef: opts.positionRef },
+        { projectId, title, parentId: opts.parentId, positionRef: opts.positionRef },
         "web",
       );
     const tree = () =>
@@ -491,18 +491,15 @@ describe("checklists (sub-items)", () => {
     expect(getItem(db, userId, c.id)?.completedAt).not.toBeNull();
   });
 
-  it("is one level deep, tasks only, and within one list", () => {
+  it("is one level deep and within one list", () => {
     const { db, userId, add } = setup();
     const p = add("tidy");
     const c = add("lounge", { parentId: p.id });
     expect(() => add("rug", { parentId: c.id })).toThrow(/already a sub-item/);
-    expect(() => add("v1", { parentId: p.id, kind: "milestone" })).toThrow(/only tasks/);
-    const m = add("launch", { kind: "milestone" });
-    expect(() => add("x", { parentId: m.id })).toThrow(/only tasks/);
 
     const other = createProject(db, userId, { name: "Other" }, "web");
     expect(() =>
-      addItem(db, userId, { projectId: other.id, kind: "task", title: "x", parentId: p.id }, "web"),
+      addItem(db, userId, { projectId: other.id, title: "x", parentId: p.id }, "web"),
     ).toThrow(/same list/);
   });
 
@@ -609,7 +606,7 @@ describe("due dates and Today", () => {
     const it1 = addItem(
       db,
       userId,
-      { projectId, kind: "task", title: "bins", dueDate: "2026-11-14" },
+      { projectId, title: "bins", dueDate: "2026-11-14" },
       "web",
     );
     expect(it1.dueDate).toBe("2026-11-14");
@@ -622,7 +619,7 @@ describe("due dates and Today", () => {
       updateItem(db, userId, it1.id, { dueDate: "2026-02-30" }, "web"),
     ).toThrow(/invalid due date/);
     expect(() =>
-      addItem(db, userId, { projectId, kind: "task", title: "x", dueDate: "14/11" }, "web"),
+      addItem(db, userId, { projectId, title: "x", dueDate: "14/11" }, "web"),
     ).toThrow(/invalid due date/);
 
     const updates = () =>
@@ -650,7 +647,7 @@ describe("due dates and Today", () => {
     const archived = createProject(db, userId, { name: "Old" }, "web");
     updateProject(db, userId, archived.id, { status: "archived" }, "web");
     const add = (projectId: string, title: string, dueDate: string | null) =>
-      addItem(db, userId, { projectId, kind: "task", title, dueDate }, "web");
+      addItem(db, userId, { projectId, title, dueDate }, "web");
 
     const tz = "Europe/London";
     const now = Date.UTC(2026, 10, 14, 12); // midday on the 14th in London
@@ -707,12 +704,12 @@ describe("due dates and Today", () => {
       projectId: string,
       title: string,
       dueDate: string | null,
-      more: { parentId?: string; kind?: "task" | "milestone" } = {},
+      more: { parentId?: string } = {},
     ) =>
       addItem(
         db,
         userId,
-        { projectId, kind: more.kind ?? "task", title, dueDate, parentId: more.parentId },
+        { projectId, title, dueDate, parentId: more.parentId },
         "web",
       );
 
@@ -721,7 +718,6 @@ describe("due dates and Today", () => {
     add(buy.id, "slippers", null);
     add(home.id, "tiling", null);
     add(home.id, "bins", "2026-11-14");
-    add(home.id, "v1", null, { kind: "milestone" });
     const tidy = add(home.id, "tidy flat", null);
     add(home.id, "lounge", null, { parentId: tidy.id });
     add(home.id, "kitchen", "2026-11-20", { parentId: tidy.id });

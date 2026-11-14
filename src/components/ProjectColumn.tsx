@@ -193,7 +193,6 @@ export function ProjectColumn({
           checklist={items.filter((i) => i.parentId === detail.item?.id)}
           nestTargets={items.filter(
             (i) =>
-              i.kind === "task" &&
               i.parentId === null &&
               i.completedAt === null &&
               i.id !== detail.item?.id,

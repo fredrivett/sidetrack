@@ -18,7 +18,7 @@ function seedItem() {
   const item = addItem(
     db,
     userId,
-    { projectId: p.id, kind: "task", title: "t" },
+    { projectId: p.id, title: "t" },
     "web",
   );
   return { db, userId, projectId: p.id, itemId: item.id };
@@ -107,8 +107,8 @@ describe("prLinks", () => {
 
   it("supports many-to-many links", () => {
     const { db, userId, projectId } = seedItem();
-    const a = addItem(db, userId, { projectId, kind: "task", title: "a" }, "web");
-    const b = addItem(db, userId, { projectId, kind: "task", title: "b" }, "web");
+    const a = addItem(db, userId, { projectId, title: "a" }, "web");
+    const b = addItem(db, userId, { projectId, title: "b" }, "web");
     linkItemToPr(db, userId, a.id, PR, "web");
     linkItemToPr(db, userId, b.id, PR, "web");
     linkItemToPr(db, userId, a.id, "https://github.com/owner/repo/pull/43", "web");

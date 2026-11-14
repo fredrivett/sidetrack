@@ -18,13 +18,12 @@ import { addItem, completeItem } from "@/core/items";
 import { runMigrations } from "@/core/migrate";
 import { linkItemToPr } from "@/core/prLinks";
 import { createProject } from "@/core/projects";
-import type { ItemKind, ProjectStatus } from "@/core/schema";
+import type { ProjectStatus } from "@/core/schema";
 
 // Seeded rows look like the owner created them in the web UI.
 const SOURCE = "web" as const;
 
 interface SeedItem {
-  kind: ItemKind;
   title: string;
   category?: string;
   done?: boolean;
@@ -54,40 +53,39 @@ function plan(): SeedUser[] {
           name: "Sidetrack",
           status: "active",
           items: [
-            { kind: "milestone", title: "v1.0 launched" },
+            { title: "Launch v1.0" },
             {
-              kind: "task",
               title: "Set up error tracking",
               category: "infra",
               done: true,
               pr: "https://github.com/fredrivett/sidetrack/pull/1",
             },
-            { kind: "task", title: "Write the launch post", category: "growth" },
-            { kind: "task", title: "Triage early feedback", category: "growth" },
+            { title: "Write the launch post", category: "growth" },
+            { title: "Triage early feedback", category: "growth" },
           ],
         },
         {
           name: "Home",
           status: "active",
           items: [
-            { kind: "task", title: "Water plants" },
-            { kind: "task", title: "Descale coffee machine" },
-            { kind: "task", title: "Refill salt", done: true },
+            { title: "Water plants" },
+            { title: "Descale coffee machine" },
+            { title: "Refill salt", done: true },
           ],
         },
         {
           name: "Mobile app",
           status: "paused",
           items: [
-            { kind: "task", title: "Cut a TestFlight build" },
-            { kind: "task", title: "Wire push notifications" },
-            { kind: "milestone", title: "Public beta" },
+            { title: "Cut a TestFlight build" },
+            { title: "Wire push notifications" },
+            { title: "Open the public beta" },
           ],
         },
         {
           name: "Christmas 2025",
           status: "archived",
-          items: [{ kind: "task", title: "Book trains", done: true }],
+          items: [{ title: "Book trains", done: true }],
         },
       ],
     },
@@ -100,16 +98,16 @@ function plan(): SeedUser[] {
           name: "Personal site",
           status: "active",
           items: [
-            { kind: "task", title: "Ship the about page", done: true },
-            { kind: "task", title: "Add a now page" },
+            { title: "Ship the about page", done: true },
+            { title: "Add a now page" },
           ],
         },
         {
           name: "Newsletter",
           status: "active",
           items: [
-            { kind: "task", title: "Pick a sending platform" },
-            { kind: "task", title: "Draft issue #1" },
+            { title: "Pick a sending platform" },
+            { title: "Draft issue #1" },
           ],
         },
       ],
@@ -161,7 +159,6 @@ async function seed() {
           user.id,
           {
             projectId: project.id,
-            kind: item.kind,
             title: item.title,
             category: item.category,
           },
