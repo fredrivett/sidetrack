@@ -1,0 +1,16 @@
+services:
+  web:
+    # `predev` migrates ./data/sidetrack.db and seeds the demo user on a fresh DB.
+    # BETTER_AUTH_URL pins Better Auth to the portal origin so auth POSTs
+    # through the portal proxy pass its origin check.
+    command: BETTER_AUTH_URL="$PUBLIC_URL" pnpm dev --port "$PORT"
+    portal:
+      title: Sidetrack
+      description: Log in as demo@sidetrack.local / sidetrack-demo.
+  mailpit:
+    # Dev email goes to smtp://localhost:1025 (src/lib/env.ts); the web UI shows it.
+    command: mailpit --smtp 127.0.0.1:1025 --listen "127.0.0.1:$PORT"
+    port: 8025
+    portal:
+      title: Mailpit
+      description: Captured dev email, such as password resets.
