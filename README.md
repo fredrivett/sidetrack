@@ -202,19 +202,18 @@ Built with [Next.js 16](https://nextjs.org), [React 19](https://react.dev),
 
 ## License
 
-Sidetrack is [Fair Source](https://fair.io) software, licensed under the
-[Functional Source License, Version 1.1, Apache 2.0 Future License (FSL-1.1-ALv2)](./LICENSE.md).
+Sidetrack is open source software, licensed under the
+[GNU Affero General Public License, version 3 (AGPL-3.0-only)](./LICENSE).
 Copyright © 2026 Jotmake Limited.
 
 In short:
 
-- You may use, copy, modify, and redistribute the code for **any purpose except
-  a Competing Use** — broadly, a commercial product or service that substitutes
-  for Sidetrack. Internal use, education, research, and contributions back are
-  all explicitly permitted.
-- Each released version **automatically converts to the
-  [Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0) two
-  years after its release**, at which point all restrictions fall away.
+- You may use, copy, modify, self-host, and redistribute Sidetrack for any
+  purpose, including commercially.
+- If you modify Sidetrack and let other people use it over a network (for
+  example, by hosting it for them), you must offer those users the source code
+  of your modified version under the same license.
 
-This is a source-available license, not an OSI-approved "open source" license,
-during the two-year window. See [`LICENSE.md`](./LICENSE.md) for the full terms.
+Contributions are accepted under the same license. Versions released before
+this change remain available under the Functional Source License (FSL-1.1-ALv2)
+they shipped with. See [`LICENSE`](./LICENSE) for the full terms.
