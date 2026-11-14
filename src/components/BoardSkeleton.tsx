@@ -26,7 +26,7 @@ export function BoardSkeleton() {
     <BoardMain>
       <BoardHeader nav={<Bone className="h-[26px] w-[105px] rounded-md" />}>
         {/* List count, Activity, Account. */}
-        <Bone className="hidden h-4 w-14 sm:block" />
+        <Bone className="hidden h-4 w-8 sm:block" />
         <Bone className="h-7 w-9 rounded-lg sm:w-[86px]" />
         <Bone className="h-7 w-9 rounded-lg sm:w-[90px]" />
       </BoardHeader>
@@ -40,18 +40,19 @@ export function BoardSkeleton() {
             aria-hidden="true"
             header={
               <>
-                {/* Icon (inside its p-1 button), name, status and prefix, menu. */}
+                {/* One 32px row, as in ProjectColumn: the icon inside its p-1
+                    button, the name inside its h-8 edit box (pulled left by
+                    the box's border and padding) followed by the prefix, then
+                    the menu. A list's status and Shared badges get a second
+                    row only when they apply, so most lists have none. */}
                 <span className="p-1">
-                  <Bone className="size-[22px] rounded-md" />
+                  <Bone className="size-6 rounded-[4px]" />
                 </span>
-                <div className="min-w-0 flex-1 space-y-1">
-                  <span className="block py-1">
-                    <Bone className="h-4 w-32" />
+                <div className="-ml-[7px] flex h-8 min-w-0 flex-1 items-center gap-1">
+                  <span className="px-[7px]">
+                    <Bone className="h-4 w-24" />
                   </span>
-                  <div className="flex items-center gap-1.5">
-                    <Bone className="h-5 w-16 rounded-full" />
-                    <Bone className="h-[19px] w-8" />
-                  </div>
+                  <Bone className="h-[19px] w-8 shrink-0" />
                 </div>
                 <span className="h-8 w-6 shrink-0" />
               </>
@@ -80,6 +81,11 @@ export function BoardSkeleton() {
             </div>
           </ColumnCard>
         ))}
+        {/* The frame of AddProjectButton, which always ends the rail. */}
+        <span
+          aria-hidden="true"
+          className="h-full min-h-32 w-72 shrink-0 snap-center rounded-2xl border-2 border-dashed border-neutral-300 dark:border-neutral-700"
+        />
       </BoardRail>
     </BoardMain>
   );
