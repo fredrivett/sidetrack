@@ -49,8 +49,8 @@ function images(
   [width, height, ratio]: [number, number, number],
   orientation: "portrait" | "landscape",
 ): StartupImage[] {
-  // device-width and -height are always the portrait values; the image is
-  // the screen as the user holds it.
+  // device-width is always the portrait width; the image is the screen as the
+  // user holds it.
   const [w, h] =
     orientation === "portrait"
       ? [width * ratio, height * ratio]
@@ -60,11 +60,23 @@ function images(
     width: w,
     height: h,
     background: BACKGROUNDS[scheme],
-    media: `(device-width: ${width}px) and (device-height: ${height}px) and (-webkit-device-pixel-ratio: ${ratio}) and (orientation: ${orientation}) and (prefers-color-scheme: ${scheme})`,
+    media: `(device-width: ${width}px) and (-webkit-device-pixel-ratio: ${ratio}) and (orientation: ${orientation}) and (prefers-color-scheme: ${scheme})`,
   }));
 }
 
-// Both orientations: the manifest allows any, so an app can launch held sideways.
-export const STARTUP_IMAGES: StartupImage[] = [...IPHONES, ...IPADS].flatMap(
-  (screen) => [...images(screen, "portrait"), ...images(screen, "landscape")],
+// The media queries leave out device-height: iOS 27 matches it against
+// Safari's window height when the app is added, not the screen's, so no image
+// matched and the app launched on black (https://webkit.org/b/326500). Screens
+// that share a width and pixel ratio would then match the same queries, so
+// only the first listed of them keeps an image (the 414pt @3x and 834pt @2x
+// ones); the others get one a little off their height.
+const SCREENS = [...IPHONES, ...IPADS].filter(
+  ([width, , ratio], i, all) =>
+    all.findIndex(([w, , r]) => w === width && r === ratio) === i,
 );
+
+// Both orientations: the manifest allows any, so an app can launch held sideways.
+export const STARTUP_IMAGES: StartupImage[] = SCREENS.flatMap((screen) => [
+  ...images(screen, "portrait"),
+  ...images(screen, "landscape"),
+]);
