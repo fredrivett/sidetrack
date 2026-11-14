@@ -51,6 +51,9 @@ function ImageIcon({
   const [index, setIndex] = useState(0);
   const src = srcs[index];
   if (src === undefined) return <>{fallback}</>;
+  // Idempotent per candidate, so onError and the mount check below can't both
+  // advance past the same failure and skip the next candidate.
+  const next = () => setIndex((i) => (i === index ? i + 1 : i));
   return (
     // eslint-disable-next-line @next/next/no-img-element -- external/user URLs and favicons; domains aren't known ahead of time so next/image config can't cover them
     <img
@@ -59,7 +62,13 @@ function ImageIcon({
       alt=""
       width={size}
       height={size}
-      onError={() => setIndex((i) => i + 1)}
+      onError={next}
+      // A server-rendered <img> can fail before hydration attaches onError, so
+      // that error is never seen and the fallback chain stalls on a broken
+      // image. Catch that case on mount: complete with no pixels = failed.
+      ref={(img) => {
+        if (img?.complete && img.naturalWidth === 0) next();
+      }}
       className={cn(BOX, "rounded-[4px] object-contain", className)}
       style={{ width: size, height: size }}
     />
