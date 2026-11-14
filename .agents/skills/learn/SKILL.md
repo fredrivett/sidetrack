@@ -22,8 +22,11 @@ If the bug is genuinely one-off, skip.
    In order of preference:
    - **ESLint rule** (`eslint.config.mjs`) — runs on every edit, zero cost.
    - **Vitest test** (`src/**/*.test.ts`) — catches behavioural regressions.
-   - **PostToolUse hook** (`.claude/settings.json`) — for mechanical checks
-     that don't fit a linter (e.g. grep for a forbidden pattern).
+   - **Edit hook** — for mechanical checks that don't fit a linter (e.g. grep
+     for a forbidden pattern). Edit hooks already exist and surface ESLint
+     output after each edit: `.claude/settings.json` PostToolUse for Claude
+     Code and `.amp/plugins/lint-on-edit.ts` for Amp. Add the new check to
+     both and keep them in step.
    - **AGENTS.md entry** — advisory; only when the above don't fit.
 
 3. **Append to `LEARNINGS.md`** under the `## Drafts` section, in this

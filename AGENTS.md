@@ -8,7 +8,10 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 - `pnpm dev` — Next.js dev server (port from `$CONDUCTOR_PORT` in Conductor)
 - `pnpm build` / `pnpm start` — production build + serve
-- `pnpm lint` — ESLint (run after edits; PostToolUse hook does this automatically)
+- `pnpm lint` — ESLint. Runs automatically after each JS/TS edit: the Claude
+  Code PostToolUse hook (`.claude/settings.json`, whole repo) and the Amp
+  plugin (`.amp/plugins/lint-on-edit.ts`, edited files only) both hand lint
+  errors back to the agent.
 - `pnpm test` — Vitest, real `better-sqlite3` in-memory, no mocks of `src/core`
 - `pnpm test:mutation` — Stryker over the high-stakes domain logic (`src/core`:
   audit, fractional indexing, items, projects, categories). On-demand, not CI;

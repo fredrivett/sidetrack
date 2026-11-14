@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "pnpm lint --quiet"
+            "command": "pnpm lint --quiet 1>&2 || exit 2"
           }
         ]
       }
