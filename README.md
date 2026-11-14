@@ -214,6 +214,11 @@ In short:
   example, by hosting it for them), you must offer those users the source code
   of your modified version under the same license.
 
-Contributions are accepted under the same license. Versions released before
-this change remain available under the Functional Source License (FSL-1.1-ALv2)
-they shipped with. See [`LICENSE`](./LICENSE) for the full terms.
+Contributions are accepted under the same license. See [`LICENSE`](./LICENSE)
+for the full terms.
+
+Versions released before this change remain available under the
+[Functional Source License (FSL-1.1-ALv2)](https://github.com/fredrivett/sidetrack/blob/d5d4a56c6285cd916b8a54692aa6d52c8ebd5efb/LICENSE.md)
+they shipped with, and each converts to the
+[Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0) two
+years after its release.
