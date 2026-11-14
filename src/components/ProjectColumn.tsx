@@ -75,28 +75,40 @@ export function ProjectColumn({
       data-project-id={project.id}
       header={
         <>
-          <ProjectIconPicker project={project} size={22} />
+          {/* Icon, title row and ⋯ menu are all 32px tall so they line up. */}
+          <ProjectIconPicker project={project} size={24} />
           <div className="min-w-0 flex-1 space-y-1">
-            <EditableText
-              value={project.name}
-              onSave={(next) => updateProjectAction(project.id, { name: next })}
-              required
-              className="block w-full truncate text-base font-semibold"
-              inputClassName="w-full text-base font-semibold"
-            />
-            <div className="flex items-center gap-1.5">
-              {project.status !== "active" && (
-                <StatusBadge projectId={project.id} status={project.status} />
-              )}
-              <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-[10px] tracking-wide text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
+            <div className="flex items-center gap-1">
+              {/* The button and the input share height, padding and border, and
+                  the input sizes to its text, so editing doesn't shift layout. */}
+              <EditableText
+                value={project.name}
+                onSave={(next) =>
+                  updateProjectAction(project.id, { name: next })
+                }
+                required
+                className="h-8 min-w-0 cursor-text truncate rounded-md border border-transparent px-1.5 text-base font-semibold transition-colors hover:bg-muted"
+                inputClassName="field-sizing-content h-8 min-w-0 px-1.5 py-0 text-base font-semibold"
+              />
+              <span className="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-[10px] tracking-wide text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
                 {project.prefix}
               </span>
-              {!project.isOwner && (
-                <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sky-700 dark:bg-sky-950 dark:text-sky-400">
-                  Shared
-                </span>
-              )}
             </div>
+            {(project.status !== "active" || !project.isOwner) && (
+              <div className="flex items-center gap-1.5">
+                {project.status !== "active" && (
+                  <StatusBadge
+                    projectId={project.id}
+                    status={project.status}
+                  />
+                )}
+                {!project.isOwner && (
+                  <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sky-700 dark:bg-sky-950 dark:text-sky-400">
+                    Shared
+                  </span>
+                )}
+              </div>
+            )}
           </div>
           <ProjectMenu
             projectId={project.id}
