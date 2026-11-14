@@ -49,6 +49,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Kbd } from "@/components/ui/kbd";
 import { useMediaQuery } from "@/components/ui/use-media-query";
 import { formatItemRef } from "@/lib/itemRef";
@@ -226,15 +227,17 @@ export function ItemRow({
             : ""
         }`}
       >
-        <input
-          type="checkbox"
-          checked={completed}
-          onChange={toggle}
-          onClick={(e) => e.stopPropagation()}
-          // mt-0.5 centres the 16px box on the title's 20px first line.
-          className="mt-0.5 size-4 shrink-0"
-          aria-label={completed ? "Uncomplete" : "Complete"}
-        />
+        {/* The wrapper stops the click, not the Checkbox: Base UI forwards it
+            to a hidden sibling <input>, whose click would also bubble to the
+            row and open the detail sheet. mt-0.5 centres the 16px circle on
+            the title's 20px first line. */}
+        <span className="mt-0.5 flex" onClick={(e) => e.stopPropagation()}>
+          <Checkbox
+            checked={completed}
+            onCheckedChange={toggle}
+            aria-label={completed ? "Uncomplete" : "Complete"}
+          />
+        </span>
 
         <div className="min-w-0 flex-1 space-y-0.5">
           {/* Keyboard-focusable affordance for opening the detail sheet; the

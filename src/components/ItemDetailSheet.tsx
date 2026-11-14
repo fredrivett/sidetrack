@@ -35,6 +35,7 @@ import { modifierSymbol } from "@/lib/keyboard";
 import { prLabel } from "@/lib/pr";
 import { addDays, dayLabel, thisWeekend } from "@/lib/time";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
@@ -132,18 +133,16 @@ function Checklist({
         const assignee = assignees.find((a) => a.userId === child.assigneeId);
         return (
           <div key={child.id} className="flex items-center gap-2 px-1 py-0.5">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={done}
               disabled={pending}
-              onChange={() =>
+              onCheckedChange={() =>
                 start(() => {
                   void (done
                     ? uncompleteItemAction(child.id)
                     : completeItemAction(child.id));
                 })
               }
-              className="size-4 shrink-0"
               aria-label={`${done ? "Uncomplete" : "Complete"} ${child.title}`}
             />
             <button

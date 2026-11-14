@@ -71,7 +71,7 @@ export function BoardSkeleton() {
                   key={row}
                   className="flex items-start gap-2 rounded-lg border border-neutral-200 bg-white p-2 dark:border-neutral-800 dark:bg-neutral-900"
                 >
-                  <Bone className="mt-0.5 size-4 shrink-0" />
+                  <Bone className="mt-0.5 size-4 shrink-0 rounded-full!" />
                   <span className="block flex-1 py-1">
                     <Bone className={`h-3 ${width}`} />
                   </span>
