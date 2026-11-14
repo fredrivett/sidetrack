@@ -30,6 +30,17 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # the default with "".
 ARG NEXT_PUBLIC_POSTHOG_KEY
 ENV NEXT_PUBLIC_POSTHOG_KEY=$NEXT_PUBLIC_POSTHOG_KEY
+# Build-only inputs read by next.config.ts during `pnpm build`. Without these
+# ARGs Railway never passes them in, so builds shipped with no release tag and
+# no source maps. They are visible to RUN as env vars and, being builder-stage
+# only, never reach the runtime image.
+# - The commit SHA: inlined as NEXT_PUBLIC_RELEASE, which tags every PostHog
+#   capture (the deploy marker). Railway provides RAILWAY_GIT_COMMIT_SHA.
+# - The PostHog personal API key + project ID: enable the source-map upload.
+ARG SOURCE_COMMIT
+ARG RAILWAY_GIT_COMMIT_SHA
+ARG POSTHOG_API_KEY
+ARG POSTHOG_PROJECT_ID
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN pnpm build
