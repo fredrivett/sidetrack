@@ -16,7 +16,17 @@ vi.mock("@/app/actions", () => ({
   updateItemAction: vi.fn(),
 }));
 
+// Whether the emulated device has a hover-capable pointer; the item menu opens
+// on right-click only there. Reset to a mouse device after each test.
+let canHover = true;
+
 beforeAll(() => {
+  window.matchMedia = ((query: string) => ({
+    matches: query === "(hover: hover)" && canHover,
+    media: query,
+    addEventListener() {},
+    removeEventListener() {},
+  })) as unknown as typeof window.matchMedia;
   // base-ui's menu positioning observes resize; jsdom has no ResizeObserver, so
   // stub it with inert methods (jsdom never lays out, so nothing to observe).
   globalThis.ResizeObserver ??= class {
@@ -32,7 +42,10 @@ beforeAll(() => {
   };
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  canHover = true;
+});
 
 const item: Item = {
   id: "i1",
@@ -91,11 +104,9 @@ function renderRow(
 }
 
 describe("ItemRow menu", () => {
-  it("opens without crashing and shows the item ref + Copy ID", () => {
-    renderRow();
-    const trigger = screen.getByLabelText("Item options");
-    fireEvent.pointerDown(trigger);
-    fireEvent.click(trigger);
+  it("opens on right-click without crashing and shows the item ref + Copy ID", () => {
+    const { container } = renderRow();
+    fireEvent.contextMenu(container.querySelector(".group") as HTMLElement);
 
     // The ref label and Copy ID render inside the open menu. Before the
     // DropdownMenuGroup wrapper, base-ui's GroupLabel threw here
@@ -103,6 +114,13 @@ describe("ItemRow menu", () => {
     // moment the menu opened.
     expect(screen.getByText("ENG-42")).toBeTruthy();
     expect(screen.getByText("Copy ID")).toBeTruthy();
+  });
+
+  it("does not open on touch devices", () => {
+    canHover = false;
+    const { container } = renderRow();
+    fireEvent.contextMenu(container.querySelector(".group") as HTMLElement);
+    expect(screen.queryByText("Copy ID")).toBeNull();
   });
 });
 
@@ -124,13 +142,13 @@ describe("ItemRow open-detail", () => {
     expect(onOpenDetail).not.toHaveBeenCalled();
   });
 
-  it("does not open the detail sheet when the options menu is clicked", () => {
+  it("does not open the detail sheet when a menu item is clicked", () => {
     const onOpenDetail = vi.fn();
-    renderRow([viewer], item, onOpenDetail);
+    const { container } = renderRow([viewer], item, onOpenDetail);
 
-    const trigger = screen.getByLabelText("Item options");
-    fireEvent.pointerDown(trigger);
-    fireEvent.click(trigger);
+    fireEvent.contextMenu(container.querySelector(".group") as HTMLElement);
+    fireEvent.click(screen.getByText("Delete item"));
+    expect(screen.getByText("Confirm delete?")).toBeTruthy();
     expect(onOpenDetail).not.toHaveBeenCalled();
   });
 
