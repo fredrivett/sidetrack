@@ -55,7 +55,8 @@ tooling/config suggestions; there is no Vercel project.
   so opening the menu doesn't start a drag.
 - Item rows have no `⋯` button: their actions are a right-click `ContextMenu`
   (`ItemRow.tsx`), disabled on touch, where tapping the row opens the detail
-  sheet with the same actions. Keep the row to checkbox, title and avatar.
+  sheet with the same actions. Don't add per-row action buttons; put new
+  actions in the context menu.
 
 # Boundaries
 

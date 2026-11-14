@@ -116,7 +116,7 @@ describe("ItemRow menu", () => {
     expect(screen.getByText("Copy ID")).toBeTruthy();
   });
 
-  it("does not open on touch devices, where tapping opens the detail sheet", () => {
+  it("does not open on touch devices", () => {
     canHover = false;
     const { container } = renderRow();
     fireEvent.contextMenu(container.querySelector(".group") as HTMLElement);
