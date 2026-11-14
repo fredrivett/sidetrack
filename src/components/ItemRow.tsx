@@ -2,6 +2,8 @@
 
 import type { DraggableAttributes, DraggableSyntheticListeners } from "@dnd-kit/core";
 import {
+  CalendarDays,
+  CalendarX,
   Check,
   ChevronRight,
   Copy,
@@ -31,6 +33,7 @@ import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { modifierSymbol } from "@/lib/keyboard";
 import { prLabel } from "@/lib/pr";
+import { dueLabel, quickDueDays } from "@/lib/time";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -56,6 +59,7 @@ import { formatItemRef } from "@/lib/itemRef";
 import { AssigneeOptions } from "./AssigneeOptions";
 import { CategoryBadge } from "./CategoryBadge";
 import { DueBadge } from "./DueBadge";
+import { useToday } from "./use-day-start";
 import { useAssignShortcuts } from "./useAssignShortcuts";
 import { useCopyItemRef } from "./useCopyItemRef";
 import { assigneeName, UserAvatar } from "./UserAvatar";
@@ -112,6 +116,7 @@ export function ItemRow({
   const [hovered, setHovered] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   const canHover = useMediaQuery("(hover: hover)");
+  const today = useToday();
 
   // Clicking anywhere on the row opens the detail sheet, but a drag must not.
   // Track whether dnd-kit treated this gesture as a drag (per its sensors'
@@ -167,6 +172,11 @@ export function ItemRow({
     },
     [item.id],
   );
+  function setDue(dueDate: string | null) {
+    start(() => {
+      void updateItemAction(item.id, { dueDate });
+    });
+  }
   const openPicker = useCallback(() => setAssignOpen(true), []);
   const assignToMe = useCallback(() => {
     assign(viewerId);
@@ -407,6 +417,41 @@ export function ItemRow({
             />
           </ContextMenuSubContent>
         </ContextMenuSub>
+        {/* The sheet's quick dates, for planning from the No date view
+            without opening each item; any other day is in the sheet. */}
+        {today && (
+          <ContextMenuSub>
+            <ContextMenuSubTrigger>
+              <CalendarDays className="opacity-70" />
+              Due date
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent className="w-52">
+              {quickDueDays(today).map(([label, day]) => (
+                <ContextMenuItem key={label} onClick={() => setDue(day)}>
+                  {label}
+                  {item.dueDate === day ? (
+                    <Check className="ml-auto opacity-70" />
+                  ) : (
+                    label !== "Today" &&
+                    label !== "Tomorrow" && (
+                      <ContextMenuShortcut>{dueLabel(day, today)}</ContextMenuShortcut>
+                    )
+                  )}
+                </ContextMenuItem>
+              ))}
+              <ContextMenuItem onClick={onOpenDetail}>Pick a date…</ContextMenuItem>
+              {item.dueDate && (
+                <>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem onClick={() => setDue(null)}>
+                    <CalendarX className="opacity-70" />
+                    Clear due date
+                  </ContextMenuItem>
+                </>
+              )}
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+        )}
         {(nestUnder || parentTitle) && (
           <>
             <ContextMenuSeparator />

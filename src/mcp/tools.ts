@@ -40,6 +40,7 @@ import {
   getProject,
   getProjectWithItems,
   listAllProjectsWithItems,
+  listNoDate,
   listToday,
   listProjects,
   reorderProject,
@@ -55,6 +56,7 @@ import { notifyInvite } from "@/lib/email";
 import { getEnv } from "@/lib/env";
 import { formatItemRef } from "@/lib/itemRef";
 import { formatRelativeLong, isDay } from "@/lib/time";
+import { matchesWhose, WHOSE_FILTERS } from "@/lib/whose";
 
 /** The authenticated caller: the key's owner and the key itself (the agent). */
 export interface McpContext {
@@ -71,6 +73,7 @@ const DueDate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "expected a calendar day, YYYY-MM-DD")
   .refine(isDay, "expected a calendar day, YYYY-MM-DD");
+const Whose = z.enum(WHOSE_FILTERS);
 const ListPosRef = z
   .string()
   .regex(/^(start|end|after:.+|before:.+)$/, "expected start|end|after:<id>|before:<id>");
@@ -328,24 +331,14 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Each item carries its ref, listName and, for a sub-item, parentTitle. " +
         "filter narrows to items assigned to the user (mine), to someone else (theirs), or to nobody (unassigned).\n" +
         "Show the user the items as a list with the list name, anything overdue marked, and finished ones crossed out, as on their screen.",
-      inputSchema: {
-        filter: z.enum(["all", "mine", "theirs", "unassigned"]).optional(),
-      },
+      inputSchema: { filter: Whose.optional() },
     },
     async ({ filter }) => {
       const { db } = getDb();
       const savedZone = getTimeZone(db, userId);
       const timeZone = savedZone ?? "UTC";
       const { today, items } = listToday(db, userId, { timeZone });
-      const keep = items.filter((it) =>
-        filter === "mine"
-          ? it.assigneeId === userId
-          : filter === "theirs"
-            ? it.assigneeId !== null && it.assigneeId !== userId
-            : filter === "unassigned"
-              ? it.assigneeId === null
-              : true,
-      );
+      const keep = items.filter((it) => matchesWhose(it, filter ?? "all", userId));
       const refs = projectRefPrefixes(db, userId);
       const names = new Map(listProjects(db, userId).map((p) => [p.id, p.name]));
       const titles = new Map<string, string>();
@@ -368,6 +361,60 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           listName: names.get(it.projectId) ?? null,
           ...(it.parentId ? { parentTitle: titles.get(it.parentId) } : {}),
         })),
+      });
+    },
+  );
+
+  server.registerTool(
+    "list_no_date",
+    {
+      title: "List items with no date",
+      description:
+        "The user's No date view: tasks with no due date across their active lists (not paused or archived), " +
+        "for planning when to do them. Milestones are left out, and so are sub-items of a dated parent, which are planned with their parent. " +
+        "Items finished today are included, which the user sees crossed out. " +
+        "Returns { today, timeZone, lists }, plus a note when the timezone is a UTC fallback; today works as in list_today. " +
+        "lists is in board order, each { list, items } with items in list order and an undated parent's undated sub-items nested in children; " +
+        "lists with nothing undated are left out. A sub-item whose parent isn't shown carries parentTitle. " +
+        "filter narrows to items assigned to the user (mine), to someone else (theirs), or to nobody (unassigned).\n" +
+        "Show the user the items grouped under each list name, sub-items indented, finished ones crossed out, as on their screen. " +
+        "To give an item a date, call update_item with due_date.",
+      inputSchema: { filter: Whose.optional() },
+    },
+    async ({ filter }) => {
+      const { db } = getDb();
+      const savedZone = getTimeZone(db, userId);
+      const timeZone = savedZone ?? "UTC";
+      const { today, lists } = listNoDate(db, userId, { timeZone });
+      const refs = projectRefPrefixes(db, userId);
+      // Siblings share a parent, so look each parent's title up once.
+      const titles = new Map<string, string | null>();
+      const parentTitle = (id: string) => {
+        if (!titles.has(id)) titles.set(id, getItem(db, userId, id)?.title ?? null);
+        return titles.get(id) ?? null;
+      };
+      return json({
+        today,
+        timeZone,
+        ...(savedZone
+          ? {}
+          : {
+              note: "The user's timezone isn't known until they open Sidetrack in a browser, so today is the day in UTC.",
+            }),
+        lists: lists.flatMap(({ project, items }) => {
+          const keep = items.filter((it) => matchesWhose(it, filter ?? "all", userId));
+          if (keep.length === 0) return [];
+          return [
+            {
+              list: project,
+              items: withRefs(refs[project.id] ?? project.prefix, keep).map((it) =>
+                it.parentId
+                  ? { ...it, parentTitle: parentTitle(it.parentId) }
+                  : it,
+              ),
+            },
+          ];
+        }),
       });
     },
   );

@@ -4,19 +4,13 @@ import { useState } from "react";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { isOnToday } from "@/lib/time";
+import { matchesWhose, type WhoseFilter } from "@/lib/whose";
 import { ItemDetailSheet } from "./ItemDetailSheet";
 import { ItemRow } from "./ItemRow";
 import type { ProjectView } from "./Kanban";
 import { useToday } from "./use-day-start";
 import { useItemDetailSheet } from "./use-item-detail-sheet";
-
-const FILTERS = [
-  ["all", "All"],
-  ["mine", "Mine"],
-  ["theirs", "Theirs"],
-  ["unassigned", "Unassigned"],
-] as const;
-type Filter = (typeof FILTERS)[number][0];
+import { WhoseFilterBar } from "./WhoseFilterBar";
 
 /**
  * One list across every active list: items due today or overdue, plus items
@@ -38,7 +32,7 @@ export function TodayView({
   viewerId: string;
 }) {
   const today = useToday();
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<WhoseFilter>("all");
 
   const all = projects.flatMap((p) => itemsByProject[p.id] ?? []);
   const byId = new Map(all.map((i) => [i.id, i]));
@@ -52,15 +46,7 @@ export function TodayView({
         .filter((i) => isOnToday(i, today))
         .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""))
     : [];
-  const matches = (i: Item, f: Filter) =>
-    f === "mine"
-      ? i.assigneeId === viewerId
-      : f === "theirs"
-        ? i.assigneeId !== null && i.assigneeId !== viewerId
-        : f === "unassigned"
-          ? i.assigneeId === null
-          : true;
-  const shown = onToday.filter((i) => matches(i, filter));
+  const shown = onToday.filter((i) => matchesWhose(i, filter, viewerId));
   const sections: Array<[string, Item[]]> = [
     ["Overdue", shown.filter((i) => (i.dueDate ?? "") < (today ?? ""))],
     ["Today", shown.filter((i) => i.dueDate === today)],
@@ -71,29 +57,14 @@ export function TodayView({
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-xl space-y-4 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        <div role="group" aria-label="Whose items" className="flex flex-wrap gap-1">
-          {FILTERS.map(([key, label]) => {
-            const open = onToday.filter(
-              (i) => i.completedAt === null && matches(i, key),
-            ).length;
-            return (
-              <button
-                key={key}
-                type="button"
-                aria-pressed={filter === key}
-                onClick={() => setFilter(key)}
-                className={`rounded-full px-2.5 py-1 text-xs font-medium transition ${
-                  filter === key
-                    ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
-                    : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
-                }`}
-              >
-                {label}
-                {open > 0 && <span className="ml-1 tabular-nums opacity-60">{open}</span>}
-              </button>
-            );
-          })}
-        </div>
+        <WhoseFilterBar
+          value={filter}
+          onChange={setFilter}
+          count={(f) =>
+            onToday.filter((i) => i.completedAt === null && matchesWhose(i, f, viewerId))
+              .length
+          }
+        />
 
         {today && shown.length === 0 && (
           <p className="py-8 text-center text-sm text-neutral-400">

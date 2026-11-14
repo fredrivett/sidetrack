@@ -141,6 +141,27 @@ export function thisWeekend(today: string): string {
   return w === 0 || w === 6 ? today : addDays(today, 6 - w);
 }
 
+/** "Next week" from `today`: the coming Monday. */
+export function nextWeek(today: string): string {
+  return addDays(today, 7 - ((weekday(today) + 6) % 7));
+}
+
+/**
+ * The quick due-date choices offered from `today` (the item sheet's buttons
+ * and the row menu): Today, Tomorrow, This weekend and Next week, dropping
+ * any that land on a day already offered (on a Saturday, This weekend is
+ * Today; on a Sunday, Next week is Tomorrow).
+ */
+export function quickDueDays(today: string): Array<[label: string, day: string]> {
+  const all: Array<[string, string]> = [
+    ["Today", today],
+    ["Tomorrow", addDays(today, 1)],
+    ["This weekend", thisWeekend(today)],
+    ["Next week", nextWeek(today)],
+  ];
+  return all.filter(([, day], i) => all.findIndex(([, d]) => d === day) === i);
+}
+
 /**
  * Short label for a due day relative to `today`: "Today", "Tomorrow",
  * "Yesterday", a weekday within the coming week ("Sat"), else "21 Nov" (with
@@ -174,5 +195,26 @@ export function isOnToday(
   timeZone?: string,
 ): boolean {
   if (!item.dueDate || item.dueDate > today) return false;
+  return item.completedAt === null || dayOf(item.completedAt, timeZone) === today;
+}
+
+/**
+ * Whether an item belongs in the No date view on `today`: a task with no due
+ * date that's open or was finished today (crossed out, as on Today). A
+ * sub-item of a dated parent stays out, since it's planned with its parent.
+ * Milestones mark a point in a list rather than something to do, so they
+ * stay out too.
+ */
+export function isOnNoDate(
+  item: {
+    kind: string;
+    dueDate: string | null;
+    completedAt: number | null;
+  },
+  parent: { dueDate: string | null } | undefined,
+  today: string,
+  timeZone?: string,
+): boolean {
+  if (item.kind !== "task" || item.dueDate || parent?.dueDate) return false;
   return item.completedAt === null || dayOf(item.completedAt, timeZone) === today;
 }

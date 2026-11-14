@@ -53,7 +53,7 @@ export default async function Home({
     <Kanban
       viewerId={userId}
       timeZone={getTimeZone(db, userId)}
-      initialView={view === "today" ? "today" : "board"}
+      initialView={view === "today" || view === "no-date" ? view : "board"}
       projects={projects}
       itemsByProject={itemsByProject}
       categoriesByProject={categoriesByProject}
