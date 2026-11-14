@@ -26,6 +26,9 @@ export const metadata: Metadata = {
   icons: {
     apple: "/icons/apple-touch-icon.png",
   },
+  // appleWebApp.capable emits only the unprefixed mobile-web-app-capable, and
+  // iOS shows the startup images above only with the apple- prefixed tag.
+  other: { "apple-mobile-web-app-capable": "yes" },
 };
 
 export const viewport: Viewport = {
