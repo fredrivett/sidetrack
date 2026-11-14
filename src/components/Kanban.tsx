@@ -6,6 +6,7 @@ import type { Category, Item, ItemPrLink, Project } from "@/core/schema";
 import { isEditableTarget, matchesShortcut } from "@/lib/keyboard";
 import { AddProjectButton } from "./AddProjectButton";
 import { AuditDrawer } from "./AuditDrawer";
+import { BoardHeader, BoardMain, BoardRail } from "./BoardLayout";
 import { InvitesBanner } from "./InvitesBanner";
 import { NewItemSheet } from "./NewItemSheet";
 import { NewProjectSheet } from "./NewProjectSheet";
@@ -143,37 +144,22 @@ export function Kanban({
   }, [projects]);
 
   return (
-    <main className="flex h-dvh flex-col">
-      <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
-        <h1 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
-          {/* The logo mark, generated from scripts/icons/icon.svg, in the text
-              colour. 18×19px is 1/16 of the icon, so every edge lands on a
-              whole pixel. */}
-          <span
-            aria-hidden="true"
-            className="h-[19px] w-[18px] shrink-0 bg-current [mask:url(/icons/mark.svg)_center/contain_no-repeat]"
-          />
-          Sidetrack
-        </h1>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-neutral-400">
-            {projects.length} project{projects.length === 1 ? "" : "s"}
-          </span>
-          <button
-            type="button"
-            onClick={() => setAudit({ open: true })}
-            className="rounded-md border border-neutral-200 px-2 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-100 dark:border-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-800"
-          >
-            Activity
-          </button>
-          <UserMenu />
-        </div>
-      </div>
+    <BoardMain>
+      <BoardHeader>
+        <span className="text-xs text-neutral-400">
+          {projects.length} project{projects.length === 1 ? "" : "s"}
+        </span>
+        <button
+          type="button"
+          onClick={() => setAudit({ open: true })}
+          className="rounded-md border border-neutral-200 px-2 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-100 dark:border-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-800"
+        >
+          Activity
+        </button>
+        <UserMenu />
+      </BoardHeader>
       <InvitesBanner invites={pendingInvites} />
-      <div
-        ref={railRef}
-        className="kanban-rail flex flex-1 snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-hidden p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
-      >
+      <BoardRail ref={railRef}>
         {projects.length === 0 && (
           <div className="m-auto text-sm text-neutral-500">
             No projects yet — tap + Add project to start.
@@ -195,7 +181,7 @@ export function Kanban({
           />
         ))}
         <AddProjectButton onClick={() => setNewProjectOpen(true)} />
-      </div>
+      </BoardRail>
 
       <AuditDrawer
         open={audit.open}
@@ -220,6 +206,6 @@ export function Kanban({
         projectId={share.projectId}
         projectName={share.projectName}
       />
-    </main>
+    </BoardMain>
   );
 }
