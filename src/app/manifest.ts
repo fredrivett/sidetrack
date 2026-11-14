@@ -5,7 +5,9 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Sidetrack",
     short_name: "Sidetrack",
     description: "Side-project tracker",
-    start_url: "/",
+    // Opens into the cached skeleton, which moves on to the board (see
+    // public/sw.js). id stays "/" so existing installs remain the same app.
+    start_url: "/launch",
     id: "/",
     display: "standalone",
     orientation: "any",

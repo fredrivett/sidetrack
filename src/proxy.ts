@@ -26,10 +26,13 @@ export function proxy(request: NextRequest) {
   }
 
   // PWA static assets must be reachable unauthenticated: the browser fetches
-  // the manifest and icons from <head> even on the login page.
+  // the manifest and icons from <head> even on the login page, and the service
+  // worker registers there and caches the (data-free) /launch skeleton.
   if (
     pathname === "/manifest.webmanifest" ||
-    pathname.startsWith("/icons/")
+    pathname.startsWith("/icons/") ||
+    pathname === "/sw.js" ||
+    pathname === "/launch"
   ) {
     return NextResponse.next();
   }

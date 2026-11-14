@@ -18,6 +18,16 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["better-sqlite3"],
   // Inlined into both bundles so server + client error capture can tag it.
   env: { NEXT_PUBLIC_RELEASE: release },
+  // Browsers check for a new service worker on each navigation; never let a
+  // cache hand them the old one.
+  async headers() {
+    return [
+      {
+        source: "/sw.js",
+        headers: [{ key: "Cache-Control", value: "no-cache" }],
+      },
+    ];
+  },
   // In an Amp orb the dev server is opened through a portal hostname, which
   // Next blocks from dev-only assets (JS chunks, HMR) unless allowed here.
   allowedDevOrigins:
