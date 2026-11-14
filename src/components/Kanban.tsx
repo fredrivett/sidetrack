@@ -146,21 +146,13 @@ export function Kanban({
     <main className="flex h-dvh flex-col">
       <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
         <h1 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
-          {/* The logo mark from scripts/icons/icon.svg, cropped to the cards
-              and drawn at 1/16 scale so every edge lands on a whole pixel. */}
-          <svg
-            viewBox="112 96 288 304"
-            width="18"
-            height="19"
-            fill="currentColor"
+          {/* The logo mark, generated from scripts/icons/icon.svg, in the text
+              colour. 18×19px is 1/16 of the icon, so every edge lands on a
+              whole pixel. */}
+          <span
             aria-hidden="true"
-          >
-            <rect x="144" y="96" width="256" height="48" rx="12" />
-            <rect x="112" y="160" width="128" height="48" rx="12" />
-            <rect x="128" y="224" width="256" height="48" rx="12" />
-            <rect x="272" y="288" width="128" height="48" rx="12" />
-            <rect x="112" y="352" width="256" height="48" rx="12" />
-          </svg>
+            className="h-[19px] w-[18px] shrink-0 bg-current [mask:url(/icons/mark.svg)_center/contain_no-repeat]"
+          />
           Sidetrack
         </h1>
         <div className="flex items-center gap-3">
