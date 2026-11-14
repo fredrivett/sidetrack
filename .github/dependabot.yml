@@ -5,6 +5,9 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    # Match pnpm's minimum-release-age: skip versions published < 7 days ago.
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 10
     groups:
       # Collapse the routine churn into one PR per week per stream.
@@ -20,3 +23,5 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
