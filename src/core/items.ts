@@ -564,10 +564,15 @@ export function reopenDueRepeats(
         projectId: it.projectId,
         detail: `reopened "${it.title}" (repeats ${repeatLabel(rule).toLowerCase()}), due ${next}`,
       });
-      // The checklist comes round with it.
+      // The checklist comes round with it. A sub-item that repeats waited
+      // for this (see above), so it's due the same day as its parent.
       for (const child of childrenOf(tx as unknown as Db, it.id)) {
         if (child.completedAt === null) continue;
-        tx.update(items).set({ completedAt: null }).where(eq(items.id, child.id)).run();
+        const childDue = repeatOf(child) ? next : child.dueDate;
+        tx.update(items)
+          .set({ completedAt: null, dueDate: childDue })
+          .where(eq(items.id, child.id))
+          .run();
         recordAudit(tx as unknown as Db, {
           actor: SYSTEM_ACTOR,
           source: "system",
@@ -575,7 +580,9 @@ export function reopenDueRepeats(
           entityType: "item",
           entityId: child.id,
           projectId: it.projectId,
-          detail: `reopened "${child.title}" with "${it.title}"`,
+          detail:
+            `reopened "${child.title}" with "${it.title}"` +
+            (childDue !== child.dueDate ? `, due ${childDue}` : ""),
         });
       }
       if (parent) {

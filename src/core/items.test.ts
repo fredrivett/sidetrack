@@ -1006,7 +1006,7 @@ describe("repeating items", () => {
     // On the parent's day, both come round.
     reopenDueRepeats(db, userId, { timeZone: tz, now: Date.UTC(2026, 10, 21, 12) });
     expect(getItem(db, userId, tidy.id)).toMatchObject({ completedAt: null, dueDate: "2026-11-21" });
-    expect(getItem(db, userId, bins.id)?.completedAt).toBeNull();
+    expect(getItem(db, userId, bins.id)).toMatchObject({ completedAt: null, dueDate: "2026-11-21" });
   });
 
   it("reopens a parent that doesn't repeat when its repeating sub-item comes due", () => {
