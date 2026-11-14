@@ -84,3 +84,17 @@ PRs are reviewed automatically by **Cubic** (https://cubic.dev), an AI reviewer
 that posts inline comments on the diff. It runs on every PR alongside CI — you
 don't invoke it. When it comments, treat its findings like a human reviewer's:
 address them or push back explicitly in the thread, don't silently ignore them.
+
+Agents that open a PR own it until it merges. PRs land through GitHub
+auto-merge (`gh pr merge --auto --merge`), which waits for the required checks
+and for every review thread to be resolved, so follow up on each event:
+
+- **Review comment you agree with:** fix it, push, reply saying what changed,
+  and resolve the thread.
+- **Review comment you disagree with:** reply with the reasoning (evidence, not
+  assertion) and resolve the thread.
+- **Unsure, or the fix changes product behaviour or scope:** ask the user and
+  leave the thread unresolved.
+- **CI failure caused by the change:** fix it and push.
+- **CI failure not caused by the change:** confirm the same check fails on
+  `main`, say so on the PR, and ask the user before working around it.
