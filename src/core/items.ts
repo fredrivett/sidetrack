@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { hasProjectAccess } from "./access";
 import { users } from "./auth-schema";
@@ -103,6 +103,18 @@ function assertTitle(title: string): string {
   return trimmed;
 }
 
+/** An item's sub-items, in order, for a user who can see the item. */
+export function listSubItems(db: Db, userId: string, parentId: string): Item[] {
+  return db
+    .select({ items })
+    .from(items)
+    .innerJoin(projects, eq(projects.id, items.projectId))
+    .where(and(eq(items.parentId, parentId), hasProjectAccess(userId)))
+    .orderBy(asc(items.position), asc(items.id))
+    .all()
+    .map((row) => row.items);
+}
+
 function childrenOf(db: Db, parentId: string): Item[] {
   return db
     .select()
@@ -132,7 +144,9 @@ function assertCanParent(parent: Item, projectId: string, kind: ItemKind) {
 /**
  * A finished parent never has open sub-items (completing a parent ticks them
  * all), so adding or reopening a sub-item reopens a finished parent with it.
- * Call inside the caller's transaction.
+ * Call inside the caller's transaction. The update is conditional, so the
+ * parent's state is read inside the transaction rather than from a snapshot,
+ * and the reopen is logged only when it actually happened.
  */
 function reopenParentIfDone(
   tx: Db,
@@ -140,8 +154,12 @@ function reopenParentIfDone(
   parent: Item,
   source: AuditOrigin,
 ) {
-  if (parent.completedAt === null) return;
-  tx.update(items).set({ completedAt: null }).where(eq(items.id, parent.id)).run();
+  const { changes } = tx
+    .update(items)
+    .set({ completedAt: null })
+    .where(and(eq(items.id, parent.id), isNotNull(items.completedAt)))
+    .run();
+  if (changes === 0) return;
   recordAudit(tx, {
     actor: userId,
     source,
@@ -356,9 +374,12 @@ export function completeItem(
   // UI decides how to show it (crossed out today, in Done after that).
   // Completing a parent ticks its open sub-items too, each logged on its own
   // so every item's history says when it was done.
-  const openChildren = childrenOf(db, id).filter((c) => c.completedAt === null);
   const now = Date.now();
   db.transaction((tx) => {
+    // Read inside the transaction, so a sub-item added meanwhile is ticked too.
+    const openChildren = childrenOf(tx as unknown as Db, id).filter(
+      (c) => c.completedAt === null,
+    );
     for (const it of [existing, ...openChildren]) {
       tx.update(items).set({ completedAt: now }).where(eq(items.id, it.id)).run();
       recordAudit(tx as unknown as Db, {
@@ -453,8 +474,8 @@ export function deleteItem(
   if (!existing) return;
   // Sub-items go with their parent. Delete and log them explicitly rather than
   // leaving it to the foreign key's cascade, so each one's history ends.
-  const children = childrenOf(db, id);
   db.transaction((tx) => {
+    const children = childrenOf(tx as unknown as Db, id);
     for (const it of [...children, existing]) {
       tx.delete(items).where(eq(items.id, it.id)).run();
       recordAudit(tx as unknown as Db, {

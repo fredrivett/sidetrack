@@ -249,30 +249,6 @@ export function ItemRow({
             )}
             {item.category && <CategoryBadge category={item.category} />}
           </button>
-          {checklist && (
-            // Progress doubles as the show/hide toggle for the sub-items.
-            <button
-              type="button"
-              aria-expanded={checklist.expanded}
-              aria-label={`${checklist.expanded ? "Hide" : "Show"} checklist, ${checklist.done} of ${checklist.total} done`}
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                checklist.onToggle();
-              }}
-              className={`inline-flex items-center gap-1 rounded px-1 py-0.5 text-[11px] font-medium tabular-nums transition hover:bg-neutral-100 dark:hover:bg-neutral-800 ${
-                checklist.done === checklist.total
-                  ? "text-green-600 dark:text-green-500"
-                  : "text-neutral-500 dark:text-neutral-400"
-              }`}
-            >
-              <ListChecks className="size-3.5" />
-              {checklist.done}/{checklist.total}
-              <ChevronRight
-                className={`size-3 transition-transform ${checklist.expanded ? "rotate-90" : ""}`}
-              />
-            </button>
-          )}
           {prLinks.length > 0 && (
             <div className="flex flex-wrap gap-1 pt-0.5">
               {prLinks.map((link) => (
@@ -292,9 +268,34 @@ export function ItemRow({
           )}
         </div>
 
-        {/* The avatar sits in a box one title-line tall so it centres on the
-            first line however many lines the title wraps to. */}
-        <div className="flex h-5 shrink-0 items-center">
+        {/* The checklist progress and avatar sit in a box one title-line tall
+            so they centre on the first line however many lines the title
+            wraps to, and a parent row is no taller than any other. */}
+        <div className="flex h-5 shrink-0 items-center gap-1">
+          {checklist && (
+            // Progress doubles as the show/hide toggle for the sub-items.
+            <button
+              type="button"
+              aria-expanded={checklist.expanded}
+              aria-label={`${checklist.expanded ? "Hide" : "Show"} checklist, ${checklist.done} of ${checklist.total} done`}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                checklist.onToggle();
+              }}
+              className={`inline-flex h-5 items-center gap-1 rounded px-1 text-[11px] font-medium tabular-nums transition hover:bg-neutral-100 dark:hover:bg-neutral-800 ${
+                checklist.done === checklist.total
+                  ? "text-green-600 dark:text-green-500"
+                  : "text-neutral-500 dark:text-neutral-400"
+              }`}
+            >
+              <ListChecks className="size-3.5" />
+              {checklist.done}/{checklist.total}
+              <ChevronRight
+                className={`size-3 transition-transform ${checklist.expanded ? "rotate-90" : ""}`}
+              />
+            </button>
+          )}
           {/* Assignee avatar doubles as the picker trigger (click, or A while
               hovered). Unassigned items show a faint add-assignee button on
               hover; without hover (touch) it's hidden rather than left as an

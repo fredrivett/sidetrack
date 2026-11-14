@@ -44,7 +44,8 @@ function SortableList<T extends Item>({
 }: {
   id: string;
   items: T[];
-  render: (item: T, drag: RowDrag) => ReactNode;
+  /** `prev` is the item above in the order shown, which may be mid-reorder. */
+  render: (item: T, drag: RowDrag, at: { prev?: T; last: boolean }) => ReactNode;
 }) {
   const [optimistic, setOptimistic] = useState<T[] | null>(null);
   const [, start] = useTransition();
@@ -98,9 +99,14 @@ function SortableList<T extends Item>({
         strategy={verticalListSortingStrategy}
       >
         <div className="space-y-1.5">
-          {ordered.map((item) => (
+          {ordered.map((item, i) => (
             <Sortable key={item.id} id={item.id}>
-              {(drag) => render(item, drag)}
+              {(drag) =>
+                render(item, drag, {
+                  prev: ordered[i - 1],
+                  last: i === ordered.length - 1,
+                })
+              }
             </Sortable>
           ))}
         </div>
@@ -136,6 +142,16 @@ function Sortable({
   );
 }
 
+// A tree line from the parent's checkbox down to each sub-item, bending into
+// it at its first line: an elbow from the gap above into the row, plus, for
+// every sub-item but the last, the line carrying on down to the next one.
+// Row maths: the gap between rows is 6px (space-y-1.5), and a row's first line
+// is centred 19px into it (1px border + 8px padding + half a 20px line).
+const BRANCH =
+  "relative before:absolute before:-top-1.5 before:-left-5 before:h-[25px] before:w-5 before:rounded-bl-lg before:border-b-2 before:border-l-2 before:border-neutral-200 dark:before:border-neutral-700";
+const TRUNK =
+  "after:absolute after:top-0 after:-bottom-1.5 after:-left-5 after:border-l-2 after:border-neutral-200 dark:after:border-neutral-700";
+
 /**
  * A top-level row followed by its sub-items, indented. Sub-items are draggable
  * among themselves when the parent is (the open list), and static in Done.
@@ -163,6 +179,9 @@ export function ItemGroupView({
       {...extra}
     />
   );
+  const branch = (last: boolean, node: ReactNode) => (
+    <div className={last ? BRANCH : `${BRANCH} ${TRUNK}`}>{node}</div>
+  );
 
   return (
     <div className="space-y-1.5">
@@ -180,21 +199,28 @@ export function ItemGroupView({
             : undefined,
       })}
       {expanded && children.length > 0 && (
-        // A guide line down the left ties the sub-items to their parent.
-        <div className="ml-3 border-l-2 border-neutral-200 pl-3 dark:border-neutral-800">
+        // The margin puts the tree line under the parent's checkbox; pl-5 leaves
+        // room for each branch to bend into its row.
+        <div className="ml-4 pl-5">
           {drag ? (
             <SortableList
               id={`item-children-${group.id}`}
               items={children}
-              render={(child, childDrag) =>
-                rowFor(child, { drag: childDrag, parentTitle: group.title })
+              render={(child, childDrag, { last }) =>
+                branch(
+                  last,
+                  rowFor(child, { drag: childDrag, parentTitle: group.title }),
+                )
               }
             />
           ) : (
             <div className="space-y-1.5">
-              {children.map((child) => (
+              {children.map((child, i) => (
                 <div key={child.id}>
-                  {rowFor(child, { parentTitle: group.title })}
+                  {branch(
+                    i === children.length - 1,
+                    rowFor(child, { parentTitle: group.title }),
+                  )}
                 </div>
               ))}
             </div>
@@ -225,9 +251,9 @@ export function ItemList({
     <SortableList
       id={`item-list-${projectId}`}
       items={groups}
-      render={(group, drag) => {
-        // A plain task can become a sub-item of the task just above it.
-        const above = groups[groups.findIndex((g) => g.id === group.id) - 1];
+      render={(group, drag, { prev: above }) => {
+        // A plain task can become a sub-item of the task just above it, as
+        // shown (so mid-reorder it's the visual neighbour, not the stale one).
         const canNest =
           group.kind === "task" &&
           group.children.length === 0 &&

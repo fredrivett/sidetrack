@@ -8,7 +8,9 @@ import {
   Copy,
   IndentDecrease,
   Trash2,
+  UserRound,
 } from "lucide-react";
+import { toast } from "sonner";
 import {
   useCallback,
   useMemo,
@@ -80,15 +82,19 @@ function Checklist({
   parent,
   items,
   assignees,
+  viewerId,
   onOpenItem,
 }: {
   parent: Item;
   items: Item[];
   assignees: AssigneeView[];
+  viewerId: string;
   onOpenItem: (item: Item) => void;
 }) {
   const [draft, setDraft] = useState("");
-  const [, start] = useTransition();
+  // Checkboxes wait for the last toggle to land, so a quick second click
+  // doesn't repeat it from the stale state.
+  const [pending, start] = useTransition();
   // Adds run one after another, so lines typed quickly land in typed order.
   const queue = useRef<Promise<unknown>>(Promise.resolve());
 
@@ -105,7 +111,7 @@ function Checklist({
           parentId: parent.id,
         }),
       )
-      .catch(() => setDraft((d) => d || title));
+      .catch(() => toast.error(`Couldn't add “${title}”. Please try again.`));
   }
 
   return (
@@ -118,6 +124,7 @@ function Checklist({
             <input
               type="checkbox"
               checked={done}
+              disabled={pending}
               onChange={() =>
                 start(() => {
                   void (done
@@ -137,7 +144,34 @@ function Checklist({
             >
               {child.title}
             </button>
-            {assignee && <UserAvatar user={assignee} size={18} />}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                aria-label={
+                  assignee
+                    ? `${child.title}: assigned to ${assigneeName(assignee)}. Reassign`
+                    : `Assign ${child.title}`
+                }
+                className="flex size-6 shrink-0 items-center justify-center rounded-full text-neutral-300 transition hover:bg-neutral-100 hover:text-neutral-600 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+              >
+                {assignee ? (
+                  <UserAvatar user={assignee} size={18} />
+                ) : (
+                  <UserRound className="size-4" />
+                )}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <AssigneeOptions
+                  currentId={child.assigneeId}
+                  assignees={assignees}
+                  viewerId={viewerId}
+                  onPick={(assigneeId) =>
+                    start(() => {
+                      void updateItemAction(child.id, { assigneeId });
+                    })
+                  }
+                />
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         );
       })}
@@ -419,6 +453,7 @@ export function ItemDetailSheet({
                   parent={item}
                   items={checklist}
                   assignees={assignees}
+                  viewerId={viewerId}
                   onOpenItem={onOpenItem}
                 />
               </Field>

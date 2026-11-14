@@ -20,6 +20,7 @@ import {
   deleteItem,
   getItem,
   listItems,
+  listSubItems,
   reorderItem,
   setItemParent,
   uncompleteItem,
@@ -416,9 +417,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       if (error) return error;
       const withRef = withItemRef(db, userId, item);
       const prefix = projectRefPrefixes(db, userId)[item.projectId] ?? "";
-      const children = listItems(db, userId, item.projectId, {
-        includeCompleted: true,
-      }).filter((c) => c.parentId === item.id);
+      const children = listSubItems(db, userId, item.id);
       return json({ ...withRef, children: withRefs(prefix, children) });
     },
   );

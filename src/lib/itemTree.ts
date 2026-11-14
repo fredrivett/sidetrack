@@ -10,7 +10,9 @@ export function nestItems<T extends { id: string; parentId: string | null }>(
   const children = new Map<string, T[]>();
   for (const it of list) {
     if (it.parentId && ids.has(it.parentId)) {
-      children.set(it.parentId, [...(children.get(it.parentId) ?? []), it]);
+      const siblings = children.get(it.parentId);
+      if (siblings) siblings.push(it);
+      else children.set(it.parentId, [it]);
     }
   }
   return list
