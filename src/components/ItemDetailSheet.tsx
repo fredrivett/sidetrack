@@ -381,6 +381,7 @@ function RepeatPicker({
             size="xs"
             disabled={disabled}
             aria-pressed={!editing && sameRepeat(r, repeat)}
+            data-repeat-choice
             onClick={() => {
               setCustom(false);
               onChange(r);
@@ -407,6 +408,7 @@ function RepeatPicker({
             variant="ghost"
             size="xs"
             disabled={disabled}
+            data-repeat-choice
             onClick={() => {
               setCustom(false);
               onChange(null);
@@ -428,7 +430,17 @@ function RepeatPicker({
             placeholder="3"
             disabled={disabled}
             onChange={(e) => setEvery(e.target.value)}
-            onBlur={() => save(every, unit)}
+            onBlur={(e) => {
+              // Clicking Daily, Weekly, Monthly or Clear replaces the draft,
+              // so don't save it first.
+              if (
+                e.relatedTarget instanceof HTMLElement &&
+                e.relatedTarget.closest("[data-repeat-choice]")
+              ) {
+                return;
+              }
+              save(every, unit);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter") save(every, unit);
             }}

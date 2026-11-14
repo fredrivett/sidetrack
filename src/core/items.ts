@@ -531,11 +531,7 @@ export function reopenDueRepeats(
       ),
     )
     .all()
-    .map((row) => row.items)
-    // Parents first: a parent reopening reopens its sub-items, while a
-    // repeating sub-item going first would reopen its parent without moving
-    // the parent's due date on.
-    .sort((a, b) => Number(a.parentId !== null) - Number(b.parentId !== null));
+    .map((row) => row.items);
 
   let reopened = 0;
   for (const it of finished) {
@@ -545,6 +541,13 @@ export function reopenDueRepeats(
     const next = nextDueDay(dayOf(done, timeZone), rule);
     if (next > today) continue;
     db.transaction((tx) => {
+      const parent = it.parentId
+        ? tx.select().from(items).where(eq(items.id, it.parentId)).get()
+        : undefined;
+      // Under a finished parent that repeats, a sub-item waits and comes
+      // round with the parent's checklist, so it can't reopen the parent
+      // before the parent's own day.
+      if (parent && parent.completedAt !== null && repeatOf(parent)) return;
       const { changes } = tx
         .update(items)
         .set({ completedAt: null, dueDate: next })
@@ -575,9 +578,6 @@ export function reopenDueRepeats(
           detail: `reopened "${child.title}" with "${it.title}"`,
         });
       }
-      const parent = it.parentId
-        ? tx.select().from(items).where(eq(items.id, it.parentId)).get()
-        : undefined;
       if (parent) {
         reopenParentIfDone(tx as unknown as Db, SYSTEM_ACTOR, parent, "system");
       }

@@ -7,7 +7,8 @@ import { useToday } from "./use-day-start";
 
 /**
  * When a finished repeating item comes back: its rule's gap after the day it
- * was done, in the viewer's day. Null until the viewer's day is known.
+ * was done, in the viewer's day. Null until the viewer's day is known, and
+ * once that day has come (the server reopens it on the next load).
  */
 export function useComesBack(
   repeat: Repeat | null,
@@ -15,7 +16,8 @@ export function useComesBack(
 ): string | null {
   const today = useToday();
   if (!repeat || completedAt === null || !today) return null;
-  return dueLabel(nextDueDay(dayOf(completedAt), repeat), today);
+  const next = nextDueDay(dayOf(completedAt), repeat);
+  return next > today ? dueLabel(next, today) : null;
 }
 
 // A repeating item's rule as a small pill next to its due date. Once it's

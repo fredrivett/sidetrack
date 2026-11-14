@@ -978,6 +978,52 @@ describe("repeating items", () => {
     ).toEqual(expect.arrayContaining([tidy.id, kitchen.id]));
   });
 
+  it("keeps a repeating sub-item waiting for its finished repeating parent", () => {
+    const { db, userId, projectId } = seedProject();
+    const tidy = addItem(
+      db,
+      userId,
+      {
+        projectId,
+        title: "Tidy flat",
+        dueDate: "2026-11-14",
+        repeat: { every: 1, unit: "week" },
+      },
+      "web",
+    );
+    const bins = addItem(
+      db,
+      userId,
+      { projectId, title: "Bins", parentId: tidy.id, repeat: { every: 1, unit: "day" } },
+      "web",
+    );
+    completeAt(db, userId, tidy.id, Date.UTC(2026, 10, 14, 12));
+    // The sub-item's own day comes first, but the parent isn't due until the 21st.
+    expect(reopenDueRepeats(db, userId, { timeZone: tz, now: Date.UTC(2026, 10, 16, 12) })).toBe(0);
+    expect(getItem(db, userId, tidy.id)).toMatchObject({ dueDate: "2026-11-14" });
+    expect(getItem(db, userId, tidy.id)?.completedAt).not.toBeNull();
+    expect(getItem(db, userId, bins.id)?.completedAt).not.toBeNull();
+    // On the parent's day, both come round.
+    reopenDueRepeats(db, userId, { timeZone: tz, now: Date.UTC(2026, 10, 21, 12) });
+    expect(getItem(db, userId, tidy.id)).toMatchObject({ completedAt: null, dueDate: "2026-11-21" });
+    expect(getItem(db, userId, bins.id)?.completedAt).toBeNull();
+  });
+
+  it("reopens a parent that doesn't repeat when its repeating sub-item comes due", () => {
+    const { db, userId, projectId } = seedProject();
+    const plan = addItem(db, userId, { projectId, title: "Plan" }, "web");
+    const step = addItem(
+      db,
+      userId,
+      { projectId, title: "Step", parentId: plan.id, repeat: { every: 1, unit: "day" } },
+      "web",
+    );
+    completeAt(db, userId, plan.id, Date.UTC(2026, 10, 14, 12));
+    reopenDueRepeats(db, userId, { timeZone: tz, now: Date.UTC(2026, 10, 15, 12) });
+    expect(getItem(db, userId, step.id)).toMatchObject({ completedAt: null, dueDate: "2026-11-15" });
+    expect(getItem(db, userId, plan.id)?.completedAt).toBeNull();
+  });
+
   it("only reopens items the user can see", () => {
     const { db, userId, projectId } = seedProject();
     const other = createTestUser(db);
