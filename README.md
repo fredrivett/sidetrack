@@ -3,9 +3,9 @@
 Sidetrack is an agent-first, self-hostable side-project tracker. Designed for
 simplicity and to work where you're already working.
 
-- 🤖 **Agent first** — a built-in [Model Context Protocol](https://modelcontextprotocol.io) server so AI agents can read and update your projects
+- 🤖 **Agent first** — a built-in [Model Context Protocol](https://modelcontextprotocol.io) server so AI agents can read and update your lists
 - 🖥️ **Web UI** for everyday use
-- 📁 **Projects → items → categories**, with drag-to-reorder
+- 📁 **Lists → items → categories**, with drag-to-reorder. Pause or archive a list to set it aside
 - 📜 **Audit log** — every change recorded, web or agent
 - 📱 **Installable** as an iOS PWA
 
@@ -123,7 +123,7 @@ https://your-host/mcp?key=sk_…
 ```
 
 Point an MCP-capable client (e.g. Claude) at it to list, create, and update
-projects and items. Web requests are tagged `web` and MCP requests `mcp` in
+lists and items. Web requests are tagged `web` and MCP requests `mcp` in
 the audit log, so you always know what changed and through which interface.
 Keys are scoped to the user who minted them; revoke them from the same page.
 
@@ -151,7 +151,7 @@ non-default port (e.g. one per git worktree). Set it only for a fixed
 deployment origin.
 
 To start with a populated board instead of an empty one, seed a fresh DB with
-a demo user and sample projects:
+a demo user and sample lists:
 
 ```bash
 SIDETRACK_SEED=true pnpm db:seed   # then log in as demo@sidetrack.local / sidetrack-demo

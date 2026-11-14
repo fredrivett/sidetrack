@@ -1,0 +1,62 @@
+"use client";
+
+import { useTransition } from "react";
+import { updateProjectAction } from "@/app/actions";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import type { Project } from "@/core/schema";
+import { ProjectIcon } from "./ProjectIcon";
+
+/**
+ * Archived lists are off the board but kept. This header menu lists them;
+ * choosing one restores it to the board as active.
+ */
+export function ArchivedListsMenu({ lists }: { lists: Project[] }) {
+  const [pending, start] = useTransition();
+  if (lists.length === 0) return null;
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        disabled={pending}
+        render={
+          <Button variant="outline" size="sm">
+            Archived ({lists.length})
+          </Button>
+        }
+      />
+      <DropdownMenuContent align="end" className="w-60">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Archived lists</DropdownMenuLabel>
+          {lists.map((l) => (
+            <DropdownMenuItem
+              key={l.id}
+              onClick={() =>
+                start(() => {
+                  void updateProjectAction(l.id, { status: "active" });
+                })
+              }
+            >
+              <ProjectIcon
+                icon={l.icon}
+                homepageUrl={l.homepageUrl}
+                name={l.name}
+                size={16}
+              />
+              <span className="min-w-0 flex-1 truncate">{l.name}</span>
+              <DropdownMenuShortcut>Restore</DropdownMenuShortcut>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { listAudit } from "./audit";
+import { addItem, listItems } from "./items";
 import {
   createProject,
   deleteProject,
@@ -18,6 +19,25 @@ describe("projects", () => {
     createProject(db, u, { name: "B" }, "mcp");
     createProject(db, u, { name: "C" }, "web");
     expect(listProjects(db, u).map((p) => p.name)).toEqual(["A", "B", "C"]);
+  });
+
+  it("starts lists active, archives them with their items, and rejects old launch statuses", () => {
+    const { db } = createTestDb();
+    const u = createTestUser(db);
+    const p = createProject(db, u, { name: "Christmas trip" }, "web");
+    expect(p.status).toBe("active");
+    addItem(db, u, { projectId: p.id, kind: "task", title: "Book trains" }, "web");
+
+    updateProject(db, u, p.id, { status: "archived" }, "web");
+    expect(getProject(db, u, p.id)?.status).toBe("archived");
+    expect(listItems(db, u, p.id).map((i) => i.title)).toEqual(["Book trains"]);
+    expect(listAudit(db, u)[0].detail).toBe(
+      'Christmas trip: status active→archived',
+    );
+
+    expect(() =>
+      updateProject(db, u, p.id, { status: "launched" as never }, "web"),
+    ).toThrow(/invalid status/);
   });
 
   it("rejects a blank name on create", () => {
@@ -205,7 +225,7 @@ describe("projects", () => {
     const p = createProject(db, u, { name: "Sidetrack" }, "web");
     expect(() =>
       updateProject(db, u, p.id, { icon: "definitely not an icon" }, "web"),
-    ).toThrow(/invalid project icon/);
+    ).toThrow(/invalid list icon/);
     expect(getProject(db, u, p.id)?.icon).toBeNull();
   });
 

@@ -53,6 +53,9 @@ export function NewItemSheet({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("");
+  // The last title added in this session: the sheet stays open after each
+  // add so you can enter a run of items, and this confirms each one landed.
+  const [lastAdded, setLastAdded] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const titleRef = useRef<HTMLInputElement>(null);
   const listId = useId();
@@ -70,6 +73,7 @@ export function NewItemSheet({
       setTitle("");
       setDescription("");
       setCategory("");
+      setLastAdded(null);
     }
   }
 
@@ -78,12 +82,17 @@ export function NewItemSheet({
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const t = title.trim();
-    if (!t || !projectId) return;
+    if (!t || !projectId || pending) return;
     const d = description.trim() || null;
     const c = kind === "task" ? category.trim() || null : null;
     start(async () => {
       await addItemAction({ projectId, kind, title: t, description: d, category: c });
-      onOpenChange(false);
+      // Stay open for the next item: clear what's per-item, keep the list,
+      // type and category, and put the cursor back in the title.
+      setTitle("");
+      setDescription("");
+      setLastAdded(t);
+      titleRef.current?.focus();
     });
   }
 
@@ -102,12 +111,12 @@ export function NewItemSheet({
           <SheetHeader className="border-b border-neutral-200 px-4 py-3 pr-14 dark:border-neutral-800">
             <SheetTitle className="text-base">New item</SheetTitle>
             <SheetDescription className="sr-only">
-              Create a new task or milestone in a project.
+              Create a new task or milestone in a list.
             </SheetDescription>
           </SheetHeader>
 
           <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
-            <Field label="Project">
+            <Field label="List">
               <select
                 value={projectId}
                 onChange={(e) => setProjectId(e.target.value)}
@@ -143,7 +152,6 @@ export function NewItemSheet({
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder={kind === "task" ? "Add a task…" : "Add a milestone…"}
-                disabled={pending}
               />
             </Field>
 
@@ -177,15 +185,22 @@ export function NewItemSheet({
             )}
           </div>
 
-          <SheetFooter className="mt-0 flex-row justify-end gap-2 border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
+          <SheetFooter className="mt-0 flex-row items-center justify-end gap-2 border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
+            {lastAdded && (
+              <p
+                role="status"
+                className="mr-auto min-w-0 truncate text-xs text-neutral-500"
+              >
+                Added “{lastAdded}”
+              </p>
+            )}
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => onOpenChange(false)}
-              disabled={pending}
             >
-              Cancel
+              {lastAdded ? "Done" : "Cancel"}
             </Button>
             <Button type="submit" size="sm" disabled={!title.trim() || !projectId || pending}>
               Add item

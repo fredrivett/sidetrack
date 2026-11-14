@@ -62,14 +62,36 @@ const Kind = z.enum(ITEM_KINDS);
 const PosRef = z
   .string()
   .regex(/^(top|end|after:.+|before:.+)$/, "expected top|end|after:<id>|before:<id>");
-const ProjectPosRef = z
+const ListPosRef = z
   .string()
   .regex(/^(start|end|after:.+|before:.+)$/, "expected start|end|after:<id>|before:<id>");
+
+// The core still calls a list a "project" (tables, fields, types); agents see
+// "list". Rename those keys on the way out, in one place, so every tool's
+// output matches the tool names and inputs.
+const AGENT_KEYS: Record<string, string> = {
+  project: "list",
+  projectId: "listId",
+  projectName: "listName",
+};
+
+function forAgent(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(forAgent);
+  if (value && Object.getPrototypeOf(value) === Object.prototype) {
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [AGENT_KEYS[k] ?? k, forAgent(v)]),
+    );
+  }
+  return value;
+}
 
 function json(value: unknown) {
   return {
     content: [
-      { type: "text" as const, text: JSON.stringify(value, null, 2) },
+      {
+        type: "text" as const,
+        text: JSON.stringify(forAgent(value), null, 2),
+      },
     ],
   };
 }
@@ -107,7 +129,7 @@ function resolveItemArg(db: Db, userId: string, raw: string) {
           {
             type: "text" as const,
             text:
-              `Ambiguous item ref "${raw}": its prefix matches multiple projects ` +
+              `Ambiguous item ref "${raw}": its prefix matches multiple lists ` +
               `you can access. Qualify it with the owner (${options}) or use the ` +
               `item's id — no change was made.`,
           },
@@ -158,25 +180,31 @@ export function registerTools(server: McpServer, ctx: McpContext) {
   const SOURCE: AuditOrigin = { source: "mcp", agent: ctx.agent };
 
   server.registerTool(
-    "list_projects",
+    "list_lists",
     {
-      title: "List projects",
+      title: "List lists",
       description:
-        "List every project in kanban order (left to right, per your own board). Returns id, name, status, summary, summary_updated_at.",
-      inputSchema: {},
+        "List the user's lists in board order (left to right, per their own board). Returns id, name, status, summary, summary_updated_at. " +
+        "status is active (on the board), paused (collapsed at the end of the board; set aside for now) or archived (off the board, kept for reference). " +
+        "Archived lists are left out unless include_archived is true.",
+      inputSchema: { include_archived: z.boolean().optional() },
     },
-    async () => {
+    async ({ include_archived }) => {
       const { db } = getDb();
-      return json(listProjects(db, userId));
+      return json(
+        listProjects(db, userId).filter(
+          (l) => include_archived || l.status !== "archived",
+        ),
+      );
     },
   );
 
   server.registerTool(
-    "get_project",
+    "get_list",
     {
-      title: "Get project",
+      title: "Get list",
       description:
-        "Fetch a project with its items in position order. Pass include_completed: true to also return completed items.",
+        "Fetch a list with its items in position order. Pass include_completed: true to also return completed items. Works for archived lists too.",
       inputSchema: {
         id: z.string(),
         include_completed: z.boolean().optional(),
@@ -187,11 +215,11 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       const result = getProjectWithItems(db, userId, id, {
         includeCompleted: include_completed,
       });
-      if (!result) return notFound("project", id);
+      if (!result) return notFound("list", id);
       const refPrefix =
         projectRefPrefixes(db, userId)[result.project.id] ?? result.project.prefix;
       return json({
-        project: result.project,
+        list: result.project,
         items: withRefs(refPrefix, result.items),
       });
     },
@@ -200,41 +228,47 @@ export function registerTools(server: McpServer, ctx: McpContext) {
   server.registerTool(
     "list_all_items",
     {
-      title: "List all items across projects",
+      title: "List all items across lists",
       description:
-        "Fetch every project together with its items — the whole board in one call. " +
-        "Projects come back in kanban order; each carries its own items array in position order. " +
+        "Fetch every list together with its items — the whole board in one call. " +
+        "Lists come back in board order; each carries its own items array in position order. " +
+        "Archived lists are left out unless include_archived is true. " +
         "include_completed defaults to false; pass true only when the user explicitly wants completed items.\n" +
         "Render the result for the user as an indented tree:\n" +
-        "- Each project is a top-level node; its items nest beneath it.\n" +
-        "- Keep projects and items in the order returned; do not re-sort unless the user asked for a different order.\n" +
+        "- Each list is a top-level node; its items nest beneath it. Mark a paused list as paused.\n" +
+        "- Keep lists and items in the order returned; do not re-sort unless the user asked for a different order.\n" +
         "- Do not show completed items in the tree.\n" +
         "- A task is a box-drawing branch, e.g. `├── Write the docs`.\n" +
         "- A milestone is a divider, not a task row: a single dashed line with its title centred in it, " +
         "e.g. `─ ─ ─  v1.0 launch  ─ ─ ─`. It marks a point in the list rather than something to check off.",
       inputSchema: {
         include_completed: z.boolean().optional(),
+        include_archived: z.boolean().optional(),
       },
     },
-    async ({ include_completed }) => {
+    async ({ include_completed, include_archived }) => {
       const { db } = getDb();
       const refs = projectRefPrefixes(db, userId);
       return json(
         listAllProjectsWithItems(db, userId, {
           includeCompleted: include_completed,
-        }).map(({ project, items }) => ({
-          project,
-          items: withRefs(refs[project.id] ?? project.prefix, items),
-        })),
+        })
+          .filter(({ project }) => include_archived || project.status !== "archived")
+          .map(({ project, items }) => ({
+            list: project,
+            items: withRefs(refs[project.id] ?? project.prefix, items),
+          })),
       );
     },
   );
 
   server.registerTool(
-    "create_project",
+    "create_list",
     {
-      title: "Create project",
-      description: "Create a new project. Appends at the right of the kanban.",
+      title: "Create list",
+      description:
+        "Create a new list, such as \"Home\", \"Buy\" or \"Launch Library\". Appends at the right of the board. " +
+        "status defaults to active.",
       inputSchema: {
         name: z.string().min(1),
         status: Status.optional(),
@@ -247,15 +281,17 @@ export function registerTools(server: McpServer, ctx: McpContext) {
   );
 
   server.registerTool(
-    "update_project",
+    "update_list",
     {
-      title: "Update project",
+      title: "Update list",
       description:
-        "Patch name/status/summary/prefix/homepage_url. Setting summary stamps summary_updated_at. " +
+        "Patch name/status/summary/prefix/homepage_url/icon. Setting summary stamps summary_updated_at. " +
+        "status is active, paused (collapse it at the end of the board) or archived (take it off the board; its items are kept, and setting active restores it). " +
+        "Archive a finished list rather than deleting it unless the user asks to delete. " +
         "prefix is the short item-ID prefix (2–5 letters, e.g. \"ENG\" → items like ENG-42); " +
-        "it is uppercased, and an auto-suffix is applied if it collides with another project. " +
-        "homepage_url is the project's public landing URL — a bare host gains an https:// scheme; pass null to clear it. " +
-        "icon is the project icon: an emoji (e.g. \"🚀\") or an http(s) image URL; pass null to clear it (falls back to the homepage favicon).",
+        "it is uppercased, and an auto-suffix is applied if it collides with another list. " +
+        "homepage_url is the list's public landing URL — a bare host gains an https:// scheme; pass null to clear it. " +
+        "icon is the list icon: an emoji (e.g. \"🚀\") or an http(s) image URL; pass null to clear it (falls back to the homepage favicon).",
       inputSchema: {
         id: z.string(),
         name: z.string().optional(),
@@ -268,7 +304,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     },
     async ({ id, homepage_url, ...patch }) => {
       const { db } = getDb();
-      if (!getProject(db, userId, id)) return notFound("project", id);
+      if (!getProject(db, userId, id)) return notFound("list", id);
       return json(
         updateProject(
           db,
@@ -284,28 +320,29 @@ export function registerTools(server: McpServer, ctx: McpContext) {
   );
 
   server.registerTool(
-    "reorder_project",
+    "reorder_list",
     {
-      title: "Reorder project",
+      title: "Reorder list",
       description:
-        "Move a project. position is one of: start | end | after:<id> | before:<id>.",
+        "Move a list on the user's board. position is one of: start | end | after:<id> | before:<id>.",
       inputSchema: {
         id: z.string(),
-        position: ProjectPosRef,
+        position: ListPosRef,
       },
     },
     async ({ id, position }) => {
       const { db } = getDb();
-      if (!getProject(db, userId, id)) return notFound("project", id);
+      if (!getProject(db, userId, id)) return notFound("list", id);
       return json(reorderProject(db, userId, id, position, SOURCE));
     },
   );
 
   server.registerTool(
-    "delete_project",
+    "delete_list",
     {
-      title: "Delete project",
-      description: "Delete a project and all its items.",
+      title: "Delete list",
+      description:
+        "Permanently delete a list and all its items (owner only). To set a finished list aside, archive it with update_list instead.",
       inputSchema: { id: z.string() },
     },
     async ({ id }) => {
@@ -321,7 +358,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       title: "Get item",
       description:
         "Fetch a single item by reference — its title, description, category, kind, and completion state. " +
-        "Use this to answer a question about one item without pulling its whole project. " +
+        "Use this to answer a question about one item without pulling its whole list. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id; the result carries its display `ref`.",
       inputSchema: { id: z.string() },
     },
@@ -338,18 +375,18 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Add item",
       description:
-        "Add a task or milestone to a project. description is optional free-text. " +
+        "Add a task or milestone to a list. description is optional free-text. " +
         "category is free-text and is auto-created if new. " +
         "position defaults to end of the active range; top|end|after:<id>|before:<id> are also valid. " +
-        "Returns { created, items } where items is every incomplete item in the project in position order.\n" +
-        "After adding, show the user the project's updated list (the items array) so they can see where " +
+        "Returns { created, items } where items is every incomplete item in the list in position order.\n" +
+        "After adding, show the user the list's updated items (the items array) so they can see where " +
         "the new item landed, unless the user asked you not to:\n" +
         "- Keep items in the order returned; do not re-sort unless the user asked for a different order.\n" +
         "- A task is a box-drawing branch, e.g. `├── Write the docs`.\n" +
         "- A milestone is a divider, not a task row: a single dashed line with its title centred in it, " +
         "e.g. `─ ─ ─  v1.0 launch  ─ ─ ─`.",
       inputSchema: {
-        project_id: z.string(),
+        list_id: z.string(),
         kind: Kind,
         title: z.string().min(1),
         description: z.string().optional(),
@@ -357,15 +394,15 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         position: PosRef.optional(),
       },
     },
-    async ({ project_id, kind, title, description, category, position }) => {
+    async ({ list_id, kind, title, description, category, position }) => {
       const { db } = getDb();
-      const project = getProject(db, userId, project_id);
-      if (!project) return notFound("project", project_id);
+      const project = getProject(db, userId, list_id);
+      if (!project) return notFound("list", list_id);
       const created = addItem(
         db,
         userId,
         {
-          projectId: project_id,
+          projectId: list_id,
           kind,
           title,
           description,
@@ -374,10 +411,10 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         },
         SOURCE,
       );
-      const refPrefix = projectRefPrefixes(db, userId)[project_id] ?? project.prefix;
+      const refPrefix = projectRefPrefixes(db, userId)[list_id] ?? project.prefix;
       return json({
         created: { ...created, ref: formatItemRef(refPrefix, created.number) },
-        items: withRefs(refPrefix, listItems(db, userId, project_id)),
+        items: withRefs(refPrefix, listItems(db, userId, list_id)),
       });
     },
   );
@@ -388,7 +425,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       title: "Update item",
       description:
         "Patch title/description/category/assignee on an item. Pass description or category as null to clear it. " +
-        "assignee_id assigns the item to a user — the project owner or an accepted member (get a user_id from list_members); " +
+        "assignee_id assigns the item to a user — the list owner or an accepted member (get a user_id from list_members); " +
         "pass null to unassign. id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: {
         id: z.string(),
@@ -461,7 +498,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Reorder item",
       description:
-        "Move an item within its project. position is top | end | after:<id> | before:<id>. " +
+        "Move an item within its list. position is top | end | after:<id> | before:<id>. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: { id: z.string(), position: PosRef },
     },
@@ -586,12 +623,12 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     "list_categories",
     {
       title: "List categories",
-      description: "List all known categories for a project.",
-      inputSchema: { project_id: z.string() },
+      description: "List all known categories for a list.",
+      inputSchema: { list_id: z.string() },
     },
-    async ({ project_id }) => {
+    async ({ list_id }) => {
       const { db } = getDb();
-      return json(listCategories(db, userId, project_id));
+      return json(listCategories(db, userId, list_id));
     },
   );
 
@@ -600,13 +637,13 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Add category",
       description:
-        "Idempotently add a category to a project. Items can also be created with a new category — they will auto-insert.",
-      inputSchema: { project_id: z.string(), name: z.string().min(1) },
+        "Idempotently add a category to a list. Items can also be created with a new category — they will auto-insert.",
+      inputSchema: { list_id: z.string(), name: z.string().min(1) },
     },
-    async ({ project_id, name }) => {
+    async ({ list_id, name }) => {
       const { db } = getDb();
-      if (!getProject(db, userId, project_id)) return notFound("project", project_id);
-      return json(addCategory(db, userId, project_id, name, SOURCE));
+      if (!getProject(db, userId, list_id)) return notFound("list", list_id);
+      return json(addCategory(db, userId, list_id, name, SOURCE));
     },
   );
 
@@ -615,24 +652,25 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "List audit log",
       description:
-        "Recent change history (newest first). Every create/update/complete/uncomplete/reorder/delete is logged with its source (web or mcp) and a human summary. Each row includes `when`, a ready-to-display relative time (e.g. \"just now\", \"5 minutes ago\", \"7 months ago\") — show that to the user, not the raw `ts` epoch. Optionally filter by project_id or source.",
+        "Recent change history (newest first). Every create/update/complete/uncomplete/reorder/delete is logged with its source (web or mcp), agentName (the API key name of the agent that made an mcp change) and a human summary. Each row includes `when`, a ready-to-display relative time (e.g. \"just now\", \"5 minutes ago\", \"7 months ago\") — show that to the user, not the raw `ts` epoch. Optionally filter by list_id or source.",
       inputSchema: {
-        project_id: z.string().optional(),
+        list_id: z.string().optional(),
         source: z.enum(AUDIT_SOURCES).optional(),
         limit: z.number().int().min(1).max(500).optional(),
       },
     },
-    async ({ project_id, source, limit }) => {
+    async ({ list_id, source, limit }) => {
       const { db } = getDb();
       const rows = listAudit(db, userId, {
-        projectId: project_id,
+        projectId: list_id,
         source,
         limit,
       });
       return json(
-        rows.map(({ ts, ...rest }) => ({
+        rows.map(({ ts, entityType, ...rest }) => ({
           ts,
           when: formatRelativeLong(ts),
+          entityType: entityType === "project" ? "list" : entityType,
           ...rest,
         })),
       );
@@ -642,20 +680,20 @@ export function registerTools(server: McpServer, ctx: McpContext) {
   server.registerTool(
     "list_members",
     {
-      title: "List project members",
+      title: "List list members",
       description:
-        "List a project's collaborators and pending invites (the owner is not " +
-        "included — it's the project's owner separately). Each row has user_id, " +
+        "List a list's collaborators and pending invites (the owner is not " +
+        "included — it's the list's owner separately). Each row has user_id, " +
         "username, name, email, and status (\"accepted\" or \"pending\"). Use a " +
         "row's user_id with remove_member.",
-      inputSchema: { project_id: z.string() },
+      inputSchema: { list_id: z.string() },
     },
-    async ({ project_id }) => {
+    async ({ list_id }) => {
       const { db } = getDb();
-      if (!getProject(db, userId, project_id)) {
-        return notFound("project", project_id);
+      if (!getProject(db, userId, list_id)) {
+        return notFound("list", list_id);
       }
-      return json(listMembers(db, userId, project_id));
+      return json(listMembers(db, userId, list_id));
     },
   );
 
@@ -664,19 +702,19 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Invite a member",
       description:
-        "Invite an existing user to collaborate on a project (owner only). " +
+        "Invite an existing user to collaborate on a list (owner only). " +
         "person is a username (\"alice\" or \"@alice\") or an email. The target " +
         "must already have an account — there is no invite-by-email-to-sign-up. " +
         "Lands a pending invite they must accept before they gain access; " +
         "accepted members can edit everything except owner-only actions " +
         "(delete, prefix, managing members).",
-      inputSchema: { project_id: z.string(), person: z.string().min(1) },
+      inputSchema: { list_id: z.string(), person: z.string().min(1) },
     },
-    async ({ project_id, person }) => {
+    async ({ list_id, person }) => {
       const { db } = getDb();
-      const project = getProject(db, userId, project_id);
-      if (!project) return notFound("project", project_id);
-      const member = inviteMember(db, userId, project_id, person, SOURCE);
+      const project = getProject(db, userId, list_id);
+      if (!project) return notFound("list", list_id);
+      const member = inviteMember(db, userId, list_id, person, SOURCE);
       await sendInviteNotification(db, userId, project.name, member.email);
       return json(member);
     },
@@ -688,13 +726,13 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       title: "Remove a member",
       description:
         "Remove a collaborator or revoke a pending invite (owner only). " +
-        "user_id is the value from list_members. To leave a project yourself, " +
-        "use leave_project instead.",
-      inputSchema: { project_id: z.string(), user_id: z.string() },
+        "user_id is the value from list_members. To leave a list yourself, " +
+        "use leave_list instead.",
+      inputSchema: { list_id: z.string(), user_id: z.string() },
     },
-    async ({ project_id, user_id }) => {
+    async ({ list_id, user_id }) => {
       const { db } = getDb();
-      removeMember(db, userId, project_id, user_id, SOURCE);
+      removeMember(db, userId, list_id, user_id, SOURCE);
       return json({ ok: true });
     },
   );
@@ -704,8 +742,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "List my pending invites",
       description:
-        "List invites awaiting your response: each has project_id, " +
-        "project_name, and owner_name. Accept with accept_invite or dismiss " +
+        "List invites awaiting your response: each has list_id, " +
+        "list_name, and owner_name. Accept with accept_invite or dismiss " +
         "with decline_invite.",
       inputSchema: {},
     },
@@ -720,13 +758,13 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Accept an invite",
       description:
-        "Accept a pending invite to a project, gaining edit access. " +
-        "project_id comes from list_pending_invites.",
-      inputSchema: { project_id: z.string() },
+        "Accept a pending invite to a list, gaining edit access. " +
+        "list_id comes from list_pending_invites.",
+      inputSchema: { list_id: z.string() },
     },
-    async ({ project_id }) => {
+    async ({ list_id }) => {
       const { db } = getDb();
-      acceptInvite(db, userId, project_id, SOURCE);
+      acceptInvite(db, userId, list_id, SOURCE);
       return json({ ok: true });
     },
   );
@@ -736,29 +774,29 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Decline an invite",
       description:
-        "Decline a pending invite, removing it. project_id comes from " +
+        "Decline a pending invite, removing it. list_id comes from " +
         "list_pending_invites.",
-      inputSchema: { project_id: z.string() },
+      inputSchema: { list_id: z.string() },
     },
-    async ({ project_id }) => {
+    async ({ list_id }) => {
       const { db } = getDb();
-      declineInvite(db, userId, project_id, SOURCE);
+      declineInvite(db, userId, list_id, SOURCE);
       return json({ ok: true });
     },
   );
 
   server.registerTool(
-    "leave_project",
+    "leave_list",
     {
-      title: "Leave a project",
+      title: "Leave a list",
       description:
-        "Remove yourself from a project you were invited to (you keep nothing). " +
-        "The owner can't leave their own project — delete it instead.",
-      inputSchema: { project_id: z.string() },
+        "Remove yourself from a list you were invited to (you keep nothing). " +
+        "The owner can't leave their own list — archive or delete it instead.",
+      inputSchema: { list_id: z.string() },
     },
-    async ({ project_id }) => {
+    async ({ list_id }) => {
       const { db } = getDb();
-      removeMember(db, userId, project_id, userId, SOURCE);
+      removeMember(db, userId, list_id, userId, SOURCE);
       return json({ ok: true });
     },
   );

@@ -150,7 +150,7 @@ function inviteMessage({
   url: string;
 }): { subject: string; text: string } {
   return {
-    subject: `${inviterName} invited you to a Sidetrack project`,
+    subject: `${inviterName} invited you to a Sidetrack list`,
     text:
       `${inviterName} invited you to collaborate on "${projectName}" in ` +
       `Sidetrack.\n\nOpen Sidetrack to accept: ${url}\n\nIf you weren't ` +
@@ -175,7 +175,7 @@ export async function deliverInviteEmail(
       to,
       subject,
       text,
-      logLine: `[email] no SMTP_URL or RESEND_API_KEY set — project invite for ${to}: ${url}`,
+      logLine: `[email] no SMTP_URL or RESEND_API_KEY set — list invite for ${to}: ${url}`,
       errorLabel: "invite email",
     },
     deps,

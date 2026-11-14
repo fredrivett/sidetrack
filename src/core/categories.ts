@@ -67,7 +67,7 @@ export function addCategory(
     .from(projects)
     .where(and(eq(projects.id, projectId), hasProjectAccess(userId)))
     .get();
-  if (!accessibleProject) throw new Error(`project not found: ${projectId}`);
+  if (!accessibleProject) throw new Error(`list not found: ${projectId}`);
 
   const existing = db
     .select()

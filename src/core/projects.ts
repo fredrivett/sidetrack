@@ -77,7 +77,7 @@ export function getProject(
  */
 function getProjectOrThrow(db: Db, userId: string, id: string): Project {
   const project = getProject(db, userId, id);
-  if (!project) throw new Error(`project not found: ${id}`);
+  if (!project) throw new Error(`list not found: ${id}`);
   return project;
 }
 
@@ -118,7 +118,7 @@ function assertStatus(status: string): asserts status is ProjectStatus {
 // and return the trimmed value.
 function assertName(name: string): string {
   const trimmed = name.trim();
-  if (!trimmed) throw new Error("project name cannot be empty");
+  if (!trimmed) throw new Error("list name cannot be empty");
   return trimmed;
 }
 
@@ -153,7 +153,7 @@ export function createProject(
   input: { name: string; status?: ProjectStatus },
   source: AuditOrigin,
 ): Project {
-  const status = input.status ?? "idea";
+  const status = input.status ?? "active";
   assertStatus(status);
   const position = nextProjectPosition(db, userId);
   const id = nanoid(12);
@@ -172,7 +172,7 @@ export function createProject(
       entityType: "project",
       entityId: id,
       projectId: id,
-      detail: `created project "${name}"`,
+      detail: `created list "${name}"`,
     });
   });
   return getProjectOrThrow(db, userId, id);
@@ -193,7 +193,7 @@ export function updateProject(
   source: AuditOrigin,
 ): Project {
   const existing = getProject(db, userId, id);
-  if (!existing) throw new Error(`project not found: ${id}`);
+  if (!existing) throw new Error(`list not found: ${id}`);
   // getProject authorizes any member; the editable fields below (name, status,
   // summary, homepage) are open to members, but the prefix is owner-only.
   const isOwner = existing.userId === userId;
@@ -215,7 +215,7 @@ export function updateProject(
       // The prefix is the owner's item-ID namespace — owner-only. Reject a
       // member's change loudly rather than letting the write silently no-op.
       if (!isOwner) {
-        throw new Error("only the project owner can change the prefix");
+        throw new Error("only the list owner can change the prefix");
       }
       // Auto-suffix on collision rather than reject, matching create. The ref
       // is derived display data, so changing the prefix never renumbers items
@@ -293,7 +293,7 @@ export function reorderProject(
   source: AuditOrigin,
 ): Project {
   const existing = getProject(db, userId, id);
-  if (!existing) throw new Error(`project not found: ${id}`);
+  if (!existing) throw new Error(`list not found: ${id}`);
   const ref = parseProjectRef(refRaw) as ProjectPositionRef;
   const others = viewerPositions(db, userId).filter((p) => p.id !== id);
   const position = resolveProjectPosition(others, ref);
@@ -316,7 +316,7 @@ export function reorderProject(
       entityType: "project",
       entityId: id,
       projectId: id,
-      detail: `reordered project "${existing.name}"`,
+      detail: `reordered list "${existing.name}"`,
     });
   });
   return getProjectOrThrow(db, userId, id);
@@ -334,7 +334,7 @@ export function deleteProject(
   // member explicitly rather than letting the delete silently no-op while still
   // writing a "deleted project" audit row. (Members leave via removeMember.)
   if (existing.userId !== userId) {
-    throw new Error("only the project owner can delete the project");
+    throw new Error("only the list owner can delete the list");
   }
   db.transaction((tx) => {
     tx.delete(projects).where(eq(projects.id, id)).run();
@@ -345,7 +345,7 @@ export function deleteProject(
       entityType: "project",
       entityId: id,
       projectId: id,
-      detail: `deleted project "${existing.name}"`,
+      detail: `deleted list "${existing.name}"`,
     });
   });
 }

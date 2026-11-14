@@ -48,7 +48,7 @@ describe("normalizeProjectIcon", () => {
 
   it("rejects a value that is neither emoji nor URL", () => {
     expect(() => normalizeProjectIcon("not an icon")).toThrow(
-      /invalid project icon/,
+      /invalid list icon/,
     );
   });
 });

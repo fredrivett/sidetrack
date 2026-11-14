@@ -29,7 +29,7 @@ export function normalizeProjectIcon(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
   if (isEmoji(trimmed)) return trimmed;
-  return normalizeWebUrl(trimmed, "project icon");
+  return normalizeWebUrl(trimmed, "list icon");
 }
 
 /**

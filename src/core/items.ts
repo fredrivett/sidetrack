@@ -127,7 +127,7 @@ export function addItem(
 ): Item {
   assertKind(input.kind);
   if (!projectAccessibleForUser(db, userId, input.projectId)) {
-    throw new Error(`project not found: ${input.projectId}`);
+    throw new Error(`list not found: ${input.projectId}`);
   }
   const ref = parseRef(input.positionRef);
   const siblings = getAllSiblings(db, userId, input.projectId);
@@ -242,7 +242,7 @@ export function updateItem(
     // member). projectAccessibleForUser is exactly that predicate applied to
     // the assignee rather than the caller.
     if (a && !projectAccessibleForUser(db, a, existing.projectId)) {
-      throw new Error(`assignee does not have access to the project: ${a}`);
+      throw new Error(`assignee does not have access to the list: ${a}`);
     }
     if (a !== existing.assigneeId) {
       next.assigneeId = a;

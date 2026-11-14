@@ -25,14 +25,14 @@ export function BoardSkeleton() {
   return (
     <BoardMain>
       <BoardHeader>
-        {/* Project count, Activity, Account. */}
+        {/* List count, Activity, Account. */}
         <Bone className="h-4 w-14" />
         <Bone className="h-[26px] w-[61px] rounded-md" />
         <Bone className="h-7 w-[72px] rounded-lg" />
       </BoardHeader>
       <BoardRail>
         <span className="sr-only" role="status">
-          Loading projects…
+          Loading lists…
         </span>
         {COLUMNS.map((titles, col) => (
           <ColumnCard

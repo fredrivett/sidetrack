@@ -8,14 +8,10 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
-export const PROJECT_STATUSES = [
-  "idea",
-  "pre-launch",
-  "early-access",
-  "launched",
-  "paused",
-  "dormant",
-] as const;
+// A list's lifecycle (a "project" in code; "list" to people and agents).
+// active lists are on the board; paused lists sit collapsed at its end;
+// archived lists leave the board but keep their items and can be restored.
+export const PROJECT_STATUSES = ["active", "paused", "archived"] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 
 export const ITEM_KINDS = ["task", "milestone"] as const;
@@ -57,7 +53,7 @@ export const projects = sqliteTable(
     id: text("id").primaryKey(),
     userId: text("user_id").notNull(),
     name: text("name").notNull(),
-    status: text("status").$type<ProjectStatus>().notNull().default("idea"),
+    status: text("status").$type<ProjectStatus>().notNull().default("active"),
     summary: text("summary").notNull().default(""),
     summaryUpdatedAt: integer("summary_updated_at"),
     // Optional public homepage / landing URL. Normalized to an absolute

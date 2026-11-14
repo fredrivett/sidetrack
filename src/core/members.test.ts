@@ -61,11 +61,11 @@ describe("project membership", () => {
       inviteMember(db, owner, projectId, "alice", "web");
       acceptInvite(db, alice, projectId, "web");
       expect(() => inviteMember(db, alice, projectId, "bob", "web")).toThrow(
-        /only the project owner/,
+        /only the list owner/,
       );
       // ...while a stranger with no access gets a plain not-found (no leak).
       expect(() => inviteMember(db, bob, projectId, "alice", "web")).toThrow(
-        /project not found/,
+        /list not found/,
       );
       expect(() => inviteMember(db, owner, projectId, "nobody", "web")).toThrow(
         /no account found/,
@@ -135,7 +135,7 @@ describe("project membership", () => {
       inviteMember(db, owner, projectId, "bob", "web");
       acceptInvite(db, bob, projectId, "web");
       expect(() => removeMember(db, alice, projectId, bob, "web")).toThrow(
-        /only the project owner/,
+        /only the list owner/,
       );
     });
 
@@ -247,21 +247,21 @@ describe("project membership", () => {
         db,
         alice,
         projectId,
-        { name: "Renamed", status: "launched", summary: "by alice" },
+        { name: "Renamed", status: "paused", summary: "by alice" },
         "web",
       );
       const p = getProject(db, owner, projectId);
       expect(p?.name).toBe("Renamed");
-      expect(p?.status).toBe("launched");
+      expect(p?.status).toBe("paused");
       expect(p?.summary).toBe("by alice");
     });
 
     it("a member cannot change the prefix or delete — and writes no audit", () => {
       expect(() =>
         updateProject(db, alice, projectId, { prefix: "NEW" }, "web"),
-      ).toThrow(/only the project owner/);
+      ).toThrow(/only the list owner/);
       expect(() => deleteProject(db, alice, projectId, "web")).toThrow(
-        /only the project owner/,
+        /only the list owner/,
       );
 
       // The project is untouched and no misleading prefix/delete audit landed.

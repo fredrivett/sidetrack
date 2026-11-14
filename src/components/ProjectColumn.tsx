@@ -48,9 +48,12 @@ export function ProjectColumn({
   // hook for the live-lookup / closing-snapshot details.
   const detail = useItemDetailSheet(items);
   // The column re-renders with fresh server props on every edit and only
-  // unmounts when the project is deleted, so plain open-state is enough — no
+  // unmounts when the list is deleted, so plain open-state is enough — no
   // live-lookup/closing-snapshot dance like the item sheet needs.
   const [detailsOpen, setDetailsOpen] = useState(false);
+  // A paused list sits collapsed at the end of the board until opened.
+  const [showPaused, setShowPaused] = useState(false);
+  const collapsed = project.status === "paused" && !showPaused;
 
   return (
     <ColumnCard
@@ -67,7 +70,9 @@ export function ProjectColumn({
               inputClassName="w-full text-base font-semibold"
             />
             <div className="flex items-center gap-1.5">
-              <StatusBadge projectId={project.id} status={project.status} />
+              {project.status !== "active" && (
+                <StatusBadge projectId={project.id} status={project.status} />
+              )}
               <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-[10px] tracking-wide text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
                 {project.prefix}
               </span>
@@ -84,6 +89,7 @@ export function ProjectColumn({
             nextId={nextId}
             name={project.name}
             prefix={project.prefix}
+            status={project.status}
             isOwner={project.isOwner}
             onShowActivity={onShowActivity}
             onShowDetails={() => setDetailsOpen(true)}
@@ -93,31 +99,49 @@ export function ProjectColumn({
         </>
       }
     >
-      <SummaryBlock
-        projectId={project.id}
-        summary={project.summary}
-        summaryUpdatedAt={project.summaryUpdatedAt}
-      />
+      {collapsed ? (
+        <div className="space-y-1 py-1 text-sm text-neutral-500">
+          <p>
+            {active.length} open item{active.length === 1 ? "" : "s"}, set
+            aside for now.
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowPaused(true)}
+            className="text-xs font-medium hover:text-neutral-700 dark:hover:text-neutral-300"
+          >
+            Show items
+          </button>
+        </div>
+      ) : (
+        <>
+          <SummaryBlock
+            projectId={project.id}
+            summary={project.summary}
+            summaryUpdatedAt={project.summaryUpdatedAt}
+          />
 
-      <div className="space-y-3 pt-3">
-        <CompletedSection
-          items={completed}
-          prefix={project.refPrefix}
-          assignees={assignees}
-          viewerId={viewerId}
-          prLinksByItem={prLinksByItem}
-          onOpenDetail={detail.openDetail}
-        />
-        <ItemList
-          projectId={project.id}
-          items={active}
-          prefix={project.refPrefix}
-          assignees={assignees}
-          viewerId={viewerId}
-          prLinksByItem={prLinksByItem}
-          onOpenDetail={detail.openDetail}
-        />
-      </div>
+          <div className="space-y-3 pt-3">
+            <CompletedSection
+              items={completed}
+              prefix={project.refPrefix}
+              assignees={assignees}
+              viewerId={viewerId}
+              prLinksByItem={prLinksByItem}
+              onOpenDetail={detail.openDetail}
+            />
+            <ItemList
+              projectId={project.id}
+              items={active}
+              prefix={project.refPrefix}
+              assignees={assignees}
+              viewerId={viewerId}
+              prLinksByItem={prLinksByItem}
+              onOpenDetail={detail.openDetail}
+            />
+          </div>
+        </>
+      )}
       {detail.item && (
         <ItemDetailSheet
           item={detail.item}

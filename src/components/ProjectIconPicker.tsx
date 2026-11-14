@@ -65,7 +65,7 @@ export function ProjectIconPicker({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
-        aria-label="Change project icon"
+        aria-label="Change list icon"
         disabled={pending}
         className="inline-flex shrink-0 items-center justify-center rounded-md p-1 transition-colors hover:bg-muted aria-expanded:bg-muted disabled:opacity-60"
       >
