@@ -58,10 +58,17 @@ export function ProjectMenu({
   }
 
   function archive() {
-    setStatus("archived");
-    toast(`Archived "${name}"`, {
-      description: "Restore it any time from Archived in the header.",
-      action: { label: "Undo", onClick: () => setStatus(status) },
+    start(async () => {
+      try {
+        await updateProjectAction(projectId, { status: "archived" });
+      } catch {
+        toast.error(`Couldn't archive "${name}". Please try again.`);
+        return;
+      }
+      toast(`Archived "${name}"`, {
+        description: "Restore it any time from Archived in the header.",
+        action: { label: "Undo", onClick: () => setStatus(status) },
+      });
     });
   }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { addItemAction } from "@/app/actions";
 import type { Category, ItemKind, Project } from "@/core/schema";
 import { Button } from "@/components/ui/button";
@@ -59,6 +59,12 @@ export function NewItemSheet({
   const [pending, start] = useTransition();
   const titleRef = useRef<HTMLInputElement>(null);
   const listId = useId();
+  // Bumped each time the sheet opens, so an add that finishes after the sheet
+  // was closed (and maybe reopened) can't write into the new session's form.
+  const session = useRef(0);
+  useEffect(() => {
+    if (open) session.current += 1;
+  }, [open]);
 
   // Reset and seed the form every time the sheet opens — the project comes
   // from the caller (the centred column for ⌘N, or the chosen column's menu).
@@ -85,12 +91,16 @@ export function NewItemSheet({
     if (!t || !projectId || pending) return;
     const d = description.trim() || null;
     const c = kind === "task" ? category.trim() || null : null;
+    const startedIn = session.current;
     start(async () => {
       await addItemAction({ projectId, kind, title: t, description: d, category: c });
+      if (session.current !== startedIn) return;
       // Stay open for the next item: clear what's per-item, keep the list,
-      // type and category, and put the cursor back in the title.
-      setTitle("");
-      setDescription("");
+      // type and category, and put the cursor back in the title. The fields
+      // stay editable while the add is in flight, so only clear them if they
+      // still hold what was submitted — never text typed for the next item.
+      setTitle((cur) => (cur.trim() === t ? "" : cur));
+      setDescription((cur) => ((cur.trim() || null) === d ? "" : cur));
       setLastAdded(t);
       titleRef.current?.focus();
     });
@@ -186,14 +196,13 @@ export function NewItemSheet({
           </div>
 
           <SheetFooter className="mt-0 flex-row items-center justify-end gap-2 border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
-            {lastAdded && (
-              <p
-                role="status"
-                className="mr-auto min-w-0 truncate text-xs text-neutral-500"
-              >
-                Added “{lastAdded}”
-              </p>
-            )}
+            {/* Always mounted so screen readers announce the first add too. */}
+            <p
+              role="status"
+              className="mr-auto min-w-0 truncate text-xs text-neutral-500"
+            >
+              {lastAdded && `Added “${lastAdded}”`}
+            </p>
             <Button
               type="button"
               variant="outline"

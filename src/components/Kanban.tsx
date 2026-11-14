@@ -81,6 +81,8 @@ export function Kanban({
   // the board, there's nowhere to add an item — start a list instead.
   const openNewItem = useCallback(
     (projectId?: string) => {
+      const isOnBoard = (id: string | null) =>
+        projects.some((p) => p.id === id && p.status !== "archived");
       const first =
         projects.find((p) => p.status === "active") ??
         projects.find((p) => p.status === "paused");
@@ -88,7 +90,9 @@ export function Kanban({
         setNewProjectOpen(true);
         return;
       }
-      const pid = projectId ?? centredProjectId() ?? first.id;
+      // ?p= can still name a list that was just archived; skip it then.
+      const centred = centredProjectId();
+      const pid = projectId ?? (isOnBoard(centred) ? centred : null) ?? first.id;
       setNewItem({ open: true, projectId: pid });
     },
     [projects],
@@ -177,7 +181,9 @@ export function Kanban({
       <BoardRail ref={railRef}>
         {onBoard.length === 0 && (
           <div className="m-auto text-sm text-neutral-500">
-            No lists yet — tap + Add list to start.
+            {archived.length > 0
+              ? "Every list is archived — restore one from Archived, or tap + Add list."
+              : "No lists yet — tap + Add list to start."}
           </div>
         )}
         {[active, paused].map((group) =>

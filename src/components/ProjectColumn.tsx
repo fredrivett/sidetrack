@@ -47,9 +47,11 @@ export function ProjectColumn({
   // between ItemList and CompletedSection when it's (un)completed — see the
   // hook for the live-lookup / closing-snapshot details.
   const detail = useItemDetailSheet(items);
-  // The column re-renders with fresh server props on every edit and only
-  // unmounts when the list is deleted, so plain open-state is enough — no
-  // live-lookup/closing-snapshot dance like the item sheet needs.
+  // The column re-renders with fresh server props on every edit. It unmounts
+  // when the list is deleted, archived, or moves between the active and paused
+  // groups (Kanban renders those as separate arrays), which resets this local
+  // state; plain open-state is still enough — no live-lookup/closing-snapshot
+  // dance like the item sheet needs.
   const [detailsOpen, setDetailsOpen] = useState(false);
   // A paused list sits collapsed at the end of the board until opened.
   const [showPaused, setShowPaused] = useState(false);
@@ -115,6 +117,15 @@ export function ProjectColumn({
         </div>
       ) : (
         <>
+          {project.status === "paused" && (
+            <button
+              type="button"
+              onClick={() => setShowPaused(false)}
+              className="mb-2 text-xs font-medium text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+            >
+              Hide items
+            </button>
+          )}
           <SummaryBlock
             projectId={project.id}
             summary={project.summary}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
+import { toast } from "sonner";
 import { updateProjectAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import {
@@ -40,8 +41,12 @@ export function ArchivedListsMenu({ lists }: { lists: Project[] }) {
             <DropdownMenuItem
               key={l.id}
               onClick={() =>
-                start(() => {
-                  void updateProjectAction(l.id, { status: "active" });
+                start(async () => {
+                  try {
+                    await updateProjectAction(l.id, { status: "active" });
+                  } catch {
+                    toast.error(`Couldn't restore "${l.name}". Please try again.`);
+                  }
                 })
               }
             >

@@ -10,7 +10,7 @@ const COLORS: Record<ProjectStatus, string> = {
   archived: "bg-neutral-100 text-neutral-500 dark:bg-neutral-900 dark:text-neutral-500",
 };
 
-export const STATUS_LABEL: Record<ProjectStatus, string> = {
+const STATUS_LABEL: Record<ProjectStatus, string> = {
   active: "Active",
   paused: "Paused",
   archived: "Archived",
@@ -40,7 +40,9 @@ export function StatusBadge({
         }}
         className="absolute inset-0 cursor-pointer opacity-0"
       >
-        {PROJECT_STATUSES.map((s) => (
+        {/* Archiving goes through the list menu, which offers Undo; an
+            archived list is never shown with this badge. */}
+        {PROJECT_STATUSES.filter((s) => s !== "archived").map((s) => (
           <option key={s} value={s}>
             {STATUS_LABEL[s]}
           </option>

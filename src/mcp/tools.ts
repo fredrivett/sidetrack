@@ -184,7 +184,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "List lists",
       description:
-        "List the user's lists in board order (left to right, per their own board). Returns id, name, status, summary, summary_updated_at. " +
+        "List the user's lists in board order (left to right, per their own board). Returns id, name, status, summary, summaryUpdatedAt and more. " +
         "status is active (on the board), paused (collapsed at the end of the board; set aside for now) or archived (off the board, kept for reference). " +
         "Archived lists are left out unless include_archived is true.",
       inputSchema: { include_archived: z.boolean().optional() },
@@ -285,7 +285,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Update list",
       description:
-        "Patch name/status/summary/prefix/homepage_url/icon. Setting summary stamps summary_updated_at. " +
+        "Patch name/status/summary/prefix/homepage_url/icon. Setting summary stamps summaryUpdatedAt. " +
         "status is active, paused (collapse it at the end of the board) or archived (take it off the board; its items are kept, and setting active restores it). " +
         "Archive a finished list rather than deleting it unless the user asks to delete. " +
         "prefix is the short item-ID prefix (2–5 letters, e.g. \"ENG\" → items like ENG-42); " +
@@ -742,9 +742,9 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "List my pending invites",
       description:
-        "List invites awaiting your response: each has list_id, " +
-        "list_name, and owner_name. Accept with accept_invite or dismiss " +
-        "with decline_invite.",
+        "List invites awaiting your response: each has listId, listName, " +
+        "ownerName and createdAt. Accept with accept_invite or dismiss with " +
+        "decline_invite, passing the invite's listId as list_id.",
       inputSchema: {},
     },
     async () => {
