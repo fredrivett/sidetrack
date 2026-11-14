@@ -90,7 +90,10 @@ export function EditableText({
         }}
         rows={3}
         placeholder={placeholder}
-        className={`w-full resize-none rounded-md border border-neutral-300 bg-transparent px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-neutral-400 dark:border-neutral-700 ${inputClassName}`}
+        className={cn(
+          "w-full resize-none rounded-md border border-neutral-300 bg-transparent px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-neutral-400 dark:border-neutral-700",
+          inputClassName,
+        )}
       />
     );
   }
