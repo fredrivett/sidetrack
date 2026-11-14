@@ -54,6 +54,7 @@ import {
 import { notifyInvite } from "@/lib/email";
 import { getEnv } from "@/lib/env";
 import { formatItemRef } from "@/lib/itemRef";
+import { MAX_REPEAT_EVERY, REPEAT_UNITS } from "@/lib/repeat";
 import { formatRelativeLong, isDay } from "@/lib/time";
 import { matchesWhose, WHOSE_FILTERS } from "@/lib/whose";
 
@@ -72,6 +73,10 @@ const DueDate = z
   .regex(/^\d{4}-\d{2}-\d{2}$/, "expected a calendar day, YYYY-MM-DD")
   .refine(isDay, "expected a calendar day, YYYY-MM-DD");
 const Whose = z.enum(WHOSE_FILTERS);
+const Repeat = z.object({
+  every: z.number().int().min(1).max(MAX_REPEAT_EVERY),
+  unit: z.enum(REPEAT_UNITS),
+});
 const ListPosRef = z
   .string()
   .regex(/^(start|end|after:.+|before:.+)$/, "expected start|end|after:<id>|before:<id>");
@@ -88,8 +93,15 @@ const AGENT_KEYS: Record<string, string> = {
 function forAgent(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(forAgent);
   if (value && Object.getPrototypeOf(value) === Object.prototype) {
+    let obj = value as Record<string, unknown>;
+    // An item's repeat rule goes out as one `repeat` field, the shape
+    // add_item and update_item take: { every, unit }, or null.
+    if ("repeatUnit" in obj && "repeatEvery" in obj) {
+      const { repeatEvery, repeatUnit, ...rest } = obj;
+      obj = { ...rest, repeat: repeatUnit ? { every: repeatEvery, unit: repeatUnit } : null };
+    }
     return Object.fromEntries(
-      Object.entries(value).map(([k, v]) => [AGENT_KEYS[k] ?? k, forAgent(v)]),
+      Object.entries(obj).map(([k, v]) => [AGENT_KEYS[k] ?? k, forAgent(v)]),
     );
   }
   return value;
@@ -541,6 +553,10 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "assignee_id assigns it to the list owner or an accepted member (get a user_id from list_members). " +
         "completed: true creates it already done, in one call — use it when the user tells you about something they've finished, " +
         "instead of add_item then complete_item. " +
+        "repeat makes a task come round again: { every, unit } with unit day, week or month, e.g. { every: 3, unit: \"day\" } for every 3 days. " +
+        "The next due date counts from the day it was last completed, not a fixed calendar: completing it leaves it crossed out for the rest of the day, " +
+        "then on the day `every` units after the day it was done it reopens as the same item (same ref), due that day. " +
+        "A month later keeps the day of the month, or the month's last day when that's shorter. " +
         "position defaults to end (the bottom of the list, or of the parent's sub-items); top|end|after:<item>|before:<item> are also valid, " +
         "where <item> is a short ref (e.g. \"HOM-12\") or an id of a sibling (same list, same parent). " +
         "Returns { created, items } where items is every incomplete item in the list in position order " +
@@ -559,6 +575,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         due_date: DueDate.nullable().optional(),
         assignee_id: z.string().optional(),
         completed: z.boolean().optional(),
+        repeat: Repeat.nullable().optional(),
         position: PosRef.optional(),
       },
     },
@@ -571,6 +588,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       due_date,
       assignee_id,
       completed,
+      repeat,
       position,
     }) => {
       const { db } = getDb();
@@ -601,6 +619,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           dueDate: due_date,
           assigneeId: assignee_id,
           completed,
+          repeat,
           positionRef: pos.position,
         },
         SOURCE,
@@ -618,9 +637,10 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Update item",
       description:
-        "Patch title/description/category/assignee on an item. Pass description or category as null to clear it. " +
+        "Patch title/description/category/assignee/due_date/repeat on an item. Pass description or category as null to clear it. " +
         "assignee_id assigns the item to a user — the list owner or an accepted member (get a user_id from list_members); " +
         "pass null to unassign. due_date sets the calendar day it's due (YYYY-MM-DD, no time); pass null to clear it. " +
+        "repeat sets how often a task comes round again, { every, unit } (see add_item); pass null to stop it repeating. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: {
         id: z.string(),
@@ -629,6 +649,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         category: z.string().nullable().optional(),
         assignee_id: z.string().nullable().optional(),
         due_date: DueDate.nullable().optional(),
+        repeat: Repeat.nullable().optional(),
       },
     },
     async ({ id, assignee_id, due_date, ...patch }) => {
@@ -659,6 +680,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Mark an item as completed. It keeps its place in the list: the user sees it crossed out for the rest of the day " +
         "(the day turns over at 4am their time), then it moves to the list's Done section. " +
         "Completing an item with sub-items also completes its open sub-items; completing the last sub-item does not complete the parent. " +
+        "A repeating item (one with a repeat rule) reopens by itself on its next due date: `every` units after the day it was completed. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: { id: z.string() },
     },
@@ -909,7 +931,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "List audit log",
       description:
-        "Recent change history (newest first). Every create/update/complete/uncomplete/reorder/delete is logged with its source (web or mcp), agentName (the API key name of the agent that made an mcp change) and a human summary. Each row includes `when`, a ready-to-display relative time (e.g. \"just now\", \"5 minutes ago\", \"7 months ago\") — show that to the user, not the raw `ts` epoch. Optionally filter by list_id or source.",
+        "Recent change history (newest first). Every create/update/complete/uncomplete/reorder/delete is logged with its source (web or mcp; system for a change nobody made, such as a repeating item reopening on its next due date), agentName (the API key name of the agent that made an mcp change) and a human summary. Each row includes `when`, a ready-to-display relative time (e.g. \"just now\", \"5 minutes ago\", \"7 months ago\") — show that to the user, not the raw `ts` epoch. Optionally filter by list_id or source.",
       inputSchema: {
         list_id: z.string().optional(),
         source: z.enum(AUDIT_SOURCES).optional(),

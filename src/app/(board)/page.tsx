@@ -2,7 +2,7 @@ import { Kanban } from "@/components/Kanban";
 import { listCategories } from "@/core/categories";
 import { getDb } from "@/core/db";
 import { projectRefPrefixes } from "@/core/itemRef";
-import { listItems } from "@/core/items";
+import { listItems, reopenDueRepeats } from "@/core/items";
 import { listAssignees, listPendingInvites } from "@/core/members";
 import { listAllPrLinks } from "@/core/prLinks";
 import { listProjects } from "@/core/projects";
@@ -20,6 +20,8 @@ export default async function Home({
   const { view } = await searchParams;
   const userId = await requireUserId();
   const { db } = getDb();
+  // Repeating items whose next due day has come reopen as the page loads.
+  reopenDueRepeats(db, userId);
   // Tag each project with whether the viewer owns it (vs. it being shared with
   // them) for the badge and owner-only gating, plus its display ref-prefix —
   // qualified (alice/SID) only when a shared project's prefix clashes on this

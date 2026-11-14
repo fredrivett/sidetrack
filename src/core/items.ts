@@ -1,11 +1,20 @@
-import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { hasProjectAccess } from "./access";
 import { users } from "./auth-schema";
-import { type AuditOrigin, recordAudit } from "./audit";
+import { type AuditOrigin, recordAudit, SYSTEM_ACTOR } from "./audit";
 import { ensureCategory } from "./categories";
 import type { Db } from "./db";
-import { isDay } from "../lib/time";
+import { getTimeZone } from "./users";
+import {
+  MAX_REPEAT_EVERY,
+  nextDueDay,
+  type Repeat,
+  REPEAT_UNITS,
+  repeatLabel,
+  repeatOf,
+} from "../lib/repeat";
+import { dayOf, isDay } from "../lib/time";
 import { parseRef, resolvePosition } from "./fracidx";
 import { type Item, items, projects } from "./schema";
 
@@ -97,6 +106,19 @@ function assertDueDate(due: string | null | undefined): string | null {
   const d = due?.trim() || null;
   if (d && !isDay(d)) throw new Error(`invalid due date: ${d} (expected YYYY-MM-DD)`);
   return d;
+}
+
+// A repeat rule is a whole number of days, weeks or months; null clears it.
+function assertRepeat(repeat: Repeat | null): Repeat | null {
+  if (!repeat) return null;
+  const { every, unit } = repeat;
+  if (!(REPEAT_UNITS as readonly string[]).includes(unit)) {
+    throw new Error(`invalid repeat unit: ${unit} (expected day, week or month)`);
+  }
+  if (!Number.isInteger(every) || every < 1 || every > MAX_REPEAT_EVERY) {
+    throw new Error(`invalid repeat: every ${every} (expected 1 to ${MAX_REPEAT_EVERY})`);
+  }
+  return { every, unit };
 }
 
 /** An item's sub-items, in order, for a user who can see the item. */
@@ -192,10 +214,12 @@ export function addItem(
     assigneeId?: string | null;
     /** Create it already done, e.g. to log something the user just finished. */
     completed?: boolean;
+    repeat?: Repeat | null;
   },
   source: AuditOrigin,
 ): Item {
   const dueDate = assertDueDate(input.dueDate);
+  const repeat = assertRepeat(input.repeat ?? null);
   if (!projectAccessibleForUser(db, userId, input.projectId)) {
     throw new Error(`list not found: ${input.projectId}`);
   }
@@ -246,6 +270,8 @@ export function addItem(
         parentId: parent?.id ?? null,
         dueDate,
         assigneeId,
+        repeatEvery: repeat?.every ?? null,
+        repeatUnit: repeat?.unit ?? null,
         position,
         number,
         createdAt: now,
@@ -264,7 +290,8 @@ export function addItem(
           ? `added "${title}" to "${parent.title}"`
           : `added task "${title}"`) +
         (dueDate ? `, due ${dueDate}` : "") +
-        (assigneeId ? `, assigned to ${assigneeLabel(tx as unknown as Db, assigneeId)}` : ""),
+        (assigneeId ? `, assigned to ${assigneeLabel(tx as unknown as Db, assigneeId)}` : "") +
+        (repeat ? `, repeats ${repeatLabel(repeat).toLowerCase()}` : ""),
     });
     // Created done: log the completion as its own row, as completeItem does,
     // so the item's history reads the same as adding it then ticking it.
@@ -318,6 +345,7 @@ export function updateItem(
     category?: string | null;
     assigneeId?: string | null;
     dueDate?: string | null;
+    repeat?: Repeat | null;
   },
   source: AuditOrigin,
 ): Item {
@@ -365,6 +393,15 @@ export function updateItem(
     if (d !== existing.dueDate) {
       next.dueDate = d;
       changes.push(d ? `due ${d}` : "due date cleared");
+    }
+  }
+  if (patch.repeat !== undefined) {
+    const r = assertRepeat(patch.repeat);
+    const was = repeatOf(existing);
+    if (r?.every !== was?.every || r?.unit !== was?.unit) {
+      next.repeatEvery = r?.every ?? null;
+      next.repeatUnit = r?.unit ?? null;
+      changes.push(r ? `repeats ${repeatLabel(r).toLowerCase()}` : "no longer repeats");
     }
   }
   if (Object.keys(next).length === 0) return existing;
@@ -458,6 +495,95 @@ export function uncompleteItem(
     });
   });
   return getItemOrThrow(db, userId, id);
+}
+
+/**
+ * Reopen the finished repeating items `userId` can see whose next due day has
+ * come: the day the rule's gap after the day it was done, in `timeZone` (4am
+ * turnover; the user's saved zone by default). Each reopens as the same item, in the same place, now due on
+ * that day, along with its checklist. Archived lists are left alone.
+ *
+ * Called on read, at the start of each request that shows items (the board
+ * and the MCP route), so whoever looks sees the reopened item; nothing needs
+ * reopening while nobody is looking. Nobody made the change, so it's logged
+ * with the `system` source. Each update only applies while the item is still
+ * finished as it was read, so two requests at once can't both reopen it.
+ * Returns how many items reopened.
+ */
+export function reopenDueRepeats(
+  db: Db,
+  userId: string,
+  opts: { timeZone?: string; now?: number } = {},
+): number {
+  // The viewer's saved zone, as list_today uses; UTC until a browser reports one.
+  const timeZone = opts.timeZone ?? getTimeZone(db, userId) ?? "UTC";
+  const today = dayOf(opts.now ?? Date.now(), timeZone);
+  const finished = db
+    .select({ items })
+    .from(items)
+    .innerJoin(projects, eq(projects.id, items.projectId))
+    .where(
+      and(
+        hasProjectAccess(userId),
+        ne(projects.status, "archived"),
+        isNotNull(items.repeatUnit),
+        isNotNull(items.completedAt),
+      ),
+    )
+    .all()
+    .map((row) => row.items)
+    // Parents first: a parent reopening reopens its sub-items, while a
+    // repeating sub-item going first would reopen its parent without moving
+    // the parent's due date on.
+    .sort((a, b) => Number(a.parentId !== null) - Number(b.parentId !== null));
+
+  let reopened = 0;
+  for (const it of finished) {
+    const rule = repeatOf(it);
+    const done = it.completedAt;
+    if (!rule || done === null) continue;
+    const next = nextDueDay(dayOf(done, timeZone), rule);
+    if (next > today) continue;
+    db.transaction((tx) => {
+      const { changes } = tx
+        .update(items)
+        .set({ completedAt: null, dueDate: next })
+        .where(and(eq(items.id, it.id), eq(items.completedAt, done)))
+        .run();
+      if (changes === 0) return;
+      reopened++;
+      recordAudit(tx as unknown as Db, {
+        actor: SYSTEM_ACTOR,
+        source: "system",
+        action: "uncomplete",
+        entityType: "item",
+        entityId: it.id,
+        projectId: it.projectId,
+        detail: `reopened "${it.title}" (repeats ${repeatLabel(rule).toLowerCase()}), due ${next}`,
+      });
+      // The checklist comes round with it.
+      for (const child of childrenOf(tx as unknown as Db, it.id)) {
+        if (child.completedAt === null) continue;
+        tx.update(items).set({ completedAt: null }).where(eq(items.id, child.id)).run();
+        recordAudit(tx as unknown as Db, {
+          actor: SYSTEM_ACTOR,
+          source: "system",
+          action: "uncomplete",
+          entityType: "item",
+          entityId: child.id,
+          projectId: it.projectId,
+          detail: `reopened "${child.title}" with "${it.title}"`,
+        });
+      }
+      const parent = it.parentId
+        ? tx.select().from(items).where(eq(items.id, it.parentId)).get()
+        : undefined;
+      if (parent) {
+        reopenParentIfDone(tx as unknown as Db, SYSTEM_ACTOR, parent, "system");
+      }
+    });
+  }
+  return reopened;
 }
 
 export function reorderItem(

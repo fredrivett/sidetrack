@@ -56,9 +56,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Kbd } from "@/components/ui/kbd";
 import { useMediaQuery } from "@/components/ui/use-media-query";
 import { formatItemRef } from "@/lib/itemRef";
+import { repeatOf } from "@/lib/repeat";
 import { AssigneeOptions } from "./AssigneeOptions";
 import { CategoryBadge } from "./CategoryBadge";
 import { DueBadge } from "./DueBadge";
+import { RepeatBadge } from "./RepeatBadge";
 import { useToday } from "./use-day-start";
 import { useAssignShortcuts } from "./useAssignShortcuts";
 import { useCopyItemRef } from "./useCopyItemRef";
@@ -126,6 +128,7 @@ export function ItemRow({
     if (isDragging) draggedRef.current = true;
   }, [isDragging]);
   const completed = item.completedAt !== null;
+  const repeat = repeatOf(item);
   const ref = formatItemRef(prefix, item.number);
   const assignee = assignees.find((a) => a.userId === item.assigneeId);
   const canAssignSelf = useMemo(
@@ -259,10 +262,13 @@ export function ItemRow({
                 {context}
               </span>
             )}
-            {(item.category || item.dueDate) && (
+            {(item.category || item.dueDate || repeat) && (
               <span className="flex flex-wrap items-center gap-1">
                 {item.dueDate && (
                   <DueBadge due={item.dueDate} done={completed} />
+                )}
+                {repeat && (
+                  <RepeatBadge repeat={repeat} completedAt={item.completedAt} />
                 )}
                 {item.category && <CategoryBadge category={item.category} />}
               </span>
