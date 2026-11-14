@@ -145,7 +145,16 @@ export function Kanban({
   return (
     <main className="flex h-dvh flex-col">
       <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
-        <h1 className="text-sm font-semibold tracking-tight">Sidetrack</h1>
+        <h1 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+          {/* The logo mark, generated from scripts/icons/icon.svg, in the text
+              colour. 18×19px is 1/16 of the icon, so every edge lands on a
+              whole pixel. */}
+          <span
+            aria-hidden="true"
+            className="h-[19px] w-[18px] shrink-0 bg-current [mask:url(/icons/mark.svg)_center/contain_no-repeat]"
+          />
+          Sidetrack
+        </h1>
         <div className="flex items-center gap-3">
           <span className="text-xs text-neutral-400">
             {projects.length} project{projects.length === 1 ? "" : "s"}

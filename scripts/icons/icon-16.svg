@@ -1,0 +1,12 @@
+<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+  <rect width="16" height="16" rx="3" fill="#0A0A0A"/>
+  <!-- icon.svg snapped to whole pixels for the 16px favicon: same cards,
+       stagger and padding, with 1px rows and gaps so all five stay distinct. -->
+  <g fill="#FAFAFA">
+    <rect x="4" y="3" width="9" height="1"/>
+    <rect x="3" y="5" width="5" height="1"/>
+    <rect x="4" y="7" width="8" height="1"/>
+    <rect x="8" y="9" width="5" height="1"/>
+    <rect x="3" y="11" width="9" height="1"/>
+  </g>
+</svg>
