@@ -133,10 +133,6 @@ export function ItemRow({
     [assignees, viewerId],
   );
 
-  const firstLine = item.description?.split("\n", 1)[0] ?? "";
-  const descriptionHasMore =
-    item.description != null && item.description.length > firstLine.length;
-
   // ⌘./Ctrl+. copies the ref while the card is hovered (Linear's shortcut),
   // deferring to an open detail sheet so we don't copy the wrong ref.
   const { copied, copy } = useCopyItemRef(ref, {
@@ -265,12 +261,6 @@ export function ItemRow({
             {context && (
               <span className="block w-full truncate text-[11px] text-neutral-400">
                 {context}
-              </span>
-            )}
-            {item.description && (
-              <span className="block w-full truncate text-xs text-neutral-500 dark:text-neutral-400">
-                {firstLine}
-                {descriptionHasMore && "…"}
               </span>
             )}
             {(item.category || item.dueDate) && (
