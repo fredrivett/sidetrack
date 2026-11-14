@@ -15,6 +15,12 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["better-sqlite3"],
   // Inlined into both bundles so server + client error capture can tag it.
   env: { NEXT_PUBLIC_RELEASE: release },
+  // In an Amp orb the dev server is opened through a portal hostname, which
+  // Next blocks from dev-only assets (JS chunks, HMR) unless allowed here.
+  allowedDevOrigins:
+    process.env.AMP_ORB && process.env.PUBLIC_URL
+      ? [new URL(process.env.PUBLIC_URL).hostname]
+      : undefined,
 };
 
 // Source-map upload happens at build time, but only when the build is given

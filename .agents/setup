@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+# Prepares an Amp orb for Sidetrack: Node 22 (matching CI and the Dockerfile),
+# pnpm dependencies, a dev .env.local, the sqlite3 CLI, and Mailpit. Runs on a
+# fresh orb and again on top of a stale snapshot, so every step is idempotent
+# and skips work that is already done. Long-running processes (dev server,
+# Mailpit) are declared in .amp/services.yaml, not started here.
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+step() {
+  local label="$1"
+  shift
+  local start=$SECONDS
+  echo "==> $label"
+  "$@"
+  echo "    ($label: $((SECONDS - start))s)"
+}
+
+# --- Node.js 22 -------------------------------------------------------------
+# CI (actions/setup-node) and the Docker image both run Node 22; the orb base
+# image ships a newer Node. Install 22 alongside it and put it first on PATH
+# for login shells, which is what Amp and supervised services start.
+node_version="22.23.5"
+node_sha256="cdeb8670a0c81f51b4dc4ac61919f9b1ad917b304bf8221eb939570663d240f8"
+node_dir="$HOME/.local/share/node/v$node_version"
+
+install_node() {
+  if [[ -x "$node_dir/bin/node" ]]; then
+    echo "    node v$node_version already installed"
+  else
+    local tmp
+    tmp="$(mktemp -d)"
+    local tarball="node-v$node_version-linux-x64.tar.xz"
+    curl -fsSL "https://nodejs.org/dist/v$node_version/$tarball" -o "$tmp/$tarball"
+    echo "$node_sha256  $tmp/$tarball" | sha256sum -c --quiet -
+    mkdir -p "$tmp/extract"
+    tar -xJf "$tmp/$tarball" -C "$tmp/extract" --strip-components=1
+    mkdir -p "$(dirname "$node_dir")"
+    rm -rf "$node_dir"
+    mv "$tmp/extract" "$node_dir"
+    rm -rf "$tmp"
+  fi
+
+  local marker="# sidetrack: Node.js 22 (see .agents/setup)"
+  local path_line="export PATH=\"$node_dir/bin:\$PATH\""
+  local profile="$HOME/.bash_profile"
+  touch "$profile"
+  if grep -Fqx "$path_line" "$profile"; then
+    return
+  fi
+  # Drop a block from an older Node version (marker line plus the line after
+  # it), so a version bump takes effect on stale snapshots.
+  local tmp_profile
+  tmp_profile="$(mktemp)"
+  awk -v m="$marker" '$0 == m { skip = 1; next } skip { skip = 0; next } { print }' "$profile" >"$tmp_profile"
+  printf '%s\n%s\n' "$marker" "$path_line" >>"$tmp_profile"
+  cat "$tmp_profile" >"$profile"
+  rm -f "$tmp_profile"
+}
+step "Node.js v$node_version" install_node
+export PATH="$node_dir/bin:$PATH"
+
+# --- System packages --------------------------------------------------------
+# sqlite3 CLI: used by CI's seed smoke test and handy for inspecting ./data.
+install_apt_packages() {
+  if dpkg -s sqlite3 >/dev/null 2>&1; then
+    echo "    sqlite3 already installed"
+    return
+  fi
+  sudo apt-get update -qq
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sqlite3 >/dev/null
+}
+step "apt packages" install_apt_packages
+
+# --- Mailpit ----------------------------------------------------------------
+# Dev mail goes to smtp://localhost:1025 (src/lib/env.ts). Docker isn't running
+# in orbs, so install the same pinned Mailpit release as docker-compose.dev.yml
+# as a native binary; .amp/services.yaml runs it.
+mailpit_version="1.30.1"
+mailpit_sha256="0c7f96daad083977ee49a41ada6376799b998c82f98840ef8962b95fb2230955"
+
+install_mailpit() {
+  if command -v mailpit >/dev/null 2>&1 && [[ "$(mailpit version 2>/dev/null)" == *"v$mailpit_version"* ]]; then
+    echo "    mailpit v$mailpit_version already installed"
+    return
+  fi
+  local tmp
+  tmp="$(mktemp -d)"
+  curl -fsSL "https://github.com/axllent/mailpit/releases/download/v$mailpit_version/mailpit-linux-amd64.tar.gz" -o "$tmp/mailpit.tar.gz"
+  echo "$mailpit_sha256  $tmp/mailpit.tar.gz" | sha256sum -c --quiet -
+  tar -xzf "$tmp/mailpit.tar.gz" -C "$tmp" mailpit
+  sudo install -m 0755 "$tmp/mailpit" /usr/local/bin/mailpit
+  rm -rf "$tmp"
+}
+step "Mailpit v$mailpit_version" install_mailpit
+
+# --- Dependencies -----------------------------------------------------------
+# pnpm in the orb matches package.json's packageManager; pnpm also switches to
+# that version itself if it ever differs.
+step "pnpm install" pnpm install --frozen-lockfile
+
+# --- Local config -----------------------------------------------------------
+write_env_local() {
+  mkdir -p data
+  if [[ -f .env.local ]]; then
+    echo "    .env.local already exists"
+    return
+  fi
+  # Dev-only signing key for this ephemeral orb; never used outside it.
+  printf 'BETTER_AUTH_SECRET=%s\n' "$(openssl rand -hex 32)" >.env.local
+}
+step ".env.local" write_env_local
+
+# --- Orb agent guidance -----------------------------------------------------
+write_agent_guidance() {
+  local file="$HOME/.config/amp/AGENTS.md"
+  local marker="<!-- sidetrack orb notes -->"
+  mkdir -p "$(dirname "$file")"
+  if [[ -f "$file" ]] && grep -Fqx "$marker" "$file"; then
+    return
+  fi
+  cat >>"$file" <<EOF
+
+$marker
+# Sidetrack in this orb
+
+- \`amp orb services ensure\` starts the dev server (\`web\`, migrates and seeds
+  ./data on start) and Mailpit (\`mailpit\`, captures dev email). Log in as
+  demo@sidetrack.local / sidetrack-demo; password-reset emails appear in the
+  Mailpit portal.
+- Node 22 (matching CI) is first on PATH in login shells; the orb's default
+  Node is newer.
+EOF
+}
+step "orb agent guidance" write_agent_guidance
+
+echo "==> setup complete"
