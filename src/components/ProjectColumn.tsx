@@ -238,6 +238,7 @@ export function ProjectColumn({
               viewerId={viewerId}
               prLinksByItem={prLinksByItem}
               onOpenDetail={detail.openDetail}
+              onAddItem={() => onAddItem(project.id)}
             />
             {done.length > 0 && (
               <DoneSection
