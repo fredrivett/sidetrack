@@ -50,6 +50,7 @@ export function ShareDialog({
   // if the dialog has since moved to another project, that late response must
   // not overwrite the new roster.
   const latestProjectId = useRef(projectId);
+  const personRef = useRef<HTMLInputElement>(null);
 
   // Clear the form when the dialog opens (or switches project) — the render-time
   // reset pattern, so we don't setState synchronously inside the load effect.
@@ -111,7 +112,7 @@ export function ShareDialog({
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
-      <ResponsiveDialogContent>
+      <ResponsiveDialogContent initialFocus={personRef}>
         <div className="flex shrink-0 flex-col gap-0.5 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
           <div className="flex items-center gap-2">
             <ResponsiveDialogTitle className="min-w-0 break-words">
@@ -128,6 +129,7 @@ export function ShareDialog({
         <form onSubmit={invite} className="shrink-0 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
           <div className="flex gap-2">
             <Input
+              ref={personRef}
               value={person}
               onChange={(e) => setPerson(e.target.value)}
               placeholder="username or email"

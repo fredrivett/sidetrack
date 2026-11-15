@@ -101,9 +101,9 @@ export function AuditDialog({
 
   return (
     <ResponsiveDialog open={open} onOpenChange={(o) => !o && onClose()}>
-      {/* A fixed height on desktop, so the modal doesn't jump as entries load
-          or a filter empties the list (md: is ResponsiveDialog's breakpoint). */}
-      <ResponsiveDialogContent className="md:h-[85vh]">
+      {/* A fixed height, so neither the modal nor the drawer jumps as entries
+          load or a filter empties the list. */}
+      <ResponsiveDialogContent className="h-[85vh]">
         <div className="flex shrink-0 items-center gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
           <div className="min-w-0">
             <ResponsiveDialogTitle>Activity</ResponsiveDialogTitle>

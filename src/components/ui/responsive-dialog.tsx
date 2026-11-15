@@ -35,7 +35,12 @@ function ResponsiveDialog({
   onOpenChange: (open: boolean) => void
   children: React.ReactNode
 }) {
-  const isDesktop = useMediaQuery("(min-width: 768px)", true)
+  const matchesDesktop = useMediaQuery("(min-width: 768px)", true)
+  // Follow the width only while closed. Swapping Dialog for Drawer remounts
+  // the body, so crossing 768px while open (a phone rotating to landscape)
+  // would throw away half-typed input.
+  const [isDesktop, setIsDesktop] = React.useState(matchesDesktop)
+  if (!open && isDesktop !== matchesDesktop) setIsDesktop(matchesDesktop)
   return (
     <IsDesktopContext.Provider value={isDesktop}>
       {isDesktop ? (
