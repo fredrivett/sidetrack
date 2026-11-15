@@ -405,7 +405,7 @@ export function ItemList({
 
   if (groups.length === 0) {
     return (
-      <p className="rounded-lg border border-dashed border-neutral-200 bg-neutral-50 px-3 py-4 text-center text-xs text-balance text-neutral-400 dark:border-neutral-800 dark:bg-neutral-800/30">
+      <p className="rounded-lg border border-dashed border-neutral-200 bg-neutral-50 px-3 py-4 text-center text-xs text-balance text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/30 dark:text-neutral-400">
         Nothing to do — add an item from the list’s ⋯ menu.
       </p>
     );
