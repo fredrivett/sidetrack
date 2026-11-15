@@ -62,6 +62,9 @@ export function ShareDialog({
     setOpened({ open, projectId });
     setPerson("");
     setError(null);
+    // Suggestions are for one project: an Invite left over from the last one
+    // would invite that person here, so hide them until this project's load.
+    setSuggestions([]);
     // A tap armed before closing must not carry over to the next open.
     tap.reset();
   }
@@ -84,26 +87,39 @@ export function ShareDialog({
     };
   }, [open, projectId]);
 
-  // Invite by handle, from the form or a suggestion; `fromForm` clears the input
-  // on success. Reloads both lists so the invitee moves from suggested to member.
+  // Re-read members and suggestions after an invite or removal, so a person
+  // moves between the two lists. The change has already committed, so a failed
+  // re-read isn't reported as a failed invite/removal; the board's own refresh
+  // and the next open bring the lists up to date.
+  async function reload(id: string) {
+    try {
+      const [rows, suggested] = await Promise.all([
+        listMembersAction(id),
+        listSuggestedCollaboratorsAction(id),
+      ]);
+      if (latestProjectId.current !== id) return;
+      setMembers(rows);
+      setSuggestions(suggested);
+    } catch {
+      // Leave the lists as they were.
+    }
+  }
+
+  // Invite by handle, from the form or a suggestion; `fromForm` clears the
+  // input on success.
   function invite(handle: string, fromForm: boolean) {
     if (!handle || !projectId) return;
     setError(null);
     start(async () => {
       try {
         await inviteMemberAction(projectId, handle);
-        const [rows, suggested] = await Promise.all([
-          listMembersAction(projectId),
-          listSuggestedCollaboratorsAction(projectId),
-        ]);
-        if (latestProjectId.current !== projectId) return;
-        if (fromForm) setPerson("");
-        setMembers(rows);
-        setSuggestions(suggested);
       } catch (err) {
         if (latestProjectId.current !== projectId) return;
         setError(err instanceof Error ? err.message : "Couldn't send the invite.");
+        return;
       }
+      if (fromForm && latestProjectId.current === projectId) setPerson("");
+      await reload(projectId);
     });
   }
 
@@ -112,17 +128,12 @@ export function ShareDialog({
     start(async () => {
       try {
         await removeMemberAction(projectId, targetUserId);
-        const [rows, suggested] = await Promise.all([
-          listMembersAction(projectId),
-          listSuggestedCollaboratorsAction(projectId),
-        ]);
-        if (latestProjectId.current !== projectId) return;
-        setMembers(rows);
-        setSuggestions(suggested);
       } catch {
         if (latestProjectId.current !== projectId) return;
         setError("Couldn't remove that person. Please try again.");
+        return;
       }
+      await reload(projectId);
     });
   }
 
