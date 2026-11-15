@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AvatarPanel } from "@/components/AvatarPanel";
+import { PasswordPanel } from "@/components/PasswordPanel";
 import { UsernamePanel } from "@/components/UsernamePanel";
 import { getCurrentSession } from "@/auth/session";
 
@@ -43,6 +44,7 @@ export default async function ProfilePage() {
             image: user.image ?? null,
           }}
         />
+        <PasswordPanel email={user.email} />
       </div>
     </main>
   );
