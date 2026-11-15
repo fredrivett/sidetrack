@@ -21,9 +21,9 @@ export function BoardHeader({
   children: ReactNode;
 }) {
   return (
-    // Tighter on phones so Board, Today and No date fit beside the header's
-    // buttons down to 320px; px-3 lines the logo up with the views below.
-    <div className="flex items-center justify-between gap-2 border-b border-neutral-200 px-3 py-2 sm:gap-3 sm:px-4 dark:border-neutral-800">
+    // Tighter on phones so the views fit beside the header's buttons down to
+    // 320px; px-3 lines the logo up with the views below.
+    <div className="flex items-center justify-between gap-2 max-[359px]:gap-1.5 border-b border-neutral-200 px-3 py-2 sm:gap-3 sm:px-4 dark:border-neutral-800">
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
         {/* Below 360px the logo gives way to the view switch too. */}
         <h1
@@ -43,7 +43,7 @@ export function BoardHeader({
         </h1>
         {nav}
       </div>
-      <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 sm:gap-3">{children}</div>
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 max-[359px]:gap-1 sm:gap-3">{children}</div>
     </div>
   );
 }

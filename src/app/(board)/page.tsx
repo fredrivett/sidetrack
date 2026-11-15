@@ -66,9 +66,12 @@ export default async function Home({
         viewerId={userId}
         viewer={getProfile(db, userId)}
         timeZone={timeZone}
-        initialView={view === "today" || view === "no-date" ? view : "board"}
+        initialView={
+          view === "today" || view === "no-date" || view === "done" ? view : "board"
+        }
         projects={projects}
         itemsByProject={itemsByProject}
+        completedSince={completedSince}
         categoriesByProject={categoriesByProject}
         assigneesByProject={assigneesByProject}
         prLinksByItem={prLinksByItem}

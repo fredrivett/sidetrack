@@ -1,4 +1,4 @@
-import { and, asc, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, type SQL, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { nanoid } from "nanoid";
 import { hasProjectAccess } from "./access";
@@ -82,6 +82,74 @@ export function listItems(
     .orderBy(asc(items.position), asc(items.id))
     .all()
     .map((row) => row.items);
+}
+
+/**
+ * Items finished before `before` in the user's lists that aren't archived,
+ * newest first, and only those with `query` in their title when it's given:
+ * the history the board leaves out (the Done view's older pages, ⌘K's search
+ * of them). It returns every one finished from `since` on: back to the
+ * `limit`th newest, and any finished at the same moment as that one, so a
+ * parent and the sub-items it closed never split. `since` is 0 when that's
+ * all of them, and `more` says older ones remain. Any finished parent brings
+ * its sub-items too, however old, so its checklist is whole.
+ */
+export function listDoneBefore(
+  db: Db,
+  userId: string,
+  opts: { before: number; limit: number; query?: string },
+): { items: Item[]; since: number; more: boolean } {
+  const limit = Math.min(Math.max(Math.floor(opts.limit) || 1, 1), 5000);
+  const query = opts.query?.trim().toLowerCase();
+  const inLists = and(hasProjectAccess(userId), ne(projects.status, "archived"));
+  const finished = (...where: SQL[]) =>
+    and(
+      inLists,
+      isNotNull(items.completedAt),
+      sql`${items.completedAt} < ${opts.before}`,
+      query ? sql`instr(lower(${items.title}), ${query}) > 0` : undefined,
+      ...where,
+    );
+  const last = db
+    .select({ at: items.completedAt })
+    .from(items)
+    .innerJoin(projects, eq(projects.id, items.projectId))
+    .where(finished())
+    .orderBy(desc(items.completedAt))
+    .limit(1)
+    .offset(limit - 1)
+    .get();
+  const since = last?.at ?? 0;
+  const more =
+    !!last &&
+    !!db
+      .select({ id: items.id })
+      .from(items)
+      .innerJoin(projects, eq(projects.id, items.projectId))
+      .where(finished(sql`${items.completedAt} < ${since}`))
+      .get();
+  const shown = db
+    .select({ items })
+    .from(items)
+    .innerJoin(projects, eq(projects.id, items.projectId))
+    .where(finished(sql`${items.completedAt} >= ${since}`))
+    .orderBy(desc(items.completedAt), desc(items.id))
+    .all()
+    .map((row) => row.items);
+  const ids = new Set(shown.map((i) => i.id));
+  const parents = shown.filter((i) => i.parentId === null).map((i) => i.id);
+  const subItems = parents.length
+    ? db
+        .select({ items })
+        .from(items)
+        .innerJoin(projects, eq(projects.id, items.projectId))
+        .where(and(inLists, inArray(items.parentId, parents)))
+        .orderBy(asc(items.position), asc(items.id))
+        .all()
+        .map((row) => row.items)
+        .filter((i) => !ids.has(i.id))
+    : [];
+  return { items: [...shown, ...subItems], since, more };
 }
 
 // Positions are scoped to a parent: top-level items order among themselves,

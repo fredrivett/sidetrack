@@ -6,6 +6,7 @@ import {
   completeItem,
   deleteItem,
   getItem,
+  listDoneBefore,
   listItems,
   reopenDueRepeats,
   reorderItem,
@@ -533,6 +534,47 @@ describe("checklists (sub-items)", () => {
       ["Trip", ["Book", "Pack bags"]],
       ["Move", ["Pack boxes", "Clean"]],
     ]);
+  });
+
+  it("listDoneBefore pages older finished items, newest first, with whole checklists", () => {
+    const { db, userId, projectId, add } = setup();
+    const completeAt = (id: string, ts: number) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(ts);
+      completeItem(db, userId, id, "web");
+      vi.useRealTimers();
+    };
+    const day = (d: number) => Date.UTC(2026, 9, d, 12);
+    const before = day(20);
+    add("Still open");
+    completeAt(add("On the cut").id, before);
+    completeAt(add("Laundry").id, day(18));
+    // Its sub-item was finished days earlier than the parent.
+    const trip = add("Trip", { subItems: ["Book trains", "Pack"] });
+    const [trains] = listItems(db, userId, projectId).filter((i) => i.parentId === trip.id);
+    completeAt(trains.id, day(10));
+    completeAt(trip.id, day(15));
+    completeAt(add("Tax return").id, day(12));
+    const archived = createProject(db, userId, { name: "Old" }, "web");
+    completeAt(addItem(db, userId, { projectId: archived.id, title: "Archived trip" }, "web").id, day(17));
+    updateProject(db, userId, archived.id, { status: "archived" }, "web");
+
+    const titles = (r: { items: { title: string }[] }) => r.items.map((i) => i.title);
+    // The 2nd newest is "Pack" or "Trip", closed together: both come, and
+    // "Book trains" comes for the checklist though it's older than `since`.
+    const first = listDoneBefore(db, userId, { before, limit: 2 });
+    expect(titles(first).sort()).toEqual(["Book trains", "Laundry", "Pack", "Trip"]);
+    expect(first.since).toBe(day(15));
+    expect(first.more).toBe(true);
+
+    const all = listDoneBefore(db, userId, { before, limit: 10 });
+    expect(titles(all).slice(0, 1)).toEqual(["Laundry"]);
+    expect(titles(all).slice(3)).toEqual(["Tax return", "Book trains"]);
+    expect(all.since).toBe(0);
+    expect(all.more).toBe(false);
+
+    const search = listDoneBefore(db, userId, { before, limit: 10, query: " TRAIN" });
+    expect(titles(search)).toEqual(["Book trains"]);
   });
 
   it("orders sub-items among their siblings only", () => {

@@ -2,9 +2,9 @@
 
 import { History } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AssigneeView, PendingInviteView } from "@/core/members";
-import { setTimeZoneAction } from "@/app/actions";
+import { listDoneBeforeAction, setTimeZoneAction } from "@/app/actions";
 import type { Category, Item, ItemPrLink, Project } from "@/core/schema";
 import { isEditableTarget, matchesShortcut } from "@/lib/keyboard";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { ArchivedListsMenu } from "./ArchivedListsMenu";
 import { AuditDialog } from "./AuditDialog";
 import { BoardHeader, BoardMain, BoardRail } from "./BoardLayout";
 import { CommandPalette } from "./CommandPalette";
+import { DoneView } from "./DoneView";
 import { InvitesBanner } from "./InvitesBanner";
 import { ItemDetailDialog } from "./ItemDetailDialog";
 import { NewItemDialog } from "./NewItemDialog";
@@ -43,8 +44,12 @@ const BOARD_VIEWS = [
   ["board", "Board"],
   ["today", "Today"],
   ["no-date", "No date"],
+  ["done", "Done"],
 ] as const;
 export type BoardView = (typeof BOARD_VIEWS)[number][0];
+
+/** How many more older finished items the Done view loads at a time. */
+const DONE_PAGE = 50;
 
 export function Kanban({
   viewerId,
@@ -53,6 +58,7 @@ export function Kanban({
   initialView,
   projects,
   itemsByProject: serverItemsByProject,
+  completedSince,
   categoriesByProject,
   assigneesByProject,
   prLinksByItem,
@@ -66,17 +72,81 @@ export function Kanban({
   /** From `?view=`, so a reload or shared link opens on the same view. */
   initialView: BoardView;
   projects: ProjectView[];
+  /**
+   * Every list's open items and its items finished at or after this, with
+   * their checklists. Older finished items load on demand (the Done view,
+   * ⌘K), into the same items.
+   */
   itemsByProject: Record<string, Item[]>;
+  completedSince: number;
   categoriesByProject: Record<string, Category[]>;
   assigneesByProject: Record<string, AssigneeView[]>;
   prLinksByItem: Record<string, ItemPrLink[]>;
   pendingInvites: PendingInviteView[];
 }) {
   const railRef = useRef<HTMLDivElement>(null);
+
+  // Finished items older than the board's: the Done view's pages, the newest
+  // `doneLimit` of them, and ⌘K's matches for `search`. Both read again
+  // whenever the server's items do (after any change), so an edit, reopen or
+  // delete shows in them too.
+  const [doneLimit, setDoneLimit] = useState(0);
+  const [older, setOlder] = useState<
+    (Awaited<ReturnType<typeof listDoneBeforeAction>> & { limit: number }) | null
+  >(null);
+  useEffect(() => {
+    if (doneLimit === 0) return;
+    let stale = false;
+    void listDoneBeforeAction({ before: completedSince, limit: doneLimit }).then(
+      (page) => !stale && setOlder({ ...page, limit: doneLimit }),
+    );
+    return () => {
+      stale = true;
+    };
+  }, [doneLimit, completedSince, serverItemsByProject]);
+  const loadingDone = doneLimit !== (older?.limit ?? 0);
+  const loadMoreDone = useCallback(() => {
+    if (!loadingDone) setDoneLimit((n) => n + DONE_PAGE);
+  }, [loadingDone]);
+
+  const [search, setSearch] = useState("");
+  const [found, setFound] = useState<{ query: string; items: Item[] } | null>(null);
+  useEffect(() => {
+    const query = search.trim();
+    if (query.length < 2) return;
+    let stale = false;
+    void listDoneBeforeAction({ before: completedSince, limit: 20, query }).then(
+      (page) => !stale && setFound({ query: search, items: page.items }),
+    );
+    return () => {
+      stale = true;
+    };
+  }, [search, completedSince, serverItemsByProject]);
+
+  const allItemsByProject = useMemo(() => {
+    const extra = [
+      ...(older?.items ?? []),
+      ...(found?.query === search ? found.items : []),
+    ];
+    if (extra.length === 0) return serverItemsByProject;
+    // The server's copy wins: an older item reopened is back on the board.
+    const seen = new Set(Object.values(serverItemsByProject).flat().map((i) => i.id));
+    const merged: Record<string, Item[]> = {};
+    for (const [projectId, list] of Object.entries(serverItemsByProject)) {
+      merged[projectId] = [...list];
+    }
+    for (const item of extra) {
+      if (seen.has(item.id) || !merged[item.projectId]) continue;
+      seen.add(item.id);
+      merged[item.projectId].push(item);
+    }
+    return merged;
+  }, [serverItemsByProject, older, found, search]);
+
   // Every view reads items from here, so a tick shows at once wherever the
   // item appears (see the hook).
   const [itemsByProject, setCompleted] =
-    useOptimisticCompletion(serverItemsByProject);
+    useOptimisticCompletion(allItemsByProject);
   const [view, setView] = useState<BoardView>(initialView);
   function switchView(next: BoardView) {
     setView(next);
@@ -274,7 +344,7 @@ export function Kanban({
                   type="button"
                   aria-pressed={view === v}
                   onClick={() => switchView(v)}
-                  className={`whitespace-nowrap rounded px-1.5 py-0.5 transition sm:px-2 ${
+                  className={`whitespace-nowrap rounded px-1.5 py-0.5 transition max-[359px]:px-1 sm:px-2 ${
                     view === v
                       ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
                       : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
@@ -319,6 +389,18 @@ export function Kanban({
             assigneesByProject={assigneesByProject}
             prLinksByItem={prLinksByItem}
             viewerId={viewerId}
+          />
+        ) : view === "done" ? (
+          <DoneView
+            projects={onBoard}
+            itemsByProject={itemsByProject}
+            assigneesByProject={assigneesByProject}
+            prLinksByItem={prLinksByItem}
+            viewerId={viewerId}
+            since={older?.since ?? completedSince}
+            more={older?.more ?? true}
+            loading={loadingDone}
+            onLoadMore={loadMoreDone}
           />
         ) : (
           <BoardRail ref={railRef}>
@@ -388,6 +470,7 @@ export function Kanban({
           onShowActivity={() => setAudit({ open: true })}
           onOpenList={openList}
           onOpenItem={paletteDetail.openDetail}
+          onSearch={setSearch}
         />
 
         {paletteDetail.item && paletteProject && (

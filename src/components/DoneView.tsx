@@ -1,0 +1,155 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import type { AssigneeView } from "@/core/members";
+import type { Item, ItemPrLink } from "@/core/schema";
+import { dayLabel } from "@/lib/time";
+import { matchesWhose, type WhoseFilter } from "@/lib/whose";
+import { ItemDetailDialog } from "./ItemDetailDialog";
+import { ItemRow } from "./ItemRow";
+import type { ProjectView } from "./Kanban";
+import { useDayStart } from "./use-day-start";
+import { useItemDetailDialog } from "./use-item-detail-dialog";
+import { WhoseFilterBar } from "./WhoseFilterBar";
+
+/**
+ * Everything finished across the lists on the board, newest first, under a
+ * heading per day. The board's items cover this week; older ones load in
+ * pages as the end of the list scrolls into view (see Kanban), and `since`
+ * is how far back they reach. Sub-items show as their own rows, naming
+ * their parent.
+ */
+export function DoneView({
+  projects,
+  itemsByProject,
+  assigneesByProject,
+  prLinksByItem,
+  viewerId,
+  since,
+  more,
+  loading,
+  onLoadMore,
+}: {
+  /** The lists on the board (active, then paused); archived lists stay out. */
+  projects: ProjectView[];
+  itemsByProject: Record<string, Item[]>;
+  assigneesByProject: Record<string, AssigneeView[]>;
+  prLinksByItem: Record<string, ItemPrLink[]>;
+  viewerId: string;
+  /** Items finished at or after this are all loaded. */
+  since: number;
+  /** Whether older finished items remain to load. */
+  more: boolean;
+  loading: boolean;
+  onLoadMore: () => void;
+}) {
+  // Day labels depend on the viewer's clock, so rows wait for the browser.
+  const known = Number.isFinite(useDayStart());
+  const [filter, setFilter] = useState<WhoseFilter>("all");
+
+  const all = projects.flatMap((p) => itemsByProject[p.id] ?? []);
+  const byId = new Map(all.map((i) => [i.id, i]));
+  const projectOf = new Map(projects.map((p) => [p.id, p]));
+  const detail = useItemDetailDialog(all);
+
+  const done = all
+    .filter(
+      (i): i is Item & { completedAt: number } =>
+        i.completedAt !== null && i.completedAt >= since,
+    )
+    .sort((a, b) => b.completedAt - a.completedAt || b.id.localeCompare(a.id));
+  const shown = done.filter((i) => matchesWhose(i, filter, viewerId));
+  const days: Array<[string, Item[]]> = [];
+  for (const item of shown) {
+    const label = dayLabel(item.completedAt);
+    const last = days.at(-1);
+    if (last?.[0] === label) last[1].push(item);
+    else days.push([label, [item]]);
+  }
+
+  // Load the next page whenever the end of the list is in view, including
+  // straight after a page lands that didn't fill the screen.
+  const end = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = end.current;
+    if (!known || !more || loading || !el) return;
+    const io = new IntersectionObserver(
+      ([entry]) => entry.isIntersecting && onLoadMore(),
+      { rootMargin: "400px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [known, more, loading, onLoadMore]);
+
+  const detailProject = detail.item ? projectOf.get(detail.item.projectId) : undefined;
+
+  return (
+    <div className="flex-1 overflow-y-auto">
+      <div className="mx-auto w-full max-w-xl space-y-4 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <WhoseFilterBar value={filter} onChange={setFilter} />
+
+        {known &&
+          days.map(([label, rows]) => (
+            <section key={label} className="space-y-1.5">
+              <h2 className="flex items-center gap-1.5 px-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                {label}
+                <span className="tabular-nums text-neutral-400 dark:text-neutral-500">
+                  {rows.length}
+                </span>
+              </h2>
+              {rows.map((item) => {
+                const project = projectOf.get(item.projectId);
+                const parent = item.parentId ? byId.get(item.parentId) : undefined;
+                return (
+                  <ItemRow
+                    key={item.id}
+                    item={item}
+                    prefix={project?.refPrefix ?? ""}
+                    assignees={assigneesByProject[item.projectId] ?? []}
+                    viewerId={viewerId}
+                    prLinks={prLinksByItem[item.id] ?? []}
+                    context={[project?.name, parent?.title].filter(Boolean).join(" › ")}
+                    onOpenDetail={() => detail.openDetail(item)}
+                  />
+                );
+              })}
+            </section>
+          ))}
+
+        <div ref={end} className="py-6 text-center text-sm text-neutral-400">
+          {known && (more || loading)
+            ? "Loading…"
+            : known && shown.length === 0
+              ? done.length === 0
+                ? "Nothing finished yet."
+                : "Nothing here for this filter."
+              : known && "That's everything."}
+        </div>
+      </div>
+
+      {detail.item && detailProject && (
+        <ItemDetailDialog
+          item={detail.item}
+          parent={all.find((i) => i.id === detail.item?.parentId) ?? null}
+          checklist={all.filter((i) => i.parentId === detail.item?.id)}
+          // The same rule as the board's dialog (ProjectColumn), within the
+          // item's own list.
+          nestTargets={all.filter(
+            (i) =>
+              i.projectId === detail.item?.projectId &&
+              i.parentId === null &&
+              i.completedAt === null &&
+              i.id !== detail.item?.id,
+          )}
+          onOpenItem={detail.openDetail}
+          prefix={detailProject.refPrefix}
+          assignees={assigneesByProject[detail.item.projectId] ?? []}
+          viewerId={viewerId}
+          prLinks={prLinksByItem[detail.item.id] ?? []}
+          open={detail.open}
+          onOpenChange={detail.onOpenChange}
+        />
+      )}
+    </div>
+  );
+}
