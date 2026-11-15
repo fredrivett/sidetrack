@@ -135,7 +135,7 @@ export function TodayView({
               i.id !== detail.item?.id,
           )}
           onOpenItem={detail.openDetail}
-          prefix={detailProject.prefix}
+          prefix={detailProject.refPrefix}
           assignees={assigneesByProject[detail.item.projectId] ?? []}
           viewerId={viewerId}
           prLinks={prLinksByItem[detail.item.id] ?? []}

@@ -131,6 +131,24 @@ describe("TodayView", () => {
     expect(screen.queryByText("Plan trip")).toBeNull();
   });
 
+  it("shows a shared list's qualified ref in the item dialog, as on its row", () => {
+    // A shared list whose prefix clashes with one of the viewer's own.
+    const shared = { ...project, prefix: "HOME", refPrefix: "alice/HOME" } as ProjectView;
+    const bins = item("Bins", "2026-11-14");
+    render(
+      <TodayView
+        projects={[shared]}
+        itemsByProject={{ p1: [bins] }}
+        assigneesByProject={{}}
+        prLinksByItem={{}}
+        viewerId="me"
+      />,
+    );
+    fireEvent.click(screen.getByText("Bins"));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText(`alice/HOME-${bins.number}`)).toBeTruthy();
+  });
+
   it("says when nothing is due, and when a filter hides everything", () => {
     renderToday([item("later", "2026-11-20")]);
     expect(screen.getByText(/Nothing due today/)).toBeTruthy();

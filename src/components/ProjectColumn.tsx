@@ -241,7 +241,7 @@ export function ProjectColumn({
               i.id !== detail.item?.id,
           )}
           onOpenItem={detail.openDetail}
-          prefix={project.prefix}
+          prefix={project.refPrefix}
           assignees={assignees}
           viewerId={viewerId}
           prLinks={prLinksByItem[detail.item.id] ?? []}
