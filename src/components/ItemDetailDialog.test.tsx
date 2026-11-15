@@ -3,9 +3,9 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { setItemParentAction, updateItemAction } from "@/app/actions";
 import type { Item } from "@/core/schema";
-import { ItemDetailSheet } from "./ItemDetailSheet";
+import { ItemDetailDialog } from "./ItemDetailDialog";
 
-// Server actions pull in server-only modules; the sheet only needs callable stubs.
+// Server actions pull in server-only modules; the dialog only needs callable stubs.
 vi.mock("@/app/actions", () => ({
   completeItemAction: vi.fn(),
   uncompleteItemAction: vi.fn(),
@@ -16,7 +16,7 @@ vi.mock("@/app/actions", () => ({
 
 beforeAll(() => {
   // base-ui's dialog/menu positioning observes resize; jsdom has neither
-  // ResizeObserver nor matchMedia (the sheet's desktop/mobile switch), so stub
+  // ResizeObserver nor matchMedia (the dialog's desktop/mobile switch), so stub
   // both with inert implementations.
   globalThis.ResizeObserver ??= class {
     observe() {
@@ -72,14 +72,14 @@ const viewer = {
   isOwner: true,
 };
 
-function renderSheet(
+function renderDialog(
   open = true,
   checklist: Item[] = [],
   nestTargets: Item[] = [],
   patch: Partial<Item> = {},
 ) {
   return render(
-    <ItemDetailSheet
+    <ItemDetailDialog
       item={{ ...item, ...patch }}
       parent={null}
       checklist={checklist}
@@ -95,10 +95,10 @@ function renderSheet(
   );
 }
 
-describe("ItemDetailSheet assign shortcuts", () => {
-  it("opens the assignee picker on 'a' while the sheet is open", () => {
-    renderSheet();
-    // The sheet owns the shortcut (it IS the dialog, so it doesn't defer).
+describe("ItemDetailDialog assign shortcuts", () => {
+  it("opens the assignee picker on 'a' while the dialog is open", () => {
+    renderDialog();
+    // The dialog owns the shortcut (it is the [role=dialog], so it doesn't defer).
     // "Unassigned" also labels the field trigger, so scope to the menu items.
     fireEvent.keyDown(document, { key: "a" });
     expect(screen.getByRole("menuitem", { name: /Unassigned/ })).toBeTruthy();
@@ -107,7 +107,7 @@ describe("ItemDetailSheet assign shortcuts", () => {
 
   it("assigns to the viewer on 'i'", () => {
     vi.mocked(updateItemAction).mockClear();
-    renderSheet();
+    renderDialog();
     fireEvent.keyDown(document, { key: "i" });
     expect(updateItemAction).toHaveBeenCalledWith("i1", { assigneeId: "u1" });
   });
@@ -116,7 +116,7 @@ describe("ItemDetailSheet assign shortcuts", () => {
     // Regression: the shortcut used to disarm itself while the picker was open,
     // so the I hint shown on the "me" row did nothing.
     vi.mocked(updateItemAction).mockClear();
-    renderSheet();
+    renderDialog();
     fireEvent.keyDown(document, { key: "a" }); // open the picker
     expect(screen.getByRole("menuitem", { name: /Me/ })).toBeTruthy();
     fireEvent.keyDown(document, { key: "i" });
@@ -126,7 +126,7 @@ describe("ItemDetailSheet assign shortcuts", () => {
   it("assigns the sub-item, not this item, on 'i' while its checklist picker is open", () => {
     vi.mocked(updateItemAction).mockClear();
     const child: Item = { ...item, id: "c1", title: "Lorna", parentId: "i1", number: 43 };
-    renderSheet(true, [child]);
+    renderDialog(true, [child]);
     const trigger = screen.getByLabelText("Assign Lorna");
     fireEvent.pointerDown(trigger);
     fireEvent.click(trigger);
@@ -136,9 +136,9 @@ describe("ItemDetailSheet assign shortcuts", () => {
     expect(updateItemAction).toHaveBeenCalledWith("c1", { assigneeId: "u1" });
   });
 
-  it("does not act on shortcuts while the sheet is closed", () => {
+  it("does not act on shortcuts while the dialog is closed", () => {
     vi.mocked(updateItemAction).mockClear();
-    renderSheet(false);
+    renderDialog(false);
     fireEvent.keyDown(document, { key: "a" });
     fireEvent.keyDown(document, { key: "i" });
     expect(screen.queryByRole("menuitem", { name: /Unassigned/ })).toBeNull();
@@ -146,11 +146,11 @@ describe("ItemDetailSheet assign shortcuts", () => {
   });
 });
 
-describe("ItemDetailSheet nesting", () => {
+describe("ItemDetailDialog nesting", () => {
   const other: Item = { ...item, id: "i2", title: "Tidy up flat", number: 7 };
 
   it("makes a plain task a sub-item of the task picked", () => {
-    renderSheet(true, [], [other]);
+    renderDialog(true, [], [other]);
     const trigger = screen.getByRole("button", { name: /make it a sub-item of/ });
     fireEvent.pointerDown(trigger);
     fireEvent.click(trigger);
@@ -160,12 +160,12 @@ describe("ItemDetailSheet nesting", () => {
 
   it("isn't offered for a task with sub-items, which can't become one", () => {
     const child: Item = { ...item, id: "c1", title: "Lounge", parentId: "i1", number: 43 };
-    renderSheet(true, [child], [other]);
+    renderDialog(true, [child], [other]);
     expect(screen.queryByRole("button", { name: /make it a sub-item of/ })).toBeNull();
   });
 });
 
-describe("ItemDetailSheet due date picker", () => {
+describe("ItemDetailDialog due date picker", () => {
   beforeEach(() => {
     vi.mocked(updateItemAction).mockClear();
     // 1am on Wednesday the 18th: the app's day is still Tuesday the 17th.
@@ -181,7 +181,7 @@ describe("ItemDetailSheet due date picker", () => {
     return screen.getByLabelText("Type a due date");
   }
 
-  // Key by key, so the sheet's bare-key shortcuts see every keystroke.
+  // Key by key, so the dialog's bare-key shortcuts see every keystroke.
   function type(input: HTMLElement, text: string) {
     for (let i = 1; i <= text.length; i++) {
       fireEvent.keyDown(input, { key: text[i - 1] });
@@ -190,9 +190,9 @@ describe("ItemDetailSheet due date picker", () => {
   }
 
   it("saves a typed day on Enter, counted from the app's day", () => {
-    renderSheet();
+    renderDialog();
     const input = openPicker();
-    // "a" and "i" are the sheet's assign shortcuts; typing them must not assign.
+    // "a" and "i" are the dialog's assign shortcuts; typing them must not assign.
     type(input, "in 2 days");
     fireEvent.keyDown(input, { key: "Enter" });
     expect(updateItemAction).toHaveBeenCalledTimes(1);
@@ -202,7 +202,7 @@ describe("ItemDetailSheet due date picker", () => {
   });
 
   it("saves nothing on Enter when the text isn't a date", () => {
-    renderSheet();
+    renderDialog();
     const input = openPicker();
     type(input, "blah");
     fireEvent.keyDown(input, { key: "Enter" });
@@ -212,7 +212,7 @@ describe("ItemDetailSheet due date picker", () => {
   });
 
   it("moves focus between days with the arrow keys", () => {
-    renderSheet(true, [], [], { dueDate: "2026-11-27" });
+    renderDialog(true, [], [], { dueDate: "2026-11-27" });
     openPicker();
     const selected = screen.getByRole("button", { name: /November 27th, 2026, selected/ });
     selected.focus();
@@ -224,7 +224,7 @@ describe("ItemDetailSheet due date picker", () => {
   });
 
   it("saves a clicked day, but not the day already set", () => {
-    renderSheet(true, [], [], { dueDate: "2026-11-27" });
+    renderDialog(true, [], [], { dueDate: "2026-11-27" });
     openPicker();
     fireEvent.click(screen.getByRole("button", { name: /November 27th, 2026, selected/ }));
     expect(updateItemAction).not.toHaveBeenCalled();

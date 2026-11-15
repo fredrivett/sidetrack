@@ -36,7 +36,7 @@ function Field({
   );
 }
 
-export function ProjectDetailSheet({
+export function ProjectDetailDialog({
   project,
   open,
   onOpenChange,

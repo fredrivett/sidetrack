@@ -365,7 +365,7 @@ function DueDatePicker({
   );
 }
 
-export function ItemDetailSheet({
+export function ItemDetailDialog({
   item,
   parent,
   checklist,

@@ -33,7 +33,7 @@ function Field({
   );
 }
 
-export function NewItemSheet({
+export function NewItemDialog({
   open,
   onOpenChange,
   projects,

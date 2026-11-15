@@ -172,7 +172,7 @@ describe("ItemRow checklist", () => {
 });
 
 describe("ItemRow open-detail", () => {
-  it("opens the detail sheet when the row is clicked", () => {
+  it("opens the detail dialog when the row is clicked", () => {
     const onOpenDetail = vi.fn();
     const { container } = renderRow([viewer], item, onOpenDetail);
     const card = container.querySelector(".group") as HTMLElement;
@@ -181,7 +181,7 @@ describe("ItemRow open-detail", () => {
     expect(onOpenDetail).toHaveBeenCalledTimes(1);
   });
 
-  it("does not open the detail sheet when the checkbox is clicked", () => {
+  it("does not open the detail dialog when the checkbox is clicked", () => {
     const onOpenDetail = vi.fn();
     renderRow([viewer], item, onOpenDetail);
 
@@ -189,7 +189,7 @@ describe("ItemRow open-detail", () => {
     expect(onOpenDetail).not.toHaveBeenCalled();
   });
 
-  it("does not open the detail sheet when a menu item is clicked", () => {
+  it("does not open the detail dialog when a menu item is clicked", () => {
     const onOpenDetail = vi.fn();
     const { container } = renderRow([viewer], item, onOpenDetail);
 
@@ -199,7 +199,7 @@ describe("ItemRow open-detail", () => {
     expect(onOpenDetail).not.toHaveBeenCalled();
   });
 
-  it("assigns via the avatar picker without opening the detail sheet", () => {
+  it("assigns via the avatar picker without opening the detail dialog", () => {
     vi.mocked(updateItemAction).mockClear();
     const onOpenDetail = vi.fn();
     renderRow([viewer], item, onOpenDetail);

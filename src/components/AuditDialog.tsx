@@ -35,7 +35,7 @@ const ACTION_LABEL: Record<string, string> = {
 
 type Filter = "all" | AuditSource;
 
-export function AuditDrawer({
+export function AuditDialog({
   open,
   projectId,
   projects,

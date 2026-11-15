@@ -1,5 +1,5 @@
 // Small pill showing an item's category. Shared so the board row and the
-// detail sheet render categories identically — change the look in one place.
+// detail dialog render categories identically — change the look in one place.
 export function CategoryBadge({
   category,
   className = "",

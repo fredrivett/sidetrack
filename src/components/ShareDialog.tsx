@@ -27,7 +27,7 @@ function displayName(m: MemberView) {
  * email, see who's a member (and who has a pending invite), and remove them.
  * Members are lazy-loaded when the dialog opens.
  */
-export function ShareSheet({
+export function ShareDialog({
   open,
   onOpenChange,
   projectId,

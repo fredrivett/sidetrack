@@ -6,7 +6,7 @@ const codeClassName =
 
 // Element styling lives here rather than relying on a `prose` plugin — the app
 // deliberately stays lightweight and doesn't pull in @tailwindcss/typography.
-// Classes lean on the same muted neutral palette the rest of the sheet uses.
+// Classes lean on the same muted neutral palette the rest of the dialog uses.
 const components: Components = {
   p: ({ children }) => <p className="my-2 first:mt-0 last:mb-0">{children}</p>,
   h1: ({ children }) => (

@@ -120,7 +120,7 @@ export function ItemRow({
   const canHover = useMediaQuery("(hover: hover)");
   const today = useToday();
 
-  // Clicking anywhere on the row opens the detail sheet, but a drag must not.
+  // Clicking anywhere on the row opens the detail dialog, but a drag must not.
   // Track whether dnd-kit treated this gesture as a drag (per its sensors'
   // activation constraints) and swallow the click that follows a drop.
   const draggedRef = useRef(false);
@@ -137,7 +137,7 @@ export function ItemRow({
   );
 
   // ⌘./Ctrl+. copies the ref while the card is hovered (Linear's shortcut),
-  // deferring to an open detail sheet so we don't copy the wrong ref.
+  // deferring to an open detail dialog so we don't copy the wrong ref.
   const { copied, copy } = useCopyItemRef(ref, {
     active: hovered,
     deferToDialog: true,
@@ -186,7 +186,7 @@ export function ItemRow({
   // while the card is hovered, and kept armed while the picker is open so the I
   // hint on the "me" row works there too — opening the picker drops `hovered`
   // (its modal backdrop swallows the pointer), so we OR in `assignOpen`.
-  // Deferred to an open detail sheet so we don't assign the wrong item.
+  // Deferred to an open detail dialog so we don't assign the wrong item.
   useAssignShortcuts({
     active: hovered || assignOpen,
     deferToDialog: true,
@@ -195,7 +195,7 @@ export function ItemRow({
   });
 
   function openDetail() {
-    // The click that fires after a drop must not open the sheet.
+    // The click that fires after a drop must not open the dialog.
     if (draggedRef.current) {
       draggedRef.current = false;
       return;
@@ -207,7 +207,7 @@ export function ItemRow({
     // Item actions live in a right-click menu rather than a ⋯ button, so the
     // row stays checkbox, title, avatar with nothing reserving space beside
     // them. Disabled without hover (touch): its long-press would fight the
-    // touch drag, and tapping the row opens the detail sheet, which has the
+    // touch drag, and tapping the row opens the detail dialog, which has the
     // same actions.
     <ContextMenu
       disabled={!canHover}
@@ -234,7 +234,7 @@ export function ItemRow({
       >
         {/* The wrapper stops the click, not the Checkbox: Base UI forwards it
             to a hidden sibling <input>, whose click would also bubble to the
-            row and open the detail sheet. mt-0.5 centres the 16px circle on
+            row and open the detail dialog. mt-0.5 centres the 16px circle on
             the title's 20px first line. */}
         <span className="mt-0.5 flex" onClick={(e) => e.stopPropagation()}>
           <Checkbox
@@ -245,7 +245,7 @@ export function ItemRow({
         </span>
 
         <div className="min-w-0 flex-1 space-y-0.5">
-          {/* Keyboard-focusable affordance for opening the detail sheet; the
+          {/* Keyboard-focusable affordance for opening the detail dialog; the
               click bubbles to the row's onClick so mouse and keyboard share the
               same drag-guarded handler. */}
           <button type="button" className="block w-full space-y-0.5 text-left">
@@ -352,7 +352,7 @@ export function ItemRow({
               className="w-52"
               // Portaled out of the row in the DOM, but React events still bubble
               // through the component tree — stop them so picking an assignee doesn't
-              // also open the detail sheet via the row's onClick.
+              // also open the detail dialog via the row's onClick.
               onClick={(e) => e.stopPropagation()}
             >
               <AssigneeOptions
@@ -409,8 +409,8 @@ export function ItemRow({
             />
           </ContextMenuSubContent>
         </ContextMenuSub>
-        {/* The sheet's quick dates, for planning from the No date view
-            without opening each item; any other day is in the sheet. */}
+        {/* The dialog's quick dates, for planning from the No date view
+            without opening each item; any other day is in the dialog. */}
         {today && (
           <ContextMenuSub>
             <ContextMenuSubTrigger>

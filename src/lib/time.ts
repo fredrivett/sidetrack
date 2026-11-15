@@ -149,7 +149,7 @@ export function nextWeek(today: string): string {
 }
 
 /**
- * The quick due-date choices offered from `today` (the item sheet's buttons
+ * The quick due-date choices offered from `today` (the item dialog's buttons
  * and the row menu): Today, Tomorrow, This weekend and Next week, dropping
  * any that land on a day already offered (on a Saturday, This weekend is
  * Today; on a Sunday, Next week is Tomorrow).

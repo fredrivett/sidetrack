@@ -12,7 +12,7 @@ import {
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
 
-export function NewProjectSheet({
+export function NewProjectDialog({
   open,
   onOpenChange,
 }: {

@@ -5,11 +5,11 @@ import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { isOnToday } from "@/lib/time";
 import { matchesWhose, type WhoseFilter } from "@/lib/whose";
-import { ItemDetailSheet } from "./ItemDetailSheet";
+import { ItemDetailDialog } from "./ItemDetailDialog";
 import { ItemRow } from "./ItemRow";
 import type { ProjectView } from "./Kanban";
 import { useToday } from "./use-day-start";
-import { useItemDetailSheet } from "./use-item-detail-sheet";
+import { useItemDetailDialog } from "./use-item-detail-dialog";
 import { WhoseFilterBar } from "./WhoseFilterBar";
 
 /**
@@ -37,7 +37,7 @@ export function TodayView({
   const all = projects.flatMap((p) => itemsByProject[p.id] ?? []);
   const byId = new Map(all.map((i) => [i.id, i]));
   const projectOf = new Map(projects.map((p) => [p.id, p]));
-  const detail = useItemDetailSheet(all);
+  const detail = useItemDetailDialog(all);
 
   // Items arrive in board order, then list order; a stable sort by due day
   // keeps that order within a day.
@@ -69,7 +69,7 @@ export function TodayView({
         {today && shown.length === 0 && (
           <p className="py-8 text-center text-sm text-neutral-400">
             {onToday.length === 0
-              ? "Nothing due today. Give an item a due date from its sheet."
+              ? "Nothing due today. Give an item a due date from its details."
               : "Nothing here for this filter."}
           </p>
         )}
@@ -111,11 +111,11 @@ export function TodayView({
       </div>
 
       {detail.item && detailProject && (
-        <ItemDetailSheet
+        <ItemDetailDialog
           item={detail.item}
           parent={all.find((i) => i.id === detail.item?.parentId) ?? null}
           checklist={all.filter((i) => i.parentId === detail.item?.id)}
-          // The same rule as the board's sheet (ProjectColumn), within the
+          // The same rule as the board's dialog (ProjectColumn), within the
           // item's own list.
           nestTargets={all.filter(
             (i) =>
