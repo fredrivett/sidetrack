@@ -5,7 +5,13 @@ import { acceptInvite, inviteMember } from "./members";
 import { linkItemToPr, setPrState } from "./prLinks";
 import { createProject, deleteProject } from "./projects";
 import { createTestDb, createTestUser } from "./test-helpers";
-import { acceptSpaceInvite, createSpace, inviteSpaceMember, setProjectSpace } from "./spaces";
+import {
+  acceptSpaceInvite,
+  createSpace,
+  declineSpaceInvite,
+  inviteSpaceMember,
+  setProjectSpace,
+} from "./spaces";
 import { setUsername } from "./users";
 
 type Db = ReturnType<typeof createTestDb>["db"];
@@ -101,6 +107,17 @@ describe("watchChanges", () => {
     setUsername(db, flatmate, "renamed_flatmate", "web");
     await settle();
     expect(heard).toEqual({ [flatmate]: 2, [member]: 1, [owner]: 0 });
+
+    // The Space's members see invites listed, so they hear one declined,
+    // even by someone they share nothing else with.
+    const passerby = createTestUser(db, { username: "passerby" });
+    inviteSpaceMember(db, stranger, spaceId, "passerby", "web");
+    await settle();
+    const before = heard[flatmate];
+    declineSpaceInvite(db, passerby, spaceId, "web");
+    await settle();
+    expect(heard[flatmate]).toBe(before + 1);
+    expect(heard[owner]).toBe(0);
   });
 
   it("tells a list's direct collaborators who joins the Space it's in", async () => {

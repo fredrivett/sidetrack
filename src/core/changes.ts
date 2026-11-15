@@ -80,9 +80,10 @@ export function watchChanges(db: Db, userId: string, onChange: () => void): () =
 }
 
 /** The lists whose changes userId sees, and the people they share them or a
- * Space with: the accepted members of their Spaces and of the Spaces their
- * lists are in (who join and leave changes who can be assigned there), and
- * the admins of a Space they're invited to, who change or revoke the invite. */
+ * Space with: everyone in, or invited to, their Spaces and the Spaces their
+ * lists are in (members see invitees listed, so an invitee declining changes
+ * what they see), and the admins of a Space they're invited to, who change
+ * or revoke the invite. */
 function audience(db: Db, userId: string) {
   const shown = db
     .select({ id: projects.id, owner: projects.userId, spaceId: projects.spaceId })
@@ -119,11 +120,12 @@ function audience(db: Db, userId: string) {
         .select({ userId: spaceMembers.userId })
         .from(spaceMembers)
         .where(
-          and(
-            eq(spaceMembers.status, "accepted"),
-            or(
-              inArray(spaceMembers.spaceId, joined),
-              and(inArray(spaceMembers.spaceId, invitedTo), eq(spaceMembers.role, "admin")),
+          or(
+            inArray(spaceMembers.spaceId, joined),
+            and(
+              inArray(spaceMembers.spaceId, invitedTo),
+              eq(spaceMembers.status, "accepted"),
+              eq(spaceMembers.role, "admin"),
             ),
           ),
         )
