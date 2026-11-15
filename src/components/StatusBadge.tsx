@@ -1,9 +1,9 @@
 "use client";
 
-import { useTransition } from "react";
 import { updateProjectAction } from "@/app/actions";
 import { PROJECT_STATUSES, type ProjectStatus } from "@/core/schema";
 import { runAction } from "./run-action";
+import { useListSave } from "./use-list-saves";
 
 const COLORS: Record<ProjectStatus, string> = {
   active: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
@@ -24,10 +24,11 @@ export function StatusBadge({
   projectId: string;
   status: ProjectStatus;
 }) {
-  const [pending, start] = useTransition();
+  // Held on the list: its column dims until the change lands.
+  const { saving, save } = useListSave();
   return (
     <label
-      className={`relative inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${COLORS[status]} ${pending ? "opacity-60" : ""}`}
+      className={`relative inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${COLORS[status]}`}
     >
       <span>{STATUS_LABEL[status]}</span>
       <select
@@ -35,13 +36,11 @@ export function StatusBadge({
         value={status}
         onChange={(e) => {
           const next = e.target.value as ProjectStatus;
-          start(() => {
-            void runAction(
-              updateProjectAction(projectId, { status: next }),
-              "change the list's status",
-            );
-          });
+          save(() =>
+            runAction(updateProjectAction(projectId, { status: next }), "change the list's status"),
+          );
         }}
+        disabled={saving}
         className="absolute inset-0 cursor-pointer opacity-0"
       >
         {/* Archiving goes through the list menu, which offers Undo; an

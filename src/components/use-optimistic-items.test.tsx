@@ -1,14 +1,23 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { useEffect } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
-import { completeItemAction, uncompleteItemAction } from "@/app/actions";
+import {
+  completeItemAction,
+  deleteItemAction,
+  setItemParentAction,
+  uncompleteItemAction,
+} from "@/app/actions";
 import type { Item } from "@/core/schema";
-import { useOptimisticCompletion } from "./use-optimistic-completion";
+import { nestItems } from "@/lib/itemTree";
+import { type ItemChanges, useOptimisticItems } from "./use-optimistic-items";
 
 vi.mock("@/app/actions", () => ({
   completeItemAction: vi.fn(),
   uncompleteItemAction: vi.fn(),
+  deleteItemAction: vi.fn(),
+  setItemParentAction: vi.fn(),
 }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
@@ -40,7 +49,7 @@ const other = { ...base, id: "other", title: "Other" };
 
 /** Lists each item with whether it shows as done; clicking one toggles it. */
 function Board({ items }: { items: Item[] }) {
-  const [byProject, setCompleted] = useOptimisticCompletion({ p1: items });
+  const [byProject, { setCompleted }] = useOptimisticItems({ p1: items });
   return (
     <>
       {byProject.p1.map((i) => (
@@ -67,7 +76,7 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-describe("useOptimisticCompletion", () => {
+describe("useOptimisticItems: ticks", () => {
   it("shows a tick, with the parent's open sub-items, before the save lands", async () => {
     const save = deferred();
     vi.mocked(completeItemAction).mockReturnValue(save.promise);
@@ -158,5 +167,62 @@ describe("useOptimisticCompletion", () => {
     expect(toast.error).toHaveBeenCalledWith(
       "Couldn't complete “Other”. Please try again.",
     );
+  });
+});
+
+/** The list as the board shows it: top-level items, each sub-item indented. */
+function Tree({ items, onChanges }: { items: Item[]; onChanges: (c: ItemChanges) => void }) {
+  const [byProject, c] = useOptimisticItems({ p1: items });
+  useEffect(() => onChanges(c), [c, onChanges]);
+  return (
+    <ol>
+      {nestItems(byProject.p1).flatMap((g) => [
+        <li key={g.id}>{g.title}</li>,
+        ...g.children.map((k) => <li key={k.id}>- {k.title}</li>),
+      ])}
+    </ol>
+  );
+}
+const shown = () => screen.getAllByRole("listitem").map((li) => li.textContent);
+let changes: ItemChanges;
+const keep = (c: ItemChanges) => {
+  changes = c;
+};
+
+describe("useOptimisticItems: deletes and moves", () => {
+  const a = { ...base, id: "a", title: "A" };
+  const a1 = { ...base, id: "a1", title: "A1", parentId: "a" };
+  const a2 = { ...base, id: "a2", title: "A2", parentId: "a" };
+  const b = { ...base, id: "b", title: "B" };
+  const c = { ...base, id: "c", title: "C" };
+
+  it("takes a parent and its sub-items off at once, and puts them back if the delete fails", async () => {
+    const save = deferred();
+    vi.mocked(deleteItemAction).mockReturnValue(save.promise);
+    render(<Tree items={[a, a1, b]} onChanges={keep} />);
+
+    act(() => changes.deleteItem(a));
+    expect(shown()).toEqual(["B"]);
+
+    await act(async () => save.reject(new Error("Failed to fetch")));
+    expect(shown()).toEqual(["A", "- A1", "B"]);
+    expect(toast.error).toHaveBeenCalledWith("Couldn't delete “A”. Please try again.");
+  });
+
+  it("nests last among the parent's sub-items, and moves out to just after the old parent", async () => {
+    const save = deferred();
+    vi.mocked(setItemParentAction).mockReturnValue(save.promise);
+    render(<Tree items={[a, a1, a2, b, c]} onChanges={keep} />);
+
+    // Where the server puts them (setItemParent without a position).
+    act(() => changes.setParent(c, "a"));
+    expect(shown()).toEqual(["A", "- A1", "- A2", "- C", "B"]);
+    act(() => changes.setParent(a1, null));
+    expect(shown()).toEqual(["A", "- A2", "- C", "A1", "B"]);
+    expect(vi.mocked(setItemParentAction).mock.calls).toEqual([
+      ["c", "a"],
+      ["a1", null],
+    ]);
+    await act(async () => save.resolve());
   });
 });

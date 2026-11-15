@@ -25,10 +25,8 @@ import { ShareDialog } from "./ShareDialog";
 import { TodayView } from "./TodayView";
 import { useDayStart } from "./use-day-start";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
-import {
-  CompletionContext,
-  useOptimisticCompletion,
-} from "./use-optimistic-completion";
+import { RemoveListContext, useOptimisticLists } from "./use-list-saves";
+import { ItemChangesContext, useOptimisticItems } from "./use-optimistic-items";
 import type { AvatarUser } from "./UserAvatar";
 import { UserMenu } from "./UserMenu";
 
@@ -56,7 +54,7 @@ export function Kanban({
   viewer,
   timeZone,
   initialView,
-  projects,
+  projects: serverProjects,
   itemsByProject: serverItemsByProject,
   completedSince,
   categoriesByProject,
@@ -171,10 +169,10 @@ export function Kanban({
     return merged;
   }, [serverItemsByProject, older, found, search]);
 
-  // Every view reads items from here, so a tick shows at once wherever the
-  // item appears (see the hook).
-  const [itemsByProject, setCompleted] =
-    useOptimisticCompletion(allItemsByProject);
+  // Every view reads items and lists from here, so a change shown ahead of the
+  // server (a tick, a delete, a move) shows at once wherever it appears.
+  const [itemsByProject, itemChanges] = useOptimisticItems(allItemsByProject);
+  const [projects, removeList] = useOptimisticLists(serverProjects);
   const [view, setView] = useState<BoardView>(initialView);
   function switchView(next: BoardView) {
     setView(next);
@@ -357,7 +355,8 @@ export function Kanban({
   }, [projects, view]);
 
   return (
-    <CompletionContext value={setCompleted}>
+    <ItemChangesContext value={itemChanges}>
+    <RemoveListContext value={removeList}>
       <BoardMain>
         <BoardHeader
           nav={
@@ -534,6 +533,7 @@ export function Kanban({
           projectName={share.projectName}
         />
       </BoardMain>
-    </CompletionContext>
+    </RemoveListContext>
+    </ItemChangesContext>
   );
 }

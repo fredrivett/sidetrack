@@ -2,12 +2,14 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
-import { setItemParentAction, updateItemAction } from "@/app/actions";
+import { addItemAction, setItemParentAction, updateItemAction } from "@/app/actions";
 import type { Item } from "@/core/schema";
 import { ItemDetailDialog } from "./ItemDetailDialog";
 
 // Server actions pull in server-only modules; the dialog only needs callable stubs.
 vi.mock("@/app/actions", () => ({
+  addItemAction: vi.fn(),
+  listAuditAction: vi.fn(),
   completeItemAction: vi.fn(),
   uncompleteItemAction: vi.fn(),
   deleteItemAction: vi.fn(),
@@ -266,5 +268,28 @@ describe("ItemDetailDialog due date picker", () => {
     openPicker();
     fireEvent.click(screen.getByRole("button", { name: "Monday, November 30th, 2026" }));
     expect(updateItemAction).toHaveBeenCalledWith("i1", { dueFrom: null, dueDate: "2026-11-30" });
+  });
+});
+
+describe("ItemDetailDialog checklist", () => {
+  it("shows a new line at once while it saves, and puts it back in the input if it fails", async () => {
+    let fail!: () => void;
+    vi.mocked(addItemAction).mockReturnValueOnce(
+      new Promise((_, reject) => (fail = () => reject(new Error("Failed to fetch")))),
+    );
+    renderDialog();
+    const input = screen.getByRole("textbox", { name: "Add a sub-item" }) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Buy bread" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    // Before the server answers: the line shows, marked as saving.
+    await act(async () => {});
+    expect(input.value).toBe("");
+    expect(screen.getByText("Buy bread").closest("[aria-busy]")).toBeTruthy();
+
+    await act(async () => fail());
+    expect(screen.queryByText("Buy bread")).toBeNull();
+    expect(input.value).toBe("Buy bread");
+    expect(toast.error).toHaveBeenCalledWith("Couldn't add “Buy bread”. Please try again.");
   });
 });

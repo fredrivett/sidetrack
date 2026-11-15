@@ -21,6 +21,7 @@ import { SummaryBlock } from "./SummaryBlock";
 import { useDayStart } from "./use-day-start";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
 import { runAction } from "./run-action";
+import { ListSaveContext, useNewListSave } from "./use-list-saves";
 
 export function ProjectColumn({
   project,
@@ -92,10 +93,16 @@ export function ProjectColumn({
   );
   const parents = inList.filter((g) => g.children.length > 0).map((g) => g.id);
   const allCollapsed = parents.every((id) => collapsedItems.has(id));
+  // The list's held saves (status, order, prefix, icon…) dim the whole column
+  // until they land, whichever control started them.
+  const listSave = useNewListSave();
 
   return (
+    <ListSaveContext value={listSave}>
     <ColumnCard
       data-project-id={project.id}
+      aria-busy={listSave.saving || undefined}
+      style={{ opacity: listSave.saving ? 0.7 : 1 }}
       header={
         <>
           {/* Icon, title row and ⋯ menu are all 32px tall so they line up. */}
@@ -275,5 +282,6 @@ export function ProjectColumn({
         onOpenChange={setDetailsOpen}
       />
     </ColumnCard>
+    </ListSaveContext>
   );
 }

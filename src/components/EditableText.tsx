@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { startTransition, useEffect, useOptimistic, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -15,6 +15,8 @@ export function EditableText({
   renderValue,
 }: {
   value: string;
+  /** Saves the new text. Wrap the action in runAction, so a failure toasts
+   * rather than throwing; the field shows the new text until it lands. */
   onSave: (next: string) => void | Promise<unknown>;
   multiline?: boolean;
   placeholder?: string;
@@ -29,12 +31,15 @@ export function EditableText({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
+  // The saved text shown ahead of the server, so the field doesn't snap back
+  // to the old text while it saves; if the save fails, the old text returns.
+  const [shown, showSaving] = useOptimistic(value);
   const ref = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
 
-  // Draft only matters while editing; the non-editing branch renders `value`
+  // Draft only matters while editing; the non-editing branch renders `shown`
   // directly. Seed draft at the moment editing starts, not via an effect.
   function startEditing() {
-    setDraft(value);
+    setDraft(shown);
     setEditing(true);
   }
 
@@ -50,19 +55,22 @@ export function EditableText({
     const trimmed = draft.trim();
     // A required field can't be blanked — discard the edit and revert.
     if (required && !trimmed) {
-      setDraft(value);
+      setDraft(shown);
       return;
     }
-    if (trimmed !== value.trim()) {
-      void onSave(trimmed);
+    if (trimmed !== shown.trim()) {
+      startTransition(async () => {
+        showSaving(trimmed);
+        await onSave(trimmed);
+      });
     } else {
-      setDraft(value);
+      setDraft(shown);
     }
   }
 
   function cancel() {
     setEditing(false);
-    setDraft(value);
+    setDraft(shown);
   }
 
   if (!editing) {
@@ -70,9 +78,9 @@ export function EditableText({
       <button
         type="button"
         onClick={startEditing}
-        className={`text-left ${value ? "" : "text-neutral-400"} ${className}`}
+        className={`text-left ${shown ? "" : "text-neutral-400"} ${className}`}
       >
-        {value ? (renderValue ? renderValue(value) : value) : placeholder || ""}
+        {shown ? (renderValue ? renderValue(shown) : shown) : placeholder || ""}
       </button>
     );
   }

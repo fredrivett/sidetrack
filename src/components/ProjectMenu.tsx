@@ -21,12 +21,8 @@ import {
   Trash2,
   UserPlus,
 } from "lucide-react";
-import { unstable_rethrow } from "next/navigation";
-import { useTransition } from "react";
 import { toast } from "sonner";
 import {
-  deleteProjectAction,
-  leaveProjectAction,
   reorderProjectAction,
   setItemOrderAction,
   sortItemsAction,
@@ -49,6 +45,7 @@ import type { ProjectStatus } from "@/core/schema";
 import { validatePrefix } from "@/lib/itemRef";
 import { ARMED_MENU_ITEM, useTapToConfirm } from "./use-tap-to-confirm";
 import { runAction } from "./run-action";
+import { useListSave, useRemoveList } from "./use-list-saves";
 
 // Each sort runs one way: soonest due first, newest first, and A to Z.
 const SORTS: Array<[ItemSort, string, LucideIcon]> = [
@@ -86,29 +83,23 @@ export function ProjectMenu({
   onAddItem: (projectId: string) => void;
   onShare: (projectId: string, projectName: string) => void;
 }) {
-  const [pending, start] = useTransition();
+  // Changes to the list hold on its column until they land; deleting or
+  // leaving takes it off the board at once.
+  const { saving, save } = useListSave();
+  const removeList = useRemoveList();
   // Delete and Leave take a second tap: the first turns them into "Confirm …?".
   const tap = useTapToConfirm();
 
   function run(fn: () => Promise<unknown>, what: string) {
-    start(() => {
-      void runAction(fn(), what);
-    });
+    save(() => runAction(fn(), what));
   }
 
-  // Pause, Resume and Undo-archive all wait for the change and say so if it
-  // fails, rather than leaving the list in the wrong state silently. Each
-  // handler that catches lets Next's redirect to /login through first
-  // (unstable_rethrow), so a signed-out action navigates without a false
-  // "Couldn't …" message.
   function setStatus(next: ProjectStatus) {
-    start(async () => {
-      await runAction(updateProjectAction(projectId, { status: next }), `update “${name}”`);
-    });
+    run(() => updateProjectAction(projectId, { status: next }), `update “${name}”`);
   }
 
   function archive() {
-    start(async () => {
+    save(async () => {
       if (!(await runAction(updateProjectAction(projectId, { status: "archived" }), `archive “${name}”`))) {
         return;
       }
@@ -122,26 +113,18 @@ export function ProjectMenu({
   // A one-off sort: it rewrites the list's order, and dragging works as
   // before afterwards. Undo puts back the order from before it.
   function sortItems(by: ItemSort, label: string) {
-    start(async () => {
-      const previous = await sortItemsAction(projectId, by).catch((e) => {
-        unstable_rethrow(e);
-        return undefined;
-      });
-      if (previous === undefined) {
-        toast.error(`Couldn't sort "${name}". Please try again.`);
-      } else if (previous === null) {
+    save(async () => {
+      const sorted = sortItemsAction(projectId, by);
+      if (!(await runAction(sorted, `sort “${name}”`))) return;
+      // The order from before the sort, or null when it was already sorted.
+      const previous = await sorted;
+      if (previous === null) {
         toast(`"${name}" is already sorted by ${label}`);
       } else {
         toast(`Sorted "${name}" by ${label}`, {
           action: {
             label: "Undo",
-            onClick: () =>
-              start(async () => {
-                await setItemOrderAction(projectId, previous).catch((e) => {
-                  unstable_rethrow(e);
-                  toast.error("Couldn't undo the sort. Please try again.");
-                });
-              }),
+            onClick: () => run(() => setItemOrderAction(projectId, previous), "undo the sort"),
           },
         });
       }
@@ -161,17 +144,14 @@ export function ProjectMenu({
       alert(err);
       return;
     }
-    // In the transition, not run(), so a rethrown redirect reaches Next.
-    start(async () => {
-      await runAction(updateProjectAction(projectId, { prefix: normalized }), "update the prefix");
-    });
+    run(() => updateProjectAction(projectId, { prefix: normalized }), "update the prefix");
   }
 
   return (
     <DropdownMenu onOpenChange={(open) => !open && tap.reset()}>
       <DropdownMenuTrigger
         aria-label="List options"
-        disabled={pending}
+        disabled={saving}
         className="rounded p-1 text-neutral-500 hover:bg-neutral-100 disabled:opacity-50 dark:hover:bg-neutral-800"
       >
         ⋯
@@ -276,7 +256,7 @@ export function ProjectMenu({
           <DropdownMenuItem
             variant="destructive"
             closeOnClick={tap.isArmed()}
-            onClick={() => tap.confirm(() => run(() => deleteProjectAction(projectId), `delete “${name}”`))}
+            onClick={() => tap.confirm(() => removeList({ id: projectId, name, kind: "delete" }))}
             className={tap.isArmed() ? ARMED_MENU_ITEM : undefined}
           >
             <Trash2 />
@@ -286,7 +266,7 @@ export function ProjectMenu({
           <DropdownMenuItem
             variant="destructive"
             closeOnClick={tap.isArmed()}
-            onClick={() => tap.confirm(() => run(() => leaveProjectAction(projectId), `leave “${name}”`))}
+            onClick={() => tap.confirm(() => removeList({ id: projectId, name, kind: "leave" }))}
             className={tap.isArmed() ? ARMED_MENU_ITEM : undefined}
           >
             <LogOut />
