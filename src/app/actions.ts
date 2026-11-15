@@ -72,7 +72,7 @@ import {
   reorderProject as reorderProjectCore,
   updateProject as updateProjectCore,
 } from "@/core/projects";
-import type { AuditSource, ProjectStatus } from "@/core/schema";
+import type { AuditSource, ProjectStatus, SpaceColor } from "@/core/schema";
 import {
   acceptSpaceInvite as acceptSpaceInviteCore,
   createSpace as createSpaceCore,
@@ -324,21 +324,36 @@ export async function removeMemberAction(projectId: string, targetUserId: string
   refresh();
 }
 
-export async function createSpaceAction(input: { name: string; icon?: string | null }) {
+export async function createSpaceAction(input: {
+  name: string;
+  icon?: string | null;
+  color?: SpaceColor | null;
+}) {
   const userId = await requireUserId();
   const { db } = getDb();
-  const space = createSpaceCore(db, userId, { name: input.name, icon: input.icon }, SOURCE);
+  const space = createSpaceCore(
+    db,
+    userId,
+    { name: input.name, icon: input.icon, color: input.color },
+    SOURCE,
+  );
   refresh();
   return space;
 }
 
 export async function updateSpaceAction(
   spaceId: string,
-  patch: { name?: string; icon?: string | null },
+  patch: { name?: string; icon?: string | null; color?: SpaceColor | null },
 ) {
   const userId = await requireUserId();
   const { db } = getDb();
-  updateSpaceCore(db, userId, spaceId, { name: patch.name, icon: patch.icon }, SOURCE);
+  updateSpaceCore(
+    db,
+    userId,
+    spaceId,
+    { name: patch.name, icon: patch.icon, color: patch.color },
+    SOURCE,
+  );
   refresh();
 }
 

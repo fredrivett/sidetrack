@@ -16,8 +16,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { CollaboratorView } from "@/core/members";
+import type { SpaceColor } from "@/core/schema";
 import type { SpaceMemberView, SpaceView } from "@/core/spaces";
 import { EditableText } from "./EditableText";
+import { ProjectIcon } from "./ProjectIcon";
+import { IconPicker } from "./ProjectIconPicker";
+import { SpaceColorPicker, spaceTint } from "./SpaceColor";
 import { runAction } from "./run-action";
 import { useTapToConfirm } from "./use-tap-to-confirm";
 
@@ -32,6 +36,8 @@ const BADGE =
 export function SpacesPanel({ spaces, viewerId }: { spaces: SpaceView[]; viewerId: string }) {
   const router = useRouter();
   const [name, setName] = useState("");
+  const [icon, setIcon] = useState<string | null>(null);
+  const [color, setColor] = useState<SpaceColor | null>(null);
   const [pending, start] = useTransition();
 
   function create(e: React.FormEvent) {
@@ -39,8 +45,10 @@ export function SpacesPanel({ spaces, viewerId }: { spaces: SpaceView[]; viewerI
     const trimmed = name.trim();
     if (!trimmed) return;
     start(async () => {
-      if (await runAction(createSpaceAction({ name: trimmed }), "create the space")) {
+      if (await runAction(createSpaceAction({ name: trimmed, icon, color }), "create the space")) {
         setName("");
+        setIcon(null);
+        setColor(null);
         router.refresh();
       }
     });
@@ -50,18 +58,33 @@ export function SpacesPanel({ spaces, viewerId }: { spaces: SpaceView[]; viewerI
     <div className="space-y-6">
       <section>
         <h2 className="mb-2 text-sm font-medium">New space</h2>
-        <form onSubmit={create} className="flex gap-2">
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Space name, e.g. Household"
-            disabled={pending}
-            className="flex-1"
-          />
-          <Button type="submit" disabled={!name.trim() || pending}>
-            <Plus data-icon="inline-start" />
-            Create
-          </Button>
+        <form onSubmit={create} className="space-y-3">
+          <div className="flex gap-2">
+            <IconPicker
+              icon={icon}
+              chosen
+              name={name}
+              size={20}
+              label="new space icon"
+              disabled={pending}
+              // The input's height and corners, so the two read as one row.
+              className="size-8 rounded-lg border border-input"
+              suggestions={[]}
+              onSelect={setIcon}
+            />
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Space name, e.g. Household"
+              disabled={pending}
+              className="flex-1"
+            />
+            <Button type="submit" disabled={!name.trim() || pending}>
+              <Plus data-icon="inline-start" />
+              Create
+            </Button>
+          </div>
+          <SpaceColorPicker value={color} onChange={setColor} label="New space colour" />
         </form>
       </section>
 
@@ -120,10 +143,30 @@ function SpaceCard({ space, viewerId }: { space: SpaceView; viewerId: string }) 
   return (
     <section
       aria-busy={saving}
-      className={`space-y-3 rounded-lg border p-3 transition-opacity ${saving ? "pointer-events-none opacity-60" : ""}`}
+      className={`space-y-3 rounded-lg border p-3 transition-opacity ${spaceTint(space.color)} ${saving ? "pointer-events-none opacity-60" : ""}`}
     >
       <header className="flex items-center gap-2">
-        <Boxes className="size-4 shrink-0 text-muted-foreground" />
+        {isAdmin ? (
+          <IconPicker
+            icon={space.icon}
+            chosen
+            name={space.name}
+            size={18}
+            label={`${space.name} icon`}
+            disabled={saving}
+            // -mx-1 here and on the name cancel their hover padding, so the
+            // header's gap-2 is the only space between icon, name and badge.
+            className="-mx-1"
+            suggestions={[]}
+            onSelect={(next) =>
+              save(() => updateSpaceAction(space.id, { icon: next }), "change the space's icon")
+            }
+          />
+        ) : space.icon ? (
+          <ProjectIcon icon={space.icon} homepageUrl={null} name={space.name} size={18} />
+        ) : (
+          <Boxes className="size-4 shrink-0 text-muted-foreground" />
+        )}
         {isAdmin ? (
           <EditableText
             value={space.name}
@@ -133,8 +176,8 @@ function SpaceCard({ space, viewerId }: { space: SpaceView; viewerId: string }) 
                 router.refresh();
               }
             }}
-            className="min-w-0 truncate rounded-md px-1 text-sm font-semibold hover:bg-muted"
-            inputClassName="h-7 px-1 text-sm font-semibold"
+            className="-mx-1 min-w-0 truncate rounded-md px-1 text-sm font-semibold hover:bg-muted"
+            inputClassName="-mx-1 h-7 px-1 text-sm font-semibold"
           />
         ) : (
           <h2 className="min-w-0 truncate text-sm font-semibold">{space.name}</h2>
@@ -145,6 +188,16 @@ function SpaceCard({ space, viewerId }: { space: SpaceView; viewerId: string }) 
           </span>
         )}
       </header>
+
+      {isAdmin && (
+        <SpaceColorPicker
+          value={space.color}
+          onChange={(next) =>
+            save(() => updateSpaceAction(space.id, { color: next }), "change the space's colour")
+          }
+          label={`${space.name} colour`}
+        />
+      )}
 
       {isAdmin && (
         <form

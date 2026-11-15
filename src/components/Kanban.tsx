@@ -271,8 +271,8 @@ export function Kanban({
   // renders them collapsed from the first paint. The tray holding ?p='s list
   // starts open, so a link to a list shows it.
   const trays = [
-    { id: "personal", name: "Personal", icon: null },
-    ...spaces.map((s) => ({ id: s.id, name: s.name, icon: s.icon })),
+    { id: "personal", name: "Personal", icon: null, color: null },
+    ...spaces.map((s) => ({ id: s.id, name: s.name, icon: s.icon, color: s.color })),
   ];
   const trayOf = (p: ProjectView) =>
     spaces.find((s) => s.id === p.spaceId)?.id ?? "personal";
@@ -547,6 +547,7 @@ export function Kanban({
                     key={tray.id}
                     name={tray.name}
                     icon={tray.icon}
+                    color={tray.color}
                     lists={lists}
                     collapsed={collapsedTrays.has(tray.id)}
                     onToggle={() => setTrayCollapsed(tray.id, !collapsedTrays.has(tray.id))}

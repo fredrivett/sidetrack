@@ -1,5 +1,8 @@
 import { ChevronRight, Plus } from "lucide-react";
 import type { ReactNode } from "react";
+import type { SpaceColor } from "@/core/schema";
+import { ProjectIcon } from "./ProjectIcon";
+import { spaceTint } from "./SpaceColor";
 
 // No "use client": the board page reads the cookie name on the server. The
 // tray holds no state of its own; Kanban owns which trays are collapsed.
@@ -34,6 +37,7 @@ export function parseCollapsedTrays(value: string | undefined): string[] {
 export function SpaceTray({
   name,
   icon,
+  color,
   lists,
   collapsed,
   onToggle,
@@ -43,6 +47,8 @@ export function SpaceTray({
 }: {
   name: string;
   icon: string | null;
+  /** The Space's colour; null (and Personal) is grey. */
+  color: SpaceColor | null;
   lists: { id: string; name: string }[];
   collapsed: boolean;
   onToggle: () => void;
@@ -51,7 +57,6 @@ export function SpaceTray({
   onOpenList: (projectId: string) => void;
   children: ReactNode;
 }) {
-  const emoji = icon && !icon.startsWith("http") ? icon : null;
   const ease = "duration-300 ease-out motion-reduce:transition-none";
   return (
     <section
@@ -59,7 +64,7 @@ export function SpaceTray({
       // Columns fill a phone's width less the tray's padding, so the tray
       // fits on screen with its list centred. Collapsed, its hidden columns
       // stop being snap points and the tray itself takes their place.
-      className={`relative flex h-full shrink-0 flex-col rounded-3xl bg-neutral-200/60 p-2 [--column-width:calc(92vw-1rem)] dark:bg-neutral-800/50 ${
+      className={`relative flex h-full shrink-0 flex-col rounded-3xl p-2 [--column-width:calc(92vw-1rem)] ${spaceTint(color)} ${
         collapsed ? "snap-start" : ""
       }`}
     >
@@ -77,7 +82,7 @@ export function SpaceTray({
               collapsed ? "" : "rotate-90"
             }`}
           />
-          {emoji && <span aria-hidden>{emoji}</span>}
+          {icon && <ProjectIcon icon={icon} homepageUrl={null} name={name} size={16} />}
           <span className="max-w-48 truncate">{name}</span>
           <span className="text-xs font-normal text-neutral-500">{lists.length}</span>
         </button>
