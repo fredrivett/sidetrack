@@ -83,7 +83,8 @@ export function UserMenu({ user }: { user: AvatarUser | null }) {
           }
         />
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={onSignOut} disabled={pending}>
+        {/* Stays open so "Signing out…" shows until the redirect to /login. */}
+        <DropdownMenuItem closeOnClick={false} onClick={onSignOut} disabled={pending}>
           {pending ? <Loader2 className="animate-spin" /> : <LogOut />}
           {pending ? "Signing out…" : "Sign out"}
         </DropdownMenuItem>
