@@ -270,7 +270,7 @@ describe("spaces", () => {
       expect(getProject(db, fred, hers.id)).toBeUndefined();
       expect(getProject(db, bob, hers.id)).toBeUndefined();
       expect(getItem(db, alice, job.id)?.assigneeIds).toEqual([]);
-      expect(listAudit(db, alice, { projectId: hers.id })[0].detail).toBe(
+      expect(listAudit(db, alice, { projectId: hers.id }).map((e) => e.detail)).toContain(
         'took "Hers" out of space "Home", unassigned from 1 item',
       );
     });

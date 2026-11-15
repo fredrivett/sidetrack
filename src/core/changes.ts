@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import { getPostHog } from "../lib/posthog";
 import { hasProjectAccess } from "./access";
 import type { Db } from "./db";
@@ -80,10 +80,12 @@ export function watchChanges(db: Db, userId: string, onChange: () => void): () =
 }
 
 /** The lists whose changes userId sees, and the people they share them or a
- * Space with, counting a Space they're invited to. */
+ * Space with: the accepted members of their Spaces and of the Spaces their
+ * lists are in (who join and leave changes who can be assigned there), and
+ * the admins of a Space they're invited to, who change or revoke the invite. */
 function audience(db: Db, userId: string) {
   const shown = db
-    .select({ id: projects.id, owner: projects.userId })
+    .select({ id: projects.id, owner: projects.userId, spaceId: projects.spaceId })
     .from(projects)
     .where(hasProjectAccess(userId))
     .all();
@@ -102,15 +104,31 @@ function audience(db: Db, userId: string) {
     .from(projectMembers)
     .where(and(eq(projectMembers.userId, userId), eq(projectMembers.status, "pending")))
     .all();
-  const mySpaces = db
-    .select({ id: spaceMembers.spaceId })
+  const mine = db
+    .select({ spaceId: spaceMembers.spaceId, status: spaceMembers.status })
     .from(spaceMembers)
-    .where(eq(spaceMembers.userId, userId));
-  const spacePeople = db
-    .select({ userId: spaceMembers.userId })
-    .from(spaceMembers)
-    .where(and(inArray(spaceMembers.spaceId, mySpaces), eq(spaceMembers.status, "accepted")))
+    .where(eq(spaceMembers.userId, userId))
     .all();
+  const joined = [
+    ...mine.filter((m) => m.status === "accepted").map((m) => m.spaceId),
+    ...shown.flatMap((p) => (p.spaceId ? [p.spaceId] : [])),
+  ];
+  const invitedTo = mine.filter((m) => m.status === "pending").map((m) => m.spaceId);
+  const spacePeople = joined.length || invitedTo.length
+    ? db
+        .select({ userId: spaceMembers.userId })
+        .from(spaceMembers)
+        .where(
+          and(
+            eq(spaceMembers.status, "accepted"),
+            or(
+              inArray(spaceMembers.spaceId, joined),
+              and(inArray(spaceMembers.spaceId, invitedTo), eq(spaceMembers.role, "admin")),
+            ),
+          ),
+        )
+        .all()
+    : [];
   return {
     lists: new Set([...ids, ...invites.map((i) => i.projectId)]),
     people: new Set([

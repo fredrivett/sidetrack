@@ -307,6 +307,7 @@ export function ProjectMenu({
               {canMove && canTakeOut && <DropdownMenuSeparator />}
               {canTakeOut && (
                 <DropdownMenuItem
+                  variant="destructive"
                   closeOnClick={tap.isArmed("space")}
                   onClick={() => tap.confirm(() => moveToSpace(null), "space")}
                   className={tap.isArmed("space") ? ARMED_MENU_ITEM : undefined}
