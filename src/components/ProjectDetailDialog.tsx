@@ -1,12 +1,12 @@
 "use client";
 
 import { ExternalLink, Trash2 } from "lucide-react";
-import { unstable_rethrow } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { updateProjectAction } from "@/app/actions";
 import type { Project } from "@/core/schema";
 import { validatePrefix } from "@/lib/itemRef";
+import { normalizeHomepageUrl } from "@/lib/url";
 import { dayLabel } from "@/lib/time";
 import { Button } from "@/components/ui/button";
 import {
@@ -61,7 +61,7 @@ export function ProjectDetailDialog({
 
   // Validate/normalize client-side before the round trip so a bad prefix never
   // hits the core (which would throw); surface the same guidance as the menu.
-  function savePrefix(next: string) {
+  async function savePrefix(next: string) {
     const normalized = next.trim().toUpperCase();
     if (normalized === project.prefix) return;
     const err = validatePrefix(normalized);
@@ -69,19 +69,23 @@ export function ProjectDetailDialog({
       toast.error(err);
       return;
     }
-    save(() => runAction(updateProjectAction(project.id, { prefix: normalized }), "update the prefix"));
+    await save(() => runAction(updateProjectAction(project.id, { prefix: normalized }), "update the prefix"));
   }
 
-  // The core normalizes (adds a scheme, validates the host) and throws on a
-  // value that isn't a real URL — catch it and nudge rather than failing silently.
-  function saveHomepage(next: string) {
-    save(() =>
-      updateProjectAction(project.id, {
-        homepageUrl: next.trim() ? next : null,
-      }).catch((e) => {
-        unstable_rethrow(e);
-        toast.error("That doesn't look like a valid URL.");
-      }),
+  // Check the URL here, as New list does, so a typo gets its own message and
+  // any other failure gets runAction's; the core normalizes it again.
+  async function saveHomepage(next: string) {
+    try {
+      normalizeHomepageUrl(next);
+    } catch {
+      toast.error("That doesn't look like a valid URL.");
+      return;
+    }
+    await save(() =>
+      runAction(
+        updateProjectAction(project.id, { homepageUrl: next.trim() ? next : null }),
+        "save the homepage",
+      ),
     );
   }
 
@@ -141,6 +145,7 @@ export function ProjectDetailDialog({
               value={project.prefix}
               onSave={savePrefix}
               required
+              hold
               className="block w-full break-words text-sm"
               inputClassName="w-full text-sm font-mono uppercase"
               renderValue={(prefix) => (
@@ -156,6 +161,7 @@ export function ProjectDetailDialog({
               <EditableText
                 value={project.homepageUrl ?? ""}
                 onSave={saveHomepage}
+                hold
                 placeholder="Add homepage URL…"
                 className="block min-w-0 flex-1 truncate text-sm text-neutral-600 dark:text-neutral-300"
                 inputClassName="w-full text-sm"

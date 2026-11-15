@@ -26,7 +26,12 @@ import { TodayView } from "./TodayView";
 import { useDayStart } from "./use-day-start";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
 import { RemoveListContext, useOptimisticLists } from "./use-list-saves";
-import { ItemChangesContext, useOptimisticItems } from "./use-optimistic-items";
+import {
+  applyItemChange,
+  type ItemChange,
+  ItemChangesContext,
+  useOptimisticItems,
+} from "./use-optimistic-items";
 import type { AvatarUser } from "./UserAvatar";
 import { UserMenu } from "./UserMenu";
 
@@ -171,7 +176,14 @@ export function Kanban({
 
   // Every view reads items and lists from here, so a change shown ahead of the
   // server (a tick, a delete, a move) shows at once wherever it appears.
-  const [itemsByProject, itemChanges] = useOptimisticItems(allItemsByProject);
+  // The Done view's older pages are a copy the refresh doesn't replace, so a
+  // saved change is applied to them too; otherwise a deleted or moved older
+  // item would show as it was until they're read again.
+  const applyToOlder = useCallback((change: ItemChange) => {
+    setOlder((o) => o && { ...o, items: applyItemChange(o.items, change) });
+    setFound((f) => f && { ...f, items: applyItemChange(f.items, change) });
+  }, []);
+  const [itemsByProject, itemChanges] = useOptimisticItems(allItemsByProject, applyToOlder);
   const [projects, removeList] = useOptimisticLists(serverProjects);
   const [view, setView] = useState<BoardView>(initialView);
   function switchView(next: BoardView) {

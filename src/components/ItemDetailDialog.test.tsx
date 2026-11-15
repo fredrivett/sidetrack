@@ -83,7 +83,7 @@ function renderDialog(
   nestTargets: Item[] = [],
   patch: Partial<Item> = {},
 ) {
-  return render(
+  const dialog = (checklist: Item[]) => (
     <ItemDetailDialog
       item={{ ...item, ...patch }}
       parent={null}
@@ -96,8 +96,11 @@ function renderDialog(
       prLinks={[]}
       open={open}
       onOpenChange={() => {}}
-    />,
+    />
   );
+  const view = render(dialog(checklist));
+  /** Re-renders with a new checklist, as a refresh from the server does. */
+  return { ...view, refresh: (next: Item[]) => view.rerender(dialog(next)) };
 }
 
 describe("ItemDetailDialog assign shortcuts", () => {
@@ -291,5 +294,26 @@ describe("ItemDetailDialog checklist", () => {
     expect(screen.queryByText("Buy bread")).toBeNull();
     expect(input.value).toBe("Buy bread");
     expect(toast.error).toHaveBeenCalledWith("Couldn't add “Buy bread”. Please try again.");
+  });
+
+  it("shows a saved line once when it arrives while the next line still saves", async () => {
+    let finishSecond!: () => void;
+    vi.mocked(addItemAction)
+      .mockResolvedValueOnce(undefined as never)
+      .mockReturnValueOnce(new Promise((resolve) => (finishSecond = () => resolve(undefined as never))));
+    const { refresh } = renderDialog();
+    const input = screen.getByRole("textbox", { name: "Add a sub-item" });
+    for (const title of ["One", "Two"]) {
+      fireEvent.change(input, { target: { value: title } });
+      fireEvent.keyDown(input, { key: "Enter" });
+    }
+    await act(async () => {});
+
+    // The first line comes back from the server while the second is saving.
+    const one = { ...item, id: "c1", title: "One", parentId: "i1", number: 43 };
+    refresh([one]);
+    expect(screen.getAllByText("One")).toHaveLength(1);
+    expect(screen.getByText("Two").closest("[aria-busy]")).toBeTruthy();
+    await act(async () => finishSecond());
   });
 });

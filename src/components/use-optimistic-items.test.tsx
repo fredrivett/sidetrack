@@ -225,4 +225,17 @@ describe("useOptimisticItems: deletes and moves", () => {
     ]);
     await act(async () => save.resolve());
   });
+
+  it("moves out to just after the old parent when its sub-items interleave with other items", async () => {
+    // Each level numbers its own positions, so a list sorted by position
+    // across both can put the parent's last sub-item after other top-level items.
+    const a3 = { ...base, id: "a3", title: "A3", parentId: "a" };
+    const save = deferred();
+    vi.mocked(setItemParentAction).mockReturnValue(save.promise);
+    render(<Tree items={[a, a1, b, a2, a3, c]} onChanges={keep} />);
+
+    act(() => changes.setParent(a3, null));
+    expect(shown()).toEqual(["A", "- A1", "- A2", "A3", "B", "C"]);
+    await act(async () => save.resolve());
+  });
 });

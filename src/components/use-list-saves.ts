@@ -58,7 +58,8 @@ export function useOptimisticLists<P extends { id: string }>(lists: P[]) {
  */
 export interface ListSave {
   saving: boolean;
-  save: (work: () => Promise<unknown>) => void;
+  /** Runs `work` as a held save; returns its promise, for callers that wait. */
+  save: <T>(work: () => Promise<T>) => Promise<T>;
 }
 export const ListSaveContext = createContext<ListSave | null>(null);
 
@@ -75,10 +76,15 @@ export function useNewListSave(): ListSave {
   return useMemo(
     () => ({
       saving,
-      save: (work) =>
+      save: <T,>(work: () => Promise<T>) => {
+        let done!: Promise<T>;
+        // start runs the callback at once, so `done` is set before it returns.
         start(async () => {
-          await work();
-        }),
+          done = work();
+          await done;
+        });
+        return done;
+      },
     }),
     [saving],
   );

@@ -28,7 +28,7 @@ export interface ItemChanges {
   setParent: (item: Item, parentId: string | null) => void;
 }
 
-type Change =
+export type ItemChange =
   | { kind: "complete"; item: Item; done: boolean; at: number }
   | { kind: "delete"; item: Item }
   | { kind: "parent"; item: Item; parentId: string | null };
@@ -83,39 +83,41 @@ function complete(list: Item[], item: Item, done: boolean, at: number): Item[] {
 /**
  * The same move setItemParent makes without a position: nesting puts the item
  * last among the parent's sub-items, and moving out puts it straight after its
- * old parent. Lists are in position order, so it moves in the array: after the
- * last row of that parent's group.
+ * old parent. A list is sorted by position across both levels, so sub-items
+ * and top-level items interleave in it; the board groups them (nestItems),
+ * where only each level's own order counts.
  */
 function reparent(list: Item[], item: Item, parentId: string | null): Item[] {
   const current = list.find((i) => i.id === item.id);
   if (!current || current.parentId === parentId) return list;
-  const group = parentId ?? current.parentId;
   const rest = list.filter((i) => i.id !== item.id);
-  let at = rest.length;
-  for (let i = rest.length - 1; i >= 0; i--) {
-    if (rest[i].id === group || rest[i].parentId === group) {
-      at = i + 1;
-      break;
-    }
-  }
+  // Nesting: after the parent's last sub-item (or the parent itself).
+  // Moving out: right after the old parent, ahead of the next top-level item.
+  const after = parentId
+    ? rest.findLastIndex((i) => i.id === parentId || i.parentId === parentId)
+    : rest.findIndex((i) => i.id === current.parentId);
+  const at = after === -1 ? rest.length : after + 1;
   return [...rest.slice(0, at), { ...current, parentId }, ...rest.slice(at)];
+}
+
+/** One change applied to a flat list of items (one list's, or any mix). */
+export function applyItemChange(list: Item[], change: ItemChange): Item[] {
+  return change.kind === "complete"
+    ? complete(list, change.item, change.done, change.at)
+    : change.kind === "delete"
+      ? // Deleting a parent deletes its sub-items with it, as on the server.
+        list.filter((i) => i.id !== change.item.id && i.parentId !== change.item.id)
+      : reparent(list, change.item, change.parentId);
 }
 
 function applyChange(
   byProject: Record<string, Item[]>,
-  change: Change,
+  change: ItemChange,
 ): Record<string, Item[]> {
   const { projectId } = change.item;
   const list = byProject[projectId];
   if (!list) return byProject;
-  const next =
-    change.kind === "complete"
-      ? complete(list, change.item, change.done, change.at)
-      : change.kind === "delete"
-        ? // Deleting a parent deletes its sub-items with it, as on the server.
-          list.filter((i) => i.id !== change.item.id && i.parentId !== change.item.id)
-        : reparent(list, change.item, change.parentId);
-  return { ...byProject, [projectId]: next };
+  return { ...byProject, [projectId]: applyItemChange(list, change) };
 }
 
 /**
@@ -124,31 +126,32 @@ function applyChange(
  * progress, an open dialog), and is held until the refreshed items replace
  * it. If saving fails, the transition ends without them, so the change undoes
  * itself and a toast says so.
+ *
+ * `onSaved` runs inside the change's transition once it has saved, so a
+ * caller holding its own copy of some items (the Done view's older pages)
+ * can apply it there before the change stops being shown ahead.
  */
-export function useOptimisticItems(itemsByProject: Record<string, Item[]>) {
+export function useOptimisticItems(
+  itemsByProject: Record<string, Item[]>,
+  onSaved?: (change: ItemChange) => void,
+) {
   const [optimistic, apply] = useOptimistic(itemsByProject, applyChange);
   // Its own transition, so a change shown ahead doesn't also dim or disable
   // the row the way the row's held saves do.
   const [, start] = useTransition();
-  const changes = useMemo<ItemChanges>(
-    () => ({
+  const changes = useMemo<ItemChanges>(() => {
+    const run = (change: ItemChange, save: () => Promise<boolean>) =>
+      start(async () => {
+        apply(change);
+        if (await save()) onSaved?.(change);
+      });
+    return {
       setCompleted: (item, done) =>
-        start(async () => {
-          apply({ kind: "complete", item, done, at: Date.now() });
-          await saves.complete(item, done);
-        }),
-      deleteItem: (item) =>
-        start(async () => {
-          apply({ kind: "delete", item });
-          await saves.delete(item);
-        }),
+        run({ kind: "complete", item, done, at: Date.now() }, () => saves.complete(item, done)),
+      deleteItem: (item) => run({ kind: "delete", item }, () => saves.delete(item)),
       setParent: (item, parentId) =>
-        start(async () => {
-          apply({ kind: "parent", item, parentId });
-          await saves.parent(item, parentId);
-        }),
-    }),
-    [apply],
-  );
+        run({ kind: "parent", item, parentId }, () => saves.parent(item, parentId)),
+    };
+  }, [apply, onSaved]);
   return [optimistic, changes] as const;
 }
