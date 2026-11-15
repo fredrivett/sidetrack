@@ -51,6 +51,7 @@ import {
   updateProject as updateProjectCore,
 } from "@/core/projects";
 import type { AuditSource, ProjectStatus } from "@/core/schema";
+import { setProjectSpace as setProjectSpaceCore } from "@/core/spaces";
 import {
   AVATAR_MAX_BYTES,
   setTimeZone as setTimeZoneCore,
@@ -77,15 +78,16 @@ export async function createProjectAction(input: {
   summary?: string;
   homepageUrl?: string | null;
   icon?: string | null;
+  spaceId?: string | null;
 }) {
   const userId = await requireUserId();
   const { db } = getDb();
   // Pick the fields, so a crafted call can't pass others (e.g. status).
-  const { name, summary, homepageUrl, icon } = input;
+  const { name, summary, homepageUrl, icon, spaceId } = input;
   const p = createProjectCore(
     db,
     userId,
-    { name, summary, homepageUrl, icon },
+    { name, summary, homepageUrl, icon, spaceId },
     SOURCE,
   );
   refresh();
@@ -108,6 +110,14 @@ export async function updateProjectAction(
   const p = updateProjectCore(db, userId, id, patch, SOURCE);
   refresh();
   return p;
+}
+
+/** Move a list into a Space, to another, or out of its Space (null). */
+export async function setProjectSpaceAction(projectId: string, spaceId: string | null) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  setProjectSpaceCore(db, userId, projectId, spaceId, SOURCE);
+  refresh();
 }
 
 // Read-only: suggestions are only applied when the user picks one, through

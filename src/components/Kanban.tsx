@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import type { AssigneeView, PendingInviteView } from "@/core/members";
 import { listDoneBeforeAction, setTimeZoneAction } from "@/app/actions";
 import type { Category, Item, ItemPrLink, Project } from "@/core/schema";
+import type { SpaceView } from "@/core/spaces";
 import { isEditableTarget, matchesShortcut } from "@/lib/keyboard";
 import { Button } from "@/components/ui/button";
 import { AddProjectButton } from "./AddProjectButton";
@@ -61,6 +62,7 @@ export function Kanban({
   assigneesByProject,
   prLinksByItem,
   pendingInvites,
+  spaces,
 }: {
   viewerId: string;
   /** The viewer's own display fields, for the avatar on the Account button. */
@@ -81,6 +83,8 @@ export function Kanban({
   assigneesByProject: Record<string, AssigneeView[]>;
   prLinksByItem: Record<string, ItemPrLink[]>;
   pendingInvites: PendingInviteView[];
+  /** The Spaces the viewer has joined, with their role in each. */
+  spaces: SpaceView[];
 }) {
   const railRef = useRef<HTMLDivElement>(null);
 
@@ -456,6 +460,7 @@ export function Kanban({
                   onShowActivity={(pid) => setAudit({ open: true, projectId: pid })}
                   onAddItem={openNewItem}
                   onShare={openShare}
+                  spaces={spaces}
                 />
               )),
             )}
@@ -484,6 +489,7 @@ export function Kanban({
           open={newProjectOpen}
           onOpenChange={setNewProjectOpen}
           takenPrefixes={projects.filter((p) => p.isOwner).map((p) => p.prefix)}
+          spaces={spaces}
         />
 
         <PullToSearch onOpen={() => setPaletteOpen(true)} />

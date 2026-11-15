@@ -18,6 +18,8 @@ import {
   type ProjectStatus,
   projectPositions,
   projects,
+  spaceMembers,
+  spaces,
 } from "./schema";
 
 /** The acting user's project ordering: {id, position} rows, sorted ascending.
@@ -325,6 +327,24 @@ function ensureUniquePrefix(
   return dedupePrefix(base, taken);
 }
 
+/** A Space `userId` has accepted, or a plain not-found (as spaces.ts says). */
+function joinedSpace(db: Db, userId: string, spaceId: string) {
+  const space = db
+    .select({ id: spaces.id, name: spaces.name })
+    .from(spaces)
+    .innerJoin(spaceMembers, eq(spaceMembers.spaceId, spaces.id))
+    .where(
+      and(
+        eq(spaces.id, spaceId),
+        eq(spaceMembers.userId, userId),
+        eq(spaceMembers.status, "accepted"),
+      ),
+    )
+    .get();
+  if (!space) throw new Error(`space not found: ${spaceId}`);
+  return space;
+}
+
 export function createProject(
   db: Db,
   userId: string,
@@ -334,10 +354,13 @@ export function createProject(
     summary?: string;
     homepageUrl?: string | null;
     icon?: string | null;
+    /** A Space the creator has joined, to share the new list with. */
+    spaceId?: string | null;
   },
   source: AuditOrigin,
 ): Project {
   const status = input.status ?? "active";
+  const space = input.spaceId ? joinedSpace(db, userId, input.spaceId) : null;
   assertStatus(status);
   const position = nextProjectPosition(db, userId);
   const id = nanoid(12);
@@ -363,6 +386,7 @@ export function createProject(
         summaryUpdatedAt: summary ? now : null,
         homepageUrl,
         icon,
+        spaceId: space?.id ?? null,
         createdAt: now,
       })
       .run();
@@ -374,7 +398,9 @@ export function createProject(
       entityType: "project",
       entityId: id,
       projectId: id,
-      detail: `created list "${name}"`,
+      detail: space
+        ? `created list "${name}" in space "${space.name}"`
+        : `created list "${name}"`,
     });
   });
   return getProjectOrThrow(db, userId, id);

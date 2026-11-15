@@ -1,6 +1,7 @@
 import { and, asc, count, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { normalizeProjectIcon } from "../lib/projectIcon";
+import { hasProjectAccess } from "./access";
 import { users } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
@@ -423,6 +424,77 @@ export function setSpaceMemberRole(
       entityType: "space_member",
       entityId: membership.id,
       detail: `made ${handleFor(target, targetUserId)} ${role === "admin" ? "an admin" : "a member"} of space "${space.name}"`,
+    });
+  });
+}
+
+/**
+ * Move a list into a Space, into another one, or out of its Space (null).
+ * Its owner may do any of these, into a Space they've joined. An admin of the
+ * list's current Space may also take it out, back to its owner. Whoever no
+ * longer reaches the list afterwards gets the usual cleanup
+ * (revokeListAccess). Audited on the list, so its activity shows the move.
+ */
+export function setProjectSpace(
+  db: Db,
+  userId: string,
+  projectId: string,
+  spaceId: string | null,
+  source: AuditOrigin,
+): void {
+  const project = db
+    .select()
+    .from(projects)
+    .where(and(eq(projects.id, projectId), hasProjectAccess(userId)))
+    .get();
+  if (!project) throw new Error(`list not found: ${projectId}`);
+  if (project.spaceId === spaceId) return;
+  const isOwner = project.userId === userId;
+  const from = project.spaceId
+    ? db.select().from(spaces).where(eq(spaces.id, project.spaceId)).get()
+    : undefined;
+  const fromRole = from && membershipOf(db, userId, from.id);
+  const takingOut =
+    spaceId === null && fromRole?.status === "accepted" && fromRole.role === "admin";
+  if (!isOwner && !takingOut) {
+    throw new Error(
+      spaceId === null
+        ? "only the list owner or a space admin can take a list out of its space"
+        : "only the list owner can move a list into a space",
+    );
+  }
+  const to = spaceId ? requireMember(db, userId, spaceId).space : undefined;
+  // Everyone who reached the list through the Space it's leaving; any who
+  // still reach it another way keep it (revokeListAccess checks).
+  const losing = from
+    ? db
+        .select({ userId: spaceMembers.userId })
+        .from(spaceMembers)
+        .where(and(eq(spaceMembers.spaceId, from.id), eq(spaceMembers.status, "accepted")))
+        .all()
+        .map((r) => r.userId)
+    : [];
+  const detail = !from
+    ? `moved "${project.name}" into space "${to?.name}"`
+    : !to
+      ? `took "${project.name}" out of space "${from.name}"`
+      : `moved "${project.name}" from space "${from.name}" to "${to.name}"`;
+  db.transaction((tx) => {
+    tx.update(projects).set({ spaceId }).where(eq(projects.id, projectId)).run();
+    const lost = { unassigned: 0, ended: 0 };
+    for (const person of losing) {
+      const r = revokeListAccess(tx as unknown as Db, person, projectId);
+      lost.unassigned += r.unassigned;
+      lost.ended += r.ended;
+    }
+    recordAudit(tx as unknown as Db, {
+      actor: userId,
+      source,
+      action: "update",
+      entityType: "project",
+      entityId: projectId,
+      projectId,
+      detail: [detail, ...accessLossDetail(lost)].join(", "),
     });
   });
 }

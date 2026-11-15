@@ -8,6 +8,7 @@ import {
   ArrowLeftToLine,
   ArrowRight,
   ArrowRightToLine,
+  Boxes,
   CalendarClock,
   Clock,
   Hash,
@@ -25,6 +26,7 @@ import { toast } from "sonner";
 import {
   reorderProjectAction,
   setItemOrderAction,
+  setProjectSpaceAction,
   sortItemsAction,
   updateProjectAction,
 } from "@/app/actions";
@@ -32,6 +34,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuSub,
@@ -42,6 +46,7 @@ import {
 import { Kbd } from "@/components/ui/kbd";
 import type { ItemSort } from "@/core/items";
 import type { ProjectStatus } from "@/core/schema";
+import type { SpaceView } from "@/core/spaces";
 import { validatePrefix } from "@/lib/itemRef";
 import { ARMED_MENU_ITEM, useTapToConfirm } from "./use-tap-to-confirm";
 import { runAction } from "./run-action";
@@ -64,6 +69,8 @@ export function ProjectMenu({
   prefix,
   status,
   isOwner,
+  spaceId,
+  spaces,
   onShowActivity,
   onShowDetails,
   onAddItem,
@@ -78,6 +85,10 @@ export function ProjectMenu({
   prefix: string;
   status: ProjectStatus;
   isOwner: boolean;
+  /** The Space the list is in, if any. */
+  spaceId: string | null;
+  /** The Spaces the viewer has joined, with their role in each. */
+  spaces: SpaceView[];
   onShowActivity: (projectId: string) => void;
   onShowDetails: () => void;
   onAddItem: (projectId: string) => void;
@@ -127,6 +138,34 @@ export function ProjectMenu({
             onClick: () => run(() => setItemOrderAction(projectId, previous), "undo the sort"),
           },
         });
+      }
+    });
+  }
+
+  // The list's Space as the viewer sees it; undefined if they aren't in it,
+  // such as an owner who left the Space their list is still in.
+  const space = spaces.find((s) => s.id === spaceId);
+  // Its owner moves it between Spaces they've joined; its owner or an admin
+  // of its Space can take it out (core enforces the same).
+  const canMove = isOwner && spaces.length > 0;
+  const canTakeOut = spaceId !== null && (isOwner || space?.role === "admin");
+  // Reaching a list through its Space, leaving the list alone changes nothing.
+  const canLeave = !isOwner && !space;
+
+  function moveToSpace(next: string | null) {
+    const target = spaces.find((s) => s.id === next);
+    start(async () => {
+      if (
+        await runAction(
+          setProjectSpaceAction(projectId, next),
+          target ? `move “${name}” into ${target.name}` : `remove “${name}” from its Space`,
+        )
+      ) {
+        toast(
+          target
+            ? `Moved "${name}" into ${target.name}`
+            : `Removed "${name}" from ${space?.name ?? "its Space"}`,
+        );
       }
     });
   }
@@ -245,13 +284,49 @@ export function ProjectMenu({
             Share…
           </DropdownMenuItem>
         )}
+        {(canMove || canTakeOut) && (
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <Boxes />
+              {isOwner ? "Move to Space" : "Space"}
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              {canMove && (
+                <DropdownMenuRadioGroup
+                  value={spaceId ?? ""}
+                  onValueChange={(next: string) => next !== spaceId && moveToSpace(next)}
+                >
+                  {spaces.map((s) => (
+                    <DropdownMenuRadioItem key={s.id} value={s.id} closeOnClick>
+                      {s.icon && !s.icon.startsWith("http") && <span>{s.icon}</span>}
+                      {s.name}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              )}
+              {canMove && canTakeOut && <DropdownMenuSeparator />}
+              {canTakeOut && (
+                <DropdownMenuItem
+                  closeOnClick={tap.isArmed("space")}
+                  onClick={() => tap.confirm(() => moveToSpace(null), "space")}
+                  className={tap.isArmed("space") ? ARMED_MENU_ITEM : undefined}
+                >
+                  <LogOut />
+                  {tap.isArmed("space")
+                    ? "Confirm remove?"
+                    : `Remove from ${space?.name ?? "Space"}`}
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        )}
         {isOwner && (
           <DropdownMenuItem onClick={editPrefix}>
             <Hash />
             Edit ID prefix
           </DropdownMenuItem>
         )}
-        <DropdownMenuSeparator />
+        {(isOwner || canLeave) && <DropdownMenuSeparator />}
         {isOwner ? (
           <DropdownMenuItem
             variant="destructive"
@@ -262,7 +337,7 @@ export function ProjectMenu({
             <Trash2 />
             {tap.isArmed() ? "Confirm delete?" : "Delete list"}
           </DropdownMenuItem>
-        ) : (
+        ) : canLeave && (
           <DropdownMenuItem
             variant="destructive"
             closeOnClick={tap.isArmed()}
