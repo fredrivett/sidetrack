@@ -113,6 +113,14 @@ unaffected. They power the hosted deploy and are not needed for self-hosting.
 | `POSTHOG_PROJECT_ID` | _(unset)_ | PostHog project id for the source-map upload |
 | `POSTHOG_API_HOST` | `https://us.posthog.com` | API host for the upload (note: not the `us.i.` ingestion host) |
 
+**Optional, build-time** — `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`, a base64 AES
+key (`openssl rand -base64 32`). Server Action IDs are derived from it, so
+without one every build makes a fresh key and renames every action: a tab left
+open through an update fails its next save and reloads into the new build. Set
+it once and keep it to keep IDs the same across builds. `docker compose` passes
+it from your `.env` into the build; with plain `docker build`, pass
+`--build-arg NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`.
+
 ## Connecting an MCP client
 
 The MCP server is exposed at `/mcp` and authenticates with a personal API key.
