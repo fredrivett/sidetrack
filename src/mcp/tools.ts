@@ -616,7 +616,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "- A task is a box-drawing branch, e.g. `├── Write the docs`.\n" +
         "- Sub-items (in `children`) nest one level beneath their parent, e.g. `│   ├── Kitchen`.\n" +
         "- Show the description of the item you added (the one whose id is created.id) inline, indented on the line beneath its branch; " +
-        "leave out every other item's description.",
+        "leave out every other item's description. If you created it completed, it isn't in items: show it and its description after the tree, marked done.",
       inputSchema: {
         list_id: z.string(),
         title: z.string().min(1),
@@ -719,7 +719,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "- A task is a box-drawing branch, e.g. `├── Write the docs`.\n" +
         "- Sub-items (in `children`) nest one level beneath their parent, e.g. `│   ├── Kitchen`.\n" +
         "- Show the description of the item you updated (the one whose id is updated.id) inline, indented on the line beneath its branch; " +
-        "leave out every other item's description.",
+        "leave out every other item's description. If it's completed, it isn't in items: show it and its description after the tree, marked done.",
       inputSchema: {
         id: z.string(),
         title: z.string().optional(),
