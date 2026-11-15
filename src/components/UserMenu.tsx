@@ -60,6 +60,7 @@ export function UserMenu({ user }: { user: AvatarUser | null }) {
       <DropdownMenuContent align="end">
         <DropdownMenuItem render={<Link href="/settings/profile">Profile</Link>} />
         <DropdownMenuItem render={<Link href="/settings/keys">API keys</Link>} />
+        <DropdownMenuItem render={<Link href="/settings/github">GitHub</Link>} />
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onSignOut} disabled={pending}>
           {pending ? "Signing out…" : "Sign out"}

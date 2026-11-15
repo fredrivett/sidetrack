@@ -76,6 +76,22 @@ export function workPrTitle(ref: string, title: string): string {
   return `${title} [${ref}]`;
 }
 
+/**
+ * The item refs a pull request title names in square brackets, in order and
+ * without repeats: `Fix login [SDT-1]`, `[SDT-1, SDT-2]`, or a qualified
+ * `[alice/SDT-1]`. Brackets that aren't refs, like `[WIP]`, are skipped.
+ */
+export function refsInPrTitle(title: string): string[] {
+  const refs: string[] = [];
+  for (const [, inside] of title.matchAll(/\[([^[\]]+)\]/g)) {
+    for (const part of inside.split(",")) {
+      const ref = part.trim();
+      if (parseItemRef(ref) && !refs.includes(ref)) refs.push(ref);
+    }
+  }
+  return refs;
+}
+
 export type ParsedItemRef = {
   /** Lowercased workspace qualifier from `username/PREFIX-N`, or null if bare. */
   username: string | null;

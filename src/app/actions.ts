@@ -9,6 +9,10 @@ import {
 } from "@/core/api-keys";
 import { listAudit as listAuditCore } from "@/core/audit";
 import {
+  removeGithubWebhook as removeGithubWebhookCore,
+  setUpGithubWebhook as setUpGithubWebhookCore,
+} from "@/core/github";
+import {
   addCategory as addCategoryCore,
   listCategories as listCategoriesCore,
 } from "@/core/categories";
@@ -321,6 +325,22 @@ export async function createApiKeyAction(name: string) {
   revalidatePath("/settings/keys");
   // plaintext is returned to the caller exactly once, then never persisted.
   return { record, plaintext };
+}
+
+export async function setUpGithubWebhookAction() {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const { secret } = setUpGithubWebhookCore(db, userId, SOURCE);
+  revalidatePath("/settings/github");
+  // The secret is shown once, to paste into GitHub.
+  return { secret };
+}
+
+export async function removeGithubWebhookAction() {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  removeGithubWebhookCore(db, userId, SOURCE);
+  revalidatePath("/settings/github");
 }
 
 export async function revokeApiKeyAction(id: string) {

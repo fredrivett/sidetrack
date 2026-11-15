@@ -5,6 +5,7 @@ import {
   formatItemRef,
   parseItemRef,
   PREFIX_MAX,
+  refsInPrTitle,
   validatePrefix,
   workBranchName,
   workPrTitle,
@@ -25,6 +26,18 @@ describe("workBranchName", () => {
 
   it("falls back to the ref when the title has nothing to slug", () => {
     expect(workBranchName("SDT-3", "🚀!!")).toBe("sdt-3");
+  });
+});
+
+describe("refsInPrTitle", () => {
+  it("finds bracketed refs anywhere, in order, once each, and skips non-refs", () => {
+    expect(
+      refsInPrTitle("[WIP] Fix login [SDT-1] [sdt-2, alice/ENG-3] [SDT-1] [v2] [SDT-]"),
+    ).toEqual(["SDT-1", "sdt-2", "alice/ENG-3"]);
+  });
+
+  it("reads the title workPrTitle builds", () => {
+    expect(refsInPrTitle(workPrTitle("SDT-42", "Fix [the] thing"))).toEqual(["SDT-42"]);
   });
 });
 
