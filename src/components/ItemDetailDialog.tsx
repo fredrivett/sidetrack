@@ -41,8 +41,11 @@ import {
   formatRelative,
   localDate,
   localDay,
-  parseDueDay,
-  quickDueDays,
+  parseDue,
+  quickDues,
+  sameDue,
+  spanDates,
+  type Due,
 } from "@/lib/time";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -324,9 +327,9 @@ function Checklist({
 /**
  * A popover for any day the quick buttons don't offer: type one ("fri",
  * "in 2 weeks") and press Enter, or click it on the calendar, which follows
- * what's typed. `today` is the app's day (with its 4am turnover), so the
- * calendar marks the same day the Today button sets. Weeks start on Monday,
- * as "Next week" does.
+ * what's typed and shows a span ("next week") as a range. `today` is the
+ * app's day (with its 4am turnover), so the calendar marks the same day the
+ * Today button sets. Weeks start on Monday, as "Next week" does.
  */
 function DueCalendar({
   due,
@@ -334,28 +337,30 @@ function DueCalendar({
   disabled,
   onChange,
 }: {
-  due: string | null;
+  due: Due | null;
   today: string | null;
   disabled: boolean;
-  onChange: (due: string) => void;
+  onChange: (due: Due) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [month, setMonth] = useState<Date>();
   const input = useRef<HTMLInputElement>(null);
-  const typed = text.trim() && today ? parseDueDay(text, today) : null;
+  const typed = text.trim() && today ? parseDue(text, today) : null;
   const shown = typed ?? due;
+  const from = shown?.dueFrom ? localDate(shown.dueFrom) : null;
+  const to = shown ? localDate(shown.dueDate) : null;
 
   function openChange(next: boolean) {
     setOpen(next);
     setText("");
-    const day = due ?? today;
+    const day = due?.dueFrom ?? due?.dueDate ?? today;
     setMonth(day ? localDate(day) : undefined);
   }
 
-  function pick(day: string) {
+  function pick(next: Due) {
     setOpen(false);
-    if (day !== due) onChange(day);
+    if (!sameDue(next, due)) onChange(next);
   }
 
   return (
@@ -375,8 +380,8 @@ function DueCalendar({
             value={text}
             onChange={(e) => {
               setText(e.target.value);
-              const day = today && parseDueDay(e.target.value, today);
-              if (day) setMonth(localDate(day));
+              const next = today && parseDue(e.target.value, today);
+              if (next) setMonth(localDate(next.dueFrom ?? next.dueDate));
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.nativeEvent.isComposing && typed) {
@@ -396,13 +401,17 @@ function DueCalendar({
               {typed ? (
                 <>
                   <span className="text-foreground">
-                    {localDate(typed).toLocaleDateString(undefined, {
-                      weekday: "long",
-                      day: "numeric",
-                      month: "long",
-                      year:
-                        typed.slice(0, 4) === today?.slice(0, 4) ? undefined : "numeric",
-                    })}
+                    {typed.dueFrom
+                      ? spanDates(typed.dueFrom, typed.dueDate, today ?? "", true)
+                      : localDate(typed.dueDate).toLocaleDateString(undefined, {
+                          weekday: "long",
+                          day: "numeric",
+                          month: "long",
+                          year:
+                            typed.dueDate.slice(0, 4) === today?.slice(0, 4)
+                              ? undefined
+                              : "numeric",
+                        })}
                   </span>
                   <Kbd>↵</Kbd>
                 </>
@@ -415,12 +424,19 @@ function DueCalendar({
         <Calendar
           mode="single"
           required
-          selected={shown ? localDate(shown) : undefined}
+          selected={to && !from ? to : undefined}
+          // A span as the calendar's range styling; picking a day sets that
+          // day alone.
+          modifiers={
+            from && to
+              ? { range_start: from, range_middle: { after: from, before: to }, range_end: to }
+              : undefined
+          }
           month={month}
           onMonthChange={setMonth}
           today={today ? localDate(today) : undefined}
           weekStartsOn={1}
-          onSelect={(date) => pick(localDay(date))}
+          onSelect={(date) => pick({ dueFrom: null, dueDate: localDay(date) })}
         />
       </PopoverContent>
     </Popover>
@@ -434,30 +450,30 @@ function DueDatePicker({
   disabled,
   onChange,
 }: {
-  due: string | null;
+  due: Due | null;
   done: boolean;
   disabled: boolean;
-  onChange: (due: string | null) => void;
+  onChange: (due: Due | null) => void;
 }) {
   const today = useToday();
-  const quick = today ? quickDueDays(today) : [];
+  const quick = today ? quickDues(today) : [];
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {/* A pressed quick button already says when it's due. */}
-      {due && !quick.some(([, day]) => day === due) && (
-        <DueBadge due={due} done={done} />
+      {due && !quick.some(([, q]) => sameDue(q, due)) && (
+        <DueBadge due={due.dueDate} from={due.dueFrom} done={done} />
       )}
-      {quick.map(([label, day]) => (
+      {quick.map(([label, q]) => (
         <Button
           key={label}
           type="button"
           variant="outline"
           size="xs"
           disabled={disabled}
-          aria-pressed={due === day}
-          onClick={() => onChange(day)}
+          aria-pressed={sameDue(due, q)}
+          onClick={() => onChange(q)}
           className={
-            due === day
+            sameDue(due, q)
               ? "border-neutral-900 bg-neutral-900 text-white hover:bg-neutral-800 hover:text-white dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900"
               : ""
           }
@@ -714,12 +730,12 @@ export function ItemDetailDialog({
           <Field label="Due">
             <DueDatePicker
               key={item.id}
-              due={item.dueDate}
+              due={item.dueDate ? { dueDate: item.dueDate, dueFrom: item.dueFrom } : null}
               done={completed}
               disabled={pending}
-              onChange={(dueDate) =>
+              onChange={(due) =>
                 start(() => {
-                  void updateItemAction(item.id, { dueDate });
+                  void updateItemAction(item.id, due ?? { dueDate: null });
                 })
               }
             />
@@ -730,6 +746,7 @@ export function ItemDetailDialog({
               key={item.id}
               repeat={repeatOf(item)}
               completedAt={item.completedAt}
+              due={item}
               disabled={pending}
               onChange={(repeat) =>
                 start(() => {

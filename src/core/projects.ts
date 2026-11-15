@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, isNotNull, isNull, lte, or, type SQL } from "drizzle-orm";
+import { and, asc, eq, gte, isNotNull, isNull, lte, or, type SQL, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { derivePrefix, dedupePrefix, validatePrefix } from "../lib/itemRef";
 import { nestItems } from "../lib/itemTree";
@@ -142,7 +142,8 @@ function activeItemsForDay(
 
 /**
  * The Today view across every active list the user can see: items due on or
- * before `today` that are open or were finished today, overdue first, then by
+ * before `today`, or in a span ("this week") that has started, that are open
+ * or were finished today, overdue first, then by
  * board order and list order. Paused and archived lists are left out.
  * `timeZone` decides which day a completion fell on, and the default `today`
  * is the current day there (with the 4am turnover).
@@ -163,7 +164,8 @@ export function listToday(
     userId,
     today,
     isNotNull(items.dueDate),
-    lte(items.dueDate, today),
+    // Started: a span ("this week") is on Today from its first day.
+    lte(sql`coalesce(${items.dueFrom}, ${items.dueDate})`, today),
   ).filter((it) => isOnToday(it, today, opts.timeZone));
   // Stable sort: due date, then the list's place on the board; ties keep list order.
   due.sort(

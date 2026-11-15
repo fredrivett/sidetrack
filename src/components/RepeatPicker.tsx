@@ -27,11 +27,14 @@ const sameRepeat = (a: Repeat | null, b: Repeat | null) =>
 export function RepeatPicker({
   repeat,
   completedAt,
+  due = null,
   disabled,
   onChange,
 }: {
   repeat: Repeat | null;
   completedAt: number | null;
+  /** When it was due, for a week or weekend that comes back as one. */
+  due?: { dueDate: string | null; dueFrom: string | null } | null;
   disabled: boolean;
   onChange: (repeat: Repeat | null) => void;
 }) {
@@ -46,7 +49,7 @@ export function RepeatPicker({
     setEvery(String(repeat?.every ?? ""));
     setUnit(repeat?.unit ?? "day");
   }
-  const back = useComesBack(repeat, completedAt);
+  const back = useComesBack(repeat, completedAt, due);
   const editing = custom || (repeat !== null && !isQuick);
 
   function save(nextEvery: string, nextUnit: RepeatUnit) {

@@ -231,6 +231,7 @@ export async function addItemAction(input: {
   positionRef?: string;
   parentId?: string | null;
   dueDate?: string | null;
+  dueFrom?: string | null;
   repeat?: Repeat | null;
   subItems?: string[];
 }) {
@@ -251,6 +252,7 @@ export async function updateItemAction(
     addAssigneeIds?: string[];
     removeAssigneeIds?: string[];
     dueDate?: string | null;
+    dueFrom?: string | null;
     repeat?: Repeat | null;
   },
 ) {

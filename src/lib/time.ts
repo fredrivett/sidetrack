@@ -137,31 +137,52 @@ export function dayOf(ts: number, timeZone?: string): string {
   return Number(part("hour")) < DAY_START_HOUR ? addDays(day, -1) : day;
 }
 
-/** "This weekend" from `today`: today on a Saturday or Sunday, else Saturday. */
-export function thisWeekend(today: string): string {
-  const w = weekday(today);
-  return w === 0 || w === 6 ? today : addDays(today, 6 - w);
-}
+/**
+ * When an item is due: on `dueDate`, or, with `dueFrom`, any day of the span
+ * from `dueFrom` to `dueDate` ("this week"). Overdue once `dueDate` passes.
+ */
+export type Due = { dueFrom: string | null; dueDate: string };
 
-/** "Next week" from `today`: the coming Monday. */
-export function nextWeek(today: string): string {
-  return addDays(today, 7 - ((weekday(today) + 6) % 7));
+const onDay = (day: string): Due => ({ dueFrom: null, dueDate: day });
+
+/** Monday of the week `day` is in; weeks run Monday to Sunday. */
+function mondayOf(day: string): string {
+  return addDays(day, -((weekday(day) + 6) % 7));
 }
 
 /**
- * The quick due-date choices offered from `today` (the item dialog's buttons
- * and the row menu): Today, Tomorrow, This weekend and Next week, dropping
- * any that land on a day already offered (on a Saturday, This weekend is
- * Today; on a Sunday, Next week is Tomorrow).
+ * The week, or its weekend, `weeks` weeks on from the one `today` is in:
+ * 0 for this week, 1 for next week, -1 for last week.
  */
-export function quickDueDays(today: string): Array<[label: string, day: string]> {
-  const all: Array<[string, string]> = [
-    ["Today", today],
-    ["Tomorrow", addDays(today, 1)],
-    ["This weekend", thisWeekend(today)],
-    ["Next week", nextWeek(today)],
+export function weekSpan(today: string, weeks: number, part: "week" | "weekend"): Due {
+  const monday = addDays(mondayOf(today), 7 * weeks);
+  return { dueFrom: addDays(monday, part === "week" ? 0 : 5), dueDate: addDays(monday, 6) };
+}
+
+/**
+ * The quick due dates offered from `today` (the item dialog's buttons and the
+ * row menu): Today, Tomorrow, This week, This weekend, Next week and Next
+ * weekend. On a Sunday, the last day of both, This week and This weekend
+ * would only mean today, so they drop out.
+ */
+export function quickDues(today: string): Array<[label: string, due: Due]> {
+  const all: Array<[string, Due]> = [
+    ["Today", onDay(today)],
+    ["Tomorrow", onDay(addDays(today, 1))],
+    ["This week", weekSpan(today, 0, "week")],
+    ["This weekend", weekSpan(today, 0, "weekend")],
+    ["Next week", weekSpan(today, 1, "week")],
+    ["Next weekend", weekSpan(today, 1, "weekend")],
   ];
-  return all.filter(([, day], i) => all.findIndex(([, d]) => d === day) === i);
+  // A span that ends today has only today left.
+  return all.filter(([, due]) => !due.dueFrom || due.dueDate !== today);
+}
+
+type MaybeDue = { dueDate: string | null; dueFrom?: string | null } | null;
+
+/** Whether two dues are the same day or the same span. */
+export function sameDue(a: MaybeDue, b: MaybeDue): boolean {
+  return (a?.dueDate ?? null) === (b?.dueDate ?? null) && (a?.dueFrom ?? null) === (b?.dueFrom ?? null);
 }
 
 /** Whether the runtime's locale writes the day before the month (1/12 = 1 Dec). */
@@ -172,22 +193,27 @@ function dayFirst(): boolean {
 }
 
 /**
- * The due day typed text means from `today`, or null when it isn't a date:
+ * The due date typed text means from `today`, or null when it isn't a date:
  * "fri", "in 2 weeks", "27 nov", "end of month". The quick buttons' names
- * mean what the buttons set ("next week" is the coming Monday, not today + 7).
- * Weekdays and dates look ahead: on a Wednesday "mon" is the coming Monday,
- * on a Friday "fri" is next week's ("this fri" is today), and in December
- * "3 jan" is next year's. Numeric dates follow the runtime
+ * mean what the buttons set ("next week" is next Monday to Sunday, not
+ * today + 7). Weekdays and dates look ahead: on a Wednesday "mon" is the
+ * coming Monday, on a Friday "fri" is next week's ("this fri" is today), and
+ * in December "3 jan" is next year's. Numeric dates follow the runtime
  * locale, so "1/12" is 1 December in the UK and 12 January in the US.
  */
-export function parseDueDay(text: string, today: string): string | null {
+export function parseDue(text: string, today: string): Due | null {
   const t = text.trim().toLowerCase();
-  const named: Record<string, string> = {
-    today,
-    tomorrow: addDays(today, 1),
-    weekend: thisWeekend(today),
-    "this weekend": thisWeekend(today),
-    "next week": nextWeek(today),
+  // Every quick button's name, including the two a Sunday drops: "this
+  // week" then is still Monday to today.
+  const named: Record<string, Due> = {
+    today: onDay(today),
+    tomorrow: onDay(addDays(today, 1)),
+    week: weekSpan(today, 0, "week"),
+    "this week": weekSpan(today, 0, "week"),
+    weekend: weekSpan(today, 0, "weekend"),
+    "this weekend": weekSpan(today, 0, "weekend"),
+    "next week": weekSpan(today, 1, "week"),
+    "next weekend": weekSpan(today, 1, "weekend"),
   };
   if (Object.hasOwn(named, t)) return named[t];
   // chrono's day-first parser reads "nov 27" as November 2027, so only
@@ -202,7 +228,7 @@ export function parseDueDay(text: string, today: string): string | null {
   // chrono reads today's weekday as today ("fri" on a Friday), but someone
   // typing it means next week's, unless they say "this fri".
   const weekdayOnly = found.start.isCertain("weekday") && !found.start.isCertain("day");
-  return weekdayOnly && day === today && !/^this\b/.test(t) ? addDays(today, 7) : day;
+  return onDay(weekdayOnly && day === today && !/^this\b/.test(t) ? addDays(today, 7) : day);
 }
 
 /** The local calendar day of `date`, as "YYYY-MM-DD". */
@@ -218,11 +244,38 @@ export function localDate(day: string): Date {
 }
 
 /**
- * Short label for a due day relative to `today`: "Today", "Tomorrow",
- * "Yesterday", a weekday within the coming week ("Sat"), else "21 Nov" (with
- * the year when it isn't this year's).
+ * The days of a span in the runtime's locale: "16–22 Nov", or "30 Nov – 6 Dec"
+ * (with the year when it isn't this year's). `long` spells it out for the
+ * date picker: "Monday 16 – Sunday 22 November".
  */
-export function dueLabel(due: string, today: string): string {
+export function spanDates(from: string, to: string, today: string, long = false): string {
+  const thisYear = from.slice(0, 4) === today.slice(0, 4) && to.slice(0, 4) === today.slice(0, 4);
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: long ? "long" : undefined,
+    day: "numeric",
+    month: long ? "long" : "short",
+    year: thisYear ? undefined : "numeric",
+    timeZone: "UTC",
+  }).formatRange(new Date(`${from}T00:00:00Z`), new Date(`${to}T00:00:00Z`));
+}
+
+/**
+ * Short label for when something's due, relative to `today`. A day is
+ * "Today", "Tomorrow", "Yesterday", a weekday within the coming week ("Sat"),
+ * else "21 Nov" (with the year when it isn't this year's). A span `from` that
+ * day is "This week", "Next weekend", "Last week" and so on, else its dates.
+ */
+export function dueLabel(due: string, today: string, from?: string | null): string {
+  if (from) {
+    for (const [weeks, word] of [[0, "This"], [1, "Next"], [-1, "Last"]] as const) {
+      for (const part of ["week", "weekend"] as const) {
+        if (sameDue({ dueFrom: from, dueDate: due }, weekSpan(today, weeks, part))) {
+          return `${word} ${part}`;
+        }
+      }
+    }
+    return spanDates(from, due, today);
+  }
   if (due === today) return "Today";
   if (due === addDays(today, 1)) return "Tomorrow";
   if (due === addDays(today, -1)) return "Yesterday";
@@ -241,15 +294,16 @@ export function dueLabel(due: string, today: string): string {
 
 /**
  * Whether an item belongs in the Today view on `today`: it's due on or before
- * today, and it's either still open or was finished today (shown crossed out,
- * like the lists). `timeZone` decides which day a completion fell on.
+ * today, or in a span that has started ("this week" from Monday), and it's
+ * either still open or was finished today (shown crossed out, like the
+ * lists). `timeZone` decides which day a completion fell on.
  */
 export function isOnToday(
-  item: { dueDate: string | null; completedAt: number | null },
+  item: { dueDate: string | null; dueFrom?: string | null; completedAt: number | null },
   today: string,
   timeZone?: string,
 ): boolean {
-  if (!item.dueDate || item.dueDate > today) return false;
+  if (!item.dueDate || (item.dueFrom ?? item.dueDate) > today) return false;
   return item.completedAt === null || dayOf(item.completedAt, timeZone) === today;
 }
 

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
-import { isOnToday } from "@/lib/time";
+import { isOnToday, sameDue, weekSpan } from "@/lib/time";
 import { matchesWhose, type WhoseFilter } from "@/lib/whose";
 import { ItemDetailDialog } from "./ItemDetailDialog";
 import { ItemRow } from "./ItemRow";
@@ -13,9 +13,11 @@ import { useItemDetailDialog } from "./use-item-detail-dialog";
 import { WhoseFilterBar } from "./WhoseFilterBar";
 
 /**
- * One list across every active list: items due today or overdue, plus items
- * finished today, crossed out in place (the same rule as list_today, see
- * isOnToday). Overdue first, then by due day; ties keep board and list order.
+ * One list across every active list: items due today or overdue, items due
+ * in a span that has started ("this week"), plus items finished today,
+ * crossed out in place (the same rule as list_today, see isOnToday). Sections
+ * run Overdue, Today, This weekend, then any other span under way under This
+ * week; ties keep board and list order.
  */
 export function TodayView({
   projects,
@@ -47,10 +49,18 @@ export function TodayView({
         .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""))
     : [];
   const shown = onToday.filter((i) => matchesWhose(i, filter, viewerId));
-  const sections: Array<[string, Item[]]> = [
-    ["Overdue", shown.filter((i) => (i.dueDate ?? "") < (today ?? ""))],
-    ["Today", shown.filter((i) => i.dueDate === today)],
-  ];
+  // A span stays in its section to its last day, when its chip turns amber.
+  const sectionOf = (i: Item) =>
+    (i.dueDate ?? "") < (today ?? "")
+      ? "Overdue"
+      : !i.dueFrom
+        ? "Today"
+        : today && sameDue(i, weekSpan(today, 0, "weekend"))
+          ? "This weekend"
+          : "This week";
+  const sections: Array<[string, Item[]]> = (
+    ["Overdue", "Today", "This weekend", "This week"] as const
+  ).map((label) => [label, shown.filter((i) => sectionOf(i) === label)]);
 
   const detailProject = detail.item ? projectOf.get(detail.item.projectId) : undefined;
 

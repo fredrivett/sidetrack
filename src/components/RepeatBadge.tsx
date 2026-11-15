@@ -1,23 +1,28 @@
 "use client";
 
 import { Repeat as RepeatIcon } from "lucide-react";
-import { nextDueDay, type Repeat, repeatLabel } from "@/lib/repeat";
+import { nextDue, type Repeat, repeatLabel } from "@/lib/repeat";
 import { dayOf, dueLabel } from "@/lib/time";
 import { useToday } from "./use-day-start";
 
+type ItemDue = { dueDate: string | null; dueFrom: string | null };
+
 /**
  * When a finished repeating item comes back: its rule's gap after the day it
- * was done, in the viewer's day. Null until the viewer's day is known, and
+ * was done, in the viewer's day, or the first day of the week or weekend
+ * it's next due in (see nextDue). Null until the viewer's day is known, and
  * once that day has come (the server reopens it on the next load).
  */
 export function useComesBack(
   repeat: Repeat | null,
   completedAt: number | null,
+  due: ItemDue | null = null,
 ): string | null {
   const today = useToday();
   if (!repeat || completedAt === null || !today) return null;
-  const next = nextDueDay(dayOf(completedAt), repeat);
-  return next > today ? dueLabel(next, today) : null;
+  const next = nextDue(dayOf(completedAt), repeat, due);
+  const back = next.dueFrom ?? next.dueDate;
+  return back > today ? dueLabel(back, today) : null;
 }
 
 // A repeating item's rule as a small pill next to its due date. Once it's
@@ -25,11 +30,14 @@ export function useComesBack(
 export function RepeatBadge({
   repeat,
   completedAt,
+  due,
 }: {
   repeat: Repeat;
   completedAt: number | null;
+  /** When it was due, for a week or weekend that comes back as one. */
+  due: ItemDue;
 }) {
-  const back = useComesBack(repeat, completedAt);
+  const back = useComesBack(repeat, completedAt, due);
   return (
     <span
       title={repeatLabel(repeat)}

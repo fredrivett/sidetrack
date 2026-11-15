@@ -61,7 +61,7 @@ import {
 import { notifyInvite } from "@/lib/email";
 import { getEnv } from "@/lib/env";
 import { formatItemRef, workPrTitle } from "@/lib/itemRef";
-import { MAX_REPEAT_EVERY, REPEAT_UNITS, type RepeatUnit, nextDueDay, repeatOf } from "@/lib/repeat";
+import { MAX_REPEAT_EVERY, REPEAT_UNITS, type RepeatUnit, nextDue, repeatOf } from "@/lib/repeat";
 import { dayOf, formatRelativeLong, isDay } from "@/lib/time";
 import { matchesWhose, WHOSE_FILTERS } from "@/lib/whose";
 
@@ -80,6 +80,13 @@ const DueDate = z
   .regex(/^\d{4}-\d{2}-\d{2}$/, "expected a calendar day, YYYY-MM-DD")
   .refine(isDay, "expected a calendar day, YYYY-MM-DD");
 const Whose = z.enum(WHOSE_FILTERS);
+// How add_item and update_item describe due spans, the web's This week, This
+// weekend, Next week and Next weekend.
+const DUE_SPAN =
+  "due_from (YYYY-MM-DD) makes it due any day from due_from to due_date instead of on one day: " +
+  "\"this week\" is Monday to Sunday of the current week, \"this weekend\" its Saturday to Sunday, " +
+  "and \"next week\" or \"next weekend\" the same a week on. Use a span when the user names a week or weekend rather than a day. " +
+  "Items carry it as dueFrom (null for a single day); a span is overdue once due_date passes. ";
 const Repeat = z.object({
   every: z.number().int().min(1).max(MAX_REPEAT_EVERY),
   unit: z.enum(REPEAT_UNITS),
@@ -112,7 +119,11 @@ function forAgent(value: unknown, timeZone: string): unknown {
       });
       obj = { ...rest, repeat };
       if (repeat && typeof obj.completedAt === "number") {
-        obj.comesBack = nextDueDay(dayOf(obj.completedAt, timeZone), repeat);
+        const next = nextDue(dayOf(obj.completedAt, timeZone), repeat, {
+          dueDate: (obj.dueDate as string | null) ?? null,
+          dueFrom: (obj.dueFrom as string | null) ?? null,
+        });
+        obj.comesBack = next.dueFrom ?? next.dueDate;
       }
     }
     return Object.fromEntries(
@@ -356,7 +367,10 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       title: "List today",
       description:
         "The user's Today view: items across their active lists (not paused or archived) that are due today or overdue, " +
+        "items due in a span that has started (dueFrom on or before today, e.g. due this week from Monday), " +
         "plus items finished today, which the user sees crossed out. Overdue items come first, then by board order. " +
+        "The user sees them in sections: Overdue (dueDate before today), Today (due today alone), " +
+        "This weekend (due this Saturday to Sunday) and This week (any other span under way). " +
         "Returns { today, timeZone, items }, plus a note when the timezone is a UTC fallback. today is the user's current day (YYYY-MM-DD) in timeZone, which their browser reports; " +
         "the day turns over at 4am, so at 1am it's still the day before. Use today to work out dates like tomorrow for due_date. " +
         "Each item carries its ref, listName and, for a sub-item, parentTitle. " +
@@ -599,6 +613,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "sub_items (titles, in order) creates the task's checklist with it in one call, all or nothing: " +
         "prefer it over adding each sub-item with parent afterwards. With completed: true they're created done too. Not with parent, since sub-items can't have their own. " +
         "due_date is the calendar day it's due, YYYY-MM-DD (no time); call list_today first if you need today's date in the user's timezone. " +
+        DUE_SPAN +
         "assignee_ids assigns it to one or more people, each the list owner (the list's userId) or an accepted member " +
         "(user_id from list_members), or \"me\" for the user you act for; several make a joint item. " +
         "assignee_id (one id) also works, for older prompts; don't pass both. " +
@@ -607,6 +622,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "repeat makes a task come round again: { every, unit } with unit day, week or month, e.g. { every: 3, unit: \"day\" } for every 3 days. " +
         "The next due date counts from the day it was last completed, not a fixed calendar: completing it leaves it crossed out for the rest of the day, " +
         "then on the day `every` units after the day it was done it reopens as the same item (same ref), due that day. " +
+        "A repeating week or weekend (due_from set) comes back as the week or weekend that day falls in, reopening on its first day, " +
+        "so a weekly \"this week\" item done on Wednesday reopens on Monday, due next week. " +
         "A month later keeps the day of the month, or the month's last day when that's shorter. " +
         "position defaults to end (the bottom of the list, or of the parent's sub-items); top|end|after:<item>|before:<item> are also valid, " +
         "where <item> is a short ref (e.g. \"HOM-12\") or an id of a sibling (same list, same parent). " +
@@ -626,6 +643,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         category: z.string().optional(),
         parent: z.string().optional(),
         due_date: DueDate.nullable().optional(),
+        due_from: DueDate.nullable().optional(),
         assignee_ids: z.array(z.string().min(1)).optional(),
         assignee_id: z.string().optional(),
         completed: z.boolean().optional(),
@@ -641,6 +659,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       category,
       parent,
       due_date,
+      due_from,
       assignee_ids,
       assignee_id,
       completed,
@@ -687,6 +706,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           category,
           parentId,
           dueDate: due_date,
+          dueFrom: due_from,
           assigneeIds,
           completed,
           repeat,
@@ -719,6 +739,9 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "it makes that person the only assignee, or null unassigns everyone. " +
         "Pass only one of assignee_ids, assignee_id, or add/remove. " +
         "due_date sets the calendar day it's due (YYYY-MM-DD, no time); pass null to clear it. " +
+        DUE_SPAN +
+        "Passing due_date without due_from makes it due that day alone. due_from without due_date changes when the span starts and keeps its due_date; " +
+        "due_from: null makes it due on its due_date alone. " +
         "repeat sets how often a task comes round again, { every, unit } (see add_item); pass null to stop it repeating. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id. " +
         "Returns { updated, items } where items is every incomplete item in the item's list in position order " +
@@ -740,6 +763,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         add_assignee_ids: z.array(z.string().min(1)).optional(),
         remove_assignee_ids: z.array(z.string().min(1)).optional(),
         due_date: DueDate.nullable().optional(),
+        due_from: DueDate.nullable().optional(),
         repeat: Repeat.nullable().optional(),
       },
     },
@@ -750,6 +774,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       add_assignee_ids,
       remove_assignee_ids,
       due_date,
+      due_from,
       ...patch
     }) => {
       const { db } = getDb();
@@ -781,7 +806,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         db,
         userId,
         item.id,
-        { ...patch, assigneeIds, addAssigneeIds, removeAssigneeIds, dueDate: due_date },
+        { ...patch, assigneeIds, addAssigneeIds, removeAssigneeIds, dueDate: due_date, dueFrom: due_from },
         SOURCE,
       );
       const refPrefix = projectRefPrefixes(db, userId)[updated.projectId];
