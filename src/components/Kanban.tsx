@@ -38,12 +38,6 @@ import { UserMenu } from "./UserMenu";
  */
 export type ProjectView = Project & { isOwner: boolean; refPrefix: string };
 
-/** The list currently centred in the rail, tracked in `?p=<id>`. */
-function centredProjectId(): string | null {
-  if (typeof window === "undefined") return null;
-  return new URLSearchParams(window.location.search).get("p");
-}
-
 /** The header's views; the board's is the default, and has no `?view=`. */
 const BOARD_VIEWS = [
   ["board", "Board"],
@@ -176,24 +170,17 @@ export function Kanban({
     [],
   );
 
-  // Open the new-item dialog, seeding its list from the caller, falling back
-  // to the centred column then the first list on the board. With no lists on
-  // the board, there's nowhere to add an item — start a list instead.
+  // Open the new-item dialog with the caller's list (a list's ⋯ menu), or
+  // none (the C shortcut, the palette), which the dialog suggests from the
+  // title. With no lists on the board, there's nowhere to add an item —
+  // start a list instead.
   const openNewItem = useCallback(
     (projectId?: string) => {
-      const isOnBoard = (id: string | null) =>
-        projects.some((p) => p.id === id && p.status !== "archived");
-      const first =
-        projects.find((p) => p.status === "active") ??
-        projects.find((p) => p.status === "paused");
-      if (!first) {
+      if (!projects.some((p) => p.status !== "archived")) {
         setNewProjectOpen(true);
         return;
       }
-      // ?p= can still name a list that was just archived; skip it then.
-      const centred = centredProjectId();
-      const pid = projectId ?? (isOnBoard(centred) ? centred : null) ?? first.id;
-      setNewItem({ open: true, projectId: pid });
+      setNewItem({ open: true, projectId: projectId ?? null });
     },
     [projects],
   );

@@ -39,6 +39,7 @@ import {
   deleteProject as deleteProjectCore,
   getProject as getProjectCore,
   getProjectWithItems as getProjectWithItemsCore,
+  listProjects as listProjectsCore,
   reorderProject as reorderProjectCore,
   updateProject as updateProjectCore,
 } from "@/core/projects";
@@ -54,6 +55,8 @@ import { getCurrentSession, requireUserId } from "@/auth/session";
 import { notifyInvite } from "@/lib/email";
 import { suggestEmoji } from "@/lib/emojiSuggest";
 import { getEnv } from "@/lib/env";
+import { checkDraftItem, suggestList } from "@/lib/itemSuggest";
+import { formatItemRef } from "@/lib/itemRef";
 import type { Repeat } from "@/lib/repeat";
 
 const SOURCE: AuditSource = "web";
@@ -131,6 +134,59 @@ export async function suggestNewListIconsAction(input: {
   const apiKey = getEnv().TYPESAFE_API_KEY;
   if (!apiKey || !input.name.trim()) return [];
   return suggestEmoji({ ...input, itemTitles: [] }, apiKey);
+}
+
+// Read-only suggestions for an item being written in the New item dialog:
+// the list it fits (when none was chosen), and an open item in that list it
+// repeats or is a step of. Nothing is applied here; the dialog shows them.
+export async function suggestForNewItemAction(input: {
+  projectId: string | null;
+  title: string;
+  description: string;
+}) {
+  const userId = await requireUserId();
+  const apiKey = getEnv().TYPESAFE_API_KEY;
+  const draft = { title: input.title.trim(), description: input.description.trim() };
+  const nothing = { projectId: null, duplicate: null, parent: null };
+  if (!apiKey || !draft.title) return nothing;
+  const { db } = getDb();
+  let projectId = input.projectId;
+  if (!projectId) {
+    const lists = listProjectsCore(db, userId)
+      .filter((p) => p.status === "active")
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        summary: p.summary,
+        itemTitles: (getProjectWithItemsCore(db, userId, p.id)?.items ?? [])
+          .slice(0, 10)
+          .map((it) => it.title),
+      }));
+    projectId = await suggestList(draft, lists, apiKey);
+    if (!projectId) return nothing;
+  }
+  const found = getProjectWithItemsCore(db, userId, projectId);
+  if (!found) return nothing;
+  const { duplicateId, parentId } = await checkDraftItem(
+    draft,
+    found.items.map((it) => ({
+      id: it.id,
+      title: it.title,
+      topLevel: !it.parentId,
+    })),
+    apiKey,
+  );
+  const hint = (id: string | null) => {
+    const it = found.items.find((i) => i.id === id);
+    return it
+      ? {
+          id: it.id,
+          ref: formatItemRef(found.project.prefix, it.number),
+          title: it.title,
+        }
+      : null;
+  };
+  return { projectId, duplicate: hint(duplicateId), parent: hint(parentId) };
 }
 
 export async function reorderProjectAction(id: string, ref: string) {
