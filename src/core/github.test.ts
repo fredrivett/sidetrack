@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { listOpenAgentSessions, startWork } from "./agentSessions";
 import { listAudit } from "./audit";
 import {
@@ -58,11 +58,21 @@ describe("GitHub webhook setup", () => {
     expect(() => addGithubWebhookSecret(db, userId, "  ", "web")).toThrow();
   });
 
+  it("lists secrets added in the same millisecond in the order they were added", () => {
+    const { db, userId } = seed();
+    vi.spyOn(Date, "now").mockReturnValue(1_800_000_000_000);
+    try {
+      for (const name of ["a", "b", "c", "d", "e"]) addGithubWebhookSecret(db, userId, name, "web");
+    } finally {
+      vi.restoreAllMocks();
+    }
+    expect(getGithubWebhook(db, userId)?.secrets.map((s) => s.name)).toEqual(["a", "b", "c", "d", "e"]);
+  });
+
   it("removes one secret, refusing its deliveries but keeping the others", () => {
     const { db, userId } = seed();
     const { secret: kept } = addGithubWebhookSecret(db, userId, "kept", "web");
-    const { webhook, secret: gone } = addGithubWebhookSecret(db, userId, "gone", "web");
-    const goneId = webhook.secrets[1].id;
+    const { webhook, id: goneId, secret: gone } = addGithubWebhookSecret(db, userId, "gone", "web");
 
     // Another user can't remove it.
     const other = createTestUser(db, { username: "bob" });

@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
 import { Input } from "@/components/ui/input";
 import type { GithubWebhookView } from "@/core/github";
+import { formatRelative } from "@/lib/time";
 import { GitHubMark } from "./GitHubMark";
 import { useTapToConfirm } from "./use-tap-to-confirm";
 
@@ -34,8 +35,9 @@ function CopyField({ label, value }: { label: string; value: string }) {
 const ARMED =
   "bg-destructive! text-white! hover:bg-destructive/90! dark:bg-destructive! dark:hover:bg-destructive/90!";
 
+// Relative, so the server's render matches the browser's whatever its timezone.
 function fmt(ts: number | null): string {
-  return ts === null ? "never" : new Date(ts).toLocaleString();
+  return ts === null ? "never" : formatRelative(ts);
 }
 
 export function GithubWebhookPanel({
@@ -53,7 +55,9 @@ export function GithubWebhookPanel({
   const tap = useTapToConfirm();
   const [name, setName] = useState("");
   // Shown once, right after adding it, like a new API key.
-  const [created, setCreated] = useState<{ name: string; secret: string } | null>(null);
+  const [created, setCreated] = useState<{ id: string; name: string; secret: string } | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
 
   function run(action: () => Promise<void>) {
@@ -71,14 +75,16 @@ export function GithubWebhookPanel({
     const raw = String(formData.get("name") ?? "").trim();
     if (!raw) return;
     run(async () => {
-      const { secret } = await addGithubWebhookSecretAction(raw);
-      setCreated({ name: raw, secret });
+      const { id, secret } = await addGithubWebhookSecretAction(raw);
+      setCreated({ id, name: raw, secret });
       setName("");
     });
   }
   const removeSecret = (id: string) =>
     run(async () => {
       await removeGithubWebhookSecretAction(id);
+      // Stop showing a secret that no longer works.
+      setCreated((c) => (c?.id === id ? null : c));
     });
   const remove = () =>
     run(async () => {

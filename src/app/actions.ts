@@ -447,10 +447,10 @@ export async function createApiKeyAction(name: string) {
 export async function addGithubWebhookSecretAction(name: string) {
   const userId = await requireUserId();
   const { db } = getDb();
-  const { secret } = addGithubWebhookSecretCore(db, userId, name, SOURCE);
+  const { id, secret } = addGithubWebhookSecretCore(db, userId, name, SOURCE);
   revalidatePath("/settings/github");
   // The secret is shown once, to paste into GitHub.
-  return { secret };
+  return { id, secret };
 }
 
 export async function removeGithubWebhookSecretAction(id: string) {

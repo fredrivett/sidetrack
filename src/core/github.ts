@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { formatItemRef, parseItemRef, refsInPrTitle } from "../lib/itemRef";
 import { endAgentSessions } from "./agentSessions";
@@ -54,7 +54,8 @@ export function getGithubWebhook(db: Db, userId: string): GithubWebhookView | nu
     })
     .from(githubWebhookSecrets)
     .where(eq(githubWebhookSecrets.webhookId, hook.id))
-    .orderBy(asc(githubWebhookSecrets.createdAt), asc(githubWebhookSecrets.id))
+    // rowid breaks ties between secrets added in the same millisecond.
+    .orderBy(asc(githubWebhookSecrets.createdAt), sql`rowid`)
     .all();
   return { ...hook, secrets };
 }
@@ -63,26 +64,28 @@ export function getGithubWebhook(db: Db, userId: string): GithubWebhookView | nu
  * Add a named secret to the user's webhook, setting the webhook up first if
  * there isn't one. Its URL never changes, so each repository can have its own
  * secret, and rotating one is adding a new secret, pasting it into GitHub,
- * then removing the old one. Returns the secret, the only time it's handed out.
+ * then removing the old one. Returns the secret, the only time it's handed out,
+ * with its id.
  */
 export function addGithubWebhookSecret(
   db: Db,
   userId: string,
   name: string,
   source: AuditOrigin,
-): { webhook: GithubWebhookView; secret: string } {
+): { webhook: GithubWebhookView; id: string; secret: string } {
   const trimmed = name.trim();
   if (!trimmed) throw new Error("secret name required");
   const existing = getGithubWebhook(db, userId);
   const secret = randomBytes(32).toString("hex");
   const id = existing?.id ?? nanoid(21);
+  const secretId = nanoid(12);
   const now = Date.now();
   db.transaction((tx) => {
     if (!existing) {
       tx.insert(githubWebhooks).values({ id, userId, createdAt: now }).run();
     }
     tx.insert(githubWebhookSecrets)
-      .values({ id: nanoid(12), webhookId: id, name: trimmed, secret, createdAt: now })
+      .values({ id: secretId, webhookId: id, name: trimmed, secret, createdAt: now })
       .run();
     recordAudit(tx as unknown as Db, {
       actor: userId,
@@ -97,7 +100,7 @@ export function addGithubWebhookSecret(
   });
   const webhook = getGithubWebhook(db, userId);
   if (!webhook) throw new Error(`webhook not found after setup: ${id}`);
-  return { webhook, secret };
+  return { webhook, id: secretId, secret };
 }
 
 /**
