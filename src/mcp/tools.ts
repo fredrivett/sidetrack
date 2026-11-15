@@ -536,11 +536,15 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "category is free-text and is auto-created if new. " +
         "parent (a short ref or id) adds the task as a sub-item of that task, one step in its checklist: " +
         "e.g. \"Tidy up flat\" with sub-items Lounge, Kitchen and Bedroom. Sub-items are one level deep; " +
-        "each is a full item with its own ref and assignee. Adding one to a finished parent reopens the parent. " +
+        "each is a full item with its own ref and assignee. Adding an open one to a finished parent reopens the parent; adding one with completed: true leaves it finished. " +
         "due_date is the calendar day it's due, YYYY-MM-DD (no time); call list_today first if you need today's date in the user's timezone. " +
+        "assignee_id assigns it to the list owner or an accepted member (get a user_id from list_members). " +
+        "completed: true creates it already done, in one call — use it when the user tells you about something they've finished, " +
+        "instead of add_item then complete_item. " +
         "position defaults to end (the bottom of the list, or of the parent's sub-items); top|end|after:<item>|before:<item> are also valid, " +
         "where <item> is a short ref (e.g. \"HOM-12\") or an id of a sibling (same list, same parent). " +
-        "Returns { created, items } where items is every incomplete item in the list in position order.\n" +
+        "Returns { created, items } where items is every incomplete item in the list in position order " +
+        "(so an item created completed is in created but not items).\n" +
         "After adding, show the user the list's updated items (the items array) so they can see where " +
         "the new item landed, unless the user asked you not to:\n" +
         "- Keep items in the order returned; do not re-sort unless the user asked for a different order.\n" +
@@ -553,10 +557,22 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         category: z.string().optional(),
         parent: z.string().optional(),
         due_date: DueDate.nullable().optional(),
+        assignee_id: z.string().optional(),
+        completed: z.boolean().optional(),
         position: PosRef.optional(),
       },
     },
-    async ({ list_id, title, description, category, parent, due_date, position }) => {
+    async ({
+      list_id,
+      title,
+      description,
+      category,
+      parent,
+      due_date,
+      assignee_id,
+      completed,
+      position,
+    }) => {
       const { db } = getDb();
       const project = getProject(db, userId, list_id);
       if (!project) return notFound("list", list_id);
@@ -583,6 +599,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           category,
           parentId,
           dueDate: due_date,
+          assigneeId: assignee_id,
+          completed,
           positionRef: pos.position,
         },
         SOURCE,

@@ -159,6 +159,39 @@ describe("items", () => {
     expect(actions).toEqual(["uncomplete", "complete", "create"]);
   });
 
+  it("creates an item already completed, logging the create and the complete", () => {
+    const { db, userId, projectId } = seedProject();
+    const open = addItem(db, userId, { projectId, title: "open" }, "web");
+    const done = addItem(
+      db,
+      userId,
+      { projectId, title: "done", completed: true },
+      "mcp",
+    );
+    expect(done.completedAt).not.toBeNull();
+    expect(open.completedAt).toBeNull();
+    expect(listItems(db, userId, projectId).map((i) => i.title)).toEqual(["open"]);
+    const rows = listAudit(db, userId, { projectId }).filter(
+      (e) => e.entityId === done.id,
+    );
+    expect(rows.map((e) => [e.action, e.source]).sort()).toEqual([
+      ["complete", "mcp"],
+      ["create", "mcp"],
+    ]);
+    // completed: false is the default, not a completion.
+    const no = addItem(
+      db,
+      userId,
+      { projectId, title: "no", completed: false },
+      "web",
+    );
+    expect(no.completedAt).toBeNull();
+    expect(
+      listAudit(db, userId, { projectId }).filter((e) => e.entityId === no.id)
+        .map((e) => e.action),
+    ).toEqual(["create"]);
+  });
+
   it("skips audit on no-op updates", () => {
     const { db, userId, projectId } = seedProject();
     const item = addItem(
@@ -310,6 +343,35 @@ describe("item assignment", () => {
     const last = listAudit(db, owner).find((e) => e.entityId === item.id);
     expect(last?.action).toBe("update");
     expect(last?.detail).toContain("assigned to @alice");
+  });
+
+  it("assigns on create, and rejects an assignee without access before creating", () => {
+    const { db, owner, alice, bob, projectId } = seedShared();
+    const created = addItem(
+      db,
+      owner,
+      { projectId, title: "for alice", assigneeId: alice },
+      "web",
+    );
+    expect(created.assigneeId).toBe(alice);
+    expect(
+      listAudit(db, owner).find((e) => e.entityId === created.id)?.detail,
+    ).toContain("assigned to @alice");
+
+    const before = listItems(db, owner, projectId).length;
+    expect(() =>
+      addItem(
+        db,
+        owner,
+        { projectId, title: "for bob", assigneeId: bob },
+        "web",
+      ),
+    ).toThrow(/does not have access/);
+    expect(listItems(db, owner, projectId)).toHaveLength(before);
+    // The failed create didn't use up an item number.
+    expect(
+      addItem(db, owner, { projectId, title: "next" }, "web").number,
+    ).toBe(created.number + 1);
   });
 
   it("lets the owner assign to themselves", () => {
@@ -480,6 +542,19 @@ describe("checklists (sub-items)", () => {
     expect(getItem(db, userId, p.id)?.completedAt).not.toBeNull();
     setItemParent(db, userId, open.id, p.id, "web");
     expect(getItem(db, userId, p.id)?.completedAt).toBeNull();
+  });
+
+  it("adding an already-done sub-item leaves a finished parent finished", () => {
+    const { db, userId, projectId } = setup();
+    const p = addItem(db, userId, { projectId, title: "tidy" }, "web");
+    completeItem(db, userId, p.id, "web");
+    addItem(
+      db,
+      userId,
+      { projectId, title: "lounge", parentId: p.id, completed: true },
+      "web",
+    );
+    expect(getItem(db, userId, p.id)?.completedAt).not.toBeNull();
   });
 
   it("reopening a parent leaves its sub-items ticked", () => {
