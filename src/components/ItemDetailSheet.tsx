@@ -30,6 +30,7 @@ import {
 } from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
+import { toggleAssignee } from "@/lib/assignees";
 import { formatItemRef } from "@/lib/itemRef";
 import { modifierSymbol } from "@/lib/keyboard";
 import { prLabel } from "@/lib/pr";
@@ -64,8 +65,9 @@ import { useToday } from "./use-day-start";
 import { EditableText } from "./EditableText";
 import { InlineCode, Markdown } from "./Markdown";
 import { useAssignShortcuts } from "./useAssignShortcuts";
+import { useOptimisticAssignees } from "./use-optimistic-assignees";
 import { useCopyItemRef } from "./useCopyItemRef";
-import { assigneeName, UserAvatar } from "./UserAvatar";
+import { AvatarStack, assigneeNames } from "./UserAvatar";
 
 function Field({
   label,
@@ -94,6 +96,8 @@ function Checklist({
   assignees,
   viewerId,
   onOpenItem,
+  assigneesById,
+  onAssign,
   pickerFor,
   onPickerFor,
 }: {
@@ -102,6 +106,9 @@ function Checklist({
   assignees: AssigneeView[];
   viewerId: string;
   onOpenItem: (item: Item) => void;
+  /** Each sub-item's assignees as last set here (see useOptimisticAssignees). */
+  assigneesById: Record<string, string[]>;
+  onAssign: (id: string, assigneeIds: string[]) => void;
   /** The sub-item whose assignee picker is open, if any (owned by the sheet,
    * which hands its A/I shortcuts over while one is open). */
   pickerFor: string | null;
@@ -133,7 +140,8 @@ function Checklist({
     <div className="space-y-1">
       {items.map((child) => {
         const done = child.completedAt !== null;
-        const assignee = assignees.find((a) => a.userId === child.assigneeId);
+        const childAssigneeIds = assigneesById[child.id] ?? child.assigneeIds;
+        const assigned = assignees.filter((a) => childAssigneeIds.includes(a.userId));
         return (
           <div key={child.id} className="flex items-center gap-2 px-1 py-0.5">
             <Checkbox
@@ -163,28 +171,24 @@ function Checklist({
             >
               <DropdownMenuTrigger
                 aria-label={
-                  assignee
-                    ? `${child.title}: assigned to ${assigneeName(assignee)}. Reassign`
+                  assigned.length
+                    ? `${child.title}: assigned to ${assigneeNames(assigned)}. Change assignees`
                     : `Assign ${child.title}`
                 }
-                className="flex size-6 shrink-0 items-center justify-center rounded-full text-neutral-300 transition hover:bg-neutral-100 hover:text-neutral-600 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+                className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full text-neutral-300 transition hover:bg-neutral-100 hover:text-neutral-600 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
               >
-                {assignee ? (
-                  <UserAvatar user={assignee} size={18} />
+                {assigned.length ? (
+                  <AvatarStack users={assigned} size={18} ringClassName="ring-popover" />
                 ) : (
                   <UserRound className="size-4" />
                 )}
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuContent data-assignee-picker align="end" className="w-52">
                 <AssigneeOptions
-                  currentId={child.assigneeId}
+                  selected={childAssigneeIds}
                   assignees={assignees}
                   viewerId={viewerId}
-                  onPick={(assigneeId) =>
-                    start(() => {
-                      void updateItemAction(child.id, { assigneeId });
-                    })
-                  }
+                  onChange={(assigneeIds) => onAssign(child.id, assigneeIds)}
                 />
               </DropdownMenuContent>
             </DropdownMenu>
@@ -407,54 +411,53 @@ export function ItemDetailSheet({
   const [childPickerFor, setChildPickerFor] = useState<string | null>(null);
   const completed = item.completedAt !== null;
   const ref = formatItemRef(prefix, item.number);
-  const assignee = assignees.find((a) => a.userId === item.assigneeId);
+  const { assigneesById, setAssignees } = useOptimisticAssignees([item, ...checklist]);
+  const assigneeIds = assigneesById[item.id];
+  const assigned = assignees.filter((a) => assigneeIds.includes(a.userId));
   const canAssignSelf = useMemo(
     () => assignees.some((a) => a.userId === viewerId),
     [assignees, viewerId],
   );
 
   const assign = useCallback(
-    (assigneeId: string | null) => {
-      start(() => {
-        void updateItemAction(item.id, { assigneeId });
-      });
-    },
-    [item.id],
+    (ids: string[]) => setAssignees(item.id, ids),
+    [setAssignees, item.id],
   );
   const openPicker = useCallback(() => setAssignOpen(true), []);
-  const assignToMe = useCallback(() => {
-    assign(viewerId);
+  // I adds you, or takes you off if you're already on it, leaving anyone else.
+  const toggleMe = useCallback(() => {
+    assign(toggleAssignee(assigneeIds, viewerId));
     setAssignOpen(false);
-  }, [assign, viewerId]);
+  }, [assign, assigneeIds, viewerId]);
 
   // While the sheet is open, ⌘./Ctrl+. copies the ref (Linear's shortcut).
   const { copy } = useCopyItemRef(ref, { active: open });
 
   // Linear's assignment shortcuts while the sheet owns the screen: A opens the
-  // picker, I assigns to me. Stays armed while the picker is open so the I hint
-  // shown on the "me" row actually works there — base-ui's menu doesn't consume
-  // letter keys, so we won't fight its typeahead. No deferToDialog: the sheet IS
-  // the dialog and should respond.
-  // While a sub-item's picker is open, I assigns that sub-item (as its menu's
-  // hint says) and A does nothing, rather than both acting on this item.
-  const assignChildToMe = useCallback(() => {
+  // picker, I adds or removes me. Stays armed while the picker is open so the I
+  // hint shown on the "me" row works there (useAssignShortcuts listens ahead of
+  // the menu's typeahead). No deferToDialog: the sheet IS the dialog and should
+  // respond.
+  // While a sub-item's picker is open, I toggles me on that sub-item (as its
+  // menu's hint says) and A does nothing, rather than both acting on this item.
+  const toggleMeOnChild = useCallback(() => {
     if (!childPickerFor) return;
-    const id = childPickerFor;
-    start(() => {
-      void updateItemAction(id, { assigneeId: viewerId });
-    });
+    setAssignees(
+      childPickerFor,
+      toggleAssignee(assigneesById[childPickerFor] ?? [], viewerId),
+    );
     setChildPickerFor(null);
-  }, [childPickerFor, viewerId]);
+  }, [assigneesById, setAssignees, childPickerFor, viewerId]);
   const noop = useCallback(() => {}, []);
   useAssignShortcuts({
     active: open && childPickerFor === null,
     onOpenPicker: openPicker,
-    onAssignToMe: canAssignSelf ? assignToMe : undefined,
+    onAssignToMe: canAssignSelf ? toggleMe : undefined,
   });
   useAssignShortcuts({
     active: open && childPickerFor !== null,
     onOpenPicker: noop,
-    onAssignToMe: canAssignSelf ? assignChildToMe : undefined,
+    onAssignToMe: canAssignSelf ? toggleMeOnChild : undefined,
   });
 
   function change(next: boolean) {
@@ -571,17 +574,17 @@ export function ItemDetailSheet({
             />
           </Field>
 
-          <Field label="Assignee">
+          <Field label="Assignees">
             <DropdownMenu open={assignOpen} onOpenChange={setAssignOpen}>
               <DropdownMenuTrigger
                 disabled={pending}
                 className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-neutral-100 disabled:opacity-50 dark:hover:bg-neutral-800"
               >
-                {assignee ? (
+                {assigned.length ? (
                   <>
-                    <UserAvatar user={assignee} size={20} />
+                    <AvatarStack users={assigned} size={20} ringClassName="ring-popover" />
                     <span className="truncate text-neutral-700 dark:text-neutral-200">
-                      {assigneeName(assignee)}
+                      {assigneeNames(assigned)}
                     </span>
                   </>
                 ) : (
@@ -593,12 +596,12 @@ export function ItemDetailSheet({
                 <Kbd className="ml-auto">A</Kbd>
                 <ChevronDown className="size-4 opacity-50" />
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-56">
+              <DropdownMenuContent data-assignee-picker align="start" className="w-56">
                 <AssigneeOptions
-                  currentId={item.assigneeId}
+                  selected={assigneeIds}
                   assignees={assignees}
                   viewerId={viewerId}
-                  onPick={assign}
+                  onChange={assign}
                 />
               </DropdownMenuContent>
             </DropdownMenu>
@@ -708,6 +711,8 @@ export function ItemDetailSheet({
                     setChildPickerFor(null);
                     onOpenItem(child);
                   }}
+                  assigneesById={assigneesById}
+                  onAssign={setAssignees}
                   pickerFor={childPickerFor}
                   onPickerFor={setChildPickerFor}
                 />

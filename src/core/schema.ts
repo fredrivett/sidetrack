@@ -141,14 +141,19 @@ export const items = sqliteTable(
     title: text("title").notNull(),
     description: text("description"),
     category: text("category"),
-    // The user this item is assigned to (the project owner or an accepted
-    // member); null = unassigned, the default. Deliberately NO foreign key on
-    // user_id, matching projects.user_id / project_members.user_id / audit_log
-    // .actor — these all reference a user without an FK so a deleted user can't
-    // break or cascade-wipe a project's rows. Assignment is kept honest at the
-    // app layer instead: updateItem rejects assigning to a non-member, and
-    // removeMember clears a departing member's assignments here.
-    assigneeId: text("assignee_id"),
+    // The users this item is assigned to (the project owner and/or accepted
+    // members), as a JSON array of user ids with no duplicates; [] =
+    // unassigned, the default. Joint items ("both of us") hold several. A JSON
+    // column rather than a join table so every read of an item carries its
+    // assignees. Deliberately no foreign key to users, matching
+    // projects.user_id / project_members.user_id / audit_log.actor, so a
+    // deleted user can't break a project's rows. Assignment is kept honest at
+    // the app layer instead: updateItem rejects assigning a non-member, and
+    // removeMember takes a departing member off every item here.
+    assigneeIds: text("assignee_ids", { mode: "json" })
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'`),
     // Checklists: a sub-item points at its parent, one level deep (a parent
     // has no parent of its own). Positions are scoped to the parent, so a
     // sub-item's position only orders it among its siblings.

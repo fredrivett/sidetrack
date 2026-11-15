@@ -51,7 +51,7 @@ const item: Item = {
   title: "Write docs",
   description: null,
   category: null,
-  assigneeId: null,
+  assigneeIds: [],
   parentId: null,
   dueDate: null,
   repeatEvery: null,
@@ -102,14 +102,14 @@ describe("ItemDetailSheet assign shortcuts", () => {
     // "Unassigned" also labels the field trigger, so scope to the menu items.
     fireEvent.keyDown(document, { key: "a" });
     expect(screen.getByRole("menuitem", { name: /Unassigned/ })).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: /Me/ })).toBeTruthy();
+    expect(screen.getByRole("menuitemcheckbox", { name: /Me/ })).toBeTruthy();
   });
 
   it("assigns to the viewer on 'i'", () => {
     vi.mocked(updateItemAction).mockClear();
     renderSheet();
     fireEvent.keyDown(document, { key: "i" });
-    expect(updateItemAction).toHaveBeenCalledWith("i1", { assigneeId: "u1" });
+    expect(updateItemAction).toHaveBeenCalledWith("i1", { addAssigneeIds: ["u1"] });
   });
 
   it("still assigns to the viewer on 'i' while the picker is open", () => {
@@ -118,9 +118,9 @@ describe("ItemDetailSheet assign shortcuts", () => {
     vi.mocked(updateItemAction).mockClear();
     renderSheet();
     fireEvent.keyDown(document, { key: "a" }); // open the picker
-    expect(screen.getByRole("menuitem", { name: /Me/ })).toBeTruthy();
+    expect(screen.getByRole("menuitemcheckbox", { name: /Me/ })).toBeTruthy();
     fireEvent.keyDown(document, { key: "i" });
-    expect(updateItemAction).toHaveBeenCalledWith("i1", { assigneeId: "u1" });
+    expect(updateItemAction).toHaveBeenCalledWith("i1", { addAssigneeIds: ["u1"] });
   });
 
   it("assigns the sub-item, not this item, on 'i' while its checklist picker is open", () => {
@@ -130,10 +130,10 @@ describe("ItemDetailSheet assign shortcuts", () => {
     const trigger = screen.getByLabelText("Assign Lorna");
     fireEvent.pointerDown(trigger);
     fireEvent.click(trigger);
-    expect(screen.getByRole("menuitem", { name: /Me/ })).toBeTruthy();
+    expect(screen.getByRole("menuitemcheckbox", { name: /Me/ })).toBeTruthy();
     fireEvent.keyDown(document, { key: "i" });
     expect(updateItemAction).toHaveBeenCalledTimes(1);
-    expect(updateItemAction).toHaveBeenCalledWith("c1", { assigneeId: "u1" });
+    expect(updateItemAction).toHaveBeenCalledWith("c1", { addAssigneeIds: ["u1"] });
   });
 
   it("does not act on shortcuts while the sheet is closed", () => {

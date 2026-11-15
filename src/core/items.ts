@@ -211,7 +211,8 @@ export function addItem(
     positionRef?: string;
     parentId?: string | null;
     dueDate?: string | null;
-    assigneeId?: string | null;
+    /** Who it's assigned to; several people make a joint item. */
+    assigneeIds?: string[];
     /** Create it already done, e.g. to log something the user just finished. */
     completed?: boolean;
     repeat?: Repeat | null;
@@ -223,9 +224,11 @@ export function addItem(
   if (!projectAccessibleForUser(db, userId, input.projectId)) {
     throw new Error(`list not found: ${input.projectId}`);
   }
-  const assigneeId = input.assigneeId || null;
-  if (assigneeId && !projectAccessibleForUser(db, assigneeId, input.projectId)) {
-    throw new Error(`assignee does not have access to the list: ${assigneeId}`);
+  const assigneeIds = [...new Set((input.assigneeIds ?? []).filter(Boolean))];
+  for (const a of assigneeIds) {
+    if (!projectAccessibleForUser(db, a, input.projectId)) {
+      throw new Error(`assignee does not have access to the list: ${a}`);
+    }
   }
   let parent: Item | null = null;
   if (input.parentId) {
@@ -269,7 +272,7 @@ export function addItem(
         category,
         parentId: parent?.id ?? null,
         dueDate,
-        assigneeId,
+        assigneeIds,
         repeatEvery: repeat?.every ?? null,
         repeatUnit: repeat?.unit ?? null,
         position,
@@ -290,7 +293,9 @@ export function addItem(
           ? `added "${title}" to "${parent.title}"`
           : `added task "${title}"`) +
         (dueDate ? `, due ${dueDate}` : "") +
-        (assigneeId ? `, assigned to ${assigneeLabel(tx as unknown as Db, assigneeId)}` : "") +
+        (assigneeIds.length
+          ? `, assigned to ${assigneeIds.map((a) => assigneeLabel(tx as unknown as Db, a)).join(", ")}`
+          : "") +
         (repeat ? `, repeats ${repeatLabel(repeat).toLowerCase()}` : ""),
     });
     // Created done: log the completion as its own row, as completeItem does,
@@ -343,7 +348,11 @@ export function updateItem(
     title?: string;
     description?: string | null;
     category?: string | null;
-    assigneeId?: string | null;
+    /** Everyone it's assigned to, replacing who it had; [] unassigns everyone. */
+    assigneeIds?: string[];
+    /** People to add or take off, leaving anyone else as they are now. */
+    addAssigneeIds?: string[];
+    removeAssigneeIds?: string[];
     dueDate?: string | null;
     repeat?: Repeat | null;
   },
@@ -375,17 +384,35 @@ export function updateItem(
       changes.push(c ? `category → ${c}` : "category cleared");
     }
   }
-  if (patch.assigneeId !== undefined) {
-    const a = patch.assigneeId || null;
+  if (
+    patch.assigneeIds !== undefined ||
+    patch.addAssigneeIds !== undefined ||
+    patch.removeAssigneeIds !== undefined
+  ) {
+    // A whole set replaces the old one. Adds and removes apply to the set as
+    // it is now, so two people changing assignees from screens that haven't
+    // caught up with each other don't undo each other's changes.
+    const base = (patch.assigneeIds ?? existing.assigneeIds).filter(
+      (a) => !patch.removeAssigneeIds?.includes(a),
+    );
+    const ids = [...new Set([...base, ...(patch.addAssigneeIds ?? [])].filter(Boolean))];
     // An assignee must have access to the project (be its owner or an accepted
     // member). projectAccessibleForUser is exactly that predicate applied to
     // the assignee rather than the caller.
-    if (a && !projectAccessibleForUser(db, a, existing.projectId)) {
-      throw new Error(`assignee does not have access to the list: ${a}`);
+    for (const a of ids) {
+      if (!projectAccessibleForUser(db, a, existing.projectId)) {
+        throw new Error(`assignee does not have access to the list: ${a}`);
+      }
     }
-    if (a !== existing.assigneeId) {
-      next.assigneeId = a;
-      changes.push(a ? `assigned to ${assigneeLabel(db, a)}` : "unassigned");
+    // Order isn't meaningful, so the same people in another order is a no-op.
+    const added = ids.filter((a) => !existing.assigneeIds.includes(a));
+    const removed = existing.assigneeIds.filter((a) => !ids.includes(a));
+    if (added.length || removed.length) {
+      next.assigneeIds = ids;
+      const names = (list: string[]) =>
+        list.map((a) => assigneeLabel(db, a)).join(", ");
+      if (added.length) changes.push(`assigned ${names(added)}`);
+      if (removed.length) changes.push(`unassigned ${names(removed)}`);
     }
   }
   if (patch.dueDate !== undefined) {

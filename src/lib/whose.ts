@@ -5,18 +5,26 @@
 export const WHOSE_FILTERS = ["all", "mine", "theirs", "unassigned"] as const;
 export type WhoseFilter = (typeof WHOSE_FILTERS)[number];
 
+/**
+ * Mine, Theirs and Unassigned split every item exactly one way, so their
+ * counts add up to All:
+ * - mine: the viewer is among its assignees, alone or on a joint item;
+ * - theirs: assigned, but not to the viewer;
+ * - unassigned: nobody's.
+ */
 export function matchesWhose(
-  item: { assigneeId: string | null },
+  item: { assigneeIds: string[] },
   filter: WhoseFilter,
   viewerId: string,
 ): boolean {
+  const ids = item.assigneeIds;
   switch (filter) {
     case "mine":
-      return item.assigneeId === viewerId;
+      return ids.includes(viewerId);
     case "theirs":
-      return item.assigneeId !== null && item.assigneeId !== viewerId;
+      return ids.length > 0 && !ids.includes(viewerId);
     case "unassigned":
-      return item.assigneeId === null;
+      return ids.length === 0;
     default:
       return true;
   }
