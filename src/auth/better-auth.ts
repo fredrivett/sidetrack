@@ -1,10 +1,10 @@
-import { eq, sql } from "drizzle-orm";
-import { APIError } from "better-auth/api";
+import { and, eq, like, sql } from "drizzle-orm";
+import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
 import { username } from "better-auth/plugins";
-import { users as authUsers } from "@/core/auth-schema";
+import { users as authUsers, verifications } from "@/core/auth-schema";
 import { getDb } from "@/core/db";
 import { auditLog, meta, projects } from "@/core/schema";
 import { sendPasswordResetEmail } from "@/lib/email";
@@ -128,6 +128,20 @@ function withNormalizedAvatar<T extends { image?: unknown }>(
   }
 }
 
+// Cancel every password reset link the user still holds.
+// audit-exempt: Better Auth one-time tokens, not a user action; the password
+// change this goes with is audited by the accounts trigger (migration 0021).
+function revokeResetLinks(userId: string): void {
+  db.delete(verifications)
+    .where(
+      and(
+        like(verifications.identifier, "reset-password:%"),
+        eq(verifications.value, userId),
+      ),
+    )
+    .run();
+}
+
 // User fields people edit, which core owns and audits. `name` has no editor
 // yet; it's blocked so a direct API call can't change it unaudited either.
 const PROFILE_FIELDS = ["name", "image", "username", "displayUsername"] as const;
@@ -203,6 +217,18 @@ export const auth = betterAuth({
         },
       },
     },
+  },
+  hooks: {
+    // A signed-in password change clears the user's reset links before the
+    // new password is written, so the accounts trigger (migration 0022)
+    // never takes it for a reset. The trigger clears them after every change
+    // anyway; this only has to run first. A failed attempt (wrong current
+    // password) clears them too, which only the signed-in user can cause.
+    before: createAuthMiddleware(async (ctx) => {
+      if (ctx.path !== "/change-password") return;
+      const session = await getSessionFromCtx(ctx);
+      if (session) revokeResetLinks(session.user.id);
+    }),
   },
   plugins: [
     username({
