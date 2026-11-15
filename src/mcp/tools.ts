@@ -61,6 +61,7 @@ import {
 import { notifyInvite } from "@/lib/email";
 import { getEnv } from "@/lib/env";
 import { formatItemRef, workPrTitle } from "@/lib/itemRef";
+import { checkDraftItem } from "@/lib/itemSuggest";
 import { MAX_REPEAT_EVERY, REPEAT_UNITS, type RepeatUnit, nextDue, repeatOf } from "@/lib/repeat";
 import { dayOf, formatRelativeLong, isDay } from "@/lib/time";
 import { matchesWhose, WHOSE_FILTERS } from "@/lib/whose";
@@ -628,7 +629,10 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "position defaults to end (the bottom of the list, or of the parent's sub-items); top|end|after:<item>|before:<item> are also valid, " +
         "where <item> is a short ref (e.g. \"HOM-12\") or an id of a sibling (same list, same parent). " +
         "Returns { created, items } where items is every incomplete item in the list in position order " +
-        "(so an item created completed is in created but not items).\n" +
+        "(so an item created completed is in created but not items). " +
+        "It also has possible_duplicate ({ id, ref, title }) when an open item already in the list looks like the same task, " +
+        "identical or reworded. The new item is created either way. Then tell the user, naming both refs, and ask whether to keep it; " +
+        "delete it only if they say so. If you created it completed, ask whether they meant to complete the open one instead.\n" +
         "After adding, show the user the list's updated items (the items array) so they can see where " +
         "the new item landed, unless the user asked you not to:\n" +
         "- Keep items in the order returned; do not re-sort unless the user asked for a different order.\n" +
@@ -696,6 +700,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       }
       const pos = resolvePositionArg(db, userId, position, project.id, parentId);
       if (pos.error) return pos.error;
+      // The list's open items before the add, to check the new one against.
+      const before = listItems(db, userId, list_id);
       const created = addItem(
         db,
         userId,
@@ -716,9 +722,26 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         SOURCE,
       );
       const refPrefix = projectRefPrefixes(db, userId)[list_id] ?? project.prefix;
+      const apiKey = getEnv().TYPESAFE_API_KEY;
+      // Only the duplicate question: no item is offered as a parent.
+      const { duplicateId } = apiKey
+        ? await checkDraftItem(
+            { title: created.title, description: created.description ?? "" },
+            before.map((it) => ({ id: it.id, title: it.title, topLevel: false })),
+            apiKey,
+          )
+        : { duplicateId: null };
+      const duplicate = before.find((it) => it.id === duplicateId);
       return json({
         created: { ...created, ref: formatItemRef(refPrefix, created.number) },
         items: withRefs(refPrefix, listItems(db, userId, list_id)),
+        ...(duplicate && {
+          possible_duplicate: {
+            id: duplicate.id,
+            ref: formatItemRef(refPrefix, duplicate.number),
+            title: duplicate.title,
+          },
+        }),
       });
     },
   );
