@@ -29,8 +29,11 @@ import {
   getItem,
   listItems,
   listSubItems,
+  ITEM_SORTS,
+  type ItemSort,
   reorderItem,
   setItemParent,
+  sortItems,
   uncompleteItem,
   updateItem,
 } from "@/core/items";
@@ -914,6 +917,31 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           reorderItem(db, userId, item.id, pos.position ?? "end", SOURCE),
         ),
       );
+    },
+  );
+
+  server.registerTool(
+    "sort_items",
+    {
+      title: "Sort items",
+      description:
+        "Sort a list's top-level items once, as the web's \"Sort items by\" does: by is due (soonest first, " +
+        "a span by its last day, undated items last), created (newest first) or title (A to Z). " +
+        "Items that tie keep their current order, and sub-items move with their parent. " +
+        "It rewrites the list's order rather than keeping it sorted: items added or moved later go where they're put. " +
+        "Returns changed (false when the list was already in that order, so nothing changed) and the list's open items in their new order.",
+      inputSchema: {
+        list_id: z.string(),
+        by: z.enum(Object.keys(ITEM_SORTS) as [ItemSort, ...ItemSort[]]),
+      },
+    },
+    async ({ list_id, by }) => {
+      const { db } = getDb();
+      const project = getProject(db, userId, list_id);
+      if (!project) return notFound("list", list_id);
+      const changed = sortItems(db, userId, list_id, by, SOURCE) !== null;
+      const refPrefix = projectRefPrefixes(db, userId)[list_id] ?? project.prefix;
+      return json({ changed, items: withRefs(refPrefix, listItems(db, userId, list_id)) });
     },
   );
 
