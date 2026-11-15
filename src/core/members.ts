@@ -1,10 +1,11 @@
-import { and, asc, eq, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { users } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
 import { getProject, nextProjectPosition } from "./projects";
 import {
+  agentSessions,
   items,
   type MembershipStatus,
   projectMembers,
@@ -329,6 +330,22 @@ export function removeMember(
         .where(eq(items.id, it.id))
         .run();
     }
+    // End their agents' open sessions here too: without access the agent
+    // can't finish them, and the board would show it working indefinitely.
+    const ended = tx
+      .update(agentSessions)
+      .set({ finishedAt: Date.now() })
+      .where(
+        and(
+          eq(agentSessions.userId, targetUserId),
+          isNull(agentSessions.finishedAt),
+          inArray(
+            agentSessions.itemId,
+            tx.select({ id: items.id }).from(items).where(eq(items.projectId, projectId)),
+          ),
+        ),
+      )
+      .run().changes;
     // Drop their ordering slot too (no user FK to cascade it). A pending
     // member never had one, so this is a harmless no-op in that case.
     tx.delete(projectPositions)
@@ -346,9 +363,13 @@ export function removeMember(
       entityType: "member",
       entityId: membership.id,
       projectId,
-      detail: held.length
-        ? `${detail}, unassigned from ${held.length} item${held.length === 1 ? "" : "s"}`
-        : detail,
+      detail: [
+        detail,
+        held.length && `unassigned from ${held.length} item${held.length === 1 ? "" : "s"}`,
+        ended && `ended ${ended} agent session${ended === 1 ? "" : "s"}`,
+      ]
+        .filter(Boolean)
+        .join(", "),
     });
   });
 }
