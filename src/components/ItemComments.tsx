@@ -1,6 +1,7 @@
 "use client";
 
 import { MoreHorizontal, Trash2 } from "lucide-react";
+import { unstable_rethrow } from "next/navigation";
 import {
   startTransition,
   useEffect,
@@ -70,8 +71,10 @@ export function ItemComments({
           (rows) => {
             if (!stale && seen === changes.current) setComments(rows);
           },
-          // Once the dialog has moved on, a failed load is moot.
+          // Once the dialog has moved on, a failed load is moot, but a
+          // signed-out session's redirect to /login still goes through.
           (error) => {
+            unstable_rethrow(error);
             if (!stale) throw error;
           },
         ),
