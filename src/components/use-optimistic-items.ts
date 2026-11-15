@@ -83,14 +83,20 @@ function complete(list: Item[], item: Item, done: boolean, at: number): Item[] {
 /**
  * The same move setItemParent makes without a position: nesting puts the item
  * last among the parent's sub-items, and moving out puts it straight after its
- * old parent. A list is sorted by position across both levels, so sub-items
- * and top-level items interleave in it; the board groups them (nestItems),
- * where only each level's own order counts.
+ * old parent. Nesting an open item reopens a finished parent. A list is sorted
+ * by position across both levels, so sub-items and top-level items interleave
+ * in it; the board groups them (nestItems), where only each level's own order
+ * counts.
  */
 function reparent(list: Item[], item: Item, parentId: string | null): Item[] {
   const current = list.find((i) => i.id === item.id);
   if (!current || current.parentId === parentId) return list;
-  const rest = list.filter((i) => i.id !== item.id);
+  const reopens = parentId !== null && current.completedAt === null;
+  const rest = list
+    .filter((i) => i.id !== item.id)
+    .map((i) =>
+      reopens && i.id === parentId && i.completedAt !== null ? { ...i, completedAt: null } : i,
+    );
   // Nesting: after the parent's last sub-item (or the parent itself).
   // Moving out: right after the old parent, ahead of the next top-level item.
   const after = parentId
