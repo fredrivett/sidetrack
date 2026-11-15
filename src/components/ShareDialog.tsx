@@ -79,11 +79,17 @@ export function ShareDialog({
       Promise.all([
         listMembersAction(projectId),
         listSuggestedCollaboratorsAction(projectId),
-      ]).then(([rows, suggested]) => {
-        if (!active) return;
-        setMembers(rows);
-        setSuggestions(suggested);
-      }),
+      ]).then(
+        ([rows, suggested]) => {
+          if (!active) return;
+          setMembers(rows);
+          setSuggestions(suggested);
+        },
+        // Once the dialog has closed or moved on, a failed load is moot.
+        (error) => {
+          if (active) throw error;
+        },
+      ),
       "load who's on this list",
     );
     return () => {

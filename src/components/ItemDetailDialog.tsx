@@ -240,12 +240,14 @@ function Checklist({
     const title = draft.trim();
     if (!title) return;
     setDraft("");
-    queue.current = queue.current.then(() =>
-      runAction(
+    queue.current = queue.current.then(async () => {
+      const added = await runAction(
         addItemAction({ projectId: parent.projectId, title, parentId: parent.id }),
         `add “${title}”`,
-      ),
-    );
+      );
+      // Put a failed line back, unless another is already being typed.
+      if (!added) setDraft((cur) => cur || title);
+    });
   }
 
   return (

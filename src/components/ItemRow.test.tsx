@@ -22,7 +22,10 @@ vi.mock("@/app/actions", () => ({
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 // The sessions provider refreshes the board through the router.
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+vi.mock("next/navigation", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("next/navigation")>()),
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
 
 // Whether the emulated device has a hover-capable pointer; the item menu opens
 // on right-click only there. Reset to a mouse device after each test.

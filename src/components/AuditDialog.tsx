@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { listAuditAction } from "@/app/actions";
 import type { AuditEntryWithActor } from "@/core/audit";
 import type { AuditSource, Project } from "@/core/schema";
@@ -78,18 +78,41 @@ export function AuditDialog({
     [projects],
   );
 
+  // The filter and limit the shown entries were loaded with. When a load
+  // fails, the pills and Show more go back to them, so they keep matching
+  // the entries and Show more stays there to try again.
+  const loaded = useRef({ filter, limit });
+
   useEffect(() => {
     if (!open) return;
+    let active = true;
     start(async () => {
-      await runAction(
+      const ok = await runAction(
         listAuditAction({
           projectId,
           source: filter === "all" ? undefined : filter,
           limit,
-        }).then(setEntries),
+        }).then(
+          (rows) => {
+            if (!active) return;
+            setEntries(rows);
+            loaded.current = { filter, limit };
+          },
+          // Once the dialog has closed or moved on, a failed load is moot.
+          (error) => {
+            if (active) throw error;
+          },
+        ),
         "load the activity",
       );
+      if (!ok) {
+        setFilter(loaded.current.filter);
+        setLimit(loaded.current.limit);
+      }
     });
+    return () => {
+      active = false;
+    };
   }, [open, projectId, filter, limit]);
 
   const groups = useMemo(() => {
