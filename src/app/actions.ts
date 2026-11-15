@@ -167,6 +167,7 @@ export async function addItemAction(input: {
   positionRef?: string;
   parentId?: string | null;
   dueDate?: string | null;
+  repeat?: Repeat | null;
 }) {
   const userId = await requireUserId();
   const { db } = getDb();

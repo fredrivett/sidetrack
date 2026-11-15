@@ -54,8 +54,8 @@ import {
 import { notifyInvite } from "@/lib/email";
 import { getEnv } from "@/lib/env";
 import { formatItemRef } from "@/lib/itemRef";
-import { MAX_REPEAT_EVERY, REPEAT_UNITS } from "@/lib/repeat";
-import { formatRelativeLong, isDay } from "@/lib/time";
+import { MAX_REPEAT_EVERY, REPEAT_UNITS, type RepeatUnit, nextDueDay, repeatOf } from "@/lib/repeat";
+import { dayOf, formatRelativeLong, isDay } from "@/lib/time";
 import { matchesWhose, WHOSE_FILTERS } from "@/lib/whose";
 
 /** The authenticated caller: the key's owner and the key itself (the agent). */
@@ -90,29 +90,38 @@ const AGENT_KEYS: Record<string, string> = {
   projectName: "listName",
 };
 
-function forAgent(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(forAgent);
+function forAgent(value: unknown, timeZone: string): unknown {
+  if (Array.isArray(value)) return value.map((v) => forAgent(v, timeZone));
   if (value && Object.getPrototypeOf(value) === Object.prototype) {
     let obj = value as Record<string, unknown>;
     // An item's repeat rule goes out as one `repeat` field, the shape
-    // add_item and update_item take: { every, unit }, or null.
+    // add_item and update_item take: { every, unit }, or null. A finished
+    // repeating item also says the day it comes back (the web's "Back Tue").
     if ("repeatUnit" in obj && "repeatEvery" in obj) {
       const { repeatEvery, repeatUnit, ...rest } = obj;
-      obj = { ...rest, repeat: repeatUnit ? { every: repeatEvery, unit: repeatUnit } : null };
+      const repeat = repeatOf({
+        repeatEvery: repeatEvery as number | null,
+        repeatUnit: repeatUnit as RepeatUnit | null,
+      });
+      obj = { ...rest, repeat };
+      if (repeat && typeof obj.completedAt === "number") {
+        obj.comesBack = nextDueDay(dayOf(obj.completedAt, timeZone), repeat);
+      }
     }
     return Object.fromEntries(
-      Object.entries(obj).map(([k, v]) => [AGENT_KEYS[k] ?? k, forAgent(v)]),
+      Object.entries(obj).map(([k, v]) => [AGENT_KEYS[k] ?? k, forAgent(v, timeZone)]),
     );
   }
   return value;
 }
 
-function json(value: unknown) {
+/** A tool result: `value` as JSON, in the agent's vocabulary. */
+function jsonFor(value: unknown, timeZone: string) {
   return {
     content: [
       {
         type: "text" as const,
-        text: JSON.stringify(forAgent(value), null, 2),
+        text: JSON.stringify(forAgent(value, timeZone), null, 2),
       },
     ],
   };
@@ -244,6 +253,10 @@ export function registerTools(server: McpServer, ctx: McpContext) {
   // Every mutation is logged as "mcp" plus the API key the agent used, so the
   // activity log can say which agent made each change.
   const SOURCE: AuditOrigin = { source: "mcp", agent: ctx.agent };
+  // comesBack days count in the user's zone, as the reopen does (UTC until a
+  // browser reports one).
+  const json = (value: unknown) =>
+    jsonFor(value, getTimeZone(getDb().db, userId) ?? "UTC");
 
   server.registerTool(
     "list_lists",
@@ -270,7 +283,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Get list",
       description:
-        "Fetch a list with its items in position order. Pass include_completed: true to also return completed items. Works for archived lists too.",
+        "Fetch a list with its items in position order. Pass include_completed: true to also return completed items. Works for archived lists too. " +
+        "A repeating item carries `repeat` ({ every, unit }); a finished one also carries `comesBack`, the day it reopens. ",
       inputSchema: {
         id: z.string(),
         include_completed: z.boolean().optional(),
@@ -305,7 +319,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "- Keep lists and items in the order returned; do not re-sort unless the user asked for a different order.\n" +
         "- Do not show completed items in the tree.\n" +
         "- A task is a box-drawing branch, e.g. `├── Write the docs`.\n" +
-        "- An item's sub-items (its checklist, in `children`) nest one level beneath it, e.g. `│   ├── Kitchen`.",
+        "- An item's sub-items (its checklist, in `children`) nest one level beneath it, e.g. `│   ├── Kitchen`.\n" +
+        "- A repeating item carries `repeat` ({ every, unit }); a finished one also carries `comesBack`, the day it reopens. Mark a repeating item with its rule, e.g. `├── Water plants (every 3 days)`.",
       inputSchema: {
         include_completed: z.boolean().optional(),
         include_archived: z.boolean().optional(),
@@ -338,7 +353,9 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "the day turns over at 4am, so at 1am it's still the day before. Use today to work out dates like tomorrow for due_date. " +
         "Each item carries its ref, listName and, for a sub-item, parentTitle. " +
         "filter narrows to items assigned to the user (mine), to someone else (theirs), or to nobody (unassigned).\n" +
-        "Show the user the items as a list with the list name, anything overdue marked, and finished ones crossed out, as on their screen.",
+        "A repeating item carries `repeat` ({ every, unit }); a finished one also carries `comesBack`, the day it reopens. " +
+        "Show the user the items as a list with the list name, anything overdue marked, repeating ones with their rule, " +
+        "and finished ones crossed out (a finished repeating one with the day it comes back), as on their screen.",
       inputSchema: { filter: Whose.optional() },
     },
     async ({ filter }) => {
@@ -385,7 +402,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "lists is in board order, each { list, items } with items in list order and an undated parent's undated sub-items nested in children; " +
         "lists with nothing undated are left out. A sub-item whose parent isn't shown carries parentTitle. " +
         "filter narrows to items assigned to the user (mine), to someone else (theirs), or to nobody (unassigned).\n" +
-        "Show the user the items grouped under each list name, sub-items indented, finished ones crossed out, as on their screen. " +
+        "A repeating item carries `repeat` ({ every, unit }); a finished one also carries `comesBack`, the day it reopens. " +
+        "Show the user the items grouped under each list name, sub-items indented, repeating ones with their rule, finished ones crossed out, as on their screen. " +
         "To give an item a date, call update_item with due_date.",
       inputSchema: { filter: Whose.optional() },
     },
@@ -525,6 +543,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Fetch a single item by reference — its title, description, category, and completion state, " +
         "plus its sub-items (its checklist) as `children`, finished ones included. A sub-item has a parentId. " +
         "Use this to answer a question about one item without pulling its whole list. " +
+        "A repeating item carries `repeat` ({ every, unit }); a finished one also carries `comesBack`, the day it reopens. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id; the result carries its display `ref`.",
       inputSchema: { id: z.string() },
     },
@@ -681,6 +700,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "(the day turns over at 4am their time), then it moves to the list's Done section. " +
         "Completing an item with sub-items also completes its open sub-items; completing the last sub-item does not complete the parent. " +
         "A repeating item (one with a repeat rule) reopens by itself on its next due date: `every` units after the day it was completed. " +
+        "The result then carries `comesBack`, that day (YYYY-MM-DD); tell the user when it'll be back. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: { id: z.string() },
     },
