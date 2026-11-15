@@ -79,10 +79,21 @@ describe("rethrow-redirect", () => {
   it("checks .catch on an action's promise, inline handlers only", () => {
     expect(lint(`saveAction(1).then(show).catch(() => {});`)).toHaveLength(1);
     expect(lint(`saveAction(1).catch(handle);`)).toHaveLength(1);
+    expect(
+      lint(`saveAction(1).catch((e) => { setError(e); unstable_rethrow(e); });`),
+    ).toHaveLength(1);
     expect(lint(`saveAction(1).catch((e) => unstable_rethrow(e));`)).toEqual([]);
     expect(
       lint(`saveAction(1).catch((e) => { unstable_rethrow(e); return null; });`),
     ).toEqual([]);
+  });
+
+  it("checks .then's rejection handler, not a lone fulfilment handler", () => {
+    expect(lint(`saveAction(1).then(show, (e) => { if (open) throw e; });`)).toHaveLength(1);
+    expect(
+      lint(`saveAction(1).then(show, (e) => { unstable_rethrow(e); if (open) throw e; });`),
+    ).toEqual([]);
+    expect(lint(`saveAction(1).then(show);`)).toEqual([]);
   });
 
   it("ignores catches that don't guard an action", () => {
@@ -138,6 +149,34 @@ describe("rethrow-redirect", () => {
         run(() => normalizeWebUrl(raw));
       `),
     ).toEqual([]);
+  });
+
+  it("follows aliases, actions handed to other calls, and mutual recursion", () => {
+    expect(
+      lint(`
+        const save = saveAction;
+        async function run() {
+          try { await save(1); } catch { setError("x"); }
+        }
+      `),
+    ).toHaveLength(1);
+    expect(
+      lint(`
+        async function removeAll(ids) {
+          try { await Promise.all(ids.map(removeAction)); } catch { setError("x"); }
+        }
+      `),
+    ).toHaveLength(1);
+    // Checking a calls b, b calls a, then a calls the action: b reaches it
+    // too, though b was checked while a's check was still open.
+    expect(
+      lint(`
+        try { a(); } catch { setError("x"); }
+        try { b(); } catch { setError("y"); }
+        function a() { if (x) b(); saveAction(1); }
+        function b() { if (y) a(); }
+      `),
+    ).toHaveLength(2);
   });
 
   it("looks inside callbacks and namespace imports in the guarded code", () => {

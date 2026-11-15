@@ -87,8 +87,10 @@ export function ShareDialog({
           setMembers(rows);
           setSuggestions(suggested);
         },
-        // Once the dialog has closed or moved on, a failed load is moot.
+        // Once the dialog has closed or moved on, a failed load is moot, but a
+        // signed-out session's redirect to /login still goes through.
         (error) => {
+          unstable_rethrow(error);
           if (active) throw error;
         },
       ),

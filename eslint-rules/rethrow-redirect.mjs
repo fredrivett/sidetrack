@@ -3,15 +3,20 @@
  * through (AGENTS.md, "Saving changes"). When the session has ended, an action
  * rejects with Next's redirect to /login; a handler that treats it as a
  * failure shows a bogus error ("NEXT_REDIRECT", "Couldn't …") on the way out.
- * So a try/catch or `.catch` whose guarded code calls an action imported from
- * `@/app/actions` must start its handler with `unstable_rethrow(error)`, or
- * leave the catching to `runAction`, which does.
+ * So a try/catch, `.catch`, or `.then(onFulfilled, onRejected)` whose guarded
+ * code calls an action imported from `@/app/actions` must start its handler
+ * with `unstable_rethrow(error)`, or leave the catching to `runAction`, which
+ * does.
  *
- * "Calls an action" follows calls within the file: a local function that
- * calls one (`try { await save() }`), and a parameter that callers pass one
- * to, as in `run(action)` with `try { await action() }` and
- * `run(async () => { await removeAction() })`. It looks inside callbacks in
- * the guarded code too (`Promise.all(ids.map((id) => removeAction(id)))`).
+ * "Calls an action" follows calls within the file: a local function or alias
+ * that calls one (`try { await save() }`), and a parameter that callers pass
+ * one to, as in `run(action)` with `try { await action() }` and
+ * `run(async () => { await removeAction() })`. Handing one to another call
+ * counts (`ids.map(removeAction)`), and callbacks in the guarded code are
+ * looked inside (`Promise.all(ids.map((id) => removeAction(id)))`). That
+ * includes a callback that runs later, such as an event listener, which the
+ * catch doesn't really guard: syntax can't tell it from one that's awaited,
+ * and a needless rethrow is harmless where a missed one isn't.
  * Calls through other files, such as `runAction`, aren't followed.
  *
  * The handler must be inline so the rethrow can be seen, and the rethrow must
@@ -68,18 +73,35 @@ export const rethrowRedirect = {
     const isActionsImport = (def) =>
       def?.type === "ImportBinding" && def.parent.source.value === ACTIONS_MODULE;
 
-    // Memoized; a function still being checked (recursion) counts as false.
-    const fnMemo = new Map();
-    const fnReaches = (fn) => {
-      if (fnMemo.has(fn)) return fnMemo.get(fn);
-      fnMemo.set(fn, false);
+    // Reachability checks are memoized. A check still in progress
+    // (recursion) counts as false for now, so a false found while another
+    // check is open may rest on it, and is only kept once none is.
+    const memo = new Map();
+    const open = new Set();
+    const cached = (key, compute) => {
+      if (memo.has(key)) return memo.get(key);
+      if (open.has(key)) return false;
+      open.add(key);
+      const result = compute();
+      open.delete(key);
+      if (result || open.size === 0) memo.set(key, result);
+      return result;
+    };
+
+    // Whether `node`'s subtree calls an action, or hands one (or a local
+    // function that calls one) to another call, as in `ids.map(removeAction)`.
+    const reaches = (node) => {
       let found = false;
-      walk(fn.body, (n) => {
-        if (!found && n.type === "CallExpression" && callReaches(n)) found = true;
+      walk(node, (n) => {
+        if (found || n.type !== "CallExpression") return;
+        found =
+          callReaches(n) ||
+          n.arguments.some((a) => a.type === "Identifier" && identifierReaches(a));
       });
-      fnMemo.set(fn, found);
       return found;
     };
+
+    const fnReaches = (fn) => cached(fn, () => reaches(fn.body));
 
     // Whether a value named by `identifier` is, or calls, an action.
     const identifierReaches = (identifier) => {
@@ -87,7 +109,14 @@ export const rethrowRedirect = {
       if (!def) return false;
       if (isActionsImport(def)) return def.node.type !== "ImportNamespaceSpecifier";
       if (def.type === "FunctionName") return fnReaches(def.node);
-      if (def.type === "Variable" && isFn(def.node.init)) return fnReaches(def.node.init);
+      if (def.type === "Variable") {
+        const { init } = def.node;
+        if (isFn(init)) return fnReaches(init);
+        // An alias, as in `const save = saveAction`.
+        return (
+          init?.type === "Identifier" && cached(def.node, () => identifierReaches(init))
+        );
+      }
       if (def.type === "Parameter") {
         const index = def.node.params.indexOf(def.name);
         return index >= 0 && paramReaches(def.node, index);
@@ -97,29 +126,24 @@ export const rethrowRedirect = {
 
     // Whether any caller of `fn` passes an action, or a function that calls
     // one, as its `index`th argument.
-    const paramMemo = new Map();
-    const paramReaches = (fn, index) => {
-      const key = `${fn.range[0]}:${index}`;
-      if (paramMemo.has(key)) return paramMemo.get(key);
-      paramMemo.set(key, false);
-      const binding =
-        fn.type === "FunctionDeclaration"
-          ? fn
-          : fn.parent.type === "VariableDeclarator" && fn.parent.init === fn
-            ? fn.parent
-            : null;
-      const found = (binding ? sourceCode.getDeclaredVariables(binding) : []).some((v) =>
-        v.references.some(({ identifier }) => {
-          const call = identifier.parent;
-          if (call.type !== "CallExpression" || call.callee !== identifier) return false;
-          const arg = call.arguments[index];
-          if (isFn(arg)) return fnReaches(arg);
-          return arg?.type === "Identifier" && identifierReaches(arg);
-        }),
-      );
-      paramMemo.set(key, found);
-      return found;
-    };
+    const paramReaches = (fn, index) =>
+      cached(`${fn.range[0]}:${index}`, () => {
+        const binding =
+          fn.type === "FunctionDeclaration"
+            ? fn
+            : fn.parent.type === "VariableDeclarator" && fn.parent.init === fn
+              ? fn.parent
+              : null;
+        return (binding ? sourceCode.getDeclaredVariables(binding) : []).some((v) =>
+          v.references.some(({ identifier }) => {
+            const call = identifier.parent;
+            if (call.type !== "CallExpression" || call.callee !== identifier) return false;
+            const arg = call.arguments[index];
+            if (isFn(arg)) return fnReaches(arg);
+            return arg?.type === "Identifier" && identifierReaches(arg);
+          }),
+        );
+      });
 
     const callReaches = (call) => {
       const { callee } = call;
@@ -132,14 +156,6 @@ export const rethrowRedirect = {
       );
     };
 
-    const guardsAction = (node) => {
-      let found = false;
-      walk(node, (n) => {
-        if (!found && n.type === "CallExpression" && callReaches(n)) found = true;
-      });
-      return found;
-    };
-
     // `unstable_rethrow(param)` as a statement or expression.
     const isRethrowOf = (node, param) =>
       node?.type === "CallExpression" &&
@@ -147,36 +163,42 @@ export const rethrowRedirect = {
       node.callee.name === "unstable_rethrow" &&
       node.arguments[0]?.type === "Identifier" &&
       node.arguments[0].name === param.name;
-    const startsWithRethrow = (param, body) =>
-      param?.type === "Identifier" &&
-      (body.type === "BlockStatement"
+    // Whether a catch clause, or a promise's rejection handler, starts with
+    // `unstable_rethrow` of what it caught. A handler that isn't inline can't
+    // be seen, so it doesn't.
+    const startsWithRethrow = (handler) => {
+      const param = handler?.type === "CatchClause" ? handler.param : isFn(handler) && handler.params[0];
+      if (param?.type !== "Identifier") return false;
+      const { body } = handler;
+      return body.type === "BlockStatement"
         ? body.body[0]?.type === "ExpressionStatement" &&
-          isRethrowOf(body.body[0].expression, param)
-        : isRethrowOf(body, param));
+            isRethrowOf(body.body[0].expression, param)
+        : isRethrowOf(body, param);
+    };
 
     // Calls are resolved once the whole file is seen, so a function declared
-    // after the catch, or a caller further down, still counts.
+    // after the catch, or a caller further down, still counts. Each entry is
+    // [guarded code, handler, node to report].
     const catches = [];
     return {
       TryStatement(node) {
-        if (node.handler) catches.push(node);
+        if (node.handler) catches.push([node.block, node.handler, node.handler]);
       },
-      "CallExpression[callee.type='MemberExpression'][callee.property.name='catch']"(node) {
-        catches.push(node);
+      // `.catch(onRejected)` and `.then(onFulfilled, onRejected)`.
+      "CallExpression[callee.type='MemberExpression']"(node) {
+        const { object, property } = node.callee;
+        const handler =
+          property.name === "catch"
+            ? node.arguments[0]
+            : property.name === "then"
+              ? node.arguments[1]
+              : undefined;
+        if (handler) catches.push([object, handler, property]);
       },
       "Program:exit"() {
-        for (const node of catches) {
-          if (node.type === "TryStatement") {
-            const { handler } = node;
-            if (guardsAction(node.block) && !startsWithRethrow(handler.param, handler.body)) {
-              context.report({ node: handler, messageId: "missingRethrow" });
-            }
-            continue;
-          }
-          const fn = node.arguments[0];
-          const ok = isFn(fn) && startsWithRethrow(fn.params[0], fn.body);
-          if (!ok && guardsAction(node.callee.object)) {
-            context.report({ node: node.callee.property, messageId: "missingRethrow" });
+        for (const [guarded, handler, at] of catches) {
+          if (!startsWithRethrow(handler) && reaches(guarded)) {
+            context.report({ node: at, messageId: "missingRethrow" });
           }
         }
       },
