@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { setUsernameAction } from "@/app/actions";
@@ -36,7 +37,6 @@ export function UsernamePanel({ initial }: { initial: string }) {
     result: "available" | "taken" | "error";
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
 
   // `sameHandle` = same normalized handle (possibly re-cased); `identical` =
   // byte-for-byte unchanged. A case-only edit changes display_username, so the
@@ -93,7 +93,7 @@ export function UsernamePanel({ initial }: { initial: string }) {
         setError(res.error);
         return;
       }
-      setSaved(true);
+      toast.success("Username updated");
       router.refresh();
     });
   }
@@ -120,7 +120,6 @@ export function UsernamePanel({ initial }: { initial: string }) {
         value={value}
         onChange={(e) => {
           setValue(e.target.value);
-          setSaved(false);
         }}
         minLength={USERNAME_MIN}
         maxLength={USERNAME_MAX}
@@ -156,11 +155,6 @@ export function UsernamePanel({ initial }: { initial: string }) {
         </p>
       )}
       {error && <p className="text-sm text-destructive">{error}</p>}
-      {saved && (
-        <p className="text-sm text-emerald-600 dark:text-emerald-500">
-          Username updated.
-        </p>
-      )}
       <Button type="button" size="sm" onClick={onSave} disabled={!canSave}>
         {pending ? "Saving…" : "Save"}
       </Button>

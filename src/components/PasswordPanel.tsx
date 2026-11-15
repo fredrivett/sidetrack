@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { changePassword } from "@/auth/client";
@@ -15,7 +16,6 @@ import { changePassword } from "@/auth/client";
 export function PasswordPanel({ email }: { email: string }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
 
   // onSubmit, not a form action: an action resets the fields even on a
   // failed attempt, so a typo in "confirm" would wipe all three.
@@ -26,7 +26,6 @@ export function PasswordPanel({ email }: { email: string }) {
     const currentPassword = String(data.get("current") ?? "");
     const newPassword = String(data.get("password") ?? "");
     setError(null);
-    setSaved(false);
     if (newPassword !== String(data.get("confirm") ?? "")) {
       setError("New passwords don't match.");
       return;
@@ -51,7 +50,9 @@ export function PasswordPanel({ email }: { email: string }) {
         return;
       }
       form.reset();
-      setSaved(true);
+      toast.success("Password changed", {
+        description: "Your other devices are signed out.",
+      });
     } catch {
       setError("Couldn't change password.");
     } finally {
@@ -105,11 +106,6 @@ export function PasswordPanel({ email }: { email: string }) {
         devices.
       </p>
       {error && <p className="text-sm text-destructive">{error}</p>}
-      {saved && (
-        <p className="text-sm text-emerald-600 dark:text-emerald-500">
-          Password changed. Your other devices are signed out.
-        </p>
-      )}
       <Button type="submit" size="sm" disabled={pending}>
         {pending ? "Changing…" : "Change password"}
       </Button>

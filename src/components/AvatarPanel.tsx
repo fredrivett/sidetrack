@@ -2,6 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { UserAvatar, type AvatarUser } from "@/components/UserAvatar";
@@ -61,18 +62,16 @@ export function AvatarPanel({ user }: { user: AvatarUser }) {
   const initial = uploaded ? "" : (user.image ?? "");
   const [value, setValue] = useState(initial);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState<string | null>(null);
 
   function run(work: () => Promise<string | null>, message: string) {
     setError(null);
-    setSaved(null);
     startTransition(async () => {
       const failure = await work();
       if (failure) {
         setError(failure);
         return;
       }
-      setSaved(message);
+      toast.success(message);
       router.refresh();
     });
   }
@@ -107,7 +106,7 @@ export function AvatarPanel({ user }: { user: AvatarUser }) {
       }
       setValue("");
       return null;
-    }, "Avatar updated.");
+    }, "Avatar updated");
   }
 
   const trimmed = value.trim();
@@ -154,7 +153,7 @@ export function AvatarPanel({ user }: { user: AvatarUser }) {
             type="button"
             size="sm"
             variant="ghost"
-            onClick={() => saveUrl(null, "Avatar removed.")}
+            onClick={() => saveUrl(null, "Avatar removed")}
             disabled={pending}
           >
             Remove
@@ -174,7 +173,6 @@ export function AvatarPanel({ user }: { user: AvatarUser }) {
           value={value}
           onChange={(e) => {
             setValue(e.target.value);
-            setSaved(null);
           }}
         />
         <Button
@@ -183,7 +181,7 @@ export function AvatarPanel({ user }: { user: AvatarUser }) {
           className="h-8"
           onClick={() =>
             preview
-              ? saveUrl(preview, "Avatar updated.")
+              ? saveUrl(preview, "Avatar updated")
               : setError("Avatar must be an http(s) image URL.")
           }
           disabled={pending || !trimmed || preview === initial}
@@ -195,9 +193,6 @@ export function AvatarPanel({ user }: { user: AvatarUser }) {
         Shown next to items assigned to you. Remove it to show your initials.
       </p>
       {error && <p className="text-sm text-destructive">{error}</p>}
-      {saved && (
-        <p className="text-sm text-emerald-600 dark:text-emerald-500">{saved}</p>
-      )}
     </div>
   );
 }
