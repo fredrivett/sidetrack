@@ -779,7 +779,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       description:
         "Mark an item as completed. It keeps its place in the list: the user sees it crossed out for the rest of the day " +
         "(the day turns over at 4am their time), then it moves to the list's Done section. " +
-        "Completing an item with sub-items also completes its open sub-items; completing the last sub-item does not complete the parent. " +
+        "Completing an item with sub-items also completes its open sub-items; completing a parent's last open sub-item completes the parent too. " +
         "A repeating item (one with a repeat rule) reopens by itself on its next due date: `every` units after the day it was completed. " +
         "The result then carries `comesBack`, that day (YYYY-MM-DD); tell the user when it'll be back. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
@@ -1027,6 +1027,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Calling it again on the same item resumes your session (and updates thread_url). Refused for a completed item. " +
         "Returns the session plus `branch` and `pr_title`: name your git branch `branch` and title your pull request `pr_title` " +
         "(the item's ref in square brackets at the end), then link the PR with link_item_to_pr. " +
+        "One pull request covers one item: for work that needs several PRs, give the item a sub-item per PR and start work on each sub-item, not the parent. " +
         "While working, call report_work at milestones; when done, call finish_work (completing the item also ends the session). " +
         "item_id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: { item_id: z.string(), thread_url: z.string().optional() },

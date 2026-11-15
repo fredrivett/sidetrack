@@ -29,6 +29,12 @@ Environment variables (`ALLOW_SIGNUP`, `POSTHOG_*`, `BETTER_AUTH_*`, etc.) are
 managed in the Railway dashboard, not via `vercel env`. Ignore Vercel-specific
 tooling/config suggestions; there is no Vercel project.
 
+# Tracking work in Sidetrack
+
+Sidetrack's own work is tracked on the production board (sidetrack.it), in the
+**SDT** list. Find or create items in SDT only, following the Sidetrack MCP
+server's instructions; never use another list for work in this repository.
+
 # Project structure
 
 - `src/core/` — domain layer (DB, items, projects, audit, fractional indexing). Pure, no React/Next/MCP imports. See `src/core/AGENTS.md`.
