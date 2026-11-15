@@ -372,7 +372,7 @@ export function ItemRow({
           don't bubble through the React tree to the row's open-detail onClick. */}
       <ContextMenuContent className="w-56">
         <ContextMenuItem onClick={onOpenDetail}>
-          <Eye className="opacity-70" />
+          <Eye />
           View item
         </ContextMenuItem>
         <ContextMenuSeparator />
@@ -384,9 +384,9 @@ export function ItemRow({
           </ContextMenuLabel>
           <ContextMenuItem closeOnClick={false} onClick={() => void copy()}>
             {copied ? (
-              <Check className="opacity-70" />
+              <Check />
             ) : (
-              <Copy className="opacity-70" />
+              <Copy />
             )}
             {copied ? "Copied" : "Copy ID"}
             <ContextMenuShortcut>
@@ -397,7 +397,7 @@ export function ItemRow({
         <ContextMenuSeparator />
         <ContextMenuSub>
           <ContextMenuSubTrigger>
-            <UserRound className="opacity-70" />
+            <UserRound />
             {assigned.length ? "Assignees" : "Assign to"}
             <ContextMenuShortcut>
               <Kbd>A</Kbd>
@@ -417,7 +417,7 @@ export function ItemRow({
         {today && (
           <ContextMenuSub>
             <ContextMenuSubTrigger>
-              <CalendarDays className="opacity-70" />
+              <CalendarDays />
               Due date
             </ContextMenuSubTrigger>
             <ContextMenuSubContent className="w-52">
@@ -425,7 +425,7 @@ export function ItemRow({
                 <ContextMenuItem key={label} onClick={() => setDue(day)}>
                   {label}
                   {item.dueDate === day ? (
-                    <Check className="ml-auto opacity-70" />
+                    <Check className="ml-auto" />
                   ) : (
                     label !== "Today" &&
                     label !== "Tomorrow" && (
@@ -439,7 +439,7 @@ export function ItemRow({
                 <>
                   <ContextMenuSeparator />
                   <ContextMenuItem onClick={() => setDue(null)}>
-                    <CalendarX className="opacity-70" />
+                    <CalendarX />
                     Clear due date
                   </ContextMenuItem>
                 </>
@@ -452,13 +452,13 @@ export function ItemRow({
             <ContextMenuSeparator />
             {nestUnder && (
               <ContextMenuItem onClick={() => setParent(nestUnder.id)}>
-                <IndentIncrease className="opacity-70" />
+                <IndentIncrease />
                 <span className="truncate">Sub-item of “{nestUnder.title}”</span>
               </ContextMenuItem>
             )}
             {parentTitle && (
               <ContextMenuItem onClick={() => setParent(null)}>
-                <IndentDecrease className="opacity-70" />
+                <IndentDecrease />
                 <span className="truncate">Move out of “{parentTitle}”</span>
               </ContextMenuItem>
             )}
@@ -475,7 +475,7 @@ export function ItemRow({
               : undefined
           }
         >
-          <Trash2 className={confirmingDelete ? "text-white!" : "opacity-70"} />
+          <Trash2 className={confirmingDelete ? "text-white!" : undefined} />
           {confirmingDelete ? "Confirm delete?" : "Delete item"}
         </ContextMenuItem>
       </ContextMenuContent>
