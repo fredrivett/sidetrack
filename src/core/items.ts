@@ -378,7 +378,10 @@ export function updateItem(
     removeAssigneeIds?: string[];
     /** Sets the due date; without dueFrom, it's due on that day alone. */
     dueDate?: string | null;
-    /** The first day of a span ending on dueDate; only with dueDate. */
+    /**
+     * The first day of a span ending on dueDate. Alone, it moves the start of
+     * the span to the current due date; null makes that a single day.
+     */
     dueFrom?: string | null;
     repeat?: Repeat | null;
   },
@@ -441,11 +444,12 @@ export function updateItem(
       if (removed.length) changes.push(`unassigned ${names(removed)}`);
     }
   }
-  if (patch.dueFrom != null && patch.dueDate === undefined) {
-    throw new Error("a due span needs a due date as its last day");
-  }
-  if (patch.dueDate !== undefined) {
-    const d = assertDue(patch.dueDate, patch.dueFrom);
+  if (patch.dueDate !== undefined || patch.dueFrom !== undefined) {
+    // dueFrom alone moves the span's start (null: due on its due date alone).
+    const d = assertDue(
+      patch.dueDate === undefined ? existing.dueDate : patch.dueDate,
+      patch.dueFrom,
+    );
     if (d.dueDate !== existing.dueDate || d.dueFrom !== existing.dueFrom) {
       Object.assign(next, d);
       changes.push(d.dueDate ? `due ${dueText(d)}` : "due date cleared");

@@ -790,13 +790,22 @@ describe("due dates and Today", () => {
 
     for (const bad of [
       { dueFrom: "2026-11-23", dueDate: "2026-11-22" },
+      { dueFrom: "2026-11-22" },
       { dueFrom: "2026-11-16", dueDate: null },
-      { dueFrom: "2026-11-16" },
       { dueFrom: "2026-02-30", dueDate: "2026-03-01" },
     ]) {
       expect(() => updateItem(db, userId, it1.id, bad, "web")).toThrow(/due/);
     }
     expect(getItem(db, userId, it1.id)).toMatchObject({ dueFrom: null, dueDate: "2026-11-21" });
+
+    // dueFrom alone starts or ends a span on the current due date.
+    updateItem(db, userId, it1.id, { dueFrom: "2026-11-16" }, "web");
+    expect(getItem(db, userId, it1.id)).toMatchObject({ dueFrom: "2026-11-16", dueDate: "2026-11-21" });
+    updateItem(db, userId, it1.id, { dueFrom: null }, "web");
+    expect(getItem(db, userId, it1.id)).toMatchObject({ dueFrom: null, dueDate: "2026-11-21" });
+    expect(audit().slice(0, 2)).toEqual(["bins: due 2026-11-21", "bins: due 2026-11-16 to 2026-11-21"]);
+    const undated = addItem(db, userId, { projectId, title: "undated" }, "web");
+    expect(() => updateItem(db, userId, undated.id, { dueFrom: "2026-11-16" }, "web")).toThrow(/due/);
   });
 
   it("lists Today across active lists: overdue first, open or done today", () => {

@@ -728,7 +728,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Pass only one of assignee_ids, assignee_id, or add/remove. " +
         "due_date sets the calendar day it's due (YYYY-MM-DD, no time); pass null to clear it. " +
         DUE_SPAN +
-        "Passing due_date without due_from makes it due that day alone; due_from needs due_date. " +
+        "Passing due_date without due_from makes it due that day alone. due_from without due_date changes when the span starts and keeps its due_date; " +
+        "due_from: null makes it due on its due_date alone. " +
         "repeat sets how often a task comes round again, { every, unit } (see add_item); pass null to stop it repeating. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: {
