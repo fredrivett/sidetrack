@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { listAllAgentSessions, startWork } from "./agentSessions";
 import { listAudit } from "./audit";
 import { addItem, getItem, updateItem } from "./items";
 import {
@@ -171,6 +172,36 @@ describe("project membership", () => {
         (e) => e.entityType === "member" && e.action === "delete",
       );
       expect(entry?.detail).toBe("removed @alice, unassigned from 2 items");
+    });
+
+    it("ends a removed member's agent sessions on the list, and only theirs", () => {
+      const agent = (keyId: string) => ({
+        source: "mcp" as const,
+        agent: { keyId, name: keyId },
+      });
+      const item = addItem(db, owner, { projectId, title: "t" }, "web");
+      startWork(db, alice, item.id, {}, agent("alice-key"));
+      startWork(db, owner, item.id, {}, agent("owner-key"));
+      // Her session on another list she stays on carries on.
+      const other = createProject(db, owner, { name: "Other" }, "web").id;
+      inviteMember(db, owner, other, "alice", "web");
+      acceptInvite(db, alice, other, "web");
+      const elsewhere = addItem(db, owner, { projectId: other, title: "e" }, "web");
+      startWork(db, alice, elsewhere.id, {}, agent("alice-key"));
+
+      removeMember(db, owner, projectId, alice, "web");
+      const open = listAllAgentSessions(db, owner)
+        .filter((s) => s.finishedAt === null)
+        .map((s) => `${s.agentKeyId} on ${s.itemId}`);
+      expect(open.sort()).toEqual(
+        [`owner-key on ${item.id}`, `alice-key on ${elsewhere.id}`].sort(),
+      );
+      const entry = listAudit(db, owner).find(
+        (e) => e.entityType === "member" && e.action === "delete",
+      );
+      expect(entry?.detail).toBe(
+        "removed @alice, unassigned from 1 item, ended 1 agent session",
+      );
     });
 
     it("unassigns a member's items when they leave", () => {
