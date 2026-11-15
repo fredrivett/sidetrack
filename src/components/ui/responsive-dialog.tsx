@@ -42,14 +42,31 @@ function ResponsiveDialog({
   // would throw away half-typed input.
   const [isDesktop, setIsDesktop] = React.useState(matchesDesktop)
   if (!open && isDesktop !== matchesDesktop) setIsDesktop(matchesDesktop)
+  // Toasts sit outside the dialog but over it, not behind it, so pressing
+  // one (such as copying the ref from New item's "Added" toast) isn't a
+  // press outside that closes the dialog.
+  function change(
+    next: boolean,
+    details: { reason: string; event: Event; cancel: () => void }
+  ) {
+    if (
+      details.reason === "outside-press" &&
+      details.event.target instanceof Element &&
+      details.event.target.closest("[data-sonner-toaster]")
+    ) {
+      details.cancel()
+      return
+    }
+    onOpenChange(next)
+  }
   return (
     <IsDesktopContext.Provider value={isDesktop}>
       {isDesktop ? (
-        <Dialog open={open} onOpenChange={onOpenChange}>
+        <Dialog open={open} onOpenChange={change}>
           {children}
         </Dialog>
       ) : (
-        <Drawer open={open} onOpenChange={onOpenChange} showSwipeHandle>
+        <Drawer open={open} onOpenChange={change} showSwipeHandle>
           {/* Keeps the focused field above the on-screen keyboard by
               scrolling the drawer's body. */}
           <DrawerPrimitive.VirtualKeyboardProvider>

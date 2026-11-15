@@ -1,6 +1,14 @@
 "use client";
 
-import { ChevronDown, CircleDashed, CornerDownRight, Plus, X } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  CircleDashed,
+  Copy,
+  CornerDownRight,
+  Plus,
+  X,
+} from "lucide-react";
 import { unstable_rethrow } from "next/navigation";
 import {
   useCallback,
@@ -10,6 +18,7 @@ import {
   useState,
   useTransition,
 } from "react";
+import { toast } from "sonner";
 import {
   addItemAction,
   createProjectAction,
@@ -17,8 +26,9 @@ import {
   suggestNewListIconsAction,
 } from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
-import type { Category, Project } from "@/core/schema";
+import type { Category, Item } from "@/core/schema";
 import { toggleAssignee } from "@/lib/assignees";
+import { formatItemRef } from "@/lib/itemRef";
 import type { Repeat } from "@/lib/repeat";
 import type { Due } from "@/lib/time";
 import { Button } from "@/components/ui/button";
@@ -37,9 +47,11 @@ import {
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { useCopy } from "@/components/ui/use-copy";
 import { AssigneeOptions } from "./AssigneeOptions";
 import { CreatableCombobox } from "./CreatableCombobox";
 import { DueDatePicker } from "./DueDatePicker";
+import type { ProjectView } from "./Kanban";
 import { RepeatPicker } from "./RepeatPicker";
 import { runAction } from "./run-action";
 import { useAssignShortcuts } from "./useAssignShortcuts";
@@ -68,9 +80,51 @@ function Field({
   );
 }
 
+/**
+ * The toast confirming an add. The whole toast opens the item: the title's
+ * button stretches over it with ::after (Sonner's toast is the positioned
+ * box). The ref tag sits above that, so clicking it copies the ref instead.
+ */
+function AddedToast({
+  title,
+  itemRef,
+  onOpen,
+}: {
+  title: string;
+  itemRef: string;
+  onOpen: () => void;
+}) {
+  const { copied, copy } = useCopy(itemRef);
+  return (
+    <span className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="min-w-0 truncate text-left after:absolute after:inset-0 after:cursor-pointer"
+      >
+        Added “{title}”
+      </button>
+      <button
+        type="button"
+        onClick={() => void copy()}
+        title="Copy ID"
+        className="relative inline-flex shrink-0 items-center gap-1 rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-[11px] tracking-wide text-neutral-600 transition hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+      >
+        {copied ? (
+          <Check className="size-3 opacity-70" />
+        ) : (
+          <Copy className="size-3 opacity-70" />
+        )}
+        {copied ? "Copied" : itemRef}
+      </button>
+    </span>
+  );
+}
+
 export function NewItemDialog({
   open,
   onOpenChange,
+  onOpenItem,
   projects,
   categoriesByProject,
   assigneesByProject,
@@ -79,7 +133,9 @@ export function NewItemDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  projects: Project[];
+  /** Opens an added item, from its toast. */
+  onOpenItem: (item: Item) => void;
+  projects: ProjectView[];
   categoriesByProject: Record<string, Category[]>;
   assigneesByProject: Record<string, AssigneeView[]>;
   viewerId: string;
@@ -110,9 +166,9 @@ export function NewItemDialog({
   const [subDraft, setSubDraft] = useState("");
   // Remounts the repeat picker after each add, so a Custom draft goes too.
   const [added, setAdded] = useState(0);
-  // The last title added in this session: the dialog stays open after each
-  // add so you can enter a run of items, and this confirms each one landed.
-  const [lastAdded, setLastAdded] = useState<string | null>(null);
+  // Whether anything was added in this session: the dialog stays open after
+  // each add so you can enter a run of items, so Cancel becomes Done.
+  const [addedAny, setAddedAny] = useState(false);
   const [pending, start] = useTransition();
   const titleRef = useRef<HTMLInputElement>(null);
   const subRef = useRef<HTMLInputElement>(null);
@@ -150,7 +206,7 @@ export function NewItemDialog({
       setRepeat(null);
       setSubItems([]);
       setSubDraft("");
-      setLastAdded(null);
+      setAddedAny(false);
     }
   }
 
@@ -256,6 +312,7 @@ export function NewItemDialog({
     // A sub-item still in its input counts, so it isn't lost to the click.
     const subs = [...subItems, subDraft.trim()].filter(Boolean);
     const startedIn = session.current;
+    const prefix = projects.find((pr) => pr.id === projectId)?.refPrefix;
     start(async () => {
       const added = await runAction(
         addItemAction({
@@ -269,6 +326,20 @@ export function NewItemDialog({
           dueFrom: du?.dueFrom ?? null,
           repeat: r,
           subItems: subs,
+        }).then((item) => {
+          // Confirms each add in a run, even one that lands after the dialog
+          // closed.
+          toast.success(
+            <AddedToast
+              title={t}
+              itemRef={formatItemRef(prefix ?? "", item.number)}
+              onOpen={() => {
+                toast.dismiss(item.id);
+                onOpenItem(item);
+              }}
+            />,
+            { id: item.id },
+          );
         }),
         `add “${t}”`,
       );
@@ -291,7 +362,7 @@ export function NewItemDialog({
       setSubItems([]);
       setSubDraft("");
       setAdded((n) => n + 1);
-      setLastAdded(t);
+      setAddedAny(true);
       titleRef.current?.focus();
     });
   }
@@ -501,20 +572,13 @@ export function NewItemDialog({
           </div>
 
           <div className="flex shrink-0 items-center justify-end gap-2 border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
-            {/* Always mounted so screen readers announce the first add too. */}
-            <p
-              role="status"
-              className="mr-auto min-w-0 truncate text-xs text-neutral-500"
-            >
-              {lastAdded && `Added “${lastAdded}”`}
-            </p>
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => onOpenChange(false)}
             >
-              {lastAdded ? "Done" : "Cancel"}
+              {addedAny ? "Done" : "Cancel"}
             </Button>
             <Button type="submit" size="sm" disabled={!title.trim() || !projectId || pending}>
               <Plus data-icon="inline-start" />
