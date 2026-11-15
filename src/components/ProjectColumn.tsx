@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronsDownUp, ChevronsUpDown } from "lucide-react";
 import { useState } from "react";
 import { updateProjectAction } from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
@@ -69,6 +70,14 @@ export function ProjectColumn({
   // A paused list sits collapsed at the end of the board until opened.
   const [showPaused, setShowPaused] = useState(false);
   const collapsed = project.status === "paused" && !showPaused;
+  // Parents in the list whose sub-items are hidden. Kept here, not in
+  // ItemList, so the header's button can collapse or expand them all at once;
+  // it shows only while the list has a parent with sub-items on view.
+  const [collapsedItems, setCollapsedItems] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
+  const parents = inList.filter((g) => g.children.length > 0).map((g) => g.id);
+  const allCollapsed = parents.every((id) => collapsedItems.has(id));
 
   return (
     <ColumnCard
@@ -112,6 +121,32 @@ export function ProjectColumn({
               </div>
             )}
           </div>
+          {!collapsed && parents.length > 0 && (
+            <button
+              type="button"
+              aria-label={allCollapsed ? "Expand all sub-items" : "Collapse all sub-items"}
+              title={allCollapsed ? "Expand all" : "Collapse all"}
+              onClick={() =>
+                // Only the parents on view, so one in Done keeps its state if
+                // it comes back to the list.
+                setCollapsedItems((s) => {
+                  const next = new Set(s);
+                  for (const id of parents) {
+                    if (allCollapsed) next.delete(id);
+                    else next.add(id);
+                  }
+                  return next;
+                })
+              }
+              className="-mr-1.5 flex h-8 items-center rounded px-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+            >
+              {allCollapsed ? (
+                <ChevronsUpDown className="size-4" />
+              ) : (
+                <ChevronsDownUp className="size-4" />
+              )}
+            </button>
+          )}
           <ProjectMenu
             projectId={project.id}
             prevId={prevId}
@@ -167,6 +202,14 @@ export function ProjectColumn({
             <ItemList
               projectId={project.id}
               groups={inList}
+              collapsed={collapsedItems}
+              onToggleCollapsed={(id) =>
+                setCollapsedItems((s) => {
+                  const next = new Set(s);
+                  if (!next.delete(id)) next.add(id);
+                  return next;
+                })
+              }
               prefix={project.refPrefix}
               assignees={assignees}
               viewerId={viewerId}

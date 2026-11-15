@@ -251,17 +251,21 @@ function Sortable({
 export function ItemList({
   projectId,
   groups,
+  collapsed,
+  onToggleCollapsed,
   ...row
 }: RowProps & {
   projectId: string;
   groups: ItemGroup[];
+  /** Parents whose sub-items are hidden. */
+  collapsed: ReadonlySet<string>;
+  onToggleCollapsed: (id: string) => void;
 }) {
   // The order just dropped, shown until the server's refresh lands: held for
   // the whole transition, so the list can't flash back to the old order
   // between the action returning and the new order rendering.
   const [full, setFull] = useOptimistic(flatten(groups));
   const [, start] = useTransition();
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const [offsetX, setOffsetX] = useState(0);
@@ -491,12 +495,7 @@ export function ItemList({
                     ? {
                         ...progress(children),
                         expanded: !collapsed.has(item.id),
-                        onToggle: () =>
-                          setCollapsed((s) => {
-                            const next = new Set(s);
-                            if (!next.delete(item.id)) next.add(item.id);
-                            return next;
-                          }),
+                        onToggle: () => onToggleCollapsed(item.id),
                       }
                     : undefined,
               });
