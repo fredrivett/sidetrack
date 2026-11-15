@@ -536,7 +536,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "category is free-text and is auto-created if new. " +
         "parent (a short ref or id) adds the task as a sub-item of that task, one step in its checklist: " +
         "e.g. \"Tidy up flat\" with sub-items Lounge, Kitchen and Bedroom. Sub-items are one level deep; " +
-        "each is a full item with its own ref and assignee. Adding one to a finished parent reopens the parent. " +
+        "each is a full item with its own ref and assignee. Adding an open one to a finished parent reopens the parent; adding one with completed: true leaves it finished. " +
         "due_date is the calendar day it's due, YYYY-MM-DD (no time); call list_today first if you need today's date in the user's timezone. " +
         "assignee_id assigns it to the list owner or an accepted member (get a user_id from list_members). " +
         "completed: true creates it already done, in one call — use it when the user tells you about something they've finished, " +
