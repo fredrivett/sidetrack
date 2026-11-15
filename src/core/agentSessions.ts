@@ -130,7 +130,13 @@ export function startWork(
     const t = tx as unknown as Db;
     if (existing) {
       tx.update(agentSessions)
-        .set({ lastActiveAt: now, agentName: name, ...(threadUrl ? { threadUrl } : {}) })
+        .set({
+          lastActiveAt: now,
+          agentName: name,
+          ...(threadUrl ? { threadUrl } : {}),
+          // A session from before branches were stored has none yet.
+          ...(existing.branch ? {} : { branch }),
+        })
         .where(eq(agentSessions.id, existing.id))
         .run();
       recordAudit(t, {

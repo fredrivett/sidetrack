@@ -128,10 +128,12 @@ function AgentWork({
               )}
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                 {s.threadUrl && <ThreadLink url={s.threadUrl}>Open thread</ThreadLink>}
-                <span className="inline-flex min-w-0 items-center gap-1 text-neutral-500">
-                  <GitBranch className="size-3 shrink-0" />
-                  <span className="truncate font-mono">{s.branch}</span>
-                </span>
+                {s.branch && (
+                  <span className="inline-flex min-w-0 items-center gap-1 text-neutral-500">
+                    <GitBranch className="size-3 shrink-0" />
+                    <span className="truncate font-mono">{s.branch}</span>
+                  </span>
+                )}
               </div>
               <p className="text-xs text-neutral-400">
                 Started {formatRelative(s.startedAt)}

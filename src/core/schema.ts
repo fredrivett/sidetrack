@@ -230,8 +230,9 @@ export const agentSessions = sqliteTable(
     // The agent's own thread or session page, an absolute http(s) URL.
     threadUrl: text("thread_url"),
     // The git branch start_work told the agent to use, kept as given so
-    // renaming the item later doesn't change it.
-    branch: text("branch").notNull(),
+    // renaming the item later doesn't change it. The default only fills rows
+    // from before the column existed; startWork always sets it.
+    branch: text("branch").notNull().default(""),
     // The latest progress note from report_work ("Opened the PR").
     note: text("note"),
     startedAt: integer("started_at").notNull(),

@@ -181,18 +181,27 @@ describe("finishWork", () => {
 
 describe("listAllAgentSessions", () => {
   it("returns open sessions plus only each item's latest finished one", () => {
-    const { db, userId, itemId } = seed();
-    startWork(db, userId, itemId, {}, AMP);
-    finishWork(db, userId, itemId, { note: "first" }, AMP);
-    startWork(db, userId, itemId, {}, AMP);
-    finishWork(db, userId, itemId, { note: "second" }, AMP);
+    const { db, userId, projectId, itemId } = seed();
+    const other = addItem(db, userId, { projectId, title: "Other" }, "web");
+    for (const [id, notes] of [
+      [itemId, ["a1", "a2"]],
+      [other.id, ["b1", "b2", "b3"]],
+    ] as const) {
+      for (const note of notes) {
+        startWork(db, userId, id, {}, AMP);
+        finishWork(db, userId, id, { note }, AMP);
+      }
+    }
     startWork(db, userId, itemId, {}, CLAUDE);
 
     const sessions = listAllAgentSessions(db, userId);
-    expect(sessions.map((s) => [s.agentName, s.note])).toEqual([
-      ["Amp", "second"],
-      ["Claude", null],
-    ]);
+    expect(sessions.map((s) => [s.itemId, s.agentName, s.note]).sort()).toEqual(
+      [
+        [itemId, "Amp", "a2"],
+        [itemId, "Claude", null],
+        [other.id, "Amp", "b3"],
+      ].sort(),
+    );
   });
 });
 
