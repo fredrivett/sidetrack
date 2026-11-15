@@ -10,7 +10,9 @@ import { toast } from "sonner"
  * `copy()` resolves to whether the copy succeeded.
  */
 export function useCopy(text: string) {
-  const [copied, setCopied] = useState(false)
+  // The text last copied, not a boolean, so a control whose value changes
+  // (a new API key) doesn't claim "Copied" for a value never copied.
+  const [copiedText, setCopiedText] = useState<string | null>(null)
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const copy = useCallback(async () => {
@@ -18,13 +20,13 @@ export function useCopy(text: string) {
       // Throws when the clipboard API is missing (insecure context) too.
       await navigator.clipboard.writeText(text)
     } catch {
-      setCopied(false)
+      setCopiedText(null)
       toast.error("Couldn't copy to the clipboard.")
       return false
     }
-    setCopied(true)
+    setCopiedText(text)
     if (resetTimer.current) clearTimeout(resetTimer.current)
-    resetTimer.current = setTimeout(() => setCopied(false), 1500)
+    resetTimer.current = setTimeout(() => setCopiedText(null), 1500)
     return true
   }, [text])
 
@@ -35,5 +37,5 @@ export function useCopy(text: string) {
     []
   )
 
-  return { copied, copy }
+  return { copied: copiedText === text, copy }
 }
