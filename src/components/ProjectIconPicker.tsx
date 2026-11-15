@@ -33,9 +33,18 @@ export function ProjectIconPicker({
   size?: number;
 }) {
   const [pending, start] = useTransition();
-  // Empty when AI is off (no TYPESAFE_API_KEY) or the request failed, so the
-  // suggestion row stays hidden.
-  const [suggestions, setSuggestions] = useState<string[] | null>(null);
+  // Suggestions with the list details they were made for, refetched on open
+  // once the name, summary or homepage changes. Empty when AI is off (no
+  // TYPESAFE_API_KEY) or the request failed, so the suggestion row stays hidden.
+  const [suggested, setSuggested] = useState<{
+    for: string;
+    emoji: string[];
+  } | null>(null);
+  const context = JSON.stringify([
+    project.name,
+    project.summary,
+    project.homepageUrl,
+  ]);
 
   return (
     <IconPicker
@@ -47,12 +56,12 @@ export function ProjectIconPicker({
       // -ml-1 cancels the p-1 hover padding so the icon itself lines up with
       // the content below the header, not 4px in from it.
       className="-ml-1"
-      suggestions={suggestions ?? []}
+      suggestions={suggested?.for === context ? suggested.emoji : []}
       onOpen={() => {
-        if (suggestions !== null) return;
-        setSuggestions([]);
+        if (suggested?.for === context) return;
+        setSuggested({ for: context, emoji: [] });
         void suggestProjectIconsAction(project.id)
-          .then(setSuggestions)
+          .then((emoji) => setSuggested({ for: context, emoji }))
           .catch(() => {});
       }}
       onSelect={(next) =>

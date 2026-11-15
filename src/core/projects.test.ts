@@ -80,6 +80,9 @@ describe("projects", () => {
     expect(() =>
       createProject(db, u, { name: "Bad", icon: "not an icon" }, "web"),
     ).toThrow(/invalid list icon/);
+    expect(() =>
+      createProject(db, u, { name: "Bad", homepageUrl: "not a url" }, "web"),
+    ).toThrow(/invalid homepage URL/);
     expect(listProjects(db, u).map((p) => p.name)).toEqual([
       "Personal site",
       "Bare",

@@ -261,7 +261,9 @@ export async function suggestEmoji(
   };
   const probabilities = body.answers?.icon?.probabilities ?? {};
   return Object.entries(probabilities)
-    .filter(([emoji, p]) => emoji in EMOJI_OPTIONS && p >= MIN_PROBABILITY)
+    .filter(
+      ([emoji, p]) => Object.hasOwn(EMOJI_OPTIONS, emoji) && p >= MIN_PROBABILITY,
+    )
     .sort((a, b) => b[1] - a[1])
     .slice(0, MAX_SUGGESTIONS)
     .map(([emoji]) => emoji);

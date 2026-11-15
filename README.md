@@ -74,7 +74,8 @@ logs` / check your process output and pass the link to the user):
 
 **Optional** — AI list-icon suggestions. With it set, the list icon picker
 offers emoji picked by [TypeSafe's Jev](https://docs.typesafe.ai) from the
-list's name, summary, and open item titles, which are sent to TypeSafe:
+list's name, summary, homepage domain (not the full URL), and open item
+titles, which are sent to TypeSafe:
 
 | Variable | Default | Description |
 | --- | --- | --- |

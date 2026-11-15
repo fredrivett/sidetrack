@@ -69,7 +69,14 @@ export async function createProjectAction(input: {
 }) {
   const userId = await requireUserId();
   const { db } = getDb();
-  const p = createProjectCore(db, userId, input, SOURCE);
+  // Pick the fields, so a crafted call can't pass others (e.g. status).
+  const { name, summary, homepageUrl, icon } = input;
+  const p = createProjectCore(
+    db,
+    userId,
+    { name, summary, homepageUrl, icon },
+    SOURCE,
+  );
   refresh();
   return p;
 }
