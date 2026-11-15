@@ -41,6 +41,7 @@ import { setTimeZone as setTimeZoneCore } from "@/core/users";
 import { getCurrentSession, requireUserId } from "@/auth/session";
 import { notifyInvite } from "@/lib/email";
 import { getEnv } from "@/lib/env";
+import type { Repeat } from "@/lib/repeat";
 
 const SOURCE: AuditSource = "web";
 
@@ -182,6 +183,7 @@ export async function updateItemAction(
     category?: string | null;
     assigneeId?: string | null;
     dueDate?: string | null;
+    repeat?: Repeat | null;
   },
 ) {
   const userId = await requireUserId();

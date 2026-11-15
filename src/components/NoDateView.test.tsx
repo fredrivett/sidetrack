@@ -40,6 +40,8 @@ const item = (projectId: string, title: string, more: Partial<Item> = {}): Item 
   assigneeId: null,
   parentId: null,
   dueDate: null,
+  repeatEvery: null,
+  repeatUnit: null,
   position: `a${n}`,
   number: n,
   completedAt: null,

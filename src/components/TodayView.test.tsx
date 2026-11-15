@@ -39,6 +39,8 @@ const item = (title: string, dueDate: string | null, more: Partial<Item> = {}): 
   assigneeId: null,
   parentId: null,
   dueDate,
+  repeatEvery: null,
+  repeatUnit: null,
   position: `a${n}`,
   number: n,
   completedAt: null,

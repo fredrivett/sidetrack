@@ -14,7 +14,8 @@ import {
 
 /** An audit row plus the resolved display name of its actor. */
 export interface AuditEntryWithActor extends AuditEntry {
-  /** Actor's name (falls back to email, then null for a deleted user). */
+  /** Actor's name (falls back to email, then null for a deleted user);
+   * "Sidetrack" for a system change. */
   actorName: string | null;
 }
 
@@ -27,8 +28,14 @@ export type AuditOrigin =
   | AuditSource
   | { source: "mcp"; agent: { keyId: string; name: string } };
 
+/**
+ * The actor of a `system` change, one nobody made (a repeating item
+ * reopening). Not a user id, so it never resolves to a name.
+ */
+export const SYSTEM_ACTOR = "system";
+
 export interface AuditInput {
-  /** User id of whoever performed the action. */
+  /** User id of whoever performed the action, or SYSTEM_ACTOR. */
   actor: string;
   source: AuditOrigin;
   action: AuditAction;
@@ -115,6 +122,7 @@ export function listAudit(
 
   return rows.map((r) => ({
     ...r.entry,
-    actorName: r.name ?? r.email ?? null,
+    actorName:
+      r.entry.actor === SYSTEM_ACTOR ? "Sidetrack" : (r.name ?? r.email ?? null),
   }));
 }

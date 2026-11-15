@@ -8,6 +8,7 @@ import {
   text,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
+import type { RepeatUnit } from "../lib/repeat";
 
 // A list's lifecycle (a "project" in code; "list" to people and agents).
 // active lists are on the board; paused lists sit collapsed at its end;
@@ -15,7 +16,9 @@ import {
 export const PROJECT_STATUSES = ["active", "paused", "archived"] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 
-export const AUDIT_SOURCES = ["web", "mcp", "github"] as const;
+// `system` is a change nobody made, such as a repeating item reopening on its
+// next due date.
+export const AUDIT_SOURCES = ["web", "mcp", "github", "system"] as const;
 export type AuditSource = (typeof AUDIT_SOURCES)[number];
 
 export const AUDIT_ACTIONS = [
@@ -159,6 +162,11 @@ export const items = sqliteTable(
     // The calendar day it's due, as "YYYY-MM-DD", with no time or timezone:
     // "due Saturday" means Saturday wherever you are. null = no date.
     dueDate: text("due_date"),
+    // Repeat rule ("every 3 days"): both set, or both null for an item that
+    // doesn't repeat. A finished repeating item reopens on the day this long
+    // after the day it was done (reopenDueRepeats in items.ts).
+    repeatEvery: integer("repeat_every"),
+    repeatUnit: text("repeat_unit").$type<RepeatUnit>(),
     completedAt: integer("completed_at"),
     createdAt: integer("created_at")
       .notNull()

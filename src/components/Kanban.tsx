@@ -1,6 +1,7 @@
 "use client";
 
 import { History } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AssigneeView, PendingInviteView } from "@/core/members";
 import { setTimeZoneAction } from "@/app/actions";
@@ -18,6 +19,7 @@ import { NewProjectSheet } from "./NewProjectSheet";
 import { ProjectColumn } from "./ProjectColumn";
 import { ShareSheet } from "./ShareSheet";
 import { TodayView } from "./TodayView";
+import { useDayStart } from "./use-day-start";
 import { UserMenu } from "./UserMenu";
 
 /**
@@ -74,6 +76,7 @@ export function Kanban({
     window.history.replaceState(null, "", url.toString());
   }
 
+  const router = useRouter();
   // Agents work out "today" in the viewer's timezone (list_today), so save
   // the browser's whenever it differs, e.g. after travelling. A tab left open
   // across a flight rechecks when it comes back into view.
@@ -81,7 +84,8 @@ export function Kanban({
     function sync() {
       const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       if (browserZone && browserZone !== timeZone) {
-        void setTimeZoneAction(browserZone);
+        // Reload once it's saved: repeating items reopen by the viewer's day.
+        void setTimeZoneAction(browserZone).then(() => router.refresh());
       }
     }
     sync();
@@ -90,7 +94,19 @@ export function Kanban({
     }
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [timeZone]);
+  }, [timeZone, router]);
+
+  // When the day turns over with the page open (or a tab comes back the next
+  // morning), reload the board: the server reopens repeating items due today.
+  const dayStart = useDayStart();
+  const shownDay = useRef(dayStart);
+  useEffect(() => {
+    if (!Number.isFinite(dayStart)) return;
+    if (Number.isFinite(shownDay.current) && shownDay.current !== dayStart) {
+      router.refresh();
+    }
+    shownDay.current = dayStart;
+  }, [dayStart, router]);
   const [audit, setAudit] = useState<{ open: boolean; projectId?: string }>({
     open: false,
   });

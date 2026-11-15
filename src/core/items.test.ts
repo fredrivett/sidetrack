@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { listAudit } from "./audit";
 import {
   addItem,
@@ -7,6 +7,7 @@ import {
   deleteItem,
   getItem,
   listItems,
+  reopenDueRepeats,
   reorderItem,
   setItemParent,
   uncompleteItem,
@@ -21,6 +22,7 @@ import {
   updateProject,
 } from "./projects";
 import { items } from "./schema";
+import { setTimeZone } from "./users";
 import { nestItems } from "../lib/itemTree";
 import { createTestDb, createTestUser } from "./test-helpers";
 
@@ -814,5 +816,225 @@ describe("due dates and Today", () => {
       ["Buy", ["slippers"]],
       ["Home", ["tiling", "tidy flat", "lounge", "done today"]],
     ]);
+  });
+});
+
+describe("repeating items", () => {
+  afterEach(() => vi.useRealTimers());
+  const tz = "Europe/London";
+  // Complete at a chosen moment, through completeItem itself.
+  function completeAt(db: ReturnType<typeof seedProject>["db"], userId: string, id: string, ts: number) {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(ts);
+    completeItem(db, userId, id, "web");
+    vi.useRealTimers();
+  }
+
+  it("sets, changes and clears a rule, auditing each change and not a no-op", () => {
+    const { db, userId, projectId } = seedProject();
+    const it = addItem(
+      db,
+      userId,
+      { projectId, title: "Water plants", repeat: { every: 3, unit: "day" } },
+      "web",
+    );
+    expect([it.repeatEvery, it.repeatUnit]).toEqual([3, "day"]);
+    expect(listAudit(db, userId)[0].detail).toBe('added task "Water plants", repeats every 3 days');
+
+    const changed = updateItem(db, userId, it.id, { repeat: { every: 2, unit: "week" } }, "web");
+    expect([changed.repeatEvery, changed.repeatUnit]).toEqual([2, "week"]);
+    expect(listAudit(db, userId)[0].detail).toBe("Water plants: repeats every 2 weeks");
+
+    const before = listAudit(db, userId).length;
+    updateItem(db, userId, it.id, { repeat: { every: 2, unit: "week" } }, "web");
+    expect(listAudit(db, userId)).toHaveLength(before);
+
+    const cleared = updateItem(db, userId, it.id, { repeat: null }, "web");
+    expect([cleared.repeatEvery, cleared.repeatUnit]).toEqual([null, null]);
+    expect(listAudit(db, userId)[0].detail).toBe("Water plants: no longer repeats");
+  });
+
+  it("rejects a bad rule", () => {
+    const { db, userId, projectId } = seedProject();
+    const task = addItem(db, userId, { projectId, title: "t" }, "web");
+    for (const repeat of [
+      { every: 0, unit: "day" as const },
+      { every: 1.5, unit: "day" as const },
+      { every: 366, unit: "day" as const },
+      { every: 1, unit: "year" as "day" },
+    ]) {
+      expect(() => updateItem(db, userId, task.id, { repeat }, "web")).toThrow(/repeat/);
+    }
+    expect(getItem(db, userId, task.id)?.repeatUnit).toBeNull();
+  });
+
+  it("reopens as the same item on the next due day, counted from the day it was done", () => {
+    const { db, userId, projectId } = seedProject();
+    const plants = addItem(
+      db,
+      userId,
+      {
+        projectId,
+        title: "Water plants",
+        dueDate: "2026-11-12",
+        repeat: { every: 3, unit: "day" },
+      },
+      "web",
+    );
+    // Watered two days late, on the evening of Saturday the 14th.
+    completeAt(db, userId, plants.id, Date.UTC(2026, 10, 14, 20));
+
+    // Still crossed out for the rest of that day, and up to 3:59am on the 17th.
+    for (const now of [Date.UTC(2026, 10, 14, 23), Date.UTC(2026, 10, 17, 3, 59)]) {
+      expect(reopenDueRepeats(db, userId, { timeZone: tz, now })).toBe(0);
+    }
+    expect(getItem(db, userId, plants.id)?.completedAt).not.toBeNull();
+
+    // 4am on the 17th, three days after it was done (not after it was due).
+    expect(reopenDueRepeats(db, userId, { timeZone: tz, now: Date.UTC(2026, 10, 17, 4) })).toBe(1);
+    const reopened = getItem(db, userId, plants.id);
+    expect(reopened).toMatchObject({
+      id: plants.id,
+      number: plants.number,
+      position: plants.position,
+      completedAt: null,
+      dueDate: "2026-11-17",
+    });
+    const [row] = listAudit(db, userId);
+    expect(row).toMatchObject({
+      source: "system",
+      actor: "system",
+      actorName: "Sidetrack",
+      action: "uncomplete",
+      entityId: plants.id,
+      projectId,
+      agentName: null,
+    });
+    expect(row.detail).toBe('reopened "Water plants" (repeats every 3 days), due 2026-11-17');
+
+    // Looking again reopens nothing and logs nothing.
+    const rows = listAudit(db, userId).length;
+    expect(reopenDueRepeats(db, userId, { timeZone: tz, now: Date.UTC(2026, 10, 18, 9) })).toBe(0);
+    expect(listAudit(db, userId)).toHaveLength(rows);
+  });
+
+  it("counts a completion before 4am as the day before, in the user's saved zone", () => {
+    const { db, userId, projectId } = seedProject();
+    setTimeZone(db, userId, "Pacific/Auckland"); // UTC+13 in November
+    const salt = addItem(
+      db,
+      userId,
+      { projectId, title: "Refill salt", repeat: { every: 1, unit: "month" } },
+      "web",
+    );
+    // 1am on 1 December in Auckland: still 30 November there.
+    completeAt(db, userId, salt.id, Date.UTC(2026, 10, 30, 12));
+    // Due 30 December, from 4am Auckland time (15:00 UTC on the 29th).
+    expect(reopenDueRepeats(db, userId, { now: Date.UTC(2026, 11, 29, 14, 59) })).toBe(0);
+    expect(reopenDueRepeats(db, userId, { now: Date.UTC(2026, 11, 29, 15) })).toBe(1);
+    expect(getItem(db, userId, salt.id)?.dueDate).toBe("2026-12-30");
+  });
+
+  it("leaves items that don't repeat, open items, and archived lists alone", () => {
+    const { db, userId, projectId } = seedProject();
+    const add = (projectId: string, title: string, repeat: { every: number; unit: "day" } | null) =>
+      addItem(db, userId, { projectId, title, repeat }, "web");
+    const once = add(projectId, "once", null);
+    const open = add(projectId, "open", { every: 1, unit: "day" });
+    const archived = createProject(db, userId, { name: "Old" }, "web");
+    const old = add(archived.id, "in archived list", { every: 1, unit: "day" });
+    completeAt(db, userId, once.id, Date.UTC(2026, 10, 1, 12));
+    completeAt(db, userId, old.id, Date.UTC(2026, 10, 1, 12));
+    updateProject(db, userId, archived.id, { status: "archived" }, "web");
+
+    expect(reopenDueRepeats(db, userId, { timeZone: tz, now: Date.UTC(2026, 10, 14, 12) })).toBe(0);
+    expect(getItem(db, userId, once.id)?.completedAt).not.toBeNull();
+    expect(getItem(db, userId, old.id)?.completedAt).not.toBeNull();
+    expect(getItem(db, userId, open.id)).toMatchObject({ completedAt: null, dueDate: null });
+  });
+
+  it("brings the checklist round with its parent", () => {
+    const { db, userId, projectId } = seedProject();
+    const tidy = addItem(
+      db,
+      userId,
+      { projectId, title: "Tidy flat", repeat: { every: 1, unit: "week" } },
+      "web",
+    );
+    const kitchen = addItem(
+      db,
+      userId,
+      { projectId, title: "Kitchen", parentId: tidy.id },
+      "web",
+    );
+    completeAt(db, userId, tidy.id, Date.UTC(2026, 10, 14, 12));
+    expect(getItem(db, userId, kitchen.id)?.completedAt).not.toBeNull();
+
+    reopenDueRepeats(db, userId, { timeZone: tz, now: Date.UTC(2026, 10, 21, 12) });
+    expect(getItem(db, userId, tidy.id)).toMatchObject({ completedAt: null, dueDate: "2026-11-21" });
+    expect(getItem(db, userId, kitchen.id)?.completedAt).toBeNull();
+    expect(
+      listAudit(db, userId).filter((r) => r.source === "system").map((r) => r.entityId),
+    ).toEqual(expect.arrayContaining([tidy.id, kitchen.id]));
+  });
+
+  it("keeps a repeating sub-item waiting for its finished repeating parent", () => {
+    const { db, userId, projectId } = seedProject();
+    const tidy = addItem(
+      db,
+      userId,
+      {
+        projectId,
+        title: "Tidy flat",
+        dueDate: "2026-11-14",
+        repeat: { every: 1, unit: "week" },
+      },
+      "web",
+    );
+    const bins = addItem(
+      db,
+      userId,
+      { projectId, title: "Bins", parentId: tidy.id, repeat: { every: 1, unit: "day" } },
+      "web",
+    );
+    completeAt(db, userId, tidy.id, Date.UTC(2026, 10, 14, 12));
+    // The sub-item's own day comes first, but the parent isn't due until the 21st.
+    expect(reopenDueRepeats(db, userId, { timeZone: tz, now: Date.UTC(2026, 10, 16, 12) })).toBe(0);
+    expect(getItem(db, userId, tidy.id)).toMatchObject({ dueDate: "2026-11-14" });
+    expect(getItem(db, userId, tidy.id)?.completedAt).not.toBeNull();
+    expect(getItem(db, userId, bins.id)?.completedAt).not.toBeNull();
+    // On the parent's day, both come round.
+    reopenDueRepeats(db, userId, { timeZone: tz, now: Date.UTC(2026, 10, 21, 12) });
+    expect(getItem(db, userId, tidy.id)).toMatchObject({ completedAt: null, dueDate: "2026-11-21" });
+    expect(getItem(db, userId, bins.id)).toMatchObject({ completedAt: null, dueDate: "2026-11-21" });
+  });
+
+  it("reopens a parent that doesn't repeat when its repeating sub-item comes due", () => {
+    const { db, userId, projectId } = seedProject();
+    const plan = addItem(db, userId, { projectId, title: "Plan" }, "web");
+    const step = addItem(
+      db,
+      userId,
+      { projectId, title: "Step", parentId: plan.id, repeat: { every: 1, unit: "day" } },
+      "web",
+    );
+    completeAt(db, userId, plan.id, Date.UTC(2026, 10, 14, 12));
+    reopenDueRepeats(db, userId, { timeZone: tz, now: Date.UTC(2026, 10, 15, 12) });
+    expect(getItem(db, userId, step.id)).toMatchObject({ completedAt: null, dueDate: "2026-11-15" });
+    expect(getItem(db, userId, plan.id)?.completedAt).toBeNull();
+  });
+
+  it("only reopens items the user can see", () => {
+    const { db, userId, projectId } = seedProject();
+    const other = createTestUser(db);
+    const it = addItem(
+      db,
+      userId,
+      { projectId, title: "mine", repeat: { every: 1, unit: "day" } },
+      "web",
+    );
+    completeAt(db, userId, it.id, Date.UTC(2026, 10, 1, 12));
+    expect(reopenDueRepeats(db, other, { timeZone: tz, now: Date.UTC(2026, 10, 14, 12) })).toBe(0);
+    expect(getItem(db, userId, it.id)?.completedAt).not.toBeNull();
   });
 });

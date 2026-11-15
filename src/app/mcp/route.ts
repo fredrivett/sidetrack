@@ -1,6 +1,7 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { verifyApiKey } from "@/core/api-keys";
 import { getDb } from "@/core/db";
+import { reopenDueRepeats } from "@/core/items";
 import { buildServer } from "@/mcp/server";
 
 export const runtime = "nodejs";
@@ -30,6 +31,9 @@ async function handle(request: Request): Promise<Response> {
   const { db } = getDb();
   const caller = verifyApiKey(db, key);
   if (!caller) return new Response("unauthorized", { status: 401 });
+  // Repeating items whose next due day has come reopen before any tool reads,
+  // so an agent sees what the board would show.
+  reopenDueRepeats(db, caller.userId);
 
   const server = buildServer({
     userId: caller.userId,
