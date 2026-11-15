@@ -12,6 +12,7 @@ import {
   ResponsiveDialogDescription,
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
+import { AvatarStack } from "./UserAvatar";
 
 const PAGE = 100;
 
@@ -37,6 +38,60 @@ const ACTION_LABEL: Record<string, string> = {
 };
 
 type Filter = "all" | AuditSource;
+
+/** One audit row: its source, what happened, when, and who did it. */
+export function AuditEntryRow({
+  entry: e,
+  listName,
+  className,
+}: {
+  entry: AuditEntryWithActor;
+  /** The list it happened in, for a view that spans lists. */
+  listName?: string;
+  className?: string;
+}) {
+  // The agent ahead of the person it acted for, as on a board row; no face
+  // for a system change or a deleted user.
+  const users =
+    e.source !== "system" && e.actorName !== null
+      ? [{ userId: e.actor, name: e.actorName, image: e.actorImage, displayUsername: null, email: null }]
+      : [];
+  const agents = e.agentName ? [{ id: e.id, name: e.agentName }] : [];
+  return (
+    <li className={`flex items-start gap-2 ${className ?? ""}`}>
+      <span
+        className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${SOURCE_BADGE[e.source]}`}
+      >
+        {e.source}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="break-words text-sm">
+          <span
+            className={
+              e.action === "delete"
+                ? "font-medium text-red-600 dark:text-red-400"
+                : "font-medium"
+            }
+          >
+            {ACTION_LABEL[e.action] ?? e.action}
+          </span>{" "}
+          <span className="text-neutral-600 dark:text-neutral-300">{e.detail}</span>
+        </p>
+        <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-neutral-400">
+          {(users.length > 0 || agents.length > 0) && (
+            <AvatarStack users={users} agents={agents} size={16} ringClassName="ring-popover" />
+          )}
+          <span className="min-w-0">
+            {e.actorName ?? "Unknown"}
+            {e.agentName ? ` via ${e.agentName}` : ""}
+            {` · ${formatRelative(e.ts)}`}
+            {listName ? ` · ${listName}` : ""}
+          </span>
+        </p>
+      </div>
+    </li>
+  );
+}
 
 export function AuditDialog({
   open,
@@ -153,40 +208,14 @@ export function AuditDialog({
               </h3>
               <ul>
                 {g.rows.map((e) => (
-                  <li
+                  <AuditEntryRow
                     key={e.id}
-                    className="flex items-start gap-2 border-b border-neutral-100 px-4 py-2.5 dark:border-neutral-800/60"
-                  >
-                    <span
-                      className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${SOURCE_BADGE[e.source]}`}
-                    >
-                      {e.source}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="break-words text-sm">
-                        <span
-                          className={
-                            e.action === "delete"
-                              ? "font-medium text-red-600 dark:text-red-400"
-                              : "font-medium"
-                          }
-                        >
-                          {ACTION_LABEL[e.action] ?? e.action}
-                        </span>{" "}
-                        <span className="text-neutral-600 dark:text-neutral-300">
-                          {e.detail}
-                        </span>
-                      </p>
-                      <p className="mt-0.5 text-[11px] text-neutral-400">
-                        {formatRelative(e.ts)}
-                        {` · ${e.actorName ?? "Unknown"}`}
-                        {e.agentName ? ` via ${e.agentName}` : ""}
-                        {!projectId && e.projectId && nameById.get(e.projectId)
-                          ? ` · ${nameById.get(e.projectId)}`
-                          : ""}
-                      </p>
-                    </div>
-                  </li>
+                    entry={e}
+                    listName={
+                      !projectId && e.projectId ? nameById.get(e.projectId) : undefined
+                    }
+                    className="border-b border-neutral-100 px-4 py-2.5 dark:border-neutral-800/60"
+                  />
                 ))}
               </ul>
             </section>

@@ -4,6 +4,7 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
   Circle,
   CircleDashed,
   Copy,
@@ -17,6 +18,7 @@ import {
 import { toast } from "sonner";
 import {
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -26,9 +28,11 @@ import {
 import {
   addItemAction,
   deleteItemAction,
+  listAuditAction,
   setItemParentAction,
   updateItemAction,
 } from "@/app/actions";
+import type { AuditEntryWithActor } from "@/core/audit";
 import type { AssigneeView } from "@/core/members";
 import type { AgentSession, Item, ItemPrLink } from "@/core/schema";
 import { toggleAssignee } from "@/lib/assignees";
@@ -54,6 +58,7 @@ import {
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
 import { AssigneeOptions } from "./AssigneeOptions";
+import { AuditEntryRow } from "./AuditDialog";
 import { CategoryBadge } from "./CategoryBadge";
 import { DueDatePicker } from "./DueDatePicker";
 import { PrLink } from "./PrLink";
@@ -143,6 +148,82 @@ function AgentWork({
         )}
       </div>
     </Field>
+  );
+}
+
+const ACTIVITY_PAGE = 50;
+
+/**
+ * The item's history, newest first, collapsed until opened so the dialog
+ * doesn't read the log for every item it shows. While open it reloads
+ * whenever the item does, so a change made here shows up straight away.
+ */
+function ItemActivity({ item }: { item: Item }) {
+  const [expanded, setExpanded] = useState(false);
+  const [limit, setLimit] = useState(ACTIVITY_PAGE);
+  const [entries, setEntries] = useState<AuditEntryWithActor[] | null>(null);
+  const [pending, start] = useTransition();
+
+  // Switching to another item (a sub-item or the parent) drops the last
+  // one's history rather than showing it until the new one loads.
+  const [prevId, setPrevId] = useState(item.id);
+  if (prevId !== item.id) {
+    setPrevId(item.id);
+    setEntries(null);
+    setLimit(ACTIVITY_PAGE);
+  }
+
+  useEffect(() => {
+    if (!expanded) return;
+    let stale = false;
+    start(async () => {
+      const rows = await listAuditAction({ itemId: item.id, limit });
+      if (!stale) setEntries(rows);
+    });
+    return () => {
+      stale = true;
+    };
+  }, [expanded, item, limit]);
+
+  return (
+    <div className="space-y-1">
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        aria-expanded={expanded}
+        className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-neutral-400 transition hover:text-neutral-600 dark:hover:text-neutral-300"
+      >
+        <ChevronRight
+          className={`size-3.5 transition-transform ${expanded ? "rotate-90" : ""}`}
+        />
+        Activity
+      </button>
+      {expanded &&
+        (entries === null ? (
+          <p className="text-sm text-neutral-400">Loading…</p>
+        ) : entries.length === 0 ? (
+          <p className="text-sm text-neutral-400">No activity yet.</p>
+        ) : (
+          <>
+            <ul className="space-y-2.5">
+              {entries.map((e) => (
+                <AuditEntryRow key={e.id} entry={e} />
+              ))}
+            </ul>
+            {entries.length === limit && limit < 500 && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                disabled={pending}
+                onClick={() => setLimit((l) => Math.min(l + ACTIVITY_PAGE, 500))}
+              >
+                {pending ? "Loading…" : "Show more"}
+              </Button>
+            )}
+          </>
+        ))}
+    </div>
   );
 }
 
@@ -662,6 +743,8 @@ export function ItemDetailDialog({
               </div>
             </Field>
           )}
+
+          <ItemActivity item={item} />
         </div>
 
         <div className="flex shrink-0 items-center justify-between border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">

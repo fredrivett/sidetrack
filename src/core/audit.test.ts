@@ -3,11 +3,12 @@ import { SQLiteTable } from "drizzle-orm/sqlite-core";
 import { describe, expect, it } from "vitest";
 import { createApiKey, revokeApiKey, verifyApiKey } from "./api-keys";
 import { listAudit, recordAudit } from "./audit";
-import { addItem } from "./items";
+import { addItem, updateItem } from "./items";
 import { createProject } from "./projects";
 import * as authSchema from "./auth-schema";
 import * as appSchema from "./schema";
 import { createTestDb, createTestUser } from "./test-helpers";
+import { setAvatarUrl } from "./users";
 
 // The write-path ownership checks stop one user mutating another's project,
 // so a foreign actor on your project can't arise through the public core API
@@ -154,18 +155,23 @@ describe("audit", () => {
     expect(rows.some((e) => e.entityType === "api_key")).toBe(true);
   });
 
-  it("resolves the actor's display name (null for an unknown actor)", () => {
+  it("resolves the actor's display name and avatar (null for an unknown actor)", () => {
     const { db } = createTestDb();
     const alice = createTestUser(db, {
       email: "alice@test.local",
       name: "Alice Example",
     });
+    setAvatarUrl(db, alice, "https://example.com/alice.png", "web");
     const p = createProject(db, alice, { name: "Alice" }, "web");
     recordOnProject(db, "ghost-user", p.id); // actor not in users table
 
     const rows = listAudit(db, alice);
-    expect(rows.find((e) => e.actor === alice)?.actorName).toBe("Alice Example");
-    expect(rows.find((e) => e.actor === "ghost-user")?.actorName).toBeNull();
+    const mine = rows.find((e) => e.actor === alice);
+    expect(mine?.actorName).toBe("Alice Example");
+    expect(mine?.actorImage).toBe("https://example.com/alice.png");
+    const ghost = rows.find((e) => e.actor === "ghost-user");
+    expect(ghost?.actorName).toBeNull();
+    expect(ghost?.actorImage).toBeNull();
   });
 
   it("project view shows all actors but only to the project's owner", () => {
@@ -181,6 +187,27 @@ describe("audit", () => {
 
     // A non-owner gets nothing, not another user's history.
     expect(listAudit(db, bob, { projectId: p.id })).toEqual([]);
+  });
+
+  it("item view shows only that item's history, and only to someone with access", () => {
+    const { db } = createTestDb();
+    const alice = createTestUser(db, { email: "alice@test.local" });
+    const bob = createTestUser(db, { email: "bob@test.local" });
+    const p = createProject(db, alice, { name: "Alice" }, "web");
+    const item = addItem(db, alice, { projectId: p.id, title: "Item" }, "web");
+    addItem(db, alice, { projectId: p.id, title: "Sub", parentId: item.id }, "web");
+    addItem(db, alice, { projectId: p.id, title: "Other" }, "web");
+    updateItem(db, alice, item.id, { title: "Renamed" }, "web");
+
+    // Its own rows: not its sub-item's, nor the list's other items'.
+    const rows = listAudit(db, alice, { itemId: item.id });
+    expect(rows.map((e) => [e.action, e.entityId]).sort()).toEqual([
+      ["create", item.id],
+      ["update", item.id],
+    ]);
+
+    // Someone without access to its list gets nothing.
+    expect(listAudit(db, bob, { itemId: item.id })).toEqual([]);
   });
 });
 

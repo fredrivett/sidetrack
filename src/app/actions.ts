@@ -428,6 +428,7 @@ export async function listCategoriesAction(projectId: string) {
 
 export async function listAuditAction(opts: {
   projectId?: string;
+  itemId?: string;
   source?: AuditSource;
   limit?: number;
 } = {}) {
