@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useTapToConfirm } from "./use-tap-to-confirm";
 import {
   createApiKeyAction,
   revokeApiKeyAction,
@@ -26,6 +27,7 @@ function fmt(d: Date | number | null): string {
 export function ApiKeysPanel({ initial }: { initial: KeyRow[] }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const tap = useTapToConfirm();
   const [name, setName] = useState("");
   const [justCreated, setJustCreated] = useState<{
     plaintext: string;
@@ -53,10 +55,8 @@ export function ApiKeysPanel({ initial }: { initial: KeyRow[] }) {
     });
   }
 
+  // A second tap revokes: any client using the key stops working.
   function onRevoke(id: string) {
-    if (!confirm("Revoke this key? Any client using it will stop working.")) {
-      return;
-    }
     setRevokeError(null);
     startTransition(async () => {
       try {
@@ -147,10 +147,11 @@ export function ApiKeysPanel({ initial }: { initial: KeyRow[] }) {
                 <Button
                   variant="destructive"
                   size="sm"
-                  onClick={() => onRevoke(k.id)}
+                  onClick={() => tap.confirm(() => onRevoke(k.id), k.id)}
                   disabled={pending}
+                  className={tap.isArmed(k.id) ? "bg-destructive text-white hover:bg-destructive/90" : undefined}
                 >
-                  Revoke
+                  {tap.isArmed(k.id) ? "Confirm?" : "Revoke"}
                 </Button>
               </li>
             ))}

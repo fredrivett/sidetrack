@@ -19,6 +19,7 @@ import {
 import { Kbd } from "@/components/ui/kbd";
 import type { ProjectStatus } from "@/core/schema";
 import { validatePrefix } from "@/lib/itemRef";
+import { ARMED_MENU_ITEM, useTapToConfirm } from "./use-tap-to-confirm";
 
 export function ProjectMenu({
   projectId,
@@ -46,6 +47,8 @@ export function ProjectMenu({
   onShare: (projectId: string, projectName: string) => void;
 }) {
   const [pending, start] = useTransition();
+  // Delete and Leave take a second tap: the first turns them into "Confirm …?".
+  const tap = useTapToConfirm();
 
   function run(fn: () => Promise<unknown>) {
     start(() => {
@@ -103,7 +106,7 @@ export function ProjectMenu({
   }
 
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={(open) => !open && tap.reset()}>
       <DropdownMenuTrigger
         aria-label="List options"
         disabled={pending}
@@ -166,22 +169,20 @@ export function ProjectMenu({
         {isOwner ? (
           <DropdownMenuItem
             variant="destructive"
-            onClick={() => {
-              if (!confirm(`Delete list "${name}" and all its items? To keep them, archive it instead.`)) return;
-              run(() => deleteProjectAction(projectId));
-            }}
+            closeOnClick={tap.isArmed()}
+            onClick={() => tap.confirm(() => run(() => deleteProjectAction(projectId)))}
+            className={tap.isArmed() ? ARMED_MENU_ITEM : undefined}
           >
-            Delete list
+            {tap.isArmed() ? "Confirm delete?" : "Delete list"}
           </DropdownMenuItem>
         ) : (
           <DropdownMenuItem
             variant="destructive"
-            onClick={() => {
-              if (!confirm(`Leave list "${name}"?`)) return;
-              run(() => leaveProjectAction(projectId));
-            }}
+            closeOnClick={tap.isArmed()}
+            onClick={() => tap.confirm(() => run(() => leaveProjectAction(projectId)))}
+            className={tap.isArmed() ? ARMED_MENU_ITEM : undefined}
           >
-            Leave list
+            {tap.isArmed() ? "Confirm leave?" : "Leave list"}
           </DropdownMenuItem>
         )}
       </DropdownMenuContent>

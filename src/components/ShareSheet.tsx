@@ -17,6 +17,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { useMediaQuery } from "@/components/ui/use-media-query";
+import { useTapToConfirm } from "./use-tap-to-confirm";
 
 function displayName(m: MemberView) {
   return m.displayUsername ? `@${m.displayUsername}` : (m.name ?? m.email ?? m.userId);
@@ -43,6 +44,8 @@ export function ShareSheet({
   const [person, setPerson] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  // Removing someone takes a second tap: it also takes them off their items.
+  const tap = useTapToConfirm();
 
   // Always holds the currently-open project (synced in the load effect below).
   // An invite/remove fetches the roster for the project it was issued against;
@@ -170,12 +173,24 @@ export function ShareSheet({
                     )}
                     <button
                       type="button"
-                      onClick={() => remove(m.userId)}
+                      onClick={() => tap.confirm(() => remove(m.userId), m.userId)}
                       disabled={pending}
-                      className="rounded px-1.5 py-0.5 text-xs text-neutral-500 hover:bg-neutral-200 hover:text-red-600 disabled:opacity-50 dark:hover:bg-neutral-700"
-                      aria-label={`Remove ${displayName(m)}`}
+                      className={`rounded px-1.5 py-0.5 text-xs disabled:opacity-50 ${
+                        tap.isArmed(m.userId)
+                          ? "bg-destructive font-medium text-white"
+                          : "text-neutral-500 hover:bg-neutral-200 hover:text-red-600 dark:hover:bg-neutral-700"
+                      }`}
+                      aria-label={
+                        tap.isArmed(m.userId)
+                          ? `Confirm removing ${displayName(m)}`
+                          : `Remove ${displayName(m)}`
+                      }
                     >
-                      {m.status === "pending" ? "Revoke" : "Remove"}
+                      {tap.isArmed(m.userId)
+                        ? "Confirm?"
+                        : m.status === "pending"
+                          ? "Revoke"
+                          : "Remove"}
                     </button>
                   </div>
                 </li>
