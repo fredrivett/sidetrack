@@ -6,12 +6,12 @@ import type { AuditEntryWithActor } from "@/core/audit";
 import type { AuditSource, Project } from "@/core/schema";
 import { dayLabel, formatRelative } from "@/lib/time";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  ResponsiveDialog,
+  ResponsiveDialogCloseButton,
+  ResponsiveDialogContent,
+  ResponsiveDialogDescription,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
 
 const PAGE = 100;
 
@@ -51,7 +51,7 @@ export function AuditDrawer({
   const [entries, setEntries] = useState<AuditEntryWithActor[]>([]);
   const [pending, start] = useTransition();
 
-  // Reset filter + limit when the drawer opens, or when the user switches
+  // Reset filter + limit when the dialog opens, or when the user switches
   // projects while it stays open. Compare prev props in render rather than
   // syncing via useEffect (avoids cascading renders).
   const [prevOpen, setPrevOpen] = useState(open);
@@ -100,19 +100,21 @@ export function AuditDrawer({
   const maybeMore = entries.length === limit;
 
   return (
-    <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent
-        side="right"
-        className="w-full gap-0 p-0 data-[side=right]:sm:max-w-md"
-      >
-        <SheetHeader className="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-          <SheetTitle className="text-sm font-semibold">Activity</SheetTitle>
-          <SheetDescription className="truncate text-xs">
-            {projectName ?? "All lists"}
-          </SheetDescription>
-        </SheetHeader>
+    <ResponsiveDialog open={open} onOpenChange={(o) => !o && onClose()}>
+      {/* A fixed height on desktop, so the modal doesn't jump as entries load
+          or a filter empties the list (md: is ResponsiveDialog's breakpoint). */}
+      <ResponsiveDialogContent className="md:h-[85vh]">
+        <div className="flex shrink-0 items-center gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+          <div className="min-w-0">
+            <ResponsiveDialogTitle>Activity</ResponsiveDialogTitle>
+            <ResponsiveDialogDescription className="truncate text-left text-xs">
+              {projectName ?? "All lists"}
+            </ResponsiveDialogDescription>
+          </div>
+          <ResponsiveDialogCloseButton className="ml-auto shrink-0" />
+        </div>
 
-        <div className="flex items-center gap-1 border-b border-neutral-200 p-2 dark:border-neutral-800">
+        <div className="flex shrink-0 items-center gap-1 border-b border-neutral-200 p-2 dark:border-neutral-800">
           {(["all", "web", "mcp", "github", "system"] as const).map((f) => (
             <button
               key={f}
@@ -135,7 +137,7 @@ export function AuditDrawer({
           </span>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           {entries.length === 0 && !pending && (
             <p className="p-6 text-center text-sm text-neutral-400">
               No activity yet.
@@ -198,7 +200,7 @@ export function AuditDrawer({
             </button>
           )}
         </div>
-      </SheetContent>
-    </Sheet>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }

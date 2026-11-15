@@ -9,14 +9,12 @@ import { validatePrefix } from "@/lib/itemRef";
 import { dayLabel } from "@/lib/time";
 import { Button } from "@/components/ui/button";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import { useMediaQuery } from "@/components/ui/use-media-query";
+  ResponsiveDialog,
+  ResponsiveDialogCloseButton,
+  ResponsiveDialogContent,
+  ResponsiveDialogDescription,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
 import { EditableText } from "./EditableText";
 import { ProjectIconPicker } from "./ProjectIconPicker";
 import { StatusBadge } from "./StatusBadge";
@@ -47,9 +45,6 @@ export function ProjectDetailSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  // Sidebar slide-out on desktop, bottom drawer on mobile — matches
-  // ItemDetailSheet's responsive default.
-  const isDesktop = useMediaQuery("(min-width: 768px)", true);
   const [pending, start] = useTransition();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
@@ -97,21 +92,15 @@ export function ProjectDetailSheet({
   }
 
   return (
-    <Sheet open={open} onOpenChange={change}>
-      <SheetContent
-        side={isDesktop ? "right" : "bottom"}
-        className={
-          isDesktop
-            ? "w-full gap-0 p-0 data-[side=right]:sm:max-w-md"
-            : "max-h-[85vh] gap-0 rounded-t-xl p-0"
-        }
-      >
-        <SheetHeader className="gap-2 border-b border-neutral-200 px-4 py-3 pr-14 dark:border-neutral-800">
+    <ResponsiveDialog open={open} onOpenChange={change}>
+      <ResponsiveDialogContent>
+        <div className="flex shrink-0 flex-col gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
           <div className="flex items-center gap-2">
             <ProjectIconPicker project={project} size={22} />
             <StatusBadge projectId={project.id} status={project.status} />
+            <ResponsiveDialogCloseButton className="ml-auto" />
           </div>
-          <SheetTitle className="text-base">
+          <ResponsiveDialogTitle>
             <EditableText
               value={project.name}
               onSave={(next) =>
@@ -121,13 +110,13 @@ export function ProjectDetailSheet({
               className="block w-full break-words text-base font-semibold"
               inputClassName="w-full text-base font-semibold"
             />
-          </SheetTitle>
-          <SheetDescription className="sr-only">
+          </ResponsiveDialogTitle>
+          <ResponsiveDialogDescription className="sr-only">
             List details for {project.name}
-          </SheetDescription>
-        </SheetHeader>
+          </ResponsiveDialogDescription>
+        </div>
 
-        <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4">
           <Field label="Summary">
             <EditableText
               value={project.summary}
@@ -181,7 +170,7 @@ export function ProjectDetailSheet({
           </Field>
         </div>
 
-        <SheetFooter className="mt-0 flex-row items-center justify-between border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
+        <div className="flex shrink-0 items-center justify-between border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
           <span className="text-xs text-neutral-400">
             Created {dayLabel(project.createdAt)}
           </span>
@@ -194,8 +183,8 @@ export function ProjectDetailSheet({
             <Trash2 />
             {confirmingDelete ? "Confirm delete?" : "Delete"}
           </Button>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+        </div>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }
