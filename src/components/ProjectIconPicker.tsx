@@ -96,6 +96,8 @@ export function IconPicker({
   homepageUrl: string | null;
   name: string;
   size: number;
+  /** Dimmed and won't open; stays focusable (aria-disabled), so a save that
+   * lands after picking doesn't drop keyboard focus. */
   disabled?: boolean;
   className?: string;
   /** Show the icon at half opacity, e.g. an AI suggestion not yet picked. */
@@ -135,16 +137,17 @@ export function IconPicker({
   return (
     <Popover
       open={open}
-      onOpenChange={(next) => {
+      onOpenChange={(next, details) => {
+        if (next && disabled) return details.cancel();
         setOpen(next);
         if (next) onOpen?.();
       }}
     >
       <PopoverTrigger
         aria-label="Change list icon"
-        disabled={disabled}
+        aria-disabled={disabled || undefined}
         className={cn(
-          "inline-flex shrink-0 items-center justify-center rounded-md p-1 transition-colors hover:bg-muted aria-expanded:bg-muted disabled:opacity-60",
+          "inline-flex shrink-0 items-center justify-center rounded-md p-1 transition-colors hover:bg-muted aria-expanded:bg-muted aria-disabled:opacity-60",
           className,
         )}
       >

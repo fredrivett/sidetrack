@@ -24,24 +24,29 @@ export function StatusBadge({
   projectId: string;
   status: ProjectStatus;
 }) {
-  // Held on the list: its column dims until the change lands.
+  // Held: the badge dims, with its column, until the change lands. The badge
+  // dims too because in the list's details dialog the column is hidden.
   const { saving, save } = useListSave();
   return (
     <label
-      className={`relative inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${COLORS[status]}`}
+      aria-busy={saving || undefined}
+      className={`relative inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${COLORS[status]} ${saving ? "opacity-60" : ""}`}
     >
       <span>{STATUS_LABEL[status]}</span>
       <select
         aria-label="Change status"
         value={status}
         onChange={(e) => {
+          // aria-disabled rather than disabled while saving, so the select
+          // keeps focus; a change made meanwhile is ignored.
+          if (saving) return;
           const next = e.target.value as ProjectStatus;
           save(() =>
             runAction(updateProjectAction(projectId, { status: next }), "change the list's status"),
           );
         }}
-        disabled={saving}
-        className="absolute inset-0 cursor-pointer opacity-0"
+        aria-disabled={saving || undefined}
+        className="absolute inset-0 cursor-pointer opacity-0 aria-disabled:cursor-default"
       >
         {/* Archiving goes through the list menu, which offers Undo; an
             archived list is never shown with this badge. */}

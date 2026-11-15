@@ -303,10 +303,23 @@ function Checklist({
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   // Lines still saving: each shows at once, faded, until the refreshed
   // checklist has it (it has no ref or controls until then).
-  const [adding, showAdding] = useOptimistic<string[], string>([], (cur, title) => [
+  type Adding = { key: number; title: string; known: string[] };
+  const [addingAll, showAdding] = useOptimistic<Adding[], Adding>([], (cur, line) => [
     ...cur,
-    title,
+    line,
   ]);
+  // A line stops showing as saving once a sub-item with its title appears that
+  // wasn't there when it was typed, so it never shows twice. Each new sub-item
+  // stands for one line, so two lines with the same title wait for two.
+  const claimed = new Set<string>();
+  const adding = addingAll.filter((a) => {
+    const saved = items.find(
+      (i) => !claimed.has(i.id) && i.title === a.title && !a.known.includes(i.id),
+    );
+    if (saved) claimed.add(saved.id);
+    return !saved;
+  });
+  const nextKey = useRef(0);
   const rows = items.length + adding.length;
   // Each new row lands above the input and pushes it down, out of view once
   // the dialog hits its max height. Nothing else scrolls it back (the
@@ -335,7 +348,7 @@ function Checklist({
     });
     queue.current = save;
     startTransition(async () => {
-      showAdding(title);
+      showAdding({ key: nextKey.current++, title, known: items.map((i) => i.id) });
       await save;
     });
   }
@@ -392,9 +405,9 @@ function Checklist({
           </div>
         );
       })}
-      {adding.map((title, i) => (
+      {adding.map(({ key, title }) => (
         <div
-          key={`adding-${i}`}
+          key={`adding-${key}`}
           aria-busy
           className="flex items-center gap-2 px-1 py-0.5 text-sm text-neutral-400"
         >

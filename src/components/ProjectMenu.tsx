@@ -187,11 +187,18 @@ export function ProjectMenu({
   }
 
   return (
-    <DropdownMenu onOpenChange={(open) => !open && tap.reset()}>
+    <DropdownMenu
+      onOpenChange={(open, details) => {
+        // aria-disabled rather than disabled while saving, so the trigger the
+        // closing menu hands focus back to keeps it; it just won't open.
+        if (open && saving) return details.cancel();
+        if (!open) tap.reset();
+      }}
+    >
       <DropdownMenuTrigger
         aria-label="List options"
-        disabled={saving}
-        className="rounded p-1 text-neutral-500 hover:bg-neutral-100 disabled:opacity-50 dark:hover:bg-neutral-800"
+        aria-disabled={saving || undefined}
+        className="rounded p-1 text-neutral-500 hover:bg-neutral-100 aria-disabled:opacity-50 dark:hover:bg-neutral-800"
       >
         ⋯
       </DropdownMenuTrigger>

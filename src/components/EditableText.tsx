@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useEffect, useOptimistic, useRef, useState } from "react";
+import { useEffect, useOptimistic, useRef, useState, useTransition } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -10,19 +10,24 @@ export function EditableText({
   multiline = false,
   placeholder,
   required = false,
+  hold = false,
   className = "",
   inputClassName = "",
   renderValue,
 }: {
   value: string;
   /** Saves the new text. Wrap the action in runAction, so a failure toasts
-   * rather than throwing; the field shows the new text until it lands. */
-  onSave: (next: string) => void | Promise<unknown>;
+   * rather than throwing. Return its promise: the field shows the new text,
+   * or with `hold` dims, until it settles. */
+  onSave: (next: string) => Promise<unknown>;
   multiline?: boolean;
   placeholder?: string;
   // When true, an empty value is rejected: blanking the field reverts to the
   // current value instead of saving (mirrors the core's non-empty guard).
   required?: boolean;
+  /** Hold rather than show the new text, for values the server cleans up or
+   * can reject: the field keeps the saved text, dimmed, until the save lands. */
+  hold?: boolean;
   className?: string;
   inputClassName?: string;
   // Custom rendering for the non-editing display of a non-empty value (e.g. a
@@ -34,6 +39,7 @@ export function EditableText({
   // The saved text shown ahead of the server, so the field doesn't snap back
   // to the old text while it saves; if the save fails, the old text returns.
   const [shown, showSaving] = useOptimistic(value);
+  const [saving, startSaving] = useTransition();
   const ref = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
 
   // Draft only matters while editing; the non-editing branch renders `shown`
@@ -59,8 +65,8 @@ export function EditableText({
       return;
     }
     if (trimmed !== shown.trim()) {
-      startTransition(async () => {
-        showSaving(trimmed);
+      startSaving(async () => {
+        if (!hold) showSaving(trimmed);
         await onSave(trimmed);
       });
     } else {
@@ -77,8 +83,10 @@ export function EditableText({
     return (
       <button
         type="button"
-        onClick={startEditing}
-        className={`text-left ${shown ? "" : "text-neutral-400"} ${className}`}
+        onClick={() => !(hold && saving) && startEditing()}
+        aria-disabled={(hold && saving) || undefined}
+        aria-busy={(hold && saving) || undefined}
+        className={`text-left ${shown ? "" : "text-neutral-400"} ${hold && saving ? "opacity-60" : ""} ${className}`}
       >
         {shown ? (renderValue ? renderValue(shown) : shown) : placeholder || ""}
       </button>

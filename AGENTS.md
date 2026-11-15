@@ -66,9 +66,15 @@ server's instructions; never use another list for work in this repository.
 
 ## Saving changes
 
-Every Server Action the UI calls goes through `runAction`
+Changes the user starts go through `runAction`
 (`src/components/run-action.ts`), so a failure shows "Couldn't … Please try
-again." instead of failing silently or crashing the board. Choose how the UI
+again." instead of failing silently or crashing the board. The exception is a
+form that reports the error inline, where the user is looking: the settings
+panels and Share's invite and remove. A handler that catches an action's error
+itself must call `unstable_rethrow` first, so a signed-out session still
+redirects to login. Reads the user waits on, such as a dialog loading its
+contents, use it too. Background reads and syncs, such as the Done view's older
+items and the time zone, and AI suggestions don't (rule 1). Choose how the UI
 shows each save with these rules:
 
 1. **Scope.** These rules cover changes the user starts. Reads show a loading
@@ -87,7 +93,9 @@ shows each save with these rules:
    list. Board-wide item changes go through `useItemChanges()`
    (`use-optimistic-items.ts`), list removal through `useRemoveList()`.
 4. **Hold** otherwise: dim and disable the thing being changed until the save
-   finishes, by awaiting the action inside the transition (not `void`). Always
+   finishes, by awaiting the action inside the transition (not `void`).
+   Disable with `aria-disabled`, ignoring input meanwhile, not `disabled`,
+   which drops keyboard focus. Always
    hold when the server can reject the change or decides part of what the user
    will see, such as a ref number, a deduplicated prefix, a cleaned-up URL or a
    resized avatar. Values the user never sees, such as fractional positions,
