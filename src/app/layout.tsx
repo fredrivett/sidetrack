@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
+import { LatestDeploy } from "@/components/LatestDeploy";
 import { ServiceWorker } from "@/components/ServiceWorker";
 import { Toaster } from "@/components/ui/sonner";
 import { STARTUP_IMAGES } from "@/lib/startupImages";
@@ -56,6 +57,7 @@ export default function RootLayout({
         {children}
         <Toaster />
         <ServiceWorker />
+        <LatestDeploy />
       </body>
     </html>
   );
