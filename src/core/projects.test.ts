@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { listAudit } from "./audit";
-import { addItem, listItems } from "./items";
+import { addItem, completeItem, listItems } from "./items";
 import {
   createProject,
   deleteProject,
   getProject,
   listProjects,
   reorderProject,
+  sampleOpenItemTitles,
   updateProject,
 } from "./projects";
 import { createTestDb, createTestUser } from "./test-helpers";
@@ -87,6 +88,27 @@ describe("projects", () => {
       "Personal site",
       "Bare",
     ]);
+  });
+
+  it("samples each active list's open titles in list order, up to the cap", () => {
+    const { db } = createTestDb();
+    const u = createTestUser(db);
+    const home = createProject(db, u, { name: "Home" }, "web");
+    const trip = createProject(db, u, { name: "Trip" }, "web");
+    const paused = createProject(db, u, { name: "Someday" }, "web");
+    for (const title of ["Water plants", "Descale", "Mow lawn"]) {
+      addItem(db, u, { projectId: home.id, title }, "web");
+    }
+    const done = addItem(db, u, { projectId: trip.id, title: "Book flights" }, "web");
+    completeItem(db, u, done.id, "web");
+    addItem(db, u, { projectId: trip.id, title: "Pack" }, "web");
+    addItem(db, u, { projectId: paused.id, title: "Learn piano" }, "web");
+    updateProject(db, u, paused.id, { status: "paused" }, "web");
+
+    expect(Object.fromEntries(sampleOpenItemTitles(db, u, 2))).toEqual({
+      [home.id]: ["Water plants", "Descale"],
+      [trip.id]: ["Pack"],
+    });
   });
 
   it("rejects a blank name on create", () => {

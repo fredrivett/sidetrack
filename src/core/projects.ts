@@ -109,6 +109,37 @@ export function listAllProjectsWithItems(
 }
 
 /**
+ * Up to `perList` open item titles from each active list the user can see,
+ * in list order, keyed by list id: a sample of what each list holds. One
+ * query for every list, reading only the title column.
+ */
+export function sampleOpenItemTitles(
+  db: Db,
+  userId: string,
+  perList: number,
+): Map<string, string[]> {
+  const rows = db
+    .select({ projectId: items.projectId, title: items.title })
+    .from(items)
+    .innerJoin(projects, eq(projects.id, items.projectId))
+    .where(
+      and(
+        hasProjectAccess(userId),
+        eq(projects.status, "active"),
+        isNull(items.completedAt),
+      ),
+    )
+    .orderBy(asc(items.position), asc(items.id))
+    .all();
+  const byList = new Map<string, string[]>();
+  for (const { projectId, title } of rows) {
+    const titles = byList.get(projectId) ?? [];
+    if (titles.length < perList) byList.set(projectId, [...titles, title]);
+  }
+  return byList;
+}
+
+/**
  * Items in the user's active lists, in list order, that are open or were
  * finished recently enough to land on `today` in some zone: the 4am start of
  * today is never before midnight UTC the day before, even at UTC+14. The
