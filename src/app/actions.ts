@@ -37,6 +37,7 @@ import {
   createProject as createProjectCore,
   deleteProject as deleteProjectCore,
   getProject as getProjectCore,
+  getProjectWithItems as getProjectWithItemsCore,
   reorderProject as reorderProjectCore,
   updateProject as updateProjectCore,
 } from "@/core/projects";
@@ -50,6 +51,7 @@ import {
 } from "@/core/users";
 import { getCurrentSession, requireUserId } from "@/auth/session";
 import { notifyInvite } from "@/lib/email";
+import { suggestEmoji } from "@/lib/emojiSuggest";
 import { getEnv } from "@/lib/env";
 import type { Repeat } from "@/lib/repeat";
 
@@ -59,10 +61,15 @@ function refresh() {
   revalidatePath("/");
 }
 
-export async function createProjectAction(name: string) {
+export async function createProjectAction(input: {
+  name: string;
+  summary?: string;
+  homepageUrl?: string | null;
+  icon?: string | null;
+}) {
   const userId = await requireUserId();
   const { db } = getDb();
-  const p = createProjectCore(db, userId, { name }, SOURCE);
+  const p = createProjectCore(db, userId, input, SOURCE);
   refresh();
   return p;
 }
@@ -83,6 +90,39 @@ export async function updateProjectAction(
   const p = updateProjectCore(db, userId, id, patch, SOURCE);
   refresh();
   return p;
+}
+
+// Read-only: suggestions are only applied when the user picks one, through
+// updateProjectAction, so nothing is audited here. [] when AI is off.
+export async function suggestProjectIconsAction(id: string) {
+  const userId = await requireUserId();
+  const apiKey = getEnv().TYPESAFE_API_KEY;
+  if (!apiKey) return [];
+  const { db } = getDb();
+  const found = getProjectWithItemsCore(db, userId, id);
+  if (!found) return [];
+  return suggestEmoji(
+    {
+      name: found.project.name,
+      summary: found.project.summary,
+      itemTitles: found.items.slice(0, 20).map((it) => it.title),
+      homepageUrl: found.project.homepageUrl,
+    },
+    apiKey,
+  );
+}
+
+// The same for a list still being written in the New list dialog, from what's
+// typed so far. Read-only; [] when AI is off.
+export async function suggestNewListIconsAction(input: {
+  name: string;
+  summary: string;
+  homepageUrl: string | null;
+}) {
+  await requireUserId();
+  const apiKey = getEnv().TYPESAFE_API_KEY;
+  if (!apiKey || !input.name.trim()) return [];
+  return suggestEmoji({ ...input, itemTitles: [] }, apiKey);
 }
 
 export async function reorderProjectAction(id: string, ref: string) {
