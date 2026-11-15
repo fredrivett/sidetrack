@@ -253,3 +253,40 @@ export function finishWork(
   });
   return { ...session, ...patch };
 }
+
+/**
+ * End every agent's open session on an item for a reason outside the agents,
+ * such as its pull request closing without merging. Each ended session keeps
+ * the reason as its last note and is audited on its own. Returns how many
+ * sessions it ended.
+ */
+export function endAgentSessions(
+  db: Db,
+  userId: string,
+  itemId: string,
+  reason: string,
+  source: AuditOrigin,
+): number {
+  const item = itemOrThrow(db, userId, itemId);
+  const open = listOpenAgentSessions(db, userId, itemId);
+  if (open.length === 0) return 0;
+  const now = Date.now();
+  db.transaction((tx) => {
+    for (const session of open) {
+      tx.update(agentSessions)
+        .set({ finishedAt: now, note: reason })
+        .where(eq(agentSessions.id, session.id))
+        .run();
+      recordAudit(tx as unknown as Db, {
+        actor: userId,
+        source,
+        action: "finish",
+        entityType: "item",
+        entityId: itemId,
+        projectId: item.projectId,
+        detail: `ended ${session.agentName}'s work on "${item.title}": ${reason}`,
+      });
+    }
+  });
+  return open.length;
+}
