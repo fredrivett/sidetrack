@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { formatItemRef, parseItemRef, refsInPrTitle } from "../lib/itemRef";
 import { endAgentSessions } from "./agentSessions";
@@ -15,7 +15,7 @@ import {
   setPrState,
   unlinkItemFromPr,
 } from "./prLinks";
-import { githubWebhooks } from "./schema";
+import { githubWebhookSecrets, githubWebhooks } from "./schema";
 
 // A user's GitHub webhook (see the githubWebhooks table): GitHub posts pull
 // request events to it, and Sidetrack links the items a PR title names in
@@ -23,58 +23,76 @@ import { githubWebhooks } from "./schema";
 // Changes made from a delivery are audited with the `github` source, as the
 // webhook's owner.
 
-/** The webhook as settings shows it: never the secret. */
-export type GithubWebhookView = {
+/** A secret as settings shows it: its name and use, never the value. */
+export type GithubWebhookSecretView = {
   id: string;
+  name: string;
   createdAt: number;
   lastDeliveryAt: number | null;
 };
 
+/** The webhook as settings shows it, with its secrets, oldest first. */
+export type GithubWebhookView = {
+  id: string;
+  createdAt: number;
+  secrets: GithubWebhookSecretView[];
+};
+
 export function getGithubWebhook(db: Db, userId: string): GithubWebhookView | null {
-  return (
-    db
-      .select({
-        id: githubWebhooks.id,
-        createdAt: githubWebhooks.createdAt,
-        lastDeliveryAt: githubWebhooks.lastDeliveryAt,
-      })
-      .from(githubWebhooks)
-      .where(eq(githubWebhooks.userId, userId))
-      .get() ?? null
-  );
+  const hook = db
+    .select({ id: githubWebhooks.id, createdAt: githubWebhooks.createdAt })
+    .from(githubWebhooks)
+    .where(eq(githubWebhooks.userId, userId))
+    .get();
+  if (!hook) return null;
+  const secrets = db
+    .select({
+      id: githubWebhookSecrets.id,
+      name: githubWebhookSecrets.name,
+      createdAt: githubWebhookSecrets.createdAt,
+      lastDeliveryAt: githubWebhookSecrets.lastDeliveryAt,
+    })
+    .from(githubWebhookSecrets)
+    .where(eq(githubWebhookSecrets.webhookId, hook.id))
+    .orderBy(asc(githubWebhookSecrets.createdAt), asc(githubWebhookSecrets.id))
+    .all();
+  return { ...hook, secrets };
 }
 
 /**
- * Set up the user's webhook, or give it a new secret if it exists (its URL
- * stays the same, so only the secret needs changing in GitHub). Returns the
- * secret, the only time it's handed out.
+ * Add a named secret to the user's webhook, setting the webhook up first if
+ * there isn't one. Its URL never changes, so each repository can have its own
+ * secret, and rotating one is adding a new secret, pasting it into GitHub,
+ * then removing the old one. Returns the secret, the only time it's handed out.
  */
-export function setUpGithubWebhook(
+export function addGithubWebhookSecret(
   db: Db,
   userId: string,
+  name: string,
   source: AuditOrigin,
 ): { webhook: GithubWebhookView; secret: string } {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("secret name required");
   const existing = getGithubWebhook(db, userId);
   const secret = randomBytes(32).toString("hex");
   const id = existing?.id ?? nanoid(21);
+  const now = Date.now();
   db.transaction((tx) => {
-    if (existing) {
-      tx.update(githubWebhooks)
-        .set({ secret })
-        .where(eq(githubWebhooks.id, id))
-        .run();
-    } else {
-      tx.insert(githubWebhooks)
-        .values({ id, userId, secret, createdAt: Date.now() })
-        .run();
+    if (!existing) {
+      tx.insert(githubWebhooks).values({ id, userId, createdAt: now }).run();
     }
+    tx.insert(githubWebhookSecrets)
+      .values({ id: nanoid(12), webhookId: id, name: trimmed, secret, createdAt: now })
+      .run();
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
       action: existing ? "update" : "create",
       entityType: "webhook",
       entityId: id,
-      detail: existing ? "gave the GitHub webhook a new secret" : "set up the GitHub webhook",
+      detail: existing
+        ? `added secret "${trimmed}" to the GitHub webhook`
+        : `set up the GitHub webhook with secret "${trimmed}"`,
     });
   });
   const webhook = getGithubWebhook(db, userId);
@@ -82,11 +100,39 @@ export function setUpGithubWebhook(
   return { webhook, secret };
 }
 
-/** Remove the user's webhook; deliveries to its URL are then refused. */
+/**
+ * Remove one of the webhook's secrets; deliveries signed with it are then
+ * refused. The webhook stays, even with no secrets left.
+ */
+export function removeGithubWebhookSecret(
+  db: Db,
+  userId: string,
+  secretId: string,
+  source: AuditOrigin,
+): boolean {
+  const webhook = getGithubWebhook(db, userId);
+  const secret = webhook?.secrets.find((s) => s.id === secretId);
+  if (!webhook || !secret) return false;
+  db.transaction((tx) => {
+    tx.delete(githubWebhookSecrets).where(eq(githubWebhookSecrets.id, secret.id)).run();
+    recordAudit(tx as unknown as Db, {
+      actor: userId,
+      source,
+      action: "update",
+      entityType: "webhook",
+      entityId: webhook.id,
+      detail: `removed secret "${secret.name}" from the GitHub webhook`,
+    });
+  });
+  return true;
+}
+
+/** Remove the user's webhook and its secrets; deliveries to its URL are then refused. */
 export function removeGithubWebhook(db: Db, userId: string, source: AuditOrigin): boolean {
   const existing = getGithubWebhook(db, userId);
   if (!existing) return false;
   db.transaction((tx) => {
+    // Its secrets go with it (on delete cascade).
     tx.delete(githubWebhooks).where(eq(githubWebhooks.id, existing.id)).run();
     recordAudit(tx as unknown as Db, {
       actor: userId,
@@ -102,10 +148,11 @@ export function removeGithubWebhook(db: Db, userId: string, source: AuditOrigin)
 
 /**
  * Check a delivery to webhook `id` against GitHub's X-Hub-Signature-256
- * header (`sha256=<hex HMAC of the raw body>`), in constant time. Returns the
- * webhook's owner, or null for an unknown webhook or a bad signature. A good
- * delivery records its time, unaudited like an API key's last use: it fires
- * on every delivery and changes nothing on the board.
+ * header (`sha256=<hex HMAC of the raw body>`), trying each of its secrets in
+ * constant time. Returns the webhook's owner, or null for an unknown webhook
+ * or a signature no secret made. A good delivery records its time on the
+ * secret that signed it, unaudited like an API key's last use: it fires on
+ * every delivery and changes nothing on the board.
  */
 export function verifyGithubDelivery(
   db: Db,
@@ -113,17 +160,29 @@ export function verifyGithubDelivery(
   body: string,
   signature: string | null,
 ): { userId: string } | null {
-  const hook = db.select().from(githubWebhooks).where(eq(githubWebhooks.id, id)).get();
-  if (!hook || !signature?.startsWith("sha256=")) return null;
+  if (!signature?.startsWith("sha256=")) return null;
   const given = Buffer.from(signature.slice("sha256=".length), "hex");
-  const expected = createHmac("sha256", hook.secret).update(body).digest();
-  if (given.length !== expected.length || !timingSafeEqual(given, expected)) return null;
-  // audit-exempt: delivery telemetry on every webhook call, not a user action.
-  db.update(githubWebhooks)
-    .set({ lastDeliveryAt: Date.now() })
+  const secrets = db
+    .select({
+      id: githubWebhookSecrets.id,
+      secret: githubWebhookSecrets.secret,
+      userId: githubWebhooks.userId,
+    })
+    .from(githubWebhookSecrets)
+    .innerJoin(githubWebhooks, eq(githubWebhooks.id, githubWebhookSecrets.webhookId))
     .where(eq(githubWebhooks.id, id))
+    .all();
+  const match = secrets.find((s) => {
+    const expected = createHmac("sha256", s.secret).update(body).digest();
+    return given.length === expected.length && timingSafeEqual(given, expected);
+  });
+  if (!match) return null;
+  // audit-exempt: delivery telemetry on every webhook call, not a user action.
+  db.update(githubWebhookSecrets)
+    .set({ lastDeliveryAt: Date.now() })
+    .where(eq(githubWebhookSecrets.id, match.id))
     .run();
-  return { userId: hook.userId };
+  return { userId: match.userId };
 }
 
 /** What a pull request delivery did, reported back to GitHub's delivery log. */
