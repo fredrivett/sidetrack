@@ -31,6 +31,7 @@ import {
   declineInvite as declineInviteCore,
   inviteMember as inviteMemberCore,
   listMembers as listMembersCore,
+  listSuggestedCollaborators as listSuggestedCollaboratorsCore,
   removeMember as removeMemberCore,
 } from "@/core/members";
 import {
@@ -151,6 +152,12 @@ export async function listMembersAction(projectId: string) {
   const userId = await requireUserId();
   const { db } = getDb();
   return listMembersCore(db, userId, projectId);
+}
+
+export async function listSuggestedCollaboratorsAction(projectId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  return listSuggestedCollaboratorsCore(db, userId, projectId);
 }
 
 /** Absolute base URL for links in outgoing email: the configured
