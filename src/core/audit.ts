@@ -2,6 +2,7 @@ import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { hasProjectAccess } from "./access";
 import { users } from "./auth-schema";
+import { announceChange } from "./changes";
 import type { Db } from "./db";
 import {
   type AuditAction,
@@ -72,6 +73,8 @@ export function recordAudit(db: Db, input: AuditInput): void {
       detail: input.detail ?? "",
     })
     .run();
+  // Every audited change reaches open pages once it commits (see changes.ts).
+  announceChange({ actor: input.actor, projectId: input.projectId ?? null });
 }
 
 export function listAudit(

@@ -1,5 +1,6 @@
 import { AgentSessionsProvider } from "@/components/agent-sessions";
 import { Kanban } from "@/components/Kanban";
+import { LiveUpdates } from "@/components/LiveUpdates";
 import { listAllAgentSessions } from "@/core/agentSessions";
 import { listCategories } from "@/core/categories";
 import { getDb } from "@/core/db";
@@ -77,6 +78,7 @@ export default async function Home({
         prLinksByItem={prLinksByItem}
         pendingInvites={pendingInvites}
       />
+      <LiveUpdates />
     </AgentSessionsProvider>
   );
 }
