@@ -63,6 +63,9 @@ export function AuditDialog({
   if (prevOpen !== open || prevProjectId !== projectId) {
     setPrevOpen(open);
     setPrevProjectId(projectId);
+    // Another list's entries never show under this one's name, even if
+    // loading this one's fails.
+    if (prevProjectId !== projectId) setEntries([]);
     if (open) {
       setFilter("all");
       setLimit(PAGE);
@@ -78,10 +81,10 @@ export function AuditDialog({
     [projects],
   );
 
-  // The filter and limit the shown entries were loaded with. When a load
-  // fails, the pills and Show more go back to them, so they keep matching
-  // the entries and Show more stays there to try again.
-  const loaded = useRef({ filter, limit });
+  // The list, filter and limit the shown entries were loaded with. When a
+  // load for the same list fails, the pills and Show more go back to them, so
+  // they keep matching the entries and Show more stays there to try again.
+  const loaded = useRef({ projectId, filter, limit });
 
   useEffect(() => {
     if (!open) return;
@@ -96,7 +99,7 @@ export function AuditDialog({
           (rows) => {
             if (!active) return;
             setEntries(rows);
-            loaded.current = { filter, limit };
+            loaded.current = { projectId, filter, limit };
           },
           // Once the dialog has closed or moved on, a failed load is moot.
           (error) => {
@@ -105,7 +108,7 @@ export function AuditDialog({
         ),
         "load the activity",
       );
-      if (!ok) {
+      if (!ok && loaded.current.projectId === projectId) {
         setFilter(loaded.current.filter);
         setLimit(loaded.current.limit);
       }
