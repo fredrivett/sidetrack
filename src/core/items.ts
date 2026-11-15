@@ -470,8 +470,10 @@ export function completeItem(
   // last open sub-item completes the parent, each logged on its own so every
   // item's history says when it was done.
   const now = Date.now();
-  const parent = existing.parentId ? getItem(db, userId, existing.parentId) : undefined;
   db.transaction((tx) => {
+    const parent = existing.parentId
+      ? getItem(tx as unknown as Db, userId, existing.parentId)
+      : undefined;
     // Read inside the transaction, so a sub-item added meanwhile counts.
     const openChildren = childrenOf(tx as unknown as Db, id).filter(
       (c) => c.completedAt === null,

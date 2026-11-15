@@ -1020,7 +1020,9 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Start work on item",
       description:
-        "Call this when you begin working on an item (coding it, researching it, anything that takes more than a moment), " +
+        "Call this when you begin working on an item (coding it, researching it, anything that takes more than a moment). " +
+        "Find the item first: an open item that describes the work in the list the repository's AGENTS.md names (else the one the user names), " +
+        "creating one with add_item if none matches and asking the user if unsure; then call this " +
         "so the user sees you on it: you appear on the item's row and in its detail view, marked working. " +
         "If nobody is assigned, it assigns the user you act for; existing assignees are kept. " +
         "thread_url is a link to your own thread or session (e.g. an Amp or Claude thread URL) so the user can follow along; pass it whenever you have one. " +

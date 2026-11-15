@@ -135,6 +135,8 @@ describe("useOptimisticCompletion", () => {
     fireEvent.click(screen.getByText("Second child: open"));
     screen.getByText("Parent: done");
     screen.getByText("Other: open");
+    // The server completes the parent itself; the client saves only the ticks.
+    expect(vi.mocked(completeItemAction).mock.calls).toEqual([["open"], ["second"]]);
     await act(async () => {
       first.resolve();
       last.resolve();
