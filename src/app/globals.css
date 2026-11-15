@@ -49,6 +49,9 @@
 html,
 body {
   font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+  /* No browser pull-to-refresh: pulling down from the top of the board opens
+     the command palette instead (PullToSearch). */
+  overscroll-behavior-y: none;
 }
 
 /* Hide scrollbars on the horizontal kanban rail while keeping scroll usable. */
