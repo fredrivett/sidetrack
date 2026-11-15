@@ -3,6 +3,8 @@ import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 // Local audit-log-invariant rule, defined and tested in eslint-rules/.
 import { auditPlugin } from "./eslint-rules/audit-in-transaction.mjs";
+// Local rule: catches around Server Actions let Next's redirects through.
+import { rethrowRedirectPlugin } from "./eslint-rules/rethrow-redirect.mjs";
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -79,6 +81,15 @@ const eslintConfig = defineConfig([
     ignores: ["src/**/*.test.ts", "src/**/*.test.tsx", "src/core/test-helpers.ts"],
     plugins: { audit: auditPlugin },
     rules: { "audit/audit-in-transaction": "error" },
+  },
+  // A catch around a Server Action calls unstable_rethrow first, so a
+  // signed-out session's redirect to /login isn't shown as an error (AGENTS.md,
+  // "Saving changes"). Tests catch mocked actions' rejections on purpose.
+  {
+    files: ["src/**/*.ts", "src/**/*.tsx"],
+    ignores: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    plugins: { redirect: rethrowRedirectPlugin },
+    rules: { "redirect/rethrow-redirect": "error" },
   },
 ]);
 
