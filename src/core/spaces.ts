@@ -1,4 +1,4 @@
-import { and, asc, count, eq } from "drizzle-orm";
+import { and, asc, count, eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { normalizeProjectIcon } from "../lib/projectIcon";
 import { hasProjectAccess } from "./access";
@@ -7,9 +7,11 @@ import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
 import {
   accessLossDetail,
+  type CollaboratorView,
   findUserByHandle,
   handleFor,
   revokeListAccess,
+  suggestCollaborators,
 } from "./members";
 import {
   type MembershipStatus,
@@ -536,6 +538,25 @@ export function listSpaceMembers(
       role: membership.role,
       createdAt: membership.createdAt,
     }));
+}
+
+/**
+ * People an admin already shares a list or a Space with who aren't in this
+ * Space and haven't been invited to it, for one-tap invites. Empty for anyone
+ * but an admin, since only admins invite.
+ */
+export function listSuggestedSpaceMembers(
+  db: Db,
+  userId: string,
+  spaceId: string,
+): CollaboratorView[] {
+  const membership = membershipOf(db, userId, spaceId);
+  if (membership?.status !== "accepted" || membership.role !== "admin") return [];
+  return suggestCollaborators(
+    db,
+    userId,
+    sql`(select ${spaceMembers.userId} from ${spaceMembers} where ${spaceMembers.spaceId} = ${spaceId})`,
+  );
 }
 
 /** The caller's own pending Space invites. */

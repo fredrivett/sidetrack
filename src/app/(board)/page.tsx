@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { AgentSessionsProvider } from "@/components/agent-sessions";
 import { Kanban } from "@/components/Kanban";
 import { LiveUpdates } from "@/components/LiveUpdates";
@@ -9,7 +10,8 @@ import { listItems, reopenDueRepeats } from "@/core/items";
 import { listAssignees, listPendingInvites } from "@/core/members";
 import { listAllPrLinks } from "@/core/prLinks";
 import { listProjects } from "@/core/projects";
-import { listSpaces } from "@/core/spaces";
+import { listPendingSpaceInvites, listSpaces } from "@/core/spaces";
+import { COLLAPSED_TRAYS_COOKIE, parseCollapsedTrays } from "@/components/SpaceTray";
 import { getProfile, getTimeZone } from "@/core/users";
 import { weekStartBound } from "@/lib/time";
 import type { ItemPrLink } from "@/core/schema";
@@ -79,6 +81,10 @@ export default async function Home({
         prLinksByItem={prLinksByItem}
         pendingInvites={pendingInvites}
         spaces={listSpaces(db, userId)}
+        pendingSpaceInvites={listPendingSpaceInvites(db, userId)}
+        initialCollapsedTrays={parseCollapsedTrays(
+          (await cookies()).get(COLLAPSED_TRAYS_COOKIE)?.value,
+        )}
       />
       <LiveUpdates />
     </AgentSessionsProvider>

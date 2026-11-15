@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Boxes,
   CalendarDays,
   CalendarOff,
   CircleCheck,
@@ -90,6 +91,7 @@ export function CommandPalette({
     { label: "Go to Done", icon: <CircleCheck />, action: () => onSwitchView("done") },
     { label: "Show activity", icon: <History />, action: onShowActivity },
     { label: "Profile settings", icon: <UserRound />, action: () => router.push("/settings/profile") },
+    { label: "Spaces", icon: <Boxes />, action: () => router.push("/settings/spaces") },
     { label: "API keys", icon: <KeyRound />, action: () => router.push("/settings/keys") },
     { label: "GitHub webhook", icon: <GitHubMark />, action: () => router.push("/settings/github") },
   ];

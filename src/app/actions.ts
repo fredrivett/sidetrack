@@ -52,7 +52,20 @@ import {
   updateProject as updateProjectCore,
 } from "@/core/projects";
 import type { AuditSource, ProjectStatus } from "@/core/schema";
-import { setProjectSpace as setProjectSpaceCore } from "@/core/spaces";
+import {
+  acceptSpaceInvite as acceptSpaceInviteCore,
+  createSpace as createSpaceCore,
+  declineSpaceInvite as declineSpaceInviteCore,
+  deleteSpace as deleteSpaceCore,
+  inviteSpaceMember as inviteSpaceMemberCore,
+  listSpaceMembers as listSpaceMembersCore,
+  listSpaces as listSpacesCore,
+  listSuggestedSpaceMembers as listSuggestedSpaceMembersCore,
+  removeSpaceMember as removeSpaceMemberCore,
+  setProjectSpace as setProjectSpaceCore,
+  setSpaceMemberRole as setSpaceMemberRoleCore,
+  updateSpace as updateSpaceCore,
+} from "@/core/spaces";
 import {
   AVATAR_MAX_BYTES,
   setTimeZone as setTimeZoneCore,
@@ -273,6 +286,96 @@ export async function removeMemberAction(projectId: string, targetUserId: string
   const userId = await requireUserId();
   const { db } = getDb();
   removeMemberCore(db, userId, projectId, targetUserId, SOURCE);
+  refresh();
+}
+
+export async function createSpaceAction(input: { name: string; icon?: string | null }) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const space = createSpaceCore(db, userId, { name: input.name, icon: input.icon }, SOURCE);
+  refresh();
+  return space;
+}
+
+export async function updateSpaceAction(
+  spaceId: string,
+  patch: { name?: string; icon?: string | null },
+) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  updateSpaceCore(db, userId, spaceId, { name: patch.name, icon: patch.icon }, SOURCE);
+  refresh();
+}
+
+export async function deleteSpaceAction(spaceId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  deleteSpaceCore(db, userId, spaceId, SOURCE);
+  refresh();
+}
+
+export async function listSpaceMembersAction(spaceId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  return listSpaceMembersCore(db, userId, spaceId);
+}
+
+export async function listSuggestedSpaceMembersAction(spaceId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  return listSuggestedSpaceMembersCore(db, userId, spaceId);
+}
+
+export async function inviteSpaceMemberAction(spaceId: string, person: string) {
+  const session = await getCurrentSession();
+  if (!session) redirect("/login");
+  const { db } = getDb();
+  const member = inviteSpaceMemberCore(db, session.user.id, spaceId, person, SOURCE);
+  // Best-effort, like a list invite: the in-app banner is the source of truth.
+  const space = listSpacesCore(db, session.user.id).find((s) => s.id === spaceId);
+  if (member.email && space) {
+    await notifyInvite({
+      to: member.email,
+      inviterName: session.user.name,
+      projectName: space.name,
+      url: await appBaseUrl(),
+      kind: "space",
+    });
+  }
+  refresh();
+  return member;
+}
+
+/** Remove someone from a Space, revoke their invite, or (yourself) leave. */
+export async function removeSpaceMemberAction(spaceId: string, targetUserId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  removeSpaceMemberCore(db, userId, spaceId, targetUserId, SOURCE);
+  refresh();
+}
+
+export async function setSpaceMemberRoleAction(
+  spaceId: string,
+  targetUserId: string,
+  role: "admin" | "member",
+) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  setSpaceMemberRoleCore(db, userId, spaceId, targetUserId, role, SOURCE);
+  refresh();
+}
+
+export async function acceptSpaceInviteAction(spaceId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  acceptSpaceInviteCore(db, userId, spaceId, SOURCE);
+  refresh();
+}
+
+export async function declineSpaceInviteAction(spaceId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  declineSpaceInviteCore(db, userId, spaceId, SOURCE);
   refresh();
 }
 
