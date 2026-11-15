@@ -21,17 +21,21 @@ import { assigneeName, UserAvatar } from "./UserAvatar";
  * ticking two people quickly adds both before the first change comes back.
  * Render inside a DropdownMenuContent (avatar picker, item dialog) or the
  * row's ContextMenuSubContent; all are base-ui Menus, so these items work in each.
+ * `onClear` handles Unassigned when clearing means more than `onChange([])`,
+ * such as the New item dialog, which also holds people from other lists.
  */
 export function AssigneeOptions({
   selected,
   assignees,
   viewerId,
   onChange,
+  onClear = () => onChange([]),
 }: {
   selected: string[];
   assignees: AssigneeView[];
   viewerId: string | null;
   onChange: (assigneeIds: string[]) => void;
+  onClear?: () => void;
 }) {
 
   const ordered = viewerId
@@ -42,7 +46,7 @@ export function AssigneeOptions({
 
   return (
     <>
-      <DropdownMenuItem onClick={() => onChange([])}>
+      <DropdownMenuItem onClick={onClear}>
         <CircleDashed className="text-neutral-400" />
         Unassigned
         {selected.length === 0 && <Check className="ml-auto" />}

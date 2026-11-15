@@ -364,6 +364,8 @@ export function Kanban({
           onOpenChange={(open) => setNewItem((s) => ({ ...s, open }))}
           projects={onBoard}
           categoriesByProject={categoriesByProject}
+          assigneesByProject={assigneesByProject}
+          viewerId={viewerId}
           initialProjectId={newItem.projectId}
         />
 
