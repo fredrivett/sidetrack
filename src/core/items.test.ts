@@ -1312,7 +1312,8 @@ describe("sorting a list", () => {
     const previous = sortItems(db, userId, projectId, "title", "web");
     addItem(db, userId, { projectId, title: "new" }, "web");
 
-    setItemOrder(db, userId, projectId, previous ?? [], "web");
+    if (!previous) throw new Error("expected the sort to change the order");
+    setItemOrder(db, userId, projectId, previous, "web");
     expect(titles(db, userId, projectId)).toEqual(["c", "a", "b", "new"]);
     expect(listAudit(db, userId, { projectId })[0].detail).toBe('reordered the items in "P"');
   });

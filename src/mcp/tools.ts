@@ -925,8 +925,9 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Sort items",
       description:
-        "Sort a list's top-level items once, as the web's \"Sort items by\" does: by is due (soonest first, " +
-        "a span by its last day, undated items last), created (newest first) or title (A to Z). " +
+        "Sort a list's top-level items once, as the web's \"Sort items by\" does. by is one of: " +
+        "\"due\" (due date, soonest first, a span by its last day, undated items last), " +
+        "\"created\" (date created, newest first) or \"title\" (A to Z). " +
         "Items that tie keep their current order, and sub-items move with their parent. " +
         "It rewrites the list's order rather than keeping it sorted: items added or moved later go where they're put. " +
         "Returns changed (false when the list was already in that order, so nothing changed) and the list's open items in their new order.",

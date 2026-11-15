@@ -21,6 +21,7 @@ import {
   Trash2,
   UserPlus,
 } from "lucide-react";
+import { unstable_rethrow } from "next/navigation";
 import { useTransition } from "react";
 import { toast } from "sonner";
 import {
@@ -125,7 +126,12 @@ export function ProjectMenu({
   // before afterwards. Undo puts back the order from before it.
   function sortItems(by: ItemSort, label: string) {
     start(async () => {
-      const previous = await sortItemsAction(projectId, by).catch(() => undefined);
+      // A signed-out action rejects with Next's redirect to /login; let that
+      // through so it navigates, and turn only real failures into a toast.
+      const previous = await sortItemsAction(projectId, by).catch((e) => {
+        unstable_rethrow(e);
+        return undefined;
+      });
       if (previous === undefined) {
         toast.error(`Couldn't sort "${name}". Please try again.`);
       } else if (previous === null) {
@@ -136,9 +142,10 @@ export function ProjectMenu({
             label: "Undo",
             onClick: () =>
               start(async () => {
-                await setItemOrderAction(projectId, previous).catch(() =>
-                  toast.error("Couldn't undo the sort. Please try again."),
-                );
+                await setItemOrderAction(projectId, previous).catch((e) => {
+                  unstable_rethrow(e);
+                  toast.error("Couldn't undo the sort. Please try again.");
+                });
               }),
           },
         });
