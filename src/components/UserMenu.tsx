@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, CircleUserRound, KeyRound, Loader2, LogOut, UserRound } from "lucide-react";
+import { Boxes, Check, CircleUserRound, KeyRound, Loader2, LogOut, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
@@ -57,6 +57,14 @@ export function UserMenu({ user }: { user: AvatarUser | null }) {
             <Link href="/settings/profile">
               <UserRound />
               Profile
+            </Link>
+          }
+        />
+        <DropdownMenuItem
+          render={
+            <Link href="/settings/spaces">
+              <Boxes />
+              Spaces
             </Link>
           }
         />

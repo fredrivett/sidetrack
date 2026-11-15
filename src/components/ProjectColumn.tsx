@@ -61,6 +61,9 @@ export function ProjectColumn({
   // first, and older ones leave the board. Before the browser knows its day
   // (dayStart is Infinity), Done shows every finished item the server sent.
   const dayStart = useDayStart();
+  // A list in one of the viewer's Spaces sits on that Space's tray, which
+  // already says who shares it, so it drops the "Shared" badge.
+  const inSpace = spaces.some((s) => s.id === project.spaceId);
   const weekStart = Number.isFinite(dayStart) ? startOfWeek(dayStart) : -Infinity;
   const groups = nestItems(items);
   const active = groups.filter((i) => i.completedAt === null);
@@ -131,7 +134,7 @@ export function ProjectColumn({
                 {project.prefix}
               </span>
             </div>
-            {(project.status !== "active" || !project.isOwner) && (
+            {(project.status !== "active" || (!project.isOwner && !inSpace)) && (
               <div className="flex items-center gap-1.5">
                 {project.status !== "active" && (
                   <StatusBadge
@@ -139,7 +142,7 @@ export function ProjectColumn({
                     status={project.status}
                   />
                 )}
-                {!project.isOwner && (
+                {!project.isOwner && !inSpace && (
                   <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sky-700 dark:bg-sky-950 dark:text-sky-400">
                     Shared
                   </span>

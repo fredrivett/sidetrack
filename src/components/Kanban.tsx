@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import type { AssigneeView, PendingInviteView } from "@/core/members";
 import { listDoneBeforeAction, setTimeZoneAction } from "@/app/actions";
 import type { Category, Item, ItemPrLink, Project } from "@/core/schema";
-import type { SpaceView } from "@/core/spaces";
+import type { PendingSpaceInviteView, SpaceView } from "@/core/spaces";
 import { isEditableTarget, matchesShortcut } from "@/lib/keyboard";
 import { Button } from "@/components/ui/button";
 import { AddProjectButton } from "./AddProjectButton";
@@ -23,6 +23,7 @@ import { NewProjectDialog } from "./NewProjectDialog";
 import { ProjectColumn } from "./ProjectColumn";
 import { PullToSearch } from "./PullToSearch";
 import { ShareDialog } from "./ShareDialog";
+import { saveCollapsedTrays, SpaceTray } from "./SpaceTray";
 import { TodayView } from "./TodayView";
 import { useDayStart } from "./use-day-start";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
@@ -68,6 +69,9 @@ export function Kanban({
   prLinksByItem,
   pendingInvites,
   spaces,
+  pendingSpaceInvites,
+  initialCollapsedTrays,
+  initialListId,
 }: {
   viewerId: string;
   /** The viewer's own display fields, for the avatar on the Account button. */
@@ -90,6 +94,11 @@ export function Kanban({
   pendingInvites: PendingInviteView[];
   /** The Spaces the viewer has joined, with their role in each. */
   spaces: SpaceView[];
+  pendingSpaceInvites: PendingSpaceInviteView[];
+  /** Trays ("personal" or Space ids) this browser has collapsed, from its cookie. */
+  initialCollapsedTrays: string[];
+  /** From `?p=`, the list the board opens centred on. */
+  initialListId: string | null;
 }) {
   const railRef = useRef<HTMLDivElement>(null);
 
@@ -236,7 +245,8 @@ export function Kanban({
     open: boolean;
     projectId: string | null;
   }>({ open: false, projectId: null });
-  const [newProjectOpen, setNewProjectOpen] = useState(false);
+  // New list starts in the Space of the tray whose + opened it, else in none.
+  const [newList, setNewList] = useState({ open: false, spaceId: "" });
   const [share, setShare] = useState<{
     open: boolean;
     projectId: string | null;
@@ -252,6 +262,41 @@ export function Kanban({
   const archived = projects.filter((p) => p.status === "archived");
   const onBoard = [...active, ...paused];
 
+  // For someone in a Space, the board groups lists on trays: "Personal" for
+  // lists in none of their Spaces, then one per Space, empty ones included.
+  // Collapsed trays are remembered per browser in a cookie, so the board
+  // renders them collapsed from the first paint. The tray holding ?p='s list
+  // starts open, so a link to a list shows it.
+  const trays = [
+    { id: "personal", name: "Personal", icon: null },
+    ...spaces.map((s) => ({ id: s.id, name: s.name, icon: s.icon })),
+  ];
+  const trayOf = (p: ProjectView) =>
+    spaces.find((s) => s.id === p.spaceId)?.id ?? "personal";
+  const trayByList: Record<string, string> = Object.fromEntries(
+    onBoard.map((p) => [p.id, trayOf(p)]),
+  );
+  const [collapsedTrays, setCollapsedTrays] = useState(() => {
+    const collapsed = new Set(initialCollapsedTrays);
+    if (initialListId) collapsed.delete(trayByList[initialListId]);
+    return collapsed;
+  });
+  function setTrayCollapsed(trayId: string, value: boolean) {
+    const next = new Set(collapsedTrays);
+    if (value) next.add(trayId);
+    else next.delete(trayId);
+    setCollapsedTrays(next);
+    saveCollapsedTrays([...next]);
+    // ?p= follows the list on view; once its tray folds away it isn't, and
+    // keeping it would open the tray again on the next load.
+    const url = new URL(window.location.href);
+    const shown = url.searchParams.get("p");
+    if (value && shown && trayByList[shown] === trayId) {
+      url.searchParams.delete("p");
+      window.history.replaceState(null, "", url.toString());
+    }
+  }
+
   const [paletteOpen, setPaletteOpen] = useState(false);
   // Items opened from the palette get their own dialog here, since the item
   // may sit in a list the current view doesn't show.
@@ -262,18 +307,27 @@ export function Kanban({
   );
 
   // Centre a list in the rail, switching to the board first when needed; the
-  // effect below scrolls to ?p= once the rail mounts.
+  // effect below scrolls to ?p= once the rail mounts. A collapsed tray opens
+  // first, and the scroll waits for it to finish widening.
   function openList(projectId: string) {
     const url = new URL(window.location.href);
     url.searchParams.set("p", projectId);
     window.history.replaceState(null, "", url.toString());
+    // Without Spaces there are no trays, whatever the cookie says.
+    const trayId = spaces.length > 0 ? (trayByList[projectId] ?? "") : "";
+    const opening = collapsedTrays.has(trayId);
+    if (opening) setTrayCollapsed(trayId, false);
     if (view !== "board") {
       switchView("board");
       return;
     }
-    railRef.current
-      ?.querySelector(`[data-project-id="${CSS.escape(projectId)}"]`)
-      ?.scrollIntoView({ behavior: "smooth", inline: "center" });
+    setTimeout(
+      () =>
+        railRef.current
+          ?.querySelector(`[data-project-id="${CSS.escape(projectId)}"]`)
+          ?.scrollIntoView({ behavior: "smooth", inline: "center" }),
+      opening ? 300 : 0,
+    );
   }
 
   const openShare = useCallback(
@@ -289,13 +343,35 @@ export function Kanban({
   const openNewItem = useCallback(
     (projectId?: string) => {
       if (!projects.some((p) => p.status !== "archived")) {
-        setNewProjectOpen(true);
+        setNewList({ open: true, spaceId: "" });
         return;
       }
       setNewItem({ open: true, projectId: projectId ?? null });
     },
     [projects],
   );
+
+  // One run of columns (a tray's active or paused lists, or the whole board's
+  // without Spaces); the ⋯ menu's moves stay within it.
+  const columns = (group: ProjectView[]) =>
+    group.map((p, idx) => (
+      <ProjectColumn
+        key={p.id}
+        project={p}
+        viewerId={viewerId}
+        items={itemsByProject[p.id] ?? []}
+        assignees={assigneesByProject[p.id] ?? []}
+        prLinksByItem={prLinksByItem}
+        prevId={group[idx - 1]?.id ?? null}
+        nextId={group[idx + 1]?.id ?? null}
+        firstId={group[0].id}
+        lastId={group[group.length - 1].id}
+        onShowActivity={(pid) => setAudit({ open: true, projectId: pid })}
+        onAddItem={openNewItem}
+        onShare={openShare}
+        spaces={spaces}
+      />
+    ));
 
   // Global shortcuts: ⌘K / Ctrl+K toggles the command palette, even from a
   // field. Then Linear-style bare keys: / → palette, C → new item, ⇧C → new
@@ -316,7 +392,7 @@ export function Kanban({
         setPaletteOpen(true);
       } else if (matchesShortcut(e, { key: "c", shift: true })) {
         e.preventDefault();
-        setNewProjectOpen(true);
+        setNewList({ open: true, spaceId: "" });
       } else if (matchesShortcut(e, { key: "c", shift: false })) {
         e.preventDefault();
         openNewItem();
@@ -416,7 +492,7 @@ export function Kanban({
           </Button>
           <UserMenu user={viewer} />
         </BoardHeader>
-        <InvitesBanner invites={pendingInvites} />
+        <InvitesBanner invites={pendingInvites} spaceInvites={pendingSpaceInvites} />
         {view === "today" ? (
           <TodayView
             projects={active}
@@ -449,34 +525,48 @@ export function Kanban({
           />
         ) : (
           <BoardRail ref={railRef}>
-            {onBoard.length === 0 && (
-              <div className="m-auto text-sm text-neutral-500">
-                {archived.length > 0
-                  ? "Every list is archived — restore one from Archived, or tap + Add list."
-                  : "No lists yet — tap + Add list to start."}
-              </div>
+            {spaces.length === 0 ? (
+              <>
+                {onBoard.length === 0 && (
+                  <div className="m-auto text-sm text-neutral-500">
+                    {archived.length > 0
+                      ? "Every list is archived — restore one from Archived, or tap + Add list."
+                      : "No lists yet — tap + Add list to start."}
+                  </div>
+                )}
+                {[active, paused].map(columns)}
+                <AddProjectButton onClick={() => setNewList({ open: true, spaceId: "" })} />
+              </>
+            ) : (
+              trays.map((tray) => {
+                const inTray = (p: ProjectView) => trayOf(p) === tray.id;
+                const lists = onBoard.filter(inTray);
+                const spaceId = tray.id === "personal" ? "" : tray.id;
+                return (
+                  <SpaceTray
+                    key={tray.id}
+                    name={tray.name}
+                    icon={tray.icon}
+                    lists={lists}
+                    collapsed={collapsedTrays.has(tray.id)}
+                    onToggle={() => setTrayCollapsed(tray.id, !collapsedTrays.has(tray.id))}
+                    onAddList={() => setNewList({ open: true, spaceId })}
+                    onOpenList={openList}
+                  >
+                    {lists.length === 0 ? (
+                      <AddProjectButton
+                        shortcut={tray.id === "personal"}
+                        onClick={() => setNewList({ open: true, spaceId })}
+                      />
+                    ) : (
+                      // Moves stay within the tray (and within its active or
+                      // paused lists), where the new order shows.
+                      [active.filter(inTray), paused.filter(inTray)].map(columns)
+                    )}
+                  </SpaceTray>
+                );
+              })
             )}
-            {[active, paused].map((group) =>
-              group.map((p, idx) => (
-                <ProjectColumn
-                  key={p.id}
-                  project={p}
-                  viewerId={viewerId}
-                  items={itemsByProject[p.id] ?? []}
-                  assignees={assigneesByProject[p.id] ?? []}
-                  prLinksByItem={prLinksByItem}
-                  prevId={group[idx - 1]?.id ?? null}
-                  nextId={group[idx + 1]?.id ?? null}
-                  firstId={group[0].id}
-                  lastId={group[group.length - 1].id}
-                  onShowActivity={(pid) => setAudit({ open: true, projectId: pid })}
-                  onAddItem={openNewItem}
-                  onShare={openShare}
-                  spaces={spaces}
-                />
-              )),
-            )}
-            <AddProjectButton onClick={() => setNewProjectOpen(true)} />
           </BoardRail>
         )}
 
@@ -498,10 +588,11 @@ export function Kanban({
         />
 
         <NewProjectDialog
-          open={newProjectOpen}
-          onOpenChange={setNewProjectOpen}
+          open={newList.open}
+          onOpenChange={(open) => setNewList((s) => ({ ...s, open }))}
           takenPrefixes={projects.filter((p) => p.isOwner).map((p) => p.prefix)}
           spaces={spaces}
+          defaultSpaceId={newList.spaceId}
         />
 
         <PullToSearch onOpen={() => setPaletteOpen(true)} />
@@ -512,7 +603,7 @@ export function Kanban({
           lists={onBoard}
           itemsByProject={itemsByProject}
           onNewItem={() => openNewItem()}
-          onNewList={() => setNewProjectOpen(true)}
+          onNewList={() => setNewList({ open: true, spaceId: "" })}
           onSwitchView={switchView}
           onShowActivity={() => setAudit({ open: true })}
           onOpenList={openList}

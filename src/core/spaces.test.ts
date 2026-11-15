@@ -18,6 +18,7 @@ import {
   listPendingSpaceInvites,
   listSpaceMembers,
   listSpaces,
+  listSuggestedSpaceMembers,
   removeSpaceMember,
   setProjectSpace,
   setSpaceMemberRole,
@@ -224,6 +225,26 @@ describe("spaces", () => {
       listSuggestedCollaborators(db, fred, listId).map((c) => c.username);
     expect(handles(outside.id)).toEqual(["alice"]);
     expect(handles(inSpace.id)).toEqual([]);
+  });
+
+  it("suggests an admin's collaborators who aren't in the space yet", () => {
+    // Fred shares a list with Bob, and is in another Space with Carol.
+    const list = createProject(db, fred, { name: "Shared" }, "web");
+    inviteMember(db, fred, list.id, "bob", "web");
+    acceptInvite(db, bob, list.id, "web");
+    const carol = createTestUser(db, { username: "carol" });
+    const work = createSpace(db, carol, { name: "Work" }, "web").id;
+    inviteSpaceMember(db, carol, work, "fred", "web");
+    acceptSpaceInvite(db, fred, work, "web");
+    const handles = () => listSuggestedSpaceMembers(db, fred, spaceId).map((c) => c.username);
+
+    expect(handles()).toEqual(["bob", "carol"]);
+    // Invited, pending or not, drops out; Alice was never a collaborator.
+    inviteSpaceMember(db, fred, spaceId, "bob", "web");
+    expect(handles()).toEqual(["carol"]);
+    // Only admins invite, so members get no suggestions.
+    acceptSpaceInvite(db, bob, spaceId, "web");
+    expect(listSuggestedSpaceMembers(db, bob, spaceId)).toEqual([]);
   });
 
   describe("lists in a space", () => {
