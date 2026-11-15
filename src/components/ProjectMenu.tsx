@@ -154,7 +154,7 @@ export function ProjectMenu({
 
   function moveToSpace(next: string | null) {
     const target = spaces.find((s) => s.id === next);
-    start(async () => {
+    save(async () => {
       if (
         await runAction(
           setProjectSpaceAction(projectId, next),
