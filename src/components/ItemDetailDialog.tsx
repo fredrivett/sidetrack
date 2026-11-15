@@ -49,14 +49,12 @@ import {
 import { Kbd } from "@/components/ui/kbd";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import { useMediaQuery } from "@/components/ui/use-media-query";
+  ResponsiveDialog,
+  ResponsiveDialogCloseButton,
+  ResponsiveDialogContent,
+  ResponsiveDialogDescription,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
 import { AssigneeOptions } from "./AssigneeOptions";
 import { CategoryBadge } from "./CategoryBadge";
 import { DueBadge } from "./DueBadge";
@@ -109,7 +107,7 @@ function Checklist({
   /** Each sub-item's assignees as last set here (see useOptimisticAssignees). */
   assigneesById: Record<string, string[]>;
   onAssign: (id: string, assigneeIds: string[]) => void;
-  /** The sub-item whose assignee picker is open, if any (owned by the sheet,
+  /** The sub-item whose assignee picker is open, if any (owned by the dialog,
    * which hands its A/I shortcuts over while one is open). */
   pickerFor: string | null;
   onPickerFor: (id: string | null) => void;
@@ -371,7 +369,7 @@ function DueDatePicker({
   );
 }
 
-export function ItemDetailSheet({
+export function ItemDetailDialog({
   item,
   parent,
   checklist,
@@ -392,7 +390,7 @@ export function ItemDetailSheet({
   /** Tasks this item can become a sub-item of: the list's other open
    * top-level tasks, in order. */
   nestTargets: Item[];
-  /** Switch the sheet to another item (a sub-item or the parent). */
+  /** Switch the dialog to another item (a sub-item or the parent). */
   onOpenItem: (item: Item) => void;
   prefix: string;
   assignees: AssigneeView[];
@@ -401,9 +399,6 @@ export function ItemDetailSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  // Sidebar slide-out on desktop, bottom drawer on mobile — same responsive
-  // default as abode's dialog-or-drawer, built on our own Sheet primitive.
-  const isDesktop = useMediaQuery("(min-width: 768px)", true);
   const [pending, start] = useTransition();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
@@ -430,14 +425,14 @@ export function ItemDetailSheet({
     setAssignOpen(false);
   }, [assign, assigneeIds, viewerId]);
 
-  // While the sheet is open, ⌘./Ctrl+. copies the ref (Linear's shortcut).
+  // While the dialog is open, ⌘./Ctrl+. copies the ref (Linear's shortcut).
   const { copy } = useCopyItemRef(ref, { active: open });
 
-  // Linear's assignment shortcuts while the sheet owns the screen: A opens the
+  // Linear's assignment shortcuts while the dialog owns the screen: A opens the
   // picker, I adds or removes me. Stays armed while the picker is open so the I
   // hint shown on the "me" row works there (useAssignShortcuts listens ahead of
-  // the menu's typeahead). No deferToDialog: the sheet IS the dialog and should
-  // respond.
+  // the menu's typeahead). No deferToDialog: this is the dialog
+  // the shortcuts defer to, so it should respond.
   // While a sub-item's picker is open, I toggles me on that sub-item (as its
   // menu's hint says) and A does nothing, rather than both acting on this item.
   const toggleMeOnChild = useCallback(() => {
@@ -463,7 +458,7 @@ export function ItemDetailSheet({
   function change(next: boolean) {
     if (!next) {
       setConfirmingDelete(false);
-      // Reset the picker so a closed sheet never reopens with it already open
+      // Reset the picker so a closed dialog never reopens with it already open
       // (which would also disarm the A/I shortcuts).
       setAssignOpen(false);
       setChildPickerFor(null);
@@ -491,16 +486,9 @@ export function ItemDetailSheet({
   }
 
   return (
-    <Sheet open={open} onOpenChange={change}>
-      <SheetContent
-        side={isDesktop ? "right" : "bottom"}
-        className={
-          isDesktop
-            ? "w-full gap-0 p-0 data-[side=right]:sm:max-w-md"
-            : "max-h-[85vh] gap-0 rounded-t-xl p-0"
-        }
-      >
-        <SheetHeader className="gap-2 border-b border-neutral-200 px-4 py-3 pr-14 dark:border-neutral-800">
+    <ResponsiveDialog open={open} onOpenChange={change}>
+      <ResponsiveDialogContent>
+        <div className="flex shrink-0 flex-col gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -528,8 +516,9 @@ export function ItemDetailSheet({
               {completed ? <CheckCircle2 /> : <Circle />}
               {completed ? "Completed" : "Complete"}
             </Button>
+            <ResponsiveDialogCloseButton />
           </div>
-          <SheetTitle className="text-base">
+          <ResponsiveDialogTitle>
             <EditableText
               value={item.title}
               onSave={(next) => updateItemAction(item.id, { title: next })}
@@ -540,13 +529,13 @@ export function ItemDetailSheet({
               inputClassName="w-full text-base"
               renderValue={(title) => <InlineCode>{title}</InlineCode>}
             />
-          </SheetTitle>
-          <SheetDescription className="sr-only">
+          </ResponsiveDialogTitle>
+          <ResponsiveDialogDescription className="sr-only">
             Item details for {item.title}
-          </SheetDescription>
-        </SheetHeader>
+          </ResponsiveDialogDescription>
+        </div>
 
-        <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4">
           <Field label="Description">
             <EditableText
               value={item.description ?? ""}
@@ -739,7 +728,7 @@ export function ItemDetailSheet({
           )}
         </div>
 
-        <SheetFooter className="mt-0 flex-row items-center justify-between border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
+        <div className="flex shrink-0 items-center justify-between border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
           <span className="text-xs text-neutral-400">
             {completed && item.completedAt
               ? `Completed ${dayLabel(item.completedAt)}`
@@ -754,8 +743,8 @@ export function ItemDetailSheet({
             <Trash2 />
             {confirmingDelete ? "Confirm delete?" : "Delete"}
           </Button>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+        </div>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }

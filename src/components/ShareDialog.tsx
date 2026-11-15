@@ -10,13 +10,12 @@ import type { MemberView } from "@/core/members";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import { useMediaQuery } from "@/components/ui/use-media-query";
+  ResponsiveDialog,
+  ResponsiveDialogCloseButton,
+  ResponsiveDialogContent,
+  ResponsiveDialogDescription,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
 import { useTapToConfirm } from "./use-tap-to-confirm";
 
 function displayName(m: MemberView) {
@@ -26,9 +25,9 @@ function displayName(m: MemberView) {
 /**
  * Owner-only panel to manage a project's collaborators: invite by username or
  * email, see who's a member (and who has a pending invite), and remove them.
- * Members are lazy-loaded when the sheet opens.
+ * Members are lazy-loaded when the dialog opens.
  */
-export function ShareSheet({
+export function ShareDialog({
   open,
   onOpenChange,
   projectId,
@@ -39,7 +38,6 @@ export function ShareSheet({
   projectId: string | null;
   projectName: string;
 }) {
-  const isDesktop = useMediaQuery("(min-width: 768px)", true);
   const [members, setMembers] = useState<MemberView[]>([]);
   const [person, setPerson] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -49,11 +47,12 @@ export function ShareSheet({
 
   // Always holds the currently-open project (synced in the load effect below).
   // An invite/remove fetches the roster for the project it was issued against;
-  // if the sheet has since moved to another project, that late response must
+  // if the dialog has since moved to another project, that late response must
   // not overwrite the new roster.
   const latestProjectId = useRef(projectId);
+  const personRef = useRef<HTMLInputElement>(null);
 
-  // Clear the form when the sheet opens (or switches project) — the render-time
+  // Clear the form when the dialog opens (or switches project) — the render-time
   // reset pattern, so we don't setState synchronously inside the load effect.
   const [opened, setOpened] = useState({ open, projectId });
   if (opened.open !== open || opened.projectId !== projectId) {
@@ -64,7 +63,7 @@ export function ShareSheet({
     tap.reset();
   }
 
-  // Load the roster whenever the sheet opens for a project.
+  // Load the roster whenever the dialog opens for a project.
   useEffect(() => {
     latestProjectId.current = projectId;
     if (!open || !projectId) return;
@@ -112,26 +111,25 @@ export function ShareSheet({
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side={isDesktop ? "right" : "bottom"}
-        className={
-          isDesktop
-            ? "w-full gap-0 p-0 data-[side=right]:sm:max-w-md"
-            : "gap-0 rounded-t-xl p-0"
-        }
-      >
-        <SheetHeader className="border-b border-neutral-200 px-4 py-3 pr-14 dark:border-neutral-800">
-          <SheetTitle className="text-base">Share “{projectName}”</SheetTitle>
-          <SheetDescription className="text-xs text-neutral-500">
+    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+      <ResponsiveDialogContent initialFocus={personRef}>
+        <div className="flex shrink-0 flex-col gap-0.5 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+          <div className="flex items-center gap-2">
+            <ResponsiveDialogTitle className="min-w-0 break-words">
+              Share “{projectName}”
+            </ResponsiveDialogTitle>
+            <ResponsiveDialogCloseButton className="ml-auto shrink-0" />
+          </div>
+          <ResponsiveDialogDescription className="text-xs text-neutral-500">
             Invite people by username or email. They’ll need a Sidetrack account
             and must accept before they can edit.
-          </SheetDescription>
-        </SheetHeader>
+          </ResponsiveDialogDescription>
+        </div>
 
-        <form onSubmit={invite} className="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+        <form onSubmit={invite} className="shrink-0 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
           <div className="flex gap-2">
             <Input
+              ref={personRef}
               value={person}
               onChange={(e) => setPerson(e.target.value)}
               placeholder="username or email"
@@ -147,7 +145,7 @@ export function ShareSheet({
           )}
         </form>
 
-        <div className="flex-1 overflow-y-auto px-4 py-3">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
           {members.length === 0 ? (
             <p className="py-6 text-center text-xs text-neutral-500">
               No collaborators yet.
@@ -200,7 +198,7 @@ export function ShareSheet({
             </ul>
           )}
         </div>
-      </SheetContent>
-    </Sheet>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }

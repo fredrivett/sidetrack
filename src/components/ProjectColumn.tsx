@@ -9,15 +9,15 @@ import { ColumnCard } from "./BoardLayout";
 import { DoneSection } from "./DoneSection";
 import type { ProjectView } from "./Kanban";
 import { EditableText } from "./EditableText";
-import { ItemDetailSheet } from "./ItemDetailSheet";
+import { ItemDetailDialog } from "./ItemDetailDialog";
 import { ItemList } from "./ItemList";
-import { ProjectDetailSheet } from "./ProjectDetailSheet";
+import { ProjectDetailDialog } from "./ProjectDetailDialog";
 import { ProjectIconPicker } from "./ProjectIconPicker";
 import { ProjectMenu } from "./ProjectMenu";
 import { StatusBadge } from "./StatusBadge";
 import { SummaryBlock } from "./SummaryBlock";
 import { useDayStart } from "./use-day-start";
-import { useItemDetailSheet } from "./use-item-detail-sheet";
+import { useItemDetailDialog } from "./use-item-detail-dialog";
 
 export function ProjectColumn({
   project,
@@ -59,12 +59,12 @@ export function ProjectColumn({
   // Lives above the list/done split so it survives an item moving between
   // ItemList and DoneSection when it's reopened or the day turns over — see
   // the hook for the live-lookup / closing-snapshot details.
-  const detail = useItemDetailSheet(items);
+  const detail = useItemDetailDialog(items);
   // The column re-renders with fresh server props on every edit. It unmounts
   // when the list is deleted, archived, or moves between the active and paused
   // groups (Kanban renders those as separate arrays), which resets this local
   // state; plain open-state is still enough — no live-lookup/closing-snapshot
-  // dance like the item sheet needs.
+  // dance like the item dialog needs.
   const [detailsOpen, setDetailsOpen] = useState(false);
   // A paused list sits collapsed at the end of the board until opened.
   const [showPaused, setShowPaused] = useState(false);
@@ -154,7 +154,7 @@ export function ProjectColumn({
             </button>
           )}
           {/* Only shown once written; an empty summary is added from the
-              details sheet, so it doesn't take up room on every card. */}
+              details dialog, so it doesn't take up room on every card. */}
           {project.summary.trim() && (
             <SummaryBlock
               projectId={project.id}
@@ -187,7 +187,7 @@ export function ProjectColumn({
         </>
       )}
       {detail.item && (
-        <ItemDetailSheet
+        <ItemDetailDialog
           item={detail.item}
           parent={items.find((i) => i.id === detail.item?.parentId) ?? null}
           checklist={items.filter((i) => i.parentId === detail.item?.id)}
@@ -207,7 +207,7 @@ export function ProjectColumn({
         />
       )}
 
-      <ProjectDetailSheet
+      <ProjectDetailDialog
         project={project}
         open={detailsOpen}
         onOpenChange={setDetailsOpen}

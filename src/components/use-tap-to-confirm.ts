@@ -12,7 +12,7 @@ export const ARMED_MENU_ITEM =
 /**
  * Tap-to-confirm for destructive actions: the first tap arms the button,
  * which then says "Confirm …?", and a second tap runs it. It disarms after a
- * few seconds, or on `reset` (call it when the menu or sheet closes). `key`
+ * few seconds, or on `reset` (call it when the menu or dialog closes). `key`
  * tells apart several buttons sharing one hook, such as one per row.
  */
 export function useTapToConfirm() {

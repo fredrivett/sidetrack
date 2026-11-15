@@ -45,8 +45,8 @@ tooling/config suggestions; there is no Vercel project.
 # UI conventions
 
 - Build UI from the shadcn-style primitives in `src/components/ui/` (button,
-  dropdown-menu, sheet, input, …). Reach for an existing primitive before
-  hand-rolling markup; add a new one via the shadcn pattern rather than ad-hoc
+  dropdown-menu, responsive-dialog, input, …). Reach for an existing primitive
+  before hand-rolling markup; add a new one via the shadcn pattern rather than ad-hoc
   components.
 - Card actions belong in a `⋯` dropdown menu (`DropdownMenu` +
   `DropdownMenuTrigger`/`Content`/`Item`), with destructive actions marked
@@ -55,7 +55,7 @@ tooling/config suggestions; there is no Vercel project.
   so opening the menu doesn't start a drag.
 - Item rows have no `⋯` button: their actions are a right-click `ContextMenu`
   (`ItemRow.tsx`), disabled on touch, where tapping the row opens the detail
-  sheet with the same actions. Don't add per-row action buttons; put new
+  dialog with the same actions. Don't add per-row action buttons; put new
   actions in the context menu.
 
 # Boundaries

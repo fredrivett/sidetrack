@@ -13,10 +13,10 @@ export const ASSIGN_TO_ME_SHORTCUT = { key: "i" } as const;
  * (or takes them off if they're already on it).
  *
  * `active` arms a document-level key listener — pass the condition under which
- * this item should own the shortcuts (a hovered card, an open detail sheet, …),
+ * this item should own the shortcuts (a hovered card, an open detail dialog, …),
  * and disarm it while the picker itself is open so the menu keeps its own
  * keyboard handling. Set `deferToDialog` on a card so a still-hovered row behind
- * an open sheet yields to that sheet ([role=dialog]) rather than acting on the
+ * an open dialog yields to that dialog ([role=dialog]) rather than acting on the
  * wrong item. `onAssignToMe` is omitted when the viewer can't assign themselves
  * (not a candidate on this project), which also drops the `I` binding.
  */
@@ -35,15 +35,15 @@ export function useAssignShortcuts({
     if (!active) return;
     function onKeyDown(e: KeyboardEvent) {
       if (isEditableTarget(e.target)) return;
-      // Inside any other menu (the row's right-click menu, the sheet's parent
+      // Inside any other menu (the row's right-click menu, the dialog's parent
       // picker), letters belong to that menu's typeahead. Assignee pickers
       // carry data-assignee-picker so their own I hint still works.
       const menu = (e.target as Element | null)?.closest?.('[role="menu"]');
       if (menu && !menu.hasAttribute("data-assignee-picker")) return;
       // Bare keys only — never shadow ⌘A / Ctrl+A (select all) and friends.
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      // A hovered card behind an open sheet must not steal the shortcut from
-      // the sheet, which renders a [role=dialog] popup over it.
+      // A hovered card behind an open dialog must not steal the shortcut from
+      // the dialog, which renders a [role=dialog] popup over it.
       if (deferToDialog && document.querySelector('[role="dialog"]')) return;
       if (matchesShortcut(e, OPEN_ASSIGNEE_SHORTCUT)) {
         e.preventDefault();

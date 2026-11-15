@@ -134,7 +134,7 @@ export function RepeatPicker({
               save(every, unit);
             }}
             onKeyDown={(e) => {
-              // Enter commits the count; in the new-item sheet it mustn't
+              // Enter commits the count; in the new-item dialog it mustn't
               // also submit the form with the old rule.
               if (e.key === "Enter") {
                 e.preventDefault();

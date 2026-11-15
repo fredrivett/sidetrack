@@ -7,15 +7,13 @@ import type { Repeat } from "@/lib/repeat";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  ResponsiveDialog,
+  ResponsiveDialogCloseButton,
+  ResponsiveDialogContent,
+  ResponsiveDialogDescription,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { useMediaQuery } from "@/components/ui/use-media-query";
 import { RepeatPicker } from "./RepeatPicker";
 
 function Field({
@@ -35,7 +33,7 @@ function Field({
   );
 }
 
-export function NewItemSheet({
+export function NewItemDialog({
   open,
   onOpenChange,
   projects,
@@ -48,8 +46,6 @@ export function NewItemSheet({
   categoriesByProject: Record<string, Category[]>;
   initialProjectId: string | null;
 }) {
-  // Sidebar slide-out on desktop, bottom drawer on mobile — matches ItemDetailSheet.
-  const isDesktop = useMediaQuery("(min-width: 768px)", true);
   const [projectId, setProjectId] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -57,20 +53,20 @@ export function NewItemSheet({
   const [repeat, setRepeat] = useState<Repeat | null>(null);
   // Remounts the repeat picker after each add, so a Custom draft goes too.
   const [added, setAdded] = useState(0);
-  // The last title added in this session: the sheet stays open after each
+  // The last title added in this session: the dialog stays open after each
   // add so you can enter a run of items, and this confirms each one landed.
   const [lastAdded, setLastAdded] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const titleRef = useRef<HTMLInputElement>(null);
   const listId = useId();
-  // Bumped each time the sheet opens, so an add that finishes after the sheet
+  // Bumped each time the dialog opens, so an add that finishes after the dialog
   // was closed (and maybe reopened) can't write into the new session's form.
   const session = useRef(0);
   useEffect(() => {
     if (open) session.current += 1;
   }, [open]);
 
-  // Reset and seed the form every time the sheet opens — the project comes
+  // Reset and seed the form every time the dialog opens — the project comes
   // from the caller (the centred column for ⌘N, or the chosen column's menu).
   // Adjusting state during render off a previous-value tracker is React's
   // recommended alternative to a reset-in-effect.
@@ -116,25 +112,18 @@ export function NewItemSheet({
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side={isDesktop ? "right" : "bottom"}
-        initialFocus={titleRef}
-        className={
-          isDesktop
-            ? "w-full gap-0 p-0 data-[side=right]:sm:max-w-md"
-            : "max-h-[85vh] gap-0 rounded-t-xl p-0"
-        }
-      >
+    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+      <ResponsiveDialogContent initialFocus={titleRef}>
         <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
-          <SheetHeader className="border-b border-neutral-200 px-4 py-3 pr-14 dark:border-neutral-800">
-            <SheetTitle className="text-base">New item</SheetTitle>
-            <SheetDescription className="sr-only">
+          <div className="flex shrink-0 items-center gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+            <ResponsiveDialogTitle>New item</ResponsiveDialogTitle>
+            <ResponsiveDialogDescription className="sr-only">
               Create a new task in a list.
-            </SheetDescription>
-          </SheetHeader>
+            </ResponsiveDialogDescription>
+            <ResponsiveDialogCloseButton className="ml-auto" />
+          </div>
 
-          <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4">
             <Field label="List">
               <select
                 value={projectId}
@@ -197,7 +186,7 @@ export function NewItemSheet({
             </Field>
           </div>
 
-          <SheetFooter className="mt-0 flex-row items-center justify-end gap-2 border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
+          <div className="flex shrink-0 items-center justify-end gap-2 border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
             {/* Always mounted so screen readers announce the first add too. */}
             <p
               role="status"
@@ -216,9 +205,9 @@ export function NewItemSheet({
             <Button type="submit" size="sm" disabled={!title.trim() || !projectId || pending}>
               {pending ? "Adding…" : "Add item"}
             </Button>
-          </SheetFooter>
+          </div>
         </form>
-      </SheetContent>
-    </Sheet>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }

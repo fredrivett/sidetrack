@@ -19,7 +19,7 @@ import { assigneeName, UserAvatar } from "./UserAvatar";
  *
  * `selected` should be the owner's optimistic copy (useOptimisticAssignees), so
  * ticking two people quickly adds both before the first change comes back.
- * Render inside a DropdownMenuContent (avatar picker, item sheet) or the
+ * Render inside a DropdownMenuContent (avatar picker, item dialog) or the
  * row's ContextMenuSubContent; all are base-ui Menus, so these items work in each.
  */
 export function AssigneeOptions({

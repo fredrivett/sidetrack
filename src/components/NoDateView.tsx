@@ -6,13 +6,13 @@ import type { Item, ItemPrLink } from "@/core/schema";
 import { nestItems } from "@/lib/itemTree";
 import { isOnNoDate } from "@/lib/time";
 import { matchesWhose, type WhoseFilter } from "@/lib/whose";
-import { ItemDetailSheet } from "./ItemDetailSheet";
+import { ItemDetailDialog } from "./ItemDetailDialog";
 import { ItemGroupView } from "./ItemList";
 import { ItemRow } from "./ItemRow";
 import type { ProjectView } from "./Kanban";
 import { ProjectIcon } from "./ProjectIcon";
 import { useToday } from "./use-day-start";
-import { useItemDetailSheet } from "./use-item-detail-sheet";
+import { useItemDetailDialog } from "./use-item-detail-dialog";
 import { WhoseFilterBar } from "./WhoseFilterBar";
 
 /**
@@ -42,9 +42,9 @@ export function NoDateView({
 
   const all = projects.flatMap((p) => itemsByProject[p.id] ?? []);
   const byId = new Map(all.map((i) => [i.id, i]));
-  // Every item, not just the undated ones, so an open sheet stays open once
+  // Every item, not just the undated ones, so an open dialog stays open once
   // it gives its item a date.
-  const detail = useItemDetailSheet(all);
+  const detail = useItemDetailDialog(all);
 
   const undated = today
     ? all.filter((i) =>
@@ -135,11 +135,11 @@ export function NoDateView({
       </div>
 
       {detail.item && detailProject && (
-        <ItemDetailSheet
+        <ItemDetailDialog
           item={detail.item}
           parent={all.find((i) => i.id === detail.item?.parentId) ?? null}
           checklist={all.filter((i) => i.parentId === detail.item?.id)}
-          // The same rule as the board's sheet (ProjectColumn), within the
+          // The same rule as the board's dialog (ProjectColumn), within the
           // item's own list.
           nestTargets={all.filter(
             (i) =>

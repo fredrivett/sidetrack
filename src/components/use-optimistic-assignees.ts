@@ -12,7 +12,7 @@ import type { Item } from "@/core/schema";
  * Once a change lands, the refreshed items take over again.
  *
  * The server gets who was added and who was taken off, not the whole set, so
- * a change made from another screen's copy (a row and a sheet, or two
+ * a change made from another screen's copy (a row and a dialog, or two
  * people's phones) is kept rather than overwritten. Unassigned is the one
  * absolute change: it clears everyone.
  */

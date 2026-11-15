@@ -10,14 +10,14 @@ import { isEditableTarget, matchesShortcut } from "@/lib/keyboard";
 import { Button } from "@/components/ui/button";
 import { AddProjectButton } from "./AddProjectButton";
 import { ArchivedListsMenu } from "./ArchivedListsMenu";
-import { AuditDrawer } from "./AuditDrawer";
+import { AuditDialog } from "./AuditDialog";
 import { BoardHeader, BoardMain, BoardRail } from "./BoardLayout";
 import { InvitesBanner } from "./InvitesBanner";
-import { NewItemSheet } from "./NewItemSheet";
+import { NewItemDialog } from "./NewItemDialog";
 import { NoDateView } from "./NoDateView";
-import { NewProjectSheet } from "./NewProjectSheet";
+import { NewProjectDialog } from "./NewProjectDialog";
 import { ProjectColumn } from "./ProjectColumn";
-import { ShareSheet } from "./ShareSheet";
+import { ShareDialog } from "./ShareDialog";
 import { TodayView } from "./TodayView";
 import { useDayStart } from "./use-day-start";
 import { UserMenu } from "./UserMenu";
@@ -136,7 +136,7 @@ export function Kanban({
     [],
   );
 
-  // Open the new-item sheet, seeding its list from the caller, falling back
+  // Open the new-item dialog, seeding its list from the caller, falling back
   // to the centred column then the first list on the board. With no lists on
   // the board, there's nowhere to add an item — start a list instead.
   const openNewItem = useCallback(
@@ -312,14 +312,14 @@ export function Kanban({
         </BoardRail>
       )}
 
-      <AuditDrawer
+      <AuditDialog
         open={audit.open}
         projectId={audit.projectId}
         projects={projects}
         onClose={() => setAudit({ open: false })}
       />
 
-      <NewItemSheet
+      <NewItemDialog
         open={newItem.open}
         onOpenChange={(open) => setNewItem((s) => ({ ...s, open }))}
         projects={onBoard}
@@ -327,9 +327,9 @@ export function Kanban({
         initialProjectId={newItem.projectId}
       />
 
-      <NewProjectSheet open={newProjectOpen} onOpenChange={setNewProjectOpen} />
+      <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
 
-      <ShareSheet
+      <ShareDialog
         open={share.open}
         onOpenChange={(open) => setShare((s) => ({ ...s, open }))}
         projectId={share.projectId}

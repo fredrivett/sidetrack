@@ -13,8 +13,8 @@ const COPY_REF_SHORTCUT = { key: ".", mod: true } as const;
  *
  * `shortcut.active` arms a document-level key listener — pass the condition
  * under which this item should own the shortcut (a hovered card, an open detail
- * sheet, …). Set `shortcut.deferToDialog` on a card so a still-hovered row
- * behind an open sheet yields the shortcut to that sheet ([role=dialog]) rather
+ * dialog, …). Set `shortcut.deferToDialog` on a card so a still-hovered row
+ * behind an open dialog yields the shortcut to that dialog ([role=dialog]) rather
  * than copying the wrong ref.
  */
 export function useCopyItemRef(
@@ -50,8 +50,8 @@ export function useCopyItemRef(
     function onKeyDown(e: KeyboardEvent) {
       if (isEditableTarget(e.target)) return;
       if (!matchesShortcut(e, COPY_REF_SHORTCUT)) return;
-      // A hovered card behind an open sheet must not steal the shortcut from
-      // the sheet, which renders a [role=dialog] popup over it.
+      // A hovered card behind an open dialog must not steal the shortcut from
+      // the dialog, which renders a [role=dialog] popup over it.
       if (deferToDialog && document.querySelector('[role="dialog"]')) return;
       e.preventDefault();
       void copy();
