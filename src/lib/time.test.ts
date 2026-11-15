@@ -10,6 +10,8 @@ import {
   quickDues,
   nextDayStart,
   startOfDay,
+  startOfWeek,
+  weekStartBound,
 } from "./time";
 
 // A due date on one day, as parseDue and quickDues return it.
@@ -34,6 +36,27 @@ describe("startOfDay", () => {
   it("gives the next turnover", () => {
     expect(nextDayStart(at(14, 3, 59))).toBe(at(14, 4));
     expect(nextDayStart(at(14, 4))).toBe(at(15, 4));
+  });
+});
+
+describe("startOfWeek", () => {
+  // 9 Nov 2026 is a Monday.
+  it("starts at 4am Monday, so the small hours of Monday are still last week", () => {
+    expect(startOfWeek(at(15, 23))).toBe(at(9, 4));
+    expect(startOfWeek(at(16, 3, 59))).toBe(at(9, 4));
+    expect(startOfWeek(at(16, 4))).toBe(at(16, 4));
+    expect(startOfWeek(at(11, 12))).toBe(at(9, 4));
+  });
+
+  it("bounds the week from the zone's own day, early enough for UTC+14", () => {
+    // 01:00 UTC Monday 16 Nov is Sunday evening in New York (week began
+    // 09:00 UTC on the 9th) and Monday afternoon in Kiritimati, UTC+14 (week
+    // began 14:00 UTC Sunday the 15th).
+    const now = Date.UTC(2026, 10, 16, 1);
+    expect(weekStartBound("America/New_York", now)).toBe(Date.UTC(2026, 10, 8));
+    expect(weekStartBound("Pacific/Kiritimati", now)).toBe(Date.UTC(2026, 10, 15));
+    // With no zone saved yet, the earliest week still running anywhere.
+    expect(weekStartBound(undefined, now)).toBe(Date.UTC(2026, 10, 8));
   });
 });
 

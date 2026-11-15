@@ -30,14 +30,15 @@ export function ArchivedListsMenu({ lists }: { lists: Project[] }) {
       <DropdownMenuTrigger
         disabled={pending}
         render={
-          // An icon and count on phones, where the header is full.
+          // An icon and count on phones, where the header is full; just the
+          // icon below 360px, so the four views fit beside it.
           <Button
             variant="outline"
             size="sm"
             aria-label={`Archived (${lists.length})`}
           >
             <Archive />
-            <span className="sm:hidden">{lists.length}</span>
+            <span className="max-[360px]:hidden sm:hidden">{lists.length}</span>
             <span className="hidden sm:inline">Archived ({lists.length})</span>
           </Button>
         }

@@ -88,7 +88,7 @@ export function TodayView({
           ([label, rows]) =>
             rows.length > 0 && (
               <section key={label} className="space-y-1.5">
-                {/* Quiet, like a list's "Done (n)": the red due chips already
+                {/* Quiet, like a list's "Done this week (n)": the red due chips already
                     say what's late, so Overdue only gets a dot. */}
                 <h2 className="flex items-center gap-1.5 px-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">
                   {label === "Overdue" && (

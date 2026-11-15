@@ -9,7 +9,10 @@ const LABELS: Record<WhoseFilter, string> = {
   unassigned: "Unassigned",
 };
 
-/** All / Mine / Theirs / Unassigned chips, each with its count of open items. */
+/**
+ * All / Mine / Theirs / Unassigned chips, each with its count of open items
+ * when `count` is given.
+ */
 export function WhoseFilterBar({
   value,
   onChange,
@@ -17,12 +20,12 @@ export function WhoseFilterBar({
 }: {
   value: WhoseFilter;
   onChange: (filter: WhoseFilter) => void;
-  count: (filter: WhoseFilter) => number;
+  count?: (filter: WhoseFilter) => number;
 }) {
   return (
     <div role="group" aria-label="Whose items" className="flex flex-wrap gap-1">
       {WHOSE_FILTERS.map((key) => {
-        const open = count(key);
+        const open = count?.(key) ?? 0;
         return (
           <button
             key={key}

@@ -7,9 +7,10 @@ import type { Item, ItemPrLink } from "@/core/schema";
 import { type ItemGroup, ItemGroupView } from "./ItemList";
 
 /**
- * Items finished before today, collapsed at the bottom of the list. `groups`
- * arrive newest-completed first, each with its sub-items. Items finished today
- * stay in place in the main list instead, crossed out, until the day turns over.
+ * Items finished earlier this week, collapsed at the bottom of the list.
+ * `groups` arrive newest-completed first, each with its sub-items. Items
+ * finished today stay in place in the main list instead, crossed out, until
+ * the day turns over; ones from before this week leave the board.
  */
 export function DoneSection({
   groups,
@@ -41,7 +42,7 @@ export function DoneSection({
         <ChevronRight
           className={`size-3.5 transition-transform ${expanded ? "rotate-90" : ""}`}
         />
-        Done ({groups.length})
+        Done this week ({groups.length})
       </button>
       {expanded && (
         <div className="space-y-1.5">

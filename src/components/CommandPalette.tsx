@@ -13,7 +13,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { type ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 import type { Item } from "@/core/schema";
 import { formatItemRef } from "@/lib/itemRef";
 import {
@@ -48,6 +48,7 @@ export function CommandPalette({
   onShowActivity,
   onOpenList,
   onOpenItem,
+  onSearch,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -60,6 +61,11 @@ export function CommandPalette({
   onShowActivity: () => void;
   onOpenList: (projectId: string) => void;
   onOpenItem: (item: Item) => void;
+  /**
+   * The search as typed, after a pause, so the board can fetch finished items
+   * it hasn't loaded that match it (into `itemsByProject`).
+   */
+  onSearch: (search: string) => void;
 }) {
   const router = useRouter();
 
@@ -81,6 +87,7 @@ export function CommandPalette({
     { label: "Go to Board", icon: <Columns3 />, action: () => onSwitchView("board") },
     { label: "Go to Today", icon: <CalendarDays />, action: () => onSwitchView("today") },
     { label: "Go to No date", icon: <CalendarOff />, action: () => onSwitchView("no-date") },
+    { label: "Go to Done", icon: <CircleCheck />, action: () => onSwitchView("done") },
     { label: "Show activity", icon: <History />, action: onShowActivity },
     { label: "Profile settings", icon: <UserRound />, action: () => router.push("/settings/profile") },
     { label: "API keys", icon: <KeyRound />, action: () => router.push("/settings/keys") },
@@ -104,6 +111,7 @@ export function CommandPalette({
         {/* Uncontrolled: cmdk keeps the search, and it unmounts with the
             dialog, so every way of closing (Esc, ⌘K, a pick) clears it. */}
         <CommandInput placeholder="Search commands, lists, items…" />
+        <ReportSearch onSearch={onSearch} />
         <CommandList className="max-h-[min(24rem,60dvh)]">
           <CommandEmpty>No matches.</CommandEmpty>
           <CommandGroup heading="Commands">
@@ -194,6 +202,16 @@ export function CommandPalette({
       </Command>
     </CommandDialog>
   );
+}
+
+/** Passes the search up once typing pauses. */
+function ReportSearch({ onSearch }: { onSearch: (search: string) => void }) {
+  const search = useCommandState((state) => state.search);
+  useEffect(() => {
+    const timer = setTimeout(() => onSearch(search), 200);
+    return () => clearTimeout(timer);
+  }, [search, onSearch]);
+  return null;
 }
 
 /** Renders its children only once something is typed into the palette. */
