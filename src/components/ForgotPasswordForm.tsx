@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LoadingEllipsis } from "@/components/ui/loading-ellipsis";
@@ -71,7 +71,10 @@ export function ForgotPasswordForm({
             </span>
           </>
         ) : (
-          "Send reset link"
+          <>
+            <Send data-icon="inline-start" />
+            Send reset link
+          </>
         )}
       </Button>
     </form>

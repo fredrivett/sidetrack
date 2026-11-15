@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Loader2, LogIn, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LoadingEllipsis } from "@/components/ui/loading-ellipsis";
@@ -231,9 +231,15 @@ export function LoginForm({
             </span>
           </>
         ) : mode === "sign-up" ? (
-          "Create account"
+          <>
+            <UserPlus data-icon="inline-start" />
+            Create account
+          </>
         ) : (
-          "Sign in"
+          <>
+            <LogIn data-icon="inline-start" />
+            Sign in
+          </>
         )}
       </Button>
     </form>

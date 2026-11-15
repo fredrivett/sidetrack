@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Webhook } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { removeGithubWebhookAction, setUpGithubWebhookAction } from "@/app/actions";
@@ -73,6 +73,7 @@ export function GithubWebhookPanel({
           repository under Settings → Webhooks on GitHub.
         </p>
         <Button onClick={setUp} disabled={pending}>
+          <Webhook data-icon="inline-start" />
           {pending ? "…" : "Set up webhook"}
         </Button>
         {error && <p className="text-sm text-destructive">{error}</p>}

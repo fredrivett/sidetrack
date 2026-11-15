@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -111,6 +112,7 @@ export function PasswordPanel({ email }: { email: string }) {
         </p>
       )}
       <Button type="submit" size="sm" disabled={pending}>
+        <KeyRound data-icon="inline-start" />
         {pending ? "Changing…" : "Change password"}
       </Button>
     </form>

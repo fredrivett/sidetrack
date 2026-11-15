@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Loader2 } from "lucide-react";
+import { KeyRound, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LoadingEllipsis } from "@/components/ui/loading-ellipsis";
@@ -79,7 +79,10 @@ export function ResetPasswordForm({ token }: { token: string }) {
             </span>
           </>
         ) : (
-          "Update password"
+          <>
+            <KeyRound data-icon="inline-start" />
+            Update password
+          </>
         )}
       </Button>
     </form>
