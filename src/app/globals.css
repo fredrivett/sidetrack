@@ -130,6 +130,15 @@ body {
   }
 }
 
+/* A dragged card rising out of its list (see ItemList's DragOverlay): from
+   flat to whatever lift its classes give it. */
+@keyframes lift {
+  from {
+    scale: 1;
+    box-shadow: none;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
