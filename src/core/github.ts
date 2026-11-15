@@ -2,6 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { formatItemRef, parseItemRef, refsInPrTitle } from "../lib/itemRef";
+import { endAgentSessions } from "./agentSessions";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
 import { projectRefPrefixes, resolveItemRef } from "./itemRef";
@@ -10,6 +11,7 @@ import {
   canonicalizePrUrl,
   linkItemToPr,
   listItemsForPr,
+  listPrLinksForItem,
   setPrState,
   unlinkItemFromPr,
 } from "./prLinks";
@@ -134,12 +136,15 @@ export type PullRequestResult = {
   unresolved: string[];
   /** Items completed because the PR merged, by ref. */
   completed: string[];
+  /** Items whose agents stopped work because the PR closed unmerged, by ref. */
+  finished: string[];
 };
 
 /**
  * Apply a `pull_request` event for the webhook's owner. Every delivery records
  * the PR's state (open, draft, merged, closed) on its links. A PR closed
- * without merging changes nothing else. Otherwise the title owns the links it
+ * without merging changes no links or items, but ends the agents' work on its
+ * items (merging ends it too, by completing them). Otherwise the title owns the links it
  * made: link
  * every item it names in square brackets, and unlink items a previous title
  * linked that it no longer names (linking and unlinking are idempotent, so
@@ -163,7 +168,13 @@ export function applyPullRequestEvent(
   },
 ): PullRequestResult {
   const prUrl = canonicalizePrUrl(event.url);
-  const result: PullRequestResult = { linked: [], unlinked: [], unresolved: [], completed: [] };
+  const result: PullRequestResult = {
+    linked: [],
+    unlinked: [],
+    unresolved: [],
+    completed: [],
+    finished: [],
+  };
   const prState = event.merged
     ? "merged"
     : event.state === "closed"
@@ -171,11 +182,24 @@ export function applyPullRequestEvent(
       : event.draft
         ? "draft"
         : "open";
+  const prefixes = projectRefPrefixes(db, userId);
   if (event.action === "closed" && !event.merged) {
     setPrState(db, userId, prUrl, prState);
+    // The work this PR carried has stopped: take its agents off its items,
+    // unless an item has another PR still open (say, a replacement).
+    for (const link of listItemsForPr(db, userId, prUrl)) {
+      const item = getItem(db, userId, link.itemId);
+      if (!item || item.completedAt !== null) continue;
+      const otherOpen = listPrLinksForItem(db, userId, item.id).some(
+        (l) => l.prUrl !== prUrl && (l.prState === "open" || l.prState === "draft"),
+      );
+      if (otherOpen) continue;
+      if (endAgentSessions(db, userId, item.id, "PR closed without merging", "github") > 0) {
+        result.finished.push(formatItemRef(prefixes[item.projectId] ?? "", item.number));
+      }
+    }
     return result;
   }
-  const prefixes = projectRefPrefixes(db, userId);
   const named = new Set<string>();
   // Title refs that don't resolve now (say, ambiguous since a project was
   // shared), as PREFIX-N: the title may still mean an item it linked before.

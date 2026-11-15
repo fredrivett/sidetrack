@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { listOpenAgentSessions, startWork } from "./agentSessions";
 import { listAudit } from "./audit";
 import {
   applyPullRequestEvent,
@@ -93,6 +94,7 @@ describe("applyPullRequestEvent", () => {
       unlinked: [],
       unresolved: ["SID-99"],
       completed: [],
+      finished: [],
     });
     for (const it of [one, two]) {
       expect(listPrLinksForItem(db, userId, it.id).map((l) => [l.prUrl, l.linkedBySource])).toEqual([
@@ -216,8 +218,37 @@ describe("applyPullRequestEvent", () => {
       title: "Abandon [SID-1]",
       url: PR,
     }));
-    expect(result).toEqual({ linked: [], unlinked: [], unresolved: [], completed: [] });
+    expect(result).toEqual({
+      linked: [],
+      unlinked: [],
+      unresolved: [],
+      completed: [],
+      finished: [],
+    });
     expect(getItem(db, userId, one.id)?.completedAt).toBeNull();
     expect(listPrLinksForItem(db, userId, one.id)).toEqual([]);
+  });
+
+  it("ends the agents' work when the PR closes unmerged, unless another PR is open", () => {
+    const { db, userId, one, two } = seed();
+    const amp = { source: "mcp" as const, agent: { keyId: "k1", name: "Amp" } };
+    const deliver = (e: Parameters<typeof pr>[0]) => applyPullRequestEvent(db, userId, pr(e));
+    const REPLACEMENT = "https://github.com/fredrivett/sidetrack/pull/8";
+    startWork(db, userId, one.id, {}, amp);
+    startWork(db, userId, two.id, {}, amp);
+    deliver({ action: "opened", title: "Ship [SID-1, SID-2]" });
+    // SID-2's work moved to a replacement PR, opened before the first closes.
+    deliver({ action: "opened", title: "Ship v2 [SID-2]", url: REPLACEMENT });
+
+    // Opening and editing the PR leave the agents working.
+    expect(listOpenAgentSessions(db, userId, one.id)).toHaveLength(1);
+
+    const closed = deliver({ action: "closed", title: "Ship [SID-1, SID-2]" });
+    expect(closed.finished).toEqual(["SID-1"]);
+    const [ended] = listAudit(db, userId).filter((e) => e.action === "finish");
+    expect(ended).toMatchObject({ source: "github", entityId: one.id });
+    expect(listOpenAgentSessions(db, userId, one.id)).toEqual([]);
+    expect(listOpenAgentSessions(db, userId, two.id)).toHaveLength(1);
+    expect(getItem(db, userId, one.id)?.completedAt).toBeNull();
   });
 });
