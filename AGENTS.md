@@ -94,6 +94,10 @@ commit or fail together — never write one without the other.
   through core (`setUsername`, `setAvatarUrl`, `setUploadedAvatar`); Better
   Auth's `/update-user` refuses them, since its writes can't be audited in our
   transactions.
+- Password changes and resets are the one exception to `recordAudit`: Better
+  Auth writes `accounts.password` itself, so the `audit_password_update`
+  SQLite trigger (migration 0021) writes their audit row inside the same
+  statement. Keep it in step if `audit_log` columns change.
 
 # Review
 
