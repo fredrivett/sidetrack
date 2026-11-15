@@ -240,10 +240,10 @@ function iconSize(
   type: string | undefined,
   sizes: string | undefined,
 ): number | null {
-  const path = href.startsWith("data:") ? "" : new URL(href).pathname;
+  const path = /^data:/i.test(href) ? "" : new URL(href).pathname;
   if (
     /^image\/svg\+xml$/i.test(type ?? "") ||
-    href.startsWith("data:image/svg+xml") ||
+    /^data:image\/svg\+xml/i.test(href) ||
     /\.svg$/i.test(path)
   ) {
     return VECTOR_SIZE;

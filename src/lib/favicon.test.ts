@@ -84,6 +84,18 @@ describe("parseHtmlIcons", () => {
     ]);
   });
 
+  it("ranks an inline SVG as vector, whatever the case of its data: URL", () => {
+    const { icons } = parseHtmlIcons(
+      `<link rel="icon" href="/big.png" sizes="512x512">
+       <link rel="icon" href="DATA:IMAGE/SVG+XML,%3Csvg%3E%3C/svg%3E">`,
+      page,
+    );
+    expect(icons).toEqual([
+      "DATA:IMAGE/SVG+XML,%3Csvg%3E%3C/svg%3E",
+      "https://example.com/big.png",
+    ]);
+  });
+
   it("honours <base href>", () => {
     const { icons } = parseHtmlIcons(
       `<base href="https://static.example.com/assets/"><link rel="icon" href="fav.png">`,
