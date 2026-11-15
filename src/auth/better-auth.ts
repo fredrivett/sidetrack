@@ -55,6 +55,7 @@ function userCount(): number {
 // rather than being silently treated as "already claimed".
 function claimSentinel(key: string): boolean {
   try {
+    // audit-exempt: sign-up lock bookkeeping in meta, not a user action.
     db.insert(meta).values({ key, value: "1" }).run();
     return true;
   } catch (error) {
@@ -75,6 +76,7 @@ function claimSentinel(key: string): boolean {
 try {
   const haveUsers = userCount() > 0;
   if (!haveUsers) {
+    // audit-exempt: boot-time repair of the sign-up lock, not a user action.
     db.delete(meta).where(eq(meta.key, SIGNUP_LOCK_KEY)).run();
   } else {
     // Ensure the lock exists; claimSentinel ignores an existing one.
@@ -88,6 +90,8 @@ try {
 // stamped with the legacy 'me' placeholder. Subsequent signups don't —
 // they start empty. Keeps the old single-user database intact on upgrade
 // without any env-var configuration.
+// audit-exempt: one-time hand-over of legacy single-user data to
+// the first account, which also rewrites the old audit rows' actor.
 function adoptMeRows(userId: string): void {
   const { changes: projectChanges } = db
     .update(projects)

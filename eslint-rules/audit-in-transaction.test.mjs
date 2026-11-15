@@ -43,9 +43,46 @@ describe("audit-in-transaction", () => {
     ).toHaveLength(1);
   });
 
-  it("exempts an un-transactioned write (e.g. ensureCategory, backup)", () => {
+  it("flags a write outside a transaction that isn't marked exempt", () => {
     const messages = lint(`db.insert(categories).values({}).run();`);
-    expect(messages).toEqual([]);
+    expect(messages).toHaveLength(1);
+    expect(messages[0].messageId).toBe("unauditedWrite");
+    // A marker with no reason doesn't count.
+    expect(
+      lint(`
+        // audit-exempt:
+        db.update(users).set({}).run();
+      `),
+    ).toHaveLength(1);
+  });
+
+  it("accepts a marked write, above the statement or an enclosing function", () => {
+    expect(
+      lint(`
+        // audit-exempt: telemetry, not a user action
+        db.update(apiKeys).set({}).run();
+      `),
+    ).toEqual([]);
+    expect(
+      lint(`
+        /** Does a thing. audit-exempt: the caller audits it */
+        export function helper(tx) {
+          if (x) {
+            tx.update(items).set({}).run();
+          }
+        }
+      `),
+    ).toEqual([]);
+  });
+
+  it("ignores delete/update calls on things other than the DB handle", () => {
+    expect(
+      lint(`
+        seen.delete(id);
+        url.searchParams.delete("view");
+        hash.update(data);
+      `),
+    ).toEqual([]);
   });
 
   it("ignores a read-only transaction", () => {
@@ -72,8 +109,11 @@ describe("audit-in-transaction", () => {
       const cb = (tx) => { tx.delete(items).run(); };
       db.transaction(cb);
     `);
-    expect(messages).toHaveLength(1);
-    expect(messages[0].messageId).toBe("inlineCallback");
+    // The extracted body's write is also reported, as one outside a transaction.
+    expect(messages.map((m) => m.messageId).sort()).toEqual([
+      "inlineCallback",
+      "unauditedWrite",
+    ]);
   });
 
   it("flags a non-inline callback even if it would audit", () => {
@@ -82,7 +122,10 @@ describe("audit-in-transaction", () => {
       function run(tx) { tx.insert(items).values({}).run(); recordAudit(tx, {}); }
       db.transaction(run);
     `);
-    expect(messages).toHaveLength(1);
-    expect(messages[0].messageId).toBe("inlineCallback");
+    // The extracted body's write is also reported, as one outside a transaction.
+    expect(messages.map((m) => m.messageId).sort()).toEqual([
+      "inlineCallback",
+      "unauditedWrite",
+    ]);
   });
 });

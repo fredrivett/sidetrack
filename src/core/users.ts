@@ -49,6 +49,8 @@ export function setTimeZone(db: Db, userId: string, timeZone: string): void {
   }
   // Fixed offsets like "+05:00" parse too, but they aren't zones: no DST.
   if (/^[+-]/.test(canonical)) throw new Error(`unknown timezone: ${timeZone}`);
+  // audit-exempt: the device reporting its zone, not a user action
+  // (see above).
   db.update(users).set({ timeZone: canonical }).where(eq(users.id, userId)).run();
 }
 

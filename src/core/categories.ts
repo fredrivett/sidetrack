@@ -49,6 +49,8 @@ export function ensureCategory(
     .get();
   if (existing) return existing;
   const id = nanoid(12);
+  // audit-exempt: an inline category is noise; the item create or
+  // update that adds it is the logged event (see above).
   db.insert(categories).values({ id, projectId, name: trimmed }).run();
   return { id, projectId, name: trimmed };
 }

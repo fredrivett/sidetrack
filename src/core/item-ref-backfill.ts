@@ -51,6 +51,7 @@ export function backfillItemPrefixes(db: Db): void {
     }
     const prefix = dedupePrefix(derivePrefix(project.name), taken);
     taken.add(prefix);
+    // audit-exempt: boot-time backfill of legacy rows, not a user action.
     db.update(projects)
       .set({ prefix })
       .where(eq(projects.id, project.id))

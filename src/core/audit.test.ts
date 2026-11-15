@@ -1,8 +1,12 @@
+import { getTableName, is } from "drizzle-orm";
+import { SQLiteTable } from "drizzle-orm/sqlite-core";
 import { describe, expect, it } from "vitest";
 import { createApiKey, revokeApiKey, verifyApiKey } from "./api-keys";
 import { listAudit, recordAudit } from "./audit";
 import { addItem } from "./items";
 import { createProject } from "./projects";
+import * as authSchema from "./auth-schema";
+import * as appSchema from "./schema";
 import { createTestDb, createTestUser } from "./test-helpers";
 
 // The write-path ownership checks stop one user mutating another's project,
@@ -177,5 +181,36 @@ describe("audit", () => {
 
     // A non-owner gets nothing, not another user's history.
     expect(listAudit(db, bob, { projectId: p.id })).toEqual([]);
+  });
+});
+
+// Every table, by whether changes to it are audited. A new table fails the
+// test below until it's added here, so whether its changes are audited is a
+// decision someone made. Individual exempt writes to audited tables are
+// marked `audit-exempt` where they happen (lint enforces that).
+const TABLE_AUDIT: Record<string, "audited" | `exempt: ${string}`> = {
+  projects: "audited",
+  project_positions: "audited",
+  project_members: "audited",
+  items: "audited",
+  item_pr_links: "audited",
+  categories: "audited",
+  api_keys: "audited",
+  agent_sessions: "audited",
+  users: "audited",
+  avatars: "audited",
+  audit_log: "exempt: the log itself",
+  meta: "exempt: app bookkeeping (sign-up lock, last backup time)",
+  sessions: "exempt: Better Auth sign-in state",
+  accounts: "exempt: Better Auth credentials; password changes aren't audited yet",
+  verifications: "exempt: Better Auth one-time tokens (password reset)",
+};
+
+describe("audit coverage", () => {
+  it("classifies every table as audited or exempt", () => {
+    const tables = Object.values({ ...appSchema, ...authSchema })
+      .filter((value) => is(value, SQLiteTable))
+      .map((table) => getTableName(table as SQLiteTable));
+    expect(tables.sort()).toEqual(Object.keys(TABLE_AUDIT).sort());
   });
 });

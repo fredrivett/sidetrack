@@ -72,9 +72,11 @@ const eslintConfig = defineConfig([
     ],
     rules: { "no-console": "off" },
   },
-  // Audit-log invariant — transactions live only in the domain layer.
+  // Audit-log invariant: every DB write is audited in its transaction or marked
+  // audit-exempt. Tests write fixtures directly.
   {
-    files: ["src/core/**/*.ts"],
+    files: ["src/**/*.ts", "src/**/*.tsx"],
+    ignores: ["src/**/*.test.ts", "src/**/*.test.tsx", "src/core/test-helpers.ts"],
     plugins: { audit: auditPlugin },
     rules: { "audit/audit-in-transaction": "error" },
   },

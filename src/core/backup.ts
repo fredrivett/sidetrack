@@ -28,6 +28,7 @@ function readLastBackupAt(): number | null {
 
 function writeLastBackupAt(ts: number): void {
   const { db } = getDb();
+  // audit-exempt: backup scheduler bookkeeping, not a user action.
   db.insert(meta)
     .values({ key: LAST_BACKUP_KEY, value: String(ts) })
     .onConflictDoUpdate({ target: meta.key, set: { value: String(ts) } })
