@@ -144,6 +144,7 @@ export function NewItemDialog({
       setDescription("");
       setCategory("");
       setAssigneeIds([]);
+      setAssignOpen(false);
       setDue(null);
       setRepeat(null);
       setSubItems([]);
@@ -418,7 +419,14 @@ export function NewItemDialog({
                     selected={assigned.map((a) => a.userId)}
                     assignees={listAssignees}
                     viewerId={viewerId}
-                    onChange={setAssigneeIds}
+                    // The picker sets this list's people only; keep anyone
+                    // picked on another list for when you switch back.
+                    onChange={(ids) =>
+                      setAssigneeIds((cur) => [
+                        ...cur.filter((id) => !listAssignees.some((a) => a.userId === id)),
+                        ...ids,
+                      ])
+                    }
                   />
                 </DropdownMenuContent>
               </DropdownMenu>
