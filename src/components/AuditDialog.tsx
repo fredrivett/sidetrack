@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { unstable_rethrow } from "next/navigation";
 import { listAuditAction } from "@/app/actions";
 import type { AuditEntryWithActor } from "@/core/audit";
 import type { AuditSource, Project } from "@/core/schema";
@@ -190,8 +191,10 @@ export function AuditDialog({
             setEntries(rows);
             loaded.current = { projectId, filter, limit };
           },
-          // Once the dialog has closed or moved on, a failed load is moot.
+          // Once the dialog has closed or moved on, a failed load is moot, but a
+          // signed-out session's redirect to /login still goes through.
           (error) => {
+            unstable_rethrow(error);
             if (active) throw error;
           },
         ),

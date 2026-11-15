@@ -15,6 +15,7 @@ import {
   Trash2,
   UserRound,
 } from "lucide-react";
+import { unstable_rethrow } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -183,8 +184,10 @@ function ItemActivity({ item }: { item: Item }) {
           (rows) => {
             if (!stale) setEntries(rows);
           },
-          // Once the dialog has moved on, a failed load is moot.
+          // Once the dialog has moved on, a failed load is moot, but a
+          // signed-out session's redirect to /login still goes through.
           (error) => {
+            unstable_rethrow(error);
             if (!stale) throw error;
           },
         ),

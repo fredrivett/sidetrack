@@ -1,6 +1,7 @@
 "use client";
 
 import { Check, Sparkles, X } from "lucide-react";
+import { unstable_rethrow } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { suggestProjectIconsAction, updateProjectAction } from "@/app/actions";
@@ -65,7 +66,8 @@ export function ProjectIconPicker({
         setSuggested({ for: context, emoji: [] });
         void suggestProjectIconsAction(project.id)
           .then((emoji) => setSuggested({ for: context, emoji }))
-          .catch(() => {});
+          // A signed-out session's redirect to /login goes through to Next.
+          .catch((e) => unstable_rethrow(e));
       }}
       onSelect={(next) =>
         save(() => runAction(updateProjectAction(project.id, { icon: next }), "update the icon"))
