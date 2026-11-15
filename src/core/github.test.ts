@@ -1,12 +1,13 @@
 import { createHmac } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { listOpenAgentSessions, startWork } from "./agentSessions";
 import { listAudit } from "./audit";
 import {
+  addGithubWebhookSecret,
   applyPullRequestEvent,
   getGithubWebhook,
   removeGithubWebhook,
-  setUpGithubWebhook,
+  removeGithubWebhookSecret,
   verifyGithubDelivery,
 } from "./github";
 import { addItem, getItem, uncompleteItem } from "./items";
@@ -39,22 +40,55 @@ const sign = (secret: string, body: string) =>
   `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
 
 describe("GitHub webhook setup", () => {
-  it("gives a new secret on setting up again, keeping the URL, and audits both", () => {
+  it("adds named secrets to one webhook, keeping its URL, and audits each", () => {
     const { db, userId } = seed();
-    const first = setUpGithubWebhook(db, userId, "web");
-    const again = setUpGithubWebhook(db, userId, "web");
+    const first = addGithubWebhookSecret(db, userId, " fredrivett/sidetrack ", "web");
+    const again = addGithubWebhookSecret(db, userId, "fredrivett/reeve", "web");
 
     expect(again.webhook.id).toBe(first.webhook.id);
     expect(again.secret).not.toBe(first.secret);
-    expect(listAudit(db, userId).slice(0, 2).map((e) => [e.action, e.entityType])).toEqual([
-      ["update", "webhook"],
-      ["create", "webhook"],
+    expect(again.webhook.secrets.map((s) => [s.name, s.lastDeliveryAt])).toEqual([
+      ["fredrivett/sidetrack", null],
+      ["fredrivett/reeve", null],
     ]);
+    expect(listAudit(db, userId).slice(0, 2).map((e) => [e.action, e.entityType, e.detail])).toEqual([
+      ["update", "webhook", 'added secret "fredrivett/reeve" to the GitHub webhook'],
+      ["create", "webhook", 'set up the GitHub webhook with secret "fredrivett/sidetrack"'],
+    ]);
+    expect(() => addGithubWebhookSecret(db, userId, "  ", "web")).toThrow();
+  });
+
+  it("lists secrets added in the same millisecond in the order they were added", () => {
+    const { db, userId } = seed();
+    vi.spyOn(Date, "now").mockReturnValue(1_800_000_000_000);
+    try {
+      for (const name of ["a", "b", "c", "d", "e"]) addGithubWebhookSecret(db, userId, name, "web");
+    } finally {
+      vi.restoreAllMocks();
+    }
+    expect(getGithubWebhook(db, userId)?.secrets.map((s) => s.name)).toEqual(["a", "b", "c", "d", "e"]);
+  });
+
+  it("removes one secret, refusing its deliveries but keeping the others", () => {
+    const { db, userId } = seed();
+    const { secret: kept } = addGithubWebhookSecret(db, userId, "kept", "web");
+    const { webhook, id: goneId, secret: gone } = addGithubWebhookSecret(db, userId, "gone", "web");
+
+    // Another user can't remove it.
+    const other = createTestUser(db, { username: "bob" });
+    expect(removeGithubWebhookSecret(db, other, goneId, "web")).toBe(false);
+
+    expect(removeGithubWebhookSecret(db, userId, goneId, "web")).toBe(true);
+    expect(getGithubWebhook(db, userId)?.secrets.map((s) => s.name)).toEqual(["kept"]);
+    expect(listAudit(db, userId)[0]).toMatchObject({ action: "update", detail: 'removed secret "gone" from the GitHub webhook' });
+    expect(verifyGithubDelivery(db, webhook.id, "{}", sign(gone, "{}"))).toBeNull();
+    expect(verifyGithubDelivery(db, webhook.id, "{}", sign(kept, "{}"))).toEqual({ userId });
+    expect(removeGithubWebhookSecret(db, userId, goneId, "web")).toBe(false);
   });
 
   it("removes the webhook, after which deliveries are refused", () => {
     const { db, userId } = seed();
-    const { webhook, secret } = setUpGithubWebhook(db, userId, "web");
+    const { webhook, secret } = addGithubWebhookSecret(db, userId, "main", "web");
     expect(removeGithubWebhook(db, userId, "web")).toBe(true);
     expect(getGithubWebhook(db, userId)).toBeNull();
     expect(verifyGithubDelivery(db, webhook.id, "{}", sign(secret, "{}"))).toBeNull();
@@ -63,19 +97,32 @@ describe("GitHub webhook setup", () => {
 });
 
 describe("verifyGithubDelivery", () => {
-  it("accepts only the current secret's signature over the exact body", () => {
+  it("accepts any of the webhook's secrets over the exact body, recording which delivered", () => {
     const { db, userId } = seed();
-    const old = setUpGithubWebhook(db, userId, "web");
-    const { webhook, secret } = setUpGithubWebhook(db, userId, "web");
+    const a = addGithubWebhookSecret(db, userId, "a", "web");
+    const { webhook, secret } = addGithubWebhookSecret(db, userId, "b", "web");
     const body = '{"zen":"Keep it logically awesome."}';
+    const lastDeliveries = () =>
+      getGithubWebhook(db, userId)?.secrets.map((s) => [s.name, s.lastDeliveryAt !== null]);
 
     expect(verifyGithubDelivery(db, webhook.id, body, sign(secret, body))).toEqual({ userId });
-    expect(getGithubWebhook(db, userId)?.lastDeliveryAt).not.toBeNull();
-    expect(verifyGithubDelivery(db, webhook.id, body, sign(old.secret, body))).toBeNull();
+    expect(lastDeliveries()).toEqual([["a", false], ["b", true]]);
+    expect(verifyGithubDelivery(db, webhook.id, body, sign(a.secret, body))).toEqual({ userId });
+    expect(lastDeliveries()).toEqual([["a", true], ["b", true]]);
+
+    expect(verifyGithubDelivery(db, webhook.id, body, sign("not-a-secret", body))).toBeNull();
     expect(verifyGithubDelivery(db, webhook.id, `${body} `, sign(secret, body))).toBeNull();
     expect(verifyGithubDelivery(db, webhook.id, body, null)).toBeNull();
     expect(verifyGithubDelivery(db, webhook.id, body, "sha256=abc")).toBeNull();
     expect(verifyGithubDelivery(db, "nope", body, sign(secret, body))).toBeNull();
+  });
+
+  it("refuses a secret on another user's webhook", () => {
+    const { db, userId } = seed();
+    const bob = createTestUser(db, { username: "bob" });
+    const mine = addGithubWebhookSecret(db, userId, "mine", "web");
+    const { secret: bobs } = addGithubWebhookSecret(db, bob, "bobs", "web");
+    expect(verifyGithubDelivery(db, mine.webhook.id, "{}", sign(bobs, "{}"))).toBeNull();
   });
 });
 

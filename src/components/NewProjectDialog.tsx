@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, useTransition } from "react";
+import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { createProjectAction, suggestNewListIconsAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
@@ -208,6 +209,7 @@ export function NewProjectDialog({
               Cancel
             </Button>
             <Button type="submit" size="sm" disabled={!trimmedName || pending}>
+              <Plus data-icon="inline-start" />
               Create
             </Button>
           </div>

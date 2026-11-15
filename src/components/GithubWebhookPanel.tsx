@@ -1,12 +1,18 @@
 "use client";
 
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Plus, Webhook } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { removeGithubWebhookAction, setUpGithubWebhookAction } from "@/app/actions";
+import {
+  addGithubWebhookSecretAction,
+  removeGithubWebhookAction,
+  removeGithubWebhookSecretAction,
+} from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
+import { Input } from "@/components/ui/input";
 import type { GithubWebhookView } from "@/core/github";
+import { formatRelative } from "@/lib/time";
 import { GitHubMark } from "./GitHubMark";
 import { useTapToConfirm } from "./use-tap-to-confirm";
 
@@ -25,8 +31,13 @@ function CopyField({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** The armed look for a destructive button, filled red. */
+const ARMED =
+  "bg-destructive! text-white! hover:bg-destructive/90! dark:bg-destructive! dark:hover:bg-destructive/90!";
+
+// Relative, so the server's render matches the browser's whatever its timezone.
 function fmt(ts: number | null): string {
-  return ts === null ? "never" : new Date(ts).toLocaleString();
+  return ts === null ? "never" : formatRelative(ts);
 }
 
 export function GithubWebhookPanel({
@@ -42,8 +53,11 @@ export function GithubWebhookPanel({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const tap = useTapToConfirm();
-  // Shown once, right after setting up or rotating, like a new API key.
-  const [secret, setSecret] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  // Shown once, right after adding it, like a new API key.
+  const [created, setCreated] = useState<{ id: string; name: string; secret: string } | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
 
   function run(action: () => Promise<void>) {
@@ -57,24 +71,54 @@ export function GithubWebhookPanel({
       }
     });
   }
-  const setUp = () =>
-    run(async () => setSecret((await setUpGithubWebhookAction()).secret));
+  function add(formData: FormData) {
+    const raw = String(formData.get("name") ?? "").trim();
+    if (!raw) return;
+    run(async () => {
+      const { id, secret } = await addGithubWebhookSecretAction(raw);
+      setCreated({ id, name: raw, secret });
+      setName("");
+    });
+  }
+  const removeSecret = (id: string) =>
+    run(async () => {
+      await removeGithubWebhookSecretAction(id);
+      // Stop showing a secret that no longer works.
+      setCreated((c) => (c?.id === id ? null : c));
+    });
   const remove = () =>
     run(async () => {
       await removeGithubWebhookAction();
-      setSecret(null);
+      setCreated(null);
     });
+
+  const addForm = (
+    <form action={add} className="flex gap-2">
+      <Input
+        name="name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder={`Secret name, e.g. ${repos[0] ?? "owner/repo"}`}
+        aria-label="Secret name"
+        className="flex-1"
+        autoComplete="off"
+      />
+      <Button type="submit" disabled={pending || !name.trim()}>
+        {webhook ? <Plus data-icon="inline-start" /> : <Webhook data-icon="inline-start" />}
+        {pending ? "…" : webhook ? "Add secret" : "Set up webhook"}
+      </Button>
+    </form>
+  );
 
   if (!webhook || !payloadUrl) {
     return (
       <section className="space-y-3">
         <p className="text-sm text-muted-foreground">
-          Set up a webhook to get a payload URL and secret, then add them to a
-          repository under Settings → Webhooks on GitHub.
+          Name a first secret, say for the repository it&apos;s for, to get a
+          payload URL and secret. Then add them to a repository under Settings →
+          Webhooks on GitHub.
         </p>
-        <Button onClick={setUp} disabled={pending}>
-          {pending ? "…" : "Set up webhook"}
-        </Button>
+        {addForm}
         {error && <p className="text-sm text-destructive">{error}</p>}
       </section>
     );
@@ -116,51 +160,71 @@ export function GithubWebhookPanel({
         )}
         <CopyField label="Payload URL" value={payloadUrl} />
         <CopyField label="Content type" value="application/json" />
-        {secret ? (
+        {created ? (
           <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-950/40">
-            <CopyField label="Secret" value={secret} />
+            <CopyField label={`Secret: ${created.name}`} value={created.secret} />
             <p className="text-xs text-muted-foreground">
               Copy it now; it won&apos;t be shown again.
             </p>
-            <Button variant="ghost" size="sm" onClick={() => setSecret(null)}>
+            <Button variant="ghost" size="sm" onClick={() => setCreated(null)}>
               I&apos;ve copied it
             </Button>
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
-            Secret: the one shown when you set it up. Lost it? Make a new one and
-            paste that into GitHub instead.
+            Secret: one of the secrets below, shown when you added it. Lost it?
+            Add a new one and paste that into GitHub instead.
           </p>
         )}
       </section>
 
       <section className="space-y-3">
-        <p className="text-xs text-muted-foreground">
-          Last delivery: {fmt(webhook.lastDeliveryAt)}
+        <h2 className="text-sm font-medium">Secrets</h2>
+        <p className="text-sm text-muted-foreground">
+          GitHub&apos;s deliveries are accepted when signed with any of these. Give
+          each repository its own, or rotate one by adding a new secret, pasting
+          it into GitHub, then removing the old one.
         </p>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={pending}
-            onClick={() => tap.confirm(setUp, "secret")}
-          >
-            {tap.isArmed("secret") ? "Confirm new secret?" : "New secret"}
-          </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            disabled={pending}
-            onClick={() => tap.confirm(remove, "remove")}
-            className={
-              tap.isArmed("remove")
-                ? "bg-destructive! text-white! hover:bg-destructive/90! dark:bg-destructive! dark:hover:bg-destructive/90!"
-                : undefined
-            }
-          >
-            {tap.isArmed("remove") ? "Confirm remove?" : "Remove webhook"}
-          </Button>
-        </div>
+        {webhook.secrets.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No secrets: deliveries are refused until you add one.
+          </p>
+        ) : (
+          <ul className="divide-y divide-border rounded-lg border">
+            {webhook.secrets.map((s) => (
+              <li key={s.id} className="flex items-center justify-between gap-3 p-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{s.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Created {fmt(s.createdAt)} · last delivery {fmt(s.lastDeliveryAt)}
+                  </p>
+                </div>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={pending}
+                  onClick={() => tap.confirm(() => removeSecret(s.id), s.id)}
+                  className={tap.isArmed(s.id) ? ARMED : undefined}
+                >
+                  {tap.isArmed(s.id) ? "Confirm?" : "Remove"}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {addForm}
+      </section>
+
+      <section className="space-y-3">
+        <Button
+          variant="destructive"
+          size="sm"
+          disabled={pending}
+          onClick={() => tap.confirm(remove, "remove")}
+          className={tap.isArmed("remove") ? ARMED : undefined}
+        >
+          {tap.isArmed("remove") ? "Confirm remove?" : "Remove webhook"}
+        </Button>
         {error && <p className="text-sm text-destructive">{error}</p>}
       </section>
     </div>

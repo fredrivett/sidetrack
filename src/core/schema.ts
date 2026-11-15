@@ -263,21 +263,36 @@ export const agentSessions = sqliteTable(
 
 // A user's GitHub webhook: the id goes in the payload URL GitHub posts to
 // (/api/github/webhook/<id>) and picks whose board the PR titles' refs resolve
-// against; the secret verifies GitHub's X-Hub-Signature-256 on each delivery.
-// The secret is stored as is, not hashed, because checking a signature needs
-// it. One per user; setting it up again replaces it. No foreign key on
-// user_id, matching projects.user_id.
+// against. One per user. No foreign key on user_id, matching projects.user_id.
 export const githubWebhooks = sqliteTable(
   "github_webhooks",
   {
     id: text("id").primaryKey(),
     userId: text("user_id").notNull(),
-    secret: text("secret").notNull(),
     createdAt: integer("created_at").notNull(),
-    // When a correctly signed delivery last arrived, to help with setup.
-    lastDeliveryAt: integer("last_delivery_at"),
   },
   (t) => [uniqueIndex("github_webhooks_user").on(t.userId)],
+);
+
+// The secrets a webhook accepts, each named by the user (say, for the
+// repository it's pasted into): a delivery signed with any of them verifies
+// GitHub's X-Hub-Signature-256. Several let repositories have their own, and a
+// secret be rotated without breaking the rest. Stored as is, not hashed,
+// because checking a signature needs it.
+export const githubWebhookSecrets = sqliteTable(
+  "github_webhook_secrets",
+  {
+    id: text("id").primaryKey(),
+    webhookId: text("webhook_id")
+      .notNull()
+      .references(() => githubWebhooks.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    secret: text("secret").notNull(),
+    createdAt: integer("created_at").notNull(),
+    // When a delivery signed with this secret last arrived, to help with setup.
+    lastDeliveryAt: integer("last_delivery_at"),
+  },
+  (t) => [index("github_webhook_secrets_webhook").on(t.webhookId)],
 );
 
 export const categories = sqliteTable(

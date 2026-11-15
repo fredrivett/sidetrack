@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import { UserPlus } from "lucide-react";
 import {
   inviteMemberAction,
   listMembersAction,
@@ -179,6 +180,7 @@ export function ShareDialog({
               disabled={pending}
             />
             <Button type="submit" size="sm" disabled={!person.trim() || pending}>
+              <UserPlus data-icon="inline-start" />
               Invite
             </Button>
           </div>

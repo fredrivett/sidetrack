@@ -1,6 +1,6 @@
 "use client";
 
-import { CornerDownRight, X } from "lucide-react";
+import { CornerDownRight, Plus, X } from "lucide-react";
 import {
   useEffect,
   useLayoutEffect,
@@ -411,6 +411,7 @@ export function NewItemDialog({
               {lastAdded ? "Done" : "Cancel"}
             </Button>
             <Button type="submit" size="sm" disabled={!title.trim() || !projectId || pending}>
+              <Plus data-icon="inline-start" />
               {pending ? "Adding…" : "Add item"}
             </Button>
           </div>

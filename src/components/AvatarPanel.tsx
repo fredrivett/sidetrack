@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
+import { Check } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -184,6 +185,7 @@ export function AvatarPanel({ user }: { user: AvatarUser }) {
           }
           disabled={pending || !trimmed || preview === initial}
         >
+          <Check data-icon="inline-start" />
           {pending ? "Saving…" : "Save"}
         </Button>
       </div>

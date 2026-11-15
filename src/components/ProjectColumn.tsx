@@ -29,6 +29,8 @@ export function ProjectColumn({
   prLinksByItem,
   prevId,
   nextId,
+  firstId,
+  lastId,
   onShowActivity,
   onAddItem,
   onShare,
@@ -40,6 +42,8 @@ export function ProjectColumn({
   prLinksByItem: Record<string, ItemPrLink[]>;
   prevId: string | null;
   nextId: string | null;
+  firstId: string;
+  lastId: string;
   onShowActivity: (projectId: string) => void;
   onAddItem: (projectId: string) => void;
   onShare: (projectId: string, projectName: string) => void;
@@ -155,6 +159,8 @@ export function ProjectColumn({
             projectId={project.id}
             prevId={prevId}
             nextId={nextId}
+            firstId={firstId}
+            lastId={lastId}
             name={project.name}
             prefix={project.prefix}
             status={project.status}

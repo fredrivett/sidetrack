@@ -9,8 +9,9 @@ import {
 } from "@/core/api-keys";
 import { listAudit as listAuditCore } from "@/core/audit";
 import {
+  addGithubWebhookSecret as addGithubWebhookSecretCore,
   removeGithubWebhook as removeGithubWebhookCore,
-  setUpGithubWebhook as setUpGithubWebhookCore,
+  removeGithubWebhookSecret as removeGithubWebhookSecretCore,
 } from "@/core/github";
 import {
   addCategory as addCategoryCore,
@@ -443,13 +444,20 @@ export async function createApiKeyAction(name: string) {
   return { record, plaintext };
 }
 
-export async function setUpGithubWebhookAction() {
+export async function addGithubWebhookSecretAction(name: string) {
   const userId = await requireUserId();
   const { db } = getDb();
-  const { secret } = setUpGithubWebhookCore(db, userId, SOURCE);
+  const { id, secret } = addGithubWebhookSecretCore(db, userId, name, SOURCE);
   revalidatePath("/settings/github");
   // The secret is shown once, to paste into GitHub.
-  return { secret };
+  return { id, secret };
+}
+
+export async function removeGithubWebhookSecretAction(id: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  removeGithubWebhookSecretCore(db, userId, id, SOURCE);
+  revalidatePath("/settings/github");
 }
 
 export async function removeGithubWebhookAction() {

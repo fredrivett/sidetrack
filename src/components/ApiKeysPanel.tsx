@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
@@ -88,6 +89,7 @@ export function ApiKeysPanel({ initial }: { initial: KeyRow[] }) {
             autoComplete="off"
           />
           <Button type="submit" disabled={pending || !name.trim()}>
+            <Plus data-icon="inline-start" />
             {pending ? "…" : "Create"}
           </Button>
         </form>

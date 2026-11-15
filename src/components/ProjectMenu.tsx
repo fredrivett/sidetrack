@@ -1,5 +1,21 @@
 "use client";
 
+import {
+  Archive,
+  ArrowLeft,
+  ArrowLeftToLine,
+  ArrowRight,
+  ArrowRightToLine,
+  Hash,
+  History,
+  Info,
+  LogOut,
+  Pause,
+  Play,
+  Plus,
+  Trash2,
+  UserPlus,
+} from "lucide-react";
 import { useTransition } from "react";
 import { toast } from "sonner";
 import {
@@ -26,6 +42,8 @@ export function ProjectMenu({
   projectId,
   prevId,
   nextId,
+  firstId,
+  lastId,
   name,
   prefix,
   status,
@@ -38,6 +56,8 @@ export function ProjectMenu({
   projectId: string;
   prevId: string | null;
   nextId: string | null;
+  firstId: string;
+  lastId: string;
   name: string;
   prefix: string;
   status: ProjectStatus;
@@ -104,9 +124,11 @@ export function ProjectMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
         <DropdownMenuItem onClick={onShowDetails}>
+          <Info />
           List details
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => onAddItem(projectId)}>
+          <Plus />
           Add new item
           <DropdownMenuShortcut>
             <Kbd>C</Kbd>
@@ -116,9 +138,19 @@ export function ProjectMenu({
         <DropdownMenuItem
           disabled={!prevId}
           onClick={() =>
+            run(() => reorderProjectAction(projectId, `before:${firstId}`), `move “${name}”`)
+          }
+        >
+          <ArrowLeftToLine />
+          Move to start
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          disabled={!prevId}
+          onClick={() =>
             run(() => reorderProjectAction(projectId, `before:${prevId}`), `move “${name}”`)
           }
         >
+          <ArrowLeft />
           Move left
         </DropdownMenuItem>
         <DropdownMenuItem
@@ -127,29 +159,47 @@ export function ProjectMenu({
             run(() => reorderProjectAction(projectId, `after:${nextId}`), `move “${name}”`)
           }
         >
+          <ArrowRight />
           Move right
         </DropdownMenuItem>
+        <DropdownMenuItem
+          disabled={!nextId}
+          onClick={() =>
+            run(() => reorderProjectAction(projectId, `after:${lastId}`), `move “${name}”`)
+          }
+        >
+          <ArrowRightToLine />
+          Move to end
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={() => onShowActivity(projectId)}>
+          <History />
           Activity
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         {status === "paused" ? (
           <DropdownMenuItem onClick={() => setStatus("active")}>
+            <Play />
             Resume list
           </DropdownMenuItem>
         ) : (
           <DropdownMenuItem onClick={() => setStatus("paused")}>
+            <Pause />
             Pause list
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem onClick={archive}>Archive list</DropdownMenuItem>
+        <DropdownMenuItem onClick={archive}>
+          <Archive />
+          Archive list
+        </DropdownMenuItem>
         {isOwner && (
           <DropdownMenuItem onClick={() => onShare(projectId, name)}>
+            <UserPlus />
             Share…
           </DropdownMenuItem>
         )}
         {isOwner && (
           <DropdownMenuItem onClick={editPrefix}>
+            <Hash />
             Edit ID prefix
           </DropdownMenuItem>
         )}
@@ -161,6 +211,7 @@ export function ProjectMenu({
             onClick={() => tap.confirm(() => run(() => deleteProjectAction(projectId), `delete “${name}”`))}
             className={tap.isArmed() ? ARMED_MENU_ITEM : undefined}
           >
+            <Trash2 />
             {tap.isArmed() ? "Confirm delete?" : "Delete list"}
           </DropdownMenuItem>
         ) : (
@@ -170,6 +221,7 @@ export function ProjectMenu({
             onClick={() => tap.confirm(() => run(() => leaveProjectAction(projectId), `leave “${name}”`))}
             className={tap.isArmed() ? ARMED_MENU_ITEM : undefined}
           >
+            <LogOut />
             {tap.isArmed() ? "Confirm leave?" : "Leave list"}
           </DropdownMenuItem>
         )}
