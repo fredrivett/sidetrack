@@ -211,6 +211,18 @@ describe("ItemDetailSheet due date picker", () => {
     expect(screen.getByLabelText("Type a due date")).toBeTruthy();
   });
 
+  it("moves focus between days with the arrow keys", () => {
+    renderSheet(true, [], [], { dueDate: "2026-11-27" });
+    openPicker();
+    const selected = screen.getByRole("button", { name: /November 27th, 2026, selected/ });
+    selected.focus();
+    fireEvent.focus(selected);
+    fireEvent.keyDown(selected, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Saturday, November 28th, 2026" }),
+    );
+  });
+
   it("saves a clicked day, but not the day already set", () => {
     renderSheet(true, [], [], { dueDate: "2026-11-27" });
     openPicker();

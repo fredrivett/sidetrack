@@ -189,7 +189,7 @@ export function parseDueDay(text: string, today: string): string | null {
     "this weekend": thisWeekend(today),
     "next week": nextWeek(today),
   };
-  if (named[t]) return named[t];
+  if (Object.hasOwn(named, t)) return named[t];
   // chrono's day-first parser reads "nov 27" as November 2027, so only
   // numeric dates go to it.
   const parser = dayFirst() && /\d\s*[/.-]\s*\d/.test(t) ? chrono.GB : chrono.casual;

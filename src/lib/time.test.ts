@@ -120,6 +120,9 @@ describe("calendar days", () => {
     expect(parseDueDay("next fri", fri)).toBe("2026-11-27");
     expect(parseDueDay("hello", wed)).toBeNull();
     expect(parseDueDay("  ", wed)).toBeNull();
+    // Object.prototype's names aren't quick-button names.
+    expect(parseDueDay("constructor", wed)).toBeNull();
+    expect(parseDueDay("__proto__", wed)).toBeNull();
   });
 
   it("reads numeric due days in the locale's order", () => {
