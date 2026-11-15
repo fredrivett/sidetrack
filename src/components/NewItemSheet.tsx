@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { addItemAction } from "@/app/actions";
 import type { Category, Project } from "@/core/schema";
+import type { Repeat } from "@/lib/repeat";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -15,6 +16,7 @@ import {
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { useMediaQuery } from "@/components/ui/use-media-query";
+import { RepeatPicker } from "./RepeatPicker";
 
 function Field({
   label,
@@ -52,6 +54,9 @@ export function NewItemSheet({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("");
+  const [repeat, setRepeat] = useState<Repeat | null>(null);
+  // Remounts the repeat picker after each add, so a Custom draft goes too.
+  const [added, setAdded] = useState(0);
   // The last title added in this session: the sheet stays open after each
   // add so you can enter a run of items, and this confirms each one landed.
   const [lastAdded, setLastAdded] = useState<string | null>(null);
@@ -77,6 +82,7 @@ export function NewItemSheet({
       setTitle("");
       setDescription("");
       setCategory("");
+      setRepeat(null);
       setLastAdded(null);
     }
   }
@@ -89,9 +95,10 @@ export function NewItemSheet({
     if (!t || !projectId || pending) return;
     const d = description.trim() || null;
     const c = category.trim() || null;
+    const r = repeat;
     const startedIn = session.current;
     start(async () => {
-      await addItemAction({ projectId, title: t, description: d, category: c });
+      await addItemAction({ projectId, title: t, description: d, category: c, repeat: r });
       if (session.current !== startedIn) return;
       // Stay open for the next item: clear what's per-item, keep the list
       // and category, and put the cursor back in the title. You can type
@@ -100,6 +107,9 @@ export function NewItemSheet({
       // submitted — never text typed for the next item.
       setTitle((cur) => (cur.trim() === t ? "" : cur));
       setDescription((cur) => ((cur.trim() || null) === d ? "" : cur));
+      // A repeat belongs to the item just added, like its title.
+      setRepeat((cur) => (cur === r ? null : cur));
+      setAdded((n) => n + 1);
       setLastAdded(t);
       titleRef.current?.focus();
     });
@@ -174,6 +184,16 @@ export function NewItemSheet({
                   <option key={c.id} value={c.name} />
                 ))}
               </datalist>
+            </Field>
+
+            <Field label="Repeat">
+              <RepeatPicker
+                key={added}
+                repeat={repeat}
+                completedAt={null}
+                disabled={pending}
+                onChange={setRepeat}
+              />
             </Field>
           </div>
 
