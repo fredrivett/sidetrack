@@ -7,6 +7,7 @@ import {
   inviteMember,
   listMembers,
   listPendingInvites,
+  listSuggestedCollaborators,
   removeMember,
 } from "./members";
 import {
@@ -210,6 +211,47 @@ describe("project membership", () => {
       // Once accepted it's no longer pending.
       acceptInvite(db, alice, projectId, "web");
       expect(listPendingInvites(db, alice)).toHaveLength(0);
+    });
+  });
+
+  describe("listSuggestedCollaborators", () => {
+    const names = (rows: { username: string | null }[]) =>
+      rows.map((r) => r.username);
+
+    it("suggests people from the owner's other lists, in either direction", () => {
+      // owner's own list: alice accepted, bob only pending.
+      inviteMember(db, owner, projectId, "alice", "web");
+      acceptInvite(db, alice, projectId, "web");
+      inviteMember(db, owner, projectId, "bob", "web");
+      // carol's list, which owner and dave both accepted.
+      const carol = createTestUser(db, { username: "carol" });
+      const dave = createTestUser(db, { username: "dave" });
+      createTestUser(db, { username: "stranger" });
+      const hers = createProject(db, carol, { name: "Hers" }, "web").id;
+      inviteMember(db, carol, hers, "owner", "web");
+      acceptInvite(db, owner, hers, "web");
+      inviteMember(db, carol, hers, "dave", "web");
+      acceptInvite(db, dave, hers, "web");
+
+      const home = createProject(db, owner, { name: "Home" }, "web").id;
+      expect(names(listSuggestedCollaborators(db, owner, home))).toEqual([
+        "alice",
+        "carol",
+        "dave",
+      ]);
+
+      // Anyone already on the list, pending or accepted, drops out.
+      inviteMember(db, owner, home, "carol", "web");
+      expect(names(listSuggestedCollaborators(db, owner, home))).toEqual([
+        "alice",
+        "dave",
+      ]);
+      expect(names(listSuggestedCollaborators(db, owner, projectId))).toEqual([
+        "carol",
+        "dave",
+      ]);
+      // Only the owner can invite, so a member gets no suggestions.
+      expect(listSuggestedCollaborators(db, alice, projectId)).toEqual([]);
     });
   });
 

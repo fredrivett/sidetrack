@@ -31,6 +31,7 @@ import {
   declineInvite as declineInviteCore,
   inviteMember as inviteMemberCore,
   listMembers as listMembersCore,
+  listSuggestedCollaborators as listSuggestedCollaboratorsCore,
   removeMember as removeMemberCore,
 } from "@/core/members";
 import {
@@ -153,6 +154,12 @@ export async function listMembersAction(projectId: string) {
   return listMembersCore(db, userId, projectId);
 }
 
+export async function listSuggestedCollaboratorsAction(projectId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  return listSuggestedCollaboratorsCore(db, userId, projectId);
+}
+
 /** Absolute base URL for links in outgoing email: the configured
  * BETTER_AUTH_URL, else derived from the incoming request's headers. */
 async function appBaseUrl(): Promise<string> {
@@ -226,6 +233,7 @@ export async function addItemAction(input: {
   dueDate?: string | null;
   dueFrom?: string | null;
   repeat?: Repeat | null;
+  subItems?: string[];
 }) {
   const userId = await requireUserId();
   const { db } = getDb();

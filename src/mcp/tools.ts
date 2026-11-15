@@ -610,6 +610,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "parent (a short ref or id) adds the task as a sub-item of that task, one step in its checklist: " +
         "e.g. \"Tidy up flat\" with sub-items Lounge, Kitchen and Bedroom. Sub-items are one level deep; " +
         "each is a full item with its own ref and assignees. Adding an open one to a finished parent reopens the parent; adding one with completed: true leaves it finished. " +
+        "sub_items (titles, in order) creates the task's checklist with it in one call, all or nothing: " +
+        "prefer it over adding each sub-item with parent afterwards. With completed: true they're created done too. Not with parent, since sub-items can't have their own. " +
         "due_date is the calendar day it's due, YYYY-MM-DD (no time); call list_today first if you need today's date in the user's timezone. " +
         DUE_SPAN +
         "assignee_ids assigns it to one or more people, each the list owner (the list's userId) or an accepted member " +
@@ -631,7 +633,9 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "the new item landed, unless the user asked you not to:\n" +
         "- Keep items in the order returned; do not re-sort unless the user asked for a different order.\n" +
         "- A task is a box-drawing branch, e.g. `├── Write the docs`.\n" +
-        "- Sub-items (in `children`) nest one level beneath their parent, e.g. `│   ├── Kitchen`.",
+        "- Sub-items (in `children`) nest one level beneath their parent, e.g. `│   ├── Kitchen`.\n" +
+        "- Show the description of the item you added (the one whose id is created.id) inline, indented on the line beneath its branch; " +
+        "leave out every other item's description. If you created it completed, it isn't in items: show it and its description after the tree, marked done.",
       inputSchema: {
         list_id: z.string(),
         title: z.string().min(1),
@@ -645,6 +649,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         completed: z.boolean().optional(),
         repeat: Repeat.nullable().optional(),
         position: PosRef.optional(),
+        sub_items: z.array(z.string().min(1)).optional(),
       },
     },
     async ({
@@ -660,8 +665,14 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       completed,
       repeat,
       position,
+      sub_items,
     }) => {
       const { db } = getDb();
+      if (parent !== undefined && sub_items !== undefined) {
+        return errorText(
+          "Pass parent or sub_items, not both: sub-items can't have their own — no change was made.",
+        );
+      }
       if (assignee_ids !== undefined && assignee_id !== undefined) {
         return errorText(
           "Pass assignee_ids or the older assignee_id, not both — no change was made.",
@@ -700,6 +711,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           completed,
           repeat,
           positionRef: pos.position,
+          subItems: sub_items,
         },
         SOURCE,
       );
@@ -731,7 +743,16 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Passing due_date without due_from makes it due that day alone. due_from without due_date changes when the span starts and keeps its due_date; " +
         "due_from: null makes it due on its due_date alone. " +
         "repeat sets how often a task comes round again, { every, unit } (see add_item); pass null to stop it repeating. " +
-        "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
+        "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id. " +
+        "Returns { updated, items } where items is every incomplete item in the item's list in position order " +
+        "(so a completed item is in updated but not items).\n" +
+        "After updating, show the user the list's items (the items array) so they can see the change in place, " +
+        "unless the user asked you not to:\n" +
+        "- Keep items in the order returned; do not re-sort unless the user asked for a different order.\n" +
+        "- A task is a box-drawing branch, e.g. `├── Write the docs`.\n" +
+        "- Sub-items (in `children`) nest one level beneath their parent, e.g. `│   ├── Kitchen`.\n" +
+        "- Show the description of the item you updated (the one whose id is updated.id) inline, indented on the line beneath its branch; " +
+        "leave out every other item's description. If it's completed, it isn't in items: show it and its description after the tree, marked done.",
       inputSchema: {
         id: z.string(),
         title: z.string().optional(),
@@ -781,19 +802,18 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           `${both.join(", ")} is in both add_assignee_ids and remove_assignee_ids — no change was made.`,
         );
       }
-      return json(
-        withItemRef(
-          db,
-          userId,
-          updateItem(
-            db,
-            userId,
-            item.id,
-            { ...patch, assigneeIds, addAssigneeIds, removeAssigneeIds, dueDate: due_date, dueFrom: due_from },
-            SOURCE,
-          ),
-        ),
+      const updated = updateItem(
+        db,
+        userId,
+        item.id,
+        { ...patch, assigneeIds, addAssigneeIds, removeAssigneeIds, dueDate: due_date, dueFrom: due_from },
+        SOURCE,
       );
+      const refPrefix = projectRefPrefixes(db, userId)[updated.projectId];
+      return json({
+        updated: { ...updated, ref: formatItemRef(refPrefix, updated.number) },
+        items: withRefs(refPrefix, listItems(db, userId, updated.projectId)),
+      });
     },
   );
 
