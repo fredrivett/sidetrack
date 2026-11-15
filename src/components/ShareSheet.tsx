@@ -60,6 +60,8 @@ export function ShareSheet({
     setOpened({ open, projectId });
     setPerson("");
     setError(null);
+    // A tap armed before closing must not carry over to the next open.
+    tap.reset();
   }
 
   // Load the roster whenever the sheet opens for a project.
@@ -182,8 +184,8 @@ export function ShareSheet({
                       }`}
                       aria-label={
                         tap.isArmed(m.userId)
-                          ? `Confirm removing ${displayName(m)}`
-                          : `Remove ${displayName(m)}`
+                          ? `Confirm ${m.status === "pending" ? "revoking" : "removing"} ${displayName(m)}`
+                          : `${m.status === "pending" ? "Revoke" : "Remove"} ${displayName(m)}`
                       }
                     >
                       {tap.isArmed(m.userId)

@@ -149,7 +149,11 @@ export function ApiKeysPanel({ initial }: { initial: KeyRow[] }) {
                   size="sm"
                   onClick={() => tap.confirm(() => onRevoke(k.id), k.id)}
                   disabled={pending}
-                  className={tap.isArmed(k.id) ? "bg-destructive text-white hover:bg-destructive/90" : undefined}
+                  className={
+                    tap.isArmed(k.id)
+                      ? "bg-destructive! text-white! hover:bg-destructive/90! dark:bg-destructive! dark:hover:bg-destructive/90!"
+                      : undefined
+                  }
                 >
                   {tap.isArmed(k.id) ? "Confirm?" : "Revoke"}
                 </Button>
