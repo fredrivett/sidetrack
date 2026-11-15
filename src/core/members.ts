@@ -1,5 +1,6 @@
 import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { hasProjectAccess } from "./access";
 import { users } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
@@ -11,6 +12,7 @@ import {
   projectMembers,
   projectPositions,
   projects,
+  spaceMembers,
 } from "./schema";
 
 /** A project member (or pending invite) with the target user's display info. */
@@ -53,7 +55,7 @@ export interface PendingInviteView {
  * case-insensitively. Returns undefined when no account matches — invites
  * require the target to have signed up already.
  */
-function findUserByHandle(db: Db, raw: string) {
+export function findUserByHandle(db: Db, raw: string) {
   const input = raw.trim();
   if (!input) return undefined;
   if (input.startsWith("@")) {
@@ -86,7 +88,7 @@ export function getUserName(db: Db, id: string): string | null {
 }
 
 /** Display handle for an audit detail: `@username`, falling back to the id. */
-function handleFor(user: { username: string | null } | undefined, id: string) {
+export function handleFor(user: { username: string | null } | undefined, id: string) {
   return user?.username ? `@${user.username}` : id;
 }
 
@@ -223,8 +225,10 @@ export function acceptInvite(
     if (flipped.changes === 0) {
       throw new Error("no pending invite for this list");
     }
+    // They may already have a slot, from a Space the list is in.
     tx.insert(projectPositions)
       .values({ userId, projectId, position })
+      .onConflictDoNothing()
       .run();
     recordAudit(tx as unknown as Db, {
       actor: userId,
@@ -309,53 +313,11 @@ export function removeMember(
     tx.delete(projectMembers)
       .where(eq(projectMembers.id, membership.id))
       .run();
-    // Take them off any items they held here, leaving any other assignees of
-    // a joint item in place: once they lose access they can't action that
-    // work, so leaving it assigned would be a lie. Like the ordering-slot
-    // cleanup below, this is a consequence of the (audited) removal, not its
-    // own event, so no per-item audit row: the removal's row says how many.
-    const held = tx
-      .select({ id: items.id, assigneeIds: items.assigneeIds })
-      .from(items)
-      .where(
-        and(
-          eq(items.projectId, projectId),
-          sql`exists (select 1 from json_each(${items.assigneeIds}) where value = ${targetUserId})`,
-        ),
-      )
-      .all();
-    for (const it of held) {
-      tx.update(items)
-        .set({ assigneeIds: it.assigneeIds.filter((a) => a !== targetUserId) })
-        .where(eq(items.id, it.id))
-        .run();
-    }
-    // End their agents' open sessions here too: without access the agent
-    // can't finish them, and the board would show it working indefinitely.
-    const ended = tx
-      .update(agentSessions)
-      .set({ finishedAt: Date.now() })
-      .where(
-        and(
-          eq(agentSessions.userId, targetUserId),
-          isNull(agentSessions.finishedAt),
-          inArray(
-            agentSessions.itemId,
-            tx.select({ id: items.id }).from(items).where(eq(items.projectId, projectId)),
-          ),
-        ),
-      )
-      .run().changes;
-    // Drop their ordering slot too (no user FK to cascade it). A pending
-    // member never had one, so this is a harmless no-op in that case.
-    tx.delete(projectPositions)
-      .where(
-        and(
-          eq(projectPositions.userId, targetUserId),
-          eq(projectPositions.projectId, projectId),
-        ),
-      )
-      .run();
+    const { unassigned, ended } = revokeListAccess(
+      tx as unknown as Db,
+      targetUserId,
+      projectId,
+    );
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
@@ -365,13 +327,83 @@ export function removeMember(
       projectId,
       detail: [
         detail,
-        held.length && `unassigned from ${held.length} item${held.length === 1 ? "" : "s"}`,
-        ended && `ended ${ended} agent session${ended === 1 ? "" : "s"}`,
-      ]
-        .filter(Boolean)
-        .join(", "),
+        ...accessLossDetail({ unassigned, ended }),
+      ].join(", "),
     });
   });
+}
+
+/**
+ * Clean up after `userId` loses access to a project, if they have: take them
+ * off its items (other assignees of a joint item stay), end their agents' open
+ * sessions on it, and drop their ordering slot. Without access they can't
+ * action that work, so leaving it assigned or "working" would be a lie. Does
+ * nothing while they still have access another way (owner, direct member, or
+ * the list's Space), so callers run it after every change that could end
+ * access. Like the slot cleanup, this is a consequence of the caller's audited
+ * event, not its own: the caller's audit row reports the counts.
+ */
+// audit-exempt: runs inside the caller's audited transaction.
+export function revokeListAccess(
+  db: Db,
+  userId: string,
+  projectId: string,
+): { unassigned: number; ended: number } {
+  const stillHasAccess = db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(and(eq(projects.id, projectId), hasProjectAccess(userId)))
+    .get();
+  if (stillHasAccess) return { unassigned: 0, ended: 0 };
+  const held = db
+    .select({ id: items.id, assigneeIds: items.assigneeIds })
+    .from(items)
+    .where(
+      and(
+        eq(items.projectId, projectId),
+        sql`exists (select 1 from json_each(${items.assigneeIds}) where value = ${userId})`,
+      ),
+    )
+    .all();
+  for (const it of held) {
+    db.update(items)
+      .set({ assigneeIds: it.assigneeIds.filter((a) => a !== userId) })
+      .where(eq(items.id, it.id))
+      .run();
+  }
+  const ended = db
+    .update(agentSessions)
+    .set({ finishedAt: Date.now() })
+    .where(
+      and(
+        eq(agentSessions.userId, userId),
+        isNull(agentSessions.finishedAt),
+        inArray(
+          agentSessions.itemId,
+          db.select({ id: items.id }).from(items).where(eq(items.projectId, projectId)),
+        ),
+      ),
+    )
+    .run().changes;
+  // No user FK to cascade the slot. Someone who never had one (a pending
+  // invitee) makes this a harmless no-op.
+  db.delete(projectPositions)
+    .where(
+      and(
+        eq(projectPositions.userId, userId),
+        eq(projectPositions.projectId, projectId),
+      ),
+    )
+    .run();
+  return { unassigned: held.length, ended };
+}
+
+/** The audit-detail phrases for what revokeListAccess cleaned up. */
+export function accessLossDetail(c: { unassigned: number; ended: number }): string[] {
+  return [
+    c.unassigned && `unassigned from ${c.unassigned} item${c.unassigned === 1 ? "" : "s"}`,
+    c.ended && `ended ${c.ended} agent session${c.ended === 1 ? "" : "s"}`,
+  ].filter((p): p is string => Boolean(p));
 }
 
 /**
@@ -406,9 +438,9 @@ export function listMembers(
 export type CollaboratorView = Omit<MemberView, "status" | "createdAt">;
 
 /**
- * People the owner already shares another list with (in either direction, as
- * owner or accepted member) who aren't on this project yet — no member row,
- * pending or accepted. Owner-only, since only the owner can invite; empty for
+ * People the owner already shares another list or a Space with (in either
+ * direction, as owner or accepted member) who aren't on this project yet — no
+ * member row, pending or accepted, and no access through its Space. Owner-only, since only the owner can invite; empty for
  * anyone else. Pending invites elsewhere don't count: until someone accepts,
  * they aren't a collaborator.
  */
@@ -420,23 +452,35 @@ export function listSuggestedCollaborators(
   const project = getProject(db, userId, projectId);
   if (!project || project.userId !== userId) return [];
 
-  // Every list the caller is on: the ones they own plus accepted memberships.
-  const shared = sql`(
-    select ${projects.id} from ${projects} where ${projects.userId} = ${userId}
+  // Every list the caller can see, however they got access.
+  const shared = sql`(select ${projects.id} from ${projects} where ${hasProjectAccess(userId)})`;
+  // The caller's Spaces: those of the lists above, plus any they're in
+  // (a Space can have no lists yet).
+  const mySpaces = sql`(
+    select ${projects.spaceId} from ${projects}
+    where ${projects.id} in ${shared} and ${projects.spaceId} is not null
     union
-    select ${projectMembers.projectId} from ${projectMembers}
-    where ${projectMembers.userId} = ${userId} and ${projectMembers.status} = 'accepted'
+    select ${spaceMembers.spaceId} from ${spaceMembers}
+    where ${spaceMembers.userId} = ${userId} and ${spaceMembers.status} = 'accepted'
   )`;
-  // Everyone on those lists: their owners and accepted members.
+  // Everyone on those lists and in those Spaces: owners and accepted members.
   const people = sql`(
     select ${projects.userId} from ${projects} where ${projects.id} in ${shared}
     union
     select ${projectMembers.userId} from ${projectMembers}
     where ${projectMembers.status} = 'accepted' and ${projectMembers.projectId} in ${shared}
+    union
+    select ${spaceMembers.userId} from ${spaceMembers}
+    where ${spaceMembers.status} = 'accepted' and ${spaceMembers.spaceId} in ${mySpaces}
   )`;
+  // Already on this list: a member row (pending or accepted), or access
+  // through the list's Space.
   const onThisProject = sql`(
     select ${projectMembers.userId} from ${projectMembers}
     where ${projectMembers.projectId} = ${projectId}
+    union
+    select ${spaceMembers.userId} from ${spaceMembers}
+    where ${spaceMembers.status} = 'accepted' and ${spaceMembers.spaceId} = ${project.spaceId ?? ""}
   )`;
 
   return db
@@ -461,7 +505,7 @@ export function listSuggestedCollaborators(
 
 /**
  * The users who can be assigned items on a project: the owner first, then every
- * accepted member in invite order (pending invites are excluded — they have no
+ * accepted member in invite order, then the list's Space's accepted members (pending invites are excluded — they have no
  * access yet, so they can't hold work). Visible to anyone with access; empty
  * for a project the caller can't see.
  */
@@ -499,7 +543,27 @@ export function listAssignees(
     )
     .orderBy(asc(projectMembers.createdAt))
     .all();
+  // Then the Space's accepted members, admin or not, who aren't listed yet.
+  if (project.spaceId) {
+    rows.push(
+      ...db
+        .select({ user: users })
+        .from(spaceMembers)
+        .innerJoin(users, eq(users.id, spaceMembers.userId))
+        .where(
+          and(
+            eq(spaceMembers.spaceId, project.spaceId),
+            eq(spaceMembers.status, "accepted"),
+          ),
+        )
+        .orderBy(asc(spaceMembers.createdAt))
+        .all(),
+    );
+  }
+  const seen = new Set(out.map((a) => a.userId));
   for (const { user } of rows) {
+    if (seen.has(user.id)) continue;
+    seen.add(user.id);
     out.push({
       userId: user.id,
       username: user.username,

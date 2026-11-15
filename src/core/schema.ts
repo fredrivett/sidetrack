@@ -43,6 +43,8 @@ export const AUDIT_ENTITIES = [
   "category",
   "api_key",
   "member",
+  "space",
+  "space_member",
   // The user's own profile (avatar). entityId is the user id; no project.
   "profile",
   "webhook",
@@ -54,6 +56,52 @@ export type AuditEntity = (typeof AUDIT_ENTITIES)[number];
 // see hasProjectAccess. Declining/removing deletes the row outright.
 export const MEMBERSHIP_STATUSES = ["pending", "accepted"] as const;
 export type MembershipStatus = (typeof MEMBERSHIP_STATUSES)[number];
+
+// A Space member's role. Every accepted member can see and edit every list in
+// the Space; admins also manage the Space and its people (see spaces.ts).
+export const SPACE_ROLES = ["admin", "member"] as const;
+export type SpaceRole = (typeof SPACE_ROLES)[number];
+
+// A group of people who share every list in it (a household, a team). A list
+// is in one Space or none (projects.spaceId). createdBy is only a record: the
+// creator's access and admin role come from their space_members row, like
+// everyone else's. No foreign key on it, like projects.user_id.
+export const spaces = sqliteTable("spaces", {
+  id: text("id").primaryKey(),
+  createdBy: text("created_by").notNull(),
+  name: text("name").notNull(),
+  // Emoji or http(s) image URL, as projects.icon; null = generic glyph.
+  icon: text("icon"),
+  createdAt: integer("created_at")
+    .notNull()
+    .default(sql`(unixepoch() * 1000)`),
+});
+
+// People in a Space, mirroring project_members: `pending` until the invitee
+// accepts, and only `accepted` rows grant access to the Space's lists (see
+// hasProjectAccess). Cascades on Space delete; no foreign key on user_id.
+export const spaceMembers = sqliteTable(
+  "space_members",
+  {
+    id: text("id").primaryKey(),
+    spaceId: text("space_id")
+      .notNull()
+      .references(() => spaces.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    status: text("status")
+      .$type<MembershipStatus>()
+      .notNull()
+      .default("pending"),
+    role: text("role").$type<SpaceRole>().notNull().default("member"),
+    createdAt: integer("created_at")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => [
+    uniqueIndex("space_members_space_user").on(t.spaceId, t.userId),
+    index("space_members_user_status").on(t.userId, t.status, t.createdAt),
+  ],
+);
 
 export const projects = sqliteTable(
   "projects",
@@ -79,11 +127,17 @@ export const projects = sqliteTable(
     // transaction and never decremented, so a deleted item's number is never
     // reused (Linear-style). Stored, not derived from MAX(number).
     itemSeq: integer("item_seq").notNull().default(0),
+    // The Space this list is in, shared with everyone in it; null = none.
+    // Deleting a Space returns its lists to their owners, never deletes them.
+    spaceId: text("space_id").references(() => spaces.id, { onDelete: "set null" }),
     createdAt: integer("created_at")
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
   },
-  (t) => [uniqueIndex("projects_user_prefix").on(t.userId, t.prefix)],
+  (t) => [
+    uniqueIndex("projects_user_prefix").on(t.userId, t.prefix),
+    index("projects_space").on(t.spaceId),
+  ],
 );
 
 // Collaborators on a project. The owner is projects.userId (always exactly
