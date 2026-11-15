@@ -58,6 +58,19 @@ export function AuditEntryRow({
       ? [{ userId: e.actor, name: e.actorName, image: e.actorImage, displayUsername: null, email: null }]
       : [];
   const agents = e.agentName ? [{ id: e.id, name: e.agentName }] : [];
+  // A detail reads as a sentence that starts with what happened ("deleted
+  // "Milk""), except an update's or a profile change's, which only names what
+  // changed ("Milk: edited description", "avatar"), so the action goes first.
+  const label = ACTION_LABEL[e.action] ?? e.action;
+  const sentence =
+    !e.detail
+      ? label
+      : e.action === "update" || e.entityType === "profile"
+        ? `${label} ${e.detail}`
+        : e.detail;
+  const space = sentence.indexOf(" ");
+  const verb = space === -1 ? sentence : sentence.slice(0, space);
+  const rest = space === -1 ? "" : sentence.slice(space + 1);
   return (
     <li className={`flex items-start gap-2 ${className ?? ""}`}>
       <span
@@ -67,16 +80,8 @@ export function AuditEntryRow({
       </span>
       <div className="min-w-0 flex-1">
         <p className="break-words text-sm">
-          <span
-            className={
-              e.action === "delete"
-                ? "font-medium text-red-600 dark:text-red-400"
-                : "font-medium"
-            }
-          >
-            {ACTION_LABEL[e.action] ?? e.action}
-          </span>{" "}
-          <span className="text-neutral-600 dark:text-neutral-300">{e.detail}</span>
+          <span className="font-medium">{verb}</span>{" "}
+          <span className="text-neutral-600 dark:text-neutral-300">{rest}</span>
         </p>
         <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-neutral-400">
           {(users.length > 0 || agents.length > 0) && (
