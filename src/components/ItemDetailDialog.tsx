@@ -15,6 +15,7 @@ import {
 import { toast } from "sonner";
 import {
   useCallback,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -118,6 +119,18 @@ function Checklist({
   const [pending, start] = useTransition();
   // Adds run one after another, so lines typed quickly land in typed order.
   const queue = useRef<Promise<unknown>>(Promise.resolve());
+  // Each new row lands above the input and pushes it down, out of view once
+  // the dialog hits its max height. Nothing else scrolls it back (the
+  // drawer's keyboard provider only aligns on focus), so do it while typing.
+  const input = useRef<HTMLInputElement>(null);
+  const count = useRef(items.length);
+  useLayoutEffect(() => {
+    const grew = items.length > count.current;
+    count.current = items.length;
+    if (grew && input.current === document.activeElement) {
+      input.current?.scrollIntoView({ block: "nearest" });
+    }
+  }, [items.length]);
 
   function add() {
     const title = draft.trim();
@@ -194,6 +207,7 @@ function Checklist({
         );
       })}
       <Input
+        ref={input}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
@@ -203,7 +217,11 @@ function Checklist({
           }
         }}
         placeholder={items.length ? "Add another…" : "Add a step…"}
-        aria-label={`Add a sub-item to ${parent.title}`}
+        className="scroll-mb-4"
+        // Not the task's title: Safari reads the label to guess the field,
+        // so a task like "Change phone plan" got phone-number AutoFill (it
+        // ignores autocomplete="off"). The dialog is already titled.
+        aria-label="Add a sub-item"
       />
     </div>
   );
