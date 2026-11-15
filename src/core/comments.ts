@@ -1,4 +1,4 @@
-import { and, asc, eq, type SQL, sql } from "drizzle-orm";
+import { and, asc, desc, eq, type SQL, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { hasProjectAccess } from "./access";
 import { users } from "./auth-schema";
@@ -33,10 +33,29 @@ function cleanBody(raw: string): string {
   return body;
 }
 
-function selectComments(db: Db, userId: string, where: SQL) {
-  return db
+/** A comment in a feed across items: the comment plus the item it's on. */
+export interface FeedComment extends CommentView {
+  item: Pick<Item, "id" | "title" | "number" | "projectId">;
+}
+
+function selectComments(
+  db: Db,
+  userId: string,
+  where: SQL | undefined,
+  opts: { newestFirst?: boolean; limit?: number } = {},
+): FeedComment[] {
+  // Ties (two comments in the same millisecond) keep the order they were
+  // added in.
+  const dir = opts.newestFirst ? desc : asc;
+  const query = db
     .select({
       comment: comments,
+      item: {
+        id: items.id,
+        title: items.title,
+        number: items.number,
+        projectId: items.projectId,
+      },
       name: users.name,
       displayUsername: users.displayUsername,
       email: users.email,
@@ -48,12 +67,12 @@ function selectComments(db: Db, userId: string, where: SQL) {
     // Left join, so a deleted user's comments still show.
     .leftJoin(users, eq(users.id, comments.userId))
     .where(and(where, hasProjectAccess(userId)))
-    // Ties (two comments in the same millisecond) keep the order they were
-    // added in.
-    .orderBy(asc(comments.createdAt), asc(sql`${comments}.rowid`))
+    .orderBy(dir(comments.createdAt), dir(sql`${comments}.rowid`));
+  return (opts.limit ? query.limit(opts.limit) : query)
     .all()
-    .map(({ comment, name, displayUsername, email, image }) => ({
+    .map(({ comment, item, name, displayUsername, email, image }) => ({
       ...comment,
+      item,
       author:
         name === null && email === null
           ? null
@@ -61,13 +80,38 @@ function selectComments(db: Db, userId: string, where: SQL) {
     }));
 }
 
+/**
+ * The newest comments on items the user can open, in one list or across all
+ * of them, newest first: the Activity view's Comments tab.
+ */
+export function listRecentComments(
+  db: Db,
+  userId: string,
+  opts: { projectId?: string; limit?: number } = {},
+): FeedComment[] {
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 500);
+  return selectComments(
+    db,
+    userId,
+    opts.projectId ? eq(items.projectId, opts.projectId) : undefined,
+    { newestFirst: true, limit },
+  );
+}
+
 /** The item's comments, oldest first; none when the user can't open it. */
 export function listComments(db: Db, userId: string, itemId: string): CommentView[] {
-  return selectComments(db, userId, eq(comments.itemId, itemId));
+  return selectComments(db, userId, eq(comments.itemId, itemId)).map(withoutItem);
 }
 
 function getComment(db: Db, userId: string, id: string): CommentView | undefined {
-  return selectComments(db, userId, eq(comments.id, id))[0];
+  return selectComments(db, userId, eq(comments.id, id)).map(withoutItem)[0];
+}
+
+// Where it's already known which item the comments are on.
+function withoutItem(comment: FeedComment): CommentView {
+  const view: CommentView & { item?: unknown } = { ...comment };
+  delete view.item;
+  return view;
 }
 
 /** The comment and its item, for a change only its author may make. */

@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { unstable_rethrow } from "next/navigation";
-import { listAuditAction } from "@/app/actions";
+import { listAuditAction, listRecentCommentsAction } from "@/app/actions";
 import type { AuditEntryWithActor } from "@/core/audit";
-import type { AuditSource, Project } from "@/core/schema";
+import type { FeedComment } from "@/core/comments";
+import type { AuditSource, Item, Project } from "@/core/schema";
+import { formatItemRef } from "@/lib/itemRef";
 import { dayLabel, formatRelative } from "@/lib/time";
 import {
   ResponsiveDialog,
@@ -14,6 +16,7 @@ import {
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
 import { runAction } from "./run-action";
+import { CommentCard } from "./ItemComments";
 import { AvatarStack } from "./UserAvatar";
 
 const PAGE = 100;
@@ -39,7 +42,10 @@ const ACTION_LABEL: Record<string, string> = {
   finish: "finished",
 };
 
-type Filter = "all" | AuditSource;
+// "comments" shows the comments themselves rather than the log's rows.
+type Filter = "all" | AuditSource | "comments";
+
+const FILTERS = ["all", "web", "mcp", "github", "system", "comments"] as const;
 
 // The verbs src/core starts an audit detail with when it reads as a sentence
 // ("deleted "Milk"", "made @fred an admin of …"). A detail that starts any
@@ -131,20 +137,88 @@ export function AuditEntryRow({
   );
 }
 
+/** Rows grouped under the day they happened, newest day first. */
+function byDay<T>(rows: T[], ts: (row: T) => number) {
+  const out: { label: string; rows: T[] }[] = [];
+  for (const row of rows) {
+    const label = dayLabel(ts(row));
+    const last = out.at(-1);
+    if (last && last.label === label) last.rows.push(row);
+    else out.push({ label, rows: [row] });
+  }
+  return out;
+}
+
+/**
+ * One comment in the Comments tab, as the item dialog shows it, plus the item
+ * it's on (opening it when it's on the board) and, across lists, its list.
+ */
+function FeedCommentRow({
+  comment: c,
+  project,
+  showList,
+  onOpen,
+}: {
+  comment: FeedComment;
+  project: Project | undefined;
+  showList: boolean;
+  onOpen?: () => void;
+}) {
+  const item = (
+    <>
+      {project && (
+        <span className="shrink-0 font-mono text-[11px] text-neutral-400">
+          {formatItemRef(project.prefix, c.item.number)}
+        </span>
+      )}
+      <span className="truncate">{c.item.title}</span>
+      {showList && project && (
+        <span className="shrink-0 text-neutral-400">· {project.name}</span>
+      )}
+    </>
+  );
+  const itemClass = "mt-0.5 flex max-w-full items-center gap-1.5 text-left text-xs text-neutral-500";
+  return (
+    <CommentCard
+      comment={c}
+      clamp
+      context={
+        onOpen ? (
+          <button
+            type="button"
+            onClick={onOpen}
+            className={`${itemClass} hover:text-neutral-900 hover:underline dark:hover:text-neutral-100`}
+          >
+            {item}
+          </button>
+        ) : (
+          <p className={itemClass}>{item}</p>
+        )
+      }
+    />
+  );
+}
+
 export function AuditDialog({
   open,
   projectId,
   projects,
+  items = [],
+  onOpenItem,
   onClose,
 }: {
   open: boolean;
   projectId?: string;
   projects: Project[];
+  /** The items the board has, which a comment's item can be opened from. */
+  items?: Item[];
+  onOpenItem?: (item: Item) => void;
   onClose: () => void;
 }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [limit, setLimit] = useState(PAGE);
   const [entries, setEntries] = useState<AuditEntryWithActor[]>([]);
+  const [comments, setComments] = useState<FeedComment[]>([]);
   const [pending, start] = useTransition();
 
   // Reset filter + limit when the dialog opens, or when the user switches
@@ -157,7 +231,10 @@ export function AuditDialog({
     setPrevProjectId(projectId);
     // Another list's entries never show under this one's name, even if
     // loading this one's fails.
-    if (prevProjectId !== projectId) setEntries([]);
+    if (prevProjectId !== projectId) {
+      setEntries([]);
+      setComments([]);
+    }
     if (open) {
       setFilter("all");
       setLimit(PAGE);
@@ -172,6 +249,11 @@ export function AuditDialog({
     () => new Map(projects.map((p) => [p.id, p.name])),
     [projects],
   );
+  const projectById = useMemo(
+    () => new Map(projects.map((p) => [p.id, p])),
+    [projects],
+  );
+  const itemById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
 
   // The list, filter and limit the shown entries were loaded with. When a
   // load for the same list fails, the pills and Show more go back to them, so
@@ -182,15 +264,22 @@ export function AuditDialog({
     if (!open) return;
     let active = true;
     start(async () => {
+      // The Comments tab reads the comments; every other tab, the log.
+      const read: Promise<() => void> =
+        filter === "comments"
+          ? listRecentCommentsAction({ projectId, limit }).then(
+              (rows) => () => setComments(rows),
+            )
+          : listAuditAction({
+              projectId,
+              source: filter === "all" ? undefined : filter,
+              limit,
+            }).then((rows) => () => setEntries(rows));
       const ok = await runAction(
-        listAuditAction({
-          projectId,
-          source: filter === "all" ? undefined : filter,
-          limit,
-        }).then(
-          (rows) => {
+        read.then(
+          (show) => {
             if (!active) return;
-            setEntries(rows);
+            show();
             loaded.current = { projectId, filter, limit };
           },
           // Once the dialog has closed or moved on, a failed load is moot, but a
@@ -200,7 +289,7 @@ export function AuditDialog({
             if (active) throw error;
           },
         ),
-        "load the activity",
+        filter === "comments" ? "load the comments" : "load the activity",
       );
       if (!ok && loaded.current.projectId === projectId) {
         setFilter(loaded.current.filter);
@@ -212,18 +301,12 @@ export function AuditDialog({
     };
   }, [open, projectId, filter, limit]);
 
-  const groups = useMemo(() => {
-    const out: { label: string; rows: AuditEntryWithActor[] }[] = [];
-    for (const e of entries) {
-      const label = dayLabel(e.ts);
-      const last = out.at(-1);
-      if (last && last.label === label) last.rows.push(e);
-      else out.push({ label, rows: [e] });
-    }
-    return out;
-  }, [entries]);
+  const showingComments = filter === "comments";
+  const groups = useMemo(() => byDay(entries, (e) => e.ts), [entries]);
+  const commentGroups = useMemo(() => byDay(comments, (c) => c.createdAt), [comments]);
+  const shownCount = showingComments ? comments.length : entries.length;
 
-  const maybeMore = entries.length === limit;
+  const maybeMore = shownCount === limit;
 
   return (
     <ResponsiveDialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -241,7 +324,7 @@ export function AuditDialog({
         </div>
 
         <div className="flex shrink-0 items-center gap-1 border-b border-neutral-200 p-2 dark:border-neutral-800">
-          {(["all", "web", "mcp", "github", "system"] as const).map((f) => (
+          {FILTERS.map((f) => (
             <button
               key={f}
               type="button"
@@ -259,17 +342,39 @@ export function AuditDialog({
             </button>
           ))}
           <span className="ml-auto text-xs text-neutral-400">
-            {pending ? "…" : `${entries.length}`}
+            {pending ? "…" : `${shownCount}`}
           </span>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-          {entries.length === 0 && !pending && (
+          {shownCount === 0 && !pending && (
             <p className="p-6 text-center text-sm text-neutral-400">
-              No activity yet.
+              {showingComments ? "No comments yet." : "No activity yet."}
             </p>
           )}
-          {groups.map((g) => (
+          {showingComments &&
+            commentGroups.map((g) => (
+              <section key={g.label}>
+                <h3 className="sticky top-0 z-10 bg-neutral-50 px-4 py-1.5 text-[11px] font-medium uppercase tracking-wide text-neutral-500 dark:bg-neutral-950">
+                  {g.label}
+                </h3>
+                <ul className="space-y-2 px-4 py-2">
+                  {g.rows.map((c) => {
+                    const item = itemById.get(c.item.id);
+                    return (
+                      <FeedCommentRow
+                        key={c.id}
+                        comment={c}
+                        project={projectById.get(c.item.projectId)}
+                        showList={!projectId}
+                        onOpen={item && onOpenItem ? () => onOpenItem(item) : undefined}
+                      />
+                    );
+                  })}
+                </ul>
+              </section>
+            ))}
+          {!showingComments && groups.map((g) => (
             <section key={g.label}>
               <h3 className="sticky top-0 bg-neutral-50 px-4 py-1.5 text-[11px] font-medium uppercase tracking-wide text-neutral-500 dark:bg-neutral-950">
                 {g.label}

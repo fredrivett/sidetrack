@@ -577,6 +577,12 @@ export function Kanban({
           open={audit.open}
           projectId={audit.projectId}
           projects={projects}
+          items={boardItems}
+          // Opening a comment's item swaps Activity for the item's dialog.
+          onOpenItem={(item) => {
+            setAudit({ open: false });
+            paletteDetail.openDetail(item);
+          }}
           onClose={() => setAudit({ open: false })}
         />
 
