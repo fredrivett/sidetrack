@@ -7,6 +7,7 @@ import {
   isDay,
   isOnToday,
   nextWeek,
+  parseDueDay,
   quickDueDays,
   nextDayStart,
   startOfDay,
@@ -93,6 +94,52 @@ describe("calendar days", () => {
     // Saturday: This weekend is today. Sunday: it's today, and Next week is tomorrow.
     expect(quickDueDays("2026-11-21").map(([l]) => l)).toEqual(["Today", "Tomorrow", "Next week"]);
     expect(quickDueDays("2026-11-22").map(([l]) => l)).toEqual(["Today", "Tomorrow"]);
+  });
+
+  it("reads typed due days, looking ahead from the app's today", () => {
+    const wed = "2026-11-18";
+    // The quick buttons' names set what the buttons do: chrono alone reads
+    // "next week" as today + 7 (the 25th), the button as the coming Monday.
+    expect(parseDueDay(" Next week ", wed)).toBe("2026-11-23");
+    expect(parseDueDay("weekend", wed)).toBe("2026-11-21");
+    expect(parseDueDay("tomorrow", wed)).toBe("2026-11-19");
+    expect(parseDueDay("mon", wed)).toBe("2026-11-23"); // not the past Monday
+    expect(parseDueDay("fri", wed)).toBe("2026-11-20");
+    expect(parseDueDay("in 2 weeks", wed)).toBe("2026-12-02");
+    expect(parseDueDay("nov 27", wed)).toBe("2026-11-27");
+    expect(parseDueDay("3 jan", "2026-12-10")).toBe("2027-01-03");
+    expect(parseDueDay("end of month", wed)).toBe("2026-11-30");
+    // On a Friday, "fri" is next week's: chrono alone gives today. A date
+    // that happens to be today, or "this fri", still means today.
+    const fri = "2026-11-20";
+    expect(parseDueDay("fri", fri)).toBe("2026-11-27");
+    expect(parseDueDay("on Friday", fri)).toBe("2026-11-27");
+    expect(parseDueDay("this fri", fri)).toBe(fri);
+    expect(parseDueDay("20 nov", fri)).toBe(fri);
+    expect(parseDueDay("fri 20 nov", fri)).toBe(fri);
+    expect(parseDueDay("next fri", fri)).toBe("2026-11-27");
+    expect(parseDueDay("hello", wed)).toBeNull();
+    expect(parseDueDay("  ", wed)).toBeNull();
+  });
+
+  it("reads numeric due days in the locale's order", () => {
+    const wed = "2026-11-18";
+    const parts = Intl.DateTimeFormat.prototype.formatToParts;
+    const spy = vi.spyOn(Intl.DateTimeFormat.prototype, "formatToParts");
+    try {
+      spy.mockImplementation(function (this: Intl.DateTimeFormat, d) {
+        return parts.call(new Intl.DateTimeFormat("en-US"), d);
+      });
+      expect(parseDueDay("1/12", wed)).toBe("2027-01-12");
+      spy.mockImplementation(function (this: Intl.DateTimeFormat, d) {
+        return parts.call(new Intl.DateTimeFormat("en-GB"), d);
+      });
+      expect(parseDueDay("1/12", wed)).toBe("2026-12-01");
+      // Day-first must not swallow month-name dates: "nov 27" isn't Nov 2027.
+      expect(parseDueDay("nov 27", wed)).toBe("2026-11-27");
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("labels due days relative to today", () => {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { setItemParentAction, updateItemAction } from "@/app/actions";
 import type { Item } from "@/core/schema";
 import { ItemDetailSheet } from "./ItemDetailSheet";
@@ -72,10 +72,15 @@ const viewer = {
   isOwner: true,
 };
 
-function renderSheet(open = true, checklist: Item[] = [], nestTargets: Item[] = []) {
+function renderSheet(
+  open = true,
+  checklist: Item[] = [],
+  nestTargets: Item[] = [],
+  patch: Partial<Item> = {},
+) {
   return render(
     <ItemDetailSheet
-      item={item}
+      item={{ ...item, ...patch }}
       parent={null}
       checklist={checklist}
       nestTargets={nestTargets}
@@ -157,5 +162,62 @@ describe("ItemDetailSheet nesting", () => {
     const child: Item = { ...item, id: "c1", title: "Lounge", parentId: "i1", number: 43 };
     renderSheet(true, [child], [other]);
     expect(screen.queryByRole("button", { name: /make it a sub-item of/ })).toBeNull();
+  });
+});
+
+describe("ItemDetailSheet due date picker", () => {
+  beforeEach(() => {
+    vi.mocked(updateItemAction).mockClear();
+    // 1am on Wednesday the 18th: the app's day is still Tuesday the 17th.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 18, 1));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  function openPicker() {
+    const trigger = screen.getByRole("button", { name: "Pick date" });
+    fireEvent.pointerDown(trigger);
+    fireEvent.click(trigger);
+    return screen.getByLabelText("Type a due date");
+  }
+
+  // Key by key, so the sheet's bare-key shortcuts see every keystroke.
+  function type(input: HTMLElement, text: string) {
+    for (let i = 1; i <= text.length; i++) {
+      fireEvent.keyDown(input, { key: text[i - 1] });
+      fireEvent.change(input, { target: { value: text.slice(0, i) } });
+    }
+  }
+
+  it("saves a typed day on Enter, counted from the app's day", () => {
+    renderSheet();
+    const input = openPicker();
+    // "a" and "i" are the sheet's assign shortcuts; typing them must not assign.
+    type(input, "in 2 days");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(updateItemAction).toHaveBeenCalledTimes(1);
+    expect(updateItemAction).toHaveBeenCalledWith("i1", { dueDate: "2026-11-19" });
+    expect(screen.queryByRole("menuitem", { name: /Unassigned/ })).toBeNull();
+    expect(screen.queryByLabelText("Type a due date")).toBeNull();
+  });
+
+  it("saves nothing on Enter when the text isn't a date", () => {
+    renderSheet();
+    const input = openPicker();
+    type(input, "blah");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.getByText("Not a date")).toBeTruthy();
+    expect(updateItemAction).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Type a due date")).toBeTruthy();
+  });
+
+  it("saves a clicked day, but not the day already set", () => {
+    renderSheet(true, [], [], { dueDate: "2026-11-27" });
+    openPicker();
+    fireEvent.click(screen.getByRole("button", { name: /November 27th, 2026, selected/ }));
+    expect(updateItemAction).not.toHaveBeenCalled();
+    openPicker();
+    fireEvent.click(screen.getByRole("button", { name: "Monday, November 30th, 2026" }));
+    expect(updateItemAction).toHaveBeenCalledWith("i1", { dueDate: "2026-11-30" });
   });
 });
