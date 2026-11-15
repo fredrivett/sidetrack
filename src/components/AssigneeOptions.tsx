@@ -45,7 +45,7 @@ export function AssigneeOptions({
       <DropdownMenuItem onClick={() => onChange([])}>
         <CircleDashed className="text-neutral-400" />
         Unassigned
-        {selected.length === 0 && <Check className="ml-auto opacity-70" />}
+        {selected.length === 0 && <Check className="ml-auto" />}
       </DropdownMenuItem>
       {ordered.map((a) => (
         <DropdownMenuCheckboxItem

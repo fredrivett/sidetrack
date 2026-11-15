@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleUserRound } from "lucide-react";
+import { CircleUserRound, KeyRound, Loader2, LogOut, UserRound, Webhook } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
@@ -58,11 +58,34 @@ export function UserMenu({ user }: { user: AvatarUser | null }) {
         }
       />
       <DropdownMenuContent align="end">
-        <DropdownMenuItem render={<Link href="/settings/profile">Profile</Link>} />
-        <DropdownMenuItem render={<Link href="/settings/keys">API keys</Link>} />
-        <DropdownMenuItem render={<Link href="/settings/github">GitHub</Link>} />
+        <DropdownMenuItem
+          render={
+            <Link href="/settings/profile">
+              <UserRound />
+              Profile
+            </Link>
+          }
+        />
+        <DropdownMenuItem
+          render={
+            <Link href="/settings/keys">
+              <KeyRound />
+              API keys
+            </Link>
+          }
+        />
+        <DropdownMenuItem
+          render={
+            <Link href="/settings/github">
+              <Webhook />
+              GitHub
+            </Link>
+          }
+        />
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={onSignOut} disabled={pending}>
+        {/* Stays open so "Signing out…" shows until the redirect to /login. */}
+        <DropdownMenuItem closeOnClick={false} onClick={onSignOut} disabled={pending}>
+          {pending ? <Loader2 className="animate-spin" /> : <LogOut />}
           {pending ? "Signing out…" : "Sign out"}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
