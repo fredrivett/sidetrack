@@ -717,6 +717,121 @@ export function reorderItem(
   return getItemOrThrow(db, userId, id);
 }
 
+/** Ways to sort a list's items once, each in its one useful direction. */
+export const ITEM_SORTS = {
+  due: "due date",
+  created: "date created",
+  title: "name",
+} as const;
+export type ItemSort = keyof typeof ITEM_SORTS;
+
+const byTitle = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+// Each compares two top-level items; the sort is stable, so ties keep the
+// list's current order.
+const COMPARE: Record<ItemSort, (a: Item, b: Item) => number> = {
+  // Soonest first, a span by its last day; undated items last.
+  due: (a, b) =>
+    a.dueDate === b.dueDate
+      ? 0
+      : a.dueDate === null
+        ? 1
+        : b.dueDate === null
+          ? -1
+          : a.dueDate.localeCompare(b.dueDate),
+  // Newest first.
+  created: (a, b) => b.createdAt - a.createdAt,
+  title: (a, b) => byTitle.compare(a.title, b.title),
+};
+
+/**
+ * Give a list's top-level items new positions in `order`, in one transaction
+ * with its audit row. Sub-items keep their positions, which order them only
+ * among their siblings, so each checklist moves with its parent.
+ */
+function applyItemOrder(
+  db: Db,
+  userId: string,
+  projectId: string,
+  order: Item[],
+  detail: string,
+  source: AuditOrigin,
+) {
+  db.transaction((tx) => {
+    const placed: Array<{ id: string; position: string }> = [];
+    for (const item of order) {
+      const position = resolvePosition(placed, "last");
+      tx.update(items).set({ position }).where(eq(items.id, item.id)).run();
+      placed.push({ id: item.id, position });
+    }
+    recordAudit(tx as unknown as Db, {
+      actor: userId,
+      source,
+      action: "reorder",
+      entityType: "project",
+      entityId: projectId,
+      projectId,
+      detail,
+    });
+  });
+}
+
+function projectNameOrThrow(db: Db, userId: string, projectId: string): string {
+  const row = db
+    .select({ name: projects.name })
+    .from(projects)
+    .where(accessibleProjectWhere(userId, projectId))
+    .get();
+  if (!row) throw new Error(`list not found: ${projectId}`);
+  return row.name;
+}
+
+const sameOrder = (a: Item[], b: Item[]) => a.every((item, i) => item.id === b[i]?.id);
+
+/**
+ * Sort a list's top-level items once, rewriting their order; dragging works
+ * as before afterwards. Returns the ids in their order before the sort, for
+ * setItemOrder to undo it, or null when they were already in that order and
+ * nothing changed.
+ */
+export function sortItems(
+  db: Db,
+  userId: string,
+  projectId: string,
+  by: ItemSort,
+  source: AuditOrigin,
+): string[] | null {
+  if (!Object.hasOwn(ITEM_SORTS, by)) throw new Error(`invalid sort: ${by}`);
+  const name = projectNameOrThrow(db, userId, projectId);
+  const current = getAllSiblings(db, userId, projectId, null);
+  const sorted = current.toSorted(COMPARE[by]);
+  if (sameOrder(sorted, current)) return null;
+  applyItemOrder(db, userId, projectId, sorted, `sorted "${name}" by ${ITEM_SORTS[by]}`, source);
+  return current.map((i) => i.id);
+}
+
+/**
+ * Put a list's top-level items in the order of `ids`, such as the order
+ * sortItems returned, to undo a sort. Ids no longer in the list are skipped,
+ * and items added since go after the rest, in their current order.
+ */
+export function setItemOrder(
+  db: Db,
+  userId: string,
+  projectId: string,
+  ids: string[],
+  source: AuditOrigin,
+): void {
+  const name = projectNameOrThrow(db, userId, projectId);
+  const current = getAllSiblings(db, userId, projectId, null);
+  const rank = new Map(ids.map((id, i) => [id, i]));
+  const ordered = current.toSorted(
+    (a, b) => (rank.get(a.id) ?? ids.length) - (rank.get(b.id) ?? ids.length),
+  );
+  if (sameOrder(ordered, current)) return;
+  applyItemOrder(db, userId, projectId, ordered, `reordered the items in "${name}"`, source);
+}
+
 export function deleteItem(
   db: Db,
   userId: string,

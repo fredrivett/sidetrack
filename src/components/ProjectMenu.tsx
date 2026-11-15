@@ -2,11 +2,16 @@
 
 import {
   Archive,
+  ArrowDownAZ,
+  ArrowDownUp,
   ArrowLeft,
   ArrowLeftToLine,
   ArrowRight,
   ArrowRightToLine,
+  CalendarClock,
+  Clock,
   Hash,
+  type LucideIcon,
   History,
   Info,
   LogOut,
@@ -16,12 +21,15 @@ import {
   Trash2,
   UserPlus,
 } from "lucide-react";
+import { unstable_rethrow } from "next/navigation";
 import { useTransition } from "react";
 import { toast } from "sonner";
 import {
   deleteProjectAction,
   leaveProjectAction,
   reorderProjectAction,
+  setItemOrderAction,
+  sortItemsAction,
   updateProjectAction,
 } from "@/app/actions";
 import {
@@ -30,12 +38,23 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Kbd } from "@/components/ui/kbd";
+import type { ItemSort } from "@/core/items";
 import type { ProjectStatus } from "@/core/schema";
 import { validatePrefix } from "@/lib/itemRef";
 import { ARMED_MENU_ITEM, useTapToConfirm } from "./use-tap-to-confirm";
+
+// Each sort runs one way: soonest due first, newest first, and A to Z.
+const SORTS: Array<[ItemSort, string, LucideIcon]> = [
+  ["due", "Due date", CalendarClock],
+  ["created", "Date created", Clock],
+  ["title", "Name", ArrowDownAZ],
+];
 
 export function ProjectMenu({
   projectId,
@@ -100,6 +119,37 @@ export function ProjectMenu({
         description: "Restore it any time from Archived in the header.",
         action: { label: "Undo", onClick: () => setStatus(status) },
       });
+    });
+  }
+
+  // A one-off sort: it rewrites the list's order, and dragging works as
+  // before afterwards. Undo puts back the order from before it.
+  function sortItems(by: ItemSort, label: string) {
+    start(async () => {
+      // A signed-out action rejects with Next's redirect to /login; let that
+      // through so it navigates, and turn only real failures into a toast.
+      const previous = await sortItemsAction(projectId, by).catch((e) => {
+        unstable_rethrow(e);
+        return undefined;
+      });
+      if (previous === undefined) {
+        toast.error(`Couldn't sort "${name}". Please try again.`);
+      } else if (previous === null) {
+        toast(`"${name}" is already sorted by ${label}`);
+      } else {
+        toast(`Sorted "${name}" by ${label}`, {
+          action: {
+            label: "Undo",
+            onClick: () =>
+              start(async () => {
+                await setItemOrderAction(projectId, previous).catch((e) => {
+                  unstable_rethrow(e);
+                  toast.error("Couldn't undo the sort. Please try again.");
+                });
+              }),
+          },
+        });
+      }
     });
   }
 
@@ -183,6 +233,20 @@ export function ProjectMenu({
           <ArrowRightToLine />
           Move to end
         </DropdownMenuItem>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <ArrowDownUp />
+            Sort items by
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            {SORTS.map(([by, label, Icon]) => (
+              <DropdownMenuItem key={by} onClick={() => sortItems(by, label.toLowerCase())}>
+                <Icon />
+                {label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
         <DropdownMenuItem onClick={() => onShowActivity(projectId)}>
           <History />
           Activity
