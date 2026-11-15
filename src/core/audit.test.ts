@@ -229,7 +229,12 @@ describe("audit", () => {
     );
 
     // A sub-item's own view is just its rows.
-    expect(listAudit(db, alice, { itemId: sub.id }).every((e) => e.entityId === sub.id)).toBe(true);
+    expect(
+      listAudit(db, alice, { itemId: sub.id }).map((e) => [e.action, e.entityId]).sort(),
+    ).toEqual([
+      ["create", sub.id],
+      ["update", sub.id],
+    ]);
 
     // Someone without access to its list gets nothing.
     expect(listAudit(db, bob, { itemId: item.id })).toEqual([]);

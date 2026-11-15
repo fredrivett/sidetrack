@@ -40,6 +40,36 @@ const ACTION_LABEL: Record<string, string> = {
 
 type Filter = "all" | AuditSource;
 
+// The verbs src/core starts an audit detail with when it reads as a sentence
+// ("deleted "Milk"", "made @fred an admin of …"). A detail that starts any
+// other way, such as with an item's name, gets the action in front.
+const DETAIL_VERBS = new Set([
+  "accepted",
+  "added",
+  "completed",
+  "created",
+  "declined",
+  "deleted",
+  "ended",
+  "finished",
+  "invited",
+  "left",
+  "linked",
+  "made",
+  "minted",
+  "moved",
+  "removed",
+  "reopened",
+  "reordered",
+  "reported",
+  "resumed",
+  "revoked",
+  "set",
+  "sorted",
+  "started",
+  "unlinked",
+]);
+
 /** One audit row: its source, what happened, when, and who did it. */
 export function AuditEntryRow({
   entry: e,
@@ -58,16 +88,15 @@ export function AuditEntryRow({
       ? [{ userId: e.actor, name: e.actorName, image: e.actorImage, displayUsername: null, email: null }]
       : [];
   const agents = e.agentName ? [{ id: e.id, name: e.agentName }] : [];
-  // A detail reads as a sentence that starts with what happened ("deleted
-  // "Milk""), except an update's or a profile change's, which only names what
-  // changed ("Milk: edited description", "avatar"), so the action goes first.
+  // Most details read as a sentence that starts with what happened
+  // ("deleted "Milk""); the rest only name what changed ("Milk: edited
+  // description", "avatar"), so the action goes first.
   const label = ACTION_LABEL[e.action] ?? e.action;
-  const sentence =
-    !e.detail
-      ? label
-      : e.action === "update" || e.entityType === "profile"
-        ? `${label} ${e.detail}`
-        : e.detail;
+  const sentence = !e.detail
+    ? label
+    : DETAIL_VERBS.has(e.detail.split(" ", 1)[0])
+      ? e.detail
+      : `${label} ${e.detail}`;
   const space = sentence.indexOf(" ");
   const verb = space === -1 ? sentence : sentence.slice(0, space);
   const rest = space === -1 ? "" : sentence.slice(space + 1);
