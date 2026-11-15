@@ -40,6 +40,7 @@ import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { type DropTarget, projectDrop, type TreeRow } from "@/lib/itemTree";
 import { ItemRow, type RowDrag } from "./ItemRow";
+import { runAction } from "./run-action";
 
 /** A top-level item with its sub-items, in list order. */
 export type ItemGroup = Item & { children: Item[] };
@@ -393,9 +394,12 @@ export function ItemList({
     navigator.vibrate?.(15);
     start(async () => {
       setFull(applyDrop(full, id, target));
-      await (sameParent
-        ? reorderItemAction(id, target.position)
-        : setItemParentAction(id, target.parentId, target.position));
+      await runAction(
+        sameParent
+          ? reorderItemAction(id, target.position)
+          : setItemParentAction(id, target.parentId, target.position),
+        `move “${from.item.title}”`,
+      );
     });
   }
 

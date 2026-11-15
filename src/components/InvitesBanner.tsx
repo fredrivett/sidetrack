@@ -4,6 +4,7 @@ import { useTransition } from "react";
 import { acceptInviteAction, declineInviteAction } from "@/app/actions";
 import type { PendingInviteView } from "@/core/members";
 import { Button } from "@/components/ui/button";
+import { runAction } from "./run-action";
 
 /**
  * A strip of pending project invites shown above the board. Each can be
@@ -30,7 +31,14 @@ export function InvitesBanner({ invites }: { invites: PendingInviteView[] }) {
             <Button
               size="sm"
               disabled={pending}
-              onClick={() => start(() => acceptInviteAction(invite.projectId))}
+              onClick={() =>
+                start(async () => {
+                  await runAction(
+                    acceptInviteAction(invite.projectId),
+                    `accept the invite to “${invite.projectName}”`,
+                  );
+                })
+              }
             >
               Accept
             </Button>
@@ -38,7 +46,14 @@ export function InvitesBanner({ invites }: { invites: PendingInviteView[] }) {
               size="sm"
               variant="outline"
               disabled={pending}
-              onClick={() => start(() => declineInviteAction(invite.projectId))}
+              onClick={() =>
+                start(async () => {
+                  await runAction(
+                    declineInviteAction(invite.projectId),
+                    `decline the invite to “${invite.projectName}”`,
+                  );
+                })
+              }
             >
               Decline
             </Button>

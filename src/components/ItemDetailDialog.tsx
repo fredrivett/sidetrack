@@ -15,7 +15,6 @@ import {
   Trash2,
   UserRound,
 } from "lucide-react";
-import { toast } from "sonner";
 import {
   useCallback,
   useEffect,
@@ -63,6 +62,7 @@ import { CategoryBadge } from "./CategoryBadge";
 import { DueDatePicker } from "./DueDatePicker";
 import { PrLink } from "./PrLink";
 import { RepeatPicker } from "./RepeatPicker";
+import { runAction } from "./run-action";
 import { EditableText } from "./EditableText";
 import { InlineCode, Markdown } from "./Markdown";
 import { useAssignShortcuts } from "./useAssignShortcuts";
@@ -177,8 +177,18 @@ function ItemActivity({ item }: { item: Item }) {
     if (!expanded) return;
     let stale = false;
     start(async () => {
-      const rows = await listAuditAction({ itemId: item.id, limit });
-      if (!stale) setEntries(rows);
+      await runAction(
+        listAuditAction({ itemId: item.id, limit }).then(
+          (rows) => {
+            if (!stale) setEntries(rows);
+          },
+          // Once the dialog has moved on, a failed load is moot.
+          (error) => {
+            if (!stale) throw error;
+          },
+        ),
+        "load the item's activity",
+      );
     });
     return () => {
       stale = true;
@@ -307,15 +317,14 @@ function Checklist({
     const title = draft.trim();
     if (!title) return;
     setDraft("");
-    queue.current = queue.current
-      .then(() =>
-        addItemAction({
-          projectId: parent.projectId,
-          title,
-          parentId: parent.id,
-        }),
-      )
-      .catch(() => toast.error(`Couldn't add “${title}”. Please try again.`));
+    queue.current = queue.current.then(async () => {
+      const added = await runAction(
+        addItemAction({ projectId: parent.projectId, title, parentId: parent.id }),
+        `add “${title}”`,
+      );
+      // Put a failed line back, unless another is already being typed.
+      if (!added) setDraft((cur) => cur || title);
+    });
   }
 
   return (
@@ -498,7 +507,7 @@ export function ItemDetailDialog({
       return;
     }
     start(() => {
-      void deleteItemAction(item.id);
+      void runAction(deleteItemAction(item.id), `delete “${item.title}”`);
     });
     change(false);
   }
@@ -543,7 +552,9 @@ export function ItemDetailDialog({
           <ResponsiveDialogTitle>
             <EditableText
               value={item.title}
-              onSave={(next) => updateItemAction(item.id, { title: next })}
+              onSave={(next) =>
+                runAction(updateItemAction(item.id, { title: next }), `rename “${item.title}”`)
+              }
               required
               className={`block w-full break-words text-base font-medium ${
                 completed ? "text-neutral-400 line-through" : ""
@@ -562,7 +573,10 @@ export function ItemDetailDialog({
             <EditableText
               value={item.description ?? ""}
               onSave={(next) =>
-                updateItemAction(item.id, { description: next || null })
+                runAction(
+                  updateItemAction(item.id, { description: next || null }),
+                  `save the description of “${item.title}”`,
+                )
               }
               multiline
               placeholder="Add description…"
@@ -576,7 +590,10 @@ export function ItemDetailDialog({
             <EditableText
               value={item.category ?? ""}
               onSave={(next) =>
-                updateItemAction(item.id, { category: next || null })
+                runAction(
+                  updateItemAction(item.id, { category: next || null }),
+                  `change the category of “${item.title}”`,
+                )
               }
               placeholder="Add category…"
               className="block w-full break-words text-sm text-neutral-600 dark:text-neutral-300"
@@ -628,7 +645,10 @@ export function ItemDetailDialog({
               disabled={pending}
               onChange={(due) =>
                 start(() => {
-                  void updateItemAction(item.id, due ?? { dueDate: null });
+                  void runAction(
+                    updateItemAction(item.id, due ?? { dueDate: null }),
+                    `change the due date of “${item.title}”`,
+                  );
                 })
               }
             />
@@ -643,7 +663,10 @@ export function ItemDetailDialog({
               disabled={pending}
               onChange={(repeat) =>
                 start(() => {
-                  void updateItemAction(item.id, { repeat });
+                  void runAction(
+                    updateItemAction(item.id, { repeat }),
+                    `change how “${item.title}” repeats`,
+                  );
                 })
               }
             />
@@ -666,7 +689,10 @@ export function ItemDetailDialog({
                   disabled={pending}
                   onClick={() =>
                     start(() => {
-                      void setItemParentAction(item.id, null);
+                      void runAction(
+                        setItemParentAction(item.id, null),
+                        `move “${item.title}”`,
+                      );
                     })
                   }
                 >
@@ -698,7 +724,10 @@ export function ItemDetailDialog({
                           key={t.id}
                           onClick={() =>
                             start(() => {
-                              void setItemParentAction(item.id, t.id);
+                              void runAction(
+                                setItemParentAction(item.id, t.id),
+                                `move “${item.title}”`,
+                              );
                             })
                           }
                         >

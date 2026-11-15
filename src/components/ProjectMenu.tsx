@@ -48,6 +48,7 @@ import type { ItemSort } from "@/core/items";
 import type { ProjectStatus } from "@/core/schema";
 import { validatePrefix } from "@/lib/itemRef";
 import { ARMED_MENU_ITEM, useTapToConfirm } from "./use-tap-to-confirm";
+import { runAction } from "./run-action";
 
 // Each sort runs one way: soonest due first, newest first, and A to Z.
 const SORTS: Array<[ItemSort, string, LucideIcon]> = [
@@ -89,9 +90,9 @@ export function ProjectMenu({
   // Delete and Leave take a second tap: the first turns them into "Confirm …?".
   const tap = useTapToConfirm();
 
-  function run(fn: () => Promise<unknown>) {
+  function run(fn: () => Promise<unknown>, what: string) {
     start(() => {
-      void fn();
+      void runAction(fn(), what);
     });
   }
 
@@ -102,22 +103,13 @@ export function ProjectMenu({
   // "Couldn't …" message.
   function setStatus(next: ProjectStatus) {
     start(async () => {
-      try {
-        await updateProjectAction(projectId, { status: next });
-      } catch (e) {
-        unstable_rethrow(e);
-        toast.error(`Couldn't update "${name}". Please try again.`);
-      }
+      await runAction(updateProjectAction(projectId, { status: next }), `update “${name}”`);
     });
   }
 
   function archive() {
     start(async () => {
-      try {
-        await updateProjectAction(projectId, { status: "archived" });
-      } catch (e) {
-        unstable_rethrow(e);
-        toast.error(`Couldn't archive "${name}". Please try again.`);
+      if (!(await runAction(updateProjectAction(projectId, { status: "archived" }), `archive “${name}”`))) {
         return;
       }
       toast(`Archived "${name}"`, {
@@ -171,12 +163,7 @@ export function ProjectMenu({
     }
     // In the transition, not run(), so a rethrown redirect reaches Next.
     start(async () => {
-      try {
-        await updateProjectAction(projectId, { prefix: normalized });
-      } catch (e) {
-        unstable_rethrow(e);
-        alert("Couldn't update the prefix. Please try again.");
-      }
+      await runAction(updateProjectAction(projectId, { prefix: normalized }), "update the prefix");
     });
   }
 
@@ -205,7 +192,7 @@ export function ProjectMenu({
         <DropdownMenuItem
           disabled={!prevId}
           onClick={() =>
-            run(() => reorderProjectAction(projectId, `before:${firstId}`))
+            run(() => reorderProjectAction(projectId, `before:${firstId}`), `move “${name}”`)
           }
         >
           <ArrowLeftToLine />
@@ -214,7 +201,7 @@ export function ProjectMenu({
         <DropdownMenuItem
           disabled={!prevId}
           onClick={() =>
-            run(() => reorderProjectAction(projectId, `before:${prevId}`))
+            run(() => reorderProjectAction(projectId, `before:${prevId}`), `move “${name}”`)
           }
         >
           <ArrowLeft />
@@ -223,7 +210,7 @@ export function ProjectMenu({
         <DropdownMenuItem
           disabled={!nextId}
           onClick={() =>
-            run(() => reorderProjectAction(projectId, `after:${nextId}`))
+            run(() => reorderProjectAction(projectId, `after:${nextId}`), `move “${name}”`)
           }
         >
           <ArrowRight />
@@ -232,7 +219,7 @@ export function ProjectMenu({
         <DropdownMenuItem
           disabled={!nextId}
           onClick={() =>
-            run(() => reorderProjectAction(projectId, `after:${lastId}`))
+            run(() => reorderProjectAction(projectId, `after:${lastId}`), `move “${name}”`)
           }
         >
           <ArrowRightToLine />
@@ -289,7 +276,7 @@ export function ProjectMenu({
           <DropdownMenuItem
             variant="destructive"
             closeOnClick={tap.isArmed()}
-            onClick={() => tap.confirm(() => run(() => deleteProjectAction(projectId)))}
+            onClick={() => tap.confirm(() => run(() => deleteProjectAction(projectId), `delete “${name}”`))}
             className={tap.isArmed() ? ARMED_MENU_ITEM : undefined}
           >
             <Trash2 />
@@ -299,7 +286,7 @@ export function ProjectMenu({
           <DropdownMenuItem
             variant="destructive"
             closeOnClick={tap.isArmed()}
-            onClick={() => tap.confirm(() => run(() => leaveProjectAction(projectId)))}
+            onClick={() => tap.confirm(() => run(() => leaveProjectAction(projectId), `leave “${name}”`))}
             className={tap.isArmed() ? ARMED_MENU_ITEM : undefined}
           >
             <LogOut />

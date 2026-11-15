@@ -68,6 +68,7 @@ import { useSetCompleted } from "./use-optimistic-completion";
 import { useCopyItemRef } from "./useCopyItemRef";
 import { agentLabel, AvatarStack, assigneeNames } from "./UserAvatar";
 import { useItemAgentSessions } from "./agent-sessions";
+import { runAction } from "./run-action";
 
 /** Drag wiring from the sortable wrapper that owns this row (see ItemList). */
 export type RowDrag = {
@@ -163,12 +164,12 @@ export function ItemRow({
       return;
     }
     start(() => {
-      void deleteItemAction(item.id);
+      void runAction(deleteItemAction(item.id), `delete “${item.title}”`);
     });
   }
   function setParent(parentId: string | null) {
     start(() => {
-      void setItemParentAction(item.id, parentId);
+      void runAction(setItemParentAction(item.id, parentId), `move “${item.title}”`);
     });
   }
   const assign = useCallback(
@@ -177,7 +178,10 @@ export function ItemRow({
   );
   function setDue(due: Due | null) {
     start(() => {
-      void updateItemAction(item.id, due ?? { dueDate: null });
+      void runAction(
+        updateItemAction(item.id, due ?? { dueDate: null }),
+        `change the due date of “${item.title}”`,
+      );
     });
   }
   const openPicker = useCallback(() => setAssignOpen(true), []);

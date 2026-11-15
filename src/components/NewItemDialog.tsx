@@ -9,7 +9,6 @@ import {
   useState,
   useTransition,
 } from "react";
-import { toast } from "sonner";
 import {
   addItemAction,
   createProjectAction,
@@ -41,6 +40,7 @@ import { AssigneeOptions } from "./AssigneeOptions";
 import { CreatableCombobox } from "./CreatableCombobox";
 import { DueDatePicker } from "./DueDatePicker";
 import { RepeatPicker } from "./RepeatPicker";
+import { runAction } from "./run-action";
 import { useAssignShortcuts } from "./useAssignShortcuts";
 import { AvatarStack, assigneeNames } from "./UserAvatar";
 
@@ -203,17 +203,12 @@ export function NewItemDialog({
   // Create a list from the List field, with an AI icon as in New list.
   function createList(name: string) {
     start(async () => {
-      try {
-        const [icon] = await suggestNewListIconsAction({
-          name,
-          summary: "",
-          homepageUrl: null,
-        });
-        const created = await createProjectAction({ name, icon: icon ?? null });
-        setPickedProjectId(created.id);
-      } catch {
-        toast.error("Couldn't create the list. Please try again.");
-      }
+      await runAction(
+        suggestNewListIconsAction({ name, summary: "", homepageUrl: null })
+          .then(([icon]) => createProjectAction({ name, icon: icon ?? null }))
+          .then((created) => setPickedProjectId(created.id)),
+        "create the list",
+      );
     });
   }
 
@@ -259,19 +254,23 @@ export function NewItemDialog({
     const subs = [...subItems, subDraft.trim()].filter(Boolean);
     const startedIn = session.current;
     start(async () => {
-      await addItemAction({
-        projectId,
-        title: t,
-        description: d,
-        category: c,
-        parentId: p,
-        assigneeIds: assigned.map((a) => a.userId),
-        dueDate: du?.dueDate ?? null,
-        dueFrom: du?.dueFrom ?? null,
-        repeat: r,
-        subItems: subs,
-      });
-      if (session.current !== startedIn) return;
+      const added = await runAction(
+        addItemAction({
+          projectId,
+          title: t,
+          description: d,
+          category: c,
+          parentId: p,
+          assigneeIds: assigned.map((a) => a.userId),
+          dueDate: du?.dueDate ?? null,
+          dueFrom: du?.dueFrom ?? null,
+          repeat: r,
+          subItems: subs,
+        }),
+        `add “${t}”`,
+      );
+      // A failed add keeps the form as it was, to try again.
+      if (!added || session.current !== startedIn) return;
       // Stay open for the next item: clear what's per-item, keep the list
       // and category, and put the cursor back in the title. You can type
       // the next item while this one saves (submitting waits; the button

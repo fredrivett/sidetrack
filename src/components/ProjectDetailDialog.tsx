@@ -18,6 +18,7 @@ import {
 import { EditableText } from "./EditableText";
 import { ProjectIconPicker } from "./ProjectIconPicker";
 import { StatusBadge } from "./StatusBadge";
+import { runAction } from "./run-action";
 
 function Field({
   label,
@@ -64,9 +65,7 @@ export function ProjectDetailDialog({
       return;
     }
     start(() => {
-      void updateProjectAction(project.id, { prefix: normalized }).catch(() =>
-        toast.error("Couldn't update the prefix. Please try again."),
-      );
+      void runAction(updateProjectAction(project.id, { prefix: normalized }), "update the prefix");
     });
   }
 
@@ -86,7 +85,7 @@ export function ProjectDetailDialog({
       return;
     }
     start(() => {
-      void deleteProjectAction(project.id);
+      void runAction(deleteProjectAction(project.id), `delete “${project.name}”`);
     });
     change(false);
   }
@@ -104,7 +103,10 @@ export function ProjectDetailDialog({
             <EditableText
               value={project.name}
               onSave={(next) =>
-                updateProjectAction(project.id, { name: next })
+                runAction(
+                  updateProjectAction(project.id, { name: next }),
+                  `rename “${project.name}”`,
+                )
               }
               required
               className="block w-full break-words text-base font-semibold"
@@ -121,7 +123,7 @@ export function ProjectDetailDialog({
             <EditableText
               value={project.summary}
               onSave={(next) =>
-                updateProjectAction(project.id, { summary: next })
+                runAction(updateProjectAction(project.id, { summary: next }), "save the summary")
               }
               multiline
               placeholder="Add a summary…"

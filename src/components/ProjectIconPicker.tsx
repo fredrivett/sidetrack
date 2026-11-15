@@ -20,6 +20,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ProjectIcon } from "./ProjectIcon";
+import { runAction } from "./run-action";
 
 /**
  * A list's icon, saved as soon as one is picked. AI suggestions load the
@@ -66,9 +67,7 @@ export function ProjectIconPicker({
       }}
       onSelect={(next) =>
         start(() => {
-          void updateProjectAction(project.id, { icon: next }).catch(() =>
-            toast.error("Couldn't update the icon. Please try again."),
-          );
+          void runAction(updateProjectAction(project.id, { icon: next }), "update the icon");
         })
       }
     />

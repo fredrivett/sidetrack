@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { DndContext } from "@dnd-kit/core";
 import { SortableContext } from "@dnd-kit/sortable";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { toast } from "sonner";
 import { setItemParentAction, updateItemAction } from "@/app/actions";
 import type { AgentSession, Item } from "@/core/schema";
 import { AgentSessionsProvider } from "./agent-sessions";
@@ -18,8 +19,13 @@ vi.mock("@/app/actions", () => ({
   setItemParentAction: vi.fn(),
 }));
 
+vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+
 // The sessions provider refreshes the board through the router.
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+vi.mock("next/navigation", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("next/navigation")>()),
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
 
 // Whether the emulated device has a hover-capable pointer; the item menu opens
 // on right-click only there. Reset to a mouse device after each test.
@@ -205,6 +211,18 @@ describe("ItemRow checklist", () => {
     expect(screen.queryByText(/^Sub-item of/)).toBeNull();
     fireEvent.click(screen.getByText("Move out of “Tidy up flat”"));
     expect(setItemParentAction).toHaveBeenLastCalledWith("i1", null);
+  });
+
+  it("says so in a toast when nesting from the menu fails", async () => {
+    vi.mocked(setItemParentAction).mockRejectedValueOnce(new Error("Failed to fetch"));
+    const { row } = renderWith({ nestUnder: { id: "p1", title: "Tidy up flat" } });
+    fireEvent.contextMenu(row);
+    await act(async () => {
+      fireEvent.click(screen.getByText("Sub-item of “Tidy up flat”"));
+    });
+    expect(toast.error).toHaveBeenCalledWith(
+      `Couldn't move “${item.title}”. Please try again.`,
+    );
   });
 
   it("toggles the checklist from its progress without opening the item", () => {

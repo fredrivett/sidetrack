@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { dedupePrefix, derivePrefix } from "@/lib/itemRef";
 import { normalizeHomepageUrl } from "@/lib/url";
 import { IconPicker } from "./ProjectIconPicker";
+import { runAction } from "./run-action";
 
 // Wait for a pause in typing before asking for icon suggestions.
 const SUGGEST_DELAY_MS = 400;
@@ -122,17 +123,11 @@ export function NewProjectDialog({
       return;
     }
     start(async () => {
-      try {
-        await createProjectAction({
-          name: trimmedName,
-          summary,
-          homepageUrl,
-          icon,
-        });
-        onOpenChange(false);
-      } catch {
-        toast.error("Couldn't create the list. Please try again.");
-      }
+      const created = await runAction(
+        createProjectAction({ name: trimmedName, summary, homepageUrl, icon }),
+        "create the list",
+      );
+      if (created) onOpenChange(false);
     });
   }
 
