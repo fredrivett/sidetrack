@@ -1,10 +1,10 @@
 "use client";
 
-import { CircleUserRound, KeyRound, Loader2, LogOut, UserRound } from "lucide-react";
+import { Check, CircleUserRound, KeyRound, Loader2, LogOut, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
-import { toast } from "sonner";
+import { useCopy } from "@/components/ui/use-copy";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,14 +30,7 @@ export function UserMenu({ user }: { user: AvatarUser | null }) {
   }
 
   // The full SHA, for pasting into a bug report, an agent thread, or `git show`.
-  async function onCopyRelease() {
-    try {
-      await navigator.clipboard.writeText(RELEASE);
-      toast.success(`Copied ${RELEASE.slice(0, 7)}`);
-    } catch {
-      toast.error("Couldn't copy the version.");
-    }
-  }
+  const release = useCopy(RELEASE);
 
   return (
     <DropdownMenu>
@@ -90,13 +83,22 @@ export function UserMenu({ user }: { user: AvatarUser | null }) {
           {pending ? "Signing out…" : "Sign out"}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        {/* Which build this is, for debugging. Empty RELEASE = local dev. */}
+        {/* Which build this is, for debugging. Empty RELEASE = local dev.
+            Stays open so it can show "Copied". */}
         {RELEASE ? (
           <DropdownMenuItem
+            closeOnClick={false}
             className="text-xs text-muted-foreground"
-            onClick={onCopyRelease}
+            onClick={() => void release.copy()}
           >
-            Version {RELEASE.slice(0, 7)}
+            {release.copied ? (
+              <>
+                <Check />
+                Copied
+              </>
+            ) : (
+              <>Version {RELEASE.slice(0, 7)}</>
+            )}
           </DropdownMenuItem>
         ) : (
           <DropdownMenuItem disabled className="text-xs">

@@ -1,17 +1,17 @@
 "use client";
 
-import { ArrowUpRight, Check, Copy } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { removeGithubWebhookAction, setUpGithubWebhookAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
+import { CopyButton } from "@/components/ui/copy-button";
 import type { GithubWebhookView } from "@/core/github";
 import { GitHubMark } from "./GitHubMark";
 import { useTapToConfirm } from "./use-tap-to-confirm";
 
 /** A labelled value to paste into GitHub's form, with a copy button. */
 function CopyField({ label, value }: { label: string; value: string }) {
-  const [copied, setCopied] = useState(false);
   return (
     <div className="space-y-1">
       <p className="text-xs text-muted-foreground">{label}</p>
@@ -19,23 +19,7 @@ function CopyField({ label, value }: { label: string; value: string }) {
         <code className="min-w-0 flex-1 break-all rounded border bg-background px-2 py-1.5 font-mono text-xs select-all">
           {value}
         </code>
-        <Button
-          variant="outline"
-          size="sm"
-          aria-label={`Copy ${label.toLowerCase()}`}
-          onClick={async () => {
-            if (!navigator.clipboard) return;
-            try {
-              await navigator.clipboard.writeText(value);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1500);
-            } catch {
-              setCopied(false);
-            }
-          }}
-        >
-          {copied ? <Check /> : <Copy />}
-        </Button>
+        <CopyButton value={value} aria-label={`Copy ${label.toLowerCase()}`} />
       </div>
     </div>
   );

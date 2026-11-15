@@ -145,10 +145,12 @@ export function ItemRow({
   const { agents } = useItemAgentSessions(item.id);
 
   // ⌘./Ctrl+. copies the ref while the card is hovered (Linear's shortcut),
-  // deferring to an open detail dialog so we don't copy the wrong ref.
+  // deferring to an open detail dialog so we don't copy the wrong ref. The
+  // card shows no ref to update, so the shortcut confirms with a toast.
   const { copied, copy } = useCopyItemRef(ref, {
     active: hovered,
     deferToDialog: true,
+    toast: true,
   });
 
   function toggle() {
