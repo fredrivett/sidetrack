@@ -222,6 +222,9 @@ export const items = sqliteTable(
       onDelete: "cascade",
     }),
     position: text("position").notNull(),
+    // A parent whose sub-items are folded away on the board. Kept on the item,
+    // so it's the same for everyone who sees the list and survives a reload.
+    collapsed: integer("collapsed", { mode: "boolean" }).notNull().default(false),
     // Per-project sequence value (from projects.item_seq) behind the display
     // ref `${prefix}-${number}`. Unique within a project; monotonic.
     number: integer("number").notNull(),

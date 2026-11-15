@@ -13,12 +13,13 @@ import { DoneSection } from "./DoneSection";
 import type { ProjectView } from "./Kanban";
 import { EditableText } from "./EditableText";
 import { ItemDetailDialog } from "./ItemDetailDialog";
-import { ItemList } from "./ItemList";
+import { DraggableItemList } from "./ItemList";
 import { ProjectDetailDialog } from "./ProjectDetailDialog";
 import { ProjectIconPicker } from "./ProjectIconPicker";
 import { ProjectMenu } from "./ProjectMenu";
 import { StatusBadge } from "./StatusBadge";
 import { SummaryBlock } from "./SummaryBlock";
+import { useCollapsedItems } from "./use-collapsed-items";
 import { useDayStart } from "./use-day-start";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
 import { runAction } from "./run-action";
@@ -76,8 +77,8 @@ export function ProjectColumn({
     .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
 
   // Lives above the list/done split so it survives an item moving between
-  // ItemList and DoneSection when it's reopened or the day turns over — see
-  // the hook for the live-lookup / closing-snapshot details.
+  // DraggableItemList and DoneSection when it's reopened or the day turns
+  // over — see the hook for the live-lookup / closing-snapshot details.
   const detail = useItemDetailDialog(items);
   // The column re-renders with fresh server props on every edit. It unmounts
   // when the list is deleted, archived, or moves between the active and paused
@@ -89,11 +90,9 @@ export function ProjectColumn({
   const [showPaused, setShowPaused] = useState(false);
   const collapsed = project.status === "paused" && !showPaused;
   // Parents in the list whose sub-items are hidden. Kept here, not in
-  // ItemList, so the header's button can collapse or expand them all at once;
-  // it shows only while the list has a parent with sub-items on view.
-  const [collapsedItems, setCollapsedItems] = useState<ReadonlySet<string>>(
-    new Set(),
-  );
+  // DraggableItemList, so the header's button can collapse or expand them all
+  // at once; it shows only while the list has a parent with sub-items on view.
+  const { collapsed: collapsedItems, setCollapsed } = useCollapsedItems(items);
   const parents = inList.filter((g) => g.children.length > 0).map((g) => g.id);
   const allCollapsed = parents.every((id) => collapsedItems.has(id));
   // The list's held saves (status, order, prefix, icon…) dim the whole column
@@ -156,14 +155,7 @@ export function ProjectColumn({
               onClick={() =>
                 // Only the parents on view, so one in Done keeps its state if
                 // it comes back to the list.
-                setCollapsedItems((s) => {
-                  const next = new Set(s);
-                  for (const id of parents) {
-                    if (allCollapsed) next.delete(id);
-                    else next.add(id);
-                  }
-                  return next;
-                })
+                setCollapsed(parents, !allCollapsed)
               }
               className="-mr-1.5 flex h-8 items-center rounded px-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
             >
@@ -230,16 +222,12 @@ export function ProjectColumn({
           )}
 
           <div className="space-y-3 pt-1.5">
-            <ItemList
+            <DraggableItemList
               projectId={project.id}
               groups={inList}
               collapsed={collapsedItems}
               onToggleCollapsed={(id) =>
-                setCollapsedItems((s) => {
-                  const next = new Set(s);
-                  if (!next.delete(id)) next.add(id);
-                  return next;
-                })
+                setCollapsed([id], !collapsedItems.has(id))
               }
               prefix={project.refPrefix}
               assignees={assignees}

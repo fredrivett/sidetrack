@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { setItemsCollapsedAction } from "@/app/actions";
 import type { Item } from "@/core/schema";
 import type { ProjectView } from "./Kanban";
 import { NoDateView } from "./NoDateView";
@@ -13,6 +14,7 @@ vi.mock("@/app/actions", () => ({
   updateItemAction: vi.fn(),
   setItemParentAction: vi.fn(),
   reorderItemAction: vi.fn(),
+  setItemsCollapsedAction: vi.fn(),
 }));
 
 beforeAll(() => {
@@ -39,6 +41,7 @@ const item = (projectId: string, title: string, more: Partial<Item> = {}): Item 
   category: null,
   assigneeIds: [],
   parentId: null,
+  collapsed: false,
   dueDate: null,
   dueFrom: null,
   repeatEvery: null,
@@ -81,5 +84,32 @@ describe("NoDateView", () => {
     // Its parent is filtered out, so only the sub-item's row shows, naming it.
     expect(screen.getAllByRole("checkbox")).toHaveLength(1);
     expect(screen.getByText("Kitchen").closest("button")?.textContent).toContain("Tidy flat");
+  });
+
+  it("folds a checklist away as stored on the item, and saves a toggle", () => {
+    const tidy = item("home", "Tidy flat", { collapsed: true });
+    const trip = item("home", "Plan trip");
+    render(
+      <NoDateView
+        projects={[list("home", "Home")]}
+        itemsByProject={{
+          home: [
+            tidy,
+            item("home", "Kitchen", { parentId: tidy.id }),
+            trip,
+            item("home", "Book flights", { parentId: trip.id }),
+          ],
+        }}
+        assigneesByProject={{}}
+        prLinksByItem={{}}
+        viewerId="me"
+      />,
+    );
+
+    expect(screen.queryByText("Kitchen")).toBeNull();
+    expect(screen.getByText("Book flights")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Show checklist/ }));
+    expect(vi.mocked(setItemsCollapsedAction)).toHaveBeenCalledWith([tidy.id], false);
   });
 });

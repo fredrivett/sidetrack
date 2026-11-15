@@ -27,6 +27,7 @@ import {
   reorderItem as reorderItemCore,
   setItemOrder as setItemOrderCore,
   setItemParent as setItemParentCore,
+  setItemsCollapsed as setItemsCollapsedCore,
   sortItems as sortItemsCore,
   uncompleteItem as uncompleteItemCore,
   updateItem as updateItemCore,
@@ -371,6 +372,13 @@ export async function reorderItemAction(id: string, ref: string) {
   const it = reorderItemCore(db, userId, id, ref, SOURCE);
   refresh();
   return it;
+}
+
+export async function setItemsCollapsedAction(ids: string[], collapsed: boolean) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  setItemsCollapsedCore(db, userId, ids, collapsed);
+  refresh();
 }
 
 export async function sortItemsAction(projectId: string, by: ItemSort) {

@@ -4,6 +4,7 @@ import { hasProjectAccess } from "./access";
 import { users } from "./auth-schema";
 import { type AuditOrigin, recordAudit, SYSTEM_ACTOR } from "./audit";
 import { ensureCategory } from "./categories";
+import { announceChange } from "./changes";
 import type { Db } from "./db";
 import { getTimeZone } from "./users";
 import {
@@ -812,6 +813,35 @@ export function reorderItem(
     });
   });
   return getItemOrThrow(db, userId, id);
+}
+
+/**
+ * Fold away or show the sub-items of each of `ids` on the board, in one
+ * statement, so "collapse all" lands or fails as a whole. Any id the user
+ * can't see fails the lot before anything is written.
+ */
+export function setItemsCollapsed(
+  db: Db,
+  userId: string,
+  ids: string[],
+  collapsed: boolean,
+): void {
+  // The items that change, and the lists they're on.
+  const changed: string[] = [];
+  const lists = new Set<string>();
+  for (const id of ids) {
+    const item = getItem(db, userId, id);
+    if (!item) throw new Error(`item not found: ${id}`);
+    if (item.collapsed === collapsed) continue;
+    changed.push(id);
+    lists.add(item.projectId);
+  }
+  if (changed.length === 0) return;
+  // audit-exempt: collapsing is how the list is viewed, not a change to the
+  // item, so it stays out of the item's history and the activity feed.
+  db.update(items).set({ collapsed }).where(inArray(items.id, changed)).run();
+  // Unaudited, so announced here: everyone with the list open sees it fold.
+  for (const projectId of lists) announceChange({ actor: userId, projectId });
 }
 
 /** Ways to sort a list's items once, each in its one useful direction. */

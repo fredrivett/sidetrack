@@ -12,6 +12,7 @@ import {
   reorderItem,
   setItemOrder,
   setItemParent,
+  setItemsCollapsed,
   sortItems,
   uncompleteItem,
   updateItem,
@@ -879,6 +880,38 @@ describe("checklists (sub-items)", () => {
       .filter((e) => e.action === "delete")
       .map((e) => e.entityId);
     expect(deleted.sort()).toEqual([c.id, p.id].sort());
+  });
+
+  it("stores collapsed on each item, without logging it", () => {
+    const { db, userId, projectId, add } = setup();
+    const a = add("Trip", { subItems: ["Book"] });
+    const b = add("Move", { subItems: ["Pack"] });
+    const collapsed = () =>
+      [a.id, b.id].map((id) => getItem(db, userId, id)?.collapsed);
+    const logged = listAudit(db, userId, { projectId }).length;
+    expect(collapsed()).toEqual([false, false]);
+
+    setItemsCollapsed(db, userId, [a.id], true);
+    expect(collapsed()).toEqual([true, false]);
+    setItemsCollapsed(db, userId, [a.id, b.id], true);
+    expect(collapsed()).toEqual([true, true]);
+    setItemsCollapsed(db, userId, [b.id], false);
+    expect(collapsed()).toEqual([true, false]);
+    // View state: none of it shows in the history.
+    expect(listAudit(db, userId, { projectId })).toHaveLength(logged);
+
+    // One unknown id fails the lot.
+    expect(() =>
+      setItemsCollapsed(db, userId, [b.id, "nope"], true),
+    ).toThrow(/item not found/);
+    expect(collapsed()).toEqual([true, false]);
+
+    // Someone without access to the list can't change it.
+    const stranger = createTestUser(db);
+    expect(() => setItemsCollapsed(db, stranger, [a.id], false)).toThrow(
+      /item not found/,
+    );
+    expect(collapsed()).toEqual([true, false]);
   });
 });
 
