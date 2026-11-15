@@ -55,6 +55,8 @@ describe("startOfWeek", () => {
     const now = Date.UTC(2026, 10, 16, 1);
     expect(weekStartBound("America/New_York", now)).toBe(Date.UTC(2026, 10, 8));
     expect(weekStartBound("Pacific/Kiritimati", now)).toBe(Date.UTC(2026, 10, 15));
+    // With no zone saved yet, the earliest week still running anywhere.
+    expect(weekStartBound(undefined, now)).toBe(Date.UTC(2026, 10, 8));
   });
 });
 

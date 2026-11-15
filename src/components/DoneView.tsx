@@ -5,6 +5,7 @@ import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { dayLabel } from "@/lib/time";
 import { matchesWhose, type WhoseFilter } from "@/lib/whose";
+import { Button } from "@/components/ui/button";
 import { ItemDetailDialog } from "./ItemDetailDialog";
 import { ItemRow } from "./ItemRow";
 import type { ProjectView } from "./Kanban";
@@ -28,7 +29,9 @@ export function DoneView({
   since,
   more,
   loading,
+  failed,
   onLoadMore,
+  onRetry,
 }: {
   /** The lists on the board (active, then paused); archived lists stay out. */
   projects: ProjectView[];
@@ -41,7 +44,10 @@ export function DoneView({
   /** Whether older finished items remain to load. */
   more: boolean;
   loading: boolean;
+  /** The last read failed; paging waits for `onRetry`. */
+  failed: boolean;
   onLoadMore: () => void;
+  onRetry: () => void;
 }) {
   // Day labels depend on the viewer's clock, so rows wait for the browser.
   const known = Number.isFinite(useDayStart());
@@ -72,14 +78,14 @@ export function DoneView({
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = end.current;
-    if (!known || !more || loading || !el) return;
+    if (!known || !more || loading || failed || !el) return;
     const io = new IntersectionObserver(
       ([entry]) => entry.isIntersecting && onLoadMore(),
       { rootMargin: "400px" },
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [known, more, loading, onLoadMore]);
+  }, [known, more, loading, failed, onLoadMore]);
 
   const detailProject = detail.item ? projectOf.get(detail.item.projectId) : undefined;
 
@@ -117,7 +123,14 @@ export function DoneView({
           ))}
 
         <div ref={end} className="py-6 text-center text-sm text-neutral-400">
-          {known && (more || loading)
+          {known && failed ? (
+            <>
+              {"Couldn't load older items. "}
+              <Button variant="link" size="sm" className="h-auto p-0" onClick={onRetry}>
+                Try again
+              </Button>
+            </>
+          ) : known && (more || loading)
             ? "Loading…"
             : known && shown.length === 0
               ? done.length === 0

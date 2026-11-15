@@ -19,6 +19,7 @@ import {
 import { acceptInvite, inviteMember, listAssignees } from "./members";
 import {
   createProject,
+  getProject,
   listNoDate,
   listToday,
   reorderProject,
@@ -490,7 +491,7 @@ describe("checklists (sub-items)", () => {
     const { db, userId, projectId } = seedProject();
     const add = (
       title: string,
-      opts: { parentId?: string; positionRef?: string; subItems?: string[] } = {},
+      opts: { parentId?: string; positionRef?: string; subItems?: string[]; completed?: boolean } = {},
     ) => addItem(db, userId, { projectId, title, ...opts }, "web");
     const tree = () =>
       nestItems(listItems(db, userId, projectId, { includeCompleted: true })).map(
@@ -499,7 +500,7 @@ describe("checklists (sub-items)", () => {
     return { db, userId, projectId, add, tree };
   }
 
-  it("completedSince keeps groups by when their top-level item was finished", () => {
+  it("completedSince keeps a group while any of it is open or finished since", () => {
     const { db, userId, projectId, add } = setup();
     const cutoff = Date.UTC(2026, 10, 8);
     const completeAt = (id: string, ts: number) => {
@@ -524,6 +525,13 @@ describe("checklists (sub-items)", () => {
     completeAt(move.id, after);
     // A parent finished long ago goes, sub-items and all.
     completeAt(add("Archive", { subItems: ["Scan"] }).id, before);
+    // Unless a sub-item was added to it, already finished, since.
+    const late = add("Late");
+    completeAt(late.id, before);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(after);
+    add("Late extra", { parentId: late.id, completed: true });
+    vi.useRealTimers();
 
     const tree = nestItems(
       listItems(db, userId, projectId, { includeCompleted: true, completedSince: cutoff }),
@@ -533,6 +541,7 @@ describe("checklists (sub-items)", () => {
       ["Recent", []],
       ["Trip", ["Book", "Pack bags"]],
       ["Move", ["Pack boxes", "Clean"]],
+      ["Late", ["Late extra"]],
     ]);
   });
 
@@ -563,7 +572,9 @@ describe("checklists (sub-items)", () => {
     // The 2nd newest is "Pack" or "Trip", closed together: both come, and
     // "Book trains" comes for the checklist though it's older than `since`.
     const first = listDoneBefore(db, userId, { before, limit: 2 });
-    expect(titles(first).sort()).toEqual(["Book trains", "Laundry", "Pack", "Trip"]);
+    expect(titles(first)[0]).toBe("Laundry");
+    expect(titles(first).slice(1, 3).sort()).toEqual(["Pack", "Trip"]);
+    expect(titles(first).slice(3)).toEqual(["Book trains"]);
     expect(first.since).toBe(day(15));
     expect(first.more).toBe(true);
 
@@ -573,8 +584,17 @@ describe("checklists (sub-items)", () => {
     expect(all.since).toBe(0);
     expect(all.more).toBe(false);
 
+    // A match brings its parent and the rest of its checklist.
     const search = listDoneBefore(db, userId, { before, limit: 10, query: " TRAIN" });
-    expect(titles(search)).toEqual(["Book trains"]);
+    expect(titles(search)[0]).toBe("Book trains");
+    expect(titles(search).slice(1).sort()).toEqual(["Pack", "Trip"]);
+    // So does its ref, bare or qualified, in any case.
+    const prefix = getProject(db, userId, projectId)?.prefix ?? "";
+    for (const ref of [`${prefix}-${trains.number}`, `fred/${prefix.toLowerCase()}-${trains.number}`]) {
+      expect(titles(listDoneBefore(db, userId, { before, limit: 10, query: ref }))[0]).toBe(
+        "Book trains",
+      );
+    }
   });
 
   it("orders sub-items among their siblings only", () => {

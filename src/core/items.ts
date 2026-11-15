@@ -1,5 +1,4 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, type SQL, sql } from "drizzle-orm";
-import { alias } from "drizzle-orm/sqlite-core";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, type SQL, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { hasProjectAccess } from "./access";
 import { users } from "./auth-schema";
@@ -50,9 +49,10 @@ function projectAccessibleForUser(
 
 /**
  * A list's items in list order: open ones, plus finished ones with
- * `includeCompleted`. `completedSince` keeps only the finished ones whose
- * top-level item was finished at or after it, so a parent kept this way keeps
- * its whole checklist, and an open parent keeps sub-items finished long ago.
+ * `includeCompleted`. `completedSince` keeps a group (a top-level item and
+ * its sub-items) whole while any of it is open or was finished at or after
+ * then, so checklists stay whole and an open parent keeps sub-items finished
+ * long ago; it drops groups finished entirely before then.
  */
 export function listItems(
   db: Db,
@@ -60,24 +60,21 @@ export function listItems(
   projectId: string,
   opts: { includeCompleted?: boolean; completedSince?: number } = {},
 ): Item[] {
-  const parent = alias(items, "parent");
   const baseConds = [
     eq(items.projectId, projectId),
     hasProjectAccess(userId),
   ];
   if (!opts.includeCompleted) baseConds.push(isNull(items.completedAt));
   else if (opts.completedSince !== undefined) {
-    // When the item's group was finished, if it was: the top-level item's time.
-    const groupDone = sql`case when ${items.parentId} is null then ${items.completedAt} else ${parent.completedAt} end`;
+    const group = sql`coalesce(${items.parentId}, ${items.id})`;
     baseConds.push(
-      sql`(${groupDone} is null or ${groupDone} >= ${opts.completedSince})`,
+      sql`exists (select 1 from items g where (g.id = ${group} or g.parent_id = ${group}) and (g.completed_at is null or g.completed_at >= ${opts.completedSince}))`,
     );
   }
   return db
     .select({ items })
     .from(items)
     .innerJoin(projects, eq(projects.id, items.projectId))
-    .leftJoin(parent, eq(parent.id, items.parentId))
     .where(and(...baseConds))
     .orderBy(asc(items.position), asc(items.id))
     .all()
@@ -86,28 +83,41 @@ export function listItems(
 
 /**
  * Items finished before `before` in the user's lists that aren't archived,
- * newest first, and only those with `query` in their title when it's given:
- * the history the board leaves out (the Done view's older pages, ⌘K's search
- * of them). It returns every one finished from `since` on: back to the
- * `limit`th newest, and any finished at the same moment as that one, so a
- * parent and the sub-items it closed never split. `since` is 0 when that's
- * all of them, and `more` says older ones remain. Any finished parent brings
- * its sub-items too, however old, so its checklist is whole.
+ * newest first: the history the board leaves out (the Done view's older
+ * pages, ⌘K's search of them). With `query`, only those whose title has it
+ * or whose ref it is ("SID-12"). It returns every one finished from `since`
+ * on: back to the `limit`th newest, and any finished at the same moment as
+ * that one, so a parent and the sub-items it closed never split. `since` is
+ * 0 when that's all of them, and `more` says older ones remain. Each comes
+ * with the rest of its group (its parent and their sub-items), however old,
+ * so its checklist and parent are whole.
  */
 export function listDoneBefore(
   db: Db,
   userId: string,
   opts: { before: number; limit: number; query?: string },
 ): { items: Item[]; since: number; more: boolean } {
-  const limit = Math.min(Math.max(Math.floor(opts.limit) || 1, 1), 5000);
+  const limit = Math.max(Math.floor(opts.limit) || 1, 1);
   const query = opts.query?.trim().toLowerCase();
+  // A ref, optionally qualified ("alice/SID-12"), by its list's prefix.
+  const ref = query ? /^(?:.*\/)?([a-z]+)-(\d+)$/.exec(query) : null;
   const inLists = and(hasProjectAccess(userId), ne(projects.status, "archived"));
   const finished = (...where: SQL[]) =>
     and(
       inLists,
       isNotNull(items.completedAt),
       sql`${items.completedAt} < ${opts.before}`,
-      query ? sql`instr(lower(${items.title}), ${query}) > 0` : undefined,
+      query
+        ? or(
+            sql`instr(lower(${items.title}), ${query}) > 0`,
+            ref
+              ? and(
+                  sql`lower(${projects.prefix}) = ${ref[1]}`,
+                  eq(items.number, Number(ref[2])),
+                )
+              : undefined,
+          )
+        : undefined,
       ...where,
     );
   const last = db
@@ -137,19 +147,22 @@ export function listDoneBefore(
     .all()
     .map((row) => row.items);
   const ids = new Set(shown.map((i) => i.id));
-  const parents = shown.filter((i) => i.parentId === null).map((i) => i.id);
-  const subItems = parents.length
-    ? db
-        .select({ items })
-        .from(items)
-        .innerJoin(projects, eq(projects.id, items.projectId))
-        .where(and(inLists, inArray(items.parentId, parents)))
-        .orderBy(asc(items.position), asc(items.id))
-        .all()
-        .map((row) => row.items)
-        .filter((i) => !ids.has(i.id))
-    : [];
-  return { items: [...shown, ...subItems], since, more };
+  const groups = [...new Set(shown.map((i) => i.parentId ?? i.id))];
+  const rest: Item[] = [];
+  // In batches, to stay inside SQLite's limit on bound parameters.
+  for (let i = 0; i < groups.length; i += 500) {
+    const batch = groups.slice(i, i + 500);
+    for (const row of db
+      .select({ items })
+      .from(items)
+      .innerJoin(projects, eq(projects.id, items.projectId))
+      .where(and(inLists, or(inArray(items.id, batch), inArray(items.parentId, batch))))
+      .orderBy(asc(items.position), asc(items.id))
+      .all()) {
+      if (!ids.has(row.items.id)) rest.push(row.items);
+    }
+  }
+  return { items: [...shown, ...rest], since, more };
 }
 
 // Positions are scoped to a parent: top-level items order among themselves,

@@ -1,8 +1,8 @@
 "use client";
 
 import { History } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { unstable_rethrow, useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { AssigneeView, PendingInviteView } from "@/core/members";
 import { listDoneBeforeAction, setTimeZoneAction } from "@/app/actions";
 import type { Category, Item, ItemPrLink, Project } from "@/core/schema";
@@ -94,20 +94,39 @@ export function Kanban({
   const [older, setOlder] = useState<
     (Awaited<ReturnType<typeof listDoneBeforeAction>> & { limit: number }) | null
   >(null);
+  // A failed read stops the paging (no retrying on its own) until Try again.
+  const [doneFailed, setDoneFailed] = useState(false);
+  const [doneTries, setDoneTries] = useState(0);
+  const [, startRead] = useTransition();
   useEffect(() => {
     if (doneLimit === 0) return;
     let stale = false;
-    void listDoneBeforeAction({ before: completedSince, limit: doneLimit }).then(
-      (page) => !stale && setOlder({ ...page, limit: doneLimit }),
-    );
+    startRead(async () => {
+      // A signed-out read rejects with Next's redirect to /login; let that
+      // through so it navigates.
+      const page = await listDoneBeforeAction({
+        before: completedSince,
+        limit: doneLimit,
+      }).catch((e) => {
+        unstable_rethrow(e);
+        return null;
+      });
+      if (stale) return;
+      if (page) setOlder({ ...page, limit: doneLimit });
+      setDoneFailed(!page);
+    });
     return () => {
       stale = true;
     };
-  }, [doneLimit, completedSince, serverItemsByProject]);
-  const loadingDone = doneLimit !== (older?.limit ?? 0);
+  }, [doneLimit, doneTries, completedSince, serverItemsByProject]);
+  const loadingDone = !doneFailed && doneLimit !== (older?.limit ?? 0);
   const loadMoreDone = useCallback(() => {
-    if (!loadingDone) setDoneLimit((n) => n + DONE_PAGE);
-  }, [loadingDone]);
+    if (!loadingDone && !doneFailed) setDoneLimit((n) => n + DONE_PAGE);
+  }, [loadingDone, doneFailed]);
+  const retryDone = useCallback(() => {
+    setDoneFailed(false);
+    setDoneTries((n) => n + 1);
+  }, []);
 
   const [search, setSearch] = useState("");
   const [found, setFound] = useState<{ query: string; items: Item[] } | null>(null);
@@ -115,9 +134,18 @@ export function Kanban({
     const query = search.trim();
     if (query.length < 2) return;
     let stale = false;
-    void listDoneBeforeAction({ before: completedSince, limit: 20, query }).then(
-      (page) => !stale && setFound({ query: search, items: page.items }),
-    );
+    startRead(async () => {
+      // Search is a bonus over the board's own items: a failure leaves those.
+      const page = await listDoneBeforeAction({
+        before: completedSince,
+        limit: 20,
+        query,
+      }).catch((e) => {
+        unstable_rethrow(e);
+        return null;
+      });
+      if (page && !stale) setFound({ query: search, items: page.items });
+    });
     return () => {
       stale = true;
     };
@@ -344,7 +372,7 @@ export function Kanban({
                   type="button"
                   aria-pressed={view === v}
                   onClick={() => switchView(v)}
-                  className={`whitespace-nowrap rounded px-1.5 py-0.5 transition max-[359px]:px-1 sm:px-2 ${
+                  className={`whitespace-nowrap rounded px-1.5 py-0.5 transition max-[360px]:px-1 sm:px-2 ${
                     view === v
                       ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
                       : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
@@ -400,7 +428,9 @@ export function Kanban({
             since={older?.since ?? completedSince}
             more={older?.more ?? true}
             loading={loadingDone}
+            failed={doneFailed}
             onLoadMore={loadMoreDone}
+            onRetry={retryDone}
           />
         ) : (
           <BoardRail ref={railRef}>

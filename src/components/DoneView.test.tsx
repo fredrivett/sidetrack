@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Item } from "@/core/schema";
 import { DoneView } from "./DoneView";
@@ -74,14 +74,22 @@ describe("DoneView", () => {
         since={at(10, 0)}
         more={false}
         loading={false}
+        failed={false}
         onLoadMore={() => {}}
+        onRetry={() => {}}
       />,
     );
 
     // Each heading ends with its count; the date's format follows the locale.
     const headings = screen.getAllByRole("heading").map((h) => h.textContent);
     expect(headings.slice(0, 2)).toEqual(["Today1", "Yesterday1"]);
-    expect(headings.slice(2)).toEqual([expect.stringMatching(/12.*2026.*1$/)]);
+    expect(headings.slice(2)).toEqual([
+      `${new Date(2026, 10, 12).toLocaleDateString(undefined, {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })}1`,
+    ]);
     const yesterday = screen
       .getByRole("heading", { name: /Yesterday/ })
       .closest("section") as HTMLElement;
@@ -91,5 +99,27 @@ describe("DoneView", () => {
     expect(screen.queryByText("Tax return")).toBeNull();
     expect(screen.queryByText("Open")).toBeNull();
     expect(screen.getByText("That's everything.")).toBeTruthy();
+  });
+
+  it("offers Try again after a failed read, instead of loading for ever", () => {
+    const onRetry = vi.fn();
+    render(
+      <DoneView
+        projects={[project]}
+        itemsByProject={{ p1: [] }}
+        assigneesByProject={{}}
+        prLinksByItem={{}}
+        viewerId="me"
+        since={0}
+        more
+        loading={false}
+        failed
+        onLoadMore={() => {}}
+        onRetry={onRetry}
+      />,
+    );
+    expect(screen.queryByText("Loading…")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(onRetry).toHaveBeenCalledOnce();
   });
 });

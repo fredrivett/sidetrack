@@ -23,12 +23,12 @@ export function BoardHeader({
   return (
     // Tighter on phones so the views fit beside the header's buttons down to
     // 320px; px-3 lines the logo up with the views below.
-    <div className="flex items-center justify-between gap-2 max-[359px]:gap-1.5 border-b border-neutral-200 px-3 py-2 sm:gap-3 sm:px-4 dark:border-neutral-800">
+    <div className="flex items-center justify-between gap-2 max-[360px]:gap-1.5 border-b border-neutral-200 px-3 py-2 sm:gap-3 sm:px-4 dark:border-neutral-800">
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-        {/* Below 360px the logo gives way to the view switch too. */}
+        {/* Below 375px the logo gives way to the view switch too. */}
         <h1
           className={`flex items-center gap-2 text-sm font-semibold tracking-tight ${
-            nav ? "max-[359px]:sr-only" : ""
+            nav ? "max-[375px]:sr-only" : ""
           }`}
         >
           {/* The logo mark, generated from scripts/icons/icon.svg, in the text
@@ -43,7 +43,7 @@ export function BoardHeader({
         </h1>
         {nav}
       </div>
-      <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 max-[359px]:gap-1 sm:gap-3">{children}</div>
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 max-[360px]:gap-1 sm:gap-3">{children}</div>
     </div>
   );
 }

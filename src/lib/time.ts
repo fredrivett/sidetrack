@@ -164,9 +164,10 @@ function mondayOf(day: string): string {
  * A time no later than the start of the week `now` falls in (4am Monday,
  * see startOfWeek) in any timezone: midnight UTC on the Sunday before the
  * Monday of that week in `timeZone`. Even at UTC+14, 4am Monday is after it.
+ * Without a zone, it takes UTC−12's week, the last to start.
  */
 export function weekStartBound(timeZone?: string, now = Date.now()): number {
-  const monday = mondayOf(dayOf(now, timeZone));
+  const monday = mondayOf(dayOf(now, timeZone ?? "Etc/GMT+12"));
   return Date.parse(`${addDays(monday, -1)}T00:00:00Z`);
 }
 
