@@ -40,6 +40,52 @@ describe("projects", () => {
     ).toThrow(/invalid status/);
   });
 
+  it("creates a list with optional details, validated as on update, in one audit row", () => {
+    const { db } = createTestDb();
+    const u = createTestUser(db);
+    const p = createProject(
+      db,
+      u,
+      {
+        name: "Personal site",
+        summary: "  Blog and portfolio ",
+        homepageUrl: "example.com",
+        icon: "🌐",
+      },
+      "web",
+    );
+    expect(p).toMatchObject({
+      summary: "Blog and portfolio",
+      homepageUrl: "https://example.com/",
+      icon: "🌐",
+    });
+    expect(p.summaryUpdatedAt).not.toBeNull();
+    expect(listAudit(db, u).map((a) => a.detail)).toEqual([
+      'created list "Personal site"',
+    ]);
+
+    // Blank details mean unset; a bad one rejects the whole create.
+    const bare = createProject(
+      db,
+      u,
+      { name: "Bare", summary: " ", homepageUrl: "", icon: "" },
+      "web",
+    );
+    expect(bare).toMatchObject({
+      summary: "",
+      summaryUpdatedAt: null,
+      homepageUrl: null,
+      icon: null,
+    });
+    expect(() =>
+      createProject(db, u, { name: "Bad", icon: "not an icon" }, "web"),
+    ).toThrow(/invalid list icon/);
+    expect(listProjects(db, u).map((p) => p.name)).toEqual([
+      "Personal site",
+      "Bare",
+    ]);
+  });
+
   it("rejects a blank name on create", () => {
     const { db } = createTestDb();
     const u = createTestUser(db);
