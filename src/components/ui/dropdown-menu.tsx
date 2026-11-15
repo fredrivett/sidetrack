@@ -159,7 +159,7 @@ function DropdownMenuCheckboxItem({
       data-slot="dropdown-menu-checkbox-item"
       data-inset={inset}
       className={cn(
-        "relative flex cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
+        "group/dropdown-menu-checkbox-item relative flex cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
         className
       )}
       checked={checked}
@@ -169,7 +169,7 @@ function DropdownMenuCheckboxItem({
         className="pointer-events-none absolute right-2 flex items-center justify-center"
         data-slot="dropdown-menu-checkbox-item-indicator"
       >
-        <MenuPrimitive.CheckboxItemIndicator>
+        <MenuPrimitive.CheckboxItemIndicator className="flex transition-[opacity,scale] duration-150 ease-out motion-reduce:transition-none data-starting-style:scale-50 data-starting-style:opacity-0 data-ending-style:scale-50 data-ending-style:opacity-0">
           <CheckIcon
           />
         </MenuPrimitive.CheckboxItemIndicator>
@@ -233,6 +233,8 @@ function DropdownMenuSeparator({
   )
 }
 
+// In a checkbox item the shortcut sits in the tick's space while unchecked,
+// and slides left as the tick fades in.
 function DropdownMenuShortcut({
   className,
   ...props
@@ -241,7 +243,7 @@ function DropdownMenuShortcut({
     <span
       data-slot="dropdown-menu-shortcut"
       className={cn(
-        "ml-auto text-xs tracking-widest text-muted-foreground group-focus/dropdown-menu-item:text-accent-foreground",
+        "ml-auto text-xs tracking-widest text-muted-foreground transition-transform duration-150 ease-out group-focus/dropdown-menu-item:text-accent-foreground motion-reduce:transition-none group-data-unchecked/dropdown-menu-checkbox-item:translate-x-6",
         className
       )}
       {...props}
