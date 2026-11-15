@@ -221,6 +221,12 @@ export function UserAvatar({
         width={size}
         height={size}
         onError={() => setFailed(true)}
+        // A server-rendered <img> can fail before hydration attaches onError,
+        // leaving a blank gap. Catch it on mount, as ProjectIcon does:
+        // complete with no pixels = failed.
+        ref={(img) => {
+          if (img?.complete && img.naturalWidth === 0) setFailed(true);
+        }}
         className={cn(box, "object-cover", className)}
         style={{ width: size, height: size }}
       />

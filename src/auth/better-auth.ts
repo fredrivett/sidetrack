@@ -9,6 +9,7 @@ import { getDb } from "@/core/db";
 import { auditLog, meta, projects } from "@/core/schema";
 import { sendPasswordResetEmail } from "@/lib/email";
 import { getEnv } from "@/lib/env";
+import { normalizeWebUrl } from "@/lib/url";
 import { isReservedUsername, USERNAME_RE } from "@/lib/username";
 
 // Reading validated config here doubles as a backstop for the boot-time check
@@ -105,6 +106,24 @@ function adoptMeRows(userId: string): void {
   }
 }
 
+// The avatar (`user.image`) is rendered as an <img> for everyone who shares a
+// list with the user. Sign-up would store any image unchecked, so normalize it
+// like setAvatarUrl does: blank clears it, a bare host gains https://, and
+// anything that isn't an http(s) web address (javascript:, data:, typos) is
+// rejected. Returns undefined when the write has no image.
+function withNormalizedAvatar<T extends { image?: unknown }>(
+  user: T,
+): { data: T } | undefined {
+  if (typeof user.image !== "string") return undefined;
+  try {
+    return { data: { ...user, image: normalizeWebUrl(user.image, "avatar URL") } };
+  } catch {
+    throw new APIError("BAD_REQUEST", {
+      message: "Avatar must be an http(s) image URL.",
+    });
+  }
+}
+
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
     provider: "sqlite",
@@ -139,8 +158,11 @@ export const auth = betterAuth({
   databaseHooks: {
     user: {
       create: {
-        before: async () => {
-          if (ALLOW_SIGNUP) return;
+        before: async (user) => {
+          // Validate first: a bad avatar rejected after the claim below would
+          // leave the instance locked with no user until the next boot.
+          const normalized = withNormalizedAvatar(user);
+          if (ALLOW_SIGNUP) return normalized;
           // First signup wins the lock; everyone after is rejected. A lost
           // claim (false) means it's already held → closed.
           if (!claimSentinel(SIGNUP_LOCK_KEY)) {
@@ -148,6 +170,7 @@ export const auth = betterAuth({
               message: "Sign-up is closed on this instance.",
             });
           }
+          return normalized;
         },
         after: async (user) => {
           // First-ever signup adopts legacy 'me' data. Gated by its own
@@ -156,6 +179,18 @@ export const auth = betterAuth({
           // count > 1 and skip adoption entirely). Exactly one signup wins
           // the claim and adopts, in either signup mode.
           if (claimSentinel(ME_ADOPTION_KEY)) adoptMeRows(user.id);
+        },
+      },
+      update: {
+        // Avatar changes go through setAvatarUrl / setUploadedAvatar in core,
+        // which audit them in the same transaction. /update-user would write
+        // the image with no audit row, so it may not touch it.
+        before: async (user) => {
+          if (user.image !== undefined) {
+            throw new APIError("BAD_REQUEST", {
+              message: "Change your avatar from the Profile page.",
+            });
+          }
         },
       },
     },

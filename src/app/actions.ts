@@ -37,7 +37,11 @@ import {
   updateProject as updateProjectCore,
 } from "@/core/projects";
 import type { AuditSource, ProjectStatus } from "@/core/schema";
-import { setTimeZone as setTimeZoneCore } from "@/core/users";
+import {
+  setTimeZone as setTimeZoneCore,
+  setAvatarUrl as setAvatarUrlCore,
+  setUploadedAvatar as setUploadedAvatarCore,
+} from "@/core/users";
 import { getCurrentSession, requireUserId } from "@/auth/session";
 import { notifyInvite } from "@/lib/email";
 import { getEnv } from "@/lib/env";
@@ -244,6 +248,24 @@ export async function setTimeZoneAction(timeZone: string) {
   const userId = await requireUserId();
   const { db } = getDb();
   setTimeZoneCore(db, userId, timeZone);
+}
+
+/** Upload an avatar image (already shrunk by the browser) for the signed-in user. */
+export async function uploadAvatarAction(formData: FormData) {
+  const userId = await requireUserId();
+  const file = formData.get("file");
+  if (!(file instanceof File)) throw new Error("no avatar file");
+  const { db } = getDb();
+  setUploadedAvatarCore(db, userId, new Uint8Array(await file.arrayBuffer()), SOURCE);
+  refresh();
+}
+
+/** Set the signed-in user's avatar to an image URL, or clear it with null. */
+export async function setAvatarUrlAction(url: string | null) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  setAvatarUrlCore(db, userId, url, SOURCE);
+  refresh();
 }
 
 export async function addCategoryAction(projectId: string, name: string) {

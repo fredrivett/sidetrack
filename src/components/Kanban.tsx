@@ -24,6 +24,7 @@ import { ShareDialog } from "./ShareDialog";
 import { TodayView } from "./TodayView";
 import { useDayStart } from "./use-day-start";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
+import type { AvatarUser } from "./UserAvatar";
 import { UserMenu } from "./UserMenu";
 
 /**
@@ -49,6 +50,7 @@ export type BoardView = (typeof BOARD_VIEWS)[number][0];
 
 export function Kanban({
   viewerId,
+  viewer,
   timeZone,
   initialView,
   projects,
@@ -59,6 +61,8 @@ export function Kanban({
   pendingInvites,
 }: {
   viewerId: string;
+  /** The viewer's own display fields, for the avatar on the Account button. */
+  viewer: AvatarUser | null;
   /** The timezone saved for the viewer, kept in step with their browser. */
   timeZone: string | null;
   /** From `?view=`, so a reload or shared link opens on the same view. */
@@ -301,7 +305,7 @@ export function Kanban({
           <History />
           <span className="hidden sm:inline">Activity</span>
         </Button>
-        <UserMenu />
+        <UserMenu user={viewer} />
       </BoardHeader>
       <InvitesBanner invites={pendingInvites} />
       {view === "today" ? (
