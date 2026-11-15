@@ -127,6 +127,20 @@
       "when": 1794732918095,
       "tag": "0017_tricky_prodigy",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1794748668413,
+      "tag": "0018_swift_mongu",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1794751534368,
+      "tag": "0019_strange_golden_guardian",
+      "breakpoints": true
     }
   ]
 }

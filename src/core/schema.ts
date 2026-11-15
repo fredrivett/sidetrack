@@ -30,6 +30,10 @@ export const AUDIT_ACTIONS = [
   "delete",
   "link",
   "unlink",
+  // An agent's work session on an item: start_work, report_work, finish_work.
+  "start",
+  "report",
+  "finish",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -206,6 +210,43 @@ export const itemPrLinks = sqliteTable(
   ],
 );
 
+// An agent working on an item, from start_work until finish_work (or the item
+// being completed). The agent is the API key it called with: agentKeyId plus a
+// snapshot of the key's name ("Amp"), like audit_log, so the session still says
+// who worked on it after the key is revoked; no foreign key to api_keys for
+// the same reason. userId is the key's owner, the person it works for.
+// lastActiveAt moves on every start/report, so the board can tell a working
+// agent from one that has gone quiet. One open session per agent per item.
+export const agentSessions = sqliteTable(
+  "agent_sessions",
+  {
+    id: text("id").primaryKey(),
+    itemId: text("item_id")
+      .notNull()
+      .references(() => items.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    agentKeyId: text("agent_key_id").notNull(),
+    agentName: text("agent_name").notNull(),
+    // The agent's own thread or session page, an absolute http(s) URL.
+    threadUrl: text("thread_url"),
+    // The git branch start_work told the agent to use, kept as given so
+    // renaming the item later doesn't change it. The default only fills rows
+    // from before the column existed; startWork always sets it.
+    branch: text("branch").notNull().default(""),
+    // The latest progress note from report_work ("Opened the PR").
+    note: text("note"),
+    startedAt: integer("started_at").notNull(),
+    lastActiveAt: integer("last_active_at").notNull(),
+    finishedAt: integer("finished_at"),
+  },
+  (t) => [
+    index("agent_sessions_item").on(t.itemId),
+    uniqueIndex("agent_sessions_open_item_agent")
+      .on(t.itemId, t.agentKeyId)
+      .where(sql`${t.finishedAt} is null`),
+  ],
+);
+
 export const categories = sqliteTable(
   "categories",
   {
@@ -270,3 +311,4 @@ export type AuditEntry = typeof auditLog.$inferSelect;
 export type NewAuditEntry = typeof auditLog.$inferInsert;
 export type ItemPrLink = typeof itemPrLinks.$inferSelect;
 export type NewItemPrLink = typeof itemPrLinks.$inferInsert;
+export type AgentSession = typeof agentSessions.$inferSelect;

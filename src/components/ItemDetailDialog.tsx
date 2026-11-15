@@ -7,6 +7,8 @@ import {
   Circle,
   CircleDashed,
   Copy,
+  ExternalLink,
+  GitBranch,
   IndentDecrease,
   IndentIncrease,
   Trash2,
@@ -30,13 +32,19 @@ import {
   updateItemAction,
 } from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
-import type { Item, ItemPrLink } from "@/core/schema";
+import type { AgentSession, Item, ItemPrLink } from "@/core/schema";
 import { toggleAssignee } from "@/lib/assignees";
 import { formatItemRef } from "@/lib/itemRef";
 import { modifierSymbol } from "@/lib/keyboard";
-import { prLabel } from "@/lib/pr";
 import { repeatOf } from "@/lib/repeat";
-import { dayLabel, localDate, localDay, parseDueDay, quickDueDays } from "@/lib/time";
+import {
+  dayLabel,
+  formatRelative,
+  localDate,
+  localDay,
+  parseDueDay,
+  quickDueDays,
+} from "@/lib/time";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -59,6 +67,7 @@ import {
 import { AssigneeOptions } from "./AssigneeOptions";
 import { CategoryBadge } from "./CategoryBadge";
 import { DueBadge } from "./DueBadge";
+import { PrLink } from "./PrLink";
 import { RepeatPicker } from "./RepeatPicker";
 import { useToday } from "./use-day-start";
 import { EditableText } from "./EditableText";
@@ -66,7 +75,101 @@ import { InlineCode, Markdown } from "./Markdown";
 import { useAssignShortcuts } from "./useAssignShortcuts";
 import { useOptimisticAssignees } from "./use-optimistic-assignees";
 import { useCopyItemRef } from "./useCopyItemRef";
-import { AvatarStack, assigneeNames } from "./UserAvatar";
+import { AgentAvatar, AvatarStack, assigneeName, assigneeNames } from "./UserAvatar";
+import { useItemAgentSessions } from "./agent-sessions";
+
+/**
+ * The agents working on the item, each with its status, latest note, thread
+ * and branch, then a line for the agent that finished most recently.
+ */
+function AgentWork({
+  item,
+  assignees,
+}: {
+  item: Item;
+  assignees: AssigneeView[];
+}) {
+  const { sessions, agents } = useItemAgentSessions(item.id);
+  let last: (AgentSession & { finishedAt: number }) | null = null;
+  for (const s of sessions) {
+    if (s.finishedAt !== null && (!last || s.finishedAt > last.finishedAt)) {
+      last = { ...s, finishedAt: s.finishedAt };
+    }
+  }
+  if (agents.length === 0 && !last) return null;
+  return (
+    <Field label={agents.length > 1 ? "Agents" : "Agent"}>
+      <div className="space-y-2">
+        {agents.map(({ session: s, ...agent }) => {
+          const owner = assignees.find((a) => a.userId === s.userId);
+          return (
+            <div
+              key={s.id}
+              className="space-y-1.5 rounded-lg border border-neutral-200 p-2.5 text-sm dark:border-neutral-800"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <AgentAvatar agent={agent} size={22} ringClassName="ring-popover" />
+                <span className="font-medium">{s.agentName}</span>
+                <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-950 dark:text-violet-300">
+                  Agent
+                </span>
+                <span className="ml-auto flex items-center gap-1.5 text-xs text-neutral-500">
+                  <span
+                    className={`size-1.5 rounded-full ${agent.status === "working" ? "bg-green-500" : "bg-neutral-400"}`}
+                  />
+                  <span className="text-neutral-700 dark:text-neutral-200">
+                    {agent.status === "working" ? "Working" : "Idle"}
+                  </span>
+                  · {formatRelative(s.lastActiveAt)}
+                </span>
+              </div>
+              {s.note && (
+                <p className="break-words text-neutral-700 dark:text-neutral-200">{s.note}</p>
+              )}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                {s.threadUrl && <ThreadLink url={s.threadUrl}>Open thread</ThreadLink>}
+                {s.branch && (
+                  <span className="inline-flex min-w-0 items-center gap-1 text-neutral-500">
+                    <GitBranch className="size-3 shrink-0" />
+                    <span className="truncate font-mono">{s.branch}</span>
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-neutral-400">
+                Started {formatRelative(s.startedAt)}
+                {owner ? `, for ${assigneeName(owner)}` : ""}
+              </p>
+            </div>
+          );
+        })}
+        {last && (
+          <div className="flex flex-wrap items-center gap-2 text-sm text-neutral-500">
+            <AgentAvatar agent={{ id: last.id, name: last.agentName }} size={18} />
+            <span className="min-w-0 break-words">
+              {last.agentName} finished {formatRelative(last.finishedAt)}
+              {last.note ? `: ${last.note}` : ""}
+            </span>
+            {last.threadUrl && <ThreadLink url={last.threadUrl}>Thread</ThreadLink>}
+          </div>
+        )}
+      </div>
+    </Field>
+  );
+}
+
+function ThreadLink({ url, children }: { url: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer noopener"
+      className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline dark:text-blue-300"
+    >
+      {children}
+      <ExternalLink className="size-3" />
+    </a>
+  );
+}
 
 function Field({
   label,
@@ -581,6 +684,8 @@ export function ItemDetailDialog({
             />
           </Field>
 
+          <AgentWork item={item} assignees={assignees} />
+
           <Field label="Assignees">
             <DropdownMenu open={assignOpen} onOpenChange={setAssignOpen}>
               <DropdownMenuTrigger
@@ -729,17 +834,9 @@ export function ItemDetailDialog({
 
           {prLinks.length > 0 && (
             <Field label="Pull requests">
-              <div className="flex flex-wrap gap-1">
+              <div className="flex flex-wrap gap-x-3 gap-y-1">
                 {prLinks.map((link) => (
-                  <a
-                    key={link.id}
-                    href={link.prUrl}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    className="inline-block rounded bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-100 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/70"
-                  >
-                    {prLabel(link.prUrl)}
-                  </a>
+                  <PrLink key={link.id} url={link.prUrl} className="text-sm" />
                 ))}
               </div>
             </Field>

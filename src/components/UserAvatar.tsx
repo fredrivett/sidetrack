@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { Sparkles } from "lucide-react";
+import { type CSSProperties, useState } from "react";
 import type { AssigneeView } from "@/core/members";
 import { cn } from "@/lib/utils";
 
@@ -24,35 +25,127 @@ export function assigneeNames(users: AvatarUser[]): string {
   );
 }
 
+/** An agent working on an item, drawn in the avatar stack ahead of people. */
+export interface AgentAvatarView {
+  /** Its work session's id. */
+  id: string;
+  /** The agent's API key name, e.g. "Amp". */
+  name: string;
+  /** Working (reported lately) or idle; no status dot when omitted. */
+  status?: "working" | "idle";
+}
+
+/** "Amp (agent, working)", for labels. */
+export function agentLabel(a: AgentAvatarView): string {
+  return `${a.name} (agent${a.status ? `, ${a.status}` : ""})`;
+}
+
+/**
+ * An agent's avatar: a violet rounded square, unlike a person's circle, with
+ * its status as a dot on the bottom-left corner, which stays clear of the
+ * avatars it overlaps at the front of a stack. `ringClassName` rings the dot
+ * in the surface colour behind it.
+ */
+export function AgentAvatar({
+  agent,
+  size = 20,
+  className,
+  ringClassName = "ring-white dark:ring-neutral-900",
+}: {
+  agent: AgentAvatarView;
+  size?: number;
+  className?: string;
+  ringClassName?: string;
+}) {
+  const dot = Math.max(6, Math.round(size * 0.35));
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "relative inline-flex shrink-0 items-center justify-center rounded-md bg-violet-100 text-violet-600 dark:bg-violet-950 dark:text-violet-300",
+        className,
+      )}
+      style={{ width: size, height: size }}
+    >
+      <Sparkles style={{ width: size * 0.6, height: size * 0.6 }} />
+      {agent.status && (
+        <span
+          className={cn(
+            "absolute -bottom-0.5 -left-0.5 rounded-full ring-2",
+            agent.status === "working" ? "bg-green-500" : "bg-neutral-400",
+            ringClassName,
+          )}
+          style={{ width: dot, height: dot }}
+        />
+      )}
+    </span>
+  );
+}
+
 /**
  * An item's assignees as overlapping avatars, each ringed in the surface
  * colour behind it (`ringClassName`) so the overlaps read as separate people.
- * The leftmost sits on top, in reading order, and past `max` the last slot
- * becomes a "+N" chip tucked beneath the rest.
+ * Agents working on it come first and sit on top; then people, the leftmost
+ * on top, in reading order. Past `max` the last slot becomes a "+N" chip
+ * tucked beneath the rest, counting people only: agents never fold into it.
+ *
+ * With `unfurl`, hovering the stack (or focusing the control it's in) spreads
+ * everyone out, "+N" included, floating leftwards over what's beside it so
+ * the layout never moves. The spread copy is painted on the board row's
+ * surface (white / neutral-900), the only place that unfurls.
  */
 export function AvatarStack({
   users,
+  agents = [],
   size = 20,
   max = 3,
   ringClassName = "ring-white dark:ring-neutral-900",
+  unfurl = false,
 }: {
   users: AvatarUser[];
+  agents?: AgentAvatarView[];
   size?: number;
   max?: number;
   ringClassName?: string;
+  unfurl?: boolean;
 }) {
-  const shown = users.length > max ? users.slice(0, max - 1) : users;
-  const extra = users.length - shown.length;
-  const overlap = { marginLeft: -Math.round(size * 0.2) };
+  // `overlapped`: drawn in the collapsed stack, where an agent behind the first
+  // has its bottom-left dot covered, so it shows no dot there (the spread
+  // stack and the detail sheet still say how it's doing).
+  const avatars = [
+    ...agents.map((a, i) => ({
+      key: `agent:${a.id}`,
+      node: (overlapped: boolean) => (
+        <AgentAvatar
+          agent={overlapped && i > 0 ? { ...a, status: undefined } : a}
+          size={size}
+          className={cn("ring-2", ringClassName)}
+          ringClassName={ringClassName}
+        />
+      ),
+    })),
+    ...users.map((u) => ({
+      key: u.userId,
+      node: () => (
+        <UserAvatar user={u} size={size} className={cn("ring-2", ringClassName)} />
+      ),
+    })),
+  ];
+  const people =
+    avatars.length > max ? Math.max(0, max - 1 - agents.length) : users.length;
+  const shown = avatars.slice(0, agents.length + people);
+  const extra = avatars.length - shown.length;
+  const overlap = Math.round(size * 0.2);
+  const gap = 3;
   return (
-    <span className="isolate flex items-center">
-      {shown.map((u, i) => (
+    <span className="group/stack relative isolate flex items-center">
+      {shown.map((a, i) => (
         <span
-          key={u.userId}
+          key={a.key}
           className="relative flex"
-          style={{ ...(i > 0 ? overlap : {}), zIndex: shown.length - i }}
+          style={{ ...(i > 0 ? { marginLeft: -overlap } : {}), zIndex: shown.length - i }}
         >
-          <UserAvatar user={u} size={size} className={cn("ring-2", ringClassName)} />
+          {a.node(true)}
         </span>
       ))}
       {extra > 0 && (
@@ -62,9 +155,34 @@ export function AvatarStack({
             "inline-flex shrink-0 items-center justify-center rounded-full bg-neutral-100 font-medium text-neutral-500 ring-2 dark:bg-neutral-800 dark:text-neutral-300",
             ringClassName,
           )}
-          style={{ ...overlap, width: size, height: size, fontSize: Math.round(size * 0.45) }}
+          style={{ marginLeft: -overlap, width: size, height: size, fontSize: Math.round(size * 0.45) }}
         >
           +{extra}
+        </span>
+      )}
+      {unfurl && avatars.length > 1 && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute -inset-y-1 -right-1 z-50 flex items-center rounded-full bg-white pr-1 pl-1.5 opacity-0 transition-opacity duration-150 ease-out group-hover/stack:pointer-events-auto group-hover/stack:opacity-100 in-focus-visible:opacity-100 motion-reduce:transition-none dark:bg-neutral-900"
+          // Bleeds past the stack on every side, so the collapsed avatars' rings
+          // and dots, which overhang their box, stay covered.
+          style={{ gap }}
+        >
+          {avatars.map((a, i) => (
+            // Each slides out from about where it sat in the stack.
+            <span
+              key={a.key}
+              className="relative flex translate-x-(--slide) transition-transform duration-150 ease-out group-hover/stack:translate-x-0 in-focus-visible:translate-x-0 motion-reduce:transition-none"
+              style={
+                {
+                  "--slide": `${(avatars.length - 1 - i) * (gap + overlap)}px`,
+                  zIndex: avatars.length - i,
+                } as CSSProperties
+              }
+            >
+              {a.node(false)}
+            </span>
+          ))}
         </span>
       )}
     </span>
