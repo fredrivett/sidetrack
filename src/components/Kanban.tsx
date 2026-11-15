@@ -133,7 +133,7 @@ export function Kanban({
 
   // Active lists keep the viewer's order; paused lists follow, collapsed at the
   // end; archived lists leave the board for the Archived menu. Each group
-  // keeps its own neighbours for Move left/right, so a move never crosses
+  // keeps its own neighbours and ends for the Move items, so a move never crosses
   // into another group (where the position change wouldn't show).
   const active = projects.filter((p) => p.status === "active");
   const paused = projects.filter((p) => p.status === "paused");
@@ -340,6 +340,8 @@ export function Kanban({
                   prLinksByItem={prLinksByItem}
                   prevId={group[idx - 1]?.id ?? null}
                   nextId={group[idx + 1]?.id ?? null}
+                  firstId={group[0].id}
+                  lastId={group[group.length - 1].id}
                   onShowActivity={(pid) => setAudit({ open: true, projectId: pid })}
                   onAddItem={openNewItem}
                   onShare={openShare}
