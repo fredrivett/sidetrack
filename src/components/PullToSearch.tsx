@@ -112,7 +112,9 @@ export function PullToSearch({ onOpen }: { onOpen: () => void }) {
       // input now: the keyboard stays up as focus moves on to the palette's,
       // and removing it on blur leaves nothing for focus to return to.
       const proxy = document.createElement("input");
-      proxy.setAttribute("aria-hidden", "true");
+      // Named, not aria-hidden: it holds focus until the palette's input
+      // takes it, and a focused element must stay exposed to screen readers.
+      proxy.setAttribute("aria-label", "Search");
       proxy.tabIndex = -1;
       // 16px stops iOS zooming in on focus.
       proxy.style.cssText = "position:fixed;top:0;left:0;opacity:0;font-size:16px";
