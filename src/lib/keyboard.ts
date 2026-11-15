@@ -20,6 +20,12 @@ export function modifierSymbol(): string {
   return isApplePlatform() ? "⌘" : "Ctrl";
 }
 
+/**
+ * localStorage key remembering that this device has sent a physical key
+ * press, so touch devices keep showing shortcut hints across reloads.
+ */
+export const PHYSICAL_KEYBOARD_STORAGE_KEY = "sidetrack:physical-keyboard";
+
 function modifierActive(event: KeyboardEvent): boolean {
   return isApplePlatform() ? event.metaKey : event.ctrlKey;
 }

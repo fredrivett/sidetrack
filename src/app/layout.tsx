@@ -4,6 +4,7 @@ import { LatestDeploy } from "@/components/LatestDeploy";
 import { PhysicalKeyboard } from "@/components/PhysicalKeyboard";
 import { ServiceWorker } from "@/components/ServiceWorker";
 import { Toaster } from "@/components/ui/sonner";
+import { PHYSICAL_KEYBOARD_STORAGE_KEY } from "@/lib/keyboard";
 import { STARTUP_IMAGES } from "@/lib/startupImages";
 import "./globals.css";
 
@@ -50,10 +51,22 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
+    // suppressHydrationWarning: the inline script below may add
+    // data-physical-keyboard before React hydrates.
     <html
       lang="en"
       className={`${geistSans.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
+      <head>
+        {/* Restores PhysicalKeyboard's mark before first paint, so touch
+            devices with a keyboard don't flash their shortcut hints in. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{if(localStorage.getItem(${JSON.stringify(PHYSICAL_KEYBOARD_STORAGE_KEY)}))document.documentElement.dataset.physicalKeyboard=""}catch(e){}`,
+          }}
+        />
+      </head>
       <body className="min-h-dvh bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
         {children}
         <Toaster />
