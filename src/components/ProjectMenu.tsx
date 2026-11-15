@@ -25,6 +25,8 @@ export function ProjectMenu({
   projectId,
   prevId,
   nextId,
+  firstId,
+  lastId,
   name,
   prefix,
   status,
@@ -37,6 +39,8 @@ export function ProjectMenu({
   projectId: string;
   prevId: string | null;
   nextId: string | null;
+  firstId: string;
+  lastId: string;
   name: string;
   prefix: string;
   status: ProjectStatus;
@@ -128,6 +132,14 @@ export function ProjectMenu({
         <DropdownMenuItem
           disabled={!prevId}
           onClick={() =>
+            run(() => reorderProjectAction(projectId, `before:${firstId}`))
+          }
+        >
+          Move to start
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          disabled={!prevId}
+          onClick={() =>
             run(() => reorderProjectAction(projectId, `before:${prevId}`))
           }
         >
@@ -140,6 +152,14 @@ export function ProjectMenu({
           }
         >
           Move right
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          disabled={!nextId}
+          onClick={() =>
+            run(() => reorderProjectAction(projectId, `after:${lastId}`))
+          }
+        >
+          Move to end
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => onShowActivity(projectId)}>
           Activity
