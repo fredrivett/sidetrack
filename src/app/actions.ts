@@ -7,6 +7,10 @@ import {
   createApiKey as createApiKeyCore,
   revokeApiKey as revokeApiKeyCore,
 } from "@/core/api-keys";
+import {
+  removeAgentWebhook as removeAgentWebhookCore,
+  setAgentWebhook as setAgentWebhookCore,
+} from "@/core/agentWebhooks";
 import { listAudit as listAuditCore } from "@/core/audit";
 import {
   addGithubWebhookSecret as addGithubWebhookSecretCore,
@@ -661,4 +665,20 @@ export async function revokeApiKeyAction(id: string) {
   const removed = revokeApiKeyCore(db, userId, id, SOURCE);
   revalidatePath("/settings/keys");
   return { removed };
+}
+
+export async function setAgentWebhookAction(keyId: string, url: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const { secret } = setAgentWebhookCore(db, userId, keyId, url, SOURCE);
+  revalidatePath("/settings/keys");
+  // The signing secret is shown once, to give to whatever receives the webhook.
+  return { secret };
+}
+
+export async function removeAgentWebhookAction(keyId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  removeAgentWebhookCore(db, userId, keyId, SOURCE);
+  revalidatePath("/settings/keys");
 }
