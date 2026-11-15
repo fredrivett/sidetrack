@@ -26,6 +26,7 @@ import {
   uncompleteItem as uncompleteItemCore,
   updateItem as updateItemCore,
 } from "@/core/items";
+import { projectRefPrefixes as projectRefPrefixesCore } from "@/core/itemRef";
 import {
   acceptInvite as acceptInviteCore,
   declineInvite as declineInviteCore,
@@ -176,12 +177,14 @@ export async function suggestForNewItemAction(input: {
     })),
     apiKey,
   );
+  // The ref as the board shows it: owner-qualified when the prefix clashes.
+  const prefix = projectRefPrefixesCore(db, userId)[projectId] ?? found.project.prefix;
   const hint = (id: string | null) => {
     const it = found.items.find((i) => i.id === id);
     return it
       ? {
           id: it.id,
-          ref: formatItemRef(found.project.prefix, it.number),
+          ref: formatItemRef(prefix, it.number),
           title: it.title,
         }
       : null;
