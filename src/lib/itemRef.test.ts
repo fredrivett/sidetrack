@@ -6,7 +6,35 @@ import {
   parseItemRef,
   PREFIX_MAX,
   validatePrefix,
+  workBranchName,
+  workPrTitle,
 } from "./itemRef";
+
+describe("workBranchName", () => {
+  it("leads with the lowercased, unpadded ref, then a slug of the title", () => {
+    expect(workBranchName("SDT-1", "Show agent: work sessions!")).toBe(
+      "sdt-1-show-agent-work-sessions",
+    );
+  });
+
+  it("folds accents and trims the slug without a trailing dash", () => {
+    expect(workBranchName("SDT-7", "Café résumé")).toBe("sdt-7-cafe-resume");
+    const long = workBranchName("SDT-2", "a".repeat(39) + " tail end of a long title");
+    expect(long).toBe(`sdt-2-${"a".repeat(39)}`);
+  });
+
+  it("falls back to the ref when the title has nothing to slug", () => {
+    expect(workBranchName("SDT-3", "🚀!!")).toBe("sdt-3");
+  });
+});
+
+describe("workPrTitle", () => {
+  it("puts the ref in brackets at the end", () => {
+    expect(workPrTitle("SDT-42", "Show agent work sessions")).toBe(
+      "Show agent work sessions [SDT-42]",
+    );
+  });
+});
 
 describe("derivePrefix", () => {
   it("takes the first three letters, uppercased", () => {

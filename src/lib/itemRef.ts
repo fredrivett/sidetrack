@@ -55,6 +55,27 @@ export function formatItemRef(prefix: string, number: number): string {
   return `${prefix}-${number}`;
 }
 
+/**
+ * The git branch an agent works on an item in: the lowercased bare ref, then
+ * the title as a slug, e.g. `sdt-42-show-agent-work-sessions`. The ref leads
+ * so the branch reads back to its item, unpadded like the ref everywhere else.
+ */
+export function workBranchName(ref: string, title: string): string {
+  const slug = title
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .slice(0, 40)
+    .replace(/^-+|-+$/g, "");
+  return slug ? `${ref.toLowerCase()}-${slug}` : ref.toLowerCase();
+}
+
+/** The title for an item's pull request: its title, then the ref in brackets. */
+export function workPrTitle(ref: string, title: string): string {
+  return `${title} [${ref}]`;
+}
+
 export type ParsedItemRef = {
   /** Lowercased workspace qualifier from `username/PREFIX-N`, or null if bare. */
   username: string | null;

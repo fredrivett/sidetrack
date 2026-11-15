@@ -1,0 +1,224 @@
+import { and, asc, eq, isNull } from "drizzle-orm";
+import { nanoid } from "nanoid";
+import { normalizeWebUrl } from "../lib/url";
+import { hasProjectAccess } from "./access";
+import { type AuditOrigin, recordAudit } from "./audit";
+import type { Db } from "./db";
+import { assigneeLabel, getItem } from "./items";
+import {
+  type AgentSession,
+  type Item,
+  agentSessions,
+  items,
+  projects,
+} from "./schema";
+
+// An agent's work session on an item (see the agentSessions table). Only an
+// agent can hold one, so these take the MCP origin with its API key: the key
+// is the agent's identity. Reads go through the item's project, like PR links.
+
+/** An agent's call: the mcp source plus the API key it authenticated with. */
+export type AgentOrigin = Extract<AuditOrigin, { source: "mcp" }>;
+
+const NOTE_MAX = 280;
+
+function cleanNote(raw: string): string {
+  const note = raw.trim().replace(/\s+/g, " ");
+  if (!note) throw new Error("note is required");
+  if (note.length > NOTE_MAX) {
+    throw new Error(`note is too long (${note.length} characters, max ${NOTE_MAX})`);
+  }
+  return note;
+}
+
+function openSession(db: Db, itemId: string, agentKeyId: string) {
+  return db
+    .select()
+    .from(agentSessions)
+    .where(
+      and(
+        eq(agentSessions.itemId, itemId),
+        eq(agentSessions.agentKeyId, agentKeyId),
+        isNull(agentSessions.finishedAt),
+      ),
+    )
+    .get();
+}
+
+function itemOrThrow(db: Db, userId: string, itemId: string): Item {
+  const item = getItem(db, userId, itemId);
+  if (!item) throw new Error(`item not found: ${itemId}`);
+  return item;
+}
+
+/** Every session on items the user can access, oldest first. */
+export function listAllAgentSessions(db: Db, userId: string): AgentSession[] {
+  return db
+    .select({ agentSessions })
+    .from(agentSessions)
+    .innerJoin(items, eq(items.id, agentSessions.itemId))
+    .innerJoin(projects, eq(projects.id, items.projectId))
+    .where(hasProjectAccess(userId))
+    .orderBy(asc(agentSessions.startedAt))
+    .all()
+    .map((row) => row.agentSessions);
+}
+
+/** The agents working on an item now (its open sessions), oldest first. */
+export function listOpenAgentSessions(
+  db: Db,
+  userId: string,
+  itemId: string,
+): AgentSession[] {
+  if (!getItem(db, userId, itemId)) return [];
+  return db
+    .select()
+    .from(agentSessions)
+    .where(and(eq(agentSessions.itemId, itemId), isNull(agentSessions.finishedAt)))
+    .orderBy(asc(agentSessions.startedAt))
+    .all();
+}
+
+/**
+ * Open a work session for the calling agent on an item, assigning the key's
+ * owner when nobody is assigned yet. Calling it again while the session is
+ * open resumes it: it marks the agent active and updates the thread URL when
+ * one is given.
+ */
+export function startWork(
+  db: Db,
+  userId: string,
+  itemId: string,
+  input: { threadUrl?: string | null },
+  source: AgentOrigin,
+): AgentSession {
+  const item = itemOrThrow(db, userId, itemId);
+  if (item.completedAt !== null) {
+    throw new Error(`"${item.title}" is completed; reopen it before starting work on it`);
+  }
+  const threadUrl = input.threadUrl
+    ? normalizeWebUrl(input.threadUrl, "thread URL")
+    : null;
+  const { keyId, name } = source.agent;
+  const existing = openSession(db, itemId, keyId);
+  const now = Date.now();
+
+  db.transaction((tx) => {
+    const t = tx as unknown as Db;
+    if (existing) {
+      tx.update(agentSessions)
+        .set({ lastActiveAt: now, agentName: name, ...(threadUrl ? { threadUrl } : {}) })
+        .where(eq(agentSessions.id, existing.id))
+        .run();
+      recordAudit(t, {
+        actor: userId,
+        source,
+        action: "start",
+        entityType: "item",
+        entityId: itemId,
+        projectId: item.projectId,
+        detail: `resumed work on "${item.title}"`,
+      });
+      return;
+    }
+    const assign = item.assigneeIds.length === 0;
+    tx.insert(agentSessions)
+      .values({
+        id: nanoid(12),
+        itemId,
+        userId,
+        agentKeyId: keyId,
+        agentName: name,
+        threadUrl,
+        startedAt: now,
+        lastActiveAt: now,
+      })
+      .run();
+    if (assign) {
+      tx.update(items).set({ assigneeIds: [userId] }).where(eq(items.id, itemId)).run();
+    }
+    recordAudit(t, {
+      actor: userId,
+      source,
+      action: "start",
+      entityType: "item",
+      entityId: itemId,
+      projectId: item.projectId,
+      detail:
+        `started work on "${item.title}"` +
+        (assign ? `, assigned to ${assigneeLabel(t, userId)}` : ""),
+    });
+  });
+
+  const session = openSession(db, itemId, keyId);
+  // Guaranteed by the committed transaction; a miss means an invariant broke.
+  if (!session) throw new Error(`work session not found after start: ${itemId}`);
+  return session;
+}
+
+/** Record progress on the calling agent's open session, marking it active. */
+export function reportWork(
+  db: Db,
+  userId: string,
+  itemId: string,
+  rawNote: string,
+  source: AgentOrigin,
+): AgentSession {
+  const item = itemOrThrow(db, userId, itemId);
+  const note = cleanNote(rawNote);
+  const session = openSession(db, itemId, source.agent.keyId);
+  if (!session) {
+    throw new Error(
+      `${source.agent.name} has no open work session on "${item.title}"; call start_work first`,
+    );
+  }
+  const now = Date.now();
+  db.transaction((tx) => {
+    tx.update(agentSessions)
+      .set({ note, lastActiveAt: now })
+      .where(eq(agentSessions.id, session.id))
+      .run();
+    recordAudit(tx as unknown as Db, {
+      actor: userId,
+      source,
+      action: "report",
+      entityType: "item",
+      entityId: itemId,
+      projectId: item.projectId,
+      detail: `reported on "${item.title}": ${note}`,
+    });
+  });
+  return { ...session, note, lastActiveAt: now };
+}
+
+/**
+ * Close the calling agent's open session on an item, leaving the item itself
+ * as it is. Returns null, writing nothing, when there's no open session.
+ */
+export function finishWork(
+  db: Db,
+  userId: string,
+  itemId: string,
+  input: { note?: string | null },
+  source: AgentOrigin,
+): AgentSession | null {
+  const item = itemOrThrow(db, userId, itemId);
+  const note = input.note ? cleanNote(input.note) : null;
+  const session = openSession(db, itemId, source.agent.keyId);
+  if (!session) return null;
+  const now = Date.now();
+  const patch = { finishedAt: now, lastActiveAt: now, ...(note ? { note } : {}) };
+  db.transaction((tx) => {
+    tx.update(agentSessions).set(patch).where(eq(agentSessions.id, session.id)).run();
+    recordAudit(tx as unknown as Db, {
+      actor: userId,
+      source,
+      action: "finish",
+      entityType: "item",
+      entityId: itemId,
+      projectId: item.projectId,
+      detail: `finished work on "${item.title}"${note ? `: ${note}` : ""}`,
+    });
+  });
+  return { ...session, ...patch };
+}

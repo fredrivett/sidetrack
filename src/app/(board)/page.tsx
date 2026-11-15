@@ -1,4 +1,5 @@
 import { Kanban } from "@/components/Kanban";
+import { listAllAgentSessions } from "@/core/agentSessions";
 import { listCategories } from "@/core/categories";
 import { getDb } from "@/core/db";
 import { projectRefPrefixes } from "@/core/itemRef";
@@ -61,6 +62,7 @@ export default async function Home({
       categoriesByProject={categoriesByProject}
       assigneesByProject={assigneesByProject}
       prLinksByItem={prLinksByItem}
+      agentSessions={listAllAgentSessions(db, userId)}
       pendingInvites={pendingInvites}
     />
   );

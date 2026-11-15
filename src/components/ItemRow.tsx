@@ -66,7 +66,8 @@ import { useToday } from "./use-day-start";
 import { useAssignShortcuts } from "./useAssignShortcuts";
 import { useOptimisticAssignees } from "./use-optimistic-assignees";
 import { useCopyItemRef } from "./useCopyItemRef";
-import { AvatarStack, assigneeNames } from "./UserAvatar";
+import { agentLabel, AvatarStack, assigneeNames } from "./UserAvatar";
+import { useItemAgentSessions } from "./agent-sessions";
 
 /** Drag wiring from the sortable wrapper that owns this row (see ItemList). */
 export type RowDrag = {
@@ -140,6 +141,8 @@ export function ItemRow({
     () => assignees.some((a) => a.userId === viewerId),
     [assignees, viewerId],
   );
+  // Agents working on it lead the stack, ahead of the people assigned.
+  const { agents } = useItemAgentSessions(item.id);
 
   // ⌘./Ctrl+. copies the ref while the card is hovered (Linear's shortcut),
   // deferring to an open detail dialog so we don't copy the wrong ref.
@@ -330,28 +333,31 @@ export function ItemRow({
             </button>
           )}
           {/* The assignees' avatars, overlapping on a joint item, double as
-              the picker trigger (click, or A while hovered). Unassigned items
+              the picker trigger (click, or A while hovered). Agents working on
+              the item come first; hovering spreads the stack out. Unassigned items
               show a faint add-assignee button on hover; without hover (touch)
               it's hidden rather than left as an invisible tap target taking up
               width. */}
           <DropdownMenu open={assignOpen} onOpenChange={setAssignOpen}>
             <DropdownMenuTrigger
-              aria-label={
-                assigned.length
-                  ? `Assigned to ${assigneeNames(assigned)}. Change assignees`
-                  : "Assign"
-              }
+              aria-label={[
+                agents.length ? `${agents.map(agentLabel).join(", ")} on it` : "",
+                assigned.length ? `Assigned to ${assigneeNames(assigned)}` : "",
+                assigned.length ? "Change assignees" : "Assign",
+              ]
+                .filter(Boolean)
+                .join(". ")}
               disabled={pending}
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
               className={
-                assigned.length
+                assigned.length || agents.length
                   ? "flex rounded-full outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-400 disabled:opacity-50"
                   : "rounded p-1 text-neutral-300 opacity-0 transition hover:bg-neutral-100 hover:text-neutral-600 group-hover:opacity-100 data-[popup-open]:opacity-100 disabled:opacity-50 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 [@media(hover:none)]:hidden"
               }
             >
-              {assigned.length ? (
-                <AvatarStack users={assigned} size={20} />
+              {assigned.length || agents.length ? (
+                <AvatarStack users={assigned} agents={agents} size={20} unfurl />
               ) : (
                 <UserRound className="size-4" />
               )}

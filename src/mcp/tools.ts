@@ -1,5 +1,12 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import {
+  type AgentOrigin,
+  finishWork,
+  listOpenAgentSessions,
+  reportWork,
+  startWork,
+} from "@/core/agentSessions";
 import { type AuditOrigin, listAudit } from "@/core/audit";
 import { addCategory, listCategories } from "@/core/categories";
 import { getDb } from "@/core/db";
@@ -53,7 +60,7 @@ import {
 } from "@/core/schema";
 import { notifyInvite } from "@/lib/email";
 import { getEnv } from "@/lib/env";
-import { formatItemRef } from "@/lib/itemRef";
+import { formatItemRef, workBranchName, workPrTitle } from "@/lib/itemRef";
 import { MAX_REPEAT_EVERY, REPEAT_UNITS, type RepeatUnit, nextDueDay, repeatOf } from "@/lib/repeat";
 import { dayOf, formatRelativeLong, isDay } from "@/lib/time";
 import { matchesWhose, WHOSE_FILTERS } from "@/lib/whose";
@@ -252,7 +259,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
   const { userId } = ctx;
   // Every mutation is logged as "mcp" plus the API key the agent used, so the
   // activity log can say which agent made each change.
-  const SOURCE: AuditOrigin = { source: "mcp", agent: ctx.agent };
+  const AGENT: AgentOrigin = { source: "mcp", agent: ctx.agent };
+  const SOURCE: AuditOrigin = AGENT;
   // comesBack days count in the user's zone, as the reopen does (UTC until a
   // browser reports one).
   const json = (value: unknown) =>
@@ -548,6 +556,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "plus its sub-items (its checklist) as `children`, finished ones included. A sub-item has a parentId. " +
         "Use this to answer a question about one item without pulling its whole list. " +
         "A repeating item carries `repeat` ({ every, unit }); a finished one also carries `comesBack`, the day it reopens. " +
+        "`agents` lists the agents working on it now (open start_work sessions: agentName, threadUrl, note, lastActiveAt); " +
+        "check it before starting work so you don't duplicate another agent's. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id; the result carries its display `ref`.",
       inputSchema: { id: z.string() },
     },
@@ -558,7 +568,11 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       const withRef = withItemRef(db, userId, item);
       const prefix = projectRefPrefixes(db, userId)[item.projectId] ?? "";
       const children = listSubItems(db, userId, item.id);
-      return json({ ...withRef, children: withRefs(prefix, children) });
+      return json({
+        ...withRef,
+        children: withRefs(prefix, children),
+        agents: listOpenAgentSessions(db, userId, item.id),
+      });
     },
   );
 
@@ -988,6 +1002,94 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     },
   );
 
+  // Work sessions: how an agent shows the board it's working on an item. The
+  // conventions they rely on (branch, PR title) are spelled out in the server
+  // instructions too, so an agent learns them on connect.
+  server.registerTool(
+    "start_work",
+    {
+      title: "Start work on item",
+      description:
+        "Call this when you begin working on an item (coding it, researching it, anything that takes more than a moment), " +
+        "so the user sees you on it: you appear on the item's row and in its detail view, marked working. " +
+        "If nobody is assigned, it assigns the user you act for; existing assignees are kept. " +
+        "thread_url is a link to your own thread or session (e.g. an Amp or Claude thread URL) so the user can follow along; pass it whenever you have one. " +
+        "Calling it again on the same item resumes your session (and updates thread_url). Refused for a completed item. " +
+        "Returns the session plus `branch` and `pr_title`: name your git branch `branch` and title your pull request `pr_title` " +
+        "(the item's ref in square brackets at the end), then link the PR with link_item_to_pr. " +
+        "While working, call report_work at milestones; when done, call finish_work (completing the item also ends the session). " +
+        "item_id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
+      inputSchema: { item_id: z.string(), thread_url: z.string().optional() },
+    },
+    async ({ item_id, thread_url }) => {
+      const { db } = getDb();
+      const { item, error } = resolveItemArg(db, userId, item_id);
+      if (error) return error;
+      const project = getProject(db, userId, item.projectId);
+      if (!project) return notFound("list", item.projectId);
+      try {
+        const session = startWork(db, userId, item.id, { threadUrl: thread_url }, AGENT);
+        const ref = formatItemRef(project.prefix, item.number);
+        return json({
+          session,
+          ref,
+          branch: workBranchName(ref, item.title),
+          pr_title: workPrTitle(ref, item.title),
+        });
+      } catch (e) {
+        return errorText(`${(e as Error).message} — no change was made.`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "report_work",
+    {
+      title: "Report work progress",
+      description:
+        "Tell the user where your work on an item has got to, in one short line (max 280 characters), " +
+        "e.g. \"Opened the PR, waiting on CI\" or \"Blocked: need the API key for staging\". " +
+        "It shows on the item and marks you as working; after about 15 minutes without a report you show as idle, " +
+        "so report at each milestone rather than on a timer. Needs an open session from start_work. " +
+        "item_id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
+      inputSchema: { item_id: z.string(), note: z.string().min(1) },
+    },
+    async ({ item_id, note }) => {
+      const { db } = getDb();
+      const { item, error } = resolveItemArg(db, userId, item_id);
+      if (error) return error;
+      try {
+        return json(reportWork(db, userId, item.id, note, AGENT));
+      } catch (e) {
+        return errorText(`${(e as Error).message} — no change was made.`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "finish_work",
+    {
+      title: "Finish work on item",
+      description:
+        "End your work session on an item when you stop working on it: you've handed it back, opened the PR and are done, or given up. " +
+        "It takes you off the item's row; the item itself is left open (complete it with complete_item when the work has landed, " +
+        "e.g. when its PR merges, which also ends any session). note is an optional last line for the user, such as \"PR ready for review\". " +
+        "Returns the closed session, or null (a no-op) if you had no open session on it. " +
+        "item_id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
+      inputSchema: { item_id: z.string(), note: z.string().optional() },
+    },
+    async ({ item_id, note }) => {
+      const { db } = getDb();
+      const { item, error } = resolveItemArg(db, userId, item_id);
+      if (error) return error;
+      try {
+        return json(finishWork(db, userId, item.id, { note }, AGENT));
+      } catch (e) {
+        return errorText(`${(e as Error).message} — no change was made.`);
+      }
+    },
+  );
+
   server.registerTool(
     "add_category",
     {
@@ -1008,7 +1110,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "List audit log",
       description:
-        "Recent change history (newest first). Every create/update/complete/uncomplete/reorder/delete is logged with its source (web or mcp; system for a change nobody made, such as a repeating item reopening on its next due date), agentName (the API key name of the agent that made an mcp change) and a human summary. Each row includes `when`, a ready-to-display relative time (e.g. \"just now\", \"5 minutes ago\", \"7 months ago\") — show that to the user, not the raw `ts` epoch. Optionally filter by list_id or source.",
+        "Recent change history (newest first). Every create/update/complete/uncomplete/reorder/delete, and every agent's start/report/finish of work on an item, is logged with its source (web or mcp; system for a change nobody made, such as a repeating item reopening on its next due date), agentName (the API key name of the agent that made an mcp change) and a human summary. Each row includes `when`, a ready-to-display relative time (e.g. \"just now\", \"5 minutes ago\", \"7 months ago\") — show that to the user, not the raw `ts` epoch. Optionally filter by list_id or source.",
       inputSchema: {
         list_id: z.string().optional(),
         source: z.enum(AUDIT_SOURCES).optional(),

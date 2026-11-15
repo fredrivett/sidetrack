@@ -16,7 +16,7 @@ import {
 } from "../lib/repeat";
 import { dayOf, isDay } from "../lib/time";
 import { parseRef, resolvePosition } from "./fracidx";
-import { type Item, items, projects } from "./schema";
+import { agentSessions, type Item, items, projects } from "./schema";
 
 // Items are accessed transitively through their project. Every read joins the
 // projects table so a user only ever sees items in projects they have access
@@ -187,7 +187,7 @@ function reopenParentIfDone(
 
 // Human-readable label for an assignee in an audit detail: their `@username`,
 // falling back to name, email, then the raw id (a removed/unknown user).
-function assigneeLabel(db: Db, id: string): string {
+export function assigneeLabel(db: Db, id: string): string {
   const u = db
     .select({
       username: users.username,
@@ -474,6 +474,11 @@ export function completeItem(
     );
     for (const it of [existing, ...openChildren]) {
       tx.update(items).set({ completedAt: now }).where(eq(items.id, it.id)).run();
+      // Finished work needs no agent: end any open sessions with the item.
+      tx.update(agentSessions)
+        .set({ finishedAt: now })
+        .where(and(eq(agentSessions.itemId, it.id), isNull(agentSessions.finishedAt)))
+        .run();
       recordAudit(tx as unknown as Db, {
         actor: userId,
         source,

@@ -31,6 +31,9 @@ const ACTION_LABEL: Record<string, string> = {
   delete: "deleted",
   link: "linked",
   unlink: "unlinked",
+  start: "started",
+  report: "reported",
+  finish: "finished",
 };
 
 type Filter = "all" | AuditSource;
