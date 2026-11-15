@@ -2,7 +2,9 @@
 // name, summary, and item titles and picks from a fixed set of emoji, returning
 // a probability for each. It can only answer with an emoji from EMOJI_OPTIONS,
 // so every suggestion is a valid, savable icon. Off unless TYPESAFE_API_KEY is
-// set (see env.ts). Framework-agnostic: a plain fetch, no DB access.
+// set (see env.ts). No DB access.
+
+import { askJev } from "./jev";
 
 // Curated options for Jev's `choice` question (at most 255). Each label is
 // what the model matches the list against, so it names the topics an emoji
@@ -192,7 +194,6 @@ export const EMOJI_OPTIONS: Record<string, string> = {
   "🧰": "toolkit, resources, essentials",
 };
 
-const ENDPOINT = "https://api.typesafe.ai/v1/systemone";
 // Up to three suggestions, each at least this likely, so the row shows a few
 // real candidates rather than the long tail of a flat distribution.
 const MAX_SUGGESTIONS = 3;
@@ -225,41 +226,24 @@ export async function suggestEmoji(
   apiKey: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<string[]> {
-  let res: Response;
-  try {
-    res = await fetchImpl(ENDPOINT, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+  const answers = await askJev(
+    {
+      list_name: context.name,
+      summary: context.summary,
+      items: context.itemTitles,
+      website: domainOf(context.homepageUrl),
+    },
+    {
+      icon: {
+        type: "choice",
+        instructions: "Which emoji best represents this to-do list as its icon?",
+        criteria: EMOJI_OPTIONS,
       },
-      body: JSON.stringify({
-        model: "jev-latest",
-        state: {
-          list_name: context.name,
-          summary: context.summary,
-          items: context.itemTitles,
-          website: domainOf(context.homepageUrl),
-        },
-        questions: {
-          icon: {
-            type: "choice",
-            instructions:
-              "Which emoji best represents this to-do list as its icon?",
-            criteria: EMOJI_OPTIONS,
-          },
-        },
-      }),
-      signal: AbortSignal.timeout(5000),
-    });
-  } catch {
-    return [];
-  }
-  if (!res.ok) return [];
-  const body = (await res.json()) as {
-    answers?: { icon?: { probabilities?: Record<string, number> } };
-  };
-  const probabilities = body.answers?.icon?.probabilities ?? {};
+    },
+    apiKey,
+    fetchImpl,
+  );
+  const probabilities = answers?.icon ?? {};
   return Object.entries(probabilities)
     .filter(
       ([emoji, p]) => Object.hasOwn(EMOJI_OPTIONS, emoji) && p >= MIN_PROBABILITY,
