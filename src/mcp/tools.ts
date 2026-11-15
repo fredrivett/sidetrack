@@ -1030,7 +1030,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Returns the session plus `branch` and `pr_title`: name your git branch `branch` and title your pull request `pr_title` " +
         "(the item's ref in square brackets at the end), then link the PR with link_item_to_pr. " +
         "One pull request covers one item: for work that needs several PRs, give the item a sub-item per PR and start work on each sub-item, not the parent. " +
-        "While working, call report_work at milestones. Your session lasts until the PR merges (completing the item ends it) or closes; call finish_work only when the work ends without merging. " +
+        "While working, call report_work at milestones. Your session lasts until the PR merges (completing the item ends it) or closes, unless another PR for the item is still open; call finish_work only when the work ends without merging. " +
         "item_id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: { item_id: z.string(), thread_url: z.string().optional() },
     },
@@ -1087,7 +1087,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       description:
         "End your work session on an item when the work ends without merging: its PR was closed, or you stopped or handed it back before opening one. " +
         "Don't call it when you open the PR or mark it ready for review: you stay on the item until the PR merges, and completing the item " +
-        "(complete_item, or the GitHub webhook on merge) ends the session then. The webhook also ends it when the PR closes unmerged. " +
+        "(complete_item, or the GitHub webhook on merge) ends the session then. The webhook also ends it when the PR closes unmerged, unless another PR for the item is still open. " +
         "It takes you off the item's row and leaves the item open. note is an optional last line for the user, such as \"Closed in favour of #12\". " +
         "Returns the closed session, or null (a no-op) if you had no open session on it. " +
         "item_id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",

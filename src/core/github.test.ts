@@ -9,7 +9,7 @@ import {
   setUpGithubWebhook,
   verifyGithubDelivery,
 } from "./github";
-import { addItem, getItem } from "./items";
+import { addItem, getItem, uncompleteItem } from "./items";
 import { acceptInvite, inviteMember } from "./members";
 import { linkItemToPr, listPrLinksForItem } from "./prLinks";
 import { createProject } from "./projects";
@@ -229,26 +229,35 @@ describe("applyPullRequestEvent", () => {
     expect(listPrLinksForItem(db, userId, one.id)).toEqual([]);
   });
 
-  it("ends the agents' work when the PR closes unmerged, unless another PR is open", () => {
+  it("ends the agents' work when the PR closes unmerged, unless another PR may be open", () => {
     const { db, userId, one, two } = seed();
+    const three = addItem(db, userId, { projectId: one.projectId, title: "Three" }, "web");
     const amp = { source: "mcp" as const, agent: { keyId: "k1", name: "Amp" } };
     const deliver = (e: Parameters<typeof pr>[0]) => applyPullRequestEvent(db, userId, pr(e));
-    const REPLACEMENT = "https://github.com/fredrivett/sidetrack/pull/8";
+    for (const it of [one, two, three]) startWork(db, userId, it.id, {}, amp);
+    deliver({ action: "opened", title: "Ship [SID-1, SID-2, SID-3]" });
+    // SID-2's work moved to a replacement PR, opened before the first closes;
+    // SID-3's replacement was linked by the agent, and no delivery has
+    // reported its state yet.
+    deliver({ action: "opened", title: "Ship v2 [SID-2]", url: `${PR.slice(0, -1)}8` });
+    linkItemToPr(db, userId, three.id, `${PR.slice(0, -1)}9`, amp);
+    // A replacement that merged already doesn't keep the agent on.
+    linkItemToPr(db, userId, one.id, `${PR.slice(0, -1)}6`, "web");
+    deliver({ action: "closed", merged: true, title: "Old", url: `${PR.slice(0, -1)}6` });
+    // That merge completed SID-1, so reopen it to test the close.
+    uncompleteItem(db, userId, one.id, "web");
     startWork(db, userId, one.id, {}, amp);
-    startWork(db, userId, two.id, {}, amp);
-    deliver({ action: "opened", title: "Ship [SID-1, SID-2]" });
-    // SID-2's work moved to a replacement PR, opened before the first closes.
-    deliver({ action: "opened", title: "Ship v2 [SID-2]", url: REPLACEMENT });
 
     // Opening and editing the PR leave the agents working.
     expect(listOpenAgentSessions(db, userId, one.id)).toHaveLength(1);
 
-    const closed = deliver({ action: "closed", title: "Ship [SID-1, SID-2]" });
+    const closed = deliver({ action: "closed", title: "Ship [SID-1, SID-2, SID-3]" });
     expect(closed.finished).toEqual(["SID-1"]);
     const [ended] = listAudit(db, userId).filter((e) => e.action === "finish");
     expect(ended).toMatchObject({ source: "github", entityId: one.id });
     expect(listOpenAgentSessions(db, userId, one.id)).toEqual([]);
     expect(listOpenAgentSessions(db, userId, two.id)).toHaveLength(1);
+    expect(listOpenAgentSessions(db, userId, three.id)).toHaveLength(1);
     expect(getItem(db, userId, one.id)?.completedAt).toBeNull();
   });
 });

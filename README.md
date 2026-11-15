@@ -155,7 +155,8 @@ event only; untick **Pushes**, which GitHub leaves ticked). After that:
 - When a PR merges, every item linked to it is completed, whether the link
   came from its title or from an agent's `link_item_to_pr`.
 - When a PR closes without merging, agents working on its items are taken off
-  them; the items stay open.
+  them, except on an item with another PR still open (such as a
+  replacement); the items stay open.
 
 Each delivery is checked against the webhook's secret, and its changes appear
 in the audit log with the `github` source. The webhook works with any number

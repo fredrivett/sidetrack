@@ -186,12 +186,14 @@ export function applyPullRequestEvent(
   if (event.action === "closed" && !event.merged) {
     setPrState(db, userId, prUrl, prState);
     // The work this PR carried has stopped: take its agents off its items,
-    // unless an item has another PR still open (say, a replacement).
+    // unless an item has another PR that may still be open (say, a
+    // replacement): one not known to be merged or closed, including one whose
+    // state no delivery has reported yet.
     for (const link of listItemsForPr(db, userId, prUrl)) {
       const item = getItem(db, userId, link.itemId);
       if (!item || item.completedAt !== null) continue;
       const otherOpen = listPrLinksForItem(db, userId, item.id).some(
-        (l) => l.prUrl !== prUrl && (l.prState === "open" || l.prState === "draft"),
+        (l) => l.prUrl !== prUrl && l.prState !== "merged" && l.prState !== "closed",
       );
       if (otherOpen) continue;
       if (endAgentSessions(db, userId, item.id, "PR closed without merging", "github") > 0) {
