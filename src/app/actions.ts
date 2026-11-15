@@ -225,6 +225,7 @@ export async function addItemAction(input: {
   parentId?: string | null;
   dueDate?: string | null;
   repeat?: Repeat | null;
+  subItems?: string[];
 }) {
   const userId = await requireUserId();
   const { db } = getDb();

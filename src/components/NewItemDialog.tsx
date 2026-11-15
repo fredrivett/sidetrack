@@ -1,5 +1,6 @@
 "use client";
 
+import { X } from "lucide-react";
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { addItemAction } from "@/app/actions";
 import type { Category, Project } from "@/core/schema";
@@ -51,6 +52,8 @@ export function NewItemDialog({
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("");
   const [repeat, setRepeat] = useState<Repeat | null>(null);
+  const [subItems, setSubItems] = useState<string[]>([]);
+  const [subDraft, setSubDraft] = useState("");
   // Remounts the repeat picker after each add, so a Custom draft goes too.
   const [added, setAdded] = useState(0);
   // The last title added in this session: the dialog stays open after each
@@ -79,11 +82,20 @@ export function NewItemDialog({
       setDescription("");
       setCategory("");
       setRepeat(null);
+      setSubItems([]);
+      setSubDraft("");
       setLastAdded(null);
     }
   }
 
   const categories = categoriesByProject[projectId] ?? [];
+
+  function addSubItem() {
+    const t = subDraft.trim();
+    if (!t) return;
+    setSubItems((cur) => [...cur, t]);
+    setSubDraft("");
+  }
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -92,9 +104,18 @@ export function NewItemDialog({
     const d = description.trim() || null;
     const c = category.trim() || null;
     const r = repeat;
+    // A sub-item still in its input counts, so it isn't lost to the click.
+    const subs = [...subItems, subDraft.trim()].filter(Boolean);
     const startedIn = session.current;
     start(async () => {
-      await addItemAction({ projectId, title: t, description: d, category: c, repeat: r });
+      await addItemAction({
+        projectId,
+        title: t,
+        description: d,
+        category: c,
+        repeat: r,
+        subItems: subs,
+      });
       if (session.current !== startedIn) return;
       // Stay open for the next item: clear what's per-item, keep the list
       // and category, and put the cursor back in the title. You can type
@@ -105,6 +126,9 @@ export function NewItemDialog({
       setDescription((cur) => ((cur.trim() || null) === d ? "" : cur));
       // A repeat belongs to the item just added, like its title.
       setRepeat((cur) => (cur === r ? null : cur));
+      // Sub-items can't be edited while it saves, so they're all this item's.
+      setSubItems([]);
+      setSubDraft("");
       setAdded((n) => n + 1);
       setLastAdded(t);
       titleRef.current?.focus();
@@ -183,6 +207,43 @@ export function NewItemDialog({
                 disabled={pending}
                 onChange={setRepeat}
               />
+            </Field>
+
+            <Field label="Checklist">
+              <div className="space-y-1">
+                {subItems.map((sub, i) => (
+                  <div key={i} className="flex items-center gap-2 pl-2.5">
+                    <span className="min-w-0 flex-1 truncate text-sm">{sub}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      disabled={pending}
+                      onClick={() => setSubItems((cur) => cur.filter((_, j) => j !== i))}
+                      aria-label={`Remove sub-item ${sub}`}
+                      className="text-neutral-400"
+                    >
+                      <X />
+                    </Button>
+                  </div>
+                ))}
+                <Input
+                  value={subDraft}
+                  onChange={(e) => setSubDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Enter adds the typed sub-item; on an empty input it
+                    // submits the form as usual.
+                    if (e.key === "Enter" && !e.nativeEvent.isComposing && subDraft.trim()) {
+                      e.preventDefault();
+                      addSubItem();
+                    }
+                  }}
+                  placeholder={subItems.length ? "Add another…" : "Add a step…"}
+                  disabled={pending}
+                  className="text-sm"
+                  aria-label="Add a sub-item"
+                />
+              </div>
             </Field>
           </div>
 

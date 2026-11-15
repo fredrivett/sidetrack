@@ -218,6 +218,8 @@ export function addItem(
     /** Create it already done, e.g. to log something the user just finished. */
     completed?: boolean;
     repeat?: Repeat | null;
+    /** Titles of sub-items to create under it, in order, in the same transaction. */
+    subItems?: string[];
   },
   source: AuditOrigin,
 ): Item {
@@ -316,6 +318,16 @@ export function addItem(
     // A done sub-item doesn't contradict a finished parent; only an open one does.
     if (parent && !input.completed) {
       reopenParentIfDone(tx as unknown as Db, userId, parent, source);
+    }
+    // Each sub-item is added and logged as if added on its own afterwards, and
+    // shares the item's done state; one bad title rolls back the lot.
+    for (const subTitle of input.subItems ?? []) {
+      addItem(
+        tx as unknown as Db,
+        userId,
+        { projectId: input.projectId, title: subTitle, parentId: id, completed: input.completed },
+        source,
+      );
     }
   });
 
