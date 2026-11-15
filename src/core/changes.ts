@@ -2,7 +2,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { getPostHog } from "../lib/posthog";
 import { hasProjectAccess } from "./access";
 import type { Db } from "./db";
-import { projectMembers, projects } from "./schema";
+import { projectMembers, projects, spaceMembers } from "./schema";
 
 /**
  * Live updates. Every committed change is announced here, and each open page
@@ -54,8 +54,8 @@ export function announceChange(change: Change): void {
 /**
  * Call onChange after each batch of changes that affects what userId sees:
  * their own changes, changes to a list they can see or are invited to, and
- * account changes by the people they share lists with, whose names and
- * avatars show on those lists. A list they have just lost, deleted or
+ * account and Space changes by the people they share lists or a Space with,
+ * whose names and avatars show on those lists (Space changes have no list). A list they have just lost, deleted or
  * removed from, counts too, so it leaves their board. Returns the
  * unsubscribe function.
  */
@@ -79,7 +79,8 @@ export function watchChanges(db: Db, userId: string, onChange: () => void): () =
   };
 }
 
-/** The lists whose changes userId sees, and the people they share them with. */
+/** The lists whose changes userId sees, and the people they share them or a
+ * Space with, counting a Space they're invited to. */
 function audience(db: Db, userId: string) {
   const shown = db
     .select({ id: projects.id, owner: projects.userId })
@@ -101,8 +102,21 @@ function audience(db: Db, userId: string) {
     .from(projectMembers)
     .where(and(eq(projectMembers.userId, userId), eq(projectMembers.status, "pending")))
     .all();
+  const mySpaces = db
+    .select({ id: spaceMembers.spaceId })
+    .from(spaceMembers)
+    .where(eq(spaceMembers.userId, userId));
+  const spacePeople = db
+    .select({ userId: spaceMembers.userId })
+    .from(spaceMembers)
+    .where(and(inArray(spaceMembers.spaceId, mySpaces), eq(spaceMembers.status, "accepted")))
+    .all();
   return {
     lists: new Set([...ids, ...invites.map((i) => i.projectId)]),
-    people: new Set([...shown.map((p) => p.owner), ...members.map((m) => m.userId)]),
+    people: new Set([
+      ...shown.map((p) => p.owner),
+      ...members.map((m) => m.userId),
+      ...spacePeople.map((m) => m.userId),
+    ]),
   };
 }

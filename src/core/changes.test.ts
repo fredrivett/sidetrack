@@ -5,6 +5,7 @@ import { acceptInvite, inviteMember } from "./members";
 import { linkItemToPr, setPrState } from "./prLinks";
 import { createProject, deleteProject } from "./projects";
 import { createTestDb, createTestUser } from "./test-helpers";
+import { acceptSpaceInvite, createSpace, inviteSpaceMember } from "./spaces";
 import { setUsername } from "./users";
 
 type Db = ReturnType<typeof createTestDb>["db"];
@@ -81,6 +82,19 @@ describe("watchChanges", () => {
     setUsername(db, invitee, "renamed_pending", "web");
     await settle();
     expect(heard).toEqual({ [owner]: 2, [stranger]: 0 });
+  });
+
+  it("tells the people in a Space, and its invitees, about its changes", async () => {
+    // Nobody here shares a list with the stranger.
+    const spaceId = createSpace(db, stranger, { name: "Flat" }, "web").id;
+    const flatmate = createTestUser(db, { username: "flatmate" });
+    inviteSpaceMember(db, stranger, spaceId, "flatmate", "web");
+    acceptSpaceInvite(db, flatmate, spaceId, "web");
+    await settle();
+    watch(flatmate, member, owner);
+    inviteSpaceMember(db, stranger, spaceId, "member", "web");
+    await settle();
+    expect(heard).toEqual({ [flatmate]: 1, [member]: 1, [owner]: 0 });
   });
 
   it("tells a list about a PR's new state from GitHub, but not a repeat of it", async () => {
