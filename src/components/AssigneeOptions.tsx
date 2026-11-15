@@ -49,7 +49,8 @@ export function AssigneeOptions({
       <DropdownMenuItem onClick={onClear}>
         <CircleDashed className="text-neutral-400" />
         Unassigned
-        {selected.length === 0 && <Check className="ml-auto" />}
+        {/* mr-0.5 lines this tick up with the checkbox rows' ticks (right-2). */}
+        {selected.length === 0 && <Check className="mr-0.5 ml-auto" />}
       </DropdownMenuItem>
       {ordered.map((a) => (
         <DropdownMenuCheckboxItem
