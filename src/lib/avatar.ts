@@ -3,7 +3,7 @@
 // setUploadedAvatar). Shared by core, auth, and the profile UI.
 
 /** The path an uploaded avatar is served from, versioned so a new upload busts caches. */
-export function uploadedAvatarPath(userId: string, version: number): string {
+export function uploadedAvatarPath(userId: string, version: string): string {
   return `/api/avatars/${encodeURIComponent(userId)}?v=${version}`;
 }
 

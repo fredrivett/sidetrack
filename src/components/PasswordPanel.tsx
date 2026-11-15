@@ -105,7 +105,11 @@ export function PasswordPanel({ email }: { email: string }) {
         At least 8 characters. Changing it signs you out on your other
         devices.
       </p>
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
       <Button type="submit" size="sm" disabled={pending}>
         {pending ? "Changing…" : "Change password"}
       </Button>

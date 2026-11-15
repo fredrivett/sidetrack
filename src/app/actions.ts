@@ -38,6 +38,7 @@ import {
 } from "@/core/projects";
 import type { AuditSource, ProjectStatus } from "@/core/schema";
 import {
+  AVATAR_MAX_BYTES,
   setTimeZone as setTimeZoneCore,
   setAvatarUrl as setAvatarUrlCore,
   setUploadedAvatar as setUploadedAvatarCore,
@@ -256,6 +257,8 @@ export async function uploadAvatarAction(formData: FormData) {
   const userId = await requireUserId();
   const file = formData.get("file");
   if (!(file instanceof File)) throw new Error("no avatar file");
+  // Refuse an oversized file before reading it; setUploadedAvatar checks too.
+  if (file.size > AVATAR_MAX_BYTES) throw new Error("avatar file is too large");
   const { db } = getDb();
   setUploadedAvatarCore(db, userId, new Uint8Array(await file.arrayBuffer()), SOURCE);
   refresh();

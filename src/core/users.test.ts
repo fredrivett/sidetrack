@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createTestDb, createTestUser } from "./test-helpers";
 import {
   getProfile,
@@ -33,38 +33,93 @@ describe("user timezone", () => {
 });
 
 describe("avatar", () => {
-  const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
-  const jpeg = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 4, 5, 6]);
+  // Minimal headers, laid out as the formats define them, padded to 32 bytes.
+  const bytes = (...parts: (string | number[])[]) => {
+    const flat = parts.flatMap((p) =>
+      typeof p === "string" ? [...p].map((c) => c.charCodeAt(0)) : p,
+    );
+    return Uint8Array.from([...flat, ...Array(Math.max(0, 32 - flat.length)).fill(0)]);
+  };
+  const be32 = (n: number) => [n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
+  const le16 = (n: number) => [n & 255, n >>> 8];
+  const le24 = (n: number) => [n & 255, (n >>> 8) & 255, n >>> 16];
+  const png = (w: number, h: number) =>
+    bytes([0x89], "PNG", [0x0d, 0x0a, 0x1a, 0x0a], be32(13), "IHDR", be32(w), be32(h));
+  const riff = (chunk: string, body: number[]) =>
+    bytes("RIFF", [0, 0, 0, 0], "WEBP", chunk, [0, 0, 0, 0], body);
+  // Lossy: frame tag, 9d 01 2a start code, 14-bit sizes.
+  const webpLossy = (w: number, h: number) =>
+    riff("VP8 ", [0, 0, 0, 0x9d, 0x01, 0x2a, ...le16(w), ...le16(h)]);
+  // Lossless: 0x2f, then width-1 in 14 bits and height-1 in the next 14.
+  const webpLossless = (w: number, h: number) => {
+    const bits = (w - 1) | ((h - 1) << 14);
+    return riff("VP8L", [0x2f, bits & 255, (bits >>> 8) & 255, (bits >>> 16) & 255, bits >>> 24]);
+  };
+  // Extended: flags, then 24-bit canvas width-1 and height-1.
+  const webpExtended = (w: number, h: number) =>
+    riff("VP8X", [0, 0, 0, 0, ...le24(w - 1), ...le24(h - 1)]);
   const profileLog = (db: ReturnType<typeof createTestDb>["db"], userId: string) =>
     listAudit(db, userId)
       .filter((e) => e.entityType === "profile")
       .map((e) => [e.action, e.detail, e.entityId, e.source]);
 
-  it("stores an upload by the type sniffed from its bytes, points the user at it, and audits it", () => {
+  it("stores an upload by the type its header declares, points the user at it, and audits it", () => {
     const { db } = createTestDb();
     const userId = createTestUser(db);
-    const image = setUploadedAvatar(db, userId, png, "web");
-    expect(image).toMatch(new RegExp(`^/api/avatars/${userId}\\?v=\\d+$`));
+    const image = setUploadedAvatar(db, userId, png(256, 256), "web");
+    expect(image).toMatch(new RegExp(`^/api/avatars/${userId}\\?v=[\\w-]+$`));
     expect(getProfile(db, userId)?.image).toBe(image);
     const stored = getUploadedAvatar(db, userId);
     expect(stored?.contentType).toBe("image/png");
-    expect([...(stored?.data ?? [])]).toEqual([...png]);
+    expect([...(stored?.data ?? [])]).toEqual([...png(256, 256)]);
 
-    setUploadedAvatar(db, userId, jpeg, "web");
-    expect(getUploadedAvatar(db, userId)?.contentType).toBe("image/jpeg");
-    expect(profileLog(db, userId)).toEqual([
-      ["update", "avatar to an uploaded image", userId, "web"],
-      ["update", "avatar to an uploaded image", userId, "web"],
-    ]);
+    // A re-upload in the same millisecond still gets a new URL, since browsers
+    // cache each for good.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    let again: string;
+    try {
+      const first = setUploadedAvatar(db, userId, webpLossy(256, 256), "web");
+      again = setUploadedAvatar(db, userId, webpLossy(256, 256), "web");
+      expect(again).not.toBe(first);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(again).not.toBe(image);
+    expect(getUploadedAvatar(db, userId)?.contentType).toBe("image/webp");
+    expect(profileLog(db, userId)).toEqual(
+      Array(3).fill(["update", "avatar to an uploaded image", userId, "web"]),
+    );
   });
 
-  it("rejects uploads that aren't raster images, such as SVG, changing and logging nothing", () => {
+  it("accepts each WebP variant up to the size limit", () => {
     const { db } = createTestDb();
     const userId = createTestUser(db);
-    const image = setUploadedAvatar(db, userId, png, "web");
-    const svg = new TextEncoder().encode('<svg onload="alert(1)"/>');
-    expect(() => setUploadedAvatar(db, userId, svg, "web")).toThrow(/PNG, JPEG/);
+    for (const image of [webpLossy(1024, 1), webpLossless(1, 1024), webpExtended(1024, 1024)]) {
+      setUploadedAvatar(db, userId, image, "web");
+      expect(getUploadedAvatar(db, userId)?.contentType).toBe("image/webp");
+    }
+  });
+
+  it("rejects anything but a PNG or WebP within the size limit, changing and logging nothing", () => {
+    const { db } = createTestDb();
+    const userId = createTestUser(db);
+    const image = setUploadedAvatar(db, userId, png(256, 256), "web");
+    const svg = new TextEncoder().encode('<svg onload="alert(1)"/>'.padEnd(40));
+    const jpeg = bytes([0xff, 0xd8, 0xff, 0xe0]);
+    expect(() => setUploadedAvatar(db, userId, svg, "web")).toThrow(/PNG or WebP/);
+    expect(() => setUploadedAvatar(db, userId, jpeg, "web")).toThrow(/PNG or WebP/);
     expect(() => setUploadedAvatar(db, userId, new Uint8Array(), "web")).toThrow(/empty/);
+    // A small file declaring a huge canvas, in each layout, one past the limit.
+    for (const big of [
+      png(1025, 10),
+      png(10, 1025),
+      webpLossy(1025, 10),
+      webpLossless(10, 1025),
+      webpExtended(16384, 16384),
+      png(0, 10),
+    ]) {
+      expect(() => setUploadedAvatar(db, userId, big, "web")).toThrow(/at most 1024/);
+    }
     expect(getProfile(db, userId)?.image).toBe(image);
     expect(getUploadedAvatar(db, userId)?.contentType).toBe("image/png");
     expect(profileLog(db, userId)).toHaveLength(1);
@@ -73,7 +128,7 @@ describe("avatar", () => {
   it("sets a URL over an upload, dropping the upload, then removes it, auditing each real change", () => {
     const { db } = createTestDb();
     const userId = createTestUser(db);
-    setUploadedAvatar(db, userId, png, "web");
+    setUploadedAvatar(db, userId, png(64, 64), "web");
 
     expect(setAvatarUrl(db, userId, "example.com/me.png", "web")).toBe("https://example.com/me.png");
     expect(getUploadedAvatar(db, userId)).toBeNull();
@@ -113,10 +168,13 @@ describe("username", () => {
 
     const log = listAudit(db, userId)
       .filter((e) => e.entityType === "profile")
-      .map((e) => e.detail);
+      .map((e) => [e.action, e.detail, e.actor, e.entityId, e.projectId, e.source]);
     expect(log).toHaveLength(2);
     expect(log).toEqual(
-      expect.arrayContaining(["username from @fred to @Fred", "username from @Fred to @FredR"]),
+      expect.arrayContaining([
+        ["update", "username from @fred to @Fred", userId, userId, null, "web"],
+        ["update", "username from @Fred to @FredR", userId, userId, null, "web"],
+      ]),
     );
   });
 

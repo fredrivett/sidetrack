@@ -90,11 +90,11 @@ export function AvatarPanel({ user }: { user: AvatarUser }) {
 
   function upload(file: File) {
     run(async () => {
-      if (!file.type.startsWith("image/")) return "Choose an image file.";
       let blob: Blob;
       try {
         blob = await shrinkImage(file);
       } catch {
+        // Not an image the browser can decode, whatever its file type says.
         return "Couldn't read that image. Try a PNG or JPEG.";
       }
       const form = new FormData();
@@ -125,9 +125,7 @@ export function AvatarPanel({ user }: { user: AvatarUser }) {
     <div className="space-y-3 rounded-lg border border-border p-4">
       <span className="block text-sm font-medium">Avatar</span>
       <div className="flex items-center gap-3">
-        {/* Keyed so a URL that failed to load doesn't keep the next one on
-            initials: UserAvatar remembers a load failure for its lifetime. */}
-        <UserAvatar key={shown} user={{ ...user, image: shown }} size={40} />
+        <UserAvatar user={{ ...user, image: shown }} size={40} />
         <input
           ref={fileInput}
           type="file"
@@ -192,7 +190,11 @@ export function AvatarPanel({ user }: { user: AvatarUser }) {
       <p className="text-xs text-muted-foreground">
         Shown next to items assigned to you. Remove it to show your initials.
       </p>
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

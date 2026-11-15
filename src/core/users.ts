@@ -1,4 +1,5 @@
 import { and, eq, ne } from "drizzle-orm";
+import { nanoid } from "nanoid";
 import { avatars, users } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
@@ -50,40 +51,42 @@ export function setUsername(
   if (problem) throw new Error(problem);
   if (isReservedUsername(raw)) throw new Error(`${raw} is reserved.`);
   const username = raw.toLowerCase();
-  const current = db
-    .select({ displayUsername: users.displayUsername })
-    .from(users)
-    .where(eq(users.id, userId))
-    .get();
-  if (!current) throw new Error("unknown user");
-  if (current.displayUsername === raw) return raw;
   const taken = () => new Error(`${raw} is taken.`);
-  if (
-    db
-      .select({ id: users.id })
-      .from(users)
-      .where(and(eq(users.username, username), ne(users.id, userId)))
-      .get()
-  ) {
-    throw taken();
-  }
   try {
-    db.transaction((tx) => {
-      tx.update(users)
-        .set({ username, displayUsername: raw, updatedAt: new Date() })
-        .where(eq(users.id, userId))
-        .run();
-      recordAudit(tx as unknown as Db, {
-        actor: userId,
-        source,
-        action: "update",
-        entityType: "profile",
-        entityId: userId,
-        detail: `username from @${current.displayUsername} to @${raw}`,
-      });
-    });
+    // Read inside an immediate (write-locked) transaction, so the no-op and
+    // taken checks and the audit row's "from" see what this write replaces.
+    db.transaction(
+      (tx) => {
+        const current = tx
+          .select({ displayUsername: users.displayUsername })
+          .from(users)
+          .where(eq(users.id, userId))
+          .get();
+        if (!current) throw new Error("unknown user");
+        if (current.displayUsername === raw) return;
+        const holder = tx
+          .select({ id: users.id })
+          .from(users)
+          .where(and(eq(users.username, username), ne(users.id, userId)))
+          .get();
+        if (holder) throw taken();
+        tx.update(users)
+          .set({ username, displayUsername: raw, updatedAt: new Date() })
+          .where(eq(users.id, userId))
+          .run();
+        recordAudit(tx as unknown as Db, {
+          actor: userId,
+          source,
+          action: "update",
+          entityType: "profile",
+          entityId: userId,
+          detail: `username from @${current.displayUsername} to @${raw}`,
+        });
+      },
+      { behavior: "immediate" },
+    );
   } catch (error) {
-    // Someone else took it between the check and the write.
+    // Backstop: the unique index on username, should another writer win.
     if ((error as { code?: string }).code === "SQLITE_CONSTRAINT_UNIQUE") throw taken();
     throw error;
   }
@@ -114,20 +117,49 @@ export function setTimeZone(db: Db, userId: string, timeZone: string): void {
 /** Largest uploaded avatar accepted. The browser shrinks images to 256px first, so real uploads are far below this. */
 export const AVATAR_MAX_BYTES = 512 * 1024;
 
-// Raster formats an <img> renders, told apart by their first bytes rather
-// than the client's claimed type. Anything else (SVG, which can carry script,
-// HTML, arbitrary files) is rejected.
-const AVATAR_SIGNATURES: [string, (b: Uint8Array) => boolean][] = [
-  ["image/png", (b) => b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47],
-  ["image/jpeg", (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff],
-  ["image/gif", (b) => b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38],
-  [
-    "image/webp",
-    (b) =>
-      String.fromCharCode(...b.subarray(0, 4)) === "RIFF" &&
-      String.fromCharCode(...b.subarray(8, 12)) === "WEBP",
-  ],
-];
+/** Widest and tallest uploaded avatar accepted, in pixels. The browser sends 256. */
+export const AVATAR_MAX_SIDE = 1024;
+
+const ascii = (b: Uint8Array, at: number, length: number) =>
+  String.fromCharCode(...b.subarray(at, at + length));
+
+/**
+ * The type and pixel size an uploaded avatar declares in its header, or null
+ * for anything else. Only PNG and WebP: the browser re-encodes every upload
+ * to one of those (see AvatarPanel), so other formats, and SVG, which can
+ * carry script, never need storing. The size is checked so a small file
+ * can't declare a huge canvas that exhausts a viewer's memory when decoded.
+ */
+function readAvatarHeader(b: Uint8Array) {
+  const view = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  if (b.length < 30) return null;
+  if (
+    b[0] === 0x89 && ascii(b, 1, 3) === "PNG" && ascii(b, 12, 4) === "IHDR"
+  ) {
+    return { contentType: "image/png", width: view.getUint32(16), height: view.getUint32(20) };
+  }
+  if (ascii(b, 0, 4) !== "RIFF" || ascii(b, 8, 4) !== "WEBP") return null;
+  const contentType = "image/webp";
+  const u24 = (at: number) => view.getUint16(at, true) | (b[at + 2] << 16);
+  switch (ascii(b, 12, 4)) {
+    case "VP8 ": // lossy: 14-bit sizes after the 9d 01 2a start code
+      if (b[23] !== 0x9d || b[24] !== 0x01 || b[25] !== 0x2a) return null;
+      return {
+        contentType,
+        width: view.getUint16(26, true) & 0x3fff,
+        height: view.getUint16(28, true) & 0x3fff,
+      };
+    case "VP8L": { // lossless: 14-bit sizes minus one, after the 0x2f signature
+      if (b[20] !== 0x2f) return null;
+      const bits = view.getUint32(21, true);
+      return { contentType, width: (bits & 0x3fff) + 1, height: ((bits >>> 14) & 0x3fff) + 1 };
+    }
+    case "VP8X": // extended: 24-bit canvas sizes minus one
+      return { contentType, width: u24(24) + 1, height: u24(27) + 1 };
+    default:
+      return null;
+  }
+}
 
 /**
  * Set the user's avatar to a pasted image URL, or clear it with null or blank.
@@ -142,24 +174,29 @@ export function setAvatarUrl(
   source: AuditOrigin,
 ): string | null {
   const image = raw === null ? null : normalizeWebUrl(raw, "avatar URL");
-  const current = getProfile(db, userId);
-  if (!current) throw new Error("unknown user");
-  if (current.image === image) return image;
-  db.transaction((tx) => {
-    tx.update(users)
-      .set({ image, updatedAt: new Date() })
-      .where(eq(users.id, userId))
-      .run();
-    tx.delete(avatars).where(eq(avatars.userId, userId)).run();
-    recordAudit(tx as unknown as Db, {
-      actor: userId,
-      source,
-      action: image ? "update" : "delete",
-      entityType: "profile",
-      entityId: userId,
-      detail: image ? `avatar to ${image}` : "avatar",
-    });
-  });
+  // Read inside an immediate (write-locked) transaction, so the no-op check
+  // and the audit row see the value this write actually replaces.
+  db.transaction(
+    (tx) => {
+      const current = getProfile(tx as unknown as Db, userId);
+      if (!current) throw new Error("unknown user");
+      if (current.image === image) return;
+      tx.update(users)
+        .set({ image, updatedAt: new Date() })
+        .where(eq(users.id, userId))
+        .run();
+      tx.delete(avatars).where(eq(avatars.userId, userId)).run();
+      recordAudit(tx as unknown as Db, {
+        actor: userId,
+        source,
+        action: image ? "update" : "delete",
+        entityType: "profile",
+        entityId: userId,
+        detail: image ? `avatar to ${image}` : "avatar",
+      });
+    },
+    { behavior: "immediate" },
+  );
   return image;
 }
 
@@ -175,12 +212,18 @@ export function setUploadedAvatar(
 ): string {
   if (bytes.length === 0) throw new Error("avatar file is empty");
   if (bytes.length > AVATAR_MAX_BYTES) throw new Error("avatar file is too large");
-  const contentType = AVATAR_SIGNATURES.find(([, matches]) => matches(bytes))?.[0];
-  if (!contentType) throw new Error("avatar must be a PNG, JPEG, GIF, or WebP image");
+  const header = readAvatarHeader(bytes);
+  if (!header) throw new Error("avatar must be a PNG or WebP image");
+  const { contentType, width, height } = header;
+  if (width === 0 || height === 0 || width > AVATAR_MAX_SIDE || height > AVATAR_MAX_SIDE) {
+    throw new Error(`avatar must be at most ${AVATAR_MAX_SIDE}×${AVATAR_MAX_SIDE} pixels`);
+  }
 
   const updatedAt = new Date();
   const data = Buffer.from(bytes);
-  const image = uploadedAvatarPath(userId, updatedAt.getTime());
+  // A random version, not the time: two uploads in one millisecond would
+  // otherwise share a URL that browsers cache as immutable.
+  const image = uploadedAvatarPath(userId, nanoid(10));
   db.transaction((tx) => {
     tx.insert(avatars)
       .values({ userId, contentType, data, updatedAt })

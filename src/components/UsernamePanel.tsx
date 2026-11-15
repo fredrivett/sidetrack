@@ -154,7 +154,11 @@ export function UsernamePanel({ initial }: { initial: string }) {
           Couldn&apos;t check availability — you can still try to save.
         </p>
       )}
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
       <Button type="button" size="sm" onClick={onSave} disabled={!canSave}>
         {pending ? "Saving…" : "Save"}
       </Button>
