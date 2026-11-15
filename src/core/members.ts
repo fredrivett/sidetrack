@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { users } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
@@ -379,6 +379,63 @@ export function listMembers(
       status: r.membership.status,
       createdAt: r.membership.createdAt,
     }));
+}
+
+/** Someone the caller already collaborates with, suggested for a quick invite. */
+export type CollaboratorView = Omit<MemberView, "status" | "createdAt">;
+
+/**
+ * People the owner already shares another list with (in either direction, as
+ * owner or accepted member) who aren't on this project yet — no member row,
+ * pending or accepted. Owner-only, since only the owner can invite; empty for
+ * anyone else. Pending invites elsewhere don't count: until someone accepts,
+ * they aren't a collaborator.
+ */
+export function listSuggestedCollaborators(
+  db: Db,
+  userId: string,
+  projectId: string,
+): CollaboratorView[] {
+  const project = getProject(db, userId, projectId);
+  if (!project || project.userId !== userId) return [];
+
+  // Every list the caller is on: the ones they own plus accepted memberships.
+  const shared = sql`(
+    select ${projects.id} from ${projects} where ${projects.userId} = ${userId}
+    union
+    select ${projectMembers.projectId} from ${projectMembers}
+    where ${projectMembers.userId} = ${userId} and ${projectMembers.status} = 'accepted'
+  )`;
+  // Everyone on those lists: their owners and accepted members.
+  const people = sql`(
+    select ${projects.userId} from ${projects} where ${projects.id} in ${shared}
+    union
+    select ${projectMembers.userId} from ${projectMembers}
+    where ${projectMembers.status} = 'accepted' and ${projectMembers.projectId} in ${shared}
+  )`;
+  const onThisProject = sql`(
+    select ${projectMembers.userId} from ${projectMembers}
+    where ${projectMembers.projectId} = ${projectId}
+  )`;
+
+  return db
+    .select({
+      userId: users.id,
+      username: users.username,
+      displayUsername: users.displayUsername,
+      name: users.name,
+      email: users.email,
+    })
+    .from(users)
+    .where(
+      and(
+        sql`${users.id} in ${people}`,
+        ne(users.id, userId),
+        sql`${users.id} not in ${onThisProject}`,
+      ),
+    )
+    .orderBy(asc(users.username))
+    .all();
 }
 
 /**

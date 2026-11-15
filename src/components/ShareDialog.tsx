@@ -4,9 +4,10 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import {
   inviteMemberAction,
   listMembersAction,
+  listSuggestedCollaboratorsAction,
   removeMemberAction,
 } from "@/app/actions";
-import type { MemberView } from "@/core/members";
+import type { CollaboratorView, MemberView } from "@/core/members";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -18,14 +19,15 @@ import {
 } from "@/components/ui/responsive-dialog";
 import { useTapToConfirm } from "./use-tap-to-confirm";
 
-function displayName(m: MemberView) {
+function displayName(m: CollaboratorView) {
   return m.displayUsername ? `@${m.displayUsername}` : (m.name ?? m.email ?? m.userId);
 }
 
 /**
  * Owner-only panel to manage a project's collaborators: invite by username or
- * email, see who's a member (and who has a pending invite), and remove them.
- * Members are lazy-loaded when the dialog opens.
+ * email (or with one tap, someone from the owner's other lists), see who's a
+ * member (and who has a pending invite), and remove them. Members and
+ * suggestions are lazy-loaded when the dialog opens.
  */
 export function ShareDialog({
   open,
@@ -39,6 +41,7 @@ export function ShareDialog({
   projectName: string;
 }) {
   const [members, setMembers] = useState<MemberView[]>([]);
+  const [suggestions, setSuggestions] = useState<CollaboratorView[]>([]);
   const [person, setPerson] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -59,6 +62,9 @@ export function ShareDialog({
     setOpened({ open, projectId });
     setPerson("");
     setError(null);
+    // Suggestions are for one project: an Invite left over from the last one
+    // would invite that person here, so hide them until this project's load.
+    setSuggestions([]);
     // A tap armed before closing must not carry over to the next open.
     tap.reset();
   }
@@ -68,30 +74,52 @@ export function ShareDialog({
     latestProjectId.current = projectId;
     if (!open || !projectId) return;
     let active = true;
-    listMembersAction(projectId).then((rows) => {
-      if (active) setMembers(rows);
+    Promise.all([
+      listMembersAction(projectId),
+      listSuggestedCollaboratorsAction(projectId),
+    ]).then(([rows, suggested]) => {
+      if (!active) return;
+      setMembers(rows);
+      setSuggestions(suggested);
     });
     return () => {
       active = false;
     };
   }, [open, projectId]);
 
-  function invite(e: React.FormEvent) {
-    e.preventDefault();
-    const trimmed = person.trim();
-    if (!trimmed || !projectId) return;
+  // Re-read members and suggestions after an invite or removal, so a person
+  // moves between the two lists. The change has already committed, so a failed
+  // re-read isn't reported as a failed invite/removal; the board's own refresh
+  // and the next open bring the lists up to date.
+  async function reload(id: string) {
+    try {
+      const [rows, suggested] = await Promise.all([
+        listMembersAction(id),
+        listSuggestedCollaboratorsAction(id),
+      ]);
+      if (latestProjectId.current !== id) return;
+      setMembers(rows);
+      setSuggestions(suggested);
+    } catch {
+      // Leave the lists as they were.
+    }
+  }
+
+  // Invite by handle, from the form or a suggestion; `fromForm` clears the
+  // input on success.
+  function invite(handle: string, fromForm: boolean) {
+    if (!handle || !projectId) return;
     setError(null);
     start(async () => {
       try {
-        await inviteMemberAction(projectId, trimmed);
-        const rows = await listMembersAction(projectId);
-        if (latestProjectId.current !== projectId) return;
-        setPerson("");
-        setMembers(rows);
+        await inviteMemberAction(projectId, handle);
       } catch (err) {
         if (latestProjectId.current !== projectId) return;
         setError(err instanceof Error ? err.message : "Couldn't send the invite.");
+        return;
       }
+      if (fromForm && latestProjectId.current === projectId) setPerson("");
+      await reload(projectId);
     });
   }
 
@@ -100,13 +128,12 @@ export function ShareDialog({
     start(async () => {
       try {
         await removeMemberAction(projectId, targetUserId);
-        const rows = await listMembersAction(projectId);
-        if (latestProjectId.current !== projectId) return;
-        setMembers(rows);
       } catch {
         if (latestProjectId.current !== projectId) return;
         setError("Couldn't remove that person. Please try again.");
+        return;
       }
+      await reload(projectId);
     });
   }
 
@@ -126,7 +153,12 @@ export function ShareDialog({
           </ResponsiveDialogDescription>
         </div>
 
-        <form onSubmit={invite} className="shrink-0 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            invite(person.trim(), true);
+          }}
+          className="shrink-0 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
           <div className="flex gap-2">
             <Input
               ref={personRef}
@@ -146,11 +178,12 @@ export function ShareDialog({
         </form>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
-          {members.length === 0 ? (
+          {members.length === 0 && suggestions.length === 0 && (
             <p className="py-6 text-center text-xs text-neutral-500">
               No collaborators yet.
             </p>
-          ) : (
+          )}
+          {members.length > 0 && (
             <ul className="space-y-1">
               {members.map((m) => (
                 <li
@@ -196,6 +229,40 @@ export function ShareDialog({
                 </li>
               ))}
             </ul>
+          )}
+          {suggestions.length > 0 && (
+            <section className={members.length > 0 ? "mt-4" : undefined}>
+              <h3 className="px-2 pb-1 text-xs font-medium text-neutral-500">
+                From your other lists
+              </h3>
+              <ul className="space-y-1">
+                {suggestions.map((s) => (
+                  <li
+                    key={s.userId}
+                    className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                  >
+                    <div className="min-w-0">
+                      <span className="block truncate text-sm">{displayName(s)}</span>
+                      {s.email && (
+                        <span className="block truncate text-xs text-neutral-500">
+                          {s.email}
+                        </span>
+                      )}
+                    </div>
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant="outline"
+                      onClick={() => invite(`@${s.username}`, false)}
+                      disabled={pending}
+                      aria-label={`Invite ${displayName(s)}`}
+                    >
+                      Invite
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </section>
           )}
         </div>
       </ResponsiveDialogContent>
