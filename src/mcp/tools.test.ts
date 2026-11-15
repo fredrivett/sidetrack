@@ -4,7 +4,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { listAudit } from "@/core/audit";
 import { addItem, getItem, listItems } from "@/core/items";
 import { acceptInvite, inviteMember } from "@/core/members";
-import { createProject, getProject } from "@/core/projects";
+import { createProject, getProject, listProjects } from "@/core/projects";
 import {
   acceptSpaceInvite,
   createSpace,
@@ -306,8 +306,17 @@ describe("error results", () => {
         expect(r.error).toBe("Pass exactly one of list_id or space_id — no change was made.");
       }
     }
+    // An empty id isn't a missing one: it's refused, not ignored.
+    for (const tool of ["accept_invite", "decline_invite"]) {
+      expect((await asBob(tool, { space_id: "", list_id: list.id })).error).toBeTruthy();
+    }
     expect(listPendingSpaceInvites(db, bob)).toHaveLength(1);
     expect(getProject(db, bob, list.id)).toBeUndefined();
+
+    // Nor does create_list take an empty space_id as "no Space" and make a private list.
+    const before = listProjects(db, fred).length;
+    expect((await call("create_list", { name: "Shared", space_id: "" })).error).toBeTruthy();
+    expect(listProjects(db, fred)).toHaveLength(before);
   });
 
   it("moves a list between Spaces after its other edits, and says when the caller loses it", async () => {

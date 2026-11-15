@@ -507,7 +507,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         summary: z.string().optional(),
         homepage_url: z.string().optional(),
         icon: z.string().optional(),
-        space_id: z.string().optional(),
+        space_id: z.string().min(1).optional(),
       },
     },
     async ({ homepage_url, space_id, ...input }) => {
@@ -545,7 +545,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         prefix: z.string().optional(),
         homepage_url: z.string().nullable().optional(),
         icon: z.string().nullable().optional(),
-        space_id: z.string().nullable().optional(),
+        space_id: z.string().min(1).nullable().optional(),
       },
     },
     async ({ id, homepage_url, space_id, ...patch }) => {
@@ -1365,12 +1365,12 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       description:
         "Accept a pending invite, from list_pending_invites: pass space_id to join a Space " +
         "(gaining edit access to every list in it) or list_id to join one list. Pass exactly one.",
-      inputSchema: { list_id: z.string().optional(), space_id: z.string().optional() },
+      inputSchema: { list_id: z.string().min(1).optional(), space_id: z.string().min(1).optional() },
     },
     async ({ list_id, space_id }) => {
       const { db } = getDb();
-      if (space_id && !list_id) acceptSpaceInvite(db, userId, space_id, SOURCE);
-      else if (list_id && !space_id) acceptInvite(db, userId, list_id, SOURCE);
+      if (space_id !== undefined && list_id === undefined) acceptSpaceInvite(db, userId, space_id, SOURCE);
+      else if (list_id !== undefined && space_id === undefined) acceptInvite(db, userId, list_id, SOURCE);
       else return errorText("Pass exactly one of list_id or space_id — no change was made.");
       return json({ ok: true });
     },
@@ -1383,12 +1383,12 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       description:
         "Decline a pending invite, removing it: pass a Space invite's space_id or a list invite's " +
         "list_id, from list_pending_invites. Pass exactly one.",
-      inputSchema: { list_id: z.string().optional(), space_id: z.string().optional() },
+      inputSchema: { list_id: z.string().min(1).optional(), space_id: z.string().min(1).optional() },
     },
     async ({ list_id, space_id }) => {
       const { db } = getDb();
-      if (space_id && !list_id) declineSpaceInvite(db, userId, space_id, SOURCE);
-      else if (list_id && !space_id) declineInvite(db, userId, list_id, SOURCE);
+      if (space_id !== undefined && list_id === undefined) declineSpaceInvite(db, userId, space_id, SOURCE);
+      else if (list_id !== undefined && space_id === undefined) declineInvite(db, userId, list_id, SOURCE);
       else return errorText("Pass exactly one of list_id or space_id — no change was made.");
       return json({ ok: true });
     },
