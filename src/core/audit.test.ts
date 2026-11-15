@@ -3,7 +3,7 @@ import { SQLiteTable } from "drizzle-orm/sqlite-core";
 import { describe, expect, it } from "vitest";
 import { createApiKey, revokeApiKey, verifyApiKey } from "./api-keys";
 import { listAudit, recordAudit } from "./audit";
-import { addItem, updateItem } from "./items";
+import { addItem, deleteItem, setItemParent, updateItem } from "./items";
 import { createProject } from "./projects";
 import * as authSchema from "./auth-schema";
 import * as appSchema from "./schema";
@@ -189,21 +189,51 @@ describe("audit", () => {
     expect(listAudit(db, bob, { projectId: p.id })).toEqual([]);
   });
 
-  it("item view shows only that item's history, and only to someone with access", () => {
+  it("item view shows that item's and its sub-items' history, and only to someone with access", () => {
     const { db } = createTestDb();
     const alice = createTestUser(db, { email: "alice@test.local" });
     const bob = createTestUser(db, { email: "bob@test.local" });
     const p = createProject(db, alice, { name: "Alice" }, "web");
     const item = addItem(db, alice, { projectId: p.id, title: "Item" }, "web");
-    addItem(db, alice, { projectId: p.id, title: "Sub", parentId: item.id }, "web");
-    addItem(db, alice, { projectId: p.id, title: "Other" }, "web");
+    const sub = addItem(db, alice, { projectId: p.id, title: "Sub", parentId: item.id }, "web");
+    const other = addItem(db, alice, { projectId: p.id, title: "Other" }, "web");
+    addItem(db, alice, { projectId: p.id, title: "Other sub", parentId: other.id }, "web");
     updateItem(db, alice, item.id, { title: "Renamed" }, "web");
+    updateItem(db, alice, sub.id, { title: "Sub renamed" }, "web");
+    // A sub-item since deleted, one moved out (then changed elsewhere), and a
+    // top-level item moved in (after changes of its own).
+    const gone = addItem(db, alice, { projectId: p.id, title: "Gone", parentId: item.id }, "web");
+    deleteItem(db, alice, gone.id, "web");
+    const leaver = addItem(db, alice, { projectId: p.id, title: "Leaver", parentId: item.id }, "web");
+    setItemParent(db, alice, leaver.id, null, "web");
+    updateItem(db, alice, leaver.id, { title: "Left" }, "web");
+    const joiner = addItem(db, alice, { projectId: p.id, title: "Joiner" }, "web");
+    updateItem(db, alice, joiner.id, { title: "Joined" }, "web");
+    setItemParent(db, alice, joiner.id, item.id, "web");
 
-    // Its own rows: not its sub-item's, nor the list's other items'.
+    // Its own rows and what happened to each sub-item while it was one,
+    // deleted or not; not the list's other items', nor their sub-items'.
     const rows = listAudit(db, alice, { itemId: item.id });
-    expect(rows.map((e) => [e.action, e.entityId]).sort()).toEqual([
-      ["create", item.id],
-      ["update", item.id],
+    expect(rows.map((e) => [e.action, e.entityId]).sort()).toEqual(
+      [
+        ["create", item.id],
+        ["update", item.id],
+        ["create", sub.id],
+        ["update", sub.id],
+        ["create", gone.id],
+        ["delete", gone.id],
+        ["create", leaver.id],
+        ["update", leaver.id], // moved out
+        ["update", joiner.id], // made a sub-item
+      ].sort(),
+    );
+
+    // A sub-item's own view is just its rows.
+    expect(
+      listAudit(db, alice, { itemId: sub.id }).map((e) => [e.action, e.entityId]).sort(),
+    ).toEqual([
+      ["create", sub.id],
+      ["update", sub.id],
     ]);
 
     // Someone without access to its list gets nothing.

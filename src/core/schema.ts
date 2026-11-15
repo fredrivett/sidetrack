@@ -382,6 +382,10 @@ export const auditLog = sqliteTable(
     entityType: text("entity_type").$type<AuditEntity>().notNull(),
     entityId: text("entity_id").notNull(),
     projectId: text("project_id"),
+    // For an item's row, the item it was a sub-item of at the time, so the
+    // parent's history keeps its sub-items' rows after they're deleted or
+    // moved out. No FK, like project_id: the parent may be deleted too.
+    parentId: text("parent_id"),
     detail: text("detail").notNull().default(""),
     // The API key an agent (MCP) call came through, and that key's name at the
     // time ("Claude desktop"). Null for web and other non-agent changes. The
@@ -396,8 +400,10 @@ export const auditLog = sqliteTable(
     // listAudit always filters by actor and orders by ts desc; this composite
     // serves the per-user "my activity" read without a full-table scan.
     index("audit_log_actor_ts").on(t.actor, t.ts),
-    // An item's history (listAudit with itemId) reads by entity, newest first.
+    // An item's history (listAudit with itemId) reads its own rows by entity
+    // and its sub-items' by parent, newest first.
     index("audit_log_entity_ts").on(t.entityId, t.ts),
+    index("audit_log_parent_ts").on(t.parentId, t.ts),
   ],
 );
 
