@@ -214,7 +214,7 @@ function activeItemsForDay(
 }
 
 /**
- * The Today view across every active list the user can see: items due on or
+ * What's due now on the Agenda view, across every active list the user can see: items due on or
  * before `today`, or in a span ("this week") that has started, that are open
  * or were finished today, overdue first, then by
  * board order and list order. Paused and archived lists are left out.
@@ -250,7 +250,7 @@ export function listToday(
 }
 
 /**
- * The No date view across every active list the user can see: tasks with no
+ * The Agenda view's No date section, across every active list the user can see: tasks with no
  * due date that are open or were finished today (see isOnNoDate), grouped by
  * list in board order, each list's items in list order (a parent, then its
  * sub-items). Lists with nothing undated are left out, as are paused and archived lists. A sub-item

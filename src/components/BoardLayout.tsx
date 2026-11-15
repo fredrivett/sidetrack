@@ -10,8 +10,8 @@ export function BoardMain({ children }: { children: ReactNode }) {
 }
 
 /**
- * The top bar: logo and title on the left, then `nav` (the Board, Today
- * and No date switch), and `children` on the right.
+ * The top bar: logo and title on the left, then `nav` (the Board, Agenda
+ * and Done switch), and `children` on the right.
  */
 export function BoardHeader({
   nav,

@@ -33,6 +33,10 @@ export const users = sqliteTable("users", {
   // agents work out "today" the way the user's own screen does. null until
   // they first open the app.
   timeZone: text("time_zone"),
+  // Whether the Agenda's Overdue section is folded away, on every device.
+  overdueCollapsed: integer("overdue_collapsed", { mode: "boolean" })
+    .notNull()
+    .default(false),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });

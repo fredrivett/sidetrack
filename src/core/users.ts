@@ -18,6 +18,27 @@ export function getTimeZone(db: Db, userId: string): string | null {
   );
 }
 
+/** Whether the user has folded away the Agenda's Overdue section. */
+export function getOverdueCollapsed(db: Db, userId: string): boolean {
+  return (
+    db
+      .select({ overdueCollapsed: users.overdueCollapsed })
+      .from(users)
+      .where(eq(users.id, userId))
+      .get()?.overdueCollapsed ?? false
+  );
+}
+
+/**
+ * Fold away or show the Agenda's Overdue section, on every device the user
+ * signs in on. Not audited, like collapsing an item's sub-items: it's how
+ * the user views their items, not a change to them.
+ */
+export function setOverdueCollapsed(db: Db, userId: string, collapsed: boolean): void {
+  // audit-exempt: view state, not a change to anything shown to others.
+  db.update(users).set({ overdueCollapsed: collapsed }).where(eq(users.id, userId)).run();
+}
+
 /** The display fields for the user's own avatar and name, or null if unknown. */
 export function getProfile(db: Db, userId: string) {
   return (

@@ -74,6 +74,7 @@ import {
 } from "@/core/spaces";
 import {
   AVATAR_MAX_BYTES,
+  setOverdueCollapsed as setOverdueCollapsedCore,
   setTimeZone as setTimeZoneCore,
   setAvatarUrl as setAvatarUrlCore,
   setUploadedAvatar as setUploadedAvatarCore,
@@ -550,6 +551,14 @@ export async function deleteCommentAction(id: string) {
   const userId = await requireUserId();
   const { db } = getDb();
   deleteCommentCore(db, userId, id, SOURCE);
+  refresh();
+}
+
+/** Fold away or show the Agenda's Overdue section, for the signed-in user. */
+export async function setOverdueCollapsedAction(collapsed: boolean) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  setOverdueCollapsedCore(db, userId, collapsed);
   refresh();
 }
 
