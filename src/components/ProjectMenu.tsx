@@ -96,12 +96,16 @@ export function ProjectMenu({
   }
 
   // Pause, Resume and Undo-archive all wait for the change and say so if it
-  // fails, rather than leaving the list in the wrong state silently.
+  // fails, rather than leaving the list in the wrong state silently. Each
+  // handler that catches lets Next's redirect to /login through first
+  // (unstable_rethrow), so a signed-out action navigates without a false
+  // "Couldn't …" message.
   function setStatus(next: ProjectStatus) {
     start(async () => {
       try {
         await updateProjectAction(projectId, { status: next });
-      } catch {
+      } catch (e) {
+        unstable_rethrow(e);
         toast.error(`Couldn't update "${name}". Please try again.`);
       }
     });
@@ -111,7 +115,8 @@ export function ProjectMenu({
     start(async () => {
       try {
         await updateProjectAction(projectId, { status: "archived" });
-      } catch {
+      } catch (e) {
+        unstable_rethrow(e);
         toast.error(`Couldn't archive "${name}". Please try again.`);
         return;
       }
@@ -126,8 +131,6 @@ export function ProjectMenu({
   // before afterwards. Undo puts back the order from before it.
   function sortItems(by: ItemSort, label: string) {
     start(async () => {
-      // A signed-out action rejects with Next's redirect to /login; let that
-      // through so it navigates, and turn only real failures into a toast.
       const previous = await sortItemsAction(projectId, by).catch((e) => {
         unstable_rethrow(e);
         return undefined;
@@ -166,10 +169,12 @@ export function ProjectMenu({
       alert(err);
       return;
     }
-    run(async () => {
+    // In the transition, not run(), so a rethrown redirect reaches Next.
+    start(async () => {
       try {
         await updateProjectAction(projectId, { prefix: normalized });
-      } catch {
+      } catch (e) {
+        unstable_rethrow(e);
         alert("Couldn't update the prefix. Please try again.");
       }
     });
