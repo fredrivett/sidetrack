@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { addItemAction } from "@/app/actions";
-import type { Category, ItemKind, Project } from "@/core/schema";
+import type { Category, Project } from "@/core/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -49,7 +49,6 @@ export function NewItemSheet({
   // Sidebar slide-out on desktop, bottom drawer on mobile — matches ItemDetailSheet.
   const isDesktop = useMediaQuery("(min-width: 768px)", true);
   const [projectId, setProjectId] = useState("");
-  const [kind, setKind] = useState<ItemKind>("task");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("");
@@ -75,7 +74,6 @@ export function NewItemSheet({
     setWasOpen(open);
     if (open) {
       setProjectId(initialProjectId ?? projects[0]?.id ?? "");
-      setKind("task");
       setTitle("");
       setDescription("");
       setCategory("");
@@ -90,13 +88,13 @@ export function NewItemSheet({
     const t = title.trim();
     if (!t || !projectId || pending) return;
     const d = description.trim() || null;
-    const c = kind === "task" ? category.trim() || null : null;
+    const c = category.trim() || null;
     const startedIn = session.current;
     start(async () => {
-      await addItemAction({ projectId, kind, title: t, description: d, category: c });
+      await addItemAction({ projectId, title: t, description: d, category: c });
       if (session.current !== startedIn) return;
-      // Stay open for the next item: clear what's per-item, keep the list,
-      // type and category, and put the cursor back in the title. You can type
+      // Stay open for the next item: clear what's per-item, keep the list
+      // and category, and put the cursor back in the title. You can type
       // the next item while this one saves (submitting waits; the button
       // shows "Adding…"), so only clear fields that still hold what was
       // submitted — never text typed for the next item.
@@ -122,7 +120,7 @@ export function NewItemSheet({
           <SheetHeader className="border-b border-neutral-200 px-4 py-3 pr-14 dark:border-neutral-800">
             <SheetTitle className="text-base">New item</SheetTitle>
             <SheetDescription className="sr-only">
-              Create a new task or milestone in a list.
+              Create a new task in a list.
             </SheetDescription>
           </SheetHeader>
 
@@ -142,27 +140,12 @@ export function NewItemSheet({
               </select>
             </Field>
 
-            <Field label="Type">
-              <div className="flex items-center gap-1 rounded-lg bg-neutral-200 p-0.5 dark:bg-neutral-800">
-                {(["task", "milestone"] as const).map((k) => (
-                  <button
-                    key={k}
-                    type="button"
-                    onClick={() => setKind(k)}
-                    className={`flex-1 rounded-md py-1 text-xs font-medium transition-colors ${kind === k ? "bg-white text-neutral-900 shadow-sm dark:bg-neutral-700 dark:text-white" : "text-neutral-500"}`}
-                  >
-                    {k}
-                  </button>
-                ))}
-              </div>
-            </Field>
-
             <Field label="Title">
               <Input
                 ref={titleRef}
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder={kind === "task" ? "Add a task…" : "Add a milestone…"}
+                placeholder="Add a task…"
               />
             </Field>
 
@@ -177,23 +160,21 @@ export function NewItemSheet({
               />
             </Field>
 
-            {kind === "task" && (
-              <Field label="Category">
-                <Input
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  placeholder="Category (optional)"
-                  list={listId}
-                  disabled={pending}
-                  className="text-sm"
-                />
-                <datalist id={listId}>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.name} />
-                  ))}
-                </datalist>
-              </Field>
-            )}
+            <Field label="Category">
+              <Input
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                placeholder="Category (optional)"
+                list={listId}
+                disabled={pending}
+                className="text-sm"
+              />
+              <datalist id={listId}>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.name} />
+                ))}
+              </datalist>
+            </Field>
           </div>
 
           <SheetFooter className="mt-0 flex-row items-center justify-end gap-2 border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">

@@ -120,7 +120,6 @@ export function TodayView({
           nestTargets={all.filter(
             (i) =>
               i.projectId === detail.item?.projectId &&
-              i.kind === "task" &&
               i.parentId === null &&
               i.completedAt === null &&
               i.id !== detail.item?.id,

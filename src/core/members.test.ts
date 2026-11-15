@@ -149,7 +149,7 @@ describe("project membership", () => {
       const item = addItem(
         db,
         owner,
-        { projectId, kind: "task", title: "t" },
+        { projectId, title: "t" },
         "web",
       );
       updateItem(db, owner, item.id, { assigneeId: alice }, "web");
@@ -161,7 +161,7 @@ describe("project membership", () => {
       const item = addItem(
         db,
         owner,
-        { projectId, kind: "task", title: "t" },
+        { projectId, title: "t" },
         "web",
       );
       updateItem(db, owner, item.id, { assigneeId: alice }, "web");

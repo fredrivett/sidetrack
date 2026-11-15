@@ -118,7 +118,6 @@ function Checklist({
       .then(() =>
         addItemAction({
           projectId: parent.projectId,
-          kind: "task",
           title,
           parentId: parent.id,
         }),
@@ -443,15 +442,6 @@ export function ItemDetailSheet({
       >
         <SheetHeader className="gap-2 border-b border-neutral-200 px-4 py-3 pr-14 dark:border-neutral-800">
           <div className="flex items-center gap-2">
-            <span
-              className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                item.kind === "milestone"
-                  ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
-                  : "bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400"
-              }`}
-            >
-              {item.kind}
-            </span>
             <button
               type="button"
               onClick={() => void copy()}
@@ -598,62 +588,60 @@ export function ItemDetailSheet({
               </div>
             </Field>
           ) : (
-            item.kind === "task" && (
-              <>
-                {/* The touch way to nest an existing task, where there's no row
-                    menu: an item with sub-items can't become one. */}
-                {checklist.length === 0 && nestTargets.length > 0 && (
-                  <Field label="Sub-item of">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        disabled={pending}
-                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-neutral-100 disabled:opacity-50 dark:hover:bg-neutral-800"
-                      >
-                        <IndentIncrease className="size-4 text-neutral-400" />
-                        <span className="text-neutral-500">
-                          None — make it a sub-item of…
-                        </span>
-                        <ChevronDown className="ml-auto size-4 opacity-50" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start" className="w-64">
-                        {nestTargets.map((t) => (
-                          <DropdownMenuItem
-                            key={t.id}
-                            onClick={() =>
-                              start(() => {
-                                void setItemParentAction(item.id, t.id);
-                              })
-                            }
-                          >
-                            <span className="truncate">{t.title}</span>
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </Field>
-                )}
-                <Field
-                  label={
-                    checklist.length
-                      ? `Checklist · ${checklist.filter((c) => c.completedAt !== null).length}/${checklist.length}`
-                      : "Checklist"
-                  }
-                >
-                  <Checklist
-                    parent={item}
-                    items={checklist}
-                    assignees={assignees}
-                    viewerId={viewerId}
-                    onOpenItem={(child) => {
-                      setChildPickerFor(null);
-                      onOpenItem(child);
-                    }}
-                    pickerFor={childPickerFor}
-                    onPickerFor={setChildPickerFor}
-                  />
+            <>
+              {/* The touch way to nest an existing task, where there's no row
+                  menu: an item with sub-items can't become one. */}
+              {checklist.length === 0 && nestTargets.length > 0 && (
+                <Field label="Sub-item of">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      disabled={pending}
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-neutral-100 disabled:opacity-50 dark:hover:bg-neutral-800"
+                    >
+                      <IndentIncrease className="size-4 text-neutral-400" />
+                      <span className="text-neutral-500">
+                        None — make it a sub-item of…
+                      </span>
+                      <ChevronDown className="ml-auto size-4 opacity-50" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-64">
+                      {nestTargets.map((t) => (
+                        <DropdownMenuItem
+                          key={t.id}
+                          onClick={() =>
+                            start(() => {
+                              void setItemParentAction(item.id, t.id);
+                            })
+                          }
+                        >
+                          <span className="truncate">{t.title}</span>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </Field>
-              </>
-            )
+              )}
+              <Field
+                label={
+                  checklist.length
+                    ? `Checklist · ${checklist.filter((c) => c.completedAt !== null).length}/${checklist.length}`
+                    : "Checklist"
+                }
+              >
+                <Checklist
+                  parent={item}
+                  items={checklist}
+                  assignees={assignees}
+                  viewerId={viewerId}
+                  onOpenItem={(child) => {
+                    setChildPickerFor(null);
+                    onOpenItem(child);
+                  }}
+                  pickerFor={childPickerFor}
+                  onPickerFor={setChildPickerFor}
+                />
+              </Field>
+            </>
           )}
 
           {prLinks.length > 0 && (

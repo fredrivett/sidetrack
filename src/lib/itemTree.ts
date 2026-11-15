@@ -27,8 +27,6 @@ export type TreeRow = {
   depth: number;
   /** The parent the row shows under; null at the top level. */
   parentId: string | null;
-  /** Only tasks have or are sub-items. */
-  isTask: boolean;
   /** An item with sub-items can't become one. */
   hasChildren: boolean;
   /** A parent whose sub-items are hidden, so they aren't rows. */
@@ -49,10 +47,9 @@ export type DropTarget = {
 /**
  * Where `activeId` lands when dropped over `overId` after moving `depthDelta`
  * indents sideways. The depth starts at the row's own and is clamped to what
- * the spot allows: one level deep, tasks without sub-items only, under a task.
+ * the spot allows: one level deep, and only rows without sub-items of their own.
  * A spot between two sub-items is inside that checklist, so there it must nest;
- * a row that can't (a milestone, or a task with sub-items) can't land there,
- * and that's null. `rows` are in the order shown, without the dragged row's own
+ * a row that can't (one with sub-items) can't land there, and that's null. `rows` are in the order shown, without the dragged row's own
  * sub-items, which move with it.
  */
 export function projectDrop(
@@ -71,11 +68,7 @@ export function projectDrop(
   const prev = moved[overIndex - 1];
   const next = moved[overIndex + 1];
 
-  const canNest =
-    active.isTask &&
-    !active.hasChildren &&
-    prev !== undefined &&
-    (prev.depth === 1 || prev.isTask);
+  const canNest = !active.hasChildren && prev !== undefined;
   const maxDepth = canNest ? 1 : 0;
   const minDepth = next?.depth === 1 ? 1 : 0;
   if (minDepth > maxDepth) return null;

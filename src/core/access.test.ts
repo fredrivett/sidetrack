@@ -50,7 +50,7 @@ describe("project access (owner + members)", () => {
 
   it("a member can read the project and its items; a stranger cannot", () => {
     const p = createProject(db, owner, { name: "Shared" }, "web");
-    addItem(db, owner, { projectId: p.id, kind: "task", title: "T1" }, "web");
+    addItem(db, owner, { projectId: p.id, title: "T1" }, "web");
     addMember(db, p.id, member);
 
     expect(getProject(db, member, p.id)?.id).toBe(p.id);
@@ -70,7 +70,7 @@ describe("project access (owner + members)", () => {
     const item = addItem(
       db,
       member,
-      { projectId: p.id, kind: "task", title: "By member" },
+      { projectId: p.id, title: "By member" },
       "web",
     );
     expect(getItem(db, owner, item.id)?.title).toBe("By member");

@@ -33,7 +33,6 @@ let n = 0;
 const item = (title: string, dueDate: string | null, more: Partial<Item> = {}): Item => ({
   id: `i${++n}`,
   projectId: "p1",
-  kind: "task",
   title,
   description: null,
   category: null,

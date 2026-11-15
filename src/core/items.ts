@@ -7,13 +7,7 @@ import { ensureCategory } from "./categories";
 import type { Db } from "./db";
 import { isDay } from "../lib/time";
 import { parseRef, resolvePosition } from "./fracidx";
-import {
-  type Item,
-  type ItemKind,
-  ITEM_KINDS,
-  items,
-  projects,
-} from "./schema";
+import { type Item, items, projects } from "./schema";
 
 // Items are accessed transitively through their project. Every read joins the
 // projects table so a user only ever sees items in projects they have access
@@ -89,12 +83,6 @@ function getAllSiblings(
     .map((row) => row.items);
 }
 
-function assertKind(kind: string): asserts kind is ItemKind {
-  if (!(ITEM_KINDS as readonly string[]).includes(kind)) {
-    throw new Error(`invalid kind: ${kind}`);
-  }
-}
-
 // Title is NOT NULL in the schema, but blank is just as broken as null —
 // an item with no title is unusable. Reject it at the boundary so neither the
 // web UI nor an MCP tool can persist one, and return the trimmed value.
@@ -133,19 +121,15 @@ function childrenOf(db: Db, parentId: string): Item[] {
 }
 
 /**
- * Check that `parent` can take `kind` as a sub-item in `projectId`. Checklists
- * are one level deep and made of tasks: a milestone is a divider, not
- * something with steps.
+ * Check that `parent` can take a sub-item in `projectId`. Checklists are one
+ * level deep.
  */
-function assertCanParent(parent: Item, projectId: string, kind: ItemKind) {
+function assertCanParent(parent: Item, projectId: string) {
   if (parent.projectId !== projectId) {
     throw new Error("a sub-item must be in the same list as its parent");
   }
   if (parent.parentId !== null) {
     throw new Error(`"${parent.title}" is already a sub-item; sub-items can't have their own`);
-  }
-  if (parent.kind !== "task" || kind !== "task") {
-    throw new Error("only tasks can have or be sub-items");
   }
 }
 
@@ -199,7 +183,6 @@ export function addItem(
   userId: string,
   input: {
     projectId: string;
-    kind: ItemKind;
     title: string;
     description?: string | null;
     category?: string | null;
@@ -209,7 +192,6 @@ export function addItem(
   },
   source: AuditOrigin,
 ): Item {
-  assertKind(input.kind);
   const dueDate = assertDueDate(input.dueDate);
   if (!projectAccessibleForUser(db, userId, input.projectId)) {
     throw new Error(`list not found: ${input.projectId}`);
@@ -218,7 +200,7 @@ export function addItem(
   if (input.parentId) {
     parent = getItem(db, userId, input.parentId) ?? null;
     if (!parent) throw new Error(`item not found: ${input.parentId}`);
-    assertCanParent(parent, input.projectId, input.kind);
+    assertCanParent(parent, input.projectId);
   }
   const ref = parseRef(input.positionRef);
   const siblings = getAllSiblings(
@@ -251,7 +233,6 @@ export function addItem(
       .values({
         id,
         projectId: input.projectId,
-        kind: input.kind,
         title,
         description,
         category,
@@ -272,7 +253,7 @@ export function addItem(
       detail:
         (parent
           ? `added "${title}" to "${parent.title}"`
-          : `added ${input.kind} "${title}"`) + (dueDate ? `, due ${dueDate}` : ""),
+          : `added task "${title}"`) + (dueDate ? `, due ${dueDate}` : ""),
     });
     if (parent) reopenParentIfDone(tx as unknown as Db, userId, parent, source);
   });
@@ -541,7 +522,7 @@ export function setItemParent(
     if (parentId === id) throw new Error("an item can't be its own sub-item");
     parent = getItem(db, userId, parentId) ?? null;
     if (!parent) throw new Error(`item not found: ${parentId}`);
-    assertCanParent(parent, existing.projectId, existing.kind);
+    assertCanParent(parent, existing.projectId);
     if (childrenOf(db, id).length > 0) {
       throw new Error(`"${existing.title}" has sub-items, so it can't become one`);
     }

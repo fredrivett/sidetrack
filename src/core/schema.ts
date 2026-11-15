@@ -15,9 +15,6 @@ import {
 export const PROJECT_STATUSES = ["active", "paused", "archived"] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 
-export const ITEM_KINDS = ["task", "milestone"] as const;
-export type ItemKind = (typeof ITEM_KINDS)[number];
-
 export const AUDIT_SOURCES = ["web", "mcp", "github"] as const;
 export type AuditSource = (typeof AUDIT_SOURCES)[number];
 
@@ -138,7 +135,6 @@ export const items = sqliteTable(
     projectId: text("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
-    kind: text("kind").$type<ItemKind>().notNull(),
     title: text("title").notNull(),
     description: text("description"),
     category: text("category"),

@@ -12,7 +12,7 @@ function seed() {
   const item = addItem(
     db,
     userId,
-    { projectId: project.id, kind: "task", title: "first" },
+    { projectId: project.id, title: "first" },
     "web",
   );
   return { db, userId, project, item };
@@ -46,7 +46,7 @@ describe("resolveItemRef", () => {
     const item = addItem(
       db,
       userId,
-      { projectId: second.id, kind: "task", title: "x" },
+      { projectId: second.id, title: "x" },
       "web",
     );
     const r = resolveItemRef(db, userId, "ENG2-1");
@@ -101,7 +101,7 @@ function seedShared() {
   const item = addItem(
     db,
     fred,
-    { projectId: project.id, kind: "task", title: "shared task" },
+    { projectId: project.id, title: "shared task" },
     "web",
   );
   inviteMember(db, fred, project.id, "bob", "web");
@@ -131,7 +131,7 @@ describe("resolveItemRef with shared projects", () => {
     const mine = addItem(
       db,
       bob,
-      { projectId: own.id, kind: "task", title: "mine" },
+      { projectId: own.id, title: "mine" },
       "web",
     );
 

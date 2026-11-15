@@ -48,7 +48,6 @@ import {
 } from "@/core/projects";
 import {
   AUDIT_SOURCES,
-  ITEM_KINDS,
   type Item,
   PROJECT_STATUSES,
 } from "@/core/schema";
@@ -65,7 +64,6 @@ export interface McpContext {
 }
 
 const Status = z.enum(PROJECT_STATUSES);
-const Kind = z.enum(ITEM_KINDS);
 const PosRef = z
   .string()
   .regex(/^(top|end|after:.+|before:.+)$/, "expected top|end|after:<item>|before:<item>");
@@ -295,9 +293,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "- Keep lists and items in the order returned; do not re-sort unless the user asked for a different order.\n" +
         "- Do not show completed items in the tree.\n" +
         "- A task is a box-drawing branch, e.g. `├── Write the docs`.\n" +
-        "- An item's sub-items (its checklist, in `children`) nest one level beneath it, e.g. `│   ├── Kitchen`.\n" +
-        "- A milestone is a divider, not a task row: a single dashed line with its title centred in it, " +
-        "e.g. `─ ─ ─  v1.0 launch  ─ ─ ─`. It marks a point in the list rather than something to check off.",
+        "- An item's sub-items (its checklist, in `children`) nest one level beneath it, e.g. `│   ├── Kitchen`.",
       inputSchema: {
         include_completed: z.boolean().optional(),
         include_archived: z.boolean().optional(),
@@ -371,7 +367,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       title: "List items with no date",
       description:
         "The user's No date view: tasks with no due date across their active lists (not paused or archived), " +
-        "for planning when to do them. Milestones are left out, and so are sub-items of a dated parent, which are planned with their parent. " +
+        "for planning when to do them. Sub-items of a dated parent are left out, since they are planned with their parent. " +
         "Items finished today are included, which the user sees crossed out. " +
         "Returns { today, timeZone, lists }, plus a note when the timezone is a UTC fallback; today works as in list_today. " +
         "lists is in board order, each { list, items } with items in list order and an undated parent's undated sub-items nested in children; " +
@@ -514,7 +510,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Get item",
       description:
-        "Fetch a single item by reference — its title, description, category, kind, and completion state, " +
+        "Fetch a single item by reference — its title, description, category, and completion state, " +
         "plus its sub-items (its checklist) as `children`, finished ones included. A sub-item has a parentId. " +
         "Use this to answer a question about one item without pulling its whole list. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id; the result carries its display `ref`.",
@@ -536,10 +532,10 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Add item",
       description:
-        "Add a task or milestone to a list. description is optional free-text. " +
+        "Add a task to a list. description is optional free-text. " +
         "category is free-text and is auto-created if new. " +
         "parent (a short ref or id) adds the task as a sub-item of that task, one step in its checklist: " +
-        "e.g. \"Tidy up flat\" with sub-items Lounge, Kitchen and Bedroom. Sub-items are one level deep and tasks only; " +
+        "e.g. \"Tidy up flat\" with sub-items Lounge, Kitchen and Bedroom. Sub-items are one level deep; " +
         "each is a full item with its own ref and assignee. Adding one to a finished parent reopens the parent. " +
         "due_date is the calendar day it's due, YYYY-MM-DD (no time); call list_today first if you need today's date in the user's timezone. " +
         "position defaults to end (the bottom of the list, or of the parent's sub-items); top|end|after:<item>|before:<item> are also valid, " +
@@ -549,12 +545,9 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "the new item landed, unless the user asked you not to:\n" +
         "- Keep items in the order returned; do not re-sort unless the user asked for a different order.\n" +
         "- A task is a box-drawing branch, e.g. `├── Write the docs`.\n" +
-        "- Sub-items (in `children`) nest one level beneath their parent, e.g. `│   ├── Kitchen`.\n" +
-        "- A milestone is a divider, not a task row: a single dashed line with its title centred in it, " +
-        "e.g. `─ ─ ─  v1.0 launch  ─ ─ ─`.",
+        "- Sub-items (in `children`) nest one level beneath their parent, e.g. `│   ├── Kitchen`.",
       inputSchema: {
         list_id: z.string(),
-        kind: Kind,
         title: z.string().min(1),
         description: z.string().optional(),
         category: z.string().optional(),
@@ -563,7 +556,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         position: PosRef.optional(),
       },
     },
-    async ({ list_id, kind, title, description, category, parent, due_date, position }) => {
+    async ({ list_id, title, description, category, parent, due_date, position }) => {
       const { db } = getDb();
       const project = getProject(db, userId, list_id);
       if (!project) return notFound("list", list_id);
@@ -585,7 +578,6 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         userId,
         {
           projectId: list_id,
-          kind,
           title,
           description,
           category,

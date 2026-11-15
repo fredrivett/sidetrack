@@ -13,7 +13,7 @@ authenticated the request, so the audit log records which agent acted.
 - **Naming:** tool names and input fields are `snake_case` (MCP convention),
   even though the core API uses `camelCase`. Translate at the boundary.
 - **Validation:** input shapes are Zod schemas. Reuse the existing
-  `Status` / `Kind` / `PosRef` / `ProjectPosRef` schemas instead of redefining
+  `Status` / `PosRef` / `ListPosRef` schemas instead of redefining
   enums or regexes.
 - **Responses:** use the `json(value)` helper for success and `notFound(kind, id)`
   for missing entities. Check a project exists with `getProject` before mutating

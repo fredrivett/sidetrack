@@ -33,7 +33,7 @@ asserts the audit row was written is incomplete.
 
 3. **Tool registration.** Add to `registerTools()` in `src/mcp/tools.ts`:
    - `snake_case` tool name and input field names (MCP convention).
-   - Reuse existing Zod schemas (`Status`, `Kind`, `PosRef`, `ProjectPosRef`)
+   - Reuse existing Zod schemas (`Status`, `PosRef`, `ListPosRef`)
      where applicable.
    - Use `json(value)` for success, `notFound(kind, id)` for missing entities.
    - Pass `SOURCE` to the core fn. It's an `AuditOrigin` built at the top of

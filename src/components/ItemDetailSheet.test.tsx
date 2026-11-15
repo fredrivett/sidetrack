@@ -48,7 +48,6 @@ afterEach(cleanup);
 const item: Item = {
   id: "i1",
   projectId: "p1",
-  kind: "task",
   title: "Write docs",
   description: null,
   category: null,
