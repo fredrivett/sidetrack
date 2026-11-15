@@ -96,6 +96,20 @@ export function listItemsForPr(
 }
 
 /**
+ * The GitHub repositories (`owner/repo`, lowercase) of the PRs linked to items
+ * the user can see, sorted. Stored links are canonical, so each repo appears
+ * once however its PRs' URLs were first written.
+ */
+export function listLinkedRepos(db: Db, userId: string): string[] {
+  const repos = new Set(
+    listAllPrLinks(db, userId).map((l) =>
+      new URL(l.prUrl).pathname.split("/").slice(1, 3).join("/"),
+    ),
+  );
+  return [...repos].sort();
+}
+
+/**
  * Idempotent: if the (item, pr_url) pair already exists, returns the existing
  * row and does NOT write a duplicate audit entry.
  */
