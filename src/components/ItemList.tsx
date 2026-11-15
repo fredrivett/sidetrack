@@ -439,7 +439,14 @@ export function ItemList({
         setOverId(id);
         live.current.offsetX = 0;
         live.current.activeDepth = byId.get(id)?.parentId ? 1 : 0;
-        const home = project(id, id, 0);
+        // Where it sits now, among the rows as the drag shows them: without
+        // a parent's sub-items, which leave the list on this re-render.
+        const home = projectDrop(
+          treeRows.filter((r) => r.parentId !== id),
+          id,
+          id,
+          0,
+        );
         live.current.spot = home && `${home.parentId}|${home.position}`;
         // A tick under the finger when a long-press picks the row up
         // (where the browser supports it; Safari doesn't).
