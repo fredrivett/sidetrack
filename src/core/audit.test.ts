@@ -219,6 +219,8 @@ const TABLE_AUDIT: Record<string, "audited" | `exempt: ${string}`> = {
   projects: "audited",
   project_positions: "audited",
   project_members: "audited",
+  spaces: "audited",
+  space_members: "audited",
   items: "audited",
   item_pr_links: "audited",
   categories: "audited",

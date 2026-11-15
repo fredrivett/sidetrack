@@ -197,6 +197,13 @@
       "when": 1794773213356,
       "tag": "0027_audit_log_entity_index",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "6",
+      "when": 1794773659498,
+      "tag": "0028_spaces",
+      "breakpoints": true
     }
   ]
 }

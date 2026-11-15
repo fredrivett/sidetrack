@@ -41,11 +41,16 @@ export function nextProjectPosition(db: Db, userId: string): string {
   return resolvePosition(viewerPositions(db, userId), "last");
 }
 
+/**
+ * The viewer's board, in their own order. A list they can see but have no
+ * slot for yet (one shared with them through a Space) sorts at the end, by
+ * id, until they first move it (see fillMissingSlots).
+ */
 export function listProjects(db: Db, userId: string): Project[] {
   return db
     .select({ project: projects })
     .from(projects)
-    .innerJoin(
+    .leftJoin(
       projectPositions,
       and(
         eq(projectPositions.projectId, projects.id),
@@ -53,9 +58,41 @@ export function listProjects(db: Db, userId: string): Project[] {
       ),
     )
     .where(hasProjectAccess(userId))
-    .orderBy(asc(projectPositions.position), asc(projectPositions.projectId))
+    .orderBy(
+      sql`${projectPositions.position} is null`,
+      asc(projectPositions.position),
+      asc(projects.id),
+    )
     .all()
     .map((r) => r.project);
+}
+
+/**
+ * Give every list `userId` can see but has no slot for a slot at the end of
+ * their board, in the order listProjects shows them, so a reorder can anchor
+ * on any list on the board. Space members get no slot when a list joins a
+ * Space or they join one; this fills them in on their first drag instead.
+ */
+// audit-exempt: runs inside reorderProject's audited transaction.
+function fillMissingSlots(db: Db, userId: string): void {
+  const missing = db
+    .select({ id: projects.id })
+    .from(projects)
+    .leftJoin(
+      projectPositions,
+      and(
+        eq(projectPositions.projectId, projects.id),
+        eq(projectPositions.userId, userId),
+      ),
+    )
+    .where(and(hasProjectAccess(userId), isNull(projectPositions.projectId)))
+    .orderBy(asc(projects.id))
+    .all();
+  for (const { id } of missing) {
+    db.insert(projectPositions)
+      .values({ userId, projectId: id, position: nextProjectPosition(db, userId) })
+      .run();
+  }
 }
 
 export function getProject(
@@ -457,9 +494,12 @@ export function reorderProject(
   const existing = getProject(db, userId, id);
   if (!existing) throw new Error(`list not found: ${id}`);
   const ref = parseProjectRef(refRaw);
-  const others = viewerPositions(db, userId).filter((p) => p.id !== id);
-  const position = resolvePosition(others, ref);
   db.transaction((tx) => {
+    fillMissingSlots(tx as unknown as Db, userId);
+    const others = viewerPositions(tx as unknown as Db, userId).filter(
+      (p) => p.id !== id,
+    );
+    const position = resolvePosition(others, ref);
     // Reordering moves the project only on the acting user's board — update
     // their own position row, never the owner's or another member's.
     tx.update(projectPositions)
