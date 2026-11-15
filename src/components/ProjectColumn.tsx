@@ -5,6 +5,7 @@ import { useState } from "react";
 import { updateProjectAction } from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
+import type { SpaceView } from "@/core/spaces";
 import { nestItems } from "@/lib/itemTree";
 import { startOfWeek } from "@/lib/time";
 import { ColumnCard } from "./BoardLayout";
@@ -36,6 +37,7 @@ export function ProjectColumn({
   onShowActivity,
   onAddItem,
   onShare,
+  spaces,
 }: {
   project: ProjectView;
   viewerId: string;
@@ -49,6 +51,7 @@ export function ProjectColumn({
   onShowActivity: (projectId: string) => void;
   onAddItem: (projectId: string) => void;
   onShare: (projectId: string, projectName: string) => void;
+  spaces: SpaceView[];
 }) {
   // Items arrive in list order, flat. Group sub-items under their parent; the
   // split below is by the top-level item, and its checklist goes with it.
@@ -181,6 +184,8 @@ export function ProjectColumn({
             prefix={project.prefix}
             status={project.status}
             isOwner={project.isOwner}
+            spaceId={project.spaceId}
+            spaces={spaces}
             onShowActivity={onShowActivity}
             onShowDetails={() => setDetailsOpen(true)}
             onAddItem={onAddItem}

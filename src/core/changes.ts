@@ -1,8 +1,8 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import { getPostHog } from "../lib/posthog";
 import { hasProjectAccess } from "./access";
 import type { Db } from "./db";
-import { projectMembers, projects } from "./schema";
+import { projectMembers, projects, spaceMembers } from "./schema";
 
 /**
  * Live updates. Every committed change is announced here, and each open page
@@ -54,8 +54,8 @@ export function announceChange(change: Change): void {
 /**
  * Call onChange after each batch of changes that affects what userId sees:
  * their own changes, changes to a list they can see or are invited to, and
- * account changes by the people they share lists with, whose names and
- * avatars show on those lists. A list they have just lost, deleted or
+ * account and Space changes by the people they share lists or a Space with,
+ * whose names and avatars show on those lists (Space changes have no list). A list they have just lost, deleted or
  * removed from, counts too, so it leaves their board. Returns the
  * unsubscribe function.
  */
@@ -79,10 +79,14 @@ export function watchChanges(db: Db, userId: string, onChange: () => void): () =
   };
 }
 
-/** The lists whose changes userId sees, and the people they share them with. */
+/** The lists whose changes userId sees, and the people they share them or a
+ * Space with: everyone in, or invited to, their Spaces and the Spaces their
+ * lists are in (members see invitees listed, so an invitee declining changes
+ * what they see), and the admins of a Space they're invited to, who change
+ * or revoke the invite. */
 function audience(db: Db, userId: string) {
   const shown = db
-    .select({ id: projects.id, owner: projects.userId })
+    .select({ id: projects.id, owner: projects.userId, spaceId: projects.spaceId })
     .from(projects)
     .where(hasProjectAccess(userId))
     .all();
@@ -101,8 +105,38 @@ function audience(db: Db, userId: string) {
     .from(projectMembers)
     .where(and(eq(projectMembers.userId, userId), eq(projectMembers.status, "pending")))
     .all();
+  const mine = db
+    .select({ spaceId: spaceMembers.spaceId, status: spaceMembers.status })
+    .from(spaceMembers)
+    .where(eq(spaceMembers.userId, userId))
+    .all();
+  const joined = [
+    ...mine.filter((m) => m.status === "accepted").map((m) => m.spaceId),
+    ...shown.flatMap((p) => (p.spaceId ? [p.spaceId] : [])),
+  ];
+  const invitedTo = mine.filter((m) => m.status === "pending").map((m) => m.spaceId);
+  const spacePeople = joined.length || invitedTo.length
+    ? db
+        .select({ userId: spaceMembers.userId })
+        .from(spaceMembers)
+        .where(
+          or(
+            inArray(spaceMembers.spaceId, joined),
+            and(
+              inArray(spaceMembers.spaceId, invitedTo),
+              eq(spaceMembers.status, "accepted"),
+              eq(spaceMembers.role, "admin"),
+            ),
+          ),
+        )
+        .all()
+    : [];
   return {
     lists: new Set([...ids, ...invites.map((i) => i.projectId)]),
-    people: new Set([...shown.map((p) => p.owner), ...members.map((m) => m.userId)]),
+    people: new Set([
+      ...shown.map((p) => p.owner),
+      ...members.map((m) => m.userId),
+      ...spacePeople.map((m) => m.userId),
+    ]),
   };
 }

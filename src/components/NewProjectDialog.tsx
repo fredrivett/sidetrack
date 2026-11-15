@@ -1,10 +1,18 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, useTransition } from "react";
-import { Plus } from "lucide-react";
+import { Boxes, ChevronDown, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { createProjectAction, suggestNewListIconsAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   ResponsiveDialog,
@@ -14,6 +22,7 @@ import {
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
 import { Textarea } from "@/components/ui/textarea";
+import type { SpaceView } from "@/core/spaces";
 import { dedupePrefix, derivePrefix } from "@/lib/itemRef";
 import { normalizeHomepageUrl } from "@/lib/url";
 import { IconPicker } from "./ProjectIconPicker";
@@ -52,15 +61,20 @@ export function NewProjectDialog({
   open,
   onOpenChange,
   takenPrefixes,
+  spaces,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** The viewer's own lists' prefixes, to preview the new list's item IDs. */
   takenPrefixes: string[];
+  /** Spaces the viewer has joined, to create the list in one. */
+  spaces: SpaceView[];
 }) {
   const [name, setName] = useState("");
   const [summary, setSummary] = useState("");
   const [homepage, setHomepage] = useState("");
+  // "" for no Space.
+  const [spaceId, setSpaceId] = useState("");
   // The icon the user picked in the picker; undefined until they pick one,
   // null when they removed it.
   const [picked, setPicked] = useState<string | null | undefined>(undefined);
@@ -82,6 +96,7 @@ export function NewProjectDialog({
       setName("");
       setSummary("");
       setHomepage("");
+      setSpaceId("");
       setPicked(undefined);
       setSuggested({ for: "", emoji: [] });
     }
@@ -124,7 +139,13 @@ export function NewProjectDialog({
     }
     start(async () => {
       const created = await runAction(
-        createProjectAction({ name: trimmedName, summary, homepageUrl, icon }),
+        createProjectAction({
+          name: trimmedName,
+          summary,
+          homepageUrl,
+          icon,
+          spaceId: spaceId || null,
+        }),
         "create the list",
       );
       if (created) onOpenChange(false);
@@ -173,6 +194,49 @@ export function NewProjectDialog({
                 </p>
               )}
             </div>
+
+            {spaces.length > 0 && (
+              <div className="space-y-1">
+                <Label htmlFor={`${id}-space`}>Space</Label>
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <Button
+                        id={`${id}-space`}
+                        type="button"
+                        variant="outline"
+                        className="w-full justify-start font-normal"
+                        disabled={pending}
+                      />
+                    }
+                  >
+                    <Boxes data-icon="inline-start" />
+                    {spaces.find((s) => s.id === spaceId)?.name ?? "None, just me"}
+                    <ChevronDown className="ml-auto" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-(--anchor-width)">
+                    <DropdownMenuRadioGroup
+                      value={spaceId}
+                      onValueChange={(next: string) => setSpaceId(next)}
+                    >
+                      <DropdownMenuRadioItem value="" closeOnClick>None, just me</DropdownMenuRadioItem>
+                      <DropdownMenuSeparator />
+                      {spaces.map((s) => (
+                        <DropdownMenuRadioItem key={s.id} value={s.id} closeOnClick>
+                          {s.icon && !s.icon.startsWith("http") && <span>{s.icon}</span>}
+                          {s.name}
+                        </DropdownMenuRadioItem>
+                      ))}
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                {spaceId && (
+                  <p className="text-xs text-muted-foreground">
+                    Everyone in {spaces.find((s) => s.id === spaceId)?.name} can see and edit it.
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="space-y-1">
               <Label htmlFor={`${id}-summary`}>Summary</Label>

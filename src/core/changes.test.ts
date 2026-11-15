@@ -5,6 +5,13 @@ import { acceptInvite, inviteMember } from "./members";
 import { linkItemToPr, setPrState } from "./prLinks";
 import { createProject, deleteProject } from "./projects";
 import { createTestDb, createTestUser } from "./test-helpers";
+import {
+  acceptSpaceInvite,
+  createSpace,
+  declineSpaceInvite,
+  inviteSpaceMember,
+  setProjectSpace,
+} from "./spaces";
 import { setUsername } from "./users";
 
 type Db = ReturnType<typeof createTestDb>["db"];
@@ -81,6 +88,50 @@ describe("watchChanges", () => {
     setUsername(db, invitee, "renamed_pending", "web");
     await settle();
     expect(heard).toEqual({ [owner]: 2, [stranger]: 0 });
+  });
+
+  it("tells the people in a Space, and its invitees, about its changes", async () => {
+    // Nobody here shares a list with the stranger.
+    const spaceId = createSpace(db, stranger, { name: "Flat" }, "web").id;
+    const flatmate = createTestUser(db, { username: "flatmate" });
+    inviteSpaceMember(db, stranger, spaceId, "flatmate", "web");
+    acceptSpaceInvite(db, flatmate, spaceId, "web");
+    await settle();
+    watch(flatmate, member, owner);
+    inviteSpaceMember(db, stranger, spaceId, "member", "web");
+    await settle();
+    expect(heard).toEqual({ [flatmate]: 1, [member]: 1, [owner]: 0 });
+
+    // An invitee hears the admins, who can change the invite, but not
+    // another member's rename: they can't see who's in it until they join.
+    setUsername(db, flatmate, "renamed_flatmate", "web");
+    await settle();
+    expect(heard).toEqual({ [flatmate]: 2, [member]: 1, [owner]: 0 });
+
+    // The Space's members see invites listed, so they hear one declined,
+    // even by someone they share nothing else with.
+    const passerby = createTestUser(db, { username: "passerby" });
+    inviteSpaceMember(db, stranger, spaceId, "passerby", "web");
+    await settle();
+    const before = heard[flatmate];
+    declineSpaceInvite(db, passerby, spaceId, "web");
+    await settle();
+    expect(heard[flatmate]).toBe(before + 1);
+    expect(heard[owner]).toBe(0);
+  });
+
+  it("tells a list's direct collaborators who joins the Space it's in", async () => {
+    // The owner's list is in a Space; the member reaches it directly.
+    const spaceId = createSpace(db, owner, { name: "Flat" }, "web").id;
+    setProjectSpace(db, owner, projectId, spaceId, "web");
+    await settle();
+    const flatmate = createTestUser(db, { username: "flatmate" });
+    inviteSpaceMember(db, owner, spaceId, "flatmate", "web");
+    await settle();
+    watch(member, stranger);
+    acceptSpaceInvite(db, flatmate, spaceId, "web");
+    await settle();
+    expect(heard).toEqual({ [member]: 1, [stranger]: 0 });
   });
 
   it("tells a list about a PR's new state from GitHub, but not a repeat of it", async () => {

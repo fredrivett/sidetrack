@@ -1,4 +1,3 @@
-import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { listAllAgentSessions, startWork } from "./agentSessions";
 import { listAudit } from "./audit";
@@ -10,7 +9,6 @@ import {
   listSuggestedCollaborators,
 } from "./members";
 import { createProject, getProject, listProjects, reorderProject } from "./projects";
-import { projects } from "./schema";
 import {
   acceptSpaceInvite,
   createSpace,
@@ -21,6 +19,7 @@ import {
   listSpaceMembers,
   listSpaces,
   removeSpaceMember,
+  setProjectSpace,
   setSpaceMemberRole,
   updateSpace,
 } from "./spaces";
@@ -40,9 +39,8 @@ describe("spaces", () => {
   let bob: string;
   let spaceId: string;
 
-  // Moving lists into a Space isn't core API yet (SDT-26), so tests set it.
-  const putInSpace = (listId: string, id: string | null = spaceId) =>
-    db.update(projects).set({ spaceId: id }).where(eq(projects.id, listId)).run();
+  const putInSpace = (owner: string, listId: string) =>
+    setProjectSpace(db, owner, listId, spaceId, "web");
   const join = (userId: string, handle: string) => {
     inviteSpaceMember(db, fred, spaceId, handle, "web");
     acceptSpaceInvite(db, userId, spaceId, "web");
@@ -75,7 +73,7 @@ describe("spaces", () => {
   it("shares every list in it once an invite is accepted, and only then", () => {
     const groceries = createProject(db, fred, { name: "Groceries" }, "web");
     const outside = createProject(db, fred, { name: "Outside" }, "web");
-    putInSpace(groceries.id);
+    putInSpace(fred, groceries.id);
 
     inviteSpaceMember(db, fred, spaceId, "alice", "web");
     expect(listPendingSpaceInvites(db, alice).map((i) => i.spaceName)).toEqual(["Home"]);
@@ -148,7 +146,9 @@ describe("spaces", () => {
     const groceries = createProject(db, fred, { name: "Groceries" }, "web");
     const hers = createProject(db, alice, { name: "Hers" }, "web");
     const direct = createProject(db, fred, { name: "Direct" }, "web");
-    for (const id of [groceries.id, hers.id, direct.id]) putInSpace(id);
+    putInSpace(fred, groceries.id);
+    putInSpace(alice, hers.id);
+    putInSpace(fred, direct.id);
     // Alice is also a direct member of one list.
     inviteMember(db, fred, direct.id, "alice", "web");
     acceptInvite(db, alice, direct.id, "web");
@@ -183,8 +183,8 @@ describe("spaces", () => {
     join(alice, "alice");
     const groceries = createProject(db, fred, { name: "Groceries" }, "web");
     const hers = createProject(db, alice, { name: "Hers" }, "web");
-    putInSpace(groceries.id);
-    putInSpace(hers.id);
+    putInSpace(fred, groceries.id);
+    putInSpace(alice, hers.id);
     const milk = addItem(db, fred, { projectId: groceries.id, title: "Milk" }, "web");
     updateItem(db, fred, milk.id, { assigneeIds: [alice] }, "web");
 
@@ -199,8 +199,8 @@ describe("spaces", () => {
   it("puts space lists at the end of a board until they're moved", () => {
     const a = createProject(db, fred, { name: "A" }, "web");
     const b = createProject(db, fred, { name: "B" }, "web");
-    putInSpace(a.id);
-    putInSpace(b.id);
+    putInSpace(fred, a.id);
+    putInSpace(fred, b.id);
     join(alice, "alice");
     createProject(db, alice, { name: "Mine" }, "web");
     const [first, second] = [a, b].sort((x, y) => (x.id < y.id ? -1 : 1));
@@ -219,10 +219,82 @@ describe("spaces", () => {
     join(alice, "alice");
     const inSpace = createProject(db, fred, { name: "In" }, "web");
     const outside = createProject(db, fred, { name: "Out" }, "web");
-    putInSpace(inSpace.id);
+    putInSpace(fred, inSpace.id);
     const handles = (listId: string) =>
       listSuggestedCollaborators(db, fred, listId).map((c) => c.username);
     expect(handles(outside.id)).toEqual(["alice"]);
     expect(handles(inSpace.id)).toEqual([]);
+  });
+
+  describe("lists in a space", () => {
+    it("lets a list's owner move it in, and a member only their own lists", () => {
+      join(alice, "alice");
+      const fredsList = createProject(db, fred, { name: "Fred's" }, "web");
+      const hers = createProject(db, alice, { name: "Hers" }, "web");
+      expect(() => setProjectSpace(db, alice, fredsList.id, spaceId, "web")).toThrow(
+        /not found/,
+      );
+      setProjectSpace(db, alice, hers.id, spaceId, "web");
+      expect(getProject(db, fred, hers.id)?.spaceId).toBe(spaceId);
+      // Not into a Space you haven't joined.
+      const other = createSpace(db, bob, { name: "Bob's" }, "web").id;
+      expect(() => setProjectSpace(db, alice, hers.id, other, "web")).toThrow(
+        /space not found/,
+      );
+      expect(
+        listAudit(db, fred, { projectId: hers.id }).map((e) => e.detail),
+      ).toContain('moved "Hers" into space "Home"');
+    });
+
+    it("lets the owner or a space admin take a list out, but not another member", () => {
+      join(alice, "alice");
+      join(bob, "bob");
+      const hers = createProject(db, alice, { name: "Hers" }, "web");
+      putInSpace(alice, hers.id);
+      const job = addItem(db, alice, { projectId: hers.id, title: "Job" }, "web");
+      updateItem(db, alice, job.id, { assigneeIds: [bob] }, "web");
+
+      // Bob is a member, not an admin, and doesn't own it.
+      expect(() => setProjectSpace(db, bob, hers.id, null, "web")).toThrow(
+        /owner or a space admin/,
+      );
+      // Fred is an admin: he can take it out, but not move it elsewhere.
+      const elsewhere = createSpace(db, fred, { name: "Work" }, "web").id;
+      expect(() => setProjectSpace(db, fred, hers.id, elsewhere, "web")).toThrow(
+        /only the list owner/,
+      );
+      setProjectSpace(db, fred, hers.id, null, "web");
+
+      // It's Alice's own list again; Fred and Bob lose it, and Bob its item.
+      expect(names(listProjects(db, alice))).toEqual(["Hers"]);
+      expect(getProject(db, fred, hers.id)).toBeUndefined();
+      expect(getProject(db, bob, hers.id)).toBeUndefined();
+      expect(getItem(db, alice, job.id)?.assigneeIds).toEqual([]);
+      expect(listAudit(db, alice, { projectId: hers.id }).map((e) => e.detail)).toContain(
+        'took "Hers" out of space "Home", unassigned from 1 item',
+      );
+    });
+
+    it("moves a list between spaces, so only the new space's people reach it", () => {
+      join(alice, "alice");
+      const work = createSpace(db, fred, { name: "Work" }, "web").id;
+      inviteSpaceMember(db, fred, work, "bob", "web");
+      acceptSpaceInvite(db, bob, work, "web");
+      const list = createProject(db, fred, { name: "Shared" }, "web");
+      putInSpace(fred, list.id);
+      setProjectSpace(db, fred, list.id, work, "web");
+      expect(getProject(db, alice, list.id)).toBeUndefined();
+      expect(getProject(db, bob, list.id)?.name).toBe("Shared");
+    });
+
+    it("creates a list straight into a space its creator has joined", () => {
+      join(alice, "alice");
+      const list = createProject(db, alice, { name: "Groceries", spaceId }, "web");
+      expect(getProject(db, fred, list.id)?.spaceId).toBe(spaceId);
+      expect(() =>
+        createProject(db, bob, { name: "Nope", spaceId }, "web"),
+      ).toThrow(/space not found/);
+      expect(listProjects(db, bob)).toEqual([]);
+    });
   });
 });

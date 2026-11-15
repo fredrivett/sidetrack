@@ -9,6 +9,7 @@ import { listItems, reopenDueRepeats } from "@/core/items";
 import { listAssignees, listPendingInvites } from "@/core/members";
 import { listAllPrLinks } from "@/core/prLinks";
 import { listProjects } from "@/core/projects";
+import { listSpaces } from "@/core/spaces";
 import { getProfile, getTimeZone } from "@/core/users";
 import { weekStartBound } from "@/lib/time";
 import type { ItemPrLink } from "@/core/schema";
@@ -77,6 +78,7 @@ export default async function Home({
         assigneesByProject={assigneesByProject}
         prLinksByItem={prLinksByItem}
         pendingInvites={pendingInvites}
+        spaces={listSpaces(db, userId)}
       />
       <LiveUpdates />
     </AgentSessionsProvider>
