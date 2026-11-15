@@ -25,10 +25,8 @@ import {
 } from "react";
 import {
   addItemAction,
-  completeItemAction,
   deleteItemAction,
   setItemParentAction,
-  uncompleteItemAction,
   updateItemAction,
 } from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
@@ -74,6 +72,7 @@ import { EditableText } from "./EditableText";
 import { InlineCode, Markdown } from "./Markdown";
 import { useAssignShortcuts } from "./useAssignShortcuts";
 import { useOptimisticAssignees } from "./use-optimistic-assignees";
+import { useSetCompleted } from "./use-optimistic-completion";
 import { useCopyItemRef } from "./useCopyItemRef";
 import { AgentAvatar, AvatarStack, assigneeName, assigneeNames } from "./UserAvatar";
 import { useItemAgentSessions } from "./agent-sessions";
@@ -217,9 +216,7 @@ function Checklist({
   onPickerFor: (id: string | null) => void;
 }) {
   const [draft, setDraft] = useState("");
-  // Checkboxes wait for the last toggle to land, so a quick second click
-  // doesn't repeat it from the stale state.
-  const [pending, start] = useTransition();
+  const setCompleted = useSetCompleted();
   // Adds run one after another, so lines typed quickly land in typed order.
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   // Each new row lands above the input and pushes it down, out of view once
@@ -260,14 +257,7 @@ function Checklist({
           <div key={child.id} className="flex items-center gap-2 px-1 py-0.5">
             <Checkbox
               checked={done}
-              disabled={pending}
-              onCheckedChange={() =>
-                start(() => {
-                  void (done
-                    ? uncompleteItemAction(child.id)
-                    : completeItemAction(child.id));
-                })
-              }
+              onCheckedChange={() => setCompleted(child, !done)}
               aria-label={`${done ? "Uncomplete" : "Complete"} ${child.title}`}
             />
             <button
@@ -587,12 +577,9 @@ export function ItemDetailDialog({
     onOpenChange(next);
   }
 
+  const setCompleted = useSetCompleted();
   function toggle() {
-    start(() => {
-      void (completed
-        ? uncompleteItemAction(item.id)
-        : completeItemAction(item.id));
-    });
+    setCompleted(item, !completed);
   }
 
   function del() {

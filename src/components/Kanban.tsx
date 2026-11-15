@@ -24,6 +24,10 @@ import { ShareDialog } from "./ShareDialog";
 import { TodayView } from "./TodayView";
 import { useDayStart } from "./use-day-start";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
+import {
+  CompletionContext,
+  useOptimisticCompletion,
+} from "./use-optimistic-completion";
 import type { AvatarUser } from "./UserAvatar";
 import { UserMenu } from "./UserMenu";
 
@@ -54,7 +58,7 @@ export function Kanban({
   timeZone,
   initialView,
   projects,
-  itemsByProject,
+  itemsByProject: serverItemsByProject,
   categoriesByProject,
   assigneesByProject,
   prLinksByItem,
@@ -75,6 +79,10 @@ export function Kanban({
   pendingInvites: PendingInviteView[];
 }) {
   const railRef = useRef<HTMLDivElement>(null);
+  // Every view reads items from here, so a tick shows at once wherever the
+  // item appears (see the hook).
+  const [itemsByProject, setCompleted] =
+    useOptimisticCompletion(serverItemsByProject);
   const [view, setView] = useState<BoardView>(initialView);
   function switchView(next: BoardView) {
     setView(next);
@@ -264,158 +272,160 @@ export function Kanban({
   }, [projects, view]);
 
   return (
-    <BoardMain>
-      <BoardHeader
-        nav={
-          <div
-            role="group"
-            aria-label="View"
-            className="flex rounded-md border border-neutral-200 p-0.5 text-xs font-medium dark:border-neutral-800"
-          >
-            {BOARD_VIEWS.map(([v, label]) => (
-              <button
-                key={v}
-                type="button"
-                aria-pressed={view === v}
-                onClick={() => switchView(v)}
-                className={`whitespace-nowrap rounded px-1.5 py-0.5 transition sm:px-2 ${
-                  view === v
-                    ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
-                    : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        }
-      >
-        {/* The count gives way on phones and small tablets, where the header is full. */}
-        <span className="hidden whitespace-nowrap text-xs text-neutral-400 md:inline">
-          {onBoard.length} list{onBoard.length === 1 ? "" : "s"}
-        </span>
-        <ArchivedListsMenu lists={archived} />
-        {/* Icon and label on desktop, just the icon on phones. */}
-        <Button
-          variant="outline"
-          size="sm"
-          aria-label="Activity"
-          onClick={() => setAudit({ open: true })}
-        >
-          <History />
-          <span className="hidden sm:inline">Activity</span>
-        </Button>
-        <UserMenu user={viewer} />
-      </BoardHeader>
-      <InvitesBanner invites={pendingInvites} />
-      {view === "today" ? (
-        <TodayView
-          projects={active}
-          itemsByProject={itemsByProject}
-          assigneesByProject={assigneesByProject}
-          prLinksByItem={prLinksByItem}
-          viewerId={viewerId}
-        />
-      ) : view === "no-date" ? (
-        <NoDateView
-          projects={active}
-          itemsByProject={itemsByProject}
-          assigneesByProject={assigneesByProject}
-          prLinksByItem={prLinksByItem}
-          viewerId={viewerId}
-        />
-      ) : (
-        <BoardRail ref={railRef}>
-          {onBoard.length === 0 && (
-            <div className="m-auto text-sm text-neutral-500">
-              {archived.length > 0
-                ? "Every list is archived — restore one from Archived, or tap + Add list."
-                : "No lists yet — tap + Add list to start."}
+    <CompletionContext value={setCompleted}>
+      <BoardMain>
+        <BoardHeader
+          nav={
+            <div
+              role="group"
+              aria-label="View"
+              className="flex rounded-md border border-neutral-200 p-0.5 text-xs font-medium dark:border-neutral-800"
+            >
+              {BOARD_VIEWS.map(([v, label]) => (
+                <button
+                  key={v}
+                  type="button"
+                  aria-pressed={view === v}
+                  onClick={() => switchView(v)}
+                  className={`whitespace-nowrap rounded px-1.5 py-0.5 transition sm:px-2 ${
+                    view === v
+                      ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
+                      : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
-          )}
-          {[active, paused].map((group) =>
-            group.map((p, idx) => (
-              <ProjectColumn
-                key={p.id}
-                project={p}
-                viewerId={viewerId}
-                items={itemsByProject[p.id] ?? []}
-                assignees={assigneesByProject[p.id] ?? []}
-                prLinksByItem={prLinksByItem}
-                prevId={group[idx - 1]?.id ?? null}
-                nextId={group[idx + 1]?.id ?? null}
-                onShowActivity={(pid) => setAudit({ open: true, projectId: pid })}
-                onAddItem={openNewItem}
-                onShare={openShare}
-              />
-            )),
-          )}
-          <AddProjectButton onClick={() => setNewProjectOpen(true)} />
-        </BoardRail>
-      )}
+          }
+        >
+          {/* The count gives way on phones and small tablets, where the header is full. */}
+          <span className="hidden whitespace-nowrap text-xs text-neutral-400 md:inline">
+            {onBoard.length} list{onBoard.length === 1 ? "" : "s"}
+          </span>
+          <ArchivedListsMenu lists={archived} />
+          {/* Icon and label on desktop, just the icon on phones. */}
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label="Activity"
+            onClick={() => setAudit({ open: true })}
+          >
+            <History />
+            <span className="hidden sm:inline">Activity</span>
+          </Button>
+          <UserMenu user={viewer} />
+        </BoardHeader>
+        <InvitesBanner invites={pendingInvites} />
+        {view === "today" ? (
+          <TodayView
+            projects={active}
+            itemsByProject={itemsByProject}
+            assigneesByProject={assigneesByProject}
+            prLinksByItem={prLinksByItem}
+            viewerId={viewerId}
+          />
+        ) : view === "no-date" ? (
+          <NoDateView
+            projects={active}
+            itemsByProject={itemsByProject}
+            assigneesByProject={assigneesByProject}
+            prLinksByItem={prLinksByItem}
+            viewerId={viewerId}
+          />
+        ) : (
+          <BoardRail ref={railRef}>
+            {onBoard.length === 0 && (
+              <div className="m-auto text-sm text-neutral-500">
+                {archived.length > 0
+                  ? "Every list is archived — restore one from Archived, or tap + Add list."
+                  : "No lists yet — tap + Add list to start."}
+              </div>
+            )}
+            {[active, paused].map((group) =>
+              group.map((p, idx) => (
+                <ProjectColumn
+                  key={p.id}
+                  project={p}
+                  viewerId={viewerId}
+                  items={itemsByProject[p.id] ?? []}
+                  assignees={assigneesByProject[p.id] ?? []}
+                  prLinksByItem={prLinksByItem}
+                  prevId={group[idx - 1]?.id ?? null}
+                  nextId={group[idx + 1]?.id ?? null}
+                  onShowActivity={(pid) => setAudit({ open: true, projectId: pid })}
+                  onAddItem={openNewItem}
+                  onShare={openShare}
+                />
+              )),
+            )}
+            <AddProjectButton onClick={() => setNewProjectOpen(true)} />
+          </BoardRail>
+        )}
 
-      <AuditDialog
-        open={audit.open}
-        projectId={audit.projectId}
-        projects={projects}
-        onClose={() => setAudit({ open: false })}
-      />
-
-      <NewItemDialog
-        open={newItem.open}
-        onOpenChange={(open) => setNewItem((s) => ({ ...s, open }))}
-        projects={onBoard}
-        categoriesByProject={categoriesByProject}
-        initialProjectId={newItem.projectId}
-      />
-
-      <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
-
-      <PullToSearch onOpen={() => setPaletteOpen(true)} />
-
-      <CommandPalette
-        open={paletteOpen}
-        onOpenChange={setPaletteOpen}
-        lists={onBoard}
-        itemsByProject={itemsByProject}
-        onNewItem={() => openNewItem()}
-        onNewList={() => setNewProjectOpen(true)}
-        onSwitchView={switchView}
-        onShowActivity={() => setAudit({ open: true })}
-        onOpenList={openList}
-        onOpenItem={paletteDetail.openDetail}
-      />
-
-      {paletteDetail.item && paletteProject && (
-        <ItemDetailDialog
-          item={paletteDetail.item}
-          parent={boardItems.find((i) => i.id === paletteDetail.item?.parentId) ?? null}
-          checklist={boardItems.filter((i) => i.parentId === paletteDetail.item?.id)}
-          // The same rule as the board's dialog (ProjectColumn), within the
-          // item's own list.
-          nestTargets={boardItems.filter(
-            (i) =>
-              i.projectId === paletteDetail.item?.projectId &&
-              i.parentId === null &&
-              i.completedAt === null &&
-              i.id !== paletteDetail.item?.id,
-          )}
-          onOpenItem={paletteDetail.openDetail}
-          prefix={paletteProject.prefix}
-          assignees={assigneesByProject[paletteProject.id] ?? []}
-          viewerId={viewerId}
-          prLinks={prLinksByItem[paletteDetail.item.id] ?? []}
-          open={paletteDetail.open}
-          onOpenChange={paletteDetail.onOpenChange}
+        <AuditDialog
+          open={audit.open}
+          projectId={audit.projectId}
+          projects={projects}
+          onClose={() => setAudit({ open: false })}
         />
-      )}
 
-      <ShareDialog
-        open={share.open}
-        onOpenChange={(open) => setShare((s) => ({ ...s, open }))}
-        projectId={share.projectId}
-        projectName={share.projectName}
-      />
-    </BoardMain>
+        <NewItemDialog
+          open={newItem.open}
+          onOpenChange={(open) => setNewItem((s) => ({ ...s, open }))}
+          projects={onBoard}
+          categoriesByProject={categoriesByProject}
+          initialProjectId={newItem.projectId}
+        />
+
+        <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
+
+        <PullToSearch onOpen={() => setPaletteOpen(true)} />
+
+        <CommandPalette
+          open={paletteOpen}
+          onOpenChange={setPaletteOpen}
+          lists={onBoard}
+          itemsByProject={itemsByProject}
+          onNewItem={() => openNewItem()}
+          onNewList={() => setNewProjectOpen(true)}
+          onSwitchView={switchView}
+          onShowActivity={() => setAudit({ open: true })}
+          onOpenList={openList}
+          onOpenItem={paletteDetail.openDetail}
+        />
+
+        {paletteDetail.item && paletteProject && (
+          <ItemDetailDialog
+            item={paletteDetail.item}
+            parent={boardItems.find((i) => i.id === paletteDetail.item?.parentId) ?? null}
+            checklist={boardItems.filter((i) => i.parentId === paletteDetail.item?.id)}
+            // The same rule as the board's dialog (ProjectColumn), within the
+            // item's own list.
+            nestTargets={boardItems.filter(
+              (i) =>
+                i.projectId === paletteDetail.item?.projectId &&
+                i.parentId === null &&
+                i.completedAt === null &&
+                i.id !== paletteDetail.item?.id,
+            )}
+            onOpenItem={paletteDetail.openDetail}
+            prefix={paletteProject.prefix}
+            assignees={assigneesByProject[paletteProject.id] ?? []}
+            viewerId={viewerId}
+            prLinks={prLinksByItem[paletteDetail.item.id] ?? []}
+            open={paletteDetail.open}
+            onOpenChange={paletteDetail.onOpenChange}
+          />
+        )}
+
+        <ShareDialog
+          open={share.open}
+          onOpenChange={(open) => setShare((s) => ({ ...s, open }))}
+          projectId={share.projectId}
+          projectName={share.projectName}
+        />
+      </BoardMain>
+    </CompletionContext>
   );
 }
