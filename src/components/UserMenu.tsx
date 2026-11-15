@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleUserRound, KeyRound, Loader2, LogOut, UserRound, Webhook } from "lucide-react";
+import { CircleUserRound, KeyRound, Loader2, LogOut, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
@@ -12,6 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { GitHubMark } from "@/components/GitHubMark";
 import { UserAvatar, type AvatarUser } from "@/components/UserAvatar";
 import { signOut } from "@/auth/client";
 import { RELEASE } from "@/lib/release";
@@ -77,7 +78,7 @@ export function UserMenu({ user }: { user: AvatarUser | null }) {
         <DropdownMenuItem
           render={
             <Link href="/settings/github">
-              <Webhook />
+              <GitHubMark />
               GitHub
             </Link>
           }
