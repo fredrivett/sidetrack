@@ -34,6 +34,9 @@ export async function GET(request: Request) {
         unwatch();
       };
       request.signal.addEventListener("abort", () => stop());
+      // The browser may have gone during the session lookup, before the
+      // listener above: then it never fires.
+      if (request.signal.aborted) stop();
       send(": open\n\n");
     },
     cancel() {

@@ -91,7 +91,9 @@ function audience(db: Db, userId: string) {
     ? db
         .select({ userId: projectMembers.userId })
         .from(projectMembers)
-        .where(inArray(projectMembers.projectId, ids))
+        .where(
+          and(inArray(projectMembers.projectId, ids), eq(projectMembers.status, "accepted")),
+        )
         .all()
     : [];
   const invites = db

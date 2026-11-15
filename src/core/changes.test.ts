@@ -72,6 +72,15 @@ describe("watchChanges", () => {
     setUsername(db, member, "renamed", "web");
     await settle();
     expect(heard).toEqual({ [owner]: 1, [stranger]: 0 });
+
+    // An invitee doesn't show on the list until they accept. (The owner
+    // hears the invite they sent, but not the invitee's rename.)
+    const invitee = createTestUser(db, { username: "pending" });
+    inviteMember(db, owner, projectId, "pending", "web");
+    await settle();
+    setUsername(db, invitee, "renamed_pending", "web");
+    await settle();
+    expect(heard).toEqual({ [owner]: 2, [stranger]: 0 });
   });
 
   it("tells a list about a PR's new state from GitHub, but not a repeat of it", async () => {
