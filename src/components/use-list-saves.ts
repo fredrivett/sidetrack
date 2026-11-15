@@ -80,7 +80,8 @@ export function useNewListSave(): ListSave {
         let done!: Promise<T>;
         // start runs the callback at once, so `done` is set before it returns.
         start(async () => {
-          done = work();
+          // A throw from work() rejects `done` rather than leaving it unset.
+          done = new Promise<T>((resolve) => resolve(work()));
           await done;
         });
         return done;

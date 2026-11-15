@@ -103,7 +103,8 @@ function reparent(list: Item[], item: Item, parentId: string | null): Item[] {
 /** One change applied to a flat list of items (one list's, or any mix). */
 export function applyItemChange(list: Item[], change: ItemChange): Item[] {
   return change.kind === "complete"
-    ? complete(list, change.item, change.done, change.at)
+    ? // The item as it is now in `list`: an earlier change may have moved it.
+      complete(list, list.find((i) => i.id === change.item.id) ?? change.item, change.done, change.at)
     : change.kind === "delete"
       ? // Deleting a parent deletes its sub-items with it, as on the server.
         list.filter((i) => i.id !== change.item.id && i.parentId !== change.item.id)

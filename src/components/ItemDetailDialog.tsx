@@ -309,10 +309,16 @@ function Checklist({
     line,
   ]);
   // A line stops showing as saving once a sub-item with its title appears that
-  // wasn't there when it was typed, so it never shows twice.
-  const adding = addingAll.filter(
-    (a) => !items.some((i) => i.title === a.title && !a.known.includes(i.id)),
-  );
+  // wasn't there when it was typed, so it never shows twice. Each new sub-item
+  // stands for one line, so two lines with the same title wait for two.
+  const claimed = new Set<string>();
+  const adding = addingAll.filter((a) => {
+    const saved = items.find(
+      (i) => !claimed.has(i.id) && i.title === a.title && !a.known.includes(i.id),
+    );
+    if (saved) claimed.add(saved.id);
+    return !saved;
+  });
   const nextKey = useRef(0);
   const rows = items.length + adding.length;
   // Each new row lands above the input and pushes it down, out of view once

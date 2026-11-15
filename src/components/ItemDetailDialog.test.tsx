@@ -303,7 +303,8 @@ describe("ItemDetailDialog checklist", () => {
       .mockReturnValueOnce(new Promise((resolve) => (finishSecond = () => resolve(undefined as never))));
     const { refresh } = renderDialog();
     const input = screen.getByRole("textbox", { name: "Add a sub-item" });
-    for (const title of ["One", "Two"]) {
+    // The same title twice: each saved sub-item stands for one line.
+    for (const title of ["One", "One"]) {
       fireEvent.change(input, { target: { value: title } });
       fireEvent.keyDown(input, { key: "Enter" });
     }
@@ -312,8 +313,9 @@ describe("ItemDetailDialog checklist", () => {
     // The first line comes back from the server while the second is saving.
     const one = { ...item, id: "c1", title: "One", parentId: "i1", number: 43 };
     refresh([one]);
-    expect(screen.getAllByText("One")).toHaveLength(1);
-    expect(screen.getByText("Two").closest("[aria-busy]")).toBeTruthy();
+    const lines = screen.getAllByText("One");
+    expect(lines).toHaveLength(2);
+    expect(lines.filter((l) => l.closest("[aria-busy]"))).toHaveLength(1);
     await act(async () => finishSecond());
   });
 });
