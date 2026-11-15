@@ -35,6 +35,8 @@ describe("suggestList", () => {
     expect(await pick({ none: 0.8, japan: 0.2 })).toBeNull();
     // An answer outside the options is never trusted.
     expect(await pick({ constructor: 0.9, none: 0.1 })).toBeNull();
+    // Nor is a probability that isn't a number.
+    expect(await pick({ japan: "0.9" as unknown as number, none: 0.1 })).toBeNull();
   });
 });
 

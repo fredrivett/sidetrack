@@ -106,7 +106,7 @@ export async function checkDraftItem(
   const questions: Record<string, ChoiceQuestion> = {};
   if (items.length > 0) {
     questions.duplicate = choice(
-      "Is the new task the same task as one already on the list, just worded differently? Pick that task, or none if it's a different task.",
+      "Is the new task the same task as one already on the list, identical or reworded? Pick that task, or none if it's a different task.",
       items.map((it) => [it.id, it.title]),
       "None: the new task is different from all of these",
     );

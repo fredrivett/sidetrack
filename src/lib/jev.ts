@@ -39,10 +39,16 @@ export async function askJev(
     const body = (await res.json()) as {
       answers?: Record<string, { probabilities?: Record<string, number> }>;
     };
+    // Keep only real probabilities, so a malformed answer can't slip past a
+    // caller's threshold (a comparison with NaN or a string is never true).
     return Object.fromEntries(
       Object.keys(questions).map((id) => [
         id,
-        body.answers?.[id]?.probabilities ?? {},
+        Object.fromEntries(
+          Object.entries(body.answers?.[id]?.probabilities ?? {}).filter(
+            ([, p]) => typeof p === "number" && p >= 0 && p <= 1,
+          ),
+        ),
       ]),
     );
   } catch {

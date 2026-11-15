@@ -133,7 +133,9 @@ export function NewItemDialog({
   // An accepted parent holds its list for this item only, so the next item
   // in a run gets a fresh suggestion.
   const fixedProjectId = pickedProjectId || parent?.projectId || "";
-  const context = JSON.stringify([draft, fixedProjectId]);
+  // `added` too: an add changes the list, so the same draft is asked again
+  // (it may now be a duplicate of the item just added).
+  const context = JSON.stringify([draft, fixedProjectId, added]);
   const suggestion =
     draft.title && suggested?.for === context ? suggested.value : null;
   const projectId = fixedProjectId || suggestion?.projectId || "";
@@ -191,7 +193,7 @@ export function NewItemDialog({
       current = false;
       clearTimeout(timer);
     };
-    // `context` covers the draft and the fixed list.
+    // `context` covers the draft, the fixed list and the adds so far.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, context]);
 

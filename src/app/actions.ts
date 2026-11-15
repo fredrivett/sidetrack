@@ -40,6 +40,7 @@ import {
   getProject as getProjectCore,
   getProjectWithItems as getProjectWithItemsCore,
   listProjects as listProjectsCore,
+  sampleOpenItemTitles as sampleOpenItemTitlesCore,
   reorderProject as reorderProjectCore,
   updateProject as updateProjectCore,
 } from "@/core/projects";
@@ -152,15 +153,14 @@ export async function suggestForNewItemAction(input: {
   const { db } = getDb();
   let projectId = input.projectId;
   if (!projectId) {
+    const titles = sampleOpenItemTitlesCore(db, userId, 10);
     const lists = listProjectsCore(db, userId)
       .filter((p) => p.status === "active")
       .map((p) => ({
         id: p.id,
         name: p.name,
         summary: p.summary,
-        itemTitles: (getProjectWithItemsCore(db, userId, p.id)?.items ?? [])
-          .slice(0, 10)
-          .map((it) => it.title),
+        itemTitles: titles.get(p.id) ?? [],
       }));
     projectId = await suggestList(draft, lists, apiKey);
     if (!projectId) return nothing;
