@@ -82,6 +82,26 @@ describe("useOptimisticCompletion", () => {
     await act(async () => save.resolve());
   });
 
+  it("unticks on a second tap made before the first save lands", async () => {
+    const complete = deferred();
+    const reopen = deferred();
+    vi.mocked(completeItemAction).mockReturnValue(complete.promise);
+    vi.mocked(uncompleteItemAction).mockReturnValue(reopen.promise);
+    render(<Board items={[other]} />);
+
+    fireEvent.click(screen.getByText("Other: open"));
+    fireEvent.click(screen.getByText("Other: done"));
+
+    expect(completeItemAction).toHaveBeenCalledTimes(1);
+    expect(uncompleteItemAction).toHaveBeenCalledTimes(1);
+    expect(uncompleteItemAction).toHaveBeenCalledWith("other");
+    screen.getByText("Other: open");
+    await act(async () => {
+      complete.resolve();
+      reopen.resolve();
+    });
+  });
+
   it("reopens a finished parent with its sub-item, as the server does", async () => {
     const save = deferred();
     vi.mocked(uncompleteItemAction).mockReturnValue(save.promise);
