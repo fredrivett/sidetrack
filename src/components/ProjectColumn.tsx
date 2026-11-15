@@ -18,6 +18,7 @@ import { ProjectIconPicker } from "./ProjectIconPicker";
 import { ProjectMenu } from "./ProjectMenu";
 import { StatusBadge } from "./StatusBadge";
 import { SummaryBlock } from "./SummaryBlock";
+import { useCollapsedItems } from "./use-collapsed-items";
 import { useDayStart } from "./use-day-start";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
 import { runAction } from "./run-action";
@@ -88,9 +89,7 @@ export function ProjectColumn({
   // Parents in the list whose sub-items are hidden. Kept here, not in
   // DraggableItemList, so the header's button can collapse or expand them all
   // at once; it shows only while the list has a parent with sub-items on view.
-  const [collapsedItems, setCollapsedItems] = useState<ReadonlySet<string>>(
-    new Set(),
-  );
+  const { collapsed: collapsedItems, setCollapsed } = useCollapsedItems(items);
   const parents = inList.filter((g) => g.children.length > 0).map((g) => g.id);
   const allCollapsed = parents.every((id) => collapsedItems.has(id));
   // The list's held saves (status, order, prefix, icon…) dim the whole column
@@ -153,14 +152,7 @@ export function ProjectColumn({
               onClick={() =>
                 // Only the parents on view, so one in Done keeps its state if
                 // it comes back to the list.
-                setCollapsedItems((s) => {
-                  const next = new Set(s);
-                  for (const id of parents) {
-                    if (allCollapsed) next.delete(id);
-                    else next.add(id);
-                  }
-                  return next;
-                })
+                setCollapsed(parents, !allCollapsed)
               }
               className="-mr-1.5 flex h-8 items-center rounded px-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
             >
@@ -230,11 +222,7 @@ export function ProjectColumn({
               groups={inList}
               collapsed={collapsedItems}
               onToggleCollapsed={(id) =>
-                setCollapsedItems((s) => {
-                  const next = new Set(s);
-                  if (!next.delete(id)) next.add(id);
-                  return next;
-                })
+                setCollapsed([id], !collapsedItems.has(id))
               }
               prefix={project.refPrefix}
               assignees={assignees}

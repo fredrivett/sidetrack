@@ -38,6 +38,7 @@ const item = (title: string, dueDate: string | null, more: Partial<Item> = {}): 
   category: null,
   assigneeIds: [],
   parentId: null,
+  collapsed: false,
   dueDate,
   dueFrom: null,
   repeatEvery: null,

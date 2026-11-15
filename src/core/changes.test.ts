@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { watchChanges } from "./changes";
-import { addItem } from "./items";
+import { addItem, setItemsCollapsed } from "./items";
 import { acceptInvite, inviteMember } from "./members";
 import { linkItemToPr, setPrState } from "./prLinks";
 import { createProject, deleteProject } from "./projects";
@@ -95,5 +95,17 @@ describe("watchChanges", () => {
     setPrState(db, owner, pr, "merged");
     await settle();
     expect(heard).toEqual({ [member]: 1, [stranger]: 0 });
+  });
+
+  it("tells a list about a checklist folding away, but not a repeat of it", async () => {
+    const trip = addItem(db, member, { projectId, title: "Trip", subItems: ["Book"] }, "web");
+    await settle();
+    watch(owner, stranger);
+    // Unaudited, yet the owner sees it fold on the shared list.
+    setItemsCollapsed(db, member, [trip.id], true);
+    await settle();
+    setItemsCollapsed(db, member, [trip.id], true);
+    await settle();
+    expect(heard).toEqual({ [owner]: 1, [stranger]: 0 });
   });
 });

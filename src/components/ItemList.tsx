@@ -41,6 +41,7 @@ import type { Item, ItemPrLink } from "@/core/schema";
 import { type DropTarget, projectDrop, type TreeRow } from "@/lib/itemTree";
 import { ItemRow, type RowDrag } from "./ItemRow";
 import { runAction } from "./run-action";
+import { useCollapsedItems } from "./use-collapsed-items";
 
 /** A top-level item with its sub-items, in list order. */
 export type ItemGroup = Item & { children: Item[] };
@@ -141,15 +142,21 @@ const progress = (children: Item[]) => ({
 });
 
 /**
- * A top-level row followed by its sub-items, indented and static: Done, and
- * the copy of a dragged parent that follows the pointer.
+ * A top-level row followed by its sub-items, indented and static: Done,
+ * No date, and the copy of a dragged parent that follows the pointer. The
+ * sub-items fold away as stored on the item, the same as on the board.
  */
 export function ItemGroupView({
   group,
-  defaultExpanded = true,
+  collapsed: given,
   ...row
-}: RowProps & { group: ItemGroup; defaultExpanded?: boolean }) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
+}: RowProps & {
+  group: ItemGroup;
+  /** Shown as given rather than as stored, as the drag overlay copies its list. */
+  collapsed?: boolean;
+}) {
+  const { collapsed, setCollapsed } = useCollapsedItems([group]);
+  const expanded = !(given ?? collapsed.has(group.id));
   const { children } = group;
   return (
     <div className="space-y-1.5">
@@ -159,7 +166,7 @@ export function ItemGroupView({
             ? {
                 ...progress(children),
                 expanded,
-                onToggle: () => setExpanded((v) => !v),
+                onToggle: () => setCollapsed([group.id], expanded),
               }
             : undefined,
       })}
@@ -558,7 +565,7 @@ export function DraggableItemList({
               <ItemGroupView
                 {...row}
                 group={{ ...active.item, children: childrenOf(active.item.id) }}
-                defaultExpanded={!collapsed.has(active.item.id)}
+                collapsed={collapsed.has(active.item.id)}
               />
             )}
           </div>
