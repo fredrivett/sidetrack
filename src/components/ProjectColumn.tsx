@@ -127,7 +127,16 @@ export function ProjectColumn({
               aria-label={allCollapsed ? "Expand all sub-items" : "Collapse all sub-items"}
               title={allCollapsed ? "Expand all" : "Collapse all"}
               onClick={() =>
-                setCollapsedItems(allCollapsed ? new Set() : new Set(parents))
+                // Only the parents on view, so one in Done keeps its state if
+                // it comes back to the list.
+                setCollapsedItems((s) => {
+                  const next = new Set(s);
+                  for (const id of parents) {
+                    if (allCollapsed) next.delete(id);
+                    else next.add(id);
+                  }
+                  return next;
+                })
               }
               className="-mr-1.5 flex h-8 items-center rounded px-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
             >
