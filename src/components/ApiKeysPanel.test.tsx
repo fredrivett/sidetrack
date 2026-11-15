@@ -15,7 +15,10 @@ vi.mock("next/navigation", async (importOriginal) => ({
   useRouter: () => ({ refresh: vi.fn() }),
 }));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 /** Stands in for Next's redirect boundary, which a rethrown redirect reaches. */
 type Caught = { error: { digest?: string } | null };
