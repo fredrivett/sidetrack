@@ -485,13 +485,10 @@ describe("item assignment", () => {
 describe("checklists (sub-items)", () => {
   function setup() {
     const { db, userId, projectId } = seedProject();
-    const add = (title: string, opts: { parentId?: string; positionRef?: string } = {}) =>
-      addItem(
-        db,
-        userId,
-        { projectId, title, parentId: opts.parentId, positionRef: opts.positionRef },
-        "web",
-      );
+    const add = (
+      title: string,
+      opts: { parentId?: string; positionRef?: string; subItems?: string[] } = {},
+    ) => addItem(db, userId, { projectId, title, ...opts }, "web");
     const tree = () =>
       nestItems(listItems(db, userId, projectId, { includeCompleted: true })).map(
         (i) => [i.title, i.children.map((c) => c.title)],
@@ -512,6 +509,63 @@ describe("checklists (sub-items)", () => {
       ["b", []],
       ["c", []],
     ]);
+  });
+
+  it("creates an item's sub-items with it, in order and logged, or none at all", () => {
+    const { db, userId, projectId, add, tree } = setup();
+    add("a");
+    const p = add("tidy", { subItems: ["lounge", "kitchen"] });
+    const created = () =>
+      listAudit(db, userId, { projectId })
+        .filter((e) => e.action === "create" && e.entityType === "item")
+        .map((e) => e.detail)
+        .reverse();
+    const logged = [
+      'added task "a"',
+      'added task "tidy"',
+      'added "lounge" to "tidy"',
+      'added "kitchen" to "tidy"',
+    ];
+    expect(tree()).toEqual([
+      ["a", []],
+      ["tidy", ["lounge", "kitchen"]],
+    ]);
+    expect(created()).toEqual(logged);
+
+    // A sub-item can't have its own, and a bad title adds nothing.
+    expect(() => add("hall", { parentId: p.id, subItems: ["rug"] })).toThrow(
+      "already a sub-item",
+    );
+    expect(() => add("garden", { subItems: ["weed", "  "] })).toThrow(
+      "item title cannot be empty",
+    );
+    expect(tree()).toEqual([
+      ["a", []],
+      ["tidy", ["lounge", "kitchen"]],
+    ]);
+    expect(created()).toEqual(logged);
+  });
+
+  it("creates a done item's sub-items done, each logged, leaving it done", () => {
+    const { db, userId, projectId } = setup();
+    addItem(
+      db,
+      userId,
+      { projectId, title: "tidy", completed: true, subItems: ["lounge", "kitchen"] },
+      "web",
+    );
+    const all = listItems(db, userId, projectId, { includeCompleted: true });
+    expect(Object.fromEntries(all.map((i) => [i.title, i.completedAt !== null]))).toEqual({
+      tidy: true,
+      lounge: true,
+      kitchen: true,
+    });
+    expect(
+      listAudit(db, userId, { projectId })
+        .filter((e) => e.entityType === "item" && e.action !== "create")
+        .map((e) => e.detail)
+        .reverse(),
+    ).toEqual(['completed "tidy"', 'completed "lounge"', 'completed "kitchen"']);
   });
 
   it("completing a parent ticks its open sub-items, keeping earlier ticks", () => {

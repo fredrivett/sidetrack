@@ -596,6 +596,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "parent (a short ref or id) adds the task as a sub-item of that task, one step in its checklist: " +
         "e.g. \"Tidy up flat\" with sub-items Lounge, Kitchen and Bedroom. Sub-items are one level deep; " +
         "each is a full item with its own ref and assignees. Adding an open one to a finished parent reopens the parent; adding one with completed: true leaves it finished. " +
+        "sub_items (titles, in order) creates the task's checklist with it in one call, all or nothing: " +
+        "prefer it over adding each sub-item with parent afterwards. With completed: true they're created done too. Not with parent, since sub-items can't have their own. " +
         "due_date is the calendar day it's due, YYYY-MM-DD (no time); call list_today first if you need today's date in the user's timezone. " +
         "assignee_ids assigns it to one or more people, each the list owner (the list's userId) or an accepted member " +
         "(user_id from list_members), or \"me\" for the user you act for; several make a joint item. " +
@@ -627,6 +629,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         completed: z.boolean().optional(),
         repeat: Repeat.nullable().optional(),
         position: PosRef.optional(),
+        sub_items: z.array(z.string().min(1)).optional(),
       },
     },
     async ({
@@ -641,8 +644,14 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       completed,
       repeat,
       position,
+      sub_items,
     }) => {
       const { db } = getDb();
+      if (parent !== undefined && sub_items !== undefined) {
+        return errorText(
+          "Pass parent or sub_items, not both: sub-items can't have their own — no change was made.",
+        );
+      }
       if (assignee_ids !== undefined && assignee_id !== undefined) {
         return errorText(
           "Pass assignee_ids or the older assignee_id, not both — no change was made.",
@@ -680,6 +689,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           completed,
           repeat,
           positionRef: pos.position,
+          subItems: sub_items,
         },
         SOURCE,
       );
