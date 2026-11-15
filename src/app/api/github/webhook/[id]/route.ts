@@ -45,7 +45,9 @@ export async function POST(
   return Response.json(
     applyPullRequestEvent(db, caller.userId, {
       action: pr.action,
+      state: p.state === "closed" ? "closed" : "open",
       merged: p.merged === true,
+      draft: p.draft === true,
       title: p.title,
       url: p.html_url,
     }),

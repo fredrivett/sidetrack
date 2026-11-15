@@ -29,8 +29,9 @@ export const useSetCompleted = () => useContext(CompletionContext);
 
 /**
  * The same change completeItem / uncompleteItem make on the server
- * (src/core/items.ts): completing a parent ticks its open sub-items, and
- * reopening a sub-item reopens its finished parent.
+ * (src/core/items.ts): completing a parent ticks its open sub-items, ticking a
+ * parent's last open sub-item completes the parent, and reopening a sub-item
+ * reopens its finished parent.
  */
 function applyChange(
   byProject: Record<string, Item[]>,
@@ -38,10 +39,17 @@ function applyChange(
 ): Record<string, Item[]> {
   const list = byProject[item.projectId];
   if (!list) return byProject;
+  const closesParent =
+    done &&
+    item.parentId !== null &&
+    list.every((i) => i.parentId !== item.parentId || i.id === item.id || i.completedAt !== null);
   return {
     ...byProject,
     [item.projectId]: list.map((i) => {
       if (i.id === item.id) return { ...i, completedAt: done ? at : null };
+      if (closesParent && i.id === item.parentId && i.completedAt === null) {
+        return { ...i, completedAt: at };
+      }
       if (done && i.parentId === item.id && i.completedAt === null) {
         return { ...i, completedAt: at };
       }

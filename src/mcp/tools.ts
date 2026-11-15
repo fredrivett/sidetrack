@@ -779,7 +779,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       description:
         "Mark an item as completed. It keeps its place in the list: the user sees it crossed out for the rest of the day " +
         "(the day turns over at 4am their time), then it moves to the list's Done section. " +
-        "Completing an item with sub-items also completes its open sub-items; completing the last sub-item does not complete the parent. " +
+        "Completing an item with sub-items also completes its open sub-items; completing a parent's last open sub-item completes the parent too. " +
         "A repeating item (one with a repeat rule) reopens by itself on its next due date: `every` units after the day it was completed. " +
         "The result then carries `comesBack`, that day (YYYY-MM-DD); tell the user when it'll be back. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
@@ -1020,13 +1020,16 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Start work on item",
       description:
-        "Call this when you begin working on an item (coding it, researching it, anything that takes more than a moment), " +
+        "Call this when you begin working on an item (coding it, researching it, anything that takes more than a moment). " +
+        "Find the item first: an open item that describes the work in the list the repository's AGENTS.md names (else the one the user names), " +
+        "creating one with add_item if none matches and asking the user if unsure; then call this " +
         "so the user sees you on it: you appear on the item's row and in its detail view, marked working. " +
         "If nobody is assigned, it assigns the user you act for; existing assignees are kept. " +
         "thread_url is a link to your own thread or session (e.g. an Amp or Claude thread URL) so the user can follow along; pass it whenever you have one. " +
         "Calling it again on the same item resumes your session (and updates thread_url). Refused for a completed item. " +
         "Returns the session plus `branch` and `pr_title`: name your git branch `branch` and title your pull request `pr_title` " +
         "(the item's ref in square brackets at the end), then link the PR with link_item_to_pr. " +
+        "One pull request covers one item: for work that needs several PRs, give the item a sub-item per PR and start work on each sub-item, not the parent. " +
         "While working, call report_work at milestones; when done, call finish_work (completing the item also ends the session). " +
         "item_id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: { item_id: z.string(), thread_url: z.string().optional() },

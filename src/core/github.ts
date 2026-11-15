@@ -6,7 +6,13 @@ import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
 import { projectRefPrefixes, resolveItemRef } from "./itemRef";
 import { completeItem, getItem } from "./items";
-import { canonicalizePrUrl, linkItemToPr, listItemsForPr, unlinkItemFromPr } from "./prLinks";
+import {
+  canonicalizePrUrl,
+  linkItemToPr,
+  listItemsForPr,
+  setPrState,
+  unlinkItemFromPr,
+} from "./prLinks";
 import { githubWebhooks } from "./schema";
 
 // A user's GitHub webhook (see the githubWebhooks table): GitHub posts pull
@@ -131,8 +137,10 @@ export type PullRequestResult = {
 };
 
 /**
- * Apply a `pull_request` event for the webhook's owner. A PR closed without
- * merging changes nothing. Otherwise the title owns the links it made: link
+ * Apply a `pull_request` event for the webhook's owner. Every delivery records
+ * the PR's state (open, draft, merged, closed) on its links. A PR closed
+ * without merging changes nothing else. Otherwise the title owns the links it
+ * made: link
  * every item it names in square brackets, and unlink items a previous title
  * linked that it no longer names (linking and unlinking are idempotent, so
  * edits and pushes repeat harmlessly). Links an agent or the web made are left
@@ -144,11 +152,29 @@ export type PullRequestResult = {
 export function applyPullRequestEvent(
   db: Db,
   userId: string,
-  event: { action: string; merged: boolean; title: string; url: string },
+  event: {
+    action: string;
+    /** The PR's `state` on GitHub. */
+    state: "open" | "closed";
+    merged: boolean;
+    draft: boolean;
+    title: string;
+    url: string;
+  },
 ): PullRequestResult {
   const prUrl = canonicalizePrUrl(event.url);
   const result: PullRequestResult = { linked: [], unlinked: [], unresolved: [], completed: [] };
-  if (event.action === "closed" && !event.merged) return result;
+  const prState = event.merged
+    ? "merged"
+    : event.state === "closed"
+      ? "closed"
+      : event.draft
+        ? "draft"
+        : "open";
+  if (event.action === "closed" && !event.merged) {
+    setPrState(db, userId, prUrl, prState);
+    return result;
+  }
   const prefixes = projectRefPrefixes(db, userId);
   const named = new Set<string>();
   // Title refs that don't resolve now (say, ambiguous since a project was
@@ -176,6 +202,7 @@ export function applyPullRequestEvent(
     unlinkItemFromPr(db, userId, item.id, prUrl, "github");
     result.unlinked.push(ref);
   }
+  setPrState(db, userId, prUrl, prState);
   if (event.action === "closed" && event.merged) {
     for (const link of listItemsForPr(db, userId, prUrl)) {
       const item = getItem(db, userId, link.itemId);

@@ -823,7 +823,7 @@ export function ItemDetailDialog({
             <Field label="Pull requests">
               <div className="flex flex-wrap gap-x-3 gap-y-1">
                 {prLinks.map((link) => (
-                  <PrLink key={link.id} url={link.prUrl} className="text-sm" />
+                  <PrLink key={link.id} url={link.prUrl} state={link.prState} className="text-sm" />
                 ))}
               </div>
             </Field>

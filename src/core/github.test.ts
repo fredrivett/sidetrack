@@ -25,6 +25,15 @@ function seed() {
   return { db, userId, one, two };
 }
 
+/** A pull_request delivery, open and ready for review unless it says otherwise. */
+const pr = (e: { action: string; title: string; merged?: boolean; draft?: boolean; url?: string }) => ({
+  merged: false,
+  draft: false,
+  url: PR,
+  ...e,
+  state: e.action === "closed" ? ("closed" as const) : ("open" as const),
+});
+
 const sign = (secret: string, body: string) =>
   `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
 
@@ -72,12 +81,12 @@ describe("verifyGithubDelivery", () => {
 describe("applyPullRequestEvent", () => {
   it("links the refs in the title, skipping ones the board doesn't have", () => {
     const { db, userId, one, two } = seed();
-    const result = applyPullRequestEvent(db, userId, {
+    const result = applyPullRequestEvent(db, userId, pr({
       action: "opened",
       merged: false,
       title: "[WIP] Ship both [SID-1, SID-2] [SID-99]",
       url: `${PR}/files`,
-    });
+    }));
 
     expect(result).toEqual({
       linked: ["SID-1", "SID-2"],
@@ -99,7 +108,7 @@ describe("applyPullRequestEvent", () => {
     const three = addItem(db, userId, { projectId: one.projectId, title: "Three" }, "web");
     linkItemToPr(db, userId, three.id, PR, { source: "mcp", agent: { keyId: "k1", name: "Amp" } });
     const deliver = (action: string, merged: boolean, title: string) =>
-      applyPullRequestEvent(db, userId, { action, merged, title, url: PR });
+      applyPullRequestEvent(db, userId, pr({ action, merged, title }));
     const linkedItems = () =>
       [one, two, three].filter((it) => listPrLinksForItem(db, userId, it.id).length > 0);
 
@@ -124,15 +133,38 @@ describe("applyPullRequestEvent", () => {
     expect(listAudit(db, userId).length).toBe(auditCount + 1);
   });
 
+  it("records the PR's state on its links, including links made later", () => {
+    const { db, userId, one, two } = seed();
+    const deliver = (e: Parameters<typeof pr>[0]) => applyPullRequestEvent(db, userId, pr(e));
+    const states = () =>
+      [one, two].map((it) => listPrLinksForItem(db, userId, it.id).map((l) => l.prState));
+
+    deliver({ action: "opened", draft: true, title: "Ship [SID-1]" });
+    expect(states()).toEqual([["draft"], []]);
+    deliver({ action: "ready_for_review", title: "Ship [SID-1]" });
+    // An agent linking afterwards picks up the state already reported.
+    linkItemToPr(db, userId, two.id, PR, "web");
+    expect(states()).toEqual([["open"], ["open"]]);
+
+    // Closing unmerged records it, though a title edited at the same time
+    // changes no links.
+    deliver({ action: "closed", title: "Ship" });
+    expect(states()).toEqual([["closed"], ["closed"]]);
+    deliver({ action: "reopened", title: "Ship [SID-1]" });
+    expect(states()).toEqual([["open"], ["open"]]);
+    deliver({ action: "closed", merged: true, title: "Ship [SID-1]" });
+    expect(states()).toEqual([["merged"], ["merged"]]);
+  });
+
   it("can't reach another user's items by ref", () => {
     const { db, userId, one } = seed();
     const stranger = createTestUser(db);
-    const result = applyPullRequestEvent(db, stranger, {
+    const result = applyPullRequestEvent(db, stranger, pr({
       action: "opened",
       merged: false,
       title: "Steal [fred/SID-1]",
       url: PR,
-    });
+    }));
     expect(result.linked).toEqual([]);
     expect(listPrLinksForItem(db, userId, one.id)).toEqual([]);
   });
@@ -140,7 +172,7 @@ describe("applyPullRequestEvent", () => {
   it("keeps a title link while its ref is ambiguous, and drops it once edited out", () => {
     const { db, userId, one } = seed();
     const deliver = (title: string) =>
-      applyPullRequestEvent(db, userId, { action: "edited", merged: false, title, url: PR });
+      applyPullRequestEvent(db, userId, pr({ action: "edited", title }));
     deliver("Ship [SID-1]");
 
     // Alice shares her own "Sidetrack" list, so bare SID-1 now names two items.
@@ -161,12 +193,12 @@ describe("applyPullRequestEvent", () => {
     // Linked by an agent, not named in the title.
     linkItemToPr(db, userId, two.id, PR, "web");
 
-    const result = applyPullRequestEvent(db, userId, {
+    const result = applyPullRequestEvent(db, userId, pr({
       action: "closed",
       merged: true,
       title: "Ship it [SID-1]",
       url: PR,
-    });
+    }));
 
     expect(result.completed.sort()).toEqual(["SID-1", "SID-2"]);
     expect(getItem(db, userId, one.id)?.completedAt).not.toBeNull();
@@ -178,12 +210,12 @@ describe("applyPullRequestEvent", () => {
 
   it("changes nothing when the PR closes without merging", () => {
     const { db, userId, one } = seed();
-    const result = applyPullRequestEvent(db, userId, {
+    const result = applyPullRequestEvent(db, userId, pr({
       action: "closed",
       merged: false,
       title: "Abandon [SID-1]",
       url: PR,
-    });
+    }));
     expect(result).toEqual({ linked: [], unlinked: [], unresolved: [], completed: [] });
     expect(getItem(db, userId, one.id)?.completedAt).toBeNull();
     expect(listPrLinksForItem(db, userId, one.id)).toEqual([]);
