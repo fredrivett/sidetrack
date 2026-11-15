@@ -104,6 +104,8 @@ function SpaceCard({ space, viewerId }: { space: SpaceView; viewerId: string }) 
   // A change to the Space holds the card until it lands, then reloads its
   // people and the page (the board and this list of Spaces).
   function save(action: () => Promise<unknown>, what: string, after?: () => void) {
+    // The card ignores pointers while it holds; this stops keys too.
+    if (saving) return;
     start(async () => {
       if (!(await runAction(action(), what))) return;
       after?.();
@@ -216,6 +218,7 @@ function SpaceCard({ space, viewerId }: { space: SpaceView; viewerId: string }) 
                         `change ${displayName(m)}'s role`,
                       )
                     }
+                    aria-label={`${m.role === "admin" ? "Make member" : "Make admin"}: ${displayName(m)}`}
                     className="rounded px-1.5 py-0.5 text-xs text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900 dark:hover:bg-neutral-700 dark:hover:text-neutral-100"
                   >
                     {m.role === "admin" ? "Make member" : "Make admin"}

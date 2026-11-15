@@ -71,6 +71,7 @@ export function Kanban({
   spaces,
   pendingSpaceInvites,
   initialCollapsedTrays,
+  initialListId,
 }: {
   viewerId: string;
   /** The viewer's own display fields, for the avatar on the Account button. */
@@ -96,6 +97,8 @@ export function Kanban({
   pendingSpaceInvites: PendingSpaceInviteView[];
   /** Trays ("personal" or Space ids) this browser has collapsed, from its cookie. */
   initialCollapsedTrays: string[];
+  /** From `?p=`, the list the board opens centred on. */
+  initialListId: string | null;
 }) {
   const railRef = useRef<HTMLDivElement>(null);
 
@@ -262,7 +265,8 @@ export function Kanban({
   // For someone in a Space, the board groups lists on trays: "Personal" for
   // lists in none of their Spaces, then one per Space, empty ones included.
   // Collapsed trays are remembered per browser in a cookie, so the board
-  // renders them collapsed from the first paint.
+  // renders them collapsed from the first paint. The tray holding ?p='s list
+  // starts open, so a link to a list shows it.
   const trays = [
     { id: "personal", name: "Personal", icon: null },
     ...spaces.map((s) => ({ id: s.id, name: s.name, icon: s.icon })),
@@ -272,15 +276,25 @@ export function Kanban({
   const trayByList: Record<string, string> = Object.fromEntries(
     onBoard.map((p) => [p.id, trayOf(p)]),
   );
-  const [collapsedTrays, setCollapsedTrays] = useState(
-    () => new Set(initialCollapsedTrays),
-  );
+  const [collapsedTrays, setCollapsedTrays] = useState(() => {
+    const collapsed = new Set(initialCollapsedTrays);
+    if (initialListId) collapsed.delete(trayByList[initialListId]);
+    return collapsed;
+  });
   function setTrayCollapsed(trayId: string, value: boolean) {
     const next = new Set(collapsedTrays);
     if (value) next.add(trayId);
     else next.delete(trayId);
     setCollapsedTrays(next);
     saveCollapsedTrays([...next]);
+    // ?p= follows the list on view; once its tray folds away it isn't, and
+    // keeping it would open the tray again on the next load.
+    const url = new URL(window.location.href);
+    const shown = url.searchParams.get("p");
+    if (value && shown && trayByList[shown] === trayId) {
+      url.searchParams.delete("p");
+      window.history.replaceState(null, "", url.toString());
+    }
   }
 
   const [paletteOpen, setPaletteOpen] = useState(false);

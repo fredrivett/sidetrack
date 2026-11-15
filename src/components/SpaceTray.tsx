@@ -17,8 +17,13 @@ export function saveCollapsedTrays(ids: string[]) {
   )}; path=/; max-age=31536000; samesite=lax`;
 }
 
+/** A malformed cookie (edited by hand, cut short) reads as nothing collapsed. */
 export function parseCollapsedTrays(value: string | undefined): string[] {
-  return value ? decodeURIComponent(value).split(",").filter(Boolean) : [];
+  try {
+    return value ? decodeURIComponent(value).split(",").filter(Boolean) : [];
+  } catch {
+    return [];
+  }
 }
 
 /**

@@ -22,9 +22,9 @@ export const dynamic = "force-dynamic";
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string | string[] }>;
+  searchParams: Promise<{ view?: string | string[]; p?: string | string[] }>;
 }) {
-  const { view } = await searchParams;
+  const { view, p } = await searchParams;
   const userId = await requireUserId();
   const { db } = getDb();
   // Repeating items whose next due day has come reopen as the page loads.
@@ -82,6 +82,7 @@ export default async function Home({
         pendingInvites={pendingInvites}
         spaces={listSpaces(db, userId)}
         pendingSpaceInvites={listPendingSpaceInvites(db, userId)}
+        initialListId={typeof p === "string" ? p : null}
         initialCollapsedTrays={parseCollapsedTrays(
           (await cookies()).get(COLLAPSED_TRAYS_COOKIE)?.value,
         )}

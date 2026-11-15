@@ -24,6 +24,8 @@ export function InvitesBanner({
   invites: PendingInviteView[];
   spaceInvites: PendingSpaceInviteView[];
 }) {
+  // While one answer saves, the buttons dim and ignore presses but keep
+  // focus (aria-disabled, not disabled), as the board's other holds do.
   const [pending, start] = useTransition();
   if (invites.length === 0 && spaceInvites.length === 0) return null;
 
@@ -38,8 +40,10 @@ export function InvitesBanner({
           <div className="flex shrink-0 gap-2">
             <Button
               size="sm"
-              disabled={pending}
+              aria-disabled={pending || undefined}
+              className="aria-disabled:opacity-50"
               onClick={() =>
+                !pending &&
                 start(async () => {
                   await runAction(
                     acceptSpaceInviteAction(invite.spaceId),
@@ -53,8 +57,10 @@ export function InvitesBanner({
             <Button
               size="sm"
               variant="outline"
-              disabled={pending}
+              aria-disabled={pending || undefined}
+              className="aria-disabled:opacity-50"
               onClick={() =>
+                !pending &&
                 start(async () => {
                   await runAction(
                     declineSpaceInviteAction(invite.spaceId),
@@ -81,8 +87,10 @@ export function InvitesBanner({
           <div className="flex shrink-0 gap-2">
             <Button
               size="sm"
-              disabled={pending}
+              aria-disabled={pending || undefined}
+              className="aria-disabled:opacity-50"
               onClick={() =>
+                !pending &&
                 start(async () => {
                   await runAction(
                     acceptInviteAction(invite.projectId),
@@ -96,8 +104,10 @@ export function InvitesBanner({
             <Button
               size="sm"
               variant="outline"
-              disabled={pending}
+              aria-disabled={pending || undefined}
+              className="aria-disabled:opacity-50"
               onClick={() =>
+                !pending &&
                 start(async () => {
                   await runAction(
                     declineInviteAction(invite.projectId),
