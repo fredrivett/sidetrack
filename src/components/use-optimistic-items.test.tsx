@@ -254,14 +254,24 @@ describe("useOptimisticItems: deletes and moves", () => {
   it("reopens a finished parent when an open item nests under it, as the server does", async () => {
     const save = deferred();
     vi.mocked(setItemParentAction).mockReturnValue(save.promise);
+    const tick = deferred();
+    vi.mocked(completeItemAction).mockReturnValue(tick.promise);
     const done = (item: Item) => ({ ...item, completedAt: 1 });
-    render(<Tree items={[done(a), done(b), done(c), other]} onChanges={keep} />);
+    const d = { ...base, id: "d", title: "D" };
+    render(<Tree items={[done(a), done(b), done(c), other, d]} onChanges={keep} />);
 
-    // A finished item keeps its finished parent finished.
+    // A finished item keeps its finished parent finished, including one
+    // ticked by a save still in flight and passed as it was before the tick.
     act(() => changes.setParent(done(c), "a"));
-    expect(shown()).toEqual(["A ✓", "- C ✓", "B ✓", "Other"]);
+    expect(shown()).toEqual(["A ✓", "- C ✓", "B ✓", "Other", "D"]);
+    act(() => changes.setCompleted(other, true));
     act(() => changes.setParent(other, "a"));
-    expect(shown()).toEqual(["A", "- C ✓", "- Other", "B ✓"]);
-    await act(async () => save.resolve());
+    expect(shown()).toEqual(["A ✓", "- C ✓", "- Other ✓", "B ✓", "D"]);
+    act(() => changes.setParent(d, "a"));
+    expect(shown()).toEqual(["A", "- C ✓", "- Other ✓", "- D", "B ✓"]);
+    await act(async () => {
+      tick.resolve();
+      save.resolve();
+    });
   });
 });
