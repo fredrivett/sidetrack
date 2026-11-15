@@ -264,13 +264,16 @@ describe("error results", () => {
     addItem(db, fred, { projectId: list.id, title: "Tidy flat" }, "web");
     const call = await connectAs(fred);
 
-    const both = await call("add_item", {
-      list_id: list.id,
-      title: "Shop",
-      parent: "HOM-1",
-      sub_items: ["Milk"],
-    });
-    expect(both.error).toMatch(/Pass parent or sub_items, not both/);
+    // Supplied counts, even empty: an empty checklist is still a checklist.
+    for (const sub_items of [["Milk"], []]) {
+      const both = await call("add_item", {
+        list_id: list.id,
+        title: "Shop",
+        parent: "HOM-1",
+        sub_items,
+      });
+      expect(both.error).toMatch(/Pass parent or sub_items, not both/);
+    }
     expect(listItems(db, fred, list.id)).toHaveLength(1);
 
     const clash = await call("update_item", {
