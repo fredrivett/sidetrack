@@ -63,6 +63,9 @@ export function PullToSearch({ onOpen }: { onOpen: () => void }) {
     function setReady(hint: HTMLElement, ready: boolean) {
       if (hint.dataset.ready === String(ready)) return;
       hint.dataset.ready = String(ready);
+      // A tick as the pull arms, on Android: Safari has no vibrate, and Chrome
+      // refuses it until the page has been tapped (a pull isn't a tap).
+      if (ready && navigator.userActivation?.hasBeenActive) navigator.vibrate?.(10);
       const labels = labelsRef.current;
       const shown = ready ? labels?.lastElementChild : labels?.firstElementChild;
       if (labels && shown instanceof HTMLElement) {
