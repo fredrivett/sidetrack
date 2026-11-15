@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { Boxes, ChevronDown, Plus } from "lucide-react";
+import { unstable_rethrow } from "next/navigation";
 import { toast } from "sonner";
 import { createProjectAction, suggestNewListIconsAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
@@ -62,6 +63,7 @@ export function NewProjectDialog({
   onOpenChange,
   takenPrefixes,
   spaces,
+  defaultSpaceId = "",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -69,6 +71,8 @@ export function NewProjectDialog({
   takenPrefixes: string[];
   /** Spaces the viewer has joined, to create the list in one. */
   spaces: SpaceView[];
+  /** The Space to create the list in by default: the tray whose + opened it. */
+  defaultSpaceId?: string;
 }) {
   const [name, setName] = useState("");
   const [summary, setSummary] = useState("");
@@ -96,7 +100,7 @@ export function NewProjectDialog({
       setName("");
       setSummary("");
       setHomepage("");
-      setSpaceId("");
+      setSpaceId(defaultSpaceId);
       setPicked(undefined);
       setSuggested({ for: "", emoji: [] });
     }
@@ -122,7 +126,9 @@ export function NewProjectDialog({
         .then((emoji) => {
           if (current) setSuggested({ for: context, emoji });
         })
-        .catch(() => {});
+        // A suggestion that fails is just left out, but a signed-out
+        // session's redirect to /login goes through to Next.
+        .catch((e) => unstable_rethrow(e));
     }, SUGGEST_DELAY_MS);
     return () => {
       current = false;

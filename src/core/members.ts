@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, type SQL, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { hasProjectAccess } from "./access";
 import { users } from "./auth-schema";
@@ -452,6 +452,30 @@ export function listSuggestedCollaborators(
   const project = getProject(db, userId, projectId);
   if (!project || project.userId !== userId) return [];
 
+  // Already on this list: a member row (pending or accepted), or access
+  // through the list's Space.
+  const onThisProject = sql`(
+    select ${projectMembers.userId} from ${projectMembers}
+    where ${projectMembers.projectId} = ${projectId}
+    union
+    select ${spaceMembers.userId} from ${spaceMembers}
+    where ${spaceMembers.status} = 'accepted' and ${spaceMembers.spaceId} = ${project.spaceId ?? ""}
+  )`;
+
+  return suggestCollaborators(db, userId, onThisProject);
+}
+
+/**
+ * Everyone `userId` shares a list or a Space with, however (as owner, accepted
+ * member, or through a Space), except themselves and the ids in `exclude`, a
+ * subquery. Pending invites don't count: until someone accepts, they aren't a
+ * collaborator. Feeds the Share dialog's and a Space's invite suggestions.
+ */
+export function suggestCollaborators(
+  db: Db,
+  userId: string,
+  exclude: SQL,
+): CollaboratorView[] {
   // Every list the caller can see, however they got access.
   const shared = sql`(select ${projects.id} from ${projects} where ${hasProjectAccess(userId)})`;
   // The caller's Spaces: those of the lists above, plus any they're in
@@ -473,16 +497,6 @@ export function listSuggestedCollaborators(
     select ${spaceMembers.userId} from ${spaceMembers}
     where ${spaceMembers.status} = 'accepted' and ${spaceMembers.spaceId} in ${mySpaces}
   )`;
-  // Already on this list: a member row (pending or accepted), or access
-  // through the list's Space.
-  const onThisProject = sql`(
-    select ${projectMembers.userId} from ${projectMembers}
-    where ${projectMembers.projectId} = ${projectId}
-    union
-    select ${spaceMembers.userId} from ${spaceMembers}
-    where ${spaceMembers.status} = 'accepted' and ${spaceMembers.spaceId} = ${project.spaceId ?? ""}
-  )`;
-
   return db
     .select({
       userId: users.id,
@@ -496,7 +510,7 @@ export function listSuggestedCollaborators(
       and(
         sql`${users.id} in ${people}`,
         ne(users.id, userId),
-        sql`${users.id} not in ${onThisProject}`,
+        sql`${users.id} not in ${exclude}`,
       ),
     )
     .orderBy(asc(users.username))

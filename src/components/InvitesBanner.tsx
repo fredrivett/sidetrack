@@ -1,22 +1,79 @@
 "use client";
 
 import { useTransition } from "react";
-import { acceptInviteAction, declineInviteAction } from "@/app/actions";
+import {
+  acceptInviteAction,
+  acceptSpaceInviteAction,
+  declineInviteAction,
+  declineSpaceInviteAction,
+} from "@/app/actions";
 import type { PendingInviteView } from "@/core/members";
+import type { PendingSpaceInviteView } from "@/core/spaces";
 import { Button } from "@/components/ui/button";
 import { runAction } from "./run-action";
 
 /**
- * A strip of pending project invites shown above the board. Each can be
- * accepted (the project joins your board) or declined (the invite is dropped).
- * Renders nothing when there are no invites.
+ * A strip of pending invites shown above the board, to lists and to Spaces.
+ * Each can be accepted (the list, or the Space's lists, join your board) or
+ * declined (the invite is dropped). Renders nothing when there are none.
  */
-export function InvitesBanner({ invites }: { invites: PendingInviteView[] }) {
+export function InvitesBanner({
+  invites,
+  spaceInvites,
+}: {
+  invites: PendingInviteView[];
+  spaceInvites: PendingSpaceInviteView[];
+}) {
+  // While one answer saves, the buttons dim and ignore presses but keep
+  // focus (aria-disabled, not disabled), as the board's other holds do.
   const [pending, start] = useTransition();
-  if (invites.length === 0) return null;
+  if (invites.length === 0 && spaceInvites.length === 0) return null;
 
   return (
     <div className="shrink-0 space-y-2 border-b border-amber-200 bg-amber-50 px-4 py-2 dark:border-amber-900 dark:bg-amber-950/40">
+      {spaceInvites.map((invite) => (
+        <div key={invite.spaceId} className="flex items-center justify-between gap-3 text-sm">
+          <span className="min-w-0 truncate text-amber-900 dark:text-amber-200">
+            You&rsquo;re invited to join the space{" "}
+            <span className="font-medium">“{invite.spaceName}”</span> and share its lists
+          </span>
+          <div className="flex shrink-0 gap-2">
+            <Button
+              size="sm"
+              aria-disabled={pending || undefined}
+              className="aria-disabled:opacity-50"
+              onClick={() =>
+                !pending &&
+                start(async () => {
+                  await runAction(
+                    acceptSpaceInviteAction(invite.spaceId),
+                    `join “${invite.spaceName}”`,
+                  );
+                })
+              }
+            >
+              Join
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              aria-disabled={pending || undefined}
+              className="aria-disabled:opacity-50"
+              onClick={() =>
+                !pending &&
+                start(async () => {
+                  await runAction(
+                    declineSpaceInviteAction(invite.spaceId),
+                    `decline the invite to “${invite.spaceName}”`,
+                  );
+                })
+              }
+            >
+              Decline
+            </Button>
+          </div>
+        </div>
+      ))}
       {invites.map((invite) => (
         <div
           key={invite.projectId}
@@ -30,8 +87,10 @@ export function InvitesBanner({ invites }: { invites: PendingInviteView[] }) {
           <div className="flex shrink-0 gap-2">
             <Button
               size="sm"
-              disabled={pending}
+              aria-disabled={pending || undefined}
+              className="aria-disabled:opacity-50"
               onClick={() =>
+                !pending &&
                 start(async () => {
                   await runAction(
                     acceptInviteAction(invite.projectId),
@@ -45,8 +104,10 @@ export function InvitesBanner({ invites }: { invites: PendingInviteView[] }) {
             <Button
               size="sm"
               variant="outline"
-              disabled={pending}
+              aria-disabled={pending || undefined}
+              className="aria-disabled:opacity-50"
               onClick={() =>
+                !pending &&
                 start(async () => {
                   await runAction(
                     declineInviteAction(invite.projectId),

@@ -49,8 +49,17 @@ asserts the audit row was written is incomplete.
    - `listAudit(db)` contains a matching row with the correct
      `source`, `action`, `entityType`, and `entityId`.
 
-   Do not test the MCP tool wrapper directly — it's a thin Zod + JSON
-   adapter. Testing the core fn is what matters.
+   The tool layer has logic of its own too: ref resolution that refuses to
+   guess (`resolveItemArg`), position anchors by ref (`resolvePositionArg`),
+   output shaping (`forAgent`: `project*` keys renamed to `list*`, `repeat`,
+   `comesBack` in the user's time zone), input checks the core doesn't make
+   (e.g. `parent` with `sub_items`), and error results that say no change was
+   made. When the tool adds or changes any of that, test it in
+   `src/mcp/tools.test.ts` through the tool interface: `connectAs(userId)`
+   calls tools through a real MCP client against `createTestDb()`, with only
+   the DB singleton and env stubbed. Assert what the agent gets back and,
+   for an error, that nothing changed in the DB. Don't repeat core
+   behaviour there that the core tests already cover.
 
 5. **Verify.** Run `pnpm test` and `pnpm lint`. Both must pass before the
    tool is considered shipped.

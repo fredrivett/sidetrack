@@ -139,21 +139,30 @@ export async function deliverPasswordResetEmail(
   );
 }
 
-// Single source of truth for the project-invite email's copy.
+/** What an invite is to: a list, or a Space of lists. */
+export type InviteKind = "list" | "space";
+
+// Single source of truth for the invite email's copy.
 function inviteMessage({
   inviterName,
   projectName,
   url,
+  kind = "list",
 }: {
   inviterName: string;
   projectName: string;
   url: string;
+  kind?: InviteKind;
 }): { subject: string; text: string } {
   return {
-    subject: `${inviterName} invited you to a Sidetrack list`,
+    subject: `${inviterName} invited you to a Sidetrack ${kind}`,
     text:
-      `${inviterName} invited you to collaborate on "${projectName}" in ` +
-      `Sidetrack.\n\nOpen Sidetrack to accept: ${url}\n\nIf you weren't ` +
+      (kind === "space"
+        ? `${inviterName} invited you to join the space "${projectName}" in ` +
+          `Sidetrack, to share every list in it.`
+        : `${inviterName} invited you to collaborate on "${projectName}" in ` +
+          `Sidetrack.`) +
+      `\n\nOpen Sidetrack to accept: ${url}\n\nIf you weren't ` +
       "expecting this, you can ignore this email — nothing changes until you " +
       "accept.",
   };
@@ -166,16 +175,17 @@ export async function deliverInviteEmail(
     inviterName,
     projectName,
     url,
-  }: { to: string; inviterName: string; projectName: string; url: string },
+    kind,
+  }: { to: string; inviterName: string; projectName: string; url: string; kind?: InviteKind },
   deps: EmailDeps,
 ): Promise<void> {
-  const { subject, text } = inviteMessage({ inviterName, projectName, url });
+  const { subject, text } = inviteMessage({ inviterName, projectName, url, kind });
   await deliverEmail(
     {
       to,
       subject,
       text,
-      logLine: `[email] no SMTP_URL or RESEND_API_KEY set — list invite for ${to}: ${url}`,
+      logLine: `[email] no SMTP_URL or RESEND_API_KEY set — ${kind ?? "list"} invite for ${to}: ${url}`,
       errorLabel: "invite email",
     },
     deps,
@@ -250,6 +260,7 @@ export async function sendInviteEmail(opts: {
   inviterName: string;
   projectName: string;
   url: string;
+  kind?: InviteKind;
 }): Promise<void> {
   await deliverInviteEmail(opts, liveDeps());
 }
@@ -265,6 +276,7 @@ export async function notifyInvite(opts: {
   inviterName: string;
   projectName: string;
   url: string;
+  kind?: InviteKind;
 }): Promise<void> {
   try {
     await sendInviteEmail(opts);

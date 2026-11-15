@@ -188,6 +188,22 @@ describe("deliverInviteEmail", () => {
     expect(smtp.calls[0].message.text).toContain(INVITE.url);
   });
 
+  it("says a space invite is to a space, not a list", async () => {
+    const smtp = smtpStub();
+    await deliverInviteEmail(
+      { ...INVITE, projectName: "Household", kind: "space" },
+      {
+        env: { ...noEnv, SMTP_URL: "smtp://localhost:1025" },
+        fetchFn: fetchStub({}).fn,
+        log: () => {},
+        sendSmtp: smtp.fn,
+      },
+    );
+    const { subject, text } = smtp.calls[0].message;
+    expect(subject).toBe("Fred invited you to a Sidetrack space");
+    expect(text).toContain('join the space "Household"');
+  });
+
   it("labels a Resend rejection as the invite email", async () => {
     const { fn } = fetchStub({
       ok: false,

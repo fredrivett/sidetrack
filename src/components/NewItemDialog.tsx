@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronDown, CircleDashed, CornerDownRight, Plus, X } from "lucide-react";
+import { unstable_rethrow } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -223,7 +224,9 @@ export function NewItemDialog({
         .then((value) => {
           if (current) setSuggested({ for: context, value });
         })
-        .catch(() => {});
+        // A suggestion that fails is just left out, but a signed-out
+        // session's redirect to /login goes through to Next.
+        .catch((e) => unstable_rethrow(e));
     }, SUGGEST_DELAY_MS);
     return () => {
       current = false;
