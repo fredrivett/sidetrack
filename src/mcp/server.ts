@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { RELEASE } from "@/lib/release";
 import { type McpContext, registerTools } from "./tools";
 
 // Sent to every client on connect, so each agent learns how to show its work
@@ -15,7 +16,8 @@ When you work on an item, show it on the board:
 
 export function buildServer(ctx: McpContext) {
   const server = new McpServer(
-    { name: "sidetrack", version: "0.1.0" },
+    // The deployed commit, so an agent session shows which build it's on.
+    { name: "sidetrack", version: RELEASE.slice(0, 7) || "dev" },
     { capabilities: { tools: {} }, instructions: INSTRUCTIONS },
   );
   registerTools(server, ctx);
