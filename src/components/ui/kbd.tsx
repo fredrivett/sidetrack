@@ -1,11 +1,12 @@
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
-// Hidden on touch-only devices (primary input can't hover and is coarse, i.e.
-// a finger): there's no physical keyboard to press the shortcut with. A
-// tablet with a trackpad attached reports a fine, hovering pointer, so it
-// keeps them.
-const touchOnlyHidden = "[@media(hover:none)_and_(pointer:coarse)]:hidden";
+// Hidden on touch devices (primary input can't hover and is coarse, i.e. a
+// finger), which usually have no physical keyboard to press the shortcut
+// with, until a key press shows one is attached (PhysicalKeyboard.tsx). A
+// tablet with a trackpad reports a fine, hovering pointer, so it keeps them.
+const touchOnlyHidden =
+  "[@media(hover:none)_and_(pointer:coarse)]:[:root:not([data-physical-keyboard])_&]:hidden";
 
 const kbdVariants = cva(
   `${touchOnlyHidden} pointer-events-none inline-flex h-5 w-fit min-w-5 items-center justify-center gap-1 rounded-sm px-1 font-sans text-xs font-medium select-none [&_svg:not([class*='size-'])]:size-3`,
