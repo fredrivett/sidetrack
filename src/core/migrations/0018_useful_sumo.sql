@@ -5,6 +5,7 @@ CREATE TABLE `agent_sessions` (
 	`agent_key_id` text NOT NULL,
 	`agent_name` text NOT NULL,
 	`thread_url` text,
+	`branch` text NOT NULL,
 	`note` text,
 	`started_at` integer NOT NULL,
 	`last_active_at` integer NOT NULL,

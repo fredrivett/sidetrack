@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "2a4d96d4-5ed7-4d4a-8a38-d8ead639f593",
+  "id": "5dd1baaf-26ee-4527-b0b2-4da3ae896b6b",
   "prevId": "329dc7ae-1b2c-42d3-9771-c7d9bcf39d84",
   "tables": {
     "agent_sessions": {
@@ -47,6 +47,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false,
+          "autoincrement": false
+        },
+        "branch": {
+          "name": "branch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
           "autoincrement": false
         },
         "note": {

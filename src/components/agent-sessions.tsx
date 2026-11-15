@@ -15,6 +15,9 @@ import type { AgentAvatarView } from "./UserAvatar";
 /** An agent with no report for this long shows as idle rather than working. */
 const IDLE_AFTER_MS = 15 * 60_000;
 const TICK_MS = 60_000;
+/** How often the board reloads while an agent is working, and otherwise. */
+const POLL_ACTIVE_MS = 60_000;
+const POLL_QUIET_MS = 5 * 60_000;
 
 // The board's agent work sessions, by item, read by each row and detail sheet
 // (useItemAgentSessions) instead of being passed down through every view.
@@ -45,18 +48,27 @@ function subscribe(onChange: () => void) {
   };
 }
 
+const noSubscribe = () => () => {};
+
 /**
  * The time, to the minute, or null during the server render and hydration,
- * where every open session counts as working.
+ * where every open session counts as working. Only a caller that needs it
+ * (`active`) follows the clock, so rows without an agent never re-render.
  */
-function useMinuteClock(): number | null {
-  return useSyncExternalStore(subscribe, () => now, () => null);
+function useMinuteClock(active: boolean): number | null {
+  return useSyncExternalStore(
+    active ? subscribe : noSubscribe,
+    () => (active ? now : 0),
+    () => null,
+  );
 }
 
 /**
- * Provides the sessions to the rows and sheets, and keeps them current
+ * Provides the sessions to the rows and dialogs, and keeps them current
  * without real time: the board reloads when the tab comes back into view, and
- * every minute while it's visible and an agent is on any item.
+ * while it's visible, every minute when an agent has reported lately, else
+ * every five minutes (so new work still shows, but an abandoned session that
+ * never finished doesn't keep the board reloading every minute).
  */
 export function AgentSessionsProvider({
   sessions,
@@ -71,33 +83,48 @@ export function AgentSessionsProvider({
     for (const s of sessions) (map[s.itemId] ??= []).push(s);
     return map;
   }, [sessions]);
-  const anyOpen = sessions.some((s) => s.finishedAt === null);
+  // When an open session last reported; -Infinity when none is open.
+  const lastReport = Math.max(
+    -Infinity,
+    ...sessions.filter((s) => s.finishedAt === null).map((s) => s.lastActiveAt),
+  );
 
   useEffect(() => {
     function refresh() {
       if (document.visibilityState === "visible") router.refresh();
     }
+    // Each wait is chosen when it starts, so an agent going quiet slows the
+    // polling down even if nothing on the board changes.
+    let timer: ReturnType<typeof setTimeout>;
+    function schedule() {
+      const working = Date.now() - lastReport < IDLE_AFTER_MS;
+      timer = setTimeout(() => {
+        refresh();
+        schedule();
+      }, working ? POLL_ACTIVE_MS : POLL_QUIET_MS);
+    }
+    schedule();
     document.addEventListener("visibilitychange", refresh);
-    const poll = anyOpen ? setInterval(refresh, TICK_MS) : undefined;
     return () => {
       document.removeEventListener("visibilitychange", refresh);
-      clearInterval(poll);
+      clearTimeout(timer);
     };
-  }, [anyOpen, router]);
+  }, [lastReport, router]);
 
   return <SessionsContext value={byItem}>{children}</SessionsContext>;
 }
 
 /**
  * An item's agents: `agents` are those on it now (its open sessions, oldest
- * first) as avatars, and `sessions` every session it has had, for the sheet.
+ * first) as avatars, and `sessions` the ones the board loaded for it (open,
+ * plus the latest finished), for the detail dialog.
  */
 export function useItemAgentSessions(itemId: string): {
   sessions: AgentSession[];
   agents: (AgentAvatarView & { session: AgentSession })[];
 } {
   const sessions = useContext(SessionsContext)[itemId] ?? NO_SESSIONS;
-  const clock = useMinuteClock();
+  const clock = useMinuteClock(sessions.some((s) => s.finishedAt === null));
   const agents = useMemo(
     () =>
       sessions

@@ -60,7 +60,7 @@ import {
 } from "@/core/schema";
 import { notifyInvite } from "@/lib/email";
 import { getEnv } from "@/lib/env";
-import { formatItemRef, workBranchName, workPrTitle } from "@/lib/itemRef";
+import { formatItemRef, workPrTitle } from "@/lib/itemRef";
 import { MAX_REPEAT_EVERY, REPEAT_UNITS, type RepeatUnit, nextDueDay, repeatOf } from "@/lib/repeat";
 import { dayOf, formatRelativeLong, isDay } from "@/lib/time";
 import { matchesWhose, WHOSE_FILTERS } from "@/lib/whose";
@@ -1025,16 +1025,17 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       const { db } = getDb();
       const { item, error } = resolveItemArg(db, userId, item_id);
       if (error) return error;
-      const project = getProject(db, userId, item.projectId);
-      if (!project) return notFound("list", item.projectId);
       try {
         const session = startWork(db, userId, item.id, { threadUrl: thread_url }, AGENT);
-        const ref = formatItemRef(project.prefix, item.number);
+        // The ref as the user's board shows it: owner-qualified (alice/ENG-42)
+        // when the prefix clashes there, like every other tool's `ref`. The
+        // branch, stored on the session, always uses the bare ref.
+        const { ref } = withItemRef(db, userId, item);
         return json({
           session,
           ref,
-          branch: workBranchName(ref, item.title),
-          pr_title: workPrTitle(ref, item.title),
+          branch: session.branch,
+          pr_title: workPrTitle(ref ?? "", item.title),
         });
       } catch (e) {
         return errorText(`${(e as Error).message} — no change was made.`);

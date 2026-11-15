@@ -4,7 +4,8 @@ import { SortableContext } from "@dnd-kit/sortable";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { setItemParentAction, updateItemAction } from "@/app/actions";
-import type { Item } from "@/core/schema";
+import type { AgentSession, Item } from "@/core/schema";
+import { AgentSessionsProvider } from "./agent-sessions";
 import { ItemRow } from "./ItemRow";
 
 // The server actions pull in server-only modules (next/cache, the DB); the menu
@@ -16,6 +17,9 @@ vi.mock("@/app/actions", () => ({
   updateItemAction: vi.fn(),
   setItemParentAction: vi.fn(),
 }));
+
+// The sessions provider refreshes the board through the router.
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 // Whether the emulated device has a hover-capable pointer; the item menu opens
 // on right-click only there. Reset to a mouse device after each test.
@@ -124,6 +128,38 @@ describe("ItemRow menu", () => {
     const { container } = renderRow();
     fireEvent.contextMenu(container.querySelector(".group") as HTMLElement);
     expect(screen.queryByText("Copy ID")).toBeNull();
+  });
+});
+
+describe("ItemRow agents", () => {
+  it("names a working agent on the assign trigger of an unassigned item", () => {
+    const now = Date.now();
+    const session: AgentSession = {
+      id: "s1",
+      itemId: item.id,
+      userId: "u1",
+      agentKeyId: "k1",
+      agentName: "Amp",
+      threadUrl: null,
+      branch: "eng-42-write-docs",
+      note: null,
+      startedAt: now,
+      lastActiveAt: now,
+      finishedAt: null,
+    };
+    render(
+      <AgentSessionsProvider sessions={[session]}>
+        <ItemRow
+          item={item}
+          prefix="ENG"
+          assignees={[viewer]}
+          viewerId="u1"
+          prLinks={[]}
+          onOpenDetail={() => {}}
+        />
+      </AgentSessionsProvider>,
+    );
+    expect(screen.getByRole("button", { name: "Amp (agent, working) on it. Assign" })).toBeTruthy();
   });
 });
 

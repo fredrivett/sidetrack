@@ -1,5 +1,6 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { formatItemRef, workBranchName } from "../lib/itemRef";
 import { normalizeWebUrl } from "../lib/url";
 import { hasProjectAccess } from "./access";
 import { type AuditOrigin, recordAudit } from "./audit";
@@ -25,8 +26,10 @@ const NOTE_MAX = 280;
 function cleanNote(raw: string): string {
   const note = raw.trim().replace(/\s+/g, " ");
   if (!note) throw new Error("note is required");
-  if (note.length > NOTE_MAX) {
-    throw new Error(`note is too long (${note.length} characters, max ${NOTE_MAX})`);
+  // Count characters (code points), not UTF-16 units, so an emoji counts once.
+  const length = [...note].length;
+  if (length > NOTE_MAX) {
+    throw new Error(`note is too long (${length} characters, max ${NOTE_MAX})`);
   }
   return note;
 }
@@ -51,14 +54,25 @@ function itemOrThrow(db: Db, userId: string, itemId: string): Item {
   return item;
 }
 
-/** Every session on items the user can access, oldest first. */
+/**
+ * What the board shows, oldest first: the open sessions on items the user can
+ * access, plus each item's most recently finished one. Older history stays in
+ * the table (and the audit log) without being reloaded on every refresh.
+ */
 export function listAllAgentSessions(db: Db, userId: string): AgentSession[] {
+  const latestFinished = sql`${agentSessions.id} = (
+    select s2.id from agent_sessions s2
+    where s2.item_id = ${agentSessions.itemId} and s2.finished_at is not null
+    order by s2.finished_at desc, s2.rowid desc limit 1
+  )`;
   return db
     .select({ agentSessions })
     .from(agentSessions)
     .innerJoin(items, eq(items.id, agentSessions.itemId))
     .innerJoin(projects, eq(projects.id, items.projectId))
-    .where(hasProjectAccess(userId))
+    .where(
+      and(hasProjectAccess(userId), or(isNull(agentSessions.finishedAt), latestFinished)),
+    )
     .orderBy(asc(agentSessions.startedAt))
     .all()
     .map((row) => row.agentSessions);
@@ -102,6 +116,15 @@ export function startWork(
   const { keyId, name } = source.agent;
   const existing = openSession(db, itemId, keyId);
   const now = Date.now();
+  // The branch is fixed when the session opens, from the bare ref (never
+  // owner-qualified, which would put a slash in it).
+  const project = db
+    .select({ prefix: projects.prefix })
+    .from(projects)
+    .where(eq(projects.id, item.projectId))
+    .get();
+  if (!project) throw new Error(`list not found: ${item.projectId}`);
+  const branch = workBranchName(formatItemRef(project.prefix, item.number), item.title);
 
   db.transaction((tx) => {
     const t = tx as unknown as Db;
@@ -130,6 +153,7 @@ export function startWork(
         agentKeyId: keyId,
         agentName: name,
         threadUrl,
+        branch,
         startedAt: now,
         lastActiveAt: now,
       })
@@ -203,7 +227,8 @@ export function finishWork(
   source: AgentOrigin,
 ): AgentSession | null {
   const item = itemOrThrow(db, userId, itemId);
-  const note = input.note ? cleanNote(input.note) : null;
+  // A blank closing note is no note, so it can't stop the session closing.
+  const note = input.note?.trim() ? cleanNote(input.note) : null;
   const session = openSession(db, itemId, source.agent.keyId);
   if (!session) return null;
   const now = Date.now();

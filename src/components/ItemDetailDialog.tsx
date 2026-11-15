@@ -32,9 +32,9 @@ import {
   updateItemAction,
 } from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
-import type { Item, ItemPrLink } from "@/core/schema";
+import type { AgentSession, Item, ItemPrLink } from "@/core/schema";
 import { toggleAssignee } from "@/lib/assignees";
-import { formatItemRef, workBranchName } from "@/lib/itemRef";
+import { formatItemRef } from "@/lib/itemRef";
 import { modifierSymbol } from "@/lib/keyboard";
 import { repeatOf } from "@/lib/repeat";
 import {
@@ -80,36 +80,23 @@ import { useItemAgentSessions } from "./agent-sessions";
 
 /**
  * The agents working on the item, each with its status, latest note, thread
- * and branch; or, once none are, a line for the last one that finished.
+ * and branch, then a line for the agent that finished most recently.
  */
 function AgentWork({
   item,
-  prefix,
   assignees,
 }: {
   item: Item;
-  prefix: string;
   assignees: AssigneeView[];
 }) {
   const { sessions, agents } = useItemAgentSessions(item.id);
-  // start_work names branches from the bare ref, never owner-qualified.
-  const ref = formatItemRef(prefix.split("/").pop() ?? prefix, item.number);
-  if (agents.length === 0) {
-    const last = sessions.findLast((s) => s.finishedAt !== null);
-    if (!last?.finishedAt) return null;
-    return (
-      <Field label="Agent">
-        <div className="flex flex-wrap items-center gap-2 text-sm text-neutral-500">
-          <AgentAvatar agent={{ id: last.id, name: last.agentName }} size={18} />
-          <span className="min-w-0 break-words">
-            {last.agentName} finished {formatRelative(last.finishedAt)}
-            {last.note ? `: ${last.note}` : ""}
-          </span>
-          {last.threadUrl && <ThreadLink url={last.threadUrl}>Thread</ThreadLink>}
-        </div>
-      </Field>
-    );
+  let last: (AgentSession & { finishedAt: number }) | null = null;
+  for (const s of sessions) {
+    if (s.finishedAt !== null && (!last || s.finishedAt > last.finishedAt)) {
+      last = { ...s, finishedAt: s.finishedAt };
+    }
   }
+  if (agents.length === 0 && !last) return null;
   return (
     <Field label={agents.length > 1 ? "Agents" : "Agent"}>
       <div className="space-y-2">
@@ -143,7 +130,7 @@ function AgentWork({
                 {s.threadUrl && <ThreadLink url={s.threadUrl}>Open thread</ThreadLink>}
                 <span className="inline-flex min-w-0 items-center gap-1 text-neutral-500">
                   <GitBranch className="size-3 shrink-0" />
-                  <span className="truncate font-mono">{workBranchName(ref, item.title)}</span>
+                  <span className="truncate font-mono">{s.branch}</span>
                 </span>
               </div>
               <p className="text-xs text-neutral-400">
@@ -153,6 +140,16 @@ function AgentWork({
             </div>
           );
         })}
+        {last && (
+          <div className="flex flex-wrap items-center gap-2 text-sm text-neutral-500">
+            <AgentAvatar agent={{ id: last.id, name: last.agentName }} size={18} />
+            <span className="min-w-0 break-words">
+              {last.agentName} finished {formatRelative(last.finishedAt)}
+              {last.note ? `: ${last.note}` : ""}
+            </span>
+            {last.threadUrl && <ThreadLink url={last.threadUrl}>Thread</ThreadLink>}
+          </div>
+        )}
       </div>
     </Field>
   );
@@ -685,7 +682,7 @@ export function ItemDetailDialog({
             />
           </Field>
 
-          <AgentWork item={item} prefix={prefix} assignees={assignees} />
+          <AgentWork item={item} assignees={assignees} />
 
           <Field label="Assignees">
             <DropdownMenu open={assignOpen} onOpenChange={setAssignOpen}>

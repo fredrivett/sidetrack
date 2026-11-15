@@ -229,6 +229,9 @@ export const agentSessions = sqliteTable(
     agentName: text("agent_name").notNull(),
     // The agent's own thread or session page, an absolute http(s) URL.
     threadUrl: text("thread_url"),
+    // The git branch start_work told the agent to use, kept as given so
+    // renaming the item later doesn't change it.
+    branch: text("branch").notNull(),
     // The latest progress note from report_work ("Opened the PR").
     note: text("note"),
     startedAt: integer("started_at").notNull(),

@@ -35,6 +35,7 @@ describe("startWork", () => {
       agentKeyId: "key-amp",
       agentName: "Amp",
       threadUrl: THREAD,
+      branch: "sid-1-ship-it",
       finishedAt: null,
     });
     expect(getItem(db, userId, itemId)?.assigneeIds).toEqual([userId]);
@@ -125,6 +126,14 @@ describe("reportWork", () => {
     });
   });
 
+  it("counts an emoji as one character against the 280 limit", () => {
+    const { db, userId, itemId } = seed();
+    startWork(db, userId, itemId, {}, AMP);
+    // 280 emoji are 560 UTF-16 units but 280 characters.
+    expect(reportWork(db, userId, itemId, "🚀".repeat(280), AMP).note).toHaveLength(560);
+    expect(() => reportWork(db, userId, itemId, "🚀".repeat(281), AMP)).toThrow(/281/);
+  });
+
   it("refuses an agent with no open session, writing nothing", () => {
     const { db, userId, itemId } = seed();
     startWork(db, userId, itemId, {}, AMP);
@@ -154,11 +163,36 @@ describe("finishWork", () => {
     expect(second.id).not.toBe(first.id);
   });
 
+  it("treats a blank note as none and still closes the session", () => {
+    const { db, userId, itemId } = seed();
+    startWork(db, userId, itemId, {}, AMP);
+    const done = finishWork(db, userId, itemId, { note: "   " }, AMP);
+    expect(done?.finishedAt).not.toBeNull();
+    expect(listAudit(db, userId)[0].detail).toBe('finished work on "Ship it"');
+  });
+
   it("is a no-op without an open session", () => {
     const { db, userId, itemId } = seed();
     const before = listAudit(db, userId).length;
     expect(finishWork(db, userId, itemId, {}, AMP)).toBeNull();
     expect(listAudit(db, userId)).toHaveLength(before);
+  });
+});
+
+describe("listAllAgentSessions", () => {
+  it("returns open sessions plus only each item's latest finished one", () => {
+    const { db, userId, itemId } = seed();
+    startWork(db, userId, itemId, {}, AMP);
+    finishWork(db, userId, itemId, { note: "first" }, AMP);
+    startWork(db, userId, itemId, {}, AMP);
+    finishWork(db, userId, itemId, { note: "second" }, AMP);
+    startWork(db, userId, itemId, {}, CLAUDE);
+
+    const sessions = listAllAgentSessions(db, userId);
+    expect(sessions.map((s) => [s.agentName, s.note])).toEqual([
+      ["Amp", "second"],
+      ["Claude", null],
+    ]);
   });
 });
 
@@ -171,6 +205,8 @@ describe("completing an item", () => {
 
     completeItem(db, userId, itemId, "web");
 
-    expect(listAllAgentSessions(db, userId).map((s) => s.finishedAt)).not.toContain(null);
+    const sessions = listAllAgentSessions(db, userId);
+    expect(sessions.map((s) => s.itemId).sort()).toEqual([itemId, child.id].sort());
+    expect(sessions.map((s) => s.finishedAt)).not.toContain(null);
   });
 });

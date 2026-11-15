@@ -1,3 +1,4 @@
+import { AgentSessionsProvider } from "@/components/agent-sessions";
 import { Kanban } from "@/components/Kanban";
 import { listAllAgentSessions } from "@/core/agentSessions";
 import { listCategories } from "@/core/categories";
@@ -53,17 +54,19 @@ export default async function Home({
   }
 
   return (
-    <Kanban
-      viewerId={userId}
-      timeZone={getTimeZone(db, userId)}
-      initialView={view === "today" || view === "no-date" ? view : "board"}
-      projects={projects}
-      itemsByProject={itemsByProject}
-      categoriesByProject={categoriesByProject}
-      assigneesByProject={assigneesByProject}
-      prLinksByItem={prLinksByItem}
-      agentSessions={listAllAgentSessions(db, userId)}
-      pendingInvites={pendingInvites}
-    />
+    // Agents' work sessions reach every row and detail dialog in every view.
+    <AgentSessionsProvider sessions={listAllAgentSessions(db, userId)}>
+      <Kanban
+        viewerId={userId}
+        timeZone={getTimeZone(db, userId)}
+        initialView={view === "today" || view === "no-date" ? view : "board"}
+        projects={projects}
+        itemsByProject={itemsByProject}
+        categoriesByProject={categoriesByProject}
+        assigneesByProject={assigneesByProject}
+        prLinksByItem={prLinksByItem}
+        pendingInvites={pendingInvites}
+      />
+    </AgentSessionsProvider>
   );
 }
