@@ -27,6 +27,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { Plus } from "lucide-react";
 import {
   type ReactNode,
   useLayoutEffect,
@@ -40,6 +41,7 @@ import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { type DropTarget, projectDrop, type TreeRow } from "@/lib/itemTree";
 import { ItemRow, type RowDrag } from "./ItemRow";
+import { Button } from "./ui/button";
 import { runAction } from "./run-action";
 import { useCollapsedItems } from "./use-collapsed-items";
 
@@ -261,6 +263,7 @@ export function DraggableItemList({
   groups,
   collapsed,
   onToggleCollapsed,
+  onAddItem,
   ...row
 }: RowProps & {
   projectId: string;
@@ -268,6 +271,8 @@ export function DraggableItemList({
   /** Parents whose sub-items are hidden. */
   collapsed: ReadonlySet<string>;
   onToggleCollapsed: (id: string) => void;
+  /** Opens New item for this list, from the empty state. */
+  onAddItem: () => void;
 }) {
   // The order just dropped, shown until the server's refresh lands: held for
   // the whole transition, so the list can't flash back to the old order
@@ -412,9 +417,19 @@ export function DraggableItemList({
 
   if (groups.length === 0) {
     return (
-      <p className="rounded-lg border border-dashed border-neutral-200 bg-neutral-50 px-3 py-4 text-center text-xs text-balance text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/30 dark:text-neutral-400">
-        Nothing to do — add an item from the list’s ⋯ menu.
-      </p>
+      <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-neutral-200 bg-neutral-50 px-3 py-8 text-center text-xs text-balance text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/30 dark:text-neutral-400">
+        <p>Nothing to do yet.</p>
+        <Button
+          variant="outline"
+          size="xs"
+          onClick={onAddItem}
+          // Dark like an item row, so it sits below the card, not on it.
+          className="dark:bg-neutral-900"
+        >
+          <Plus />
+          Add item
+        </Button>
+      </div>
     );
   }
 
