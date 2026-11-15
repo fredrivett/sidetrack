@@ -23,10 +23,8 @@ import {
   useTransition,
 } from "react";
 import {
-  completeItemAction,
   deleteItemAction,
   setItemParentAction,
-  uncompleteItemAction,
   updateItemAction,
 } from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
@@ -65,6 +63,7 @@ import { RepeatBadge } from "./RepeatBadge";
 import { useToday } from "./use-day-start";
 import { useAssignShortcuts } from "./useAssignShortcuts";
 import { useOptimisticAssignees } from "./use-optimistic-assignees";
+import { useSetCompleted } from "./use-optimistic-completion";
 import { useCopyItemRef } from "./useCopyItemRef";
 import { agentLabel, AvatarStack, assigneeNames } from "./UserAvatar";
 import { useItemAgentSessions } from "./agent-sessions";
@@ -117,6 +116,7 @@ export function ItemRow({
 }) {
   const isDragging = drag?.isDragging ?? false;
   const [pending, start] = useTransition();
+  const setCompleted = useSetCompleted();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
@@ -151,11 +151,8 @@ export function ItemRow({
     deferToDialog: true,
   });
 
-
   function toggle() {
-    start(() => {
-      void (completed ? uncompleteItemAction(item.id) : completeItemAction(item.id));
-    });
+    setCompleted(item, !completed);
   }
   function del() {
     if (!confirmingDelete) {
