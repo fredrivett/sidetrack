@@ -1,6 +1,12 @@
 services:
   sidetrack:
-    build: .
+    build:
+      context: .
+      args:
+        # Optional. Keeps Server Action IDs the same across rebuilds, so tabs
+        # left open through an update can still save. Generate with:
+        # openssl rand -base64 32. Unset = a fresh key on every build.
+        NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: ${NEXT_SERVER_ACTIONS_ENCRYPTION_KEY:-}
     image: sidetrack:latest
     container_name: sidetrack
     restart: unless-stopped

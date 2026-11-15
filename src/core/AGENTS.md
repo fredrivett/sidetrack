@@ -17,8 +17,9 @@ must be callable from both Server Actions (`src/app`) and MCP tools (`src/mcp`).
   `(position, id)` so ties stay stable. An item's position orders it among its
   siblings: top-level items, or one parent's sub-items (`parentId`, one level
   deep). `position` is only "where it sits in the list": completing or
-  reopening an item never moves it — the UI decides where finished items show (in place today, Done afterwards; see
-  `startOfDay` in `src/lib/time.ts`).
+  reopening an item never moves it — the UI decides where finished items show (in place today, Done for the rest of the
+  week, then off the board; see `startOfDay` and `startOfWeek` in
+  `src/lib/time.ts`).
 - **Schema changes** go in `schema.ts`, then run `pnpm db:generate` to emit a
   new file under `src/core/migrations/`. Migrations are applied automatically
   by `src/instrumentation.ts` on app start.

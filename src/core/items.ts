@@ -1,4 +1,4 @@
-import { and, asc, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, type SQL, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { hasProjectAccess } from "./access";
 import { users } from "./auth-schema";
@@ -47,17 +47,30 @@ function projectAccessibleForUser(
   return !!row;
 }
 
+/**
+ * A list's items in list order: open ones, plus finished ones with
+ * `includeCompleted`. `completedSince` keeps a group (a top-level item and
+ * its sub-items) whole while any of it is open or was finished at or after
+ * then, so checklists stay whole and an open parent keeps sub-items finished
+ * long ago; it drops groups finished entirely before then.
+ */
 export function listItems(
   db: Db,
   userId: string,
   projectId: string,
-  opts: { includeCompleted?: boolean } = {},
+  opts: { includeCompleted?: boolean; completedSince?: number } = {},
 ): Item[] {
   const baseConds = [
     eq(items.projectId, projectId),
     hasProjectAccess(userId),
   ];
   if (!opts.includeCompleted) baseConds.push(isNull(items.completedAt));
+  else if (opts.completedSince !== undefined) {
+    const group = sql`coalesce(${items.parentId}, ${items.id})`;
+    baseConds.push(
+      sql`exists (select 1 from items g where (g.id = ${group} or g.parent_id = ${group}) and (g.completed_at is null or g.completed_at >= ${opts.completedSince}))`,
+    );
+  }
   return db
     .select({ items })
     .from(items)
@@ -66,6 +79,90 @@ export function listItems(
     .orderBy(asc(items.position), asc(items.id))
     .all()
     .map((row) => row.items);
+}
+
+/**
+ * Items finished before `before` in the user's lists that aren't archived,
+ * newest first: the history the board leaves out (the Done view's older
+ * pages, ⌘K's search of them). With `query`, only those whose title has it
+ * or whose ref it is ("SID-12"). It returns every one finished from `since`
+ * on: back to the `limit`th newest, and any finished at the same moment as
+ * that one, so a parent and the sub-items it closed never split. `since` is
+ * 0 when that's all of them, and `more` says older ones remain. Each comes
+ * with the rest of its group (its parent and their sub-items), however old,
+ * so its checklist and parent are whole.
+ */
+export function listDoneBefore(
+  db: Db,
+  userId: string,
+  opts: { before: number; limit: number; query?: string },
+): { items: Item[]; since: number; more: boolean } {
+  const limit = Math.max(Math.floor(opts.limit) || 1, 1);
+  const query = opts.query?.trim().toLowerCase();
+  // A ref, optionally qualified ("alice/SID-12"), by its list's prefix.
+  const ref = query ? /^(?:.*\/)?([a-z]+)-(\d+)$/.exec(query) : null;
+  const inLists = and(hasProjectAccess(userId), ne(projects.status, "archived"));
+  const finished = (...where: SQL[]) =>
+    and(
+      inLists,
+      isNotNull(items.completedAt),
+      sql`${items.completedAt} < ${opts.before}`,
+      query
+        ? or(
+            sql`instr(lower(${items.title}), ${query}) > 0`,
+            ref
+              ? and(
+                  sql`lower(${projects.prefix}) = ${ref[1]}`,
+                  eq(items.number, Number(ref[2])),
+                )
+              : undefined,
+          )
+        : undefined,
+      ...where,
+    );
+  const last = db
+    .select({ at: items.completedAt })
+    .from(items)
+    .innerJoin(projects, eq(projects.id, items.projectId))
+    .where(finished())
+    .orderBy(desc(items.completedAt))
+    .limit(1)
+    .offset(limit - 1)
+    .get();
+  const since = last?.at ?? 0;
+  const more =
+    !!last &&
+    !!db
+      .select({ id: items.id })
+      .from(items)
+      .innerJoin(projects, eq(projects.id, items.projectId))
+      .where(finished(sql`${items.completedAt} < ${since}`))
+      .get();
+  const shown = db
+    .select({ items })
+    .from(items)
+    .innerJoin(projects, eq(projects.id, items.projectId))
+    .where(finished(sql`${items.completedAt} >= ${since}`))
+    .orderBy(desc(items.completedAt), desc(items.id))
+    .all()
+    .map((row) => row.items);
+  const ids = new Set(shown.map((i) => i.id));
+  const groups = [...new Set(shown.map((i) => i.parentId ?? i.id))];
+  const rest: Item[] = [];
+  // In batches, to stay inside SQLite's limit on bound parameters.
+  for (let i = 0; i < groups.length; i += 500) {
+    const batch = groups.slice(i, i + 500);
+    for (const row of db
+      .select({ items })
+      .from(items)
+      .innerJoin(projects, eq(projects.id, items.projectId))
+      .where(and(inLists, or(inArray(items.id, batch), inArray(items.parentId, batch))))
+      .orderBy(asc(items.position), asc(items.id))
+      .all()) {
+      if (!ids.has(row.items.id)) rest.push(row.items);
+    }
+  }
+  return { items: [...shown, ...rest], since, more };
 }
 
 // Positions are scoped to a parent: top-level items order among themselves,

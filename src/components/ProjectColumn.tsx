@@ -6,6 +6,7 @@ import { updateProjectAction } from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { nestItems } from "@/lib/itemTree";
+import { startOfWeek } from "@/lib/time";
 import { ColumnCard } from "./BoardLayout";
 import { DoneSection } from "./DoneSection";
 import type { ProjectView } from "./Kanban";
@@ -52,15 +53,23 @@ export function ProjectColumn({
   // Items arrive in list order, flat. Group sub-items under their parent; the
   // split below is by the top-level item, and its checklist goes with it.
   // Open items and items finished today share the list (today's crossed out,
-  // in place); anything finished before today goes to Done, newest first.
+  // in place); anything finished earlier this week goes to Done, newest
+  // first, and older ones leave the board. Before the browser knows its day
+  // (dayStart is Infinity), Done shows every finished item the server sent.
   const dayStart = useDayStart();
+  const weekStart = Number.isFinite(dayStart) ? startOfWeek(dayStart) : -Infinity;
   const groups = nestItems(items);
   const active = groups.filter((i) => i.completedAt === null);
   const inList = groups.filter(
     (i) => i.completedAt === null || i.completedAt >= dayStart,
   );
   const done = groups
-    .filter((i) => i.completedAt !== null && i.completedAt < dayStart)
+    .filter(
+      (i) =>
+        i.completedAt !== null &&
+        i.completedAt < dayStart &&
+        i.completedAt >= weekStart,
+    )
     .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
 
   // Lives above the list/done split so it survives an item moving between

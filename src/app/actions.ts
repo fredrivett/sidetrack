@@ -23,6 +23,7 @@ import {
   completeItem as completeItemCore,
   deleteItem as deleteItemCore,
   type ItemSort,
+  listDoneBefore as listDoneBeforeCore,
   reorderItem as reorderItemCore,
   setItemOrder as setItemOrderCore,
   setItemParent as setItemParentCore,
@@ -341,6 +342,17 @@ export async function uncompleteItemAction(id: string) {
   const it = uncompleteItemCore(db, userId, id, SOURCE);
   refresh();
   return it;
+}
+
+export async function listDoneBeforeAction(opts: {
+  before: number;
+  limit: number;
+  query?: string;
+}) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const { before, limit, query } = opts;
+  return listDoneBeforeCore(db, userId, { before, limit, query });
 }
 
 export async function reorderItemAction(id: string, ref: string) {

@@ -54,6 +54,16 @@ export function startOfDay(now: number): number {
   return start.getTime();
 }
 
+/**
+ * Start of the week `now` falls in, like startOfDay: DAY_START_HOUR on its
+ * Monday, local time. Weeks run Monday to Sunday.
+ */
+export function startOfWeek(now: number): number {
+  const d = new Date(startOfDay(now));
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return d.getTime();
+}
+
 /** The next turnover after `now`: when startOfDay(now) next changes. */
 export function nextDayStart(now: number): number {
   const d = new Date(startOfDay(now));
@@ -148,6 +158,17 @@ const onDay = (day: string): Due => ({ dueFrom: null, dueDate: day });
 /** Monday of the week `day` is in; weeks run Monday to Sunday. */
 function mondayOf(day: string): string {
   return addDays(day, -((weekday(day) + 6) % 7));
+}
+
+/**
+ * A time no later than the start of the week `now` falls in (4am Monday,
+ * see startOfWeek) in any timezone: midnight UTC on the Sunday before the
+ * Monday of that week in `timeZone`. Even at UTC+14, 4am Monday is after it.
+ * Without a zone, it takes UTC−12's week, the last to start.
+ */
+export function weekStartBound(timeZone?: string, now = Date.now()): number {
+  const monday = mondayOf(dayOf(now, timeZone ?? "Etc/GMT+12"));
+  return Date.parse(`${addDays(monday, -1)}T00:00:00Z`);
 }
 
 /**
