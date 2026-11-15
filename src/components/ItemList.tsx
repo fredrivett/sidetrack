@@ -86,7 +86,7 @@ function rowFor(
 }
 
 // The margin puts the tree line under the parent's checkbox; pl-5 leaves room
-// for each branch to bend into its row. (ItemList draws the same, inline.)
+// for each branch to bend into its row. (DraggableItemList draws the same, inline.)
 function SubItem({ last, children }: { last: boolean; children: ReactNode }) {
   return (
     <div className="ml-4 pl-5">
@@ -249,7 +249,7 @@ function Sortable({
  * checklist. From the keyboard: Space picks up a focused row, the arrows move
  * and indent it, and Space drops it.
  */
-export function ItemList({
+export function DraggableItemList({
   projectId,
   groups,
   collapsed,

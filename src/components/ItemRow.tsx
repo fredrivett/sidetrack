@@ -66,7 +66,7 @@ import { agentLabel, AvatarStack, assigneeNames } from "./UserAvatar";
 import { useItemAgentSessions } from "./agent-sessions";
 import { runAction } from "./run-action";
 
-/** Drag wiring from the sortable wrapper that owns this row (see ItemList). */
+/** Drag wiring from the sortable wrapper that owns this row (see DraggableItemList). */
 export type RowDrag = {
   attributes: DraggableAttributes;
   listeners: DraggableSyntheticListeners;

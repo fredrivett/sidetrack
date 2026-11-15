@@ -5,8 +5,8 @@ import { useEffect, useRef } from "react";
 
 /** Finger travel, in px, past which letting go opens the palette. */
 const THRESHOLD = 72;
-/** dnd-kit's TouchSensor starts a drag after a 200ms hold (ItemList), so a
- * touch that hasn't moved by then is a drag, not a pull. */
+/** dnd-kit's TouchSensor starts a drag after a 200ms hold (DraggableItemList),
+ * so a touch that hasn't moved by then is a drag, not a pull. */
 const DRAG_HOLD_MS = 200;
 
 /** The nearest ancestor that scrolls vertically, if any. */

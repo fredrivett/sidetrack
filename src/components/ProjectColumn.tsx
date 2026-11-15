@@ -12,7 +12,7 @@ import { DoneSection } from "./DoneSection";
 import type { ProjectView } from "./Kanban";
 import { EditableText } from "./EditableText";
 import { ItemDetailDialog } from "./ItemDetailDialog";
-import { ItemList } from "./ItemList";
+import { DraggableItemList } from "./ItemList";
 import { ProjectDetailDialog } from "./ProjectDetailDialog";
 import { ProjectIconPicker } from "./ProjectIconPicker";
 import { ProjectMenu } from "./ProjectMenu";
@@ -73,8 +73,8 @@ export function ProjectColumn({
     .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
 
   // Lives above the list/done split so it survives an item moving between
-  // ItemList and DoneSection when it's reopened or the day turns over — see
-  // the hook for the live-lookup / closing-snapshot details.
+  // DraggableItemList and DoneSection when it's reopened or the day turns
+  // over — see the hook for the live-lookup / closing-snapshot details.
   const detail = useItemDetailDialog(items);
   // The column re-renders with fresh server props on every edit. It unmounts
   // when the list is deleted, archived, or moves between the active and paused
@@ -86,8 +86,8 @@ export function ProjectColumn({
   const [showPaused, setShowPaused] = useState(false);
   const collapsed = project.status === "paused" && !showPaused;
   // Parents in the list whose sub-items are hidden. Kept here, not in
-  // ItemList, so the header's button can collapse or expand them all at once;
-  // it shows only while the list has a parent with sub-items on view.
+  // DraggableItemList, so the header's button can collapse or expand them all
+  // at once; it shows only while the list has a parent with sub-items on view.
   const [collapsedItems, setCollapsedItems] = useState<ReadonlySet<string>>(
     new Set(),
   );
@@ -225,7 +225,7 @@ export function ProjectColumn({
           )}
 
           <div className="space-y-3 pt-1.5">
-            <ItemList
+            <DraggableItemList
               projectId={project.id}
               groups={inList}
               collapsed={collapsedItems}
