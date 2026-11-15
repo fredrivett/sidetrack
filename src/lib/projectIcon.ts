@@ -34,12 +34,11 @@ export function normalizeProjectIcon(raw: string): string | null {
 
 /**
  * Ordered favicon candidates for a homepage URL, best-first, to be tried in
- * turn (the UI advances on image load error). The site's own icons come first —
- * the conventional /favicon.svg (crisp, scales to any size) then /favicon.ico —
- * needing no third party, with Google's favicon service as a backup for sites
- * that only declare an icon at a non-conventional path. Returns [] when the URL
- * has no parseable host. Loaded as plain <img>, so no CORS concern and nothing
- * to store server-side.
+ * turn (the UI advances on image load error). First our own /api/favicon,
+ * which reads the site the way a browser does (declared <link> icons, the web
+ * app manifest, then the conventional paths) and serves the first real image;
+ * then Google's favicon service, for sites our server can't reach. Returns []
+ * when the URL has no parseable host.
  */
 export function faviconCandidates(homepageUrl: string): string[] {
   let url: URL;
@@ -50,8 +49,7 @@ export function faviconCandidates(homepageUrl: string): string[] {
   }
   if (!url.hostname) return [];
   return [
-    `${url.origin}/favicon.svg`,
-    `${url.origin}/favicon.ico`,
+    `/api/favicon?url=${encodeURIComponent(homepageUrl)}`,
     `https://www.google.com/s2/favicons?domain=${encodeURIComponent(
       url.hostname,
     )}&sz=64`,

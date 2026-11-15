@@ -54,10 +54,9 @@ describe("normalizeProjectIcon", () => {
 });
 
 describe("faviconCandidates", () => {
-  it("lists the site's own svg then ico, then the Google service", () => {
-    expect(faviconCandidates("https://sidetrack.it/app")).toEqual([
-      "https://sidetrack.it/favicon.svg",
-      "https://sidetrack.it/favicon.ico",
+  it("lists our favicon finder for the whole homepage, then the Google service", () => {
+    expect(faviconCandidates("https://sidetrack.it/app?x=1&y=2")).toEqual([
+      "/api/favicon?url=https%3A%2F%2Fsidetrack.it%2Fapp%3Fx%3D1%26y%3D2",
       "https://www.google.com/s2/favicons?domain=sidetrack.it&sz=64",
     ]);
   });
@@ -86,8 +85,7 @@ describe("resolveProjectIcon", () => {
     expect(resolveProjectIcon(null, "https://sidetrack.it")).toEqual({
       kind: "image",
       srcs: [
-        "https://sidetrack.it/favicon.svg",
-        "https://sidetrack.it/favicon.ico",
+        "/api/favicon?url=https%3A%2F%2Fsidetrack.it",
         "https://www.google.com/s2/favicons?domain=sidetrack.it&sz=64",
       ],
     });
