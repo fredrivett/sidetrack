@@ -299,7 +299,13 @@ export function ItemList({
   // The keyboard sensor and the screen-reader announcements read the drag as
   // it is now: dnd-kit announces a move in the same tick as onDragMove, before
   // this re-renders with the new offset.
-  const live = useRef({ offsetX: 0, projection, activeDepth: 0, project });
+  const live = useRef({
+    offsetX: 0,
+    projection,
+    activeDepth: 0,
+    project,
+    spot: null as string | null,
+  });
   useLayoutEffect(() => {
     live.current.projection = projection;
     live.current.project = project;
@@ -350,6 +356,19 @@ export function ItemList({
     onDragCancel: ({ active }) => `Put “${title(active.id)}” back.`,
   };
 
+  // A light tick each time the drag moves the drop spot to somewhere new (a
+  // slot up or down, or nesting and un-nesting), like a native list reorder.
+  // Spots it can't land on stay silent. Android only: iOS plays web haptics
+  // only for a tap on a switch, never during a drag, and has no vibrate.
+  function tickOnNewSpot(active: UniqueIdentifier, over: UniqueIdentifier | undefined, dx: number) {
+    const p = over ? project(String(active), String(over), dx) : null;
+    if (!p) return;
+    const spot = `${p.parentId}|${p.position}`;
+    if (spot === live.current.spot) return;
+    live.current.spot = spot;
+    navigator.vibrate?.(8);
+  }
+
   function reset() {
     setActiveId(null);
     setOverId(null);
@@ -366,6 +385,8 @@ export function ItemList({
     // Dropped where it started.
     if (sameParent && over.id === active.id) return;
 
+    // A firmer tap as it lands somewhere new.
+    navigator.vibrate?.(15);
     start(async () => {
       setFull(applyDrop(full, id, target));
       await (sameParent
@@ -418,15 +439,21 @@ export function ItemList({
         setOverId(id);
         live.current.offsetX = 0;
         live.current.activeDepth = byId.get(id)?.parentId ? 1 : 0;
+        const home = project(id, id, 0);
+        live.current.spot = home && `${home.parentId}|${home.position}`;
         // A tick under the finger when a long-press picks the row up
         // (where the browser supports it; Safari doesn't).
         navigator.vibrate?.(10);
       }}
-      onDragMove={({ delta }: DragMoveEvent) => {
+      onDragMove={({ active, over, delta }: DragMoveEvent) => {
         live.current.offsetX = delta.x;
         setOffsetX(delta.x);
+        tickOnNewSpot(active.id, over?.id, delta.x);
       }}
-      onDragOver={({ over }) => setOverId(over ? String(over.id) : null)}
+      onDragOver={({ active, over, delta }) => {
+        setOverId(over ? String(over.id) : null);
+        tickOnNewSpot(active.id, over?.id, delta.x);
+      }}
       onDragEnd={onDragEnd}
       onDragCancel={reset}
     >
