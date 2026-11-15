@@ -9,7 +9,7 @@ import {
 } from "@/core/agentSessions";
 import { type AuditOrigin, listAudit } from "@/core/audit";
 import { addCategory, listCategories } from "@/core/categories";
-import { addComment, COMMENT_MAX, listComments } from "@/core/comments";
+import { addComment, listComments } from "@/core/comments";
 import { getDb } from "@/core/db";
 import { getTimeZone } from "@/core/users";
 import { nestItems } from "@/lib/itemTree";
@@ -59,6 +59,7 @@ import {
 } from "@/core/projects";
 import {
   AUDIT_SOURCES,
+  COMMENT_MAX,
   type Item,
   PROJECT_STATUSES,
 } from "@/core/schema";

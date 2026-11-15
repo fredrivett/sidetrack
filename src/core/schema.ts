@@ -326,6 +326,9 @@ export const agentSessions = sqliteTable(
 // agent's API key and a snapshot of its name, as on agent_sessions. No foreign
 // key on user_id or the key, so a deleted user or revoked key keeps its
 // comments. Cascades on item delete: deleting the item is the logged event.
+/** Longest comment, in characters. */
+export const COMMENT_MAX = 10_000;
+
 export const comments = sqliteTable(
   "comments",
   {

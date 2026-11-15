@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
+import { describe, expect, it, vi } from "vitest";
 import { listAudit } from "./audit";
 import { addComment, deleteComment, listComments, updateComment } from "./comments";
 import { addItem, deleteItem } from "./items";
 import { acceptInvite, inviteMember } from "./members";
 import { createProject } from "./projects";
+import { comments } from "./schema";
 import { createTestDb, createTestUser } from "./test-helpers";
 
 const AMP = { source: "mcp" as const, agent: { keyId: "key-amp", name: "Amp" } };
@@ -20,13 +22,21 @@ function seed() {
 describe("comments", () => {
   it("adds a comment with its author, oldest first, and audits it under the item", () => {
     const { db, owner, projectId, itemId } = seed();
+    // In the same millisecond, so the order can't come from the timestamps.
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_800_000_000_000);
     const first = addComment(db, owner, itemId, "  Washer is worn  ", "web");
     const second = addComment(db, owner, itemId, "Bought a new one", AMP);
+    const third = addComment(db, owner, itemId, "Fitted it", "web");
+    now.mockRestore();
 
     expect(first).toMatchObject({ body: "Washer is worn", agentName: null });
     expect(first.author).toMatchObject({ userId: owner, name: "Fred", displayUsername: "fred" });
     expect(second).toMatchObject({ agentKeyId: "key-amp", agentName: "Amp" });
-    expect(listComments(db, owner, itemId).map((c) => c.id)).toEqual([first.id, second.id]);
+    expect(listComments(db, owner, itemId).map((c) => c.id)).toEqual([
+      first.id,
+      second.id,
+      third.id,
+    ]);
 
     const rows = listAudit(db, owner, { itemId });
     expect(rows.find((r) => r.entityId === second.id)).toMatchObject({
@@ -90,6 +100,6 @@ describe("comments", () => {
       false,
     );
     deleteItem(db, owner, itemId, "web");
-    expect(listComments(db, owner, itemId)).toEqual([]);
+    expect(db.select().from(comments).where(eq(comments.itemId, itemId)).all()).toEqual([]);
   });
 });

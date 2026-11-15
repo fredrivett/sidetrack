@@ -5,6 +5,7 @@ import {
   startTransition,
   useEffect,
   useOptimistic,
+  useRef,
   useState,
   useTransition,
 } from "react";
@@ -15,7 +16,7 @@ import {
   updateCommentAction,
 } from "@/app/actions";
 import type { CommentView } from "@/core/comments";
-import type { Item } from "@/core/schema";
+import { COMMENT_MAX, type Item } from "@/core/schema";
 import { modifierSymbol } from "@/lib/keyboard";
 import { formatRelative } from "@/lib/time";
 import { Button } from "@/components/ui/button";
@@ -35,7 +36,9 @@ import { AvatarStack, assigneeName } from "./UserAvatar";
 /**
  * The item's comments, oldest first, with a box to add one. Loaded when the
  * dialog shows the item and again whenever the item reloads, which a comment
- * made anywhere causes (it's audited, so open boards refresh).
+ * made anywhere causes (it's audited, so open boards refresh). Keyed by the
+ * item where it's used, so switching items starts afresh and a save still in
+ * flight can't land in another item's list.
  */
 export function ItemComments({
   item,
@@ -45,28 +48,27 @@ export function ItemComments({
   viewerId: string;
 }) {
   const [comments, setComments] = useState<CommentView[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   // Deleting is optimistic: the comment goes at once and comes back if the
   // delete fails.
   const [shown, hide] = useOptimistic(comments, (cur, id: string) =>
     cur ? cur.filter((c) => c.id !== id) : cur,
   );
   const [, startLoad] = useTransition();
-
-  // Switching to another item drops the last one's comments rather than
-  // showing them until the new ones load.
-  const [prevId, setPrevId] = useState(item.id);
-  if (prevId !== item.id) {
-    setPrevId(item.id);
-    setComments(null);
-  }
+  // Counts the changes made here. A read that started before one is dropped,
+  // so it can't put back what the change undid; the change's own refresh
+  // reads again.
+  const changes = useRef(0);
 
   useEffect(() => {
     let stale = false;
+    const seen = changes.current;
     startLoad(async () => {
-      await runAction(
+      const loaded = await runAction(
         listCommentsAction(item.id).then(
           (rows) => {
-            if (!stale) setComments(rows);
+            if (!stale && seen === changes.current) setComments(rows);
           },
           // Once the dialog has moved on, a failed load is moot.
           (error) => {
@@ -75,23 +77,25 @@ export function ItemComments({
         ),
         "load the comments",
       );
+      if (!loaded && !stale) setFailed(true);
     });
     return () => {
       stale = true;
     };
-  }, [item]);
+  }, [item, attempt]);
 
-  function replace(comment: CommentView) {
-    setComments(
-      (cur) => cur?.map((c) => (c.id === comment.id ? comment : c)) ?? cur,
-    );
+  // Before the comments have loaded there's nothing to change: the change's
+  // refresh loads them with it.
+  function change(update: (cur: CommentView[]) => CommentView[]) {
+    changes.current++;
+    setComments((cur) => cur && update(cur));
   }
 
   function remove(id: string) {
     startTransition(async () => {
       hide(id);
       if (await runAction(deleteCommentAction(id), "delete the comment")) {
-        setComments((cur) => cur?.filter((c) => c.id !== id) ?? cur);
+        change((cur) => cur.filter((c) => c.id !== id));
       }
     });
   }
@@ -99,7 +103,23 @@ export function ItemComments({
   return (
     <div className="space-y-3">
       {shown === null ? (
-        <p className="text-sm text-neutral-400">Loading…</p>
+        failed ? (
+          <p className="text-sm text-neutral-400">
+            Couldn’t load the comments.{" "}
+            <button
+              type="button"
+              onClick={() => {
+                setFailed(false);
+                setAttempt((a) => a + 1);
+              }}
+              className="font-medium text-neutral-600 hover:underline dark:text-neutral-300"
+            >
+              Try again
+            </button>
+          </p>
+        ) : (
+          <p className="text-sm text-neutral-400">Loading…</p>
+        )
       ) : (
         shown.length > 0 && (
           <ul className="space-y-2">
@@ -108,7 +128,9 @@ export function ItemComments({
                 key={c.id}
                 comment={c}
                 mine={c.userId === viewerId}
-                onEdited={replace}
+                onEdited={(comment) =>
+                  change((cur) => cur.map((x) => (x.id === comment.id ? comment : x)))
+                }
                 onDelete={() => remove(c.id)}
               />
             ))}
@@ -116,12 +138,9 @@ export function ItemComments({
         )
       )}
       <Composer
-        // A fresh box per item, so a half-written comment doesn't follow you
-        // to the next one.
-        key={item.id}
         itemId={item.id}
         title={item.title}
-        onAdded={(comment) => setComments((cur) => [...(cur ?? []), comment])}
+        onAdded={(comment) => change((cur) => [...cur, comment])}
       />
     </div>
   );
@@ -190,6 +209,7 @@ function CommentRow({
             }
             multiline
             required
+            maxLength={COMMENT_MAX}
             className="block w-full"
             inputClassName="w-full bg-white text-sm dark:bg-neutral-900"
             renderValue={(body) => <Markdown>{body}</Markdown>}
@@ -249,6 +269,7 @@ function Composer({
         }}
         aria-disabled={saving || undefined}
         placeholder="Leave a comment…"
+        maxLength={COMMENT_MAX}
         aria-label="Add a comment"
         className="max-h-60 min-h-12 resize-none rounded-none border-0 bg-transparent px-3 pt-2.5 pb-0 focus-visible:ring-0 dark:bg-transparent"
       />

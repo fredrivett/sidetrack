@@ -1,18 +1,15 @@
-import { and, asc, eq, type SQL } from "drizzle-orm";
+import { and, asc, eq, type SQL, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { hasProjectAccess } from "./access";
 import { users } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
 import { getItem } from "./items";
-import { type Comment, comments, type Item, items, projects } from "./schema";
+import { type Comment, COMMENT_MAX, comments, type Item, items, projects } from "./schema";
 
 // Comments are accessed through their item → project, like PR links: whoever
 // can open an item can read and add its comments, and only a comment's author
 // can edit or delete it.
-
-/** Longest comment, in characters. */
-export const COMMENT_MAX = 10_000;
 
 /** A comment with its author's display fields; author is null for a deleted user. */
 export interface CommentView extends Comment {
@@ -51,7 +48,9 @@ function selectComments(db: Db, userId: string, where: SQL) {
     // Left join, so a deleted user's comments still show.
     .leftJoin(users, eq(users.id, comments.userId))
     .where(and(where, hasProjectAccess(userId)))
-    .orderBy(asc(comments.createdAt), asc(comments.id))
+    // Ties (two comments in the same millisecond) keep the order they were
+    // added in.
+    .orderBy(asc(comments.createdAt), asc(sql`${comments}.rowid`))
     .all()
     .map(({ comment, name, displayUsername, email, image }) => ({
       ...comment,
