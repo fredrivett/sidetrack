@@ -5,6 +5,7 @@ import {
   canonicalizePrUrl,
   linkItemToPr,
   listItemsForPr,
+  listLinkedRepos,
   listPrLinksForItem,
   unlinkItemFromPr,
 } from "./prLinks";
@@ -146,5 +147,18 @@ describe("prLinks", () => {
     linkItemToPr(db, userId, itemId, PR, "web");
     deleteItem(db, userId, itemId, "web");
     expect(listItemsForPr(db, userId, PR)).toEqual([]);
+  });
+});
+
+describe("listLinkedRepos", () => {
+  it("lists each linked PR's repo once, sorted, and only the user's own", () => {
+    const { db, userId, projectId, itemId } = seedItem();
+    const other = addItem(db, userId, { projectId, title: "u" }, "web");
+    linkItemToPr(db, userId, itemId, "https://github.com/Zed/App/pull/1", "web");
+    linkItemToPr(db, userId, other.id, "https://github.com/zed/app/pull/2", "web");
+    linkItemToPr(db, userId, other.id, "https://github.com/acme/web/pull/3", "web");
+
+    expect(listLinkedRepos(db, userId)).toEqual(["acme/web", "zed/app"]);
+    expect(listLinkedRepos(db, createTestUser(db))).toEqual([]);
   });
 });

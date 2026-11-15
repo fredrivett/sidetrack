@@ -3,6 +3,7 @@ import Link from "next/link";
 import { GithubWebhookPanel } from "@/components/GithubWebhookPanel";
 import { getDb } from "@/core/db";
 import { getGithubWebhook } from "@/core/github";
+import { listLinkedRepos } from "@/core/prLinks";
 import { getEnv } from "@/lib/env";
 import { requireUserId } from "@/auth/session";
 
@@ -37,6 +38,7 @@ export default async function GithubSettingsPage() {
         <GithubWebhookPanel
           webhook={webhook}
           payloadUrl={webhook ? `${origin}/api/github/webhook/${webhook.id}` : null}
+          repos={listLinkedRepos(db, userId)}
         />
       </div>
     </main>

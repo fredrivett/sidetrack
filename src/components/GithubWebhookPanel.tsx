@@ -1,11 +1,12 @@
 "use client";
 
-import { Check, Copy } from "lucide-react";
+import { ArrowUpRight, Check, Copy } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { removeGithubWebhookAction, setUpGithubWebhookAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import type { GithubWebhookView } from "@/core/github";
+import { GitHubMark } from "./GitHubMark";
 import { useTapToConfirm } from "./use-tap-to-confirm";
 
 /** A labelled value to paste into GitHub's form, with a copy button. */
@@ -47,9 +48,12 @@ function fmt(ts: number | null): string {
 export function GithubWebhookPanel({
   webhook,
   payloadUrl,
+  repos,
 }: {
   webhook: GithubWebhookView | null;
   payloadUrl: string | null;
+  /** `owner/repo`s the board already has PRs from, to link straight to. */
+  repos: string[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -102,6 +106,29 @@ export function GithubWebhookPanel({
           select individual events&rdquo; and tick only Pull requests. One webhook
           works for any number of repositories.
         </p>
+        {repos.length > 0 && (
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">
+              Add webhook for a repository you&apos;ve linked PRs from
+            </p>
+            <ul className="flex flex-wrap gap-x-4 gap-y-1">
+              {repos.map((repo) => (
+                <li key={repo}>
+                  <a
+                    href={`https://github.com/${repo}/settings/hooks/new`}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="inline-flex items-center gap-1 text-sm text-neutral-500 transition hover:text-neutral-900 hover:underline dark:text-neutral-400 dark:hover:text-neutral-100"
+                  >
+                    <GitHubMark className="size-3.5 shrink-0" />
+                    {repo}
+                    <ArrowUpRight className="size-3.5 shrink-0" />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <CopyField label="Payload URL" value={payloadUrl} />
         <CopyField label="Content type" value="application/json" />
         {secret ? (
