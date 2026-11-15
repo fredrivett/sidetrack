@@ -9,6 +9,7 @@ import {
 } from "@/core/agentSessions";
 import { type AuditOrigin, listAudit } from "@/core/audit";
 import { addCategory, listCategories } from "@/core/categories";
+import { addComment, COMMENT_MAX, listComments } from "@/core/comments";
 import { getDb } from "@/core/db";
 import { getTimeZone } from "@/core/users";
 import { nestItems } from "@/lib/itemTree";
@@ -586,6 +587,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "A repeating item carries `repeat` ({ every, unit }); a finished one also carries `comesBack`, the day it reopens. " +
         "`agents` lists the agents working on it now (open start_work sessions: agentName, threadUrl, note, lastActiveAt); " +
         "check it before starting work so you don't duplicate another agent's. " +
+        "`comments` is its discussion, oldest first: each has body (Markdown), author (name, displayUsername), agentName when an agent wrote it for that person, createdAt and editedAt. " +
+        "Read them before working on the item: they often hold decisions and context the description doesn't. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id; the result carries its display `ref`.",
       inputSchema: { id: z.string() },
     },
@@ -600,7 +603,32 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         ...withRef,
         children: withRefs(prefix, children),
         agents: listOpenAgentSessions(db, userId, item.id),
+        comments: listComments(db, userId, item.id),
       });
+    },
+  );
+
+  server.registerTool(
+    "add_comment",
+    {
+      title: "Add comment",
+      description:
+        "Comment on an item: body is Markdown, shown in the item's detail view under your name and the user's. " +
+        "Use it for what people discussing the item should read later, such as a question for the user, a decision and why, or a summary of findings. " +
+        "Use report_work for one-line progress updates and update_item for what the item itself should say. " +
+        `Max ${COMMENT_MAX} characters. Returns the comment. ` +
+        "item_id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
+      inputSchema: { item_id: z.string(), body: z.string().min(1) },
+    },
+    async ({ item_id, body }) => {
+      const { db } = getDb();
+      const { item, error } = resolveItemArg(db, userId, item_id);
+      if (error) return error;
+      try {
+        return json(addComment(db, userId, item.id, body, SOURCE));
+      } catch (e) {
+        return errorText(`${(e as Error).message} — no change was made.`);
+      }
     },
   );
 

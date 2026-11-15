@@ -1,0 +1,95 @@
+import { describe, expect, it } from "vitest";
+import { listAudit } from "./audit";
+import { addComment, deleteComment, listComments, updateComment } from "./comments";
+import { addItem, deleteItem } from "./items";
+import { acceptInvite, inviteMember } from "./members";
+import { createProject } from "./projects";
+import { createTestDb, createTestUser } from "./test-helpers";
+
+const AMP = { source: "mcp" as const, agent: { keyId: "key-amp", name: "Amp" } };
+
+function seed() {
+  const { db } = createTestDb();
+  const owner = createTestUser(db, { username: "fred", name: "Fred" });
+  const alice = createTestUser(db, { username: "alice", name: "Alice" });
+  const p = createProject(db, owner, { name: "Home" }, "web");
+  const item = addItem(db, owner, { projectId: p.id, title: "Fix tap" }, "web");
+  return { db, owner, alice, projectId: p.id, itemId: item.id };
+}
+
+describe("comments", () => {
+  it("adds a comment with its author, oldest first, and audits it under the item", () => {
+    const { db, owner, projectId, itemId } = seed();
+    const first = addComment(db, owner, itemId, "  Washer is worn  ", "web");
+    const second = addComment(db, owner, itemId, "Bought a new one", AMP);
+
+    expect(first).toMatchObject({ body: "Washer is worn", agentName: null });
+    expect(first.author).toMatchObject({ userId: owner, name: "Fred", displayUsername: "fred" });
+    expect(second).toMatchObject({ agentKeyId: "key-amp", agentName: "Amp" });
+    expect(listComments(db, owner, itemId).map((c) => c.id)).toEqual([first.id, second.id]);
+
+    const rows = listAudit(db, owner, { itemId });
+    expect(rows.find((r) => r.entityId === second.id)).toMatchObject({
+      action: "create",
+      entityType: "comment",
+      source: "mcp",
+      agentName: "Amp",
+      projectId,
+      parentId: itemId,
+    });
+  });
+
+  it("rejects empty and over-long comments without writing anything", () => {
+    const { db, owner, itemId } = seed();
+    expect(() => addComment(db, owner, itemId, "   ", "web")).toThrow(/empty/);
+    expect(() => addComment(db, owner, itemId, "x".repeat(10_001), "web")).toThrow(/too long/);
+    expect(listComments(db, owner, itemId)).toEqual([]);
+    expect(listAudit(db, owner, { itemId }).some((r) => r.entityType === "comment")).toBe(false);
+  });
+
+  it("is open to members and closed to everyone else", () => {
+    const { db, owner, alice, projectId, itemId } = seed();
+    expect(() => addComment(db, alice, itemId, "Hi", "web")).toThrow(/not found/);
+    addComment(db, owner, itemId, "Private until shared", "web");
+    expect(listComments(db, alice, itemId)).toEqual([]);
+
+    inviteMember(db, owner, projectId, "alice", "web");
+    acceptInvite(db, alice, projectId, "web");
+    expect(listComments(db, alice, itemId)).toHaveLength(1);
+    expect(addComment(db, alice, itemId, "On it", "web").author?.name).toBe("Alice");
+  });
+
+  it("lets only the author edit or delete, and audits only real changes", () => {
+    const { db, owner, alice, projectId, itemId } = seed();
+    inviteMember(db, owner, projectId, "alice", "web");
+    acceptInvite(db, alice, projectId, "web");
+    const c = addComment(db, owner, itemId, "Draft", "web");
+
+    expect(() => updateComment(db, alice, c.id, "Hijacked", "web")).toThrow(/author/);
+    expect(() => deleteComment(db, alice, c.id, "web")).toThrow(/author/);
+
+    const same = updateComment(db, owner, c.id, " Draft ", "web");
+    expect(same.editedAt).toBeNull();
+    const edited = updateComment(db, owner, c.id, "Final", "web");
+    expect(edited).toMatchObject({ body: "Final" });
+    expect(edited.editedAt).not.toBeNull();
+
+    deleteComment(db, owner, c.id, "web");
+    expect(listComments(db, owner, itemId)).toEqual([]);
+    const actions = listAudit(db, owner, { itemId })
+      .filter((r) => r.entityId === c.id)
+      .map((r) => r.action);
+    expect(actions.sort()).toEqual(["create", "delete", "update"]);
+  });
+
+  it("goes with its item, and doesn't show in another item's history", () => {
+    const { db, owner, projectId, itemId } = seed();
+    const other = addItem(db, owner, { projectId, title: "Paint fence" }, "web");
+    addComment(db, owner, itemId, "Note", "web");
+    expect(listAudit(db, owner, { itemId: other.id }).some((r) => r.entityType === "comment")).toBe(
+      false,
+    );
+    deleteItem(db, owner, itemId, "web");
+    expect(listComments(db, owner, itemId)).toEqual([]);
+  });
+});

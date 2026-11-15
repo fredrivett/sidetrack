@@ -48,6 +48,9 @@ export const AUDIT_ENTITIES = [
   // The user's own profile (avatar). entityId is the user id; no project.
   "profile",
   "webhook",
+  // A comment on an item. Its rows carry the item as parentId, so they show
+  // in the item's history.
+  "comment",
 ] as const;
 export type AuditEntity = (typeof AUDIT_ENTITIES)[number];
 
@@ -318,6 +321,30 @@ export const agentSessions = sqliteTable(
   ],
 );
 
+// A comment on an item. userId is its author: the person who
+// wrote it, or for an agent's comment the person the agent works for, with the
+// agent's API key and a snapshot of its name, as on agent_sessions. No foreign
+// key on user_id or the key, so a deleted user or revoked key keeps its
+// comments. Cascades on item delete: deleting the item is the logged event.
+export const comments = sqliteTable(
+  "comments",
+  {
+    id: text("id").primaryKey(),
+    itemId: text("item_id")
+      .notNull()
+      .references(() => items.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    agentKeyId: text("agent_key_id"),
+    agentName: text("agent_name"),
+    // Markdown, as item descriptions.
+    body: text("body").notNull(),
+    createdAt: integer("created_at").notNull(),
+    // When its author last edited it; null if they never have.
+    editedAt: integer("edited_at"),
+  },
+  (t) => [index("comments_item_created").on(t.itemId, t.createdAt)],
+);
+
 // A user's GitHub webhook: the id goes in the payload URL GitHub posts to
 // (/api/github/webhook/<id>) and picks whose board the PR titles' refs resolve
 // against. One per user. No foreign key on user_id, matching projects.user_id.
@@ -387,7 +414,8 @@ export const auditLog = sqliteTable(
     projectId: text("project_id"),
     // For an item's row, the item it was a sub-item of at the time, so the
     // parent's history keeps its sub-items' rows after they're deleted or
-    // moved out. No FK, like project_id: the parent may be deleted too.
+    // moved out; for a comment's row, the item it's on. No FK, like
+    // project_id: the parent may be deleted too.
     parentId: text("parent_id"),
     detail: text("detail").notNull().default(""),
     // The API key an agent (MCP) call came through, and that key's name at the
@@ -425,4 +453,5 @@ export type NewAuditEntry = typeof auditLog.$inferInsert;
 export type ItemPrLink = typeof itemPrLinks.$inferSelect;
 export type NewItemPrLink = typeof itemPrLinks.$inferInsert;
 export type AgentSession = typeof agentSessions.$inferSelect;
+export type Comment = typeof comments.$inferSelect;
 export type GithubWebhook = typeof githubWebhooks.$inferSelect;
