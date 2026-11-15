@@ -106,7 +106,22 @@ export function PullToSearch({ onOpen }: { onOpen: () => void }) {
     function onTouchEnd() {
       const open = state === "pulling" && distance >= THRESHOLD;
       reset();
-      if (open) onOpenRef.current();
+      if (!open) return;
+      // iOS only raises the keyboard for a focus made inside the gesture, and
+      // the palette focuses its input a frame later. So focus a throwaway
+      // input now: the keyboard stays up as focus moves on to the palette's,
+      // and removing it on blur leaves nothing for focus to return to.
+      const proxy = document.createElement("input");
+      // Named, not aria-hidden: it holds focus until the palette's input
+      // takes it, and a focused element must stay exposed to screen readers.
+      proxy.setAttribute("aria-label", "Search");
+      proxy.tabIndex = -1;
+      // 16px stops iOS zooming in on focus.
+      proxy.style.cssText = "position:fixed;top:0;left:0;opacity:0;font-size:16px";
+      proxy.addEventListener("blur", () => proxy.remove(), { once: true });
+      document.body.append(proxy);
+      proxy.focus({ preventScroll: true });
+      onOpenRef.current();
     }
 
     const opts = { passive: true };
