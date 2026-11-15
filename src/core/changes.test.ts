@@ -99,13 +99,21 @@ describe("watchChanges", () => {
 
   it("tells a list about a checklist folding away, but not a repeat of it", async () => {
     const trip = addItem(db, member, { projectId, title: "Trip", subItems: ["Book"] }, "web");
+    // Another of the owner's lists, shared with someone else, already folded.
+    const other = createTestUser(db, { username: "other" });
+    const second = createProject(db, owner, { name: "Second" }, "web").id;
+    inviteMember(db, owner, second, "other", "web");
+    acceptInvite(db, other, second, "web");
+    const move = addItem(db, owner, { projectId: second, title: "Move", subItems: ["Pack"] }, "web");
+    setItemsCollapsed(db, owner, [move.id], true);
     await settle();
-    watch(owner, stranger);
-    // Unaudited, yet the owner sees it fold on the shared list.
-    setItemsCollapsed(db, member, [trip.id], true);
+    watch(member, other, stranger);
+    // Unaudited, yet the member sees it fold on the shared list; Second, where
+    // nothing changed, doesn't hear about it.
+    setItemsCollapsed(db, owner, [trip.id, move.id], true);
     await settle();
-    setItemsCollapsed(db, member, [trip.id], true);
+    setItemsCollapsed(db, owner, [trip.id], true);
     await settle();
-    expect(heard).toEqual({ [owner]: 1, [stranger]: 0 });
+    expect(heard).toEqual({ [member]: 1, [other]: 0, [stranger]: 0 });
   });
 });

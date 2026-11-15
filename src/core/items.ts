@@ -826,22 +826,21 @@ export function setItemsCollapsed(
   ids: string[],
   collapsed: boolean,
 ): void {
+  // The items that change, and the lists they're on.
+  const changed: string[] = [];
   const lists = new Set<string>();
   for (const id of ids) {
     const item = getItem(db, userId, id);
     if (!item) throw new Error(`item not found: ${id}`);
+    if (item.collapsed === collapsed) continue;
+    changed.push(id);
     lists.add(item.projectId);
   }
-  if (ids.length === 0) return;
+  if (changed.length === 0) return;
   // audit-exempt: collapsing is how the list is viewed, not a change to the
   // item, so it stays out of the item's history and the activity feed.
-  const { changes } = db
-    .update(items)
-    .set({ collapsed })
-    .where(and(inArray(items.id, ids), ne(items.collapsed, collapsed)))
-    .run();
+  db.update(items).set({ collapsed }).where(inArray(items.id, changed)).run();
   // Unaudited, so announced here: everyone with the list open sees it fold.
-  if (changes === 0) return;
   for (const projectId of lists) announceChange({ actor: userId, projectId });
 }
 
