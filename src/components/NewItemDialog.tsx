@@ -419,14 +419,16 @@ export function NewItemDialog({
                     selected={assigned.map((a) => a.userId)}
                     assignees={listAssignees}
                     viewerId={viewerId}
-                    // The picker sets this list's people only; keep anyone
+                    // Ticking sets this list's people only; keep anyone
                     // picked on another list for when you switch back.
+                    // Unassigned clears everyone.
                     onChange={(ids) =>
                       setAssigneeIds((cur) => [
                         ...cur.filter((id) => !listAssignees.some((a) => a.userId === id)),
                         ...ids,
                       ])
                     }
+                    onClear={() => setAssigneeIds([])}
                   />
                 </DropdownMenuContent>
               </DropdownMenu>
