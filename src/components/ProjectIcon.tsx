@@ -32,8 +32,8 @@ function LetterIcon({
 }
 
 /**
- * Image icon that tries an ordered list of candidate sources (e.g. a site's own
- * /favicon.ico, then a favicon service) and degrades to the letter glyph once
+ * Image icon that tries an ordered list of candidate sources (e.g. our
+ * /api/favicon, then a favicon service) and degrades to the letter glyph once
  * all fail. Each candidate stays invisible until it has actually loaded, so a
  * failed attempt never flashes a broken-image glyph. State is local and the
  * parent remounts it via `key` when the candidate list changes, so a broken
