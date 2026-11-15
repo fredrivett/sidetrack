@@ -32,11 +32,13 @@ function verticalScroller(el: Element | null): HTMLElement | null {
  * never fire for a mouse.
  *
  * The listeners are passive and the hint is moved by writing its style
- * directly, so the board doesn't re-render on every touchmove.
+ * directly, so the board doesn't re-render on every touchmove. Its fade and
+ * slide follow the finger with no transition, while crossing the threshold
+ * flips data-ready, whose colour, scale and label changes animate in CSS.
  */
 export function PullToSearch({ onOpen }: { onOpen: () => void }) {
   const hintRef = useRef<HTMLDivElement>(null);
-  const labelRef = useRef<HTMLSpanElement>(null);
+  const labelsRef = useRef<HTMLSpanElement>(null);
   const onOpenRef = useRef(onOpen);
   useEffect(() => {
     onOpenRef.current = onOpen;
@@ -51,15 +53,31 @@ export function PullToSearch({ onOpen }: { onOpen: () => void }) {
     let startedAt = 0;
     let distance = 0;
 
-    function show(d: number) {
-      const hint = hintRef.current;
-      const label = labelRef.current;
-      if (!hint || !label) return;
-      const progress = Math.min(d / THRESHOLD, 1);
+    function place(hint: HTMLElement, progress: number) {
       hint.style.opacity = String(progress);
       hint.style.transform = `translate(-50%, ${(progress - 1) * 16}px)`;
-      hint.dataset.ready = String(d >= THRESHOLD);
-      label.textContent = d >= THRESHOLD ? "Release to search" : "Pull to search";
+    }
+
+    /** Flips the hint's state and sizes the labels' box to the one shown,
+     * so the pill eases between their widths as they swap. */
+    function setReady(hint: HTMLElement, ready: boolean) {
+      if (hint.dataset.ready === String(ready)) return;
+      hint.dataset.ready = String(ready);
+      // A tick as the pull arms, on Android: Safari has no vibrate, and Chrome
+      // refuses it until the page has been tapped (a pull isn't a tap).
+      if (ready && navigator.userActivation?.hasBeenActive) navigator.vibrate?.(10);
+      const labels = labelsRef.current;
+      const shown = ready ? labels?.lastElementChild : labels?.firstElementChild;
+      if (labels && shown instanceof HTMLElement) {
+        labels.style.width = `${shown.offsetWidth}px`;
+      }
+    }
+
+    function show(d: number) {
+      const hint = hintRef.current;
+      if (!hint) return;
+      place(hint, Math.min(d / THRESHOLD, 1));
+      setReady(hint, d >= THRESHOLD);
     }
 
     function reset() {
@@ -68,7 +86,9 @@ export function PullToSearch({ onOpen }: { onOpen: () => void }) {
       const hint = hintRef.current;
       if (!hint) return;
       hint.style.transition = "opacity 150ms, transform 150ms";
-      show(0);
+      // Leaves data-ready alone, so the hint fades out still saying what the
+      // release did instead of flipping back to "Pull to search" on the way.
+      place(hint, 0);
     }
 
     function onTouchStart(e: TouchEvent) {
@@ -82,7 +102,10 @@ export function PullToSearch({ onOpen }: { onOpen: () => void }) {
       startX = e.touches[0].clientX;
       startY = e.touches[0].clientY;
       startedAt = e.timeStamp;
-      if (hintRef.current) hintRef.current.style.transition = "none";
+      if (hintRef.current) {
+        hintRef.current.style.transition = "none";
+        setReady(hintRef.current, false);
+      }
     }
 
     function onTouchMove(e: TouchEvent) {
@@ -137,16 +160,36 @@ export function PullToSearch({ onOpen }: { onOpen: () => void }) {
     };
   }, []);
 
+  // Both labels share one grid cell, so the swap slides one out as the other
+  // comes in; setReady sizes the cell to whichever is shown. The cell clips
+  // them, not the pill: a rounded clip misses the labels while they animate.
+  const label =
+    "col-start-1 row-start-1 w-max transition-[opacity,translate] duration-200 ease-out";
   return (
     <div
       ref={hintRef}
       aria-hidden
-      data-ready="false"
-      className="pointer-events-none fixed top-[calc(3.75rem+env(safe-area-inset-top))] left-1/2 z-40 flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-500 opacity-0 shadow-sm data-[ready=true]:border-neutral-900 data-[ready=true]:bg-neutral-900 data-[ready=true]:text-white dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400 dark:data-[ready=true]:border-neutral-100 dark:data-[ready=true]:bg-neutral-100 dark:data-[ready=true]:text-neutral-900"
+      className="group pointer-events-none fixed top-[calc(3.75rem+env(safe-area-inset-top))] left-1/2 z-40 opacity-0"
       style={{ transform: "translate(-50%, -16px)" }}
     >
-      <Search className="size-3.5" />
-      <span ref={labelRef}>Pull to search</span>
+      <div className="flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-500 shadow-sm transition-[background-color,border-color,color,scale] duration-200 ease-out motion-safe:group-data-[ready=true]:scale-105 group-data-[ready=true]:border-neutral-900 group-data-[ready=true]:bg-neutral-900 group-data-[ready=true]:text-white dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400 dark:group-data-[ready=true]:border-neutral-100 dark:group-data-[ready=true]:bg-neutral-100 dark:group-data-[ready=true]:text-neutral-900">
+        <Search className="size-3.5" />
+        <span
+          ref={labelsRef}
+          className="grid overflow-hidden transition-[width] duration-200 ease-out motion-reduce:transition-none"
+        >
+          <span
+            className={`${label} group-data-[ready=true]:opacity-0 motion-safe:group-data-[ready=true]:-translate-y-full`}
+          >
+            Pull to search
+          </span>
+          <span
+            className={`${label} opacity-0 group-data-[ready=true]:opacity-100 motion-safe:translate-y-full motion-safe:group-data-[ready=true]:translate-y-0`}
+          >
+            Release to search
+          </span>
+        </span>
+      </div>
     </div>
   );
 }
