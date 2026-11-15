@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { CopyButton } from "@/components/ui/copy-button";
 import { Input } from "@/components/ui/input";
 import { useTapToConfirm } from "./use-tap-to-confirm";
 import {
@@ -104,15 +105,7 @@ export function ApiKeysPanel({ initial }: { initial: KeyRow[] }) {
           <code className="block break-all rounded bg-background border px-2 py-1.5 text-xs font-mono select-all">
             {justCreated.plaintext}
           </code>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              void navigator.clipboard.writeText(justCreated.plaintext);
-            }}
-          >
-            Copy
-          </Button>
+          <CopyButton value={justCreated.plaintext}>Copy</CopyButton>
           <Button
             variant="ghost"
             size="sm"

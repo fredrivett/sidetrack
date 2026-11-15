@@ -2,6 +2,7 @@
 
 import {
   CalendarDays,
+  Check,
   CheckCircle2,
   ChevronDown,
   Circle,
@@ -537,7 +538,7 @@ export function ItemDetailDialog({
   }, [assign, assigneeIds, viewerId]);
 
   // While the dialog is open, ⌘./Ctrl+. copies the ref (Linear's shortcut).
-  const { copy } = useCopyItemRef(ref, { active: open });
+  const { copied, copy } = useCopyItemRef(ref, { active: open });
 
   // Linear's assignment shortcuts while the dialog owns the screen: A opens the
   // picker, I adds or removes me. Stays armed while the picker is open so the I
@@ -604,8 +605,12 @@ export function ItemDetailDialog({
               title="Copy ID"
               className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[11px] tracking-wide text-neutral-500 transition hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
             >
-              <Copy className="size-3 opacity-70" />
-              {ref}
+              {copied ? (
+                <Check className="size-3 opacity-70" />
+              ) : (
+                <Copy className="size-3 opacity-70" />
+              )}
+              {copied ? "Copied" : ref}
               <Kbd className="ml-0.5">{modifierSymbol()}.</Kbd>
             </button>
             <Button
