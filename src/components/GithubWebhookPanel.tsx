@@ -103,8 +103,9 @@ export function GithubWebhookPanel({
         <p className="text-sm text-muted-foreground">
           On GitHub, open the repository&apos;s Settings → Webhooks → Add webhook,
           and fill it in as below. Under &ldquo;Which events&rdquo;, pick &ldquo;Let me
-          select individual events&rdquo; and tick only Pull requests. One webhook
-          works for any number of repositories.
+          select individual events&rdquo;, tick Pull requests, and untick Pushes,
+          which GitHub leaves ticked. One webhook works for any number of
+          repositories.
         </p>
         {repos.length > 0 && (
           <div className="space-y-1">

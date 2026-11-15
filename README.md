@@ -132,7 +132,7 @@ Keys are scoped to the user who minted them; revoke them from the same page.
 Sidetrack can follow pull requests on its own. Under **Account → GitHub**, set
 up a webhook to get a payload URL and secret, then add them to a repository
 (Settings → Webhooks, content type `application/json`, the **Pull requests**
-event only). After that:
+event only; untick **Pushes**, which GitHub leaves ticked). After that:
 
 - A PR whose title names items in square brackets, such as
   `Fix login [SDT-1]` or `[SDT-1, SDT-2]`, is linked to those items. Refs
