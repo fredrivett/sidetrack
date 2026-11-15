@@ -269,6 +269,10 @@ describe("useOptimisticItems: deletes and moves", () => {
     expect(shown()).toEqual(["A ✓", "- C ✓", "- Other ✓", "B ✓", "D"]);
     act(() => changes.setParent(d, "a"));
     expect(shown()).toEqual(["A", "- C ✓", "- Other ✓", "- D", "B ✓"]);
+    // Moving out leaves the old parent as it is: the server doesn't tick it
+    // again now that its sub-items are all finished.
+    act(() => changes.setParent(d, null));
+    expect(shown()).toEqual(["A", "- C ✓", "- Other ✓", "D", "B ✓"]);
     await act(async () => {
       tick.resolve();
       save.resolve();
