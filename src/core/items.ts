@@ -189,12 +189,19 @@ export function addItem(
     positionRef?: string;
     parentId?: string | null;
     dueDate?: string | null;
+    assigneeId?: string | null;
+    /** Create it already done, e.g. to log something the user just finished. */
+    completed?: boolean;
   },
   source: AuditOrigin,
 ): Item {
   const dueDate = assertDueDate(input.dueDate);
   if (!projectAccessibleForUser(db, userId, input.projectId)) {
     throw new Error(`list not found: ${input.projectId}`);
+  }
+  const assigneeId = input.assigneeId || null;
+  if (assigneeId && !projectAccessibleForUser(db, assigneeId, input.projectId)) {
+    throw new Error(`assignee does not have access to the list: ${assigneeId}`);
   }
   let parent: Item | null = null;
   if (input.parentId) {
@@ -238,9 +245,11 @@ export function addItem(
         category,
         parentId: parent?.id ?? null,
         dueDate,
+        assigneeId,
         position,
         number,
         createdAt: now,
+        completedAt: input.completed ? now : null,
       })
       .run();
     recordAudit(tx as unknown as Db, {
@@ -253,9 +262,27 @@ export function addItem(
       detail:
         (parent
           ? `added "${title}" to "${parent.title}"`
-          : `added task "${title}"`) + (dueDate ? `, due ${dueDate}` : ""),
+          : `added task "${title}"`) +
+        (dueDate ? `, due ${dueDate}` : "") +
+        (assigneeId ? `, assigned to ${assigneeLabel(tx as unknown as Db, assigneeId)}` : ""),
     });
-    if (parent) reopenParentIfDone(tx as unknown as Db, userId, parent, source);
+    // Created done: log the completion as its own row, as completeItem does,
+    // so the item's history reads the same as adding it then ticking it.
+    if (input.completed) {
+      recordAudit(tx as unknown as Db, {
+        actor: userId,
+        source,
+        action: "complete",
+        entityType: "item",
+        entityId: id,
+        projectId: input.projectId,
+        detail: `completed "${title}"`,
+      });
+    }
+    // A done sub-item doesn't contradict a finished parent; only an open one does.
+    if (parent && !input.completed) {
+      reopenParentIfDone(tx as unknown as Db, userId, parent, source);
+    }
   });
 
   return getItemOrThrow(db, userId, id);
