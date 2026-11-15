@@ -55,6 +55,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Kbd } from "@/components/ui/kbd";
 import { useMediaQuery } from "@/components/ui/use-media-query";
+import { toggleAssignee } from "@/lib/assignees";
 import { formatItemRef } from "@/lib/itemRef";
 import { repeatOf } from "@/lib/repeat";
 import { AssigneeOptions } from "./AssigneeOptions";
@@ -63,8 +64,9 @@ import { DueBadge } from "./DueBadge";
 import { RepeatBadge } from "./RepeatBadge";
 import { useToday } from "./use-day-start";
 import { useAssignShortcuts } from "./useAssignShortcuts";
+import { useOptimisticAssignees } from "./use-optimistic-assignees";
 import { useCopyItemRef } from "./useCopyItemRef";
-import { assigneeName, UserAvatar } from "./UserAvatar";
+import { AvatarStack, assigneeNames } from "./UserAvatar";
 
 /** Drag wiring from the sortable wrapper that owns this row (see ItemList). */
 export type RowDrag = {
@@ -130,7 +132,10 @@ export function ItemRow({
   const completed = item.completedAt !== null;
   const repeat = repeatOf(item);
   const ref = formatItemRef(prefix, item.number);
-  const assignee = assignees.find((a) => a.userId === item.assigneeId);
+  // Shown in the list's member order, so joint items line up across rows.
+  const { assigneesById, setAssignees } = useOptimisticAssignees([item]);
+  const assigneeIds = assigneesById[item.id];
+  const assigned = assignees.filter((a) => assigneeIds.includes(a.userId));
   const canAssignSelf = useMemo(
     () => assignees.some((a) => a.userId === viewerId),
     [assignees, viewerId],
@@ -164,12 +169,8 @@ export function ItemRow({
     });
   }
   const assign = useCallback(
-    (assigneeId: string | null) => {
-      start(() => {
-        void updateItemAction(item.id, { assigneeId });
-      });
-    },
-    [item.id],
+    (ids: string[]) => setAssignees(item.id, ids),
+    [setAssignees, item.id],
   );
   function setDue(dueDate: string | null) {
     start(() => {
@@ -177,12 +178,13 @@ export function ItemRow({
     });
   }
   const openPicker = useCallback(() => setAssignOpen(true), []);
-  const assignToMe = useCallback(() => {
-    assign(viewerId);
+  // I adds you, or takes you off if you're already on it, leaving anyone else.
+  const toggleMe = useCallback(() => {
+    assign(toggleAssignee(assigneeIds, viewerId));
     setAssignOpen(false);
-  }, [assign, viewerId]);
+  }, [assign, assigneeIds, viewerId]);
 
-  // Linear's assignment shortcuts: A opens the picker, I assigns to me. Armed
+  // Linear's assignment shortcuts: A opens the picker, I toggles me. Armed
   // while the card is hovered, and kept armed while the picker is open so the I
   // hint on the "me" row works there too — opening the picker drops `hovered`
   // (its modal backdrop swallows the pointer), so we OR in `assignOpen`.
@@ -191,7 +193,7 @@ export function ItemRow({
     active: hovered || assignOpen,
     deferToDialog: true,
     onOpenPicker: openPicker,
-    onAssignToMe: canAssignSelf ? assignToMe : undefined,
+    onAssignToMe: canAssignSelf ? toggleMe : undefined,
   });
 
   function openDetail() {
@@ -321,33 +323,35 @@ export function ItemRow({
               />
             </button>
           )}
-          {/* Assignee avatar doubles as the picker trigger (click, or A while
-              hovered). Unassigned items show a faint add-assignee button on
-              hover; without hover (touch) it's hidden rather than left as an
-              invisible tap target taking up width. */}
+          {/* The assignees' avatars, overlapping on a joint item, double as
+              the picker trigger (click, or A while hovered). Unassigned items
+              show a faint add-assignee button on hover; without hover (touch)
+              it's hidden rather than left as an invisible tap target taking up
+              width. */}
           <DropdownMenu open={assignOpen} onOpenChange={setAssignOpen}>
             <DropdownMenuTrigger
               aria-label={
-                assignee
-                  ? `Assigned to ${assigneeName(assignee)}. Reassign`
+                assigned.length
+                  ? `Assigned to ${assigneeNames(assigned)}. Change assignees`
                   : "Assign"
               }
               disabled={pending}
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
               className={
-                assignee
+                assigned.length
                   ? "flex rounded-full outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-400 disabled:opacity-50"
                   : "rounded p-1 text-neutral-300 opacity-0 transition hover:bg-neutral-100 hover:text-neutral-600 group-hover:opacity-100 data-[popup-open]:opacity-100 disabled:opacity-50 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 [@media(hover:none)]:hidden"
               }
             >
-              {assignee ? (
-                <UserAvatar user={assignee} size={20} />
+              {assigned.length ? (
+                <AvatarStack users={assigned} size={20} />
               ) : (
                 <UserRound className="size-4" />
               )}
             </DropdownMenuTrigger>
             <DropdownMenuContent
+              data-assignee-picker
               align="end"
               className="w-52"
               // Portaled out of the row in the DOM, but React events still bubble
@@ -356,10 +360,10 @@ export function ItemRow({
               onClick={(e) => e.stopPropagation()}
             >
               <AssigneeOptions
-                currentId={item.assigneeId}
+                selected={assigneeIds}
                 assignees={assignees}
                 viewerId={viewerId}
-                onPick={assign}
+                onChange={assign}
               />
             </DropdownMenuContent>
           </DropdownMenu>
@@ -395,17 +399,17 @@ export function ItemRow({
         <ContextMenuSub>
           <ContextMenuSubTrigger>
             <UserRound className="opacity-70" />
-            {assignee ? "Reassign" : "Assign to"}
+            {assigned.length ? "Assignees" : "Assign to"}
             <ContextMenuShortcut>
               <Kbd>A</Kbd>
             </ContextMenuShortcut>
           </ContextMenuSubTrigger>
-          <ContextMenuSubContent className="w-52">
+          <ContextMenuSubContent data-assignee-picker className="w-52">
             <AssigneeOptions
-              currentId={item.assigneeId}
+              selected={assigneeIds}
               assignees={assignees}
               viewerId={viewerId}
-              onPick={assign}
+              onChange={assign}
             />
           </ContextMenuSubContent>
         </ContextMenuSub>

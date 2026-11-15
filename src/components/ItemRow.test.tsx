@@ -54,7 +54,7 @@ const item: Item = {
   title: "Write docs",
   description: null,
   category: null,
-  assigneeId: null,
+  assigneeIds: [],
   parentId: null,
   dueDate: null,
   repeatEvery: null,
@@ -209,7 +209,7 @@ describe("ItemRow open-detail", () => {
     fireEvent.click(trigger);
     // Picking an assignee assigns but must not bubble to the row's open-detail.
     fireEvent.click(screen.getByText("Me"));
-    expect(updateItemAction).toHaveBeenCalledWith("i1", { assigneeId: "u1" });
+    expect(updateItemAction).toHaveBeenCalledWith("i1", { addAssigneeIds: ["u1"] });
     expect(onOpenDetail).not.toHaveBeenCalled();
   });
 });
@@ -259,7 +259,7 @@ describe("ItemRow assign shortcuts", () => {
 
     fireEvent.pointerEnter(card);
     fireEvent.keyDown(document, { key: "i" });
-    expect(updateItemAction).toHaveBeenCalledWith("i1", { assigneeId: "u1" });
+    expect(updateItemAction).toHaveBeenCalledWith("i1", { addAssigneeIds: ["u1"] });
   });
 
   it("still assigns on 'i' once the picker is open and hover is lost", () => {
@@ -275,7 +275,7 @@ describe("ItemRow assign shortcuts", () => {
     expect(screen.getByText("Me")).toBeTruthy();
     fireEvent.pointerLeave(card); // backdrop swallows the pointer
     fireEvent.keyDown(document, { key: "i" });
-    expect(updateItemAction).toHaveBeenCalledWith("i1", { assigneeId: "u1" });
+    expect(updateItemAction).toHaveBeenCalledWith("i1", { addAssigneeIds: ["u1"] });
   });
 
   it("does not bind 'i' when the viewer can't be assigned", () => {
@@ -294,7 +294,9 @@ describe("ItemRow assign shortcuts", () => {
     fireEvent.pointerEnter(container.querySelector(".group") as HTMLElement);
     fireEvent.keyDown(document, { key: "a" });
 
-    const labels = screen.getAllByRole("menuitem").map((el) => el.textContent);
+    const labels = Array.from(
+      document.querySelectorAll('[role="menuitem"], [role="menuitemcheckbox"]'),
+    ).map((el) => el.textContent);
     // Unassigned first (the clear action), then the viewer ahead of Alex.
     expect(labels[0]).toContain("Unassigned");
     expect(labels[1]).toContain("Me");
@@ -304,17 +306,63 @@ describe("ItemRow assign shortcuts", () => {
     ).toBeTruthy();
   });
 
-  it("marks the viewer with a check (and no hint) when already assigned", () => {
+  it("ticks everyone on a joint item, and 'i' takes just the viewer off", () => {
+    vi.mocked(updateItemAction).mockClear();
     const { container } = renderRow([alex, viewer], {
       ...item,
-      assigneeId: "u1",
+      assigneeIds: ["u1", "u2"],
     });
     fireEvent.pointerEnter(container.querySelector(".group") as HTMLElement);
     fireEvent.keyDown(document, { key: "a" });
 
-    // The current-selection check takes the row's trailing slot, not the hint.
+    const option = (name: RegExp) => screen.getByRole("menuitemcheckbox", { name });
+    expect(option(/Me/).getAttribute("aria-checked")).toBe("true");
+    expect(option(/Alex/).getAttribute("aria-checked")).toBe("true");
+    fireEvent.keyDown(document, { key: "i" });
+    expect(updateItemAction).toHaveBeenCalledWith("i1", { removeAssigneeIds: ["u1"] });
+  });
+});
+
+describe("ItemRow joint items", () => {
+  it("names everyone assigned, in the list's member order", () => {
+    // Stored Alex first; the list's order (owner first) wins on screen.
+    renderRow([viewer, alex], { ...item, assigneeIds: ["u2", "u1"] });
     expect(
-      screen.queryByText("I", { selector: '[data-slot="kbd"]' }),
-    ).toBeNull();
+      screen.getByLabelText("Assigned to Me and Alex. Change assignees"),
+    ).toBeTruthy();
+  });
+
+  it("builds each change on the last, before the server answers", () => {
+    // The server never answers here, so the item's props stay unassigned and
+    // every change has to build on the one before.
+    vi.mocked(updateItemAction)
+      .mockReset()
+      .mockReturnValue(new Promise(() => {}));
+    renderRow([viewer, alex]);
+    const trigger = screen.getByLabelText("Assign");
+    fireEvent.pointerDown(trigger);
+    fireEvent.click(trigger);
+
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: /Alex/ }));
+    expect(updateItemAction).toHaveBeenLastCalledWith("i1", { addAssigneeIds: ["u2"] });
+    // The picker stays open and shows the tick straight away.
+    const alexOption = screen.getByRole("menuitemcheckbox", { name: /Alex/ });
+    expect(alexOption.getAttribute("aria-checked")).toBe("true");
+
+    // I from inside the open picker (its menu has focus) adds me alongside Alex.
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "i" });
+    expect(updateItemAction).toHaveBeenLastCalledWith("i1", { addAssigneeIds: ["u1"] });
+    expect(screen.getByLabelText("Assigned to Me and Alex. Change assignees")).toBeTruthy();
+    vi.mocked(updateItemAction).mockReset();
+  });
+
+  it("leaves I to the right-click menu's own typing", () => {
+    vi.mocked(updateItemAction).mockClear();
+    const { container } = renderRow([viewer, alex]);
+    const card = container.querySelector(".group") as HTMLElement;
+    fireEvent.pointerEnter(card);
+    fireEvent.contextMenu(card);
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "i" });
+    expect(updateItemAction).not.toHaveBeenCalled();
   });
 });

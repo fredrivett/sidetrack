@@ -352,7 +352,9 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Returns { today, timeZone, items }, plus a note when the timezone is a UTC fallback. today is the user's current day (YYYY-MM-DD) in timeZone, which their browser reports; " +
         "the day turns over at 4am, so at 1am it's still the day before. Use today to work out dates like tomorrow for due_date. " +
         "Each item carries its ref, listName and, for a sub-item, parentTitle. " +
-        "filter narrows to items assigned to the user (mine), to someone else (theirs), or to nobody (unassigned).\n" +
+        "Items carry assigneeIds, everyone they're assigned to; a joint item has several. " +
+        "filter narrows to items assigned to the user, alone or jointly with others (mine), " +
+        "assigned only to other people (theirs), or to nobody (unassigned). Every item falls under exactly one of the three.\n" +
         "A repeating item carries `repeat` ({ every, unit }); a finished one also carries `comesBack`, the day it reopens. " +
         "Show the user the items as a list with the list name, anything overdue marked, repeating ones with their rule, " +
         "and finished ones crossed out (a finished repeating one with the day it comes back), as on their screen.",
@@ -401,7 +403,9 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Returns { today, timeZone, lists }, plus a note when the timezone is a UTC fallback; today works as in list_today. " +
         "lists is in board order, each { list, items } with items in list order and an undated parent's undated sub-items nested in children; " +
         "lists with nothing undated are left out. A sub-item whose parent isn't shown carries parentTitle. " +
-        "filter narrows to items assigned to the user (mine), to someone else (theirs), or to nobody (unassigned).\n" +
+        "Items carry assigneeIds, everyone they're assigned to; a joint item has several. " +
+        "filter narrows to items assigned to the user, alone or jointly with others (mine), " +
+        "assigned only to other people (theirs), or to nobody (unassigned), as in list_today.\n" +
         "A repeating item carries `repeat` ({ every, unit }); a finished one also carries `comesBack`, the day it reopens. " +
         "Show the user the items grouped under each list name, sub-items indented, repeating ones with their rule, finished ones crossed out, as on their screen. " +
         "To give an item a date, call update_item with due_date.",
@@ -540,7 +544,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Get item",
       description:
-        "Fetch a single item by reference — its title, description, category, and completion state, " +
+        "Fetch a single item by reference — its title, description, category, assignees (assigneeIds, user ids; empty when unassigned) and completion state, " +
         "plus its sub-items (its checklist) as `children`, finished ones included. A sub-item has a parentId. " +
         "Use this to answer a question about one item without pulling its whole list. " +
         "A repeating item carries `repeat` ({ every, unit }); a finished one also carries `comesBack`, the day it reopens. " +
@@ -567,9 +571,11 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "category is free-text and is auto-created if new. " +
         "parent (a short ref or id) adds the task as a sub-item of that task, one step in its checklist: " +
         "e.g. \"Tidy up flat\" with sub-items Lounge, Kitchen and Bedroom. Sub-items are one level deep; " +
-        "each is a full item with its own ref and assignee. Adding an open one to a finished parent reopens the parent; adding one with completed: true leaves it finished. " +
+        "each is a full item with its own ref and assignees. Adding an open one to a finished parent reopens the parent; adding one with completed: true leaves it finished. " +
         "due_date is the calendar day it's due, YYYY-MM-DD (no time); call list_today first if you need today's date in the user's timezone. " +
-        "assignee_id assigns it to the list owner or an accepted member (get a user_id from list_members). " +
+        "assignee_ids assigns it to one or more people, each the list owner (the list's userId) or an accepted member " +
+        "(user_id from list_members), or \"me\" for the user you act for; several make a joint item. " +
+        "assignee_id (one id) also works, for older prompts; don't pass both. " +
         "completed: true creates it already done, in one call — use it when the user tells you about something they've finished, " +
         "instead of add_item then complete_item. " +
         "repeat makes a task come round again: { every, unit } with unit day, week or month, e.g. { every: 3, unit: \"day\" } for every 3 days. " +
@@ -592,6 +598,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         category: z.string().optional(),
         parent: z.string().optional(),
         due_date: DueDate.nullable().optional(),
+        assignee_ids: z.array(z.string().min(1)).optional(),
         assignee_id: z.string().optional(),
         completed: z.boolean().optional(),
         repeat: Repeat.nullable().optional(),
@@ -605,12 +612,21 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       category,
       parent,
       due_date,
+      assignee_ids,
       assignee_id,
       completed,
       repeat,
       position,
     }) => {
       const { db } = getDb();
+      if (assignee_ids !== undefined && assignee_id !== undefined) {
+        return errorText(
+          "Pass assignee_ids or the older assignee_id, not both — no change was made.",
+        );
+      }
+      const assigneeIds = (assignee_id ? [assignee_id] : assignee_ids)?.map((a) =>
+        a === "me" ? userId : a,
+      );
       const project = getProject(db, userId, list_id);
       if (!project) return notFound("list", list_id);
       let parentId: string | null = null;
@@ -636,7 +652,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           category,
           parentId,
           dueDate: due_date,
-          assigneeId: assignee_id,
+          assigneeIds,
           completed,
           repeat,
           positionRef: pos.position,
@@ -656,9 +672,17 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Update item",
       description:
-        "Patch title/description/category/assignee/due_date/repeat on an item. Pass description or category as null to clear it. " +
-        "assignee_id assigns the item to a user — the list owner or an accepted member (get a user_id from list_members); " +
-        "pass null to unassign. due_date sets the calendar day it's due (YYYY-MM-DD, no time); pass null to clear it. " +
+        "Patch title/description/category/assignees/due_date/repeat on an item. Pass description or category as null to clear it. " +
+        "assignee_ids is everyone the item is assigned to, replacing who it had; several people make a joint item " +
+        "(e.g. \"Discuss Christmas travel\" for both of them). Each entry is a user id of the list owner (the list's userId) " +
+        "or an accepted member (from list_members), or \"me\" for the user you act for. [] unassigns everyone. " +
+        "To add or take off people while leaving everyone else, use add_assignee_ids and/or remove_assignee_ids instead " +
+        "(same kinds of ids, \"me\" included): they apply to whoever is assigned when the change lands, so they never undo " +
+        "someone else's change made since you last read the item. Prefer them over assignee_ids unless you mean to set the whole list. " +
+        "assignee_id (one id, or null) is the old single-assignee input, kept so older prompts work: " +
+        "it makes that person the only assignee, or null unassigns everyone. " +
+        "Pass only one of assignee_ids, assignee_id, or add/remove. " +
+        "due_date sets the calendar day it's due (YYYY-MM-DD, no time); pass null to clear it. " +
         "repeat sets how often a task comes round again, { every, unit } (see add_item); pass null to stop it repeating. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: {
@@ -666,15 +690,48 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         title: z.string().optional(),
         description: z.string().nullable().optional(),
         category: z.string().nullable().optional(),
+        assignee_ids: z.array(z.string().min(1)).optional(),
         assignee_id: z.string().nullable().optional(),
+        add_assignee_ids: z.array(z.string().min(1)).optional(),
+        remove_assignee_ids: z.array(z.string().min(1)).optional(),
         due_date: DueDate.nullable().optional(),
         repeat: Repeat.nullable().optional(),
       },
     },
-    async ({ id, assignee_id, due_date, ...patch }) => {
+    async ({
+      id,
+      assignee_ids,
+      assignee_id,
+      add_assignee_ids,
+      remove_assignee_ids,
+      due_date,
+      ...patch
+    }) => {
       const { db } = getDb();
       const { item, error } = resolveItemArg(db, userId, id);
       if (error) return error;
+      const ways = [
+        assignee_ids !== undefined,
+        assignee_id !== undefined,
+        add_assignee_ids !== undefined || remove_assignee_ids !== undefined,
+      ].filter(Boolean).length;
+      if (ways > 1) {
+        return errorText(
+          "Pass only one of assignee_ids, the older assignee_id, or add_assignee_ids/remove_assignee_ids — no change was made.",
+        );
+      }
+      const me = (ids?: string[]) => ids?.map((a) => (a === "me" ? userId : a));
+      const given =
+        assignee_id === undefined ? assignee_ids : assignee_id ? [assignee_id] : [];
+      const assigneeIds = me(given);
+      const addAssigneeIds = me(add_assignee_ids);
+      const removeAssigneeIds = me(remove_assignee_ids);
+      const both = addAssigneeIds?.filter((a) => removeAssigneeIds?.includes(a)) ?? [];
+      if (both.length) {
+        return errorText(
+          `${both.join(", ")} is in both add_assignee_ids and remove_assignee_ids — no change was made.`,
+        );
+      }
       return json(
         withItemRef(
           db,
@@ -683,7 +740,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
             db,
             userId,
             item.id,
-            { ...patch, assigneeId: assignee_id, dueDate: due_date },
+            { ...patch, assigneeIds, addAssigneeIds, removeAssigneeIds, dueDate: due_date },
             SOURCE,
           ),
         ),
@@ -984,7 +1041,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "List a list's collaborators and pending invites (the owner is not " +
         "included — it's the list's owner separately). Each row has user_id, " +
         "username, name, email, and status (\"accepted\" or \"pending\"). Use a " +
-        "row's user_id with remove_member.",
+        "row's user_id with remove_member, or with update_item's assignee_ids.",
       inputSchema: { list_id: z.string() },
     },
     async ({ list_id }) => {

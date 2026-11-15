@@ -37,7 +37,7 @@ const item = (projectId: string, title: string, more: Partial<Item> = {}): Item 
   title,
   description: null,
   category: null,
-  assigneeId: null,
+  assigneeIds: [],
   parentId: null,
   dueDate: null,
   repeatEvery: null,
@@ -52,7 +52,7 @@ const item = (projectId: string, title: string, more: Partial<Item> = {}): Item 
 describe("NoDateView", () => {
   it("groups undated tasks by list and keeps a filtered sub-item with its parent named", () => {
     const tidy = item("home", "Tidy flat");
-    const kitchen = item("home", "Kitchen", { parentId: tidy.id, assigneeId: "me" });
+    const kitchen = item("home", "Kitchen", { parentId: tidy.id, assigneeIds: ["me"] });
     const plan = item("home", "Phone plan", { dueDate: "2026-11-18" });
     render(
       <NoDateView

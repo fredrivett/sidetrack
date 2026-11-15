@@ -333,39 +333,49 @@ describe("item assignment", () => {
     return { db, owner, alice, bob, projectId, item };
   }
 
+  const ids = (db: Parameters<typeof getItem>[0], userId: string, id: string) =>
+    getItem(db, userId, id)?.assigneeIds;
+  // Every audit detail for the item. listAudit orders by time alone, so rows
+  // written in the same millisecond can come back in either order.
+  const details = (db: Parameters<typeof listAudit>[0], userId: string, id: string) =>
+    listAudit(db, userId)
+      .filter((e) => e.entityId === id)
+      .map((e) => e.detail);
+
   it("is unassigned by default", () => {
     const { item } = seedShared();
-    expect(item.assigneeId).toBeNull();
+    expect(item.assigneeIds).toEqual([]);
   });
 
-  it("assigns to an accepted member and audits with their handle", () => {
+  it("assigns several people at once and names each in the audit row", () => {
     const { db, owner, alice, item } = seedShared();
-    const updated = updateItem(db, owner, item.id, { assigneeId: alice }, "web");
-    expect(updated.assigneeId).toBe(alice);
-    const last = listAudit(db, owner).find((e) => e.entityId === item.id);
-    expect(last?.action).toBe("update");
-    expect(last?.detail).toContain("assigned to @alice");
+    const updated = updateItem(db, owner, item.id, { assigneeIds: [owner, alice] }, "web");
+    expect(updated.assigneeIds).toEqual([owner, alice]);
+    const row = listAudit(db, owner).find(
+      (e) => e.entityId === item.id && e.action === "update",
+    );
+    expect(row?.detail).toBe("do it: assigned @owner, @alice");
   });
 
-  it("assigns on create, and rejects an assignee without access before creating", () => {
+  it("assigns several people on create, and rejects anyone without access before creating", () => {
     const { db, owner, alice, bob, projectId } = seedShared();
     const created = addItem(
       db,
       owner,
-      { projectId, title: "for alice", assigneeId: alice },
+      { projectId, title: "for us", assigneeIds: [owner, alice] },
       "web",
     );
-    expect(created.assigneeId).toBe(alice);
+    expect(created.assigneeIds).toEqual([owner, alice]);
     expect(
       listAudit(db, owner).find((e) => e.entityId === created.id)?.detail,
-    ).toContain("assigned to @alice");
+    ).toContain("assigned to @owner, @alice");
 
     const before = listItems(db, owner, projectId).length;
     expect(() =>
       addItem(
         db,
         owner,
-        { projectId, title: "for bob", assigneeId: bob },
+        { projectId, title: "for bob", assigneeIds: [alice, bob] },
         "web",
       ),
     ).toThrow(/does not have access/);
@@ -376,18 +386,51 @@ describe("item assignment", () => {
     ).toBe(created.number + 1);
   });
 
-  it("lets the owner assign to themselves", () => {
-    const { db, owner, item } = seedShared();
-    expect(
-      updateItem(db, owner, item.id, { assigneeId: owner }, "web").assigneeId,
-    ).toBe(owner);
+  it("audits who was added and who was removed when the set changes", () => {
+    const { db, owner, alice, item } = seedShared();
+    updateItem(db, owner, item.id, { assigneeIds: [owner] }, "web");
+    updateItem(db, owner, item.id, { assigneeIds: [alice] }, "web");
+    expect(ids(db, owner, item.id)).toEqual([alice]);
+    expect(details(db, owner, item.id)).toContain(
+      "do it: assigned @alice, unassigned @owner",
+    );
   });
 
-  it("rejects assigning to a user without project access", () => {
-    const { db, owner, bob, item } = seedShared();
+  it("unassigns everyone with [] and names who was taken off", () => {
+    const { db, owner, alice, item } = seedShared();
+    updateItem(db, owner, item.id, { assigneeIds: [owner, alice] }, "web");
+    const cleared = updateItem(db, owner, item.id, { assigneeIds: [] }, "web");
+    expect(cleared.assigneeIds).toEqual([]);
+    expect(details(db, owner, item.id)).toContain("do it: unassigned @owner, @alice");
+  });
+
+  it("drops duplicate ids", () => {
+    const { db, owner, alice, item } = seedShared();
+    updateItem(db, owner, item.id, { assigneeIds: [alice, alice] }, "web");
+    expect(ids(db, owner, item.id)).toEqual([alice]);
+  });
+
+  it("applies adds and removes to the current set, keeping others' changes", () => {
+    const { db, owner, alice, item } = seedShared();
+    // Two screens that both still show the item unassigned: one adds alice,
+    // the other then adds the owner. Neither change undoes the other.
+    updateItem(db, alice, item.id, { addAssigneeIds: [alice] }, "web");
+    updateItem(db, owner, item.id, { addAssigneeIds: [owner] }, "web");
+    expect(ids(db, owner, item.id)).toEqual([alice, owner]);
+    expect(details(db, owner, item.id)).toContain("do it: assigned @owner");
+
+    updateItem(db, owner, item.id, { removeAssigneeIds: [owner] }, "web");
+    expect(ids(db, owner, item.id)).toEqual([alice]);
+    expect(details(db, owner, item.id)).toContain("do it: unassigned @owner");
+  });
+
+  it("rejects the whole change when anyone in it lacks list access", () => {
+    const { db, owner, alice, bob, item } = seedShared();
+    updateItem(db, owner, item.id, { assigneeIds: [owner] }, "web");
     expect(() =>
-      updateItem(db, owner, item.id, { assigneeId: bob }, "web"),
+      updateItem(db, owner, item.id, { assigneeIds: [alice, bob] }, "web"),
     ).toThrow(/does not have access/);
+    expect(ids(db, owner, item.id)).toEqual([owner]);
   });
 
   it("rejects assigning to a pending (not-yet-accepted) invitee", () => {
@@ -403,30 +446,19 @@ describe("item assignment", () => {
       "web",
     );
     expect(() =>
-      updateItem(db, owner, item.id, { assigneeId: carol }, "web"),
+      updateItem(db, owner, item.id, { assigneeIds: [carol] }, "web"),
     ).toThrow(/does not have access/);
   });
 
-  it("unassigns and audits the clear", () => {
+  it("treats the same people in another order as a no-op (no audit row)", () => {
     const { db, owner, alice, item } = seedShared();
-    updateItem(db, owner, item.id, { assigneeId: alice }, "web");
-    const cleared = updateItem(db, owner, item.id, { assigneeId: null }, "web");
-    expect(cleared.assigneeId).toBeNull();
-    const last = listAudit(db, owner).find((e) => e.entityId === item.id);
-    expect(last?.detail).toContain("unassigned");
-  });
-
-  it("treats re-assigning the same user as a no-op (no audit row)", () => {
-    const { db, owner, alice, item } = seedShared();
-    updateItem(db, owner, item.id, { assigneeId: alice }, "web");
-    const before = listAudit(db, owner).filter(
-      (e) => e.entityId === item.id,
-    ).length;
-    updateItem(db, owner, item.id, { assigneeId: alice }, "web");
-    const after = listAudit(db, owner).filter(
-      (e) => e.entityId === item.id,
-    ).length;
-    expect(after).toBe(before);
+    updateItem(db, owner, item.id, { assigneeIds: [owner, alice] }, "web");
+    const count = () =>
+      listAudit(db, owner).filter((e) => e.entityId === item.id).length;
+    const before = count();
+    updateItem(db, owner, item.id, { assigneeIds: [alice, owner] }, "web");
+    expect(count()).toBe(before);
+    expect(ids(db, owner, item.id)).toEqual([owner, alice]);
   });
 
   it("listAssignees returns the owner first, then accepted members only", () => {
@@ -445,8 +477,8 @@ describe("item assignment", () => {
     const { db, alice, owner, item } = seedShared();
     // alice (an accepted member) assigns the item to the owner.
     expect(
-      updateItem(db, alice, item.id, { assigneeId: owner }, "web").assigneeId,
-    ).toBe(owner);
+      updateItem(db, alice, item.id, { assigneeIds: [owner] }, "web").assigneeIds,
+    ).toEqual([owner]);
   });
 });
 
