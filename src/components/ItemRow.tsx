@@ -32,7 +32,6 @@ import {
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { modifierSymbol } from "@/lib/keyboard";
-import { prLabel } from "@/lib/pr";
 import { dueLabel, quickDueDays } from "@/lib/time";
 import {
   ContextMenu,
@@ -61,6 +60,7 @@ import { repeatOf } from "@/lib/repeat";
 import { AssigneeOptions } from "./AssigneeOptions";
 import { CategoryBadge } from "./CategoryBadge";
 import { DueBadge } from "./DueBadge";
+import { PrLink } from "./PrLink";
 import { RepeatBadge } from "./RepeatBadge";
 import { useToday } from "./use-day-start";
 import { useAssignShortcuts } from "./useAssignShortcuts";
@@ -286,19 +286,9 @@ export function ItemRow({
             )}
           </button>
           {prLinks.length > 0 && (
-            <div className="flex flex-wrap gap-1 pt-0.5">
+            <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 pt-0.5">
               {prLinks.map((link) => (
-                <a
-                  key={link.id}
-                  href={link.prUrl}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={(e) => e.stopPropagation()}
-                  className="inline-block rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 hover:bg-blue-100 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/70"
-                >
-                  {prLabel(link.prUrl)}
-                </a>
+                <PrLink key={link.id} url={link.prUrl} className="text-[11px]" />
               ))}
             </div>
           )}
