@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { Drawer as DrawerPrimitive } from "@base-ui/react/drawer"
 import { XIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -49,7 +50,11 @@ function ResponsiveDialog({
         </Dialog>
       ) : (
         <Drawer open={open} onOpenChange={onOpenChange} showSwipeHandle>
-          {children}
+          {/* Keeps the focused field above the on-screen keyboard by
+              scrolling the drawer's body. */}
+          <DrawerPrimitive.VirtualKeyboardProvider>
+            {children}
+          </DrawerPrimitive.VirtualKeyboardProvider>
         </Drawer>
       )}
     </IsDesktopContext.Provider>
@@ -80,7 +85,14 @@ function ResponsiveDialogContent({
       {children}
     </DialogContent>
   ) : (
-    <DrawerContent initialFocus={initialFocus} className={className}>
+    <DrawerContent
+      initialFocus={initialFocus}
+      // Lift the whole drawer above the on-screen keyboard. The keyboard
+      // provider scrolls a field into view within the body, but undoes iOS's
+      // own page scroll, so without this a short drawer (Share, New list)
+      // stays entirely under the keyboard.
+      className={cn("pb-[var(--drawer-keyboard-inset,0px)]", className)}
+    >
       {children}
     </DrawerContent>
   )
