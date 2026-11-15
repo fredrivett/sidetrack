@@ -12,14 +12,18 @@ import { AddProjectButton } from "./AddProjectButton";
 import { ArchivedListsMenu } from "./ArchivedListsMenu";
 import { AuditDialog } from "./AuditDialog";
 import { BoardHeader, BoardMain, BoardRail } from "./BoardLayout";
+import { CommandPalette } from "./CommandPalette";
 import { InvitesBanner } from "./InvitesBanner";
+import { ItemDetailDialog } from "./ItemDetailDialog";
 import { NewItemDialog } from "./NewItemDialog";
 import { NoDateView } from "./NoDateView";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { ProjectColumn } from "./ProjectColumn";
+import { PullToSearch } from "./PullToSearch";
 import { ShareDialog } from "./ShareDialog";
 import { TodayView } from "./TodayView";
 import { useDayStart } from "./use-day-start";
+import { useItemDetailDialog } from "./use-item-detail-dialog";
 import { UserMenu } from "./UserMenu";
 
 /**
@@ -130,6 +134,30 @@ export function Kanban({
   const archived = projects.filter((p) => p.status === "archived");
   const onBoard = [...active, ...paused];
 
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  // Items opened from the palette get their own dialog here, since the item
+  // may sit in a list the current view doesn't show.
+  const boardItems = onBoard.flatMap((p) => itemsByProject[p.id] ?? []);
+  const paletteDetail = useItemDetailDialog(boardItems);
+  const paletteProject = onBoard.find(
+    (p) => p.id === paletteDetail.item?.projectId,
+  );
+
+  // Centre a list in the rail, switching to the board first when needed; the
+  // effect below scrolls to ?p= once the rail mounts.
+  function openList(projectId: string) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("p", projectId);
+    window.history.replaceState(null, "", url.toString());
+    if (view !== "board") {
+      switchView("board");
+      return;
+    }
+    railRef.current
+      ?.querySelector(`[data-project-id="${CSS.escape(projectId)}"]`)
+      ?.scrollIntoView({ behavior: "smooth", inline: "center" });
+  }
+
   const openShare = useCallback(
     (projectId: string, projectName: string) =>
       setShare({ open: true, projectId, projectName }),
@@ -158,14 +186,24 @@ export function Kanban({
     [projects],
   );
 
-  // Global shortcuts (Linear-style bare keys): C → new item, ⇧C → new list.
-  // Skipped while typing in a field, and when a command modifier is held so we
-  // don't shadow ⌘C / Ctrl+C copy.
+  // Global shortcuts: ⌘K / Ctrl+K toggles the command palette, even from a
+  // field. Then Linear-style bare keys: / → palette, C → new item, ⇧C → new
+  // list. Those are skipped while typing in a field, and when a command
+  // modifier is held so we don't shadow ⌘C / Ctrl+C copy.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      if (matchesShortcut(e, { key: "k", mod: true, shift: false, alt: false })) {
+        e.preventDefault();
+        // Holding the keys repeats keydown; toggle once per press.
+        if (!e.repeat) setPaletteOpen((o) => !o);
+        return;
+      }
       if (isEditableTarget(e.target)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (matchesShortcut(e, { key: "c", shift: true })) {
+      if (matchesShortcut(e, { key: "/" })) {
+        e.preventDefault();
+        setPaletteOpen(true);
+      } else if (matchesShortcut(e, { key: "c", shift: true })) {
         e.preventDefault();
         setNewProjectOpen(true);
       } else if (matchesShortcut(e, { key: "c", shift: false })) {
@@ -328,6 +366,45 @@ export function Kanban({
       />
 
       <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
+
+      <PullToSearch onOpen={() => setPaletteOpen(true)} />
+
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        lists={onBoard}
+        itemsByProject={itemsByProject}
+        onNewItem={() => openNewItem()}
+        onNewList={() => setNewProjectOpen(true)}
+        onSwitchView={switchView}
+        onShowActivity={() => setAudit({ open: true })}
+        onOpenList={openList}
+        onOpenItem={paletteDetail.openDetail}
+      />
+
+      {paletteDetail.item && paletteProject && (
+        <ItemDetailDialog
+          item={paletteDetail.item}
+          parent={boardItems.find((i) => i.id === paletteDetail.item?.parentId) ?? null}
+          checklist={boardItems.filter((i) => i.parentId === paletteDetail.item?.id)}
+          // The same rule as the board's dialog (ProjectColumn), within the
+          // item's own list.
+          nestTargets={boardItems.filter(
+            (i) =>
+              i.projectId === paletteDetail.item?.projectId &&
+              i.parentId === null &&
+              i.completedAt === null &&
+              i.id !== paletteDetail.item?.id,
+          )}
+          onOpenItem={paletteDetail.openDetail}
+          prefix={paletteProject.prefix}
+          assignees={assigneesByProject[paletteProject.id] ?? []}
+          viewerId={viewerId}
+          prLinks={prLinksByItem[paletteDetail.item.id] ?? []}
+          open={paletteDetail.open}
+          onOpenChange={paletteDetail.onOpenChange}
+        />
+      )}
 
       <ShareDialog
         open={share.open}
