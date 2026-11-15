@@ -155,6 +155,13 @@
       "when": 1794752799331,
       "tag": "0021_audit_password_changes",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1794753103293,
+      "tag": "0022_revoke_reset_links_on_password_change",
+      "breakpoints": true
     }
   ]
 }

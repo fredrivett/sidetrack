@@ -248,22 +248,42 @@ describe("password audit", () => {
     expect(passwordLog(userId)).toEqual([["update", "password", userId, userId, "web"]]);
 
     // Mid-reset, the user's unexpired token is present; another user's isn't theirs.
-    const token = (value: string, expiresAt: Date) => ({
-      id: `v-${value}`,
-      identifier: `reset-password:tok-${value}`,
+    const token = (id: string, value: string, expiresAt: Date) => ({
+      id,
+      identifier: `reset-password:${id}`,
       value,
       expiresAt,
       createdAt: now,
       updatedAt: now,
     });
+    const soon = new Date(Date.now() + 60_000);
     db.insert(authSchema.verifications)
-      .values([token(userId, new Date(Date.now() + 60_000)), token(other, new Date(Date.now() - 60_000))])
+      .values([
+        token("used", userId, soon),
+        token("also-sent", userId, soon),
+        token("theirs", other, new Date(Date.now() - 60_000)),
+        // Not a reset link: left alone.
+        { ...token("other-kind", userId, soon), identifier: "email-verification:x" },
+      ])
       .run();
+    const links = () =>
+      db.select({ id: authSchema.verifications.id }).from(authSchema.verifications).all()
+        .map((v) => v.id)
+        .sort();
+
     setPassword("a1", "hash-2");
+    // Every reset link the user held is cancelled with the change, not just
+    // the one used; another user's links and other kinds of token stay.
+    expect(links()).toEqual(["other-kind", "theirs"]);
+    // So the next change, with no reset in flight, is an ordinary one.
+    setPassword("a1", "hash-3");
     setPassword("a2", "hash-2"); // expired token: an ordinary change
+    expect(links()).toEqual(["other-kind"]);
+    expect(passwordLog(userId)).toHaveLength(3);
     expect(passwordLog(userId).map((r) => r[1])).toEqual(
       expect.arrayContaining(["password", "password via a reset link"]),
     );
+    expect(passwordLog(userId).filter((r) => r[1] === "password via a reset link")).toHaveLength(1);
     expect(passwordLog(other)).toEqual([["update", "password", other, other, "web"]]);
   });
 });
