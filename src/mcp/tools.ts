@@ -614,7 +614,9 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "the new item landed, unless the user asked you not to:\n" +
         "- Keep items in the order returned; do not re-sort unless the user asked for a different order.\n" +
         "- A task is a box-drawing branch, e.g. `├── Write the docs`.\n" +
-        "- Sub-items (in `children`) nest one level beneath their parent, e.g. `│   ├── Kitchen`.",
+        "- Sub-items (in `children`) nest one level beneath their parent, e.g. `│   ├── Kitchen`.\n" +
+        "- Show the description of the item you added (the one whose id is created.id) inline, indented on the line beneath its branch; " +
+        "leave out every other item's description.",
       inputSchema: {
         list_id: z.string(),
         title: z.string().min(1),
@@ -708,7 +710,16 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Pass only one of assignee_ids, assignee_id, or add/remove. " +
         "due_date sets the calendar day it's due (YYYY-MM-DD, no time); pass null to clear it. " +
         "repeat sets how often a task comes round again, { every, unit } (see add_item); pass null to stop it repeating. " +
-        "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
+        "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id. " +
+        "Returns { updated, items } where items is every incomplete item in the item's list in position order " +
+        "(so a completed item is in updated but not items).\n" +
+        "After updating, show the user the list's items (the items array) so they can see the change in place, " +
+        "unless the user asked you not to:\n" +
+        "- Keep items in the order returned; do not re-sort unless the user asked for a different order.\n" +
+        "- A task is a box-drawing branch, e.g. `├── Write the docs`.\n" +
+        "- Sub-items (in `children`) nest one level beneath their parent, e.g. `│   ├── Kitchen`.\n" +
+        "- Show the description of the item you updated (the one whose id is updated.id) inline, indented on the line beneath its branch; " +
+        "leave out every other item's description.",
       inputSchema: {
         id: z.string(),
         title: z.string().optional(),
@@ -756,19 +767,18 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           `${both.join(", ")} is in both add_assignee_ids and remove_assignee_ids — no change was made.`,
         );
       }
-      return json(
-        withItemRef(
-          db,
-          userId,
-          updateItem(
-            db,
-            userId,
-            item.id,
-            { ...patch, assigneeIds, addAssigneeIds, removeAssigneeIds, dueDate: due_date },
-            SOURCE,
-          ),
-        ),
+      const updated = updateItem(
+        db,
+        userId,
+        item.id,
+        { ...patch, assigneeIds, addAssigneeIds, removeAssigneeIds, dueDate: due_date },
+        SOURCE,
       );
+      const refPrefix = projectRefPrefixes(db, userId)[updated.projectId];
+      return json({
+        updated: { ...updated, ref: formatItemRef(refPrefix, updated.number) },
+        items: withRefs(refPrefix, listItems(db, userId, updated.projectId)),
+      });
     },
   );
 
