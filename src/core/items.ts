@@ -950,6 +950,8 @@ export function deleteItem(
         entityType: "item",
         entityId: it.id,
         projectId: existing.projectId,
+        // Gone by now, so it can't be read back from the row.
+        parentId: it.parentId,
         detail:
           it === existing
             ? `deleted "${it.title}"`
@@ -1022,6 +1024,8 @@ export function setItemParent(
       entityType: "item",
       entityId: id,
       projectId: existing.projectId,
+      // Moving out belongs to the parent it left.
+      parentId: parent?.id ?? existing.parentId,
       detail,
     });
     if (parent && existing.completedAt === null) {

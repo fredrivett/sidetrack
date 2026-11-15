@@ -45,6 +45,10 @@ export interface AuditInput {
   entityType: AuditEntity;
   entityId: string;
   projectId?: string | null;
+  /** For an item, the item it was a sub-item of when this happened. Read
+   * from the item when omitted; pass it when the row no longer says, such
+   * as once it's deleted or moved out. */
+  parentId?: string | null;
   detail?: string;
 }
 
@@ -56,6 +60,17 @@ export function recordAudit(db: Db, input: AuditInput): void {
   const origin =
     typeof input.source === "string" ? { source: input.source } : input.source;
   const agent = "agent" in origin ? origin.agent : null;
+  // A sub-item's history also belongs to its parent's (listAudit's item
+  // view), so note the parent on the row: the log has no other way to know
+  // it once the sub-item is deleted or moved.
+  const parentId =
+    input.parentId !== undefined || input.entityType !== "item"
+      ? (input.parentId ?? null)
+      : (db
+          .select({ parentId: items.parentId })
+          .from(items)
+          .where(eq(items.id, input.entityId))
+          .get()?.parentId ?? null);
   // audit-exempt: this is the audit row itself.
   db.insert(auditLog)
     .values({
@@ -69,6 +84,7 @@ export function recordAudit(db: Db, input: AuditInput): void {
       entityType: input.entityType,
       entityId: input.entityId,
       projectId: input.projectId ?? null,
+      parentId,
       detail: input.detail ?? "",
     })
     .run();
@@ -88,9 +104,9 @@ export function listAudit(
   const filters = [];
 
   if (opts.itemId) {
-    // Item-scoped view: every actor's activity on this one item. Authorized
-    // like the item itself, through its current list, so whoever can open
-    // the item can read its history and nobody else can.
+    // Item-scoped view: every actor's activity on this one item and its
+    // sub-items. Authorized like the item itself, through its current list,
+    // so whoever can open the item can read its history and nobody else can.
     const accessible = db
       .select({ id: items.id })
       .from(items)
@@ -98,9 +114,11 @@ export function listAudit(
       .where(and(eq(items.id, opts.itemId), hasProjectAccess(userId)))
       .get();
     if (!accessible) return [];
+    // Its sub-items' rows are those made while they were its sub-items,
+    // including ones since deleted or moved out.
     filters.push(
       eq(auditLog.entityType, "item"),
-      eq(auditLog.entityId, opts.itemId),
+      or(eq(auditLog.entityId, opts.itemId), eq(auditLog.parentId, opts.itemId)),
     );
   } else if (opts.projectId) {
     // Project-scoped view: every actor's activity on this one project. The

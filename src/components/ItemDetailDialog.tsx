@@ -154,9 +154,10 @@ function AgentWork({
 const ACTIVITY_PAGE = 50;
 
 /**
- * The item's history, newest first, collapsed until opened so the dialog
- * doesn't read the log for every item it shows. While open it reloads
- * whenever the item does, so a change made here shows up straight away.
+ * The item's and its sub-items' history, newest first, collapsed until
+ * opened so the dialog doesn't read the log for every item it shows. While
+ * open it reloads whenever the item does, so a change made here shows up
+ * straight away.
  */
 function ItemActivity({ item }: { item: Item }) {
   const [expanded, setExpanded] = useState(false);
