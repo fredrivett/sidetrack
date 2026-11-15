@@ -112,6 +112,7 @@ unaffected. They power the hosted deploy and are not needed for self-hosting.
 | `POSTHOG_API_KEY` | _(unset)_ | Personal API key. When set with `POSTHOG_PROJECT_ID`, `next build` uploads source maps to PostHog (and deletes them after) so stack traces symbolicate |
 | `POSTHOG_PROJECT_ID` | _(unset)_ | PostHog project id for the source-map upload |
 | `POSTHOG_API_HOST` | `https://us.posthog.com` | API host for the upload (note: not the `us.i.` ingestion host) |
+| `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` | _(fresh per build)_ | Base64 AES key (`openssl rand -base64 32`). Keeps Server Action IDs the same across builds, so tabs left open through a deploy can still save |
 
 ## Connecting an MCP client
 
