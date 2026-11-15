@@ -401,7 +401,7 @@ export function Kanban({
                 i.id !== paletteDetail.item?.id,
             )}
             onOpenItem={paletteDetail.openDetail}
-            prefix={paletteProject.prefix}
+            prefix={paletteProject.refPrefix}
             assignees={assigneesByProject[paletteProject.id] ?? []}
             viewerId={viewerId}
             prLinks={prLinksByItem[paletteDetail.item.id] ?? []}
