@@ -11,16 +11,22 @@ const MISSING_TTL_MS = 60 * 60 * 1000;
 const MAX_CACHED = 500;
 // The whole search for one homepage, across all its requests.
 const SEARCH_TIMEOUT_MS = 10_000;
+// Searches running at once, across everyone. Past this, a new homepage gets
+// a 503 (the <img> moves on to the next candidate) rather than more outbound
+// requests, so a flood of unique URLs can't tie up the server.
+const MAX_IN_FLIGHT = 16;
+let inFlight = 0;
 
 const cache = new Map<
   string,
   { expires: number; icon: Promise<FoundIcon | null> }
 >();
 
-function lookUpFavicon(homepage: string): Promise<FoundIcon | null> {
+function lookUpFavicon(homepage: string): Promise<FoundIcon | null> | "busy" {
   const now = Date.now();
   const hit = cache.get(homepage);
   if (hit && hit.expires > now) return hit.icon;
+  if (inFlight >= MAX_IN_FLIGHT) return "busy";
   cache.delete(homepage);
   // Drop the oldest entries (Map keeps insertion order) to bound memory.
   for (const key of cache.keys()) {
@@ -30,9 +36,12 @@ function lookUpFavicon(homepage: string): Promise<FoundIcon | null> {
   // Not tied to the request: other requests share this search, so one
   // browser going away mustn't cancel it for the rest.
   const signal = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
+  inFlight++;
   const icon = findFavicon(homepage, (url, { maxBytes }) =>
     safeFetch(url, { maxBytes, signal }),
-  ).catch(() => null);
+  )
+    .catch(() => null)
+    .finally(() => inFlight--);
   // Shared while in flight; once settled, kept for as long as its outcome
   // deserves.
   const entry = { expires: now + SEARCH_TIMEOUT_MS, icon };
@@ -54,17 +63,25 @@ export async function GET(request: Request) {
   if (!(await getCurrentSession())) {
     return new Response(null, { status: 401 });
   }
-  let homepage: string | null = null;
+  let homepage: URL | null = null;
   try {
-    homepage = normalizeWebUrl(
+    const normalized = normalizeWebUrl(
       new URL(request.url).searchParams.get("url") ?? "",
     );
+    if (normalized) homepage = new URL(normalized);
   } catch {
     // Falls through to the 400 below.
   }
   if (!homepage) return new Response(null, { status: 400 });
+  // Neither reaches the site we fetch (safeFetch drops credentials), so
+  // they mustn't make a separate cache entry either.
+  homepage.hash = "";
+  homepage.username = "";
+  homepage.password = "";
 
-  const icon = await lookUpFavicon(homepage);
+  const found = lookUpFavicon(homepage.toString());
+  if (found === "busy") return new Response(null, { status: 503 });
+  const icon = await found;
   if (!icon) {
     return new Response(null, {
       status: 404,

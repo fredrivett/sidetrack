@@ -20,8 +20,11 @@ export type FoundIcon = { contentType: string; body: Uint8Array };
 const MAX_HTML_BYTES = 512 * 1024;
 const MAX_MANIFEST_BYTES = 64 * 1024;
 const MAX_ICON_BYTES = 256 * 1024;
-// Bounds the work for a site whose candidates all fail.
-const MAX_ICON_FETCHES = 8;
+// Bounds the work for a site whose candidates all fail. Each stage has its
+// own budget, so broken declared icons can't use up the tries meant for the
+// manifest and the conventional paths.
+const MAX_DECLARED_FETCHES = 4;
+const MAX_MANIFEST_ICON_FETCHES = 3;
 
 // What a size-less icon counts as when ranking. A vector or "any" scales to
 // every size, so it beats any bitmap.
@@ -164,8 +167,9 @@ export async function findFavicon(
   let manifest: string | null = null;
   try {
     const page = await fetch(homepageUrl, { maxBytes: MAX_HTML_BYTES });
+    // Even an error page tells us where the site now lives.
+    pageUrl = page.url;
     if (page.status >= 200 && page.status < 300) {
-      pageUrl = page.url;
       ({ icons: declared, manifest } = parseHtmlIcons(
         new TextDecoder().decode(page.body),
         page.url,
@@ -176,17 +180,17 @@ export async function findFavicon(
   }
 
   const tried = new Set<string>();
-  let fetches = 0;
-  const tryIcons = async (hrefs: string[]) => {
+  const tryIcons = async (hrefs: string[], maxFetches = Infinity) => {
+    let fetches = 0;
     for (const href of hrefs) {
       if (tried.has(href)) continue;
       tried.add(href);
-      if (href.startsWith("data:")) {
+      if (/^data:/i.test(href)) {
         const icon = decodeDataUrl(href);
         if (icon) return icon;
         continue;
       }
-      if (fetches++ >= MAX_ICON_FETCHES) return null;
+      if (fetches++ >= maxFetches) return null;
       try {
         const res = await fetch(href, { maxBytes: MAX_ICON_BYTES });
         if (res.status < 200 || res.status >= 300 || res.truncated) continue;
@@ -199,15 +203,15 @@ export async function findFavicon(
     return null;
   };
 
-  const fromPage = await tryIcons(declared);
+  const fromPage = await tryIcons(declared, MAX_DECLARED_FETCHES);
   if (fromPage) return fromPage;
-  if (manifest && fetches < MAX_ICON_FETCHES) {
+  if (manifest) {
     try {
-      fetches++;
       const res = await fetch(manifest, { maxBytes: MAX_MANIFEST_BYTES });
       if (res.status >= 200 && res.status < 300 && !res.truncated) {
         const fromManifest = await tryIcons(
           parseManifestIcons(new TextDecoder().decode(res.body), res.url),
+          MAX_MANIFEST_ICON_FETCHES,
         );
         if (fromManifest) return fromManifest;
       }

@@ -331,6 +331,19 @@ describe("findFavicon", () => {
     expect((await findFavicon("http://old.com/", fetcher))?.body).toBe(ICO);
   });
 
+  it("tries the conventional paths on the new host when the redirect target errors", async () => {
+    const { fetcher } = site({
+      "http://old.com/": {
+        url: "https://new.com/home",
+        status: 500,
+        body: "oops",
+      },
+      "https://new.com/favicon.ico": { body: ICO },
+      "http://old.com/favicon.ico": { body: PNG },
+    });
+    expect((await findFavicon("http://old.com/", fetcher))?.body).toBe(ICO);
+  });
+
   it("still tries the conventional paths when the page is down", async () => {
     const { fetcher } = site({
       "https://x.com/app": new Error("ECONNRESET"),
@@ -352,10 +365,10 @@ describe("findFavicon", () => {
     expect(requested).not.toContain("https://x.com/from-error-page.png");
   });
 
-  it("decodes an inline data: icon without fetching it", async () => {
+  it("decodes an inline data: icon without fetching it, whatever the scheme's case", async () => {
     const { fetcher, requested } = site({
       "https://x.com/": {
-        body: `<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3C/svg%3E">`,
+        body: `<link rel="icon" href="DATA:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3C/svg%3E">`,
       },
     });
     expect((await findFavicon("https://x.com/", fetcher))?.contentType).toBe(
@@ -378,6 +391,26 @@ describe("findFavicon", () => {
     expect((await findFavicon("https://x.com/", truncating))?.body).toBe(ICO);
   });
 
+  it("still reaches the manifest and /favicon.ico after many broken declared icons", async () => {
+    const links = Array.from(
+      { length: 20 },
+      (_, i) => `<link rel="icon" href="/i${i}.png">`,
+    ).join("");
+    const { fetcher, requested } = site({
+      "https://x.com/": { body: `${links}<link rel="manifest" href="/m.json">` },
+      "https://x.com/m.json": {
+        body: JSON.stringify({
+          icons: Array.from({ length: 10 }, (_, i) => ({ src: `/m${i}.png` })),
+        }),
+      },
+      "https://x.com/favicon.ico": { body: ICO },
+    });
+    expect((await findFavicon("https://x.com/", fetcher))?.body).toBe(ICO);
+    // The page, 4 declared icons, the manifest, 3 of its icons, then
+    // /favicon.svg and /favicon.ico.
+    expect(requested.length).toBe(1 + 4 + 1 + 3 + 2);
+  });
+
   it("returns null when nothing is an image, and bounds the requests", async () => {
     const links = Array.from(
       { length: 20 },
@@ -385,7 +418,7 @@ describe("findFavicon", () => {
     ).join("");
     const { fetcher, requested } = site({ "https://x.com/": { body: links } });
     expect(await findFavicon("https://x.com/", fetcher)).toBeNull();
-    // The page, then at most 8 icon attempts.
+    // The page, 4 declared icons, then the 4 conventional paths.
     expect(requested.length).toBe(9);
   });
 

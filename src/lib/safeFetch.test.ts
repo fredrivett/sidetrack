@@ -9,6 +9,8 @@ describe("isPublicAddress", () => {
     expect(isPublicAddress("93.184.216.34")).toBe(true);
     expect(isPublicAddress("8.8.8.8")).toBe(true);
     expect(isPublicAddress("2606:4700::6810:85e5")).toBe(true);
+    expect(isPublicAddress("2001:4860:4860::8888")).toBe(true);
+    expect(isPublicAddress("::ffff:8.8.8.8")).toBe(true);
   });
 
   it("refuses loopback, private, link-local, metadata and reserved ranges", () => {
@@ -29,7 +31,15 @@ describe("isPublicAddress", () => {
       "fd00::1",
       "fe80::1",
       "::ffff:127.0.0.1",
+      "::ffff:7f00:1",
       "::ffff:10.0.0.1",
+      "fec0::1", // site-local
+      "::127.0.0.1", // IPv4-compatible
+      "::7f00:1",
+      "64:ff9b::7f00:1", // NAT64
+      "2002:7f00:1::", // 6to4
+      "2001::1", // Teredo
+      "2001:db8::1",
     ]) {
       expect(isPublicAddress(address), address).toBe(false);
     }
@@ -57,6 +67,7 @@ describe("safeFetch", () => {
     server = http.createServer((req, res) => {
       const path = req.url ?? "/";
       if (path === "/ok") return res.end("hello");
+      if (path === "/auth") return res.end(req.headers.authorization ?? "none");
       if (path.startsWith("/redirect/")) {
         const n = Number(path.split("/")[2]);
         res.writeHead(302, {
@@ -127,6 +138,15 @@ describe("safeFetch", () => {
     expect(new TextDecoder().decode(res.body)).toBe("hello");
     expect(res.truncated).toBe(false);
     expect(res.url).toBe(`${base}/ok`);
+  });
+
+  it("never sends credentials embedded in the URL", async () => {
+    const res = await safeFetch(base.replace("//", "//user:secret@") + "/auth", {
+      maxBytes: 100,
+      allowAddress: allowLoopback,
+    });
+    expect(new TextDecoder().decode(res.body)).toBe("none");
+    expect(res.url).toBe(`${base}/auth`);
   });
 
   it("follows redirects and reports the final URL", async () => {

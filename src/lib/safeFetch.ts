@@ -37,6 +37,7 @@ for (const [net, prefix] of [
   ["::1", 128], // loopback
   ["64:ff9b::", 96], // NAT64, which can embed a private IPv4 address
   ["100::", 64], // discard
+  ["2001::", 32], // Teredo, which can embed a private IPv4 address
   ["2001:db8::", 32], // documentation
   ["2002::", 16], // 6to4, which can embed a private IPv4 address
   ["fc00::", 7], // unique local
@@ -46,15 +47,31 @@ for (const [net, prefix] of [
   PRIVATE.addSubnet(net, prefix, "ipv6");
 }
 
+// IPv6 is allowed only from the global unicast block (2000::/3, minus the
+// ranges above), rather than refused range by range, so a special-use prefix
+// left off the list (site-local fec0::/10, IPv4-compatible ::a.b.c.d, ...)
+// is refused anyway.
+const GLOBAL_UNICAST = new BlockList();
+GLOBAL_UNICAST.addSubnet("2000::", 3, "ipv6");
+const IPV4_MAPPED = new BlockList();
+IPV4_MAPPED.addSubnet("::ffff:0:0", 96, "ipv6");
+
 /**
  * Whether an IP address is on the public internet. IPv4-mapped IPv6 addresses
- * (::ffff:127.0.0.1) are checked as the IPv4 address they carry. Anything that
- * isn't an IP address is not public.
+ * (::ffff:127.0.0.1) are checked as the IPv4 address they carry; any other
+ * IPv6 address must be global unicast. Anything that isn't an IP address is
+ * not public.
  */
 export function isPublicAddress(address: string): boolean {
   const family = isIP(address);
   if (family === 0) return false;
-  return !PRIVATE.check(address, family === 4 ? "ipv4" : "ipv6");
+  if (family === 4) return !PRIVATE.check(address, "ipv4");
+  // BlockList matches an IPv4-mapped address against the IPv4 ranges too.
+  if (PRIVATE.check(address, "ipv6")) return false;
+  return (
+    IPV4_MAPPED.check(address, "ipv6") ||
+    GLOBAL_UNICAST.check(address, "ipv6")
+  );
 }
 
 export type SafeFetchResult = {
@@ -95,6 +112,10 @@ export async function safeFetch(
   const abort = signal ? AbortSignal.any([signal, timeout]) : timeout;
   let current = new URL(url);
   for (let hop = 0; ; hop++) {
+    // Never send credentials embedded in a URL (Node would turn them into
+    // an Authorization header).
+    current.username = "";
+    current.password = "";
     const res = await get(current, maxBytes, abort, allowAddress);
     const location = res.location;
     if (!REDIRECT_STATUSES.has(res.status) || location === undefined) {
