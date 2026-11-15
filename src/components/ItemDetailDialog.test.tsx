@@ -165,6 +165,16 @@ describe("ItemDetailDialog nesting", () => {
   });
 });
 
+describe("ItemDetailDialog checklist", () => {
+  it("keeps the task's title out of the add input's label", () => {
+    // Regression: Safari reads the label to guess what a field holds, and
+    // labelling it with "Change phone plan" got it phone-number AutoFill.
+    renderDialog(true, [], [], { title: "Change phone plan" });
+    const input = screen.getByPlaceholderText("Add a step…");
+    expect(input.getAttribute("aria-label")).not.toMatch(/phone/i);
+  });
+});
+
 describe("ItemDetailDialog due date picker", () => {
   beforeEach(() => {
     vi.mocked(updateItemAction).mockClear();
