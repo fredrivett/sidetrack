@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { UserPlus } from "lucide-react";
+import { unstable_rethrow } from "next/navigation";
 import {
   inviteMemberAction,
   listMembersAction,
@@ -111,7 +112,9 @@ export function ShareDialog({
       if (latestProjectId.current !== id) return;
       setMembers(rows);
       setSuggestions(suggested);
-    } catch {
+    } catch (err) {
+      // A signed-out session rejects with Next's redirect to /login.
+      unstable_rethrow(err);
       // Leave the lists as they were.
     }
   }
@@ -125,6 +128,7 @@ export function ShareDialog({
       try {
         await inviteMemberAction(projectId, handle);
       } catch (err) {
+        unstable_rethrow(err);
         if (latestProjectId.current !== projectId) return;
         setError(err instanceof Error ? err.message : "Couldn't send the invite.");
         return;
@@ -139,7 +143,8 @@ export function ShareDialog({
     start(async () => {
       try {
         await removeMemberAction(projectId, targetUserId);
-      } catch {
+      } catch (err) {
+        unstable_rethrow(err);
         if (latestProjectId.current !== projectId) return;
         setError("Couldn't remove that person. Please try again.");
         return;
