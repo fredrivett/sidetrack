@@ -1,4 +1,5 @@
 import { and, asc, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 import { nanoid } from "nanoid";
 import { hasProjectAccess } from "./access";
 import { users } from "./auth-schema";
@@ -47,21 +48,36 @@ function projectAccessibleForUser(
   return !!row;
 }
 
+/**
+ * A list's items in list order: open ones, plus finished ones with
+ * `includeCompleted`. `completedSince` keeps only the finished ones whose
+ * top-level item was finished at or after it, so a parent kept this way keeps
+ * its whole checklist, and an open parent keeps sub-items finished long ago.
+ */
 export function listItems(
   db: Db,
   userId: string,
   projectId: string,
-  opts: { includeCompleted?: boolean } = {},
+  opts: { includeCompleted?: boolean; completedSince?: number } = {},
 ): Item[] {
+  const parent = alias(items, "parent");
   const baseConds = [
     eq(items.projectId, projectId),
     hasProjectAccess(userId),
   ];
   if (!opts.includeCompleted) baseConds.push(isNull(items.completedAt));
+  else if (opts.completedSince !== undefined) {
+    // When the item's group was finished, if it was: the top-level item's time.
+    const groupDone = sql`case when ${items.parentId} is null then ${items.completedAt} else ${parent.completedAt} end`;
+    baseConds.push(
+      sql`(${groupDone} is null or ${groupDone} >= ${opts.completedSince})`,
+    );
+  }
   return db
     .select({ items })
     .from(items)
     .innerJoin(projects, eq(projects.id, items.projectId))
+    .leftJoin(parent, eq(parent.id, items.parentId))
     .where(and(...baseConds))
     .orderBy(asc(items.position), asc(items.id))
     .all()

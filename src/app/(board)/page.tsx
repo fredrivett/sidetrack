@@ -9,6 +9,7 @@ import { listAssignees, listPendingInvites } from "@/core/members";
 import { listAllPrLinks } from "@/core/prLinks";
 import { listProjects } from "@/core/projects";
 import { getProfile, getTimeZone } from "@/core/users";
+import { weekStartBound } from "@/lib/time";
 import type { ItemPrLink } from "@/core/schema";
 import { requireUserId } from "@/auth/session";
 
@@ -35,10 +36,15 @@ export default async function Home({
     refPrefix: refPrefixes[p.id] ?? p.prefix,
   }));
   const pendingInvites = listPendingInvites(db, userId);
+  // Finished items stay on the board until their week is over (in each
+  // list's Done), so leave older ones out. The browser trims to its own week
+  // start (ProjectColumn); this cut is early enough for any timezone.
+  const timeZone = getTimeZone(db, userId);
+  const completedSince = weekStartBound(timeZone ?? undefined);
   const itemsByProject = Object.fromEntries(
     projects.map((p) => [
       p.id,
-      listItems(db, userId, p.id, { includeCompleted: true }),
+      listItems(db, userId, p.id, { includeCompleted: true, completedSince }),
     ]),
   );
   const categoriesByProject = Object.fromEntries(
@@ -59,7 +65,7 @@ export default async function Home({
       <Kanban
         viewerId={userId}
         viewer={getProfile(db, userId)}
-        timeZone={getTimeZone(db, userId)}
+        timeZone={timeZone}
         initialView={view === "today" || view === "no-date" ? view : "board"}
         projects={projects}
         itemsByProject={itemsByProject}
