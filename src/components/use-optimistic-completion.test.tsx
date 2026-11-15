@@ -121,6 +121,26 @@ describe("useOptimisticCompletion", () => {
     await act(async () => save.resolve());
   });
 
+  it("completes the parent with its last open sub-item, as the server does", async () => {
+    const first = deferred();
+    const last = deferred();
+    vi.mocked(completeItemAction)
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(last.promise);
+    const second = { ...open, id: "second", title: "Second child" };
+    render(<Board items={[parent, open, second, other]} />);
+
+    fireEvent.click(screen.getByText("Open child: open"));
+    screen.getByText("Parent: open");
+    fireEvent.click(screen.getByText("Second child: open"));
+    screen.getByText("Parent: done");
+    screen.getByText("Other: open");
+    await act(async () => {
+      first.resolve();
+      last.resolve();
+    });
+  });
+
   it("undoes the tick and says so when the save fails", async () => {
     const save = deferred();
     vi.mocked(completeItemAction).mockReturnValue(save.promise);

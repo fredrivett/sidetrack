@@ -466,15 +466,23 @@ export function completeItem(
 
   // Completing never moves the item: it keeps its place in the list, and the
   // UI decides how to show it (crossed out today, in Done after that).
-  // Completing a parent ticks its open sub-items too, each logged on its own
-  // so every item's history says when it was done.
+  // Completing a parent ticks its open sub-items too, and ticking a parent's
+  // last open sub-item completes the parent, each logged on its own so every
+  // item's history says when it was done.
   const now = Date.now();
+  const parent = existing.parentId ? getItem(db, userId, existing.parentId) : undefined;
   db.transaction((tx) => {
-    // Read inside the transaction, so a sub-item added meanwhile is ticked too.
+    // Read inside the transaction, so a sub-item added meanwhile counts.
     const openChildren = childrenOf(tx as unknown as Db, id).filter(
       (c) => c.completedAt === null,
     );
-    for (const it of [existing, ...openChildren]) {
+    const parentDone =
+      parent &&
+      parent.completedAt === null &&
+      childrenOf(tx as unknown as Db, parent.id).every(
+        (c) => c.id === id || c.completedAt !== null,
+      );
+    for (const it of [existing, ...openChildren, ...(parentDone ? [parent] : [])]) {
       tx.update(items).set({ completedAt: now }).where(eq(items.id, it.id)).run();
       // Finished work needs no agent: end any open sessions with the item.
       tx.update(agentSessions)
@@ -491,7 +499,9 @@ export function completeItem(
         detail:
           it === existing
             ? `completed "${it.title}"`
-            : `completed "${it.title}" with "${existing.title}"`,
+            : it === parent
+              ? `completed "${it.title}" with its last sub-item, "${existing.title}"`
+              : `completed "${it.title}" with "${existing.title}"`,
       });
     }
   });

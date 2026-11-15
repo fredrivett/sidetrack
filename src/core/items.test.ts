@@ -531,12 +531,30 @@ describe("checklists (sub-items)", () => {
     expect(completes.sort()).toEqual([lounge.id, kitchen.id, p.id].sort());
   });
 
-  it("ticking every sub-item leaves the parent open", () => {
-    const { db, userId, add } = setup();
+  it("ticking a parent's last open sub-item completes the parent, audited", () => {
+    const { db, userId, projectId, add } = setup();
     const p = add("tidy");
-    const c = add("lounge", { parentId: p.id });
-    completeItem(db, userId, c.id, "web");
+    const lounge = add("lounge", { parentId: p.id });
+    const kitchen = add("kitchen", { parentId: p.id });
+    const other = add("other");
+    add("other step", { parentId: other.id });
+
+    completeItem(db, userId, lounge.id, "web");
     expect(getItem(db, userId, p.id)?.completedAt).toBeNull();
+    completeItem(db, userId, kitchen.id, "mcp");
+    expect(getItem(db, userId, p.id)?.completedAt).not.toBeNull();
+    expect(getItem(db, userId, other.id)?.completedAt).toBeNull();
+    expect(listAudit(db, userId, { projectId })[0]).toMatchObject({
+      action: "complete",
+      entityId: p.id,
+      source: "mcp",
+    });
+
+    // Reopening a sub-item reopens the parent; ticking it again closes it again.
+    uncompleteItem(db, userId, kitchen.id, "web");
+    expect(getItem(db, userId, p.id)?.completedAt).toBeNull();
+    completeItem(db, userId, kitchen.id, "web");
+    expect(getItem(db, userId, p.id)?.completedAt).not.toBeNull();
   });
 
   it("reopening or adding a sub-item reopens a finished parent", () => {
