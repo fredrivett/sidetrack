@@ -171,15 +171,19 @@ describe("useOptimisticItems: ticks", () => {
   });
 });
 
-/** The list as the board shows it: top-level items, each sub-item indented. */
+/**
+ * The list as the board shows it: top-level items, each sub-item indented,
+ * finished ones ticked.
+ */
 function Tree({ items, onChanges }: { items: Item[]; onChanges: (c: ItemChanges) => void }) {
   const [byProject, c] = useOptimisticItems({ p1: items });
   useEffect(() => onChanges(c), [c, onChanges]);
+  const label = (i: Item) => `${i.title}${i.completedAt === null ? "" : " ✓"}`;
   return (
     <ol>
       {nestItems(byProject.p1).flatMap((g) => [
-        <li key={g.id}>{g.title}</li>,
-        ...g.children.map((k) => <li key={k.id}>- {k.title}</li>),
+        <li key={g.id}>{label(g)}</li>,
+        ...g.children.map((k) => <li key={k.id}>- {label(k)}</li>),
       ])}
     </ol>
   );
@@ -245,5 +249,33 @@ describe("useOptimisticItems: deletes and moves", () => {
     act(() => changes.setParent(a3, null));
     expect(shown()).toEqual(["A", "- A1", "- A2", "A3", "B", "C"]);
     await act(async () => save.resolve());
+  });
+
+  it("reopens a finished parent when an open item nests under it, as the server does", async () => {
+    const save = deferred();
+    vi.mocked(setItemParentAction).mockReturnValue(save.promise);
+    const tick = deferred();
+    vi.mocked(completeItemAction).mockReturnValue(tick.promise);
+    const done = (item: Item) => ({ ...item, completedAt: 1 });
+    const d = { ...base, id: "d", title: "D" };
+    render(<Tree items={[done(a), done(b), done(c), other, d]} onChanges={keep} />);
+
+    // A finished item keeps its finished parent finished, including one
+    // ticked by a save still in flight and passed as it was before the tick.
+    act(() => changes.setParent(done(c), "a"));
+    expect(shown()).toEqual(["A ✓", "- C ✓", "B ✓", "Other", "D"]);
+    act(() => changes.setCompleted(other, true));
+    act(() => changes.setParent(other, "a"));
+    expect(shown()).toEqual(["A ✓", "- C ✓", "- Other ✓", "B ✓", "D"]);
+    act(() => changes.setParent(d, "a"));
+    expect(shown()).toEqual(["A", "- C ✓", "- Other ✓", "- D", "B ✓"]);
+    // Moving out leaves the old parent as it is: the server doesn't tick it
+    // again now that its sub-items are all finished.
+    act(() => changes.setParent(d, null));
+    expect(shown()).toEqual(["A", "- C ✓", "- Other ✓", "D", "B ✓"]);
+    await act(async () => {
+      tick.resolve();
+      save.resolve();
+    });
   });
 });
