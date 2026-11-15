@@ -71,11 +71,11 @@ Changes the user starts go through `runAction`
 again." instead of failing silently or crashing the board. The exception is a
 form that reports the error inline, where the user is looking: the settings
 panels and Share's invite and remove. A handler that catches an action's error
-itself must call `unstable_rethrow` first, so a signed-out session still
-redirects to login. Reads the user waits on, such as a dialog loading its
-contents, use it too. Background reads and syncs, such as the Done view's older
-items and the time zone, and AI suggestions don't (rule 1). Choose how the UI
-shows each save with these rules:
+itself must call `unstable_rethrow` first: a signed-out session rejects with
+Next's redirect to /login, which isn't a failure to show. Reads the user waits
+on, such as a dialog loading its contents, use it too. Background reads and
+syncs, such as the Done view's older items and the time zone, and AI
+suggestions don't (rule 1). Choose how the UI shows each save with these rules:
 
 1. **Scope.** These rules cover changes the user starts. Reads show a loading
    state. AI suggestions are advisory: they never hold and never toast.

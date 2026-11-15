@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { Check } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { unstable_rethrow, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -87,7 +87,9 @@ export function UsernamePanel({ initial }: { initial: string }) {
       let res: Awaited<ReturnType<typeof setUsernameAction>>;
       try {
         res = await setUsernameAction(value);
-      } catch {
+      } catch (e) {
+        // A signed-out session rejects with Next's redirect to /login.
+        unstable_rethrow(e);
         res = { error: "Couldn't update username." };
       }
       if (res) {

@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { Check } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { unstable_rethrow, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -81,7 +81,9 @@ export function AvatarPanel({ user }: { user: AvatarUser }) {
     run(async () => {
       try {
         await setAvatarUrlAction(image);
-      } catch {
+      } catch (e) {
+        // A signed-out session rejects with Next's redirect to /login.
+        unstable_rethrow(e);
         return "Couldn't update avatar.";
       }
       setValue(image ?? "");
@@ -102,7 +104,8 @@ export function AvatarPanel({ user }: { user: AvatarUser }) {
       form.append("file", blob);
       try {
         await uploadAvatarAction(form);
-      } catch {
+      } catch (e) {
+        unstable_rethrow(e);
         return "Couldn't upload that image.";
       }
       setValue("");

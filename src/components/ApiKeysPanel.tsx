@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { Plus } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { unstable_rethrow, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
 import { Input } from "@/components/ui/input";
@@ -52,6 +52,8 @@ export function ApiKeysPanel({ initial }: { initial: KeyRow[] }) {
         setName("");
         router.refresh();
       } catch (e) {
+        // A signed-out session rejects with Next's redirect to /login.
+        unstable_rethrow(e);
         setError(e instanceof Error ? e.message : "Failed to create key.");
       }
     });
@@ -65,6 +67,7 @@ export function ApiKeysPanel({ initial }: { initial: KeyRow[] }) {
         await revokeApiKeyAction(id);
         router.refresh();
       } catch (e) {
+        unstable_rethrow(e);
         setRevokeError(
           e instanceof Error ? e.message : "Failed to revoke key.",
         );

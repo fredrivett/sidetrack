@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowUpRight, Plus, Webhook } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { unstable_rethrow, useRouter } from "next/navigation";
 import { useState, useSyncExternalStore, useTransition } from "react";
 import {
   addGithubWebhookSecretAction,
@@ -80,6 +80,8 @@ export function GithubWebhookPanel({
         await action();
         router.refresh();
       } catch (e) {
+        // A signed-out session rejects with Next's redirect to /login.
+        unstable_rethrow(e);
         setError(e instanceof Error ? e.message : "Something went wrong.");
       }
     });
