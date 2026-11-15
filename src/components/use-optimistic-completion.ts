@@ -7,15 +7,18 @@ import {
   useOptimistic,
   useTransition,
 } from "react";
-import { toast } from "sonner";
 import { completeItemAction, uncompleteItemAction } from "@/app/actions";
 import type { Item } from "@/core/schema";
+import { runAction } from "./run-action";
 
 type SetCompleted = (item: Item, done: boolean) => void;
 type Change = { item: Item; done: boolean; at: number };
 
 const save = (item: Item, done: boolean) =>
-  done ? completeItemAction(item.id) : uncompleteItemAction(item.id);
+  runAction(
+    done ? completeItemAction(item.id) : uncompleteItemAction(item.id),
+    `${done ? "complete" : "reopen"} “${item.title}”`,
+  );
 
 /**
  * Ticks and unticks an item. The board provides one that shows the change at
@@ -77,13 +80,7 @@ export function useOptimisticCompletion(itemsByProject: Record<string, Item[]>) 
     (item, done) => {
       start(async () => {
         apply({ item, done, at: Date.now() });
-        try {
-          await save(item, done);
-        } catch {
-          toast.error(
-            `Couldn't ${done ? "complete" : "reopen"} “${item.title}”. Please try again.`,
-          );
-        }
+        await save(item, done);
       });
     },
     [apply],

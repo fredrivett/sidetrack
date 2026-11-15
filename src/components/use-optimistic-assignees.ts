@@ -3,6 +3,7 @@
 import { useCallback, useOptimistic, useTransition } from "react";
 import { updateItemAction } from "@/app/actions";
 import type { Item } from "@/core/schema";
+import { runAction } from "./run-action";
 
 /**
  * Items' assignees as the viewer last set them, ahead of the server. Every
@@ -34,14 +35,17 @@ export function useOptimisticAssignees(items: Item[]) {
       const remove = current.filter((a) => !assigneeIds.includes(a));
       start(async () => {
         apply([id, assigneeIds]);
-        await updateItemAction(
-          id,
-          assigneeIds.length === 0
-            ? { assigneeIds: [] }
-            : {
-                ...(add.length ? { addAssigneeIds: add } : {}),
-                ...(remove.length ? { removeAssigneeIds: remove } : {}),
-              },
+        await runAction(
+          updateItemAction(
+            id,
+            assigneeIds.length === 0
+              ? { assigneeIds: [] }
+              : {
+                  ...(add.length ? { addAssigneeIds: add } : {}),
+                  ...(remove.length ? { removeAssigneeIds: remove } : {}),
+                },
+          ),
+          "change who's assigned",
         );
       });
     },

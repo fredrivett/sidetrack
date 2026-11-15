@@ -3,6 +3,7 @@
 import { useTransition } from "react";
 import { updateProjectAction } from "@/app/actions";
 import { PROJECT_STATUSES, type ProjectStatus } from "@/core/schema";
+import { runAction } from "./run-action";
 
 const COLORS: Record<ProjectStatus, string> = {
   active: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
@@ -35,7 +36,10 @@ export function StatusBadge({
         onChange={(e) => {
           const next = e.target.value as ProjectStatus;
           start(() => {
-            void updateProjectAction(projectId, { status: next });
+            void runAction(
+              updateProjectAction(projectId, { status: next }),
+              "change the list's status",
+            );
           });
         }}
         className="absolute inset-0 cursor-pointer opacity-0"

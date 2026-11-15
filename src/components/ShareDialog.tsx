@@ -17,6 +17,7 @@ import {
   ResponsiveDialogDescription,
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
+import { runAction } from "./run-action";
 import { useTapToConfirm } from "./use-tap-to-confirm";
 
 function displayName(m: CollaboratorView) {
@@ -74,14 +75,17 @@ export function ShareDialog({
     latestProjectId.current = projectId;
     if (!open || !projectId) return;
     let active = true;
-    Promise.all([
-      listMembersAction(projectId),
-      listSuggestedCollaboratorsAction(projectId),
-    ]).then(([rows, suggested]) => {
-      if (!active) return;
-      setMembers(rows);
-      setSuggestions(suggested);
-    });
+    void runAction(
+      Promise.all([
+        listMembersAction(projectId),
+        listSuggestedCollaboratorsAction(projectId),
+      ]).then(([rows, suggested]) => {
+        if (!active) return;
+        setMembers(rows);
+        setSuggestions(suggested);
+      }),
+      "load who's on this list",
+    );
     return () => {
       active = false;
     };

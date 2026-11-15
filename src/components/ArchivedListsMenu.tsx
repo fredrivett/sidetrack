@@ -2,7 +2,6 @@
 
 import { Archive } from "lucide-react";
 import { useTransition } from "react";
-import { toast } from "sonner";
 import { updateProjectAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { Project } from "@/core/schema";
 import { ProjectIcon } from "./ProjectIcon";
+import { runAction } from "./run-action";
 
 /**
  * Archived lists are off the board but kept. This header menu lists them;
@@ -50,11 +50,10 @@ export function ArchivedListsMenu({ lists }: { lists: Project[] }) {
               key={l.id}
               onClick={() =>
                 start(async () => {
-                  try {
-                    await updateProjectAction(l.id, { status: "active" });
-                  } catch {
-                    toast.error(`Couldn't restore "${l.name}". Please try again.`);
-                  }
+                  await runAction(
+                    updateProjectAction(l.id, { status: "active" }),
+                    `restore “${l.name}”`,
+                  );
                 })
               }
             >

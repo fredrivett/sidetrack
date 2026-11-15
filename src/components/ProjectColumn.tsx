@@ -19,6 +19,7 @@ import { StatusBadge } from "./StatusBadge";
 import { SummaryBlock } from "./SummaryBlock";
 import { useDayStart } from "./use-day-start";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
+import { runAction } from "./run-action";
 
 export function ProjectColumn({
   project,
@@ -95,7 +96,10 @@ export function ProjectColumn({
               <EditableText
                 value={project.name}
                 onSave={(next) =>
-                  updateProjectAction(project.id, { name: next })
+                  runAction(
+                    updateProjectAction(project.id, { name: next }),
+                    `rename “${project.name}”`,
+                  )
                 }
                 required
                 className="h-8 min-w-0 cursor-text truncate rounded-md border border-transparent px-1.5 text-base font-semibold transition-colors hover:bg-muted"

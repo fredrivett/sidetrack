@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { toast } from "sonner";
 import { setItemParentAction, updateItemAction } from "@/app/actions";
 import type { Item } from "@/core/schema";
 import { ItemDetailDialog } from "./ItemDetailDialog";
@@ -13,6 +14,7 @@ vi.mock("@/app/actions", () => ({
   updateItemAction: vi.fn(),
   setItemParentAction: vi.fn(),
 }));
+vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 beforeAll(() => {
   // base-ui's dialog/menu positioning observes resize; jsdom has neither
@@ -111,6 +113,18 @@ describe("ItemDetailDialog assign shortcuts", () => {
     renderDialog();
     fireEvent.keyDown(document, { key: "i" });
     expect(updateItemAction).toHaveBeenCalledWith("i1", { addAssigneeIds: ["u1"] });
+  });
+
+  it("says so in a toast when assigning fails, and keeps the dialog up", async () => {
+    vi.mocked(updateItemAction).mockRejectedValueOnce(new Error("Failed to fetch"));
+    renderDialog();
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "i" });
+    });
+    expect(toast.error).toHaveBeenCalledWith(
+      "Couldn't change who's assigned. Please try again.",
+    );
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
   it("still assigns to the viewer on 'i' while the picker is open", () => {

@@ -12,6 +12,7 @@ import {
   ResponsiveDialogDescription,
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
+import { runAction } from "./run-action";
 
 const PAGE = 100;
 
@@ -80,12 +81,14 @@ export function AuditDialog({
   useEffect(() => {
     if (!open) return;
     start(async () => {
-      const rows = await listAuditAction({
-        projectId,
-        source: filter === "all" ? undefined : filter,
-        limit,
-      });
-      setEntries(rows);
+      await runAction(
+        listAuditAction({
+          projectId,
+          source: filter === "all" ? undefined : filter,
+          limit,
+        }).then(setEntries),
+        "load the activity",
+      );
     });
   }, [open, projectId, filter, limit]);
 
