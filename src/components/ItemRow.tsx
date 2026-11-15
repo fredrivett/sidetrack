@@ -232,6 +232,12 @@ export function ItemRow({
           drag
             ? "cursor-grab touch-manipulation active:cursor-grabbing"
             : "cursor-pointer"
+        } ${
+          // While dragged, the row stays behind as the empty slot it would
+          // drop into: same size, its content hidden.
+          isDragging
+            ? "border-dashed border-neutral-300 bg-neutral-100 *:invisible dark:border-neutral-700 dark:bg-neutral-800/50"
+            : ""
         }`}
       >
         {/* The wrapper stops the click, not the Checkbox: Base UI forwards it

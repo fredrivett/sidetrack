@@ -8,6 +8,8 @@ import {
   type DragEndEvent,
   type DragMoveEvent,
   DragOverlay,
+  type DropAnimation,
+  defaultDropAnimationSideEffects,
   type KeyboardCoordinateGetter,
   KeyboardSensor,
   MeasuringStrategy,
@@ -28,6 +30,7 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   type ReactNode,
   useLayoutEffect,
+  useOptimistic,
   useRef,
   useState,
   useTransition,
@@ -94,6 +97,19 @@ function SubItem({ last, children }: { last: boolean; children: ReactNode }) {
 // The dragged card moves only up and down; sideways it snaps to the depth it
 // would land at (see the DragOverlay below), rather than sliding freely.
 const lockX: Modifier = ({ transform }) => ({ ...transform, x: 0 });
+
+// On drop the card glides into its slot and settles back down (the
+// `dnd-dropping` class undoes its lift), while the slot's real row stays hidden
+// under it until it lands. Hidden by visibility, not dnd-kit's default opacity,
+// which the rows' fade would turn into a blink.
+const dropAnimation: DropAnimation = {
+  duration: 200,
+  easing: "cubic-bezier(0.25, 1, 0.5, 1)",
+  sideEffects: defaultDropAnimationSideEffects({
+    styles: { active: { visibility: "hidden" } },
+    className: { dragOverlay: "dnd-dropping" },
+  }),
+};
 
 // The row whose middle is nearest the dragged row's middle, by height alone.
 // The dragged card's box can't stand in for the row: dnd-kit measures it with
@@ -204,6 +220,7 @@ function Sortable({
     transform,
     transition,
     isDragging,
+    active,
   } = useSortable({ id });
   return (
     <div
@@ -212,8 +229,10 @@ function Sortable({
         // Translate, not Transform: rows differ in height, and a scale would
         // stretch one into its neighbour's size.
         transform: CSS.Translate.toString(transform),
-        transition,
-        opacity: isDragging ? 0.4 : 1,
+        // The other rows fade back while one is dragged, so the card in hand
+        // and the slot it would drop into stand out.
+        transition: [transition, "opacity 200ms ease"].filter(Boolean).join(", "),
+        opacity: active && !isDragging ? 0.5 : 1,
       }}
     >
       {children({ attributes, listeners, setActivatorNodeRef, isDragging })}
@@ -237,15 +256,16 @@ export function ItemList({
   projectId: string;
   groups: ItemGroup[];
 }) {
-  // The order just dropped, shown until the server's refresh lands.
-  const [optimistic, setOptimistic] = useState<Flat[] | null>(null);
+  // The order just dropped, shown until the server's refresh lands: held for
+  // the whole transition, so the list can't flash back to the old order
+  // between the action returning and the new order rendering.
+  const [full, setFull] = useOptimistic(flatten(groups));
   const [, start] = useTransition();
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const [offsetX, setOffsetX] = useState(0);
 
-  const full = optimistic ?? flatten(groups);
   // Indexed once per render: a drag re-renders on every pointer move.
   const kids = new Map<string, Item[]>();
   for (const f of full) {
@@ -346,15 +366,11 @@ export function ItemList({
     // Dropped where it started.
     if (sameParent && over.id === active.id) return;
 
-    setOptimistic(applyDrop(full, id, target));
     start(async () => {
-      try {
-        await (sameParent
-          ? reorderItemAction(id, target.position)
-          : setItemParentAction(id, target.parentId, target.position));
-      } finally {
-        setOptimistic(null);
-      }
+      setFull(applyDrop(full, id, target));
+      await (sameParent
+        ? reorderItemAction(id, target.position)
+        : setItemParentAction(id, target.parentId, target.position));
     });
   }
 
@@ -402,6 +418,9 @@ export function ItemList({
         setOverId(id);
         live.current.offsetX = 0;
         live.current.activeDepth = byId.get(id)?.parentId ? 1 : 0;
+        // A tick under the finger when a long-press picks the row up
+        // (where the browser supports it; Safari doesn't).
+        navigator.vibrate?.(10);
       }}
       onDragMove={({ delta }: DragMoveEvent) => {
         live.current.offsetX = delta.x;
@@ -483,13 +502,14 @@ export function ItemList({
           })}
         </div>
       </SortableContext>
-      {/* What follows the pointer: the row, with a parent's checklist. */}
-      <DragOverlay modifiers={[lockX]}>
+      {/* What follows the pointer: the row, with a parent's checklist, lifted
+          off the list (scaled up with a deep shadow) until it's dropped. */}
+      <DragOverlay modifiers={[lockX]} dropAnimation={dropAnimation}>
         {active && (
           <div
             // The column's own background, so rows under a parent's checklist
             // don't show through the gaps between its rows.
-            className="cursor-grabbing rounded-lg bg-white shadow-lg transition-[margin,width] duration-150 dark:bg-neutral-900"
+            className="cursor-grabbing rounded-lg bg-white shadow-xl transition-[margin,width,scale,box-shadow] duration-200 ease-out in-[.dnd-dropping]:scale-100! in-[.dnd-dropping]:shadow-none motion-safe:scale-[1.03] motion-safe:animate-[lift_150ms_ease-out] dark:bg-neutral-900"
             style={{
               marginLeft: shift,
               width: `calc(100% - ${shift}px)`,
