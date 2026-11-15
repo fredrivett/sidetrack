@@ -174,6 +174,10 @@ export const items = sqliteTable(
     // The calendar day it's due, as "YYYY-MM-DD", with no time or timezone:
     // "due Saturday" means Saturday wherever you are. null = no date.
     dueDate: text("due_date"),
+    // For a span such as "this week", its first day ("YYYY-MM-DD"), before
+    // due_date, its last; the item is due any day from one to the other.
+    // null = due on due_date alone.
+    dueFrom: text("due_from"),
     // Repeat rule ("every 3 days"): both set, or both null for an item that
     // doesn't repeat. A finished repeating item reopens on the day this long
     // after the day it was done (reopenDueRepeats in items.ts).

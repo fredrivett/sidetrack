@@ -224,6 +224,7 @@ export async function addItemAction(input: {
   positionRef?: string;
   parentId?: string | null;
   dueDate?: string | null;
+  dueFrom?: string | null;
   repeat?: Repeat | null;
 }) {
   const userId = await requireUserId();
@@ -243,6 +244,7 @@ export async function updateItemAction(
     addAssigneeIds?: string[];
     removeAssigneeIds?: string[];
     dueDate?: string | null;
+    dueFrom?: string | null;
     repeat?: Repeat | null;
   },
 ) {

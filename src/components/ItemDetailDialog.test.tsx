@@ -54,6 +54,7 @@ const item: Item = {
   assigneeIds: [],
   parentId: null,
   dueDate: null,
+  dueFrom: null,
   repeatEvery: null,
   repeatUnit: null,
   position: "a0",
@@ -206,9 +207,19 @@ describe("ItemDetailDialog due date picker", () => {
     type(input, "in 2 days");
     fireEvent.keyDown(input, { key: "Enter" });
     expect(updateItemAction).toHaveBeenCalledTimes(1);
-    expect(updateItemAction).toHaveBeenCalledWith("i1", { dueDate: "2026-11-19" });
+    expect(updateItemAction).toHaveBeenCalledWith("i1", { dueFrom: null, dueDate: "2026-11-19" });
     expect(screen.queryByRole("menuitem", { name: /Unassigned/ })).toBeNull();
     expect(screen.queryByLabelText("Type a due date")).toBeNull();
+  });
+
+  it("saves a typed week as the span Monday to Sunday", () => {
+    renderDialog();
+    type(openPicker(), "next week");
+    fireEvent.keyDown(screen.getByLabelText("Type a due date"), { key: "Enter" });
+    expect(updateItemAction).toHaveBeenCalledWith("i1", {
+      dueFrom: "2026-11-23",
+      dueDate: "2026-11-29",
+    });
   });
 
   it("saves nothing on Enter when the text isn't a date", () => {
@@ -240,6 +251,6 @@ describe("ItemDetailDialog due date picker", () => {
     expect(updateItemAction).not.toHaveBeenCalled();
     openPicker();
     fireEvent.click(screen.getByRole("button", { name: "Monday, November 30th, 2026" }));
-    expect(updateItemAction).toHaveBeenCalledWith("i1", { dueDate: "2026-11-30" });
+    expect(updateItemAction).toHaveBeenCalledWith("i1", { dueFrom: null, dueDate: "2026-11-30" });
   });
 });

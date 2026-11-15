@@ -39,6 +39,7 @@ const item = (title: string, dueDate: string | null, more: Partial<Item> = {}): 
   assigneeIds: [],
   parentId: null,
   dueDate,
+  dueFrom: null,
   repeatEvery: null,
   repeatUnit: null,
   position: `a${n}`,
@@ -98,6 +99,36 @@ describe("TodayView", () => {
     fireEvent.click(filters.getByRole("button", { name: /Mine/ }));
     expect(screen.getByText("today, ours")).toBeTruthy();
     expect(screen.queryByText("late, theirs")).toBeNull();
+  });
+
+  it("lists spans under way under This weekend or This week, to their last day", () => {
+    // Saturday 14 November: this week is the 9th to the 15th.
+    renderToday([
+      item("Bins", "2026-11-14"),
+      item("Book boiler service", "2026-11-15", { dueFrom: "2026-11-09" }),
+      item("Clean car", "2026-11-15", { dueFrom: "2026-11-14" }),
+      item("Send invoices", "2026-11-14", { dueFrom: "2026-11-09" }),
+      item("Call the bank", "2026-11-08", { dueFrom: "2026-11-02" }),
+      item("Plan trip", "2026-11-22", { dueFrom: "2026-11-16" }),
+    ]);
+    expect(
+      screen.getAllByRole("heading").map((h) => h.textContent?.replace(/\d+$/, "")),
+    ).toEqual(["Overdue", "Today", "This weekend", "This week"]);
+    const rows: Array<[RegExp, string[]]> = [
+      [/^Overdue/, ["Call the bank"]],
+      [/^Today/, ["Bins"]],
+      [/^This weekend/, ["Clean car"]],
+      // Ending today, a span stays in its section; its chip turns amber.
+      [/^This week\d/, ["Book boiler service", "Send invoices"]],
+    ];
+    for (const [name, titles] of rows) {
+      const s = within(section(name));
+      for (const t of titles) expect(s.getByText(t)).toBeTruthy();
+      expect(s.getAllByText(/./, { selector: "span.text-sm" })).toHaveLength(titles.length);
+    }
+    // The heading, and the item's chip.
+    expect(within(section(/^This weekend/)).getAllByText("This weekend")).toHaveLength(2);
+    expect(screen.queryByText("Plan trip")).toBeNull();
   });
 
   it("says when nothing is due, and when a filter hides everything", () => {

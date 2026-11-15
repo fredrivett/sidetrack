@@ -8,13 +8,13 @@ import type { Db } from "./db";
 import { getTimeZone } from "./users";
 import {
   MAX_REPEAT_EVERY,
-  nextDueDay,
+  nextDue,
   type Repeat,
   REPEAT_UNITS,
   repeatLabel,
   repeatOf,
 } from "../lib/repeat";
-import { dayOf, isDay } from "../lib/time";
+import { dayOf, isDay, sameDue } from "../lib/time";
 import { parseRef, resolvePosition } from "./fracidx";
 import { agentSessions, type Item, items, projects } from "./schema";
 
@@ -106,6 +106,25 @@ function assertDueDate(due: string | null | undefined): string | null {
   const d = due?.trim() || null;
   if (d && !isDay(d)) throw new Error(`invalid due date: ${d} (expected YYYY-MM-DD)`);
   return d;
+}
+
+// A due date, or a span from dueFrom to dueDate. A span of one day is stored
+// as that day alone, so each due has one form.
+function assertDue(
+  dueDate: string | null | undefined,
+  dueFrom: string | null | undefined,
+): { dueDate: string | null; dueFrom: string | null } {
+  const to = assertDueDate(dueDate);
+  const from = assertDueDate(dueFrom);
+  if (from && !to) throw new Error("a due span needs a due date as its last day");
+  if (from && to && from > to) {
+    throw new Error(`invalid due span: ${from} is after its due date ${to}`);
+  }
+  return { dueDate: to, dueFrom: from === to ? null : from };
+}
+
+function dueText(due: { dueDate: string | null; dueFrom: string | null }): string {
+  return due.dueFrom ? `${due.dueFrom} to ${due.dueDate}` : (due.dueDate ?? "");
 }
 
 // A repeat rule is a whole number of days, weeks or months; null clears it.
@@ -213,6 +232,8 @@ export function addItem(
     positionRef?: string;
     parentId?: string | null;
     dueDate?: string | null;
+    /** The first day of a span ending on dueDate, such as this week's Monday. */
+    dueFrom?: string | null;
     /** Who it's assigned to; several people make a joint item. */
     assigneeIds?: string[];
     /** Create it already done, e.g. to log something the user just finished. */
@@ -221,7 +242,7 @@ export function addItem(
   },
   source: AuditOrigin,
 ): Item {
-  const dueDate = assertDueDate(input.dueDate);
+  const due = assertDue(input.dueDate, input.dueFrom);
   const repeat = assertRepeat(input.repeat ?? null);
   if (!projectAccessibleForUser(db, userId, input.projectId)) {
     throw new Error(`list not found: ${input.projectId}`);
@@ -273,7 +294,7 @@ export function addItem(
         description,
         category,
         parentId: parent?.id ?? null,
-        dueDate,
+        ...due,
         assigneeIds,
         repeatEvery: repeat?.every ?? null,
         repeatUnit: repeat?.unit ?? null,
@@ -294,7 +315,7 @@ export function addItem(
         (parent
           ? `added "${title}" to "${parent.title}"`
           : `added task "${title}"`) +
-        (dueDate ? `, due ${dueDate}` : "") +
+        (due.dueDate ? `, due ${dueText(due)}` : "") +
         (assigneeIds.length
           ? `, assigned to ${assigneeIds.map((a) => assigneeLabel(tx as unknown as Db, a)).join(", ")}`
           : "") +
@@ -355,7 +376,10 @@ export function updateItem(
     /** People to add or take off, leaving anyone else as they are now. */
     addAssigneeIds?: string[];
     removeAssigneeIds?: string[];
+    /** Sets the due date; without dueFrom, it's due on that day alone. */
     dueDate?: string | null;
+    /** The first day of a span ending on dueDate; only with dueDate. */
+    dueFrom?: string | null;
     repeat?: Repeat | null;
   },
   source: AuditOrigin,
@@ -417,11 +441,14 @@ export function updateItem(
       if (removed.length) changes.push(`unassigned ${names(removed)}`);
     }
   }
+  if (patch.dueFrom != null && patch.dueDate === undefined) {
+    throw new Error("a due span needs a due date as its last day");
+  }
   if (patch.dueDate !== undefined) {
-    const d = assertDueDate(patch.dueDate);
-    if (d !== existing.dueDate) {
-      next.dueDate = d;
-      changes.push(d ? `due ${d}` : "due date cleared");
+    const d = assertDue(patch.dueDate, patch.dueFrom);
+    if (d.dueDate !== existing.dueDate || d.dueFrom !== existing.dueFrom) {
+      Object.assign(next, d);
+      changes.push(d.dueDate ? `due ${dueText(d)}` : "due date cleared");
     }
   }
   if (patch.repeat !== undefined) {
@@ -584,8 +611,9 @@ export function reopenDueRepeats(
     const rule = repeatOf(it);
     const done = it.completedAt;
     if (!rule || done === null) continue;
-    const next = nextDueDay(dayOf(done, timeZone), rule);
-    if (next > today) continue;
+    // A week or weekend comes back as a span, from its first day.
+    const next = nextDue(dayOf(done, timeZone), rule, it);
+    if ((next.dueFrom ?? next.dueDate) > today) continue;
     db.transaction((tx) => {
       const parent = it.parentId
         ? tx.select().from(items).where(eq(items.id, it.parentId)).get()
@@ -596,7 +624,7 @@ export function reopenDueRepeats(
       if (parent && parent.completedAt !== null && repeatOf(parent)) return;
       const { changes } = tx
         .update(items)
-        .set({ completedAt: null, dueDate: next })
+        .set({ completedAt: null, ...next })
         .where(and(eq(items.id, it.id), eq(items.completedAt, done)))
         .run();
       if (changes === 0) return;
@@ -608,15 +636,17 @@ export function reopenDueRepeats(
         entityType: "item",
         entityId: it.id,
         projectId: it.projectId,
-        detail: `reopened "${it.title}" (repeats ${repeatLabel(rule).toLowerCase()}), due ${next}`,
+        detail: `reopened "${it.title}" (repeats ${repeatLabel(rule).toLowerCase()}), due ${dueText(next)}`,
       });
       // The checklist comes round with it. A sub-item that repeats waited
-      // for this (see above), so it's due the same day as its parent.
+      // for this (see above), so it's due when its parent is.
       for (const child of childrenOf(tx as unknown as Db, it.id)) {
         if (child.completedAt === null) continue;
-        const childDue = repeatOf(child) ? next : child.dueDate;
+        const childDue = repeatOf(child)
+          ? next
+          : { dueDate: child.dueDate, dueFrom: child.dueFrom };
         tx.update(items)
-          .set({ completedAt: null, dueDate: childDue })
+          .set({ completedAt: null, ...childDue })
           .where(eq(items.id, child.id))
           .run();
         recordAudit(tx as unknown as Db, {
@@ -628,7 +658,7 @@ export function reopenDueRepeats(
           projectId: it.projectId,
           detail:
             `reopened "${child.title}" with "${it.title}"` +
-            (childDue !== child.dueDate ? `, due ${childDue}` : ""),
+            (sameDue(childDue, child) ? "" : `, due ${dueText(childDue)}`),
         });
       }
       if (parent) {

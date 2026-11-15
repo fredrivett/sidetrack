@@ -764,6 +764,41 @@ describe("due dates and Today", () => {
     ]);
   });
 
+  it("sets a due span, storing a one-day span as that day, and audits it", () => {
+    const { db, userId, projectId } = seedProject();
+    const week = { dueFrom: "2026-11-16", dueDate: "2026-11-22" };
+    const it1 = addItem(db, userId, { projectId, title: "bins", ...week }, "web");
+    expect(it1).toMatchObject(week);
+    const audit = () =>
+      listAudit(db, userId, { projectId })
+        .filter((e) => e.entityId === it1.id)
+        .map((e) => e.detail);
+    expect(audit()).toEqual(['added task "bins", due 2026-11-16 to 2026-11-22']);
+
+    // The same span is no change; a day alone (no dueFrom) ends the span.
+    updateItem(db, userId, it1.id, week, "web");
+    expect(audit()).toHaveLength(1);
+    updateItem(db, userId, it1.id, { dueDate: "2026-11-22" }, "web");
+    expect(getItem(db, userId, it1.id)).toMatchObject({ dueFrom: null, dueDate: "2026-11-22" });
+    updateItem(db, userId, it1.id, { dueFrom: "2026-11-21", dueDate: "2026-11-21" }, "web");
+    expect(getItem(db, userId, it1.id)).toMatchObject({ dueFrom: null, dueDate: "2026-11-21" });
+    expect(audit()).toEqual([
+      "bins: due 2026-11-21",
+      "bins: due 2026-11-22",
+      'added task "bins", due 2026-11-16 to 2026-11-22',
+    ]);
+
+    for (const bad of [
+      { dueFrom: "2026-11-23", dueDate: "2026-11-22" },
+      { dueFrom: "2026-11-16", dueDate: null },
+      { dueFrom: "2026-11-16" },
+      { dueFrom: "2026-02-30", dueDate: "2026-03-01" },
+    ]) {
+      expect(() => updateItem(db, userId, it1.id, bad, "web")).toThrow(/due/);
+    }
+    expect(getItem(db, userId, it1.id)).toMatchObject({ dueFrom: null, dueDate: "2026-11-21" });
+  });
+
   it("lists Today across active lists: overdue first, open or done today", () => {
     const { db } = createTestDb();
     const userId = createTestUser(db);
@@ -782,6 +817,10 @@ describe("due dates and Today", () => {
     add(home.id, "home today", "2026-11-14");
     add(home.id, "overdue", "2026-11-10");
     add(home.id, "tomorrow", "2026-11-15");
+    const span = (title: string, dueFrom: string, dueDate: string) =>
+      addItem(db, userId, { projectId: home.id, title, dueFrom, dueDate }, "web");
+    span("this week", "2026-11-09", "2026-11-15");
+    span("next week", "2026-11-16", "2026-11-22");
     add(home.id, "no date", null);
     add(paused.id, "paused list", "2026-11-14");
     add(archived.id, "archived list", "2026-11-14");
@@ -797,6 +836,7 @@ describe("due dates and Today", () => {
       "done today",
       "home today",
       "work today",
+      "this week",
     ]);
     // UTC+14: just after 4am on the 14th there is still the 13th in UTC.
     const kiritimati = add(home.id, "done at dawn in Kiritimati", "2026-11-14");
@@ -966,6 +1006,34 @@ describe("repeating items", () => {
     const rows = listAudit(db, userId).length;
     expect(reopenDueRepeats(db, userId, { timeZone: tz, now: Date.UTC(2026, 10, 18, 9) })).toBe(0);
     expect(listAudit(db, userId)).toHaveLength(rows);
+  });
+
+  it("brings a weekly week back as next week, from its Monday", () => {
+    const { db, userId, projectId } = seedProject();
+    const review = addItem(
+      db,
+      userId,
+      {
+        projectId,
+        title: "Weekly review",
+        dueFrom: "2026-11-09",
+        dueDate: "2026-11-15",
+        repeat: { every: 1, unit: "week" },
+      },
+      "web",
+    );
+    // Done on Wednesday the 11th: next due Wednesday the 18th, in the week of the 16th.
+    completeAt(db, userId, review.id, Date.UTC(2026, 10, 11, 12));
+    expect(reopenDueRepeats(db, userId, { timeZone: tz, now: Date.UTC(2026, 10, 16, 3, 59) })).toBe(0);
+    expect(reopenDueRepeats(db, userId, { timeZone: tz, now: Date.UTC(2026, 10, 16, 4) })).toBe(1);
+    expect(getItem(db, userId, review.id)).toMatchObject({
+      completedAt: null,
+      dueFrom: "2026-11-16",
+      dueDate: "2026-11-22",
+    });
+    expect(listAudit(db, userId)[0].detail).toBe(
+      'reopened "Weekly review" (repeats every week), due 2026-11-16 to 2026-11-22',
+    );
   });
 
   it("counts a completion before 4am as the day before, in the user's saved zone", () => {

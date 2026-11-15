@@ -1,4 +1,4 @@
-import { addDays } from "./time";
+import { addDays, type Due, sameDue, weekSpan } from "./time";
 
 // A repeat rule: "every 3 days", "every 2 weeks", "every month". The next due
 // day counts from the day the item was last done, not from a fixed calendar,
@@ -26,6 +26,32 @@ export function nextDueDay(doneDay: string, { every, unit }: Repeat): string {
   return new Date(Date.UTC(y, m - 1 + every, Math.min(d, last)))
     .toISOString()
     .slice(0, 10);
+}
+
+/**
+ * When an item done on `doneDay`, and due `due`, is next due. A day is due
+ * again on nextDueDay. A week or weekend ("this week") comes back as the week
+ * or weekend that day falls in, so a weekly "this week" done on Wednesday is
+ * next week, from Monday; any other span keeps its length from that day. It
+ * comes back on the span's first day, never before the day after it was
+ * done: "every day" for "this week" leaves the rest of this week.
+ */
+export function nextDue(
+  doneDay: string,
+  rule: Repeat,
+  due: { dueDate: string | null; dueFrom: string | null } | null,
+): Due {
+  const day = nextDueDay(doneDay, rule);
+  const { dueFrom, dueDate } = due ?? {};
+  if (!dueFrom || !dueDate) return { dueFrom: null, dueDate: day };
+  const part = (["week", "weekend"] as const).find((p) =>
+    sameDue({ dueFrom, dueDate }, weekSpan(dueDate, 0, p)),
+  );
+  const length = (Date.parse(dueDate) - Date.parse(dueFrom)) / 86_400_000;
+  const span = part ? weekSpan(day, 0, part) : { dueFrom: day, dueDate: addDays(day, length) };
+  const dayAfter = addDays(doneDay, 1);
+  const from = span.dueFrom && span.dueFrom > dayAfter ? span.dueFrom : dayAfter;
+  return { dueFrom: from === span.dueDate ? null : from, dueDate: span.dueDate };
 }
 
 /** "Every day", "Every 3 days", "Every 2 weeks", "Every month". */

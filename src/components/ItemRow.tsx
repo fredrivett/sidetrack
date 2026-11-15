@@ -30,7 +30,7 @@ import {
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { modifierSymbol } from "@/lib/keyboard";
-import { dueLabel, quickDueDays } from "@/lib/time";
+import { type Due, quickDues, sameDue, spanDates } from "@/lib/time";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -174,9 +174,9 @@ export function ItemRow({
     (ids: string[]) => setAssignees(item.id, ids),
     [setAssignees, item.id],
   );
-  function setDue(dueDate: string | null) {
+  function setDue(due: Due | null) {
     start(() => {
-      void updateItemAction(item.id, { dueDate });
+      void updateItemAction(item.id, due ?? { dueDate: null });
     });
   }
   const openPicker = useCallback(() => setAssignOpen(true), []);
@@ -275,10 +275,10 @@ export function ItemRow({
             {(item.category || item.dueDate || repeat) && (
               <span className="flex flex-wrap items-center gap-1">
                 {item.dueDate && (
-                  <DueBadge due={item.dueDate} done={completed} />
+                  <DueBadge due={item.dueDate} from={item.dueFrom} done={completed} />
                 )}
                 {repeat && (
-                  <RepeatBadge repeat={repeat} completedAt={item.completedAt} />
+                  <RepeatBadge repeat={repeat} completedAt={item.completedAt} due={item} />
                 )}
                 {item.category && <CategoryBadge category={item.category} />}
               </span>
@@ -423,15 +423,17 @@ export function ItemRow({
               Due date
             </ContextMenuSubTrigger>
             <ContextMenuSubContent className="w-52">
-              {quickDueDays(today).map(([label, day]) => (
-                <ContextMenuItem key={label} onClick={() => setDue(day)}>
+              {quickDues(today).map(([label, due]) => (
+                <ContextMenuItem key={label} onClick={() => setDue(due)}>
                   {label}
-                  {item.dueDate === day ? (
+                  {sameDue(item, due) ? (
                     <Check className="ml-auto" />
                   ) : (
-                    label !== "Today" &&
-                    label !== "Tomorrow" && (
-                      <ContextMenuShortcut>{dueLabel(day, today)}</ContextMenuShortcut>
+                    // A span's dates; Today and Tomorrow say their day already.
+                    due.dueFrom && (
+                      <ContextMenuShortcut>
+                        {spanDates(due.dueFrom, due.dueDate, today)}
+                      </ContextMenuShortcut>
                     )
                   )}
                 </ContextMenuItem>

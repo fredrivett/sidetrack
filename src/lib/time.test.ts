@@ -6,13 +6,14 @@ import {
   dueLabel,
   isDay,
   isOnToday,
-  nextWeek,
-  parseDueDay,
-  quickDueDays,
+  parseDue,
+  quickDues,
   nextDayStart,
   startOfDay,
-  thisWeekend,
 } from "./time";
+
+// A due date on one day, as parseDue and quickDues return it.
+const day = (dueDate: string) => ({ dueFrom: null, dueDate });
 
 // Local wall-clock times, so these hold in whatever timezone the tests run.
 const at = (day: number, h: number, m = 0) =>
@@ -76,53 +77,66 @@ describe("calendar days", () => {
     expect(dayOf(Date.UTC(2026, 10, 15, 4, 0), "Europe/London")).toBe("2026-11-15");
   });
 
-  it("picks this weekend", () => {
-    expect(thisWeekend("2026-11-18")).toBe("2026-11-21"); // Wed → Sat
-    expect(thisWeekend("2026-11-21")).toBe("2026-11-21"); // Sat → today
-    expect(thisWeekend("2026-11-22")).toBe("2026-11-22"); // Sun → today
-  });
-
-  it("picks next week and dedupes the quick due days", () => {
-    expect(nextWeek("2026-11-18")).toBe("2026-11-23"); // Wed → Mon
-    expect(nextWeek("2026-11-23")).toBe("2026-11-30"); // Mon → next Mon
-    expect(quickDueDays("2026-11-18")).toEqual([
-      ["Today", "2026-11-18"],
-      ["Tomorrow", "2026-11-19"],
-      ["This weekend", "2026-11-21"],
-      ["Next week", "2026-11-23"],
+  it("offers today, tomorrow, and this and next week and weekend as spans", () => {
+    const span = (dueFrom: string, dueDate: string) => ({ dueFrom, dueDate });
+    // Wednesday 18 November: the week runs Monday 16 to Sunday 22.
+    expect(quickDues("2026-11-18")).toEqual([
+      ["Today", { dueFrom: null, dueDate: "2026-11-18" }],
+      ["Tomorrow", { dueFrom: null, dueDate: "2026-11-19" }],
+      ["This week", span("2026-11-16", "2026-11-22")],
+      ["This weekend", span("2026-11-21", "2026-11-22")],
+      ["Next week", span("2026-11-23", "2026-11-29")],
+      ["Next weekend", span("2026-11-28", "2026-11-29")],
     ]);
-    // Saturday: This weekend is today. Sunday: it's today, and Next week is tomorrow.
-    expect(quickDueDays("2026-11-21").map(([l]) => l)).toEqual(["Today", "Tomorrow", "Next week"]);
-    expect(quickDueDays("2026-11-22").map(([l]) => l)).toEqual(["Today", "Tomorrow"]);
+    // Saturday still has this week and weekend ahead; Sunday, their last
+    // day, has only today left of them.
+    expect(quickDues("2026-11-21").map(([l]) => l)).toEqual([
+      "Today",
+      "Tomorrow",
+      "This week",
+      "This weekend",
+      "Next week",
+      "Next weekend",
+    ]);
+    expect(quickDues("2026-11-22")).toEqual([
+      ["Today", { dueFrom: null, dueDate: "2026-11-22" }],
+      ["Tomorrow", { dueFrom: null, dueDate: "2026-11-23" }],
+      ["Next week", span("2026-11-23", "2026-11-29")],
+      ["Next weekend", span("2026-11-28", "2026-11-29")],
+    ]);
+    // Monday starts a new week, across a month end.
+    expect(quickDues("2026-11-30")[2]).toEqual(["This week", span("2026-11-30", "2026-12-06")]);
   });
 
   it("reads typed due days, looking ahead from the app's today", () => {
     const wed = "2026-11-18";
     // The quick buttons' names set what the buttons do: chrono alone reads
-    // "next week" as today + 7 (the 25th), the button as the coming Monday.
-    expect(parseDueDay(" Next week ", wed)).toBe("2026-11-23");
-    expect(parseDueDay("weekend", wed)).toBe("2026-11-21");
-    expect(parseDueDay("tomorrow", wed)).toBe("2026-11-19");
-    expect(parseDueDay("mon", wed)).toBe("2026-11-23"); // not the past Monday
-    expect(parseDueDay("fri", wed)).toBe("2026-11-20");
-    expect(parseDueDay("in 2 weeks", wed)).toBe("2026-12-02");
-    expect(parseDueDay("nov 27", wed)).toBe("2026-11-27");
-    expect(parseDueDay("3 jan", "2026-12-10")).toBe("2027-01-03");
-    expect(parseDueDay("end of month", wed)).toBe("2026-11-30");
+    // "next week" as today + 7 (the 25th), the button as Monday to Sunday.
+    expect(parseDue(" Next week ", wed)).toEqual({ dueFrom: "2026-11-23", dueDate: "2026-11-29" });
+    expect(parseDue("next weekend", wed)).toEqual({ dueFrom: "2026-11-28", dueDate: "2026-11-29" });
+    expect(parseDue("this week", wed)).toEqual({ dueFrom: "2026-11-16", dueDate: "2026-11-22" });
+    expect(parseDue("weekend", wed)).toEqual({ dueFrom: "2026-11-21", dueDate: "2026-11-22" });
+    expect(parseDue("tomorrow", wed)).toEqual(day("2026-11-19"));
+    expect(parseDue("mon", wed)).toEqual(day("2026-11-23")); // not the past Monday
+    expect(parseDue("fri", wed)).toEqual(day("2026-11-20"));
+    expect(parseDue("in 2 weeks", wed)).toEqual(day("2026-12-02"));
+    expect(parseDue("nov 27", wed)).toEqual(day("2026-11-27"));
+    expect(parseDue("3 jan", "2026-12-10")).toEqual(day("2027-01-03"));
+    expect(parseDue("end of month", wed)).toEqual(day("2026-11-30"));
     // On a Friday, "fri" is next week's: chrono alone gives today. A date
     // that happens to be today, or "this fri", still means today.
     const fri = "2026-11-20";
-    expect(parseDueDay("fri", fri)).toBe("2026-11-27");
-    expect(parseDueDay("on Friday", fri)).toBe("2026-11-27");
-    expect(parseDueDay("this fri", fri)).toBe(fri);
-    expect(parseDueDay("20 nov", fri)).toBe(fri);
-    expect(parseDueDay("fri 20 nov", fri)).toBe(fri);
-    expect(parseDueDay("next fri", fri)).toBe("2026-11-27");
-    expect(parseDueDay("hello", wed)).toBeNull();
-    expect(parseDueDay("  ", wed)).toBeNull();
+    expect(parseDue("fri", fri)).toEqual(day("2026-11-27"));
+    expect(parseDue("on Friday", fri)).toEqual(day("2026-11-27"));
+    expect(parseDue("this fri", fri)).toEqual(day(fri));
+    expect(parseDue("20 nov", fri)).toEqual(day(fri));
+    expect(parseDue("fri 20 nov", fri)).toEqual(day(fri));
+    expect(parseDue("next fri", fri)).toEqual(day("2026-11-27"));
+    expect(parseDue("hello", wed)).toBeNull();
+    expect(parseDue("  ", wed)).toBeNull();
     // Object.prototype's names aren't quick-button names.
-    expect(parseDueDay("constructor", wed)).toBeNull();
-    expect(parseDueDay("__proto__", wed)).toBeNull();
+    expect(parseDue("constructor", wed)).toBeNull();
+    expect(parseDue("__proto__", wed)).toBeNull();
   });
 
   it("reads numeric due days in the locale's order", () => {
@@ -133,13 +147,13 @@ describe("calendar days", () => {
       spy.mockImplementation(function (this: Intl.DateTimeFormat, d) {
         return parts.call(new Intl.DateTimeFormat("en-US"), d);
       });
-      expect(parseDueDay("1/12", wed)).toBe("2027-01-12");
+      expect(parseDue("1/12", wed)).toEqual(day("2027-01-12"));
       spy.mockImplementation(function (this: Intl.DateTimeFormat, d) {
         return parts.call(new Intl.DateTimeFormat("en-GB"), d);
       });
-      expect(parseDueDay("1/12", wed)).toBe("2026-12-01");
+      expect(parseDue("1/12", wed)).toEqual(day("2026-12-01"));
       // Day-first must not swallow month-name dates: "nov 27" isn't Nov 2027.
-      expect(parseDueDay("nov 27", wed)).toBe("2026-11-27");
+      expect(parseDue("nov 27", wed)).toEqual(day("2026-11-27"));
     } finally {
       spy.mockRestore();
     }
@@ -170,6 +184,22 @@ describe("calendar days", () => {
         year: "numeric",
       }),
     );
+    // A span: this, next and last week or weekend by name, else its dates.
+    expect(dueLabel("2026-11-15", today, "2026-11-09")).toBe("This week");
+    expect(dueLabel("2026-11-15", today, "2026-11-14")).toBe("This weekend");
+    expect(dueLabel("2026-11-22", today, "2026-11-16")).toBe("Next week");
+    expect(dueLabel("2026-11-22", today, "2026-11-21")).toBe("Next weekend");
+    expect(dueLabel("2026-11-08", today, "2026-11-02")).toBe("Last week");
+    expect(dueLabel("2026-11-08", today, "2026-11-07")).toBe("Last weekend");
+    // Two weeks on, or Monday to Wednesday, isn't a named week.
+    for (const [from, to] of [["2026-11-23", "2026-11-29"], ["2026-11-16", "2026-11-18"]]) {
+      expect(dueLabel(to, today, from)).toBe(
+        new Intl.DateTimeFormat(undefined, { ...utc, day: "numeric", month: "short" }).formatRange(
+          new Date(`${from}T00:00Z`),
+          new Date(`${to}T00:00Z`),
+        ),
+      );
+    }
   });
 
   it("puts open due-or-overdue items, and ones finished today, on Today", () => {
@@ -183,5 +213,10 @@ describe("calendar days", () => {
     expect(isOnToday({ dueDate: null, completedAt: null }, today, tz)).toBe(false);
     expect(isOnToday({ dueDate: "2026-11-10", completedAt: doneToday }, today, tz)).toBe(true);
     expect(isOnToday({ dueDate: "2026-11-10", completedAt: doneYesterday }, today, tz)).toBe(false);
+    // A span is on Today from its first day, not only once it's overdue.
+    const span = (dueFrom: string, dueDate: string) => ({ dueFrom, dueDate, completedAt: null });
+    expect(isOnToday(span("2026-11-09", "2026-11-15"), today, tz)).toBe(true);
+    expect(isOnToday(span("2026-11-14", "2026-11-15"), today, tz)).toBe(true);
+    expect(isOnToday(span("2026-11-15", "2026-11-16"), today, tz)).toBe(false);
   });
 });
