@@ -169,7 +169,7 @@ export function PullToSearch({ onOpen }: { onOpen: () => void }) {
       className="group pointer-events-none fixed top-[calc(3.75rem+env(safe-area-inset-top))] left-1/2 z-40 opacity-0"
       style={{ transform: "translate(-50%, -16px)" }}
     >
-      <div className="flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-500 shadow-sm transition-[background-color,border-color,color,scale] duration-200 ease-out group-data-[ready=true]:scale-105 group-data-[ready=true]:border-neutral-900 group-data-[ready=true]:bg-neutral-900 group-data-[ready=true]:text-white dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400 dark:group-data-[ready=true]:border-neutral-100 dark:group-data-[ready=true]:bg-neutral-100 dark:group-data-[ready=true]:text-neutral-900">
+      <div className="flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-500 shadow-sm transition-[background-color,border-color,color,scale] duration-200 ease-out motion-safe:group-data-[ready=true]:scale-105 group-data-[ready=true]:border-neutral-900 group-data-[ready=true]:bg-neutral-900 group-data-[ready=true]:text-white dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400 dark:group-data-[ready=true]:border-neutral-100 dark:group-data-[ready=true]:bg-neutral-100 dark:group-data-[ready=true]:text-neutral-900">
         <Search className="size-3.5" />
         <span
           ref={labelsRef}
