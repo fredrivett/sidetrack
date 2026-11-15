@@ -197,6 +197,7 @@ const TABLE_AUDIT: Record<string, "audited" | `exempt: ${string}`> = {
   categories: "audited",
   api_keys: "audited",
   agent_sessions: "audited",
+  github_webhooks: "audited",
   users: "audited",
   avatars: "audited",
   audit_log: "exempt: the log itself",

@@ -45,6 +45,7 @@ export const AUDIT_ENTITIES = [
   "member",
   // The user's own profile (avatar). entityId is the user id; no project.
   "profile",
+  "webhook",
 ] as const;
 export type AuditEntity = (typeof AUDIT_ENTITIES)[number];
 
@@ -249,6 +250,25 @@ export const agentSessions = sqliteTable(
   ],
 );
 
+// A user's GitHub webhook: the id goes in the payload URL GitHub posts to
+// (/api/github/webhook/<id>) and picks whose board the PR titles' refs resolve
+// against; the secret verifies GitHub's X-Hub-Signature-256 on each delivery.
+// The secret is stored as is, not hashed, because checking a signature needs
+// it. One per user; setting it up again replaces it. No foreign key on
+// user_id, matching projects.user_id.
+export const githubWebhooks = sqliteTable(
+  "github_webhooks",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    secret: text("secret").notNull(),
+    createdAt: integer("created_at").notNull(),
+    // When a correctly signed delivery last arrived, to help with setup.
+    lastDeliveryAt: integer("last_delivery_at"),
+  },
+  (t) => [uniqueIndex("github_webhooks_user").on(t.userId)],
+);
+
 export const categories = sqliteTable(
   "categories",
   {
@@ -314,3 +334,4 @@ export type NewAuditEntry = typeof auditLog.$inferInsert;
 export type ItemPrLink = typeof itemPrLinks.$inferSelect;
 export type NewItemPrLink = typeof itemPrLinks.$inferInsert;
 export type AgentSession = typeof agentSessions.$inferSelect;
+export type GithubWebhook = typeof githubWebhooks.$inferSelect;

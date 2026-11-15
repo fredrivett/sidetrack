@@ -11,6 +11,7 @@ import {
   ListPlus,
   Plus,
   UserRound,
+  Webhook,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type ReactNode } from "react";
@@ -83,6 +84,7 @@ export function CommandPalette({
     { label: "Show activity", icon: <History />, action: onShowActivity },
     { label: "Profile settings", icon: <UserRound />, action: () => router.push("/settings/profile") },
     { label: "API keys", icon: <KeyRound />, action: () => router.push("/settings/keys") },
+    { label: "GitHub webhook", icon: <Webhook />, action: () => router.push("/settings/github") },
   ];
 
   const items = lists.flatMap((list) =>

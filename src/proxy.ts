@@ -12,6 +12,9 @@ export function proxy(request: NextRequest) {
   // MCP endpoint is publicly reachable; the route handler verifies the
   // per-user API key and returns 401 if missing or unknown.
   if (pathname.startsWith("/mcp")) return NextResponse.next();
+  // Same for GitHub's webhook deliveries: the route handler checks each one's
+  // signature against the webhook's secret and returns 401 otherwise.
+  if (pathname.startsWith("/api/github/")) return NextResponse.next();
 
   // Password reset pages must work signed-out: /forgot-password requests the
   // email, /reset-password is where the emailed link lands (with ?token=).

@@ -127,6 +127,29 @@ lists and items. Web requests are tagged `web` and MCP requests `mcp` in
 the audit log, so you always know what changed and through which interface.
 Keys are scoped to the user who minted them; revoke them from the same page.
 
+## GitHub webhook
+
+Sidetrack can follow pull requests on its own. Under **Account → GitHub**, set
+up a webhook to get a payload URL and secret, then add them to a repository
+(Settings → Webhooks, content type `application/json`, the **Pull requests**
+event only). After that:
+
+- A PR whose title names items in square brackets, such as
+  `Fix login [SDT-1]` or `[SDT-1, SDT-2]`, is linked to those items. Refs
+  resolve against your lists and the shared lists you've joined, as the
+  webhook's owner. When a bare ref matches items in more than one list,
+  qualify it with the list owner's username, such as `[alice/SDT-1]`; a ref
+  that matches no item, or several, is skipped.
+- Editing a ref out of the title unlinks that item again, unless an agent
+  linked it with `link_item_to_pr`. A ref that stops resolving while still in
+  the title keeps its link.
+- When a PR merges, every item linked to it is completed, whether the link
+  came from its title or from an agent's `link_item_to_pr`.
+
+Each delivery is checked against the webhook's secret, and its changes appear
+in the audit log with the `github` source. The webhook works with any number
+of repositories; make a new secret or remove it from the same page.
+
 ## Development
 
 To run Sidetrack locally to make changes, you'll need
