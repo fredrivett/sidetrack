@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { SpaceView } from "@/core/spaces";
 import { Kanban, type ProjectView } from "./Kanban";
@@ -67,25 +67,43 @@ const board = (projects: ProjectView[], spaces: SpaceView[]) => (
 
 const space = { id: "s1", name: "Team", icon: null } as SpaceView;
 
-describe("Kanban", () => {
-  it.each([
-    ["without Spaces", [], null],
-    ["in a Space's tray", [space], space.id],
-  ])("keeps a list's column, and focus in it, when the list is paused (%s)", (_, spaces, spaceId) => {
-    const { rerender } = render(
-      board([list("a", "Home", "active", spaceId), list("b", "Work", "active", spaceId)], spaces),
-    );
+describe.each([
+  ["without Spaces", [] as SpaceView[], null],
+  ["in a Space's tray", [space], space.id],
+])("Kanban, pausing a list %s", (_, spaces, spaceId) => {
+  const before = board(
+    [list("a", "Home", "active", spaceId), list("b", "Work", "active", spaceId)],
+    spaces,
+  );
+  // Paused lists follow the active ones, so Home moves behind Work.
+  const after = board(
+    [list("a", "Home", "paused", spaceId), list("b", "Work", "active", spaceId)],
+    spaces,
+  );
+
+  it("keeps its column, and focus in it", () => {
+    const { rerender } = render(before);
     const [trigger] = screen.getAllByRole("button", { name: "List options" });
     trigger.focus();
 
-    // Paused lists follow the active ones, so Home moves behind Work.
-    rerender(
-      board([list("a", "Home", "paused", spaceId), list("b", "Work", "active", spaceId)], spaces),
-    );
+    rerender(after);
 
     const columns = [...document.querySelectorAll("[data-project-id]")];
     expect(columns.map((c) => c.getAttribute("data-project-id"))).toEqual(["b", "a"]);
     expect(document.activeElement).toBe(trigger);
     expect(columns[1].contains(trigger)).toBe(true);
+  });
+
+  it("keeps its details dialog open", () => {
+    const { rerender } = render(before);
+    const [trigger] = screen.getAllByRole("button", { name: "List options" });
+    fireEvent.pointerDown(trigger);
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("menuitem", { name: "List details" }));
+    expect(screen.getByRole("dialog").textContent).toContain("Home");
+
+    rerender(after);
+
+    expect(screen.getByRole("dialog").textContent).toContain("Home");
   });
 });
