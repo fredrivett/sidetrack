@@ -1,11 +1,9 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import {
   createContext,
   type ReactNode,
   useContext,
-  useEffect,
   useMemo,
   useSyncExternalStore,
 } from "react";
@@ -15,9 +13,6 @@ import type { AgentAvatarView } from "./UserAvatar";
 /** An agent with no report for this long shows as idle rather than working. */
 const IDLE_AFTER_MS = 15 * 60_000;
 const TICK_MS = 60_000;
-/** How often the board reloads while an agent is working, and otherwise. */
-const POLL_ACTIVE_MS = 60_000;
-const POLL_QUIET_MS = 5 * 60_000;
 
 // The board's agent work sessions, by item, read by each row and detail sheet
 // (useItemAgentSessions) instead of being passed down through every view.
@@ -64,11 +59,9 @@ function useMinuteClock(active: boolean): number | null {
 }
 
 /**
- * Provides the sessions to the rows and dialogs, and keeps them current
- * without real time: the board reloads when the tab comes back into view, and
- * while it's visible, every minute when an agent has reported lately, else
- * every five minutes (so new work still shows, but an abandoned session that
- * never finished doesn't keep the board reloading every minute).
+ * Provides the sessions to the rows and dialogs. They stay current with the
+ * rest of the board: agents' reports are audited, so each one reloads it
+ * (LiveUpdates).
  */
 export function AgentSessionsProvider({
   sessions,
@@ -77,40 +70,11 @@ export function AgentSessionsProvider({
   sessions: AgentSession[];
   children: ReactNode;
 }) {
-  const router = useRouter();
   const byItem = useMemo(() => {
     const map: Record<string, AgentSession[]> = {};
     for (const s of sessions) (map[s.itemId] ??= []).push(s);
     return map;
   }, [sessions]);
-  // When an open session last reported; -Infinity when none is open.
-  const lastReport = Math.max(
-    -Infinity,
-    ...sessions.filter((s) => s.finishedAt === null).map((s) => s.lastActiveAt),
-  );
-
-  useEffect(() => {
-    function refresh() {
-      if (document.visibilityState === "visible") router.refresh();
-    }
-    // Each wait is chosen when it starts, so an agent going quiet slows the
-    // polling down even if nothing on the board changes.
-    let timer: ReturnType<typeof setTimeout>;
-    function schedule() {
-      const working = Date.now() - lastReport < IDLE_AFTER_MS;
-      timer = setTimeout(() => {
-        refresh();
-        schedule();
-      }, working ? POLL_ACTIVE_MS : POLL_QUIET_MS);
-    }
-    schedule();
-    document.addEventListener("visibilitychange", refresh);
-    return () => {
-      document.removeEventListener("visibilitychange", refresh);
-      clearTimeout(timer);
-    };
-  }, [lastReport, router]);
-
   return <SessionsContext value={byItem}>{children}</SessionsContext>;
 }
 

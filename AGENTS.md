@@ -83,6 +83,11 @@ commit or fail together — never write one without the other.
   audited — it would be noise; the parent item create/update is the logged
   event. Explicit `addCategory` IS audited.
 - If nothing actually changed (no-op edit), do not write an audit row.
+- `recordAudit` also announces the change to every open board that shows
+  it, which reloads live (`src/core/changes.ts`, `/api/events`). Following
+  the audit rule is all a new mutation needs for live updates. An
+  audit-exempt write that still changes what people see (e.g. `setPrState`)
+  calls `announceChange` itself.
 - `audit_log` deliberately has NO foreign key / cascade to `projects`: deleting
   a project must keep its audit history so the deletion itself stays auditable.
   Do not "fix" this by adding a cascade.

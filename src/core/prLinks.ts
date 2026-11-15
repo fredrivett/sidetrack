@@ -2,6 +2,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { hasProjectAccess } from "./access";
 import { type AuditOrigin, recordAudit } from "./audit";
+import { announceChange } from "./changes";
 import type { Db } from "./db";
 import { getItem } from "./items";
 import {
@@ -206,9 +207,21 @@ export function unlinkItemFromPr(
  * see. Called for each webhook delivery about the PR.
  */
 export function setPrState(db: Db, userId: string, prUrlRaw: string, state: PrState): void {
-  const ids = listItemsForPr(db, userId, canonicalizePrUrl(prUrlRaw)).map((l) => l.id);
-  if (ids.length === 0) return;
+  const links = listItemsForPr(db, userId, canonicalizePrUrl(prUrlRaw)).filter(
+    (l) => l.prState !== state,
+  );
+  if (links.length === 0) return;
   // audit-exempt: mirrors the PR's state on GitHub, not a change made in
   // Sidetrack; the links and completions a delivery makes are audited.
-  db.update(itemPrLinks).set({ prState: state }).where(inArray(itemPrLinks.id, ids)).run();
+  db.update(itemPrLinks)
+    .set({ prState: state })
+    .where(inArray(itemPrLinks.id, links.map((l) => l.id)))
+    .run();
+  // Not audited, so announce it here: the PR badge shows on the board.
+  const lists = db
+    .selectDistinct({ projectId: items.projectId })
+    .from(items)
+    .where(inArray(items.id, links.map((l) => l.itemId)))
+    .all();
+  for (const { projectId } of lists) announceChange({ actor: userId, projectId });
 }
