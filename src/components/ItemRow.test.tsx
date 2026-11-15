@@ -132,6 +132,16 @@ describe("ItemRow menu", () => {
   });
 });
 
+describe("ItemRow description", () => {
+  it("marks an item that has a description, not a blank one", () => {
+    renderRow([viewer], { ...item, description: "Steps to reproduce" });
+    expect(screen.getByRole("img", { name: "Has description" })).toBeTruthy();
+    cleanup();
+    renderRow([viewer], { ...item, description: "  \n" });
+    expect(screen.queryByRole("img", { name: "Has description" })).toBeNull();
+  });
+});
+
 describe("ItemRow agents", () => {
   it("names a working agent on the assign trigger of an unassigned item", () => {
     const now = Date.now();

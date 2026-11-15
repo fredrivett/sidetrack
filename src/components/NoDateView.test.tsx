@@ -80,6 +80,6 @@ describe("NoDateView", () => {
     expect(screen.queryByRole("heading", { name: /Buy/ })).toBeNull();
     // Its parent is filtered out, so only the sub-item's row shows, naming it.
     expect(screen.getAllByRole("checkbox")).toHaveLength(1);
-    expect(screen.getByText("Kitchen").parentElement?.textContent).toContain("Tidy flat");
+    expect(screen.getByText("Kitchen").closest("button")?.textContent).toContain("Tidy flat");
   });
 });
