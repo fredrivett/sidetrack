@@ -11,6 +11,7 @@ import {
   IndentDecrease,
   IndentIncrease,
   ListChecks,
+  TextAlignStart,
   Trash2,
   UserRound,
 } from "lucide-react";
@@ -261,10 +262,24 @@ export function ItemRow({
           <button type="button" className="block w-full space-y-0.5 text-left">
             <span
               className={`block w-full break-words text-sm ${
-                completed ? "text-neutral-400 line-through" : ""
+                completed ? "text-neutral-400" : ""
               }`}
             >
-              {item.title}
+              {/* Struck through on its own, so the line stops at the title. */}
+              <span className={completed ? "line-through" : undefined}>{item.title}</span>
+              {/* Inline after the last word, so it marks a description
+                  without adding a line to the row. The no-break space keeps it
+                  from wrapping onto a line of its own. */}
+              {item.description?.trim() && (
+                <span className="whitespace-nowrap">
+                  {"\u00a0"}
+                  <TextAlignStart
+                    role="img"
+                    aria-label="Has description"
+                    className="ml-0.5 inline size-3.5 -translate-y-px text-neutral-400"
+                  />
+                </span>
+              )}
             </span>
             {/* Below the title, so the checkbox stays on the title's line. */}
             {context && (

@@ -124,7 +124,7 @@ describe("TodayView", () => {
     for (const [name, titles] of rows) {
       const s = within(section(name));
       for (const t of titles) expect(s.getByText(t)).toBeTruthy();
-      expect(s.getAllByText(/./, { selector: "span.text-sm" })).toHaveLength(titles.length);
+      expect(s.getAllByRole("checkbox")).toHaveLength(titles.length);
     }
     // The heading, and the item's chip.
     expect(within(section(/^This weekend/)).getAllByText("This weekend")).toHaveLength(2);
