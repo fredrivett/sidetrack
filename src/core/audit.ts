@@ -53,6 +53,7 @@ export function recordAudit(db: Db, input: AuditInput): void {
   const origin =
     typeof input.source === "string" ? { source: input.source } : input.source;
   const agent = "agent" in origin ? origin.agent : null;
+  // audit-exempt: this is the audit row itself.
   db.insert(auditLog)
     .values({
       id: nanoid(12),

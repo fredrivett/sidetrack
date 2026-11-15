@@ -82,10 +82,23 @@ commit or fail together — never write one without the other.
   Do not "fix" this by adding a cascade.
 - New mutating core functions and new MCP tools are not complete until they
   record audit. Treat a missing audit row as a bug.
-- Enforced in-loop: the `audit/audit-in-transaction` ESLint rule fails any
-  `db.transaction` that mutates without calling `recordAudit` in the same
-  transaction. Direct, un-transactioned writes (e.g. `ensureCategory`) are
-  exempt by design — keep deliberate non-audited writes outside a transaction.
+- Enforced in-loop: the `audit/audit-in-transaction` ESLint rule (all of
+  `src`, except tests) fails any `db.transaction` that mutates without calling
+  `recordAudit` in the same transaction, and any `db`/`tx` write outside a
+  transaction unless an `// audit-exempt: <reason>` comment sits above it or
+  above its function. Keep deliberate non-audited writes (e.g.
+  `ensureCategory`, telemetry, backfills) outside a transaction, with the
+  reason. `audit.test.ts` lists every table as audited or exempt; a new table
+  fails it until you decide.
+- Profile fields (`image`, `username`, `displayUsername`) change only
+  through core (`setUsername`, `setAvatarUrl`, `setUploadedAvatar`); Better
+  Auth's `/update-user` refuses them, since its writes can't be audited in our
+  transactions. It refuses `name` too, which has no editor or core setter yet:
+  add an audited one in core before letting anyone change it.
+- Password changes and resets are the one exception to `recordAudit`: Better
+  Auth writes `accounts.password` itself, so the `audit_password_update`
+  SQLite trigger (migration 0021) writes their audit row inside the same
+  statement. Keep it in step if `audit_log` columns change.
 
 # Review
 

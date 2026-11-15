@@ -197,7 +197,8 @@ function initial(u: AvatarUser): string {
 /**
  * A user's avatar: their image when set (degrading to initials if it fails to
  * load), else an initials chip. Square footprint at `size` so a row of avatars
- * lines up. Mirrors ProjectIcon's load-then-fallback approach.
+ * lines up. Mirrors ProjectIcon's load-then-fallback approach. The failure is
+ * remembered per URL, so a new image (a replaced or fixed avatar) gets tried.
  */
 export function UserAvatar({
   user,
@@ -208,10 +209,12 @@ export function UserAvatar({
   size?: number;
   className?: string;
 }) {
-  const [failed, setFailed] = useState(false);
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const failed = failedSrc !== null && failedSrc === user.image;
   const box = "inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full";
 
   if (user.image && !failed) {
+    const src = user.image;
     return (
       // eslint-disable-next-line @next/next/no-img-element -- external user avatar URLs; domains aren't known ahead of time so next/image config can't cover them
       <img
@@ -220,7 +223,13 @@ export function UserAvatar({
         alt=""
         width={size}
         height={size}
-        onError={() => setFailed(true)}
+        onError={() => setFailedSrc(src)}
+        // A server-rendered <img> can fail before hydration attaches onError,
+        // leaving a blank gap. Catch it on mount, as ProjectIcon does:
+        // complete with no pixels = failed.
+        ref={(img) => {
+          if (img?.complete && img.naturalWidth === 0) setFailedSrc(src);
+        }}
         className={cn(box, "object-cover", className)}
         style={{ width: size, height: size }}
       />

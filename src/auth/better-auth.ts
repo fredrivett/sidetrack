@@ -9,6 +9,7 @@ import { getDb } from "@/core/db";
 import { auditLog, meta, projects } from "@/core/schema";
 import { sendPasswordResetEmail } from "@/lib/email";
 import { getEnv } from "@/lib/env";
+import { normalizeWebUrl } from "@/lib/url";
 import { isReservedUsername, USERNAME_RE } from "@/lib/username";
 
 // Reading validated config here doubles as a backstop for the boot-time check
@@ -54,6 +55,7 @@ function userCount(): number {
 // rather than being silently treated as "already claimed".
 function claimSentinel(key: string): boolean {
   try {
+    // audit-exempt: sign-up lock bookkeeping in meta, not a user action.
     db.insert(meta).values({ key, value: "1" }).run();
     return true;
   } catch (error) {
@@ -74,6 +76,7 @@ function claimSentinel(key: string): boolean {
 try {
   const haveUsers = userCount() > 0;
   if (!haveUsers) {
+    // audit-exempt: boot-time repair of the sign-up lock, not a user action.
     db.delete(meta).where(eq(meta.key, SIGNUP_LOCK_KEY)).run();
   } else {
     // Ensure the lock exists; claimSentinel ignores an existing one.
@@ -87,6 +90,8 @@ try {
 // stamped with the legacy 'me' placeholder. Subsequent signups don't —
 // they start empty. Keeps the old single-user database intact on upgrade
 // without any env-var configuration.
+// audit-exempt: one-time hand-over of legacy single-user data to
+// the first account, which also rewrites the old audit rows' actor.
 function adoptMeRows(userId: string): void {
   const { changes: projectChanges } = db
     .update(projects)
@@ -104,6 +109,28 @@ function adoptMeRows(userId: string): void {
     );
   }
 }
+
+// The avatar (`user.image`) is rendered as an <img> for everyone who shares a
+// list with the user. Sign-up would store any image unchecked, so normalize it
+// like setAvatarUrl does: blank clears it, a bare host gains https://, and
+// anything that isn't an http(s) web address (javascript:, data:, typos) is
+// rejected. Returns undefined when the write has no image.
+function withNormalizedAvatar<T extends { image?: unknown }>(
+  user: T,
+): { data: T } | undefined {
+  if (typeof user.image !== "string") return undefined;
+  try {
+    return { data: { ...user, image: normalizeWebUrl(user.image, "avatar URL") } };
+  } catch {
+    throw new APIError("BAD_REQUEST", {
+      message: "Avatar must be an http(s) image URL.",
+    });
+  }
+}
+
+// User fields people edit, which core owns and audits. `name` has no editor
+// yet; it's blocked so a direct API call can't change it unaudited either.
+const PROFILE_FIELDS = ["name", "image", "username", "displayUsername"] as const;
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -139,8 +166,11 @@ export const auth = betterAuth({
   databaseHooks: {
     user: {
       create: {
-        before: async () => {
-          if (ALLOW_SIGNUP) return;
+        before: async (user) => {
+          // Validate first: a bad avatar rejected after the claim below would
+          // leave the instance locked with no user until the next boot.
+          const normalized = withNormalizedAvatar(user);
+          if (ALLOW_SIGNUP) return normalized;
           // First signup wins the lock; everyone after is rejected. A lost
           // claim (false) means it's already held → closed.
           if (!claimSentinel(SIGNUP_LOCK_KEY)) {
@@ -148,6 +178,7 @@ export const auth = betterAuth({
               message: "Sign-up is closed on this instance.",
             });
           }
+          return normalized;
         },
         after: async (user) => {
           // First-ever signup adopts legacy 'me' data. Gated by its own
@@ -156,6 +187,19 @@ export const auth = betterAuth({
           // count > 1 and skip adoption entirely). Exactly one signup wins
           // the claim and adopts, in either signup mode.
           if (claimSentinel(ME_ADOPTION_KEY)) adoptMeRows(user.id);
+        },
+      },
+      update: {
+        // Profile changes go through core (setUsername, setAvatarUrl,
+        // setUploadedAvatar), which audit them in the same transaction.
+        // /update-user would write them with no audit row, so it may not
+        // touch them. Better Auth's own updates (e.g. emailVerified) pass.
+        before: async (user) => {
+          if (PROFILE_FIELDS.some((field) => user[field] !== undefined)) {
+            throw new APIError("BAD_REQUEST", {
+              message: "Change your profile from the Profile page.",
+            });
+          }
         },
       },
     },

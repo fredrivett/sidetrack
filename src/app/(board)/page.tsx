@@ -8,7 +8,7 @@ import { listItems, reopenDueRepeats } from "@/core/items";
 import { listAssignees, listPendingInvites } from "@/core/members";
 import { listAllPrLinks } from "@/core/prLinks";
 import { listProjects } from "@/core/projects";
-import { getTimeZone } from "@/core/users";
+import { getProfile, getTimeZone } from "@/core/users";
 import type { ItemPrLink } from "@/core/schema";
 import { requireUserId } from "@/auth/session";
 
@@ -58,6 +58,7 @@ export default async function Home({
     <AgentSessionsProvider sessions={listAllAgentSessions(db, userId)}>
       <Kanban
         viewerId={userId}
+        viewer={getProfile(db, userId)}
         timeZone={getTimeZone(db, userId)}
         initialView={view === "today" || view === "no-date" ? view : "board"}
         projects={projects}

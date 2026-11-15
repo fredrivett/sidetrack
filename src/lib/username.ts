@@ -1,8 +1,7 @@
-// Client-side username rules, mirrored from the Better Auth `username` plugin
-// config in src/auth/better-auth.ts. The server is the source of truth (the
-// plugin re-validates and owns uniqueness); this just gives instant feedback
-// before a round-trip. Framework-agnostic so both the sign-up form and the
-// settings panel can share it.
+// Username rules, shared by the Better Auth `username` plugin config (sign-up,
+// src/auth/better-auth.ts), setUsername in core (renames), and the sign-up
+// form and settings panel for instant feedback. The server re-validates and
+// owns uniqueness. Framework-agnostic so all of them can import it.
 
 export const USERNAME_MIN = 3;
 export const USERNAME_MAX = 30;

@@ -1,4 +1,5 @@
 import {
+  blob,
   index,
   integer,
   sqliteTable,
@@ -107,6 +108,19 @@ export const apiKeys = sqliteTable(
     index("api_keys_user_created").on(t.userId, t.createdAt),
   ],
 );
+
+// An avatar image the user uploaded (Profile), served at its own route since
+// users.image only holds a URL. A separate table, not a users column, so the
+// bytes aren't read with every session lookup. In the DB rather than on disk
+// so the daily SQLite backup covers it. One per user; replacing overwrites.
+export const avatars = sqliteTable("avatars", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  contentType: text("content_type").notNull(),
+  data: blob("data", { mode: "buffer" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
 
 export type User = typeof users.$inferSelect;
 export type Session = typeof sessions.$inferSelect;

@@ -4,7 +4,6 @@ import { CircleUserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,9 +11,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { UserAvatar, type AvatarUser } from "@/components/UserAvatar";
 import { signOut } from "@/auth/client";
 
-export function UserMenu() {
+export function UserMenu({ user }: { user: AvatarUser | null }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
@@ -30,11 +30,19 @@ export function UserMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          // Icon and label on desktop, just the icon on phones.
-          <Button variant="outline" size="sm" aria-label="Account">
-            <CircleUserRound />
-            <span className="hidden sm:inline">Account</span>
-          </Button>
+          // The avatar is the button: the user's image once set (Profile),
+          // else their initial. 28px matches the header's size="sm" buttons.
+          <button
+            type="button"
+            aria-label="Account"
+            className="shrink-0 rounded-full outline-none transition-opacity hover:opacity-80 focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            {user ? (
+              <UserAvatar user={user} size={28} />
+            ) : (
+              <CircleUserRound className="size-7 text-muted-foreground" />
+            )}
+          </button>
         }
       />
       <DropdownMenuContent align="end">

@@ -43,6 +43,8 @@ export const AUDIT_ENTITIES = [
   "category",
   "api_key",
   "member",
+  // The user's own profile (avatar). entityId is the user id; no project.
+  "profile",
 ] as const;
 export type AuditEntity = (typeof AUDIT_ENTITIES)[number];
 

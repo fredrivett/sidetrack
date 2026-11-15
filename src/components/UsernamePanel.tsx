@@ -2,8 +2,10 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { setUsernameAction } from "@/app/actions";
 import { authClient } from "@/auth/client";
 import { USERNAME_MAX, USERNAME_MIN, validateUsername } from "@/lib/username";
 
@@ -17,7 +19,7 @@ type Status =
   // Same normalized handle, different casing (fred -> Fred) — a real change to
   // the display name, so it's saveable even though availability is moot.
   | { kind: "recase" }
-  // Availability request failed (network/server). Non-blocking: updateUser
+  // Availability request failed (network/server). Non-blocking: setUsername
   // re-validates on save, so let the user try rather than locking the button.
   | { kind: "error" };
 
@@ -35,7 +37,6 @@ export function UsernamePanel({ initial }: { initial: string }) {
     result: "available" | "taken" | "error";
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
 
   // `sameHandle` = same normalized handle (possibly re-cased); `identical` =
   // byte-for-byte unchanged. A case-only edit changes display_username, so the
@@ -80,24 +81,24 @@ export function UsernamePanel({ initial }: { initial: string }) {
   function onSave() {
     setError(null);
     startTransition(async () => {
-      // Send displayUsername too: /update-user (unlike sign-up) does not
-      // cross-fill it from username, so without this the display casing would
-      // never change. `username` is normalized to lowercase server-side;
-      // `displayUsername` keeps the casing the user typed.
-      const res = await authClient.updateUser({
-        username: value,
-        displayUsername: value,
-      });
-      if (res.error) {
-        setError(res.error.message ?? "Couldn't update username.");
+      // setUsername stores it lowercased for lookups and keeps the casing
+      // typed for display, and audits the change.
+      let res: Awaited<ReturnType<typeof setUsernameAction>>;
+      try {
+        res = await setUsernameAction(value);
+      } catch {
+        res = { error: "Couldn't update username." };
+      }
+      if (res) {
+        setError(res.error);
         return;
       }
-      setSaved(true);
+      toast.success("Username updated");
       router.refresh();
     });
   }
 
-  // Allow saving on a failed availability check too — updateUser re-validates
+  // Allow saving on a failed availability check too — setUsername re-validates
   // server-side and surfaces "taken"/"invalid" as an error if it really is.
   const canSave =
     !pending &&
@@ -119,7 +120,6 @@ export function UsernamePanel({ initial }: { initial: string }) {
         value={value}
         onChange={(e) => {
           setValue(e.target.value);
-          setSaved(false);
         }}
         minLength={USERNAME_MIN}
         maxLength={USERNAME_MAX}
@@ -154,10 +154,9 @@ export function UsernamePanel({ initial }: { initial: string }) {
           Couldn&apos;t check availability — you can still try to save.
         </p>
       )}
-      {error && <p className="text-sm text-destructive">{error}</p>}
-      {saved && (
-        <p className="text-sm text-emerald-600 dark:text-emerald-500">
-          Username updated.
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
         </p>
       )}
       <Button type="button" size="sm" onClick={onSave} disabled={!canSave}>

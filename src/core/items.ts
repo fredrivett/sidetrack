@@ -168,6 +168,8 @@ function reopenParentIfDone(
   parent: Item,
   source: AuditOrigin,
 ) {
+  // audit-exempt: runs inside the caller's transaction and audits the
+  // reopen itself, below.
   const { changes } = tx
     .update(items)
     .set({ completedAt: null })

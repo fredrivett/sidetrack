@@ -148,6 +148,7 @@ export function verifyApiKey(
   // last_used_at is best-effort telemetry: a write failure (e.g. SQLITE_BUSY)
   // must not fail auth for an otherwise-valid key.
   try {
+    // audit-exempt: usage telemetry on every MCP request, not a user action.
     db.update(apiKeys)
       .set({ lastUsedAt: new Date() })
       .where(eq(apiKeys.id, row.id))

@@ -54,6 +54,7 @@ export function backfillUsernames(db: Db): void {
       n += 1;
     }
     taken.add(handle);
+    // audit-exempt: boot-time backfill of legacy rows, not a user action.
     db.update(users)
       .set({ username: handle, displayUsername: handle })
       .where(eq(users.id, user.id))

@@ -2,9 +2,15 @@
  * Local ESLint rule: enforce the audit-log invariant (AGENTS.md). Any
  * `db.transaction` whose body mutates (insert/update/delete) must also call
  * `recordAudit` in the same transaction — the deterministic in-loop guard
- * behind the convention. Direct, un-transactioned writes (recordAudit's own
- * insert, ensureCategory, backup) sit outside a transaction callback and are
- * intentionally exempt.
+ * behind the convention.
+ *
+ * A write outside a transaction (`db.insert(…)`, `tx.update(…)` on the `db`
+ * or `tx` handle) can't be audited atomically, so it must say why it needn't
+ * be: an `// audit-exempt: <reason>` comment above the statement or above any
+ * enclosing one, such as the function that makes it (recordAudit's own insert,
+ * ensureCategory, backup bookkeeping, a helper the caller runs inside its
+ * audited transaction). An exemption is then a visible, reviewable decision
+ * rather than the silent default.
  *
  * The check only sees an inline callback's body, so it also *requires* the
  * callback to be inline: an extracted callback (`db.transaction(cb)`) would
@@ -31,12 +37,32 @@ export const auditInTransaction = {
     messages: {
       missingAudit:
         "Mutation inside db.transaction() without recordAudit(). Every state-changing DB op must write an audit_log row in the same transaction — see AGENTS.md.",
+      unauditedWrite:
+        "DB write outside db.transaction(). Wrap it in a transaction with recordAudit(), or, if it isn't a user action, mark it `// audit-exempt: <reason>` — see AGENTS.md.",
       inlineCallback:
         "Pass the db.transaction() callback inline. An extracted callback can't be checked for recordAudit, so it would bypass the audit-log invariant — see AGENTS.md.",
     },
   },
   create(context) {
     const stack = [];
+    const sourceCode = context.sourceCode;
+    // Whether a comment above `node` or any statement enclosing it exempts it.
+    const isExempt = (node) => {
+      for (let n = node; n; n = n.parent) {
+        if (!/(Statement|Declaration)$/.test(n.type)) continue;
+        // An export's comment sits above the `export`, not the declaration.
+        const target =
+          n.parent?.type === "ExportNamedDeclaration" ? n.parent : n;
+        if (
+          sourceCode
+            .getCommentsBefore(target)
+            .some((c) => /audit-exempt:\s*\S/.test(c.value))
+        ) {
+          return true;
+        }
+      }
+      return false;
+    };
     const isTxnCallback = (node) =>
       node.parent?.type === "CallExpression" &&
       node.parent.callee?.type === "MemberExpression" &&
@@ -70,15 +96,25 @@ export const auditInTransaction = {
         }
       },
       CallExpression(node) {
-        if (!stack.length) return;
-        const top = stack[stack.length - 1];
         const callee = node.callee;
-        if (
+        const mutates =
           callee.type === "MemberExpression" &&
-          ["insert", "update", "delete"].includes(callee.property?.name)
-        ) {
-          top.mutates = true;
+          ["insert", "update", "delete"].includes(callee.property?.name);
+        if (!stack.length) {
+          // Outside a transaction only the DB handles count, so Map#delete,
+          // URLSearchParams#delete and the like don't trip it.
+          if (
+            mutates &&
+            callee.object.type === "Identifier" &&
+            ["db", "tx"].includes(callee.object.name) &&
+            !isExempt(node)
+          ) {
+            context.report({ node, messageId: "unauditedWrite" });
+          }
+          return;
         }
+        const top = stack[stack.length - 1];
+        if (mutates) top.mutates = true;
         if (callee.type === "Identifier" && callee.name === "recordAudit") {
           top.audits = true;
         }

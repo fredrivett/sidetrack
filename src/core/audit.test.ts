@@ -1,8 +1,12 @@
+import { eq, getTableName, is } from "drizzle-orm";
+import { SQLiteTable } from "drizzle-orm/sqlite-core";
 import { describe, expect, it } from "vitest";
 import { createApiKey, revokeApiKey, verifyApiKey } from "./api-keys";
 import { listAudit, recordAudit } from "./audit";
 import { addItem } from "./items";
 import { createProject } from "./projects";
+import * as authSchema from "./auth-schema";
+import * as appSchema from "./schema";
 import { createTestDb, createTestUser } from "./test-helpers";
 
 // The write-path ownership checks stop one user mutating another's project,
@@ -177,5 +181,89 @@ describe("audit", () => {
 
     // A non-owner gets nothing, not another user's history.
     expect(listAudit(db, bob, { projectId: p.id })).toEqual([]);
+  });
+});
+
+// Every table, by whether changes to it are audited. A new table fails the
+// test below until it's added here, so whether its changes are audited is a
+// decision someone made. Individual exempt writes to audited tables are
+// marked `audit-exempt` where they happen (lint enforces that).
+const TABLE_AUDIT: Record<string, "audited" | `exempt: ${string}`> = {
+  projects: "audited",
+  project_positions: "audited",
+  project_members: "audited",
+  items: "audited",
+  item_pr_links: "audited",
+  categories: "audited",
+  api_keys: "audited",
+  agent_sessions: "audited",
+  users: "audited",
+  avatars: "audited",
+  audit_log: "exempt: the log itself",
+  meta: "exempt: app bookkeeping (sign-up lock, last backup time)",
+  sessions: "exempt: Better Auth sign-in state",
+  // Password changes and resets, by a trigger (migration 0021).
+  accounts: "audited",
+  verifications: "exempt: Better Auth one-time tokens (password reset)",
+};
+
+describe("audit coverage", () => {
+  it("classifies every table as audited or exempt", () => {
+    const tables = Object.values({ ...appSchema, ...authSchema })
+      .filter((value) => is(value, SQLiteTable))
+      .map((table) => getTableName(table as SQLiteTable));
+    expect(tables.sort()).toEqual(Object.keys(TABLE_AUDIT).sort());
+  });
+});
+
+describe("password audit", () => {
+  // Better Auth writes accounts itself; these writes mirror its own, so the
+  // trigger is what's under test.
+  it("logs each password change, telling a reset-link change apart", () => {
+    const { db } = createTestDb();
+    const userId = createTestUser(db);
+    const other = createTestUser(db);
+    const now = new Date();
+    const account = (id: string, user: string) => ({
+      id,
+      accountId: user,
+      providerId: "credential",
+      userId: user,
+      password: "hash-0",
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.insert(authSchema.accounts).values([account("a1", userId), account("a2", other)]).run();
+    const setPassword = (id: string, password: string) =>
+      db.update(authSchema.accounts).set({ password }).where(eq(authSchema.accounts.id, id)).run();
+    const passwordLog = (user: string) =>
+      listAudit(db, user)
+        .filter((e) => e.entityType === "profile")
+        .map((e) => [e.action, e.detail, e.actor, e.entityId, e.source]);
+
+    setPassword("a1", "hash-1");
+    // Writes that leave the password alone aren't logged.
+    db.update(authSchema.accounts).set({ scope: "x" }).where(eq(authSchema.accounts.id, "a1")).run();
+    setPassword("a1", "hash-1");
+    expect(passwordLog(userId)).toEqual([["update", "password", userId, userId, "web"]]);
+
+    // Mid-reset, the user's unexpired token is present; another user's isn't theirs.
+    const token = (value: string, expiresAt: Date) => ({
+      id: `v-${value}`,
+      identifier: `reset-password:tok-${value}`,
+      value,
+      expiresAt,
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.insert(authSchema.verifications)
+      .values([token(userId, new Date(Date.now() + 60_000)), token(other, new Date(Date.now() - 60_000))])
+      .run();
+    setPassword("a1", "hash-2");
+    setPassword("a2", "hash-2"); // expired token: an ordinary change
+    expect(passwordLog(userId).map((r) => r[1])).toEqual(
+      expect.arrayContaining(["password", "password via a reset link"]),
+    );
+    expect(passwordLog(other)).toEqual([["update", "password", other, other, "web"]]);
   });
 });

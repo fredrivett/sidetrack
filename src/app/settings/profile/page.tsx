@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { AvatarPanel } from "@/components/AvatarPanel";
+import { PasswordPanel } from "@/components/PasswordPanel";
 import { UsernamePanel } from "@/components/UsernamePanel";
 import { getCurrentSession } from "@/auth/session";
 
@@ -33,6 +35,16 @@ export default async function ProfilePage() {
           </p>
         </header>
         <UsernamePanel initial={current} />
+        <AvatarPanel
+          user={{
+            userId: user.id,
+            displayUsername: user.displayUsername ?? null,
+            name: user.name,
+            email: user.email,
+            image: user.image ?? null,
+          }}
+        />
+        <PasswordPanel email={user.email} />
       </div>
     </main>
   );
