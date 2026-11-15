@@ -32,7 +32,7 @@ describe("workBranchName", () => {
 describe("refsInPrTitle", () => {
   it("finds bracketed refs anywhere, in order, once each, and skips non-refs", () => {
     expect(
-      refsInPrTitle("[WIP] Fix login [SDT-1] [sdt-2, alice/ENG-3] [SDT-1] [v2] [SDT-]"),
+      refsInPrTitle("[WIP] Fix login [SDT-1] [sdt-2, alice/ENG-3] [sdt-1] [SDT-#2] [v2] [SDT-]"),
     ).toEqual(["SDT-1", "sdt-2", "alice/ENG-3"]);
   });
 

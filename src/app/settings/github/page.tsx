@@ -17,7 +17,7 @@ export default async function GithubSettingsPage() {
   const h = await headers();
   const origin =
     getEnv().BETTER_AUTH_URL?.replace(/\/$/, "") ??
-    `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
+    `${h.get("x-forwarded-proto") ?? "https"}://${h.get("host")}`;
 
   return (
     <main className="min-h-dvh px-4 py-6 sm:px-6">

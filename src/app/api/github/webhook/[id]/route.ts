@@ -30,7 +30,7 @@ export async function POST(
     return Response.json({ ignored: event }, { status: 202 });
   }
 
-  let pr: { action?: unknown; pull_request?: Record<string, unknown> };
+  let pr: { action?: unknown; pull_request?: Record<string, unknown> } | null;
   try {
     pr = JSON.parse(body);
   } catch {
@@ -38,8 +38,8 @@ export async function POST(
       status: 400,
     });
   }
-  const p = pr.pull_request;
-  if (typeof pr.action !== "string" || typeof p?.title !== "string" || typeof p.html_url !== "string") {
+  const p = pr?.pull_request;
+  if (typeof pr?.action !== "string" || typeof p?.title !== "string" || typeof p.html_url !== "string") {
     return new Response("not a pull_request payload", { status: 400 });
   }
   return Response.json(

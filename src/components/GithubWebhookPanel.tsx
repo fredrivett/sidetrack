@@ -22,11 +22,15 @@ function CopyField({ label, value }: { label: string; value: string }) {
           variant="outline"
           size="sm"
           aria-label={`Copy ${label.toLowerCase()}`}
-          onClick={() => {
-            void navigator.clipboard.writeText(value).then(() => {
+          onClick={async () => {
+            if (!navigator.clipboard) return;
+            try {
+              await navigator.clipboard.writeText(value);
               setCopied(true);
               setTimeout(() => setCopied(false), 1500);
-            });
+            } catch {
+              setCopied(false);
+            }
           }}
         >
           {copied ? <Check /> : <Copy />}

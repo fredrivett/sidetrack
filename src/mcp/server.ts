@@ -14,7 +14,7 @@ When you work on an item, show it on the board:
 4. Call report_work with one short line at each milestone (PR opened, blocked, tests failing). Without a report for about 15 minutes you show as idle.
 5. Call finish_work when you stop. When the work lands (the PR merges), complete_item completes the item and ends your session.
 
-If the user has set up Sidetrack's GitHub webhook, the bracketed ref in the PR title links the PR and merging it completes the item on its own; calling link_item_to_pr or complete_item as well is harmless.`;
+If the user has set up Sidetrack's GitHub webhook, the bracketed ref in the PR title links the PR and merging it completes the item on its own; calling complete_item as well is harmless. A link you make with link_item_to_pr stays even if the ref is later edited out of the title, so skip it when the title already names the item.`;
 
 export function buildServer(ctx: McpContext) {
   const server = new McpServer(

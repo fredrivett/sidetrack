@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { formatItemRef, refsInPrTitle } from "../lib/itemRef";
+import { formatItemRef, parseItemRef, refsInPrTitle } from "../lib/itemRef";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
 import { projectRefPrefixes, resolveItemRef } from "./itemRef";
@@ -131,14 +131,15 @@ export type PullRequestResult = {
 };
 
 /**
- * Apply a `pull_request` event for the webhook's owner. The title owns the
- * links it made: link every item it names in square brackets, and unlink items
- * a previous title linked that it no longer names (linking and unlinking are
- * idempotent, so edits and pushes repeat harmlessly). Links an agent or the
- * web made are left alone, even when the title doesn't name their item. Then,
- * when the PR merged, complete every open item still linked to it, however it
- * was linked. A ref that's unknown or ambiguous on the board is skipped, never
- * guessed.
+ * Apply a `pull_request` event for the webhook's owner. A PR closed without
+ * merging changes nothing. Otherwise the title owns the links it made: link
+ * every item it names in square brackets, and unlink items a previous title
+ * linked that it no longer names (linking and unlinking are idempotent, so
+ * edits and pushes repeat harmlessly). Links an agent or the web made are left
+ * alone, even when the title doesn't name their item. Then, when the PR merged,
+ * complete every open item still linked to it, however it was linked. A ref
+ * that's unknown or ambiguous on the board is skipped, never guessed, and keeps
+ * any link the title made to an item with that ref.
  */
 export function applyPullRequestEvent(
   db: Db,
@@ -147,12 +148,18 @@ export function applyPullRequestEvent(
 ): PullRequestResult {
   const prUrl = canonicalizePrUrl(event.url);
   const result: PullRequestResult = { linked: [], unlinked: [], unresolved: [], completed: [] };
+  if (event.action === "closed" && !event.merged) return result;
   const prefixes = projectRefPrefixes(db, userId);
   const named = new Set<string>();
+  // Title refs that don't resolve now (say, ambiguous since a project was
+  // shared), as PREFIX-N: the title may still mean an item it linked before.
+  const unresolved = new Set<string>();
   for (const ref of refsInPrTitle(event.title)) {
     const r = resolveItemRef(db, userId, ref);
     if (r.status !== "ok") {
       result.unresolved.push(ref);
+      const parsed = parseItemRef(ref);
+      if (parsed) unresolved.add(formatItemRef(parsed.prefix, parsed.number));
       continue;
     }
     linkItemToPr(db, userId, r.item.id, prUrl, "github");
@@ -163,8 +170,11 @@ export function applyPullRequestEvent(
     if (link.linkedBySource !== "github" || named.has(link.itemId)) continue;
     const item = getItem(db, userId, link.itemId);
     if (!item) continue;
+    const ref = formatItemRef(prefixes[item.projectId] ?? "", item.number);
+    const parsed = parseItemRef(ref);
+    if (parsed && unresolved.has(formatItemRef(parsed.prefix, parsed.number))) continue;
     unlinkItemFromPr(db, userId, item.id, prUrl, "github");
-    result.unlinked.push(formatItemRef(prefixes[item.projectId] ?? "", item.number));
+    result.unlinked.push(ref);
   }
   if (event.action === "closed" && event.merged) {
     for (const link of listItemsForPr(db, userId, prUrl)) {

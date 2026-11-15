@@ -136,9 +136,13 @@ event only). After that:
 
 - A PR whose title names items in square brackets, such as
   `Fix login [SDT-1]` or `[SDT-1, SDT-2]`, is linked to those items. Refs
-  resolve against your own board; one that matches no item is skipped.
-  Editing a ref out of the title unlinks that item again, unless an agent
-  linked it with `link_item_to_pr`.
+  resolve against your lists and the shared lists you've joined, as the
+  webhook's owner. When a bare ref matches items in more than one list,
+  qualify it with the list owner's username, such as `[alice/SDT-1]`; a ref
+  that matches no item, or several, is skipped.
+- Editing a ref out of the title unlinks that item again, unless an agent
+  linked it with `link_item_to_pr`. A ref that stops resolving while still in
+  the title keeps its link.
 - When a PR merges, every item linked to it is completed, whether the link
   came from its title or from an agent's `link_item_to_pr`.
 

@@ -9,6 +9,7 @@ import {
   verifyGithubDelivery,
 } from "./github";
 import { addItem, getItem } from "./items";
+import { acceptInvite, inviteMember } from "./members";
 import { linkItemToPr, listPrLinksForItem } from "./prLinks";
 import { createProject } from "./projects";
 import { createTestDb, createTestUser } from "./test-helpers";
@@ -124,7 +125,7 @@ describe("applyPullRequestEvent", () => {
   });
 
   it("can't reach another user's items by ref", () => {
-    const { db, one } = seed();
+    const { db, userId, one } = seed();
     const stranger = createTestUser(db);
     const result = applyPullRequestEvent(db, stranger, {
       action: "opened",
@@ -133,7 +134,26 @@ describe("applyPullRequestEvent", () => {
       url: PR,
     });
     expect(result.linked).toEqual([]);
-    expect(listPrLinksForItem(db, stranger, one.id)).toEqual([]);
+    expect(listPrLinksForItem(db, userId, one.id)).toEqual([]);
+  });
+
+  it("keeps a title link while its ref is ambiguous, and drops it once edited out", () => {
+    const { db, userId, one } = seed();
+    const deliver = (title: string) =>
+      applyPullRequestEvent(db, userId, { action: "edited", merged: false, title, url: PR });
+    deliver("Ship [SID-1]");
+
+    // Alice shares her own "Sidetrack" list, so bare SID-1 now names two items.
+    const alice = createTestUser(db, { username: "alice" });
+    const theirs = createProject(db, alice, { name: "Sidetrack" }, "web");
+    addItem(db, alice, { projectId: theirs.id, title: "Hers" }, "web");
+    inviteMember(db, alice, theirs.id, "fred", "web");
+    acceptInvite(db, userId, theirs.id, "web");
+
+    expect(deliver("Ship [SID-1]")).toMatchObject({ unlinked: [], unresolved: ["SID-1"] });
+    expect(listPrLinksForItem(db, userId, one.id)).toHaveLength(1);
+    expect(deliver("Ship").unlinked).toEqual(["fred/SID-1"]);
+    expect(listPrLinksForItem(db, userId, one.id)).toEqual([]);
   });
 
   it("completes every open item linked to a merged PR, however it was linked", () => {
@@ -156,7 +176,7 @@ describe("applyPullRequestEvent", () => {
     ).toEqual(["github", "github"]);
   });
 
-  it("leaves items open when the PR closes without merging", () => {
+  it("changes nothing when the PR closes without merging", () => {
     const { db, userId, one } = seed();
     const result = applyPullRequestEvent(db, userId, {
       action: "closed",
@@ -164,7 +184,8 @@ describe("applyPullRequestEvent", () => {
       title: "Abandon [SID-1]",
       url: PR,
     });
-    expect(result.completed).toEqual([]);
+    expect(result).toEqual({ linked: [], unlinked: [], unresolved: [], completed: [] });
     expect(getItem(db, userId, one.id)?.completedAt).toBeNull();
+    expect(listPrLinksForItem(db, userId, one.id)).toEqual([]);
   });
 });
