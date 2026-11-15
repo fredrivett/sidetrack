@@ -1,7 +1,14 @@
 "use client";
 
 import { X } from "lucide-react";
-import { useEffect, useId, useRef, useState, useTransition } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { addItemAction } from "@/app/actions";
 import type { Category, Project } from "@/core/schema";
 import type { Repeat } from "@/lib/repeat";
@@ -61,6 +68,14 @@ export function NewItemDialog({
   const [lastAdded, setLastAdded] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const titleRef = useRef<HTMLInputElement>(null);
+  const subRef = useRef<HTMLInputElement>(null);
+  // Each new step lands above the step input and pushes it down, out of view
+  // once the dialog hits its max height, so scroll it back while typing.
+  useLayoutEffect(() => {
+    if (subRef.current === document.activeElement) {
+      subRef.current?.scrollIntoView({ block: "nearest" });
+    }
+  }, [subItems.length]);
   const listId = useId();
   // Bumped each time the dialog opens, so an add that finishes after the dialog
   // was closed (and maybe reopened) can't write into the new session's form.
@@ -219,7 +234,11 @@ export function NewItemDialog({
                       variant="ghost"
                       size="icon-xs"
                       disabled={pending}
-                      onClick={() => setSubItems((cur) => cur.filter((_, j) => j !== i))}
+                      onClick={() => {
+                        setSubItems((cur) => cur.filter((_, j) => j !== i));
+                        // The button unmounts, so keep focus in the checklist.
+                        subRef.current?.focus();
+                      }}
                       aria-label={`Remove sub-item ${sub}`}
                       className="text-neutral-400"
                     >
@@ -228,6 +247,7 @@ export function NewItemDialog({
                   </div>
                 ))}
                 <Input
+                  ref={subRef}
                   value={subDraft}
                   onChange={(e) => setSubDraft(e.target.value)}
                   onKeyDown={(e) => {

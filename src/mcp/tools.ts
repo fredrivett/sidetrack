@@ -647,7 +647,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       sub_items,
     }) => {
       const { db } = getDb();
-      if (parent && sub_items?.length) {
+      if (parent !== undefined && sub_items !== undefined) {
         return errorText(
           "Pass parent or sub_items, not both: sub-items can't have their own — no change was made.",
         );
