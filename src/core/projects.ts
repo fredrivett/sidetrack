@@ -255,7 +255,13 @@ function ensureUniquePrefix(
 export function createProject(
   db: Db,
   userId: string,
-  input: { name: string; status?: ProjectStatus },
+  input: {
+    name: string;
+    status?: ProjectStatus;
+    summary?: string;
+    homepageUrl?: string | null;
+    icon?: string | null;
+  },
   source: AuditOrigin,
 ): Project {
   const status = input.status ?? "active";
@@ -265,9 +271,27 @@ export function createProject(
   const now = Date.now();
   const name = assertName(input.name);
   const prefix = ensureUniquePrefix(db, userId, derivePrefix(name));
+  // Optional details, validated the same way updateProject validates them;
+  // blank means unset.
+  const summary = input.summary?.trim() ?? "";
+  const homepageUrl = input.homepageUrl
+    ? normalizeHomepageUrl(input.homepageUrl)
+    : null;
+  const icon = input.icon ? normalizeProjectIcon(input.icon) : null;
   db.transaction((tx) => {
     tx.insert(projects)
-      .values({ id, userId, name, status, prefix, createdAt: now })
+      .values({
+        id,
+        userId,
+        name,
+        status,
+        prefix,
+        summary,
+        summaryUpdatedAt: summary ? now : null,
+        homepageUrl,
+        icon,
+        createdAt: now,
+      })
       .run();
     tx.insert(projectPositions).values({ userId, projectId: id, position }).run();
     recordAudit(tx as unknown as Db, {

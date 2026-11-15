@@ -1,9 +1,9 @@
 "use client";
 
-import { Check, X } from "lucide-react";
+import { Check, Sparkles, X } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { updateProjectAction } from "@/app/actions";
+import { suggestProjectIconsAction, updateProjectAction } from "@/app/actions";
 import type { Project } from "@/core/schema";
 import { normalizeWebUrl } from "@/lib/url";
 import { cn } from "@/lib/utils";
@@ -21,6 +21,10 @@ import {
 } from "@/components/ui/popover";
 import { ProjectIcon } from "./ProjectIcon";
 
+/**
+ * A list's icon, saved as soon as one is picked. AI suggestions load the
+ * first time the picker opens.
+ */
 export function ProjectIconPicker({
   project,
   size = 20,
@@ -28,21 +32,88 @@ export function ProjectIconPicker({
   project: Project;
   size?: number;
 }) {
-  const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
+  // Suggestions with the list details they were made for, refetched on open
+  // once the name, summary or homepage changes. Empty when AI is off (no
+  // TYPESAFE_API_KEY) or the request failed, so the suggestion row stays hidden.
+  const [suggested, setSuggested] = useState<{
+    for: string;
+    emoji: string[];
+  } | null>(null);
+  const context = JSON.stringify([
+    project.name,
+    project.summary,
+    project.homepageUrl,
+  ]);
+
+  return (
+    <IconPicker
+      icon={project.icon}
+      homepageUrl={project.homepageUrl}
+      name={project.name}
+      size={size}
+      disabled={pending}
+      // -ml-1 cancels the p-1 hover padding so the icon itself lines up with
+      // the content below the header, not 4px in from it.
+      className="-ml-1"
+      suggestions={suggested?.for === context ? suggested.emoji : []}
+      onOpen={() => {
+        if (suggested?.for === context) return;
+        setSuggested({ for: context, emoji: [] });
+        void suggestProjectIconsAction(project.id)
+          .then((emoji) => setSuggested({ for: context, emoji }))
+          .catch(() => {});
+      }}
+      onSelect={(next) =>
+        start(() => {
+          void updateProjectAction(project.id, { icon: next }).catch(() =>
+            toast.error("Couldn't update the icon. Please try again."),
+          );
+        })
+      }
+    />
+  );
+}
+
+/**
+ * The icon picker itself, controlled: `icon` is what's chosen (an emoji or
+ * image URL; null shows the homepage favicon, else the letter), and `onSelect`
+ * reports a new choice, null meaning "no icon". Used for saved lists and for
+ * the New list dialog, which holds the choice until the list is created.
+ */
+export function IconPicker({
+  icon,
+  homepageUrl,
+  name,
+  size,
+  disabled,
+  className,
+  faded,
+  suggestions,
+  onOpen,
+  onSelect,
+}: {
+  icon: string | null;
+  homepageUrl: string | null;
+  name: string;
+  size: number;
+  disabled?: boolean;
+  className?: string;
+  /** Show the icon at half opacity, e.g. an AI suggestion not yet picked. */
+  faded?: boolean;
+  suggestions: string[];
+  onOpen?: () => void;
+  onSelect: (icon: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
   const [imageUrl, setImageUrl] = useState("");
-  const hasHomepage = Boolean(project.homepageUrl);
   // No explicit icon + a homepage means the favicon is what's showing — so the
   // favicon row reads as the active selection.
-  const faviconActive = !project.icon && hasHomepage;
+  const faviconActive = !icon && Boolean(homepageUrl);
 
-  function save(next: string | null, errorMsg: string) {
+  function select(next: string | null) {
     setOpen(false);
-    start(() => {
-      void updateProjectAction(project.id, { icon: next }).catch(() =>
-        toast.error(errorMsg),
-      );
-    });
+    onSelect(next);
   }
 
   function submitImageUrl() {
@@ -59,41 +130,72 @@ export function ProjectIconPicker({
     }
     if (!normalized) return;
     setImageUrl("");
-    save(normalized, "Couldn't update the icon. Please try again.");
+    select(normalized);
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      {/* -ml-1 cancels the p-1 hover padding so the icon itself lines up
-          with the content below the header, not 4px in from it. */}
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) onOpen?.();
+      }}
+    >
       <PopoverTrigger
         aria-label="Change list icon"
-        disabled={pending}
-        className="-ml-1 inline-flex shrink-0 items-center justify-center rounded-md p-1 transition-colors hover:bg-muted aria-expanded:bg-muted disabled:opacity-60"
+        disabled={disabled}
+        className={cn(
+          "inline-flex shrink-0 items-center justify-center rounded-md p-1 transition-colors hover:bg-muted aria-expanded:bg-muted disabled:opacity-60",
+          className,
+        )}
       >
         <ProjectIcon
-          icon={project.icon}
-          homepageUrl={project.homepageUrl}
-          name={project.name}
+          icon={icon}
+          homepageUrl={homepageUrl}
+          name={name}
           size={size}
+          className={cn(faded && "opacity-50")}
         />
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[288px] p-0">
+        {suggestions.length > 0 && (
+          <div className="flex items-center gap-1 border-b px-2 py-1.5">
+            <Sparkles
+              aria-hidden
+              className="size-3.5 shrink-0 text-muted-foreground"
+            />
+            <span className="mr-1 text-xs text-muted-foreground">
+              Suggested
+            </span>
+            {suggestions.map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                aria-label={`Use ${emoji} as the icon`}
+                onClick={() => select(emoji)}
+                className={cn(
+                  "inline-flex size-8 items-center justify-center rounded-md text-lg hover:bg-muted",
+                  icon === emoji && "bg-muted",
+                )}
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        )}
         <EmojiPicker
           className="h-[268px] w-full"
-          onEmojiSelect={({ emoji }) =>
-            save(emoji, "Couldn't set the icon. Please try again.")
-          }
+          onEmojiSelect={({ emoji }) => select(emoji)}
         >
           <div className="flex items-center gap-1 border-b px-2 py-1.5">
             <EmojiPickerSearch
               placeholder="Search emoji…"
               className="h-7 border-0 px-1"
             />
-            {project.icon && (
+            {icon && (
               <button
                 type="button"
-                onClick={() => save(null, "Couldn't clear the icon.")}
+                onClick={() => select(null)}
                 className="inline-flex h-7 shrink-0 items-center gap-1 rounded px-2 text-xs text-muted-foreground hover:text-foreground"
               >
                 <X className="size-3" />
@@ -105,10 +207,10 @@ export function ProjectIconPicker({
         </EmojiPicker>
 
         <div className="space-y-2 border-t p-2">
-          {hasHomepage && (
+          {homepageUrl && (
             <button
               type="button"
-              onClick={() => save(null, "Couldn't use the favicon.")}
+              onClick={() => select(null)}
               className={cn(
                 "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted",
                 faviconActive && "bg-muted",
@@ -116,8 +218,8 @@ export function ProjectIconPicker({
             >
               <ProjectIcon
                 icon={null}
-                homepageUrl={project.homepageUrl}
-                name={project.name}
+                homepageUrl={homepageUrl}
+                name={name}
                 size={18}
               />
               <span className="flex-1 truncate">Use website favicon</span>

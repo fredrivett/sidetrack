@@ -72,6 +72,15 @@ logs` / check your process output and pass the link to the user):
 | `EMAIL_FROM` | unset | From address for outbound email, e.g. `Sidetrack <no-reply@your-domain.com>`. Required when `RESEND_API_KEY` is set; the domain must be verified in Resend |
 | `SMTP_URL` | unset (auto in dev) | Send over SMTP instead of Resend, e.g. `smtp://localhost:1025`. Takes precedence over `RESEND_API_KEY`. In development it defaults to a local mail catcher — see [Development](#development) |
 
+**Optional** — AI list-icon suggestions. With it set, the list icon picker
+offers emoji picked by [TypeSafe's Jev](https://docs.typesafe.ai) from the
+list's name, summary, homepage domain (not the full URL), and open item
+titles, which are sent to TypeSafe:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `TYPESAFE_API_KEY` | unset | TypeSafe API key. Unset turns suggestions off |
+
 In Docker, `/data` is mounted as a persistent volume. Any host with a
 persistent filesystem works (e.g. a VPS or Railway); SQLite rules out serverless
 platforms without durable disk.

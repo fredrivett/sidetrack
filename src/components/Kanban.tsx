@@ -378,7 +378,11 @@ export function Kanban({
           initialProjectId={newItem.projectId}
         />
 
-        <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
+        <NewProjectDialog
+          open={newProjectOpen}
+          onOpenChange={setNewProjectOpen}
+          takenPrefixes={projects.filter((p) => p.isOwner).map((p) => p.prefix)}
+        />
 
         <PullToSearch onOpen={() => setPaletteOpen(true)} />
 

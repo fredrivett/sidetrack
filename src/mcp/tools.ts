@@ -463,15 +463,25 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       title: "Create list",
       description:
         "Create a new list, such as \"Home\", \"Buy\" or \"Launch Library\". Appends at the right of the board. " +
-        "status defaults to active.",
+        "status defaults to active. summary, homepage_url, and icon are optional and work as in update_list.",
       inputSchema: {
         name: z.string().min(1),
         status: Status.optional(),
+        summary: z.string().optional(),
+        homepage_url: z.string().optional(),
+        icon: z.string().optional(),
       },
     },
-    async ({ name, status }) => {
+    async ({ homepage_url, ...input }) => {
       const { db } = getDb();
-      return json(createProject(db, userId, { name, status }, SOURCE));
+      return json(
+        createProject(
+          db,
+          userId,
+          { ...input, homepageUrl: homepage_url },
+          SOURCE,
+        ),
+      );
     },
   );
 

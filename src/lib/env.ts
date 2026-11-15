@@ -61,6 +61,8 @@ export interface ServerEnv {
   SMTP_URL: string | undefined;
   RESEND_API_KEY: string | undefined;
   EMAIL_FROM: string | undefined;
+  // TypeSafe Jev key for AI list-icon suggestions. Unset turns them off.
+  TYPESAFE_API_KEY: string | undefined;
 }
 
 // Production-required vars are enforced only when actually running in
@@ -111,6 +113,7 @@ function schemaFor(mode: EnvMode) {
       SMTP_URL: optionalTrimmed,
       RESEND_API_KEY: optionalTrimmed,
       EMAIL_FROM: optionalTrimmed,
+      TYPESAFE_API_KEY: optionalTrimmed,
     })
     .superRefine((env, ctx) => {
       if (enforce) {
@@ -175,6 +178,7 @@ function schemaFor(mode: EnvMode) {
           : undefined),
       RESEND_API_KEY: env.RESEND_API_KEY,
       EMAIL_FROM: env.EMAIL_FROM,
+      TYPESAFE_API_KEY: env.TYPESAFE_API_KEY,
     }));
 }
 
