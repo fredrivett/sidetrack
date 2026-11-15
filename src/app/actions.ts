@@ -291,6 +291,7 @@ export async function addItemAction(input: {
   parentId?: string | null;
   dueDate?: string | null;
   dueFrom?: string | null;
+  assigneeIds?: string[];
   repeat?: Repeat | null;
   subItems?: string[];
 }) {

@@ -1,7 +1,8 @@
 "use client";
 
-import { CornerDownRight, Plus, X } from "lucide-react";
+import { ChevronDown, CircleDashed, CornerDownRight, Plus, X } from "lucide-react";
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -15,10 +16,19 @@ import {
   suggestForNewItemAction,
   suggestNewListIconsAction,
 } from "@/app/actions";
+import type { AssigneeView } from "@/core/members";
 import type { Category, Project } from "@/core/schema";
+import { toggleAssignee } from "@/lib/assignees";
 import type { Repeat } from "@/lib/repeat";
+import type { Due } from "@/lib/time";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Kbd } from "@/components/ui/kbd";
 import {
   ResponsiveDialog,
   ResponsiveDialogCloseButton,
@@ -27,8 +37,12 @@ import {
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { AssigneeOptions } from "./AssigneeOptions";
 import { CreatableCombobox } from "./CreatableCombobox";
+import { DueDatePicker } from "./DueDatePicker";
 import { RepeatPicker } from "./RepeatPicker";
+import { useAssignShortcuts } from "./useAssignShortcuts";
+import { AvatarStack, assigneeNames } from "./UserAvatar";
 
 // Wait for a pause in typing before asking Jev about the draft.
 const SUGGEST_DELAY_MS = 400;
@@ -58,12 +72,16 @@ export function NewItemDialog({
   onOpenChange,
   projects,
   categoriesByProject,
+  assigneesByProject,
+  viewerId,
   initialProjectId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projects: Project[];
   categoriesByProject: Record<string, Category[]>;
+  assigneesByProject: Record<string, AssigneeView[]>;
+  viewerId: string;
   initialProjectId: string | null;
 }) {
   // The list the user chose, or the one the dialog was opened from; "" until
@@ -83,6 +101,9 @@ export function NewItemDialog({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("");
+  const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [due, setDue] = useState<Due | null>(null);
   const [repeat, setRepeat] = useState<Repeat | null>(null);
   const [subItems, setSubItems] = useState<string[]>([]);
   const [subDraft, setSubDraft] = useState("");
@@ -122,6 +143,8 @@ export function NewItemDialog({
       setTitle("");
       setDescription("");
       setCategory("");
+      setAssigneeIds([]);
+      setDue(null);
       setRepeat(null);
       setSubItems([]);
       setSubDraft("");
@@ -154,6 +177,23 @@ export function NewItemDialog({
     value: c.name,
     label: c.name,
   }));
+  // Only the list's owner and members can be assigned, so switching lists
+  // drops anyone who isn't on the new one (and brings them back on return).
+  const listAssignees = assigneesByProject[projectId] ?? [];
+  const assigned = listAssignees.filter((a) => assigneeIds.includes(a.userId));
+  const canAssignSelf = listAssignees.some((a) => a.userId === viewerId);
+  // A and I as in the item dialog, once a list is chosen. They're ignored
+  // while typing in a field.
+  const openPicker = useCallback(() => setAssignOpen(true), []);
+  const toggleMe = useCallback(
+    () => setAssigneeIds((cur) => toggleAssignee(cur, viewerId)),
+    [viewerId],
+  );
+  useAssignShortcuts({
+    active: open && Boolean(projectId) && !pending,
+    onOpenPicker: openPicker,
+    onAssignToMe: canAssignSelf ? toggleMe : undefined,
+  });
   // A new category typed for this item shows as chosen, like the others.
   if (category.trim() && !categoryOptions.some((o) => o.value === category.trim())) {
     categoryOptions.push({ value: category.trim(), label: category.trim() });
@@ -210,6 +250,8 @@ export function NewItemDialog({
     if (!t || !projectId || pending) return;
     const d = description.trim() || null;
     const c = category.trim() || null;
+    const who = assigneeIds;
+    const du = due;
     const r = repeat;
     const p = chosenParent?.id ?? null;
     // A sub-item still in its input counts, so it isn't lost to the click.
@@ -222,6 +264,9 @@ export function NewItemDialog({
         description: d,
         category: c,
         parentId: p,
+        assigneeIds: assigned.map((a) => a.userId),
+        dueDate: du?.dueDate ?? null,
+        dueFrom: du?.dueFrom ?? null,
         repeat: r,
         subItems: subs,
       });
@@ -233,7 +278,10 @@ export function NewItemDialog({
       // submitted — never text typed for the next item.
       setTitle((cur) => (cur.trim() === t ? "" : cur));
       setDescription((cur) => ((cur.trim() || null) === d ? "" : cur));
-      // A repeat and a parent belong to the item just added, like its title.
+      // Assignees, a due date, repeat and parent belong to the item just
+      // added, like its title.
+      setAssigneeIds((cur) => (cur === who ? [] : cur));
+      setDue((cur) => (cur === du ? null : cur));
       setRepeat((cur) => (cur === r ? null : cur));
       setParent((cur) => (cur?.item.id === p ? null : cur));
       // Sub-items can't be edited while it saves, so they're all this item's.
@@ -342,11 +390,56 @@ export function NewItemDialog({
               />
             </Field>
 
+            <Field label="Assignees">
+              <DropdownMenu open={assignOpen} onOpenChange={setAssignOpen}>
+                <DropdownMenuTrigger
+                  disabled={pending || !projectId}
+                  // Bordered like the form's other fields.
+                  className="flex h-8 w-full items-center gap-2 rounded-lg border border-input bg-transparent px-2.5 text-left text-sm transition-colors outline-none hover:bg-neutral-50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 dark:bg-input/30 dark:hover:bg-input/50"
+                >
+                  {assigned.length ? (
+                    <>
+                      <AvatarStack users={assigned} size={20} ringClassName="ring-popover" />
+                      <span className="truncate text-neutral-700 dark:text-neutral-200">
+                        {assigneeNames(assigned)}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <CircleDashed className="size-5 text-neutral-400" />
+                      <span className="text-neutral-500">Unassigned</span>
+                    </>
+                  )}
+                  <Kbd className="ml-auto">A</Kbd>
+                  <ChevronDown className="size-4 opacity-50" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent data-assignee-picker align="start" className="w-56">
+                  <AssigneeOptions
+                    selected={assigned.map((a) => a.userId)}
+                    assignees={listAssignees}
+                    viewerId={viewerId}
+                    onChange={setAssigneeIds}
+                  />
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </Field>
+
+            <Field label="Due">
+              <DueDatePicker
+                key={added}
+                due={due}
+                done={false}
+                disabled={pending}
+                onChange={setDue}
+              />
+            </Field>
+
             <Field label="Repeat">
               <RepeatPicker
                 key={added}
                 repeat={repeat}
                 completedAt={null}
+                due={due}
                 disabled={pending}
                 onChange={setRepeat}
               />
