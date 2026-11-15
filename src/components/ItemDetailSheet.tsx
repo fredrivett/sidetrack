@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  CalendarDays,
   CheckCircle2,
   ChevronDown,
   Circle,
@@ -14,7 +15,6 @@ import {
 import { toast } from "sonner";
 import {
   useCallback,
-  useEffect,
   useMemo,
   useRef,
   useState,
@@ -34,8 +34,9 @@ import { formatItemRef } from "@/lib/itemRef";
 import { modifierSymbol } from "@/lib/keyboard";
 import { prLabel } from "@/lib/pr";
 import { repeatOf } from "@/lib/repeat";
-import { dayLabel, quickDueDays } from "@/lib/time";
+import { dayLabel, localDate, localDay, parseDueDay, quickDueDays } from "@/lib/time";
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
@@ -45,6 +46,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Kbd } from "@/components/ui/kbd";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Sheet,
   SheetContent,
@@ -206,55 +208,108 @@ function Checklist({
 }
 
 /**
- * The date input. Typing a date fires a change per segment (the year alone
- * passes through 0002, 0020, 0202), so it keeps a draft and saves once the
- * date settles: on a pause, on blur, or when the sheet closes. Keyed by item,
- * so a draft never carries over to another item.
+ * A popover for any day the quick buttons don't offer: type one ("fri",
+ * "in 2 weeks") and press Enter, or click it on the calendar, which follows
+ * what's typed. `today` is the app's day (with its 4am turnover), so the
+ * calendar marks the same day the Today button sets. Weeks start on Monday,
+ * as "Next week" does.
  */
-function DueDateInput({
+function DueCalendar({
   due,
+  today,
   disabled,
   onChange,
 }: {
   due: string | null;
+  today: string | null;
   disabled: boolean;
-  onChange: (due: string | null) => void;
+  onChange: (due: string) => void;
 }) {
-  const [draft, setDraft] = useState(due ?? "");
-  // A save or a quick button changed the date: show it.
-  const [shown, setShown] = useState(due);
-  if (due !== shown) {
-    setShown(due);
-    setDraft(due ?? "");
-  }
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const flush = useRef(() => {});
-  useEffect(() => () => flush.current(), []);
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [month, setMonth] = useState<Date>();
+  const input = useRef<HTMLInputElement>(null);
+  const typed = text.trim() && today ? parseDueDay(text, today) : null;
+  const shown = typed ?? due;
 
-  function change(value: string) {
-    setDraft(value);
-    clearTimeout(timer.current);
-    flush.current = () => {
-      clearTimeout(timer.current);
-      flush.current = () => {};
-      // An unfinished date reads as "": put the saved one back rather than
-      // clearing it. Clear is the button's job.
-      if (!value) setDraft(due ?? "");
-      else if (value !== due) onChange(value);
-    };
-    timer.current = setTimeout(() => flush.current(), 800);
+  function openChange(next: boolean) {
+    setOpen(next);
+    setText("");
+    const day = due ?? today;
+    setMonth(day ? localDate(day) : undefined);
+  }
+
+  function pick(day: string) {
+    setOpen(false);
+    if (day !== due) onChange(day);
   }
 
   return (
-    <input
-      type="date"
-      value={draft}
-      disabled={disabled}
-      onChange={(e) => change(e.target.value)}
-      onBlur={() => flush.current()}
-      aria-label="Pick a due date"
-      className="h-6 rounded-md border border-neutral-200 bg-transparent px-1.5 text-xs text-neutral-600 dark:border-neutral-800 dark:text-neutral-300"
-    />
+    <Popover open={open} onOpenChange={openChange}>
+      <PopoverTrigger
+        render={
+          <Button type="button" variant="outline" size="xs" disabled={disabled} />
+        }
+      >
+        <CalendarDays />
+        Pick date
+      </PopoverTrigger>
+      <PopoverContent align="start" initialFocus={input} className="w-auto p-0">
+        <div className="space-y-1.5 px-2 pt-2 contain-inline-size">
+          <Input
+            ref={input}
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              const day = today && parseDueDay(e.target.value, today);
+              if (day) setMonth(localDate(day));
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.nativeEvent.isComposing && typed) {
+                e.preventDefault();
+                pick(typed);
+              }
+            }}
+            placeholder="fri, in 2 weeks, 27 nov…"
+            aria-label="Type a due date"
+            className="h-7"
+          />
+          {text.trim() && (
+            <p
+              aria-live="polite"
+              className="flex h-5 items-center justify-between px-1 text-xs text-muted-foreground"
+            >
+              {typed ? (
+                <>
+                  <span className="text-foreground">
+                    {localDate(typed).toLocaleDateString(undefined, {
+                      weekday: "long",
+                      day: "numeric",
+                      month: "long",
+                      year:
+                        typed.slice(0, 4) === today?.slice(0, 4) ? undefined : "numeric",
+                    })}
+                  </span>
+                  <Kbd>↵</Kbd>
+                </>
+              ) : (
+                "Not a date"
+              )}
+            </p>
+          )}
+        </div>
+        <Calendar
+          mode="single"
+          required
+          selected={shown ? localDate(shown) : undefined}
+          month={month}
+          onMonthChange={setMonth}
+          today={today ? localDate(today) : undefined}
+          weekStartsOn={1}
+          onSelect={(date) => pick(localDay(date))}
+        />
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -296,7 +351,7 @@ function DueDatePicker({
           {label}
         </Button>
       ))}
-      <DueDateInput due={due} disabled={disabled} onChange={onChange} />
+      <DueCalendar due={due} today={today} disabled={disabled} onChange={onChange} />
       {due && (
         <Button
           type="button"

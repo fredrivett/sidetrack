@@ -1,3 +1,5 @@
+import * as chrono from "chrono-node/en";
+
 export function formatRelative(ts: number): string {
   const diff = Date.now() - ts;
   const min = 60_000;
@@ -160,6 +162,59 @@ export function quickDueDays(today: string): Array<[label: string, day: string]>
     ["Next week", nextWeek(today)],
   ];
   return all.filter(([, day], i) => all.findIndex(([, d]) => d === day) === i);
+}
+
+/** Whether the runtime's locale writes the day before the month (1/12 = 1 Dec). */
+function dayFirst(): boolean {
+  const parts = new Intl.DateTimeFormat().formatToParts(new Date(2000, 0, 2));
+  const at = (type: string) => parts.findIndex((p) => p.type === type);
+  return at("day") < at("month");
+}
+
+/**
+ * The due day typed text means from `today`, or null when it isn't a date:
+ * "fri", "in 2 weeks", "27 nov", "end of month". The quick buttons' names
+ * mean what the buttons set ("next week" is the coming Monday, not today + 7).
+ * Weekdays and dates look ahead: on a Wednesday "mon" is the coming Monday,
+ * on a Friday "fri" is next week's ("this fri" is today), and in December
+ * "3 jan" is next year's. Numeric dates follow the runtime
+ * locale, so "1/12" is 1 December in the UK and 12 January in the US.
+ */
+export function parseDueDay(text: string, today: string): string | null {
+  const t = text.trim().toLowerCase();
+  const named: Record<string, string> = {
+    today,
+    tomorrow: addDays(today, 1),
+    weekend: thisWeekend(today),
+    "this weekend": thisWeekend(today),
+    "next week": nextWeek(today),
+  };
+  if (Object.hasOwn(named, t)) return named[t];
+  // chrono's day-first parser reads "nov 27" as November 2027, so only
+  // numeric dates go to it.
+  const parser = dayFirst() && /\d\s*[/.-]\s*\d/.test(t) ? chrono.GB : chrono.casual;
+  const [y, m, d] = today.split("-").map(Number);
+  // Noon on `today`, so "tomorrow" counts from the app's day (which turns
+  // over at 4am), not the clock's.
+  const [found] = t ? parser.parse(t, new Date(y, m - 1, d, 12), { forwardDate: true }) : [];
+  if (!found) return null;
+  const day = localDay(found.start.date());
+  // chrono reads today's weekday as today ("fri" on a Friday), but someone
+  // typing it means next week's, unless they say "this fri".
+  const weekdayOnly = found.start.isCertain("weekday") && !found.start.isCertain("day");
+  return weekdayOnly && day === today && !/^this\b/.test(t) ? addDays(today, 7) : day;
+}
+
+/** The local calendar day of `date`, as "YYYY-MM-DD". */
+export function localDay(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/** A "YYYY-MM-DD" day as local midnight, the inverse of localDay. */
+export function localDate(day: string): Date {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(y, m - 1, d);
 }
 
 /**
