@@ -4,7 +4,14 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { listAudit } from "@/core/audit";
 import { addItem, getItem, listItems } from "@/core/items";
 import { acceptInvite, inviteMember } from "@/core/members";
-import { createProject } from "@/core/projects";
+import { createProject, getProject, listProjects } from "@/core/projects";
+import {
+  acceptSpaceInvite,
+  createSpace,
+  inviteSpaceMember,
+  listPendingSpaceInvites,
+  setSpaceMemberRole,
+} from "@/core/spaces";
 import { createTestDb, createTestUser } from "@/core/test-helpers";
 import { setTimeZone } from "@/core/users";
 import { buildServer } from "./server";
@@ -52,6 +59,8 @@ describe("tool output", () => {
     const parent = addItem(db, fred, { projectId: list.id, title: "Tidy flat" }, "web");
     addItem(db, fred, { projectId: list.id, title: "Kitchen", parentId: parent.id }, "web");
     inviteMember(db, fred, list.id, "bob", "web");
+    const space = createSpace(db, fred, { name: "Household" }, "web");
+    inviteSpaceMember(db, fred, space.id, "bob", "web");
 
     const call = await connectAs(fred);
     const { data } = await call("get_item", { id: "HOM-1" });
@@ -63,10 +72,11 @@ describe("tool output", () => {
     expect(child).not.toHaveProperty("projectId");
 
     const invites = await (await connectAs(bob))("list_pending_invites");
-    expect(invites.data).toEqual([
-      expect.objectContaining({ listId: list.id, listName: "Home" }),
-    ]);
-    expect((invites.data as unknown as object[])[0]).not.toHaveProperty("projectName");
+    expect(invites.data).toEqual({
+      spaces: [expect.objectContaining({ spaceId: space.id, spaceName: "Household" })],
+      lists: [expect.objectContaining({ listId: list.id, listName: "Home" })],
+    });
+    expect((invites.data.lists as object[])[0]).not.toHaveProperty("projectName");
   });
 
   it("gives a repeat rule as one field, and a finished repeat the day it comes back in the user's zone", async () => {
@@ -283,6 +293,55 @@ describe("error results", () => {
     });
     expect(clash.error).toBe(`${fred} is in both add_assignee_ids and remove_assignee_ids — no change was made.`);
     expect(getItem(db, fred, listItems(db, fred, list.id)[0].id)?.assigneeIds).toEqual([]);
+
+    // An invite answer names one invite: a Space or a list, not both or neither.
+    const bob = createTestUser(db, { username: "bob" });
+    const space = createSpace(db, fred, { name: "Household" }, "web");
+    inviteSpaceMember(db, fred, space.id, "bob", "web");
+    inviteMember(db, fred, list.id, "bob", "web");
+    const asBob = await connectAs(bob);
+    for (const args of [{ space_id: space.id, list_id: list.id }, {}]) {
+      for (const tool of ["accept_invite", "decline_invite"]) {
+        const r = await asBob(tool, args);
+        expect(r.error).toBe("Pass exactly one of list_id or space_id — no change was made.");
+      }
+    }
+    // An empty id isn't a missing one: it's refused, not ignored.
+    for (const tool of ["accept_invite", "decline_invite"]) {
+      expect((await asBob(tool, { space_id: "", list_id: list.id })).error).toBeTruthy();
+    }
+    expect(listPendingSpaceInvites(db, bob)).toHaveLength(1);
+    expect(getProject(db, bob, list.id)).toBeUndefined();
+
+    // Nor does create_list take an empty space_id as "no Space" and make a private list.
+    const before = listProjects(db, fred).length;
+    expect((await call("create_list", { name: "Shared", space_id: "" })).error).toBeTruthy();
+    expect(listProjects(db, fred)).toHaveLength(before);
+  });
+
+  it("moves a list between Spaces after its other edits, and says when the caller loses it", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const bob = createTestUser(db, { username: "bob" });
+    const home = createSpace(db, fred, { name: "Household" }, "web");
+    const work = createSpace(db, fred, { name: "Work" }, "web");
+    inviteSpaceMember(db, fred, home.id, "bob", "web");
+    acceptSpaceInvite(db, bob, home.id, "web");
+    setSpaceMemberRole(db, fred, home.id, bob, "admin", "web");
+    const list = createProject(db, fred, { name: "Chores", spaceId: work.id }, "web");
+
+    // The owner renames and moves in one call; both show in what comes back.
+    const moved = await (await connectAs(fred))("update_list", {
+      id: list.id,
+      name: "House chores",
+      space_id: home.id,
+    });
+    expect(moved.data).toMatchObject({ id: list.id, name: "House chores", spaceId: home.id });
+
+    // A Space admin can take out a list they don't own, and with it their access.
+    const out = await (await connectAs(bob))("update_list", { id: list.id, space_id: null });
+    expect(out.data).toEqual({ id: list.id, note: expect.stringMatching(/no longer has access/) });
+    expect(getProject(db, fred, list.id)?.spaceId).toBeNull();
+    expect(getProject(db, bob, list.id)).toBeUndefined();
   });
 
   it("returns not found for a list the caller can't see", async () => {

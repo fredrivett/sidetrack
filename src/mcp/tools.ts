@@ -62,8 +62,23 @@ import {
   COMMENT_MAX,
   type Item,
   PROJECT_STATUSES,
+  SPACE_ROLES,
 } from "@/core/schema";
-import { notifyInvite } from "@/lib/email";
+import {
+  acceptSpaceInvite,
+  createSpace,
+  declineSpaceInvite,
+  deleteSpace,
+  inviteSpaceMember,
+  listPendingSpaceInvites,
+  listSpaceMembers,
+  listSpaces,
+  removeSpaceMember,
+  setProjectSpace,
+  setSpaceMemberRole,
+  updateSpace,
+} from "@/core/spaces";
+import { type InviteKind, notifyInvite } from "@/lib/email";
 import { getEnv } from "@/lib/env";
 import { formatItemRef, workPrTitle } from "@/lib/itemRef";
 import { checkDraftItem } from "@/lib/itemSuggest";
@@ -260,15 +275,17 @@ function withRefs(prefix: string, list: Item[]) {
 async function sendInviteNotification(
   db: Db,
   inviterId: string,
-  projectName: string,
+  name: string,
   toEmail: string | null,
+  kind: InviteKind = "list",
 ) {
   if (!toEmail) return;
   await notifyInvite({
     to: toEmail,
     inviterName: getUserName(db, inviterId) ?? "Someone",
-    projectName,
+    projectName: name,
     url: getEnv().BETTER_AUTH_URL?.replace(/\/$/, "") ?? "",
+    kind,
   });
 }
 
@@ -290,7 +307,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       description:
         "List the user's lists in board order (left to right, per their own board). Returns id, name, status, summary, summaryUpdatedAt and more. " +
         "status is active (on the board), paused (collapsed at the end of the board; set aside for now) or archived (off the board, kept for reference). " +
-        "Archived lists are left out unless include_archived is true.",
+        "Archived lists are left out unless include_archived is true. " +
+        "spaceId is the Space the list is in (null for none); everyone in that Space can see and edit it. list_spaces gives each Space's name.",
       inputSchema: { include_archived: z.boolean().optional() },
     },
     async ({ include_archived }) => {
@@ -483,22 +501,24 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       title: "Create list",
       description:
         "Create a new list, such as \"Home\", \"Buy\" or \"Launch Library\". Appends at the right of the board. " +
-        "status defaults to active. summary, homepage_url, and icon are optional and work as in update_list.",
+        "status defaults to active. summary, homepage_url, and icon are optional and work as in update_list. " +
+        "space_id (from list_spaces) creates it in a Space the user has joined, shared with everyone in it; leave it out for a list of their own.",
       inputSchema: {
         name: z.string().min(1),
         status: Status.optional(),
         summary: z.string().optional(),
         homepage_url: z.string().optional(),
         icon: z.string().optional(),
+        space_id: z.string().min(1).optional(),
       },
     },
-    async ({ homepage_url, ...input }) => {
+    async ({ homepage_url, space_id, ...input }) => {
       const { db } = getDb();
       return json(
         createProject(
           db,
           userId,
-          { ...input, homepageUrl: homepage_url },
+          { ...input, homepageUrl: homepage_url, spaceId: space_id },
           SOURCE,
         ),
       );
@@ -516,7 +536,9 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "prefix is the short item-ID prefix (2–5 letters, e.g. \"ENG\" → items like ENG-42); " +
         "it is uppercased, and an auto-suffix is applied if it collides with another list. " +
         "homepage_url is the list's public landing URL — a bare host gains an https:// scheme; pass null to clear it. " +
-        "icon is the list icon: an emoji (e.g. \"🚀\") or an http(s) image URL; pass null to clear it (falls back to the homepage favicon).",
+        "icon is the list icon: an emoji (e.g. \"🚀\") or an http(s) image URL; pass null to clear it (falls back to the homepage favicon). " +
+        "space_id moves the list into a Space the user has joined (from list_spaces), or out of its Space with null; only the list's owner can, " +
+        "except that an admin of its Space can take it out, which returns it to its owner. The other fields are saved before the move.",
       inputSchema: {
         id: z.string(),
         name: z.string().optional(),
@@ -525,21 +547,29 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         prefix: z.string().optional(),
         homepage_url: z.string().nullable().optional(),
         icon: z.string().nullable().optional(),
+        space_id: z.string().min(1).nullable().optional(),
       },
     },
-    async ({ id, homepage_url, ...patch }) => {
+    async ({ id, homepage_url, space_id, ...patch }) => {
       const { db } = getDb();
       if (!getProject(db, userId, id)) return notFound("list", id);
+      const updated = updateProject(
+        db,
+        userId,
+        id,
+        homepage_url === undefined
+          ? patch
+          : { ...patch, homepageUrl: homepage_url },
+        SOURCE,
+      );
+      if (space_id === undefined) return json(updated);
+      setProjectSpace(db, userId, id, space_id, SOURCE);
+      // An admin taking someone else's list out of the Space can lose it.
       return json(
-        updateProject(
-          db,
-          userId,
+        getProject(db, userId, id) ?? {
           id,
-          homepage_url === undefined
-            ? patch
-            : { ...patch, homepageUrl: homepage_url },
-          SOURCE,
-        ),
+          note: "The list left its Space and went back to its owner, so the user no longer has access to it.",
+        },
       );
     },
   );
@@ -1341,14 +1371,19 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "List my pending invites",
       description:
-        "List invites awaiting your response: each has listId, listName, " +
-        "ownerName and createdAt. Accept with accept_invite or dismiss with " +
-        "decline_invite, passing the invite's listId as list_id.",
+        "List invites awaiting your response, to Spaces and to lists. " +
+        "Returns { spaces, lists }: a Space invite has spaceId, spaceName and createdAt; " +
+        "a list invite has listId, listName, ownerName and createdAt. " +
+        "Accept with accept_invite or dismiss with decline_invite, passing a Space invite's spaceId as space_id " +
+        "or a list invite's listId as list_id. Joining a Space shares every list in it with the user.",
       inputSchema: {},
     },
     async () => {
       const { db } = getDb();
-      return json(listPendingInvites(db, userId));
+      return json({
+        spaces: listPendingSpaceInvites(db, userId),
+        lists: listPendingInvites(db, userId),
+      });
     },
   );
 
@@ -1357,13 +1392,15 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Accept an invite",
       description:
-        "Accept a pending invite to a list, gaining edit access. " +
-        "list_id comes from list_pending_invites.",
-      inputSchema: { list_id: z.string() },
+        "Accept a pending invite, from list_pending_invites: pass space_id to join a Space " +
+        "(gaining edit access to every list in it) or list_id to join one list. Pass exactly one.",
+      inputSchema: { list_id: z.string().min(1).optional(), space_id: z.string().min(1).optional() },
     },
-    async ({ list_id }) => {
+    async ({ list_id, space_id }) => {
       const { db } = getDb();
-      acceptInvite(db, userId, list_id, SOURCE);
+      if (space_id !== undefined && list_id === undefined) acceptSpaceInvite(db, userId, space_id, SOURCE);
+      else if (list_id !== undefined && space_id === undefined) acceptInvite(db, userId, list_id, SOURCE);
+      else return errorText("Pass exactly one of list_id or space_id — no change was made.");
       return json({ ok: true });
     },
   );
@@ -1373,13 +1410,15 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Decline an invite",
       description:
-        "Decline a pending invite, removing it. list_id comes from " +
-        "list_pending_invites.",
-      inputSchema: { list_id: z.string() },
+        "Decline a pending invite, removing it: pass a Space invite's space_id or a list invite's " +
+        "list_id, from list_pending_invites. Pass exactly one.",
+      inputSchema: { list_id: z.string().min(1).optional(), space_id: z.string().min(1).optional() },
     },
-    async ({ list_id }) => {
+    async ({ list_id, space_id }) => {
       const { db } = getDb();
-      declineInvite(db, userId, list_id, SOURCE);
+      if (space_id !== undefined && list_id === undefined) declineSpaceInvite(db, userId, space_id, SOURCE);
+      else if (list_id !== undefined && space_id === undefined) declineInvite(db, userId, list_id, SOURCE);
+      else return errorText("Pass exactly one of list_id or space_id — no change was made.");
       return json({ ok: true });
     },
   );
@@ -1396,6 +1435,176 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     async ({ list_id }) => {
       const { db } = getDb();
       removeMember(db, userId, list_id, userId, SOURCE);
+      return json({ ok: true });
+    },
+  );
+
+  // Spaces: a group of people who share every list in it. Every accepted
+  // member sees and edits the Space's lists; admins also manage its people
+  // and the Space itself. The core enforces the roles and the last-admin rule.
+  const isJoined = (db: Db, spaceId: string) =>
+    listSpaces(db, userId).some((s) => s.id === spaceId);
+
+  server.registerTool(
+    "list_spaces",
+    {
+      title: "List Spaces",
+      description:
+        "List the Spaces the user has joined, oldest first. A Space is a group of people who share every list in it. " +
+        "Each has id, name, icon and the user's role: admin (manages its people and the Space itself) or member. " +
+        "A list's spaceId (list_lists) says which Space it's in. Pending Space invites are in list_pending_invites.",
+      inputSchema: {},
+    },
+    async () => {
+      const { db } = getDb();
+      return json(listSpaces(db, userId));
+    },
+  );
+
+  server.registerTool(
+    "create_space",
+    {
+      title: "Create Space",
+      description:
+        "Create a Space, such as \"Household\". The user becomes its only admin. " +
+        "icon is optional: an emoji or an http(s) image URL. " +
+        "Then invite people with invite_space_member, and put lists in it with update_list's space_id or create_list's space_id.",
+      inputSchema: { name: z.string().min(1), icon: z.string().optional() },
+    },
+    async ({ name, icon }) => {
+      const { db } = getDb();
+      return json(createSpace(db, userId, { name, icon }, SOURCE));
+    },
+  );
+
+  server.registerTool(
+    "update_space",
+    {
+      title: "Update Space",
+      description:
+        "Rename a Space or change its icon (admins only). icon is an emoji or an http(s) image URL; pass null to clear it.",
+      inputSchema: {
+        space_id: z.string(),
+        name: z.string().optional(),
+        icon: z.string().nullable().optional(),
+      },
+    },
+    async ({ space_id, name, icon }) => {
+      const { db } = getDb();
+      if (!isJoined(db, space_id)) return notFound("space", space_id);
+      updateSpace(db, userId, space_id, { name, icon }, SOURCE);
+      return json(listSpaces(db, userId).find((s) => s.id === space_id));
+    },
+  );
+
+  server.registerTool(
+    "delete_space",
+    {
+      title: "Delete Space",
+      description:
+        "Delete a Space (admins only). Its lists are kept: each goes back to its owner, still shared with anyone it was shared with directly, " +
+        "and everyone else in the Space loses access to it. Confirm with the user before deleting.",
+      inputSchema: { space_id: z.string() },
+    },
+    async ({ space_id }) => {
+      const { db } = getDb();
+      if (!isJoined(db, space_id)) return notFound("space", space_id);
+      deleteSpace(db, userId, space_id, SOURCE);
+      return json({ ok: true });
+    },
+  );
+
+  server.registerTool(
+    "list_space_members",
+    {
+      title: "List Space members",
+      description:
+        "List everyone in a Space and everyone invited to it, the user included. Each row has user_id, username, name, email, " +
+        "status (\"accepted\" or \"pending\") and role (\"admin\" or \"member\"). " +
+        "Use a row's user_id with remove_space_member or set_space_member_role, or with update_item's assignee_ids.",
+      inputSchema: { space_id: z.string() },
+    },
+    async ({ space_id }) => {
+      const { db } = getDb();
+      if (!isJoined(db, space_id)) return notFound("space", space_id);
+      return json(
+        listSpaceMembers(db, userId, space_id).map(({ userId: user_id, ...m }) => ({ user_id, ...m })),
+      );
+    },
+  );
+
+  server.registerTool(
+    "invite_space_member",
+    {
+      title: "Invite to a Space",
+      description:
+        "Invite an existing user to a Space (admins only). person is a username (\"alice\" or \"@alice\") or an email; " +
+        "they must already have an account. They join as a member once they accept, and then see and edit every list in the Space, " +
+        "so check with the user before inviting someone they didn't name.",
+      inputSchema: { space_id: z.string(), person: z.string().min(1) },
+    },
+    async ({ space_id, person }) => {
+      const { db } = getDb();
+      const space = listSpaces(db, userId).find((s) => s.id === space_id);
+      if (!space) return notFound("space", space_id);
+      const member = inviteSpaceMember(db, userId, space_id, person, SOURCE);
+      await sendInviteNotification(db, userId, space.name, member.email, "space");
+      return json(member);
+    },
+  );
+
+  server.registerTool(
+    "remove_space_member",
+    {
+      title: "Remove from a Space",
+      description:
+        "Remove someone from a Space or revoke their pending invite (admins only). user_id comes from list_space_members. " +
+        "They lose access to the Space's lists, except lists they own or were shared directly. " +
+        "A Space always keeps an admin, so the last admin can't be removed. To leave a Space yourself, use leave_space.",
+      inputSchema: { space_id: z.string(), user_id: z.string() },
+    },
+    async ({ space_id, user_id }) => {
+      const { db } = getDb();
+      if (!isJoined(db, space_id)) return notFound("space", space_id);
+      removeSpaceMember(db, userId, space_id, user_id, SOURCE);
+      return json({ ok: true });
+    },
+  );
+
+  server.registerTool(
+    "set_space_member_role",
+    {
+      title: "Set a Space member's role",
+      description:
+        "Make someone in a Space an admin, or a member again (admins only). user_id comes from list_space_members, " +
+        "and they must have accepted. All admins are equal. A Space always keeps an admin, so the last admin can't be made a member.",
+      inputSchema: {
+        space_id: z.string(),
+        user_id: z.string(),
+        role: z.enum(SPACE_ROLES),
+      },
+    },
+    async ({ space_id, user_id, role }) => {
+      const { db } = getDb();
+      if (!isJoined(db, space_id)) return notFound("space", space_id);
+      setSpaceMemberRole(db, userId, space_id, user_id, role, SOURCE);
+      return json({ ok: true });
+    },
+  );
+
+  server.registerTool(
+    "leave_space",
+    {
+      title: "Leave a Space",
+      description:
+        "Remove the user from a Space. They lose access to its lists, except lists they own (which stay in the Space) " +
+        "or were shared directly. The last admin can't leave: make someone else an admin first, or delete the Space.",
+      inputSchema: { space_id: z.string() },
+    },
+    async ({ space_id }) => {
+      const { db } = getDb();
+      if (!isJoined(db, space_id)) return notFound("space", space_id);
+      removeSpaceMember(db, userId, space_id, userId, SOURCE);
       return json({ ok: true });
     },
   );

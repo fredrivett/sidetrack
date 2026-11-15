@@ -7,6 +7,8 @@ import { type McpContext, registerTools } from "./tools";
 // start_work / report_work / finish_work descriptions in tools.ts.
 const INSTRUCTIONS = `Sidetrack is the user's task board: lists of items, each with a short ref such as SDT-42. An item can have sub-items, one level deep, which the board shows as its checklist.
 
+Lists can be shared two ways: with people one list at a time (invite_member), or by putting the list in a Space, a group such as a household whose members all see and edit every list in it (list_spaces; a list's spaceId says which Space it's in). Admins manage a Space's people and the Space itself; members can put their own lists in it. When the user asks to share something with the people they already share a Space with, use the Space rather than inviting them list by list.
+
 When you work on an item, show it on the board:
 1. Find the item first, in the list the repository's AGENTS.md names, or else the list the user names; if neither names one, ask the user which list to use. Read the list with get_list and look for an open item that describes the work. If one matches, use it, and update its title, description or sub-items when they no longer describe the work. If none matches, create one with add_item. If you're unsure whether an item matches, or more than one could, ask the user before creating or changing anything.
 2. Each pull request covers exactly one item. When the work needs more than one PR, give the item a sub-item per PR (add_item with parent) and work on each sub-item as its own item, titling each PR with the sub-item's ref, never the parent's: merging completes the items a PR names, completing a parent completes all its sub-items, and a parent completes on its own when its last sub-item does.
