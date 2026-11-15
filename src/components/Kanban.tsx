@@ -194,7 +194,8 @@ export function Kanban({
     function onKeyDown(e: KeyboardEvent) {
       if (matchesShortcut(e, { key: "k", mod: true, shift: false, alt: false })) {
         e.preventDefault();
-        setPaletteOpen((o) => !o);
+        // Holding the keys repeats keydown; toggle once per press.
+        if (!e.repeat) setPaletteOpen((o) => !o);
         return;
       }
       if (isEditableTarget(e.target)) return;

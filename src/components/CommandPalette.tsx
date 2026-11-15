@@ -13,7 +13,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import type { Item } from "@/core/schema";
 import { formatItemRef } from "@/lib/itemRef";
 import {
@@ -25,6 +25,7 @@ import {
   CommandItem,
   CommandList,
   CommandShortcut,
+  useCommandState,
 } from "@/components/ui/command";
 import { Kbd } from "@/components/ui/kbd";
 import type { BoardView, ProjectView } from "./Kanban";
@@ -60,13 +61,11 @@ export function CommandPalette({
   onOpenItem: (item: Item) => void;
 }) {
   const router = useRouter();
-  const [query, setQuery] = useState("");
 
   // Close first, then act, so a dialog the action opens isn't stacked under
   // the closing palette.
   function run(action: () => void) {
     onOpenChange(false);
-    setQuery("");
     action();
   }
 
@@ -94,20 +93,15 @@ export function CommandPalette({
   return (
     <CommandDialog
       open={open}
-      onOpenChange={(next) => {
-        onOpenChange(next);
-        if (!next) setQuery("");
-      }}
+      onOpenChange={onOpenChange}
       title="Command palette"
       description="Search commands, lists and items"
       className="top-4 sm:top-1/4 sm:max-w-lg"
     >
       <Command>
-        <CommandInput
-          placeholder="Search commands, lists, items…"
-          value={query}
-          onValueChange={setQuery}
-        />
+        {/* Uncontrolled: cmdk keeps the search, and it unmounts with the
+            dialog, so every way of closing (Esc, ⌘K, a pick) clears it. */}
+        <CommandInput placeholder="Search commands, lists, items…" />
         <CommandList className="max-h-[min(24rem,60dvh)]">
           <CommandEmpty>No matches.</CommandEmpty>
           <CommandGroup heading="Commands">
@@ -143,7 +137,7 @@ export function CommandPalette({
               </CommandItem>
             ))}
           </CommandGroup>
-          {query.trim() !== "" && (
+          <WhenSearching>
             <CommandGroup heading="Items">
               {items.map(({ item, list }) => {
                 const ref = formatItemRef(list.refPrefix, item.number);
@@ -177,7 +171,7 @@ export function CommandPalette({
                 );
               })}
             </CommandGroup>
-          )}
+          </WhenSearching>
         </CommandList>
         {/* Keyboard hints; phones have no keyboard to hint at. */}
         <div className="hidden items-center justify-end gap-3 border-t px-2 pt-2 pb-1 text-xs text-muted-foreground sm:flex">
@@ -198,4 +192,10 @@ export function CommandPalette({
       </Command>
     </CommandDialog>
   );
+}
+
+/** Renders its children only once something is typed into the palette. */
+function WhenSearching({ children }: { children: ReactNode }) {
+  const searching = useCommandState((state) => state.search.trim() !== "");
+  return searching ? children : null;
 }
