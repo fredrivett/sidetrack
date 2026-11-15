@@ -353,15 +353,6 @@ export function removeSpaceMember(
     : requireAdmin(db, userId, spaceId, "remove people");
   const membership = membershipOf(db, targetUserId, spaceId);
   if (!membership) return;
-  if (
-    membership.status === "accepted" &&
-    membership.role === "admin" &&
-    adminCount(db, spaceId) === 1
-  ) {
-    throw new Error(
-      "the last admin can't leave the space: make someone else an admin first, or delete the space",
-    );
-  }
   const target = db.select().from(users).where(eq(users.id, targetUserId)).get();
   const who = handleFor(target, targetUserId);
   const detail = leaving
@@ -372,6 +363,14 @@ export function removeSpaceMember(
   const listIds = listIdsInSpace(db, spaceId);
   db.transaction((tx) => {
     tx.delete(spaceMembers).where(eq(spaceMembers.id, membership.id)).run();
+    // Checked after the write, in the same transaction, so two admins removed
+    // at once can't both pass and leave the Space with none. Throwing rolls
+    // the removal back.
+    if (adminCount(tx as unknown as Db, spaceId) === 0) {
+      throw new Error(
+        "the last admin can't leave the space: make someone else an admin first, or delete the space",
+      );
+    }
     const lost = { unassigned: 0, ended: 0 };
     for (const listId of listIds) {
       const r = revokeListAccess(tx as unknown as Db, targetUserId, listId);
@@ -410,14 +409,13 @@ export function setSpaceMemberRole(
     throw new Error("only people who've joined the space can have their role changed");
   }
   if (membership.role === role) return;
-  if (membership.role === "admin" && adminCount(db, spaceId) === 1) {
-    throw new Error(
-      "the space needs an admin: make someone else an admin first",
-    );
-  }
   const target = db.select().from(users).where(eq(users.id, targetUserId)).get();
   db.transaction((tx) => {
     tx.update(spaceMembers).set({ role }).where(eq(spaceMembers.id, membership.id)).run();
+    // As in removeSpaceMember: checked after the write, inside the transaction.
+    if (adminCount(tx as unknown as Db, spaceId) === 0) {
+      throw new Error("the space needs an admin: make someone else an admin first");
+    }
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,

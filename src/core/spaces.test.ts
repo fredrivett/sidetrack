@@ -95,7 +95,10 @@ describe("spaces", () => {
     inviteSpaceMember(db, fred, spaceId, "bob", "web");
     declineSpaceInvite(db, bob, spaceId, "web");
     expect(getProject(db, bob, groceries.id)).toBeUndefined();
-    expect(listSpaceMembers(db, fred, spaceId).map((m) => m.userId)).toEqual([fred, alice]);
+    // Sorted: both rows can share a millisecond, which leaves their order open.
+    expect(listSpaceMembers(db, fred, spaceId).map((m) => m.userId).sort()).toEqual(
+      [fred, alice].sort(),
+    );
   });
 
   it("lets only admins manage the space, and keeps an admin", () => {

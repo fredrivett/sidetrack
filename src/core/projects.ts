@@ -21,8 +21,10 @@ import {
 } from "./schema";
 
 /** The acting user's project ordering: {id, position} rows, sorted ascending.
- * One row per project they can see (owner row at create, member row at accept),
- * so this is the viewer's board — never anyone else's. */
+ * One row per project they own or joined directly (owner row at create, member
+ * row at accept). A list they see through a Space gets a row only on their
+ * first reorder (fillMissingSlots). This is the viewer's board, never anyone
+ * else's. */
 function viewerPositions(
   db: Db,
   userId: string,
@@ -88,10 +90,11 @@ function fillMissingSlots(db: Db, userId: string): void {
     .where(and(hasProjectAccess(userId), isNull(projectPositions.projectId)))
     .orderBy(asc(projects.id))
     .all();
+  const board = viewerPositions(db, userId);
   for (const { id } of missing) {
-    db.insert(projectPositions)
-      .values({ userId, projectId: id, position: nextProjectPosition(db, userId) })
-      .run();
+    const position = resolvePosition(board, "last");
+    db.insert(projectPositions).values({ userId, projectId: id, position }).run();
+    board.push({ id, position });
   }
 }
 
