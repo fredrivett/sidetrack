@@ -20,15 +20,15 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useOptimistic,
   useRef,
   useState,
+  startTransition,
   useTransition,
 } from "react";
 import {
   addItemAction,
-  deleteItemAction,
   listAuditAction,
-  setItemParentAction,
   updateItemAction,
 } from "@/app/actions";
 import type { AuditEntryWithActor } from "@/core/audit";
@@ -67,7 +67,7 @@ import { EditableText } from "./EditableText";
 import { InlineCode, Markdown } from "./Markdown";
 import { useAssignShortcuts } from "./useAssignShortcuts";
 import { useOptimisticAssignees } from "./use-optimistic-assignees";
-import { useSetCompleted } from "./use-optimistic-completion";
+import { useItemChanges } from "./use-optimistic-items";
 import { useCopyItemRef } from "./useCopyItemRef";
 import { AgentAvatar, AvatarStack, assigneeName, assigneeNames } from "./UserAvatar";
 import { useItemAgentSessions } from "./agent-sessions";
@@ -297,33 +297,45 @@ function Checklist({
   onPickerFor: (id: string | null) => void;
 }) {
   const [draft, setDraft] = useState("");
-  const setCompleted = useSetCompleted();
+  const { setCompleted } = useItemChanges();
   // Adds run one after another, so lines typed quickly land in typed order.
   const queue = useRef<Promise<unknown>>(Promise.resolve());
+  // Lines still saving: each shows at once, faded, until the refreshed
+  // checklist has it (it has no ref or controls until then).
+  const [adding, showAdding] = useOptimistic<string[], string>([], (cur, title) => [
+    ...cur,
+    title,
+  ]);
+  const rows = items.length + adding.length;
   // Each new row lands above the input and pushes it down, out of view once
   // the dialog hits its max height. Nothing else scrolls it back (the
   // drawer's keyboard provider only aligns on focus), so do it while typing.
   const input = useRef<HTMLInputElement>(null);
-  const count = useRef(items.length);
+  const count = useRef(rows);
   useLayoutEffect(() => {
-    const grew = items.length > count.current;
-    count.current = items.length;
+    const grew = rows > count.current;
+    count.current = rows;
     if (grew && input.current === document.activeElement) {
       input.current?.scrollIntoView({ block: "nearest" });
     }
-  }, [items.length]);
+  }, [rows]);
 
   function add() {
     const title = draft.trim();
     if (!title) return;
     setDraft("");
-    queue.current = queue.current.then(async () => {
+    const save = queue.current.then(async () => {
       const added = await runAction(
         addItemAction({ projectId: parent.projectId, title, parentId: parent.id }),
         `add “${title}”`,
       );
       // Put a failed line back, unless another is already being typed.
       if (!added) setDraft((cur) => cur || title);
+    });
+    queue.current = save;
+    startTransition(async () => {
+      showAdding(title);
+      await save;
     });
   }
 
@@ -379,6 +391,16 @@ function Checklist({
           </div>
         );
       })}
+      {adding.map((title, i) => (
+        <div
+          key={`adding-${i}`}
+          aria-busy
+          className="flex items-center gap-2 px-1 py-0.5 text-sm text-neutral-400"
+        >
+          <span aria-hidden="true" className="size-4 shrink-0 rounded-full border border-dashed border-current" />
+          <span className="min-w-0 flex-1 truncate">{title}</span>
+        </div>
+      ))}
       <Input
         ref={input}
         value={draft}
@@ -389,7 +411,7 @@ function Checklist({
             add();
           }
         }}
-        placeholder={items.length ? "Add another…" : "Add a step…"}
+        placeholder={rows ? "Add another…" : "Add a step…"}
         className="scroll-mb-4"
         // Not the task's title: Safari reads the label to guess the field,
         // so a task like "Change phone plan" got phone-number AutoFill (it
@@ -496,9 +518,9 @@ export function ItemDetailDialog({
     onOpenChange(next);
   }
 
-  const setCompleted = useSetCompleted();
+  const changes = useItemChanges();
   function toggle() {
-    setCompleted(item, !completed);
+    changes.setCompleted(item, !completed);
   }
 
   function del() {
@@ -506,9 +528,7 @@ export function ItemDetailDialog({
       setConfirmingDelete(true);
       return;
     }
-    start(() => {
-      void runAction(deleteItemAction(item.id), `delete “${item.title}”`);
-    });
+    changes.deleteItem(item);
     change(false);
   }
 
@@ -644,8 +664,8 @@ export function ItemDetailDialog({
               done={completed}
               disabled={pending}
               onChange={(due) =>
-                start(() => {
-                  void runAction(
+                start(async () => {
+                  await runAction(
                     updateItemAction(item.id, due ?? { dueDate: null }),
                     `change the due date of “${item.title}”`,
                   );
@@ -662,8 +682,8 @@ export function ItemDetailDialog({
               due={item}
               disabled={pending}
               onChange={(repeat) =>
-                start(() => {
-                  void runAction(
+                start(async () => {
+                  await runAction(
                     updateItemAction(item.id, { repeat }),
                     `change how “${item.title}” repeats`,
                   );
@@ -688,12 +708,7 @@ export function ItemDetailDialog({
                   size="sm"
                   disabled={pending}
                   onClick={() =>
-                    start(() => {
-                      void runAction(
-                        setItemParentAction(item.id, null),
-                        `move “${item.title}”`,
-                      );
-                    })
+                    changes.setParent(item, null)
                   }
                 >
                   <IndentDecrease />
@@ -723,12 +738,7 @@ export function ItemDetailDialog({
                         <DropdownMenuItem
                           key={t.id}
                           onClick={() =>
-                            start(() => {
-                              void runAction(
-                                setItemParentAction(item.id, t.id),
-                                `move “${item.title}”`,
-                              );
-                            })
+                            changes.setParent(item, t.id)
                           }
                         >
                           <span className="truncate">{t.title}</span>

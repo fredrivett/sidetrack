@@ -23,11 +23,7 @@ import {
   useState,
   useTransition,
 } from "react";
-import {
-  deleteItemAction,
-  setItemParentAction,
-  updateItemAction,
-} from "@/app/actions";
+import { updateItemAction } from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { modifierSymbol } from "@/lib/keyboard";
@@ -64,7 +60,7 @@ import { RepeatBadge } from "./RepeatBadge";
 import { useToday } from "./use-day-start";
 import { useAssignShortcuts } from "./useAssignShortcuts";
 import { useOptimisticAssignees } from "./use-optimistic-assignees";
-import { useSetCompleted } from "./use-optimistic-completion";
+import { useItemChanges } from "./use-optimistic-items";
 import { useCopyItemRef } from "./useCopyItemRef";
 import { agentLabel, AvatarStack, assigneeNames } from "./UserAvatar";
 import { useItemAgentSessions } from "./agent-sessions";
@@ -118,7 +114,7 @@ export function ItemRow({
 }) {
   const isDragging = drag?.isDragging ?? false;
   const [pending, start] = useTransition();
-  const setCompleted = useSetCompleted();
+  const changes = useItemChanges();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
@@ -156,29 +152,26 @@ export function ItemRow({
   });
 
   function toggle() {
-    setCompleted(item, !completed);
+    changes.setCompleted(item, !completed);
   }
   function del() {
     if (!confirmingDelete) {
       setConfirmingDelete(true);
       return;
     }
-    start(() => {
-      void runAction(deleteItemAction(item.id), `delete “${item.title}”`);
-    });
+    changes.deleteItem(item);
   }
   function setParent(parentId: string | null) {
-    start(() => {
-      void runAction(setItemParentAction(item.id, parentId), `move “${item.title}”`);
-    });
+    changes.setParent(item, parentId);
   }
   const assign = useCallback(
     (ids: string[]) => setAssignees(item.id, ids),
     [setAssignees, item.id],
   );
+  // Held: the row dims until the new date lands.
   function setDue(due: Due | null) {
-    start(() => {
-      void runAction(
+    start(async () => {
+      await runAction(
         updateItemAction(item.id, due ?? { dueDate: null }),
         `change the due date of “${item.title}”`,
       );

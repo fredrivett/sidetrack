@@ -1,9 +1,10 @@
 "use client";
 
 import { ExternalLink, Trash2 } from "lucide-react";
-import { useState, useTransition } from "react";
+import { unstable_rethrow } from "next/navigation";
+import { useState } from "react";
 import { toast } from "sonner";
-import { deleteProjectAction, updateProjectAction } from "@/app/actions";
+import { updateProjectAction } from "@/app/actions";
 import type { Project } from "@/core/schema";
 import { validatePrefix } from "@/lib/itemRef";
 import { dayLabel } from "@/lib/time";
@@ -19,6 +20,7 @@ import { EditableText } from "./EditableText";
 import { ProjectIconPicker } from "./ProjectIconPicker";
 import { StatusBadge } from "./StatusBadge";
 import { runAction } from "./run-action";
+import { useListSave, useRemoveList } from "./use-list-saves";
 
 function Field({
   label,
@@ -46,7 +48,10 @@ export function ProjectDetailDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const [pending, start] = useTransition();
+  // Changes hold on the list's column until they land; deleting takes the
+  // list off the board at once.
+  const { saving, save } = useListSave();
+  const removeList = useRemoveList();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   function change(next: boolean) {
@@ -64,19 +69,20 @@ export function ProjectDetailDialog({
       toast.error(err);
       return;
     }
-    start(() => {
-      void runAction(updateProjectAction(project.id, { prefix: normalized }), "update the prefix");
-    });
+    save(() => runAction(updateProjectAction(project.id, { prefix: normalized }), "update the prefix"));
   }
 
   // The core normalizes (adds a scheme, validates the host) and throws on a
   // value that isn't a real URL — catch it and nudge rather than failing silently.
   function saveHomepage(next: string) {
-    start(() => {
-      void updateProjectAction(project.id, {
+    save(() =>
+      updateProjectAction(project.id, {
         homepageUrl: next.trim() ? next : null,
-      }).catch(() => toast.error("That doesn't look like a valid URL."));
-    });
+      }).catch((e) => {
+        unstable_rethrow(e);
+        toast.error("That doesn't look like a valid URL.");
+      }),
+    );
   }
 
   function del() {
@@ -84,9 +90,7 @@ export function ProjectDetailDialog({
       setConfirmingDelete(true);
       return;
     }
-    start(() => {
-      void runAction(deleteProjectAction(project.id), `delete “${project.name}”`);
-    });
+    removeList({ id: project.id, name: project.name, kind: "delete" });
     change(false);
   }
 
@@ -180,7 +184,7 @@ export function ProjectDetailDialog({
             variant="destructive"
             size="sm"
             onClick={del}
-            disabled={pending}
+            disabled={saving}
           >
             <Trash2 />
             {confirmingDelete ? "Confirm delete?" : "Delete"}

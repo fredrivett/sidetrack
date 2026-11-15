@@ -64,6 +64,43 @@ server's instructions; never use another list for work in this repository.
   dialog with the same actions. Don't add per-row action buttons; put new
   actions in the context menu.
 
+## Saving changes
+
+Every Server Action the UI calls goes through `runAction`
+(`src/components/run-action.ts`), so a failure shows "Couldn't … Please try
+again." instead of failing silently or crashing the board. Choose how the UI
+shows each save with these rules:
+
+1. **Scope.** These rules cover changes the user starts. Reads show a loading
+   state. AI suggestions are advisory: they never hold and never toast.
+   Background syncs, such as the time zone, stay silent.
+2. **Never show the old state as if nothing happened.** The moment the user
+   acts, show either the new state or that it's saving. Show it on the thing
+   being changed, such as the row or the list, not only on the control,
+   because menus and dialogs close. A dialog that stays open while it saves,
+   such as New item, is where the user is looking, so it can show it there.
+3. **Optimistic** when the client can show exactly what the user will see, and
+   either they are manipulating it directly (dragging, ticking, typing) or it's
+   something done in quick runs. Show the change at once, roll it back on
+   failure, and say so in a toast. Examples: ticking items, assigning, drag to
+   reorder or nest, inline text edits (`EditableText`), deleting an item or
+   list. Board-wide item changes go through `useItemChanges()`
+   (`use-optimistic-items.ts`), list removal through `useRemoveList()`.
+4. **Hold** otherwise: dim and disable the thing being changed until the save
+   finishes, by awaiting the action inside the transition (not `void`). Always
+   hold when the server can reject the change or decides part of what the user
+   will see, such as a ref number, a deduplicated prefix, a cleaned-up URL or a
+   resized avatar. Values the user never sees, such as fractional positions,
+   don't count. Examples: due date, repeat, list status, icon, prefix,
+   homepage, moving or sorting a list (the column dims, via `useListSave()`),
+   adding an item from New item, sharing, settings.
+5. **Provisional** when the client knows most of the result but not all of it:
+   show it at once in a "saving" style until the server fills in the rest.
+   Example: a checklist line before it has its ref.
+6. **One change, one treatment.** The same change behaves the same from every
+   place it can be made: row, dialog, menu, shortcut, drag or command palette.
+   Undo and bulk versions follow the single action.
+
 # Boundaries
 
 ## Audit log invariant

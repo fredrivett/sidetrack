@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, Sparkles, X } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { suggestProjectIconsAction, updateProjectAction } from "@/app/actions";
 import type { Project } from "@/core/schema";
@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/popover";
 import { ProjectIcon } from "./ProjectIcon";
 import { runAction } from "./run-action";
+import { useListSave } from "./use-list-saves";
 
 /**
  * A list's icon, saved as soon as one is picked. AI suggestions load the
@@ -33,7 +34,8 @@ export function ProjectIconPicker({
   project: Project;
   size?: number;
 }) {
-  const [pending, start] = useTransition();
+  // Held on the list: its column dims until the new icon lands.
+  const { saving, save } = useListSave();
   // Suggestions with the list details they were made for, refetched on open
   // once the name, summary or homepage changes. Empty when AI is off (no
   // TYPESAFE_API_KEY) or the request failed, so the suggestion row stays hidden.
@@ -53,7 +55,7 @@ export function ProjectIconPicker({
       homepageUrl={project.homepageUrl}
       name={project.name}
       size={size}
-      disabled={pending}
+      disabled={saving}
       // -ml-1 cancels the p-1 hover padding so the icon itself lines up with
       // the content below the header, not 4px in from it.
       className="-ml-1"
@@ -66,9 +68,7 @@ export function ProjectIconPicker({
           .catch(() => {});
       }}
       onSelect={(next) =>
-        start(() => {
-          void runAction(updateProjectAction(project.id, { icon: next }), "update the icon");
-        })
+        save(() => runAction(updateProjectAction(project.id, { icon: next }), "update the icon"))
       }
     />
   );
