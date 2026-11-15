@@ -9,6 +9,9 @@ import { CheckIcon } from "lucide-react"
 // action, and a muted fill once done so completed rows recede with their
 // struck-through titles. An invisible switch (below) widens the hit area to
 // 32px without changing layout.
+const root = (el: HTMLElement) =>
+  el.closest<HTMLElement>('[data-slot="checkbox"]')
+
 function Checkbox({ className, ...props }: CheckboxPrimitive.Root.Props) {
   return (
     <CheckboxPrimitive.Root
@@ -26,24 +29,27 @@ function Checkbox({ className, ...props }: CheckboxPrimitive.Root.Props) {
       >
         <CheckIcon strokeWidth={3.5} />
       </CheckboxPrimitive.Indicator>
-      {/* A haptic tick on iPhone, which has no vibrate API: iOS plays one only
-          when the user's own tap toggles a native switch. So an invisible
-          switch is the 32px hit area. It must keep its native look
-          (opacity, not appearance-none) and its click must not reach the
-          Root, whose onClick preventDefaults it (cancelling the toggle).
-          The Root then gets the click instead. Android has no switch haptic
-          but does have vibrate (iOS doesn't), so it ticks from here. */}
+      {/* A haptic tick on iPhone, which has no vibrate API: iOS 18+ plays one
+          only when the user's own tap toggles a native switch (earlier iOS
+          just toggles it silently). So an invisible switch is the 32px hit
+          area. It must keep its native look (opacity, not appearance-none)
+          and its click must not reach the Root, whose onClick
+          preventDefaults it (cancelling the toggle). The Root then gets the
+          click instead, and focus too, so it never rests on this hidden
+          input. Android has no switch haptic but does have vibrate (iOS
+          doesn't), so it ticks from here. */}
       <input
         type="checkbox"
         {...{ switch: "" }}
         aria-hidden
         tabIndex={-1}
-        disabled={props.disabled}
+        disabled={props.disabled || props.readOnly}
         className="absolute -inset-2 m-0 size-8 cursor-pointer opacity-0 disabled:cursor-not-allowed"
+        onFocus={(e) => root(e.currentTarget)?.focus()}
         onClick={(e) => {
           e.stopPropagation()
           navigator.vibrate?.(10)
-          e.currentTarget.closest<HTMLElement>('[data-slot="checkbox"]')?.click()
+          root(e.currentTarget)?.click()
         }}
       />
     </CheckboxPrimitive.Root>
