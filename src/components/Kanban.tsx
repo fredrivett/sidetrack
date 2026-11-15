@@ -351,10 +351,13 @@ export function Kanban({
     [projects],
   );
 
-  // One run of columns (a tray's active or paused lists, or the whole board's
-  // without Spaces); the ⋯ menu's moves stay within it.
-  const columns = (group: ProjectView[]) =>
-    group.map((p, idx) => (
+  // The columns of a tray (or of the whole board without Spaces), given as its
+  // active and paused lists; the ⋯ menu's moves stay within each group. They
+  // render as one array, not one per group: keys only match within an array,
+  // so pausing or resuming a list would otherwise remount its column, closing
+  // its details dialog and dropping focus.
+  const columns = (groups: ProjectView[][]) =>
+    groups.flatMap((group) => group.map((p, idx) => (
       <ProjectColumn
         key={p.id}
         project={p}
@@ -371,7 +374,7 @@ export function Kanban({
         onShare={openShare}
         spaces={spaces}
       />
-    ));
+    )));
 
   // Global shortcuts: ⌘K / Ctrl+K toggles the command palette, even from a
   // field. Then Linear-style bare keys: / → palette, C → new item, ⇧C → new
@@ -534,7 +537,7 @@ export function Kanban({
                       : "No lists yet — tap + Add list to start."}
                   </div>
                 )}
-                {[active, paused].map(columns)}
+                {columns([active, paused])}
                 <AddProjectButton onClick={() => setNewList({ open: true, spaceId: "" })} />
               </>
             ) : (
@@ -561,7 +564,7 @@ export function Kanban({
                     ) : (
                       // Moves stay within the tray (and within its active or
                       // paused lists), where the new order shows.
-                      [active.filter(inTray), paused.filter(inTray)].map(columns)
+                      columns([active.filter(inTray), paused.filter(inTray)])
                     )}
                   </SpaceTray>
                 );
