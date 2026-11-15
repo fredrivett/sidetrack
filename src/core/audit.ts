@@ -9,6 +9,7 @@ import {
   type AuditEntry,
   type AuditSource,
   auditLog,
+  items,
   projects,
 } from "./schema";
 
@@ -17,6 +18,8 @@ export interface AuditEntryWithActor extends AuditEntry {
   /** Actor's name (falls back to email, then null for a deleted user);
    * "Sidetrack" for a system change. */
   actorName: string | null;
+  /** Actor's avatar image, when they've set one. */
+  actorImage: string | null;
 }
 
 /**
@@ -74,12 +77,32 @@ export function recordAudit(db: Db, input: AuditInput): void {
 export function listAudit(
   db: Db,
   userId: string,
-  opts: { projectId?: string; source?: AuditSource; limit?: number } = {},
+  opts: {
+    projectId?: string;
+    itemId?: string;
+    source?: AuditSource;
+    limit?: number;
+  } = {},
 ): AuditEntryWithActor[] {
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 500);
   const filters = [];
 
-  if (opts.projectId) {
+  if (opts.itemId) {
+    // Item-scoped view: every actor's activity on this one item. Authorized
+    // like the item itself, through its current list, so whoever can open
+    // the item can read its history and nobody else can.
+    const accessible = db
+      .select({ id: items.id })
+      .from(items)
+      .innerJoin(projects, eq(projects.id, items.projectId))
+      .where(and(eq(items.id, opts.itemId), hasProjectAccess(userId)))
+      .get();
+    if (!accessible) return [];
+    filters.push(
+      eq(auditLog.entityType, "item"),
+      eq(auditLog.entityId, opts.itemId),
+    );
+  } else if (opts.projectId) {
     // Project-scoped view: every actor's activity on this one project. The
     // projectId comes from the client, so authorize it here — only someone
     // with access to the project (owner or member) may read its history. A
@@ -112,7 +135,12 @@ export function listAudit(
   // Left-join users to resolve the actor's display name; left-join (not
   // inner) so a deleted user's rows still appear, with a null name.
   const rows = db
-    .select({ entry: auditLog, name: users.name, email: users.email })
+    .select({
+      entry: auditLog,
+      name: users.name,
+      email: users.email,
+      image: users.image,
+    })
     .from(auditLog)
     .leftJoin(users, eq(users.id, auditLog.actor))
     .leftJoin(projects, eq(projects.id, auditLog.projectId))
@@ -125,5 +153,6 @@ export function listAudit(
     ...r.entry,
     actorName:
       r.entry.actor === SYSTEM_ACTOR ? "Sidetrack" : (r.name ?? r.email ?? null),
+    actorImage: r.image,
   }));
 }
