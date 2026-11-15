@@ -295,3 +295,28 @@ describe("error results", () => {
     expect(listItems(db, fred, list.id)).toHaveLength(0);
   });
 });
+
+describe("comments", () => {
+  it("comments by ref as the agent, shows comments in get_item, and refuses a comment it can't add", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const list = createProject(db, fred, { name: "Home" }, "web");
+    const item = addItem(db, fred, { projectId: list.id, title: "Fix tap" }, "web");
+    const call = await connectAs(fred);
+
+    const added = await call("add_comment", { item_id: "HOM-1", body: "Ordered the washer" });
+    expect(added.data).toMatchObject({
+      itemId: item.id,
+      body: "Ordered the washer",
+      agentName: "Test agent",
+      author: { userId: fred, displayUsername: "fred" },
+    });
+
+    const tooLong = await call("add_comment", { item_id: "HOM-1", body: "x".repeat(10_001) });
+    expect(tooLong.error).toMatch(/^comment is too long .* — no change was made\.$/);
+
+    const { data } = await call("get_item", { id: "HOM-1" });
+    expect(data.comments).toEqual([
+      expect.objectContaining({ body: "Ordered the washer", agentName: "Test agent" }),
+    ]);
+  });
+});

@@ -47,10 +47,12 @@ type Filter = "all" | AuditSource;
 const DETAIL_VERBS = new Set([
   "accepted",
   "added",
+  "commented",
   "completed",
   "created",
   "declined",
   "deleted",
+  "edited",
   "ended",
   "finished",
   "invited",

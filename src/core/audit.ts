@@ -118,10 +118,16 @@ export function listAudit(
       .get();
     if (!accessible) return [];
     // Its sub-items' rows are those made while they were its sub-items,
-    // including ones since deleted or moved out.
+    // including ones since deleted or moved out. Its comments' rows name it
+    // as their parent too.
     filters.push(
-      eq(auditLog.entityType, "item"),
-      or(eq(auditLog.entityId, opts.itemId), eq(auditLog.parentId, opts.itemId)),
+      or(
+        and(
+          eq(auditLog.entityType, "item"),
+          or(eq(auditLog.entityId, opts.itemId), eq(auditLog.parentId, opts.itemId)),
+        ),
+        and(eq(auditLog.entityType, "comment"), eq(auditLog.parentId, opts.itemId)),
+      ),
     );
   } else if (opts.projectId) {
     // Project-scoped view: every actor's activity on this one project. The

@@ -17,6 +17,12 @@ import {
   addCategory as addCategoryCore,
   listCategories as listCategoriesCore,
 } from "@/core/categories";
+import {
+  addComment as addCommentCore,
+  deleteComment as deleteCommentCore,
+  listComments as listCommentsCore,
+  updateComment as updateCommentCore,
+} from "@/core/comments";
 import { getDb } from "@/core/db";
 import {
   addItem as addItemCore,
@@ -515,6 +521,35 @@ export async function deleteItemAction(id: string) {
   const userId = await requireUserId();
   const { db } = getDb();
   deleteItemCore(db, userId, id, SOURCE);
+  refresh();
+}
+
+export async function listCommentsAction(itemId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  return listCommentsCore(db, userId, itemId);
+}
+
+export async function addCommentAction(itemId: string, body: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const comment = addCommentCore(db, userId, itemId, body, SOURCE);
+  refresh();
+  return comment;
+}
+
+export async function updateCommentAction(id: string, body: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const comment = updateCommentCore(db, userId, id, body, SOURCE);
+  refresh();
+  return comment;
+}
+
+export async function deleteCommentAction(id: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  deleteCommentCore(db, userId, id, SOURCE);
   refresh();
 }
 

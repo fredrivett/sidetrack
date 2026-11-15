@@ -10,6 +10,7 @@ export function EditableText({
   multiline = false,
   placeholder,
   required = false,
+  maxLength,
   hold = false,
   className = "",
   inputClassName = "",
@@ -25,6 +26,7 @@ export function EditableText({
   // When true, an empty value is rejected: blanking the field reverts to the
   // current value instead of saving (mirrors the core's non-empty guard).
   required?: boolean;
+  maxLength?: number;
   /** Hold rather than show the new text, for values the server cleans up or
    * can reject: the field keeps the saved text, dimmed, until the save lands. */
   hold?: boolean;
@@ -106,6 +108,7 @@ export function EditableText({
         }}
         rows={3}
         placeholder={placeholder}
+        maxLength={maxLength}
         className={cn(
           "w-full resize-none rounded-md border border-neutral-300 bg-transparent px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-neutral-400 dark:border-neutral-700",
           inputClassName,
@@ -126,6 +129,7 @@ export function EditableText({
         if (e.key === "Enter") commit();
       }}
       placeholder={placeholder}
+      maxLength={maxLength}
       className={cn(
         "rounded-md border border-neutral-300 bg-transparent px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-neutral-400 dark:border-neutral-700",
         inputClassName,

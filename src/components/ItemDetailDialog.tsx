@@ -65,6 +65,7 @@ import { PrLink } from "./PrLink";
 import { RepeatPicker } from "./RepeatPicker";
 import { runAction } from "./run-action";
 import { EditableText } from "./EditableText";
+import { ItemComments } from "./ItemComments";
 import { InlineCode, Markdown } from "./Markdown";
 import { useAssignShortcuts } from "./useAssignShortcuts";
 import { useOptimisticAssignees } from "./use-optimistic-assignees";
@@ -799,6 +800,10 @@ export function ItemDetailDialog({
               </div>
             </Field>
           )}
+
+          <Field label="Comments">
+            <ItemComments key={item.id} item={item} viewerId={viewerId} />
+          </Field>
 
           <ItemActivity item={item} />
         </div>
