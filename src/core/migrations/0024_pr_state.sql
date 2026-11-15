@@ -1,0 +1,1 @@
+ALTER TABLE `item_pr_links` ADD `pr_state` text;

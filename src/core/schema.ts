@@ -191,9 +191,15 @@ export const items = sqliteTable(
   ],
 );
 
+// A GitHub pull request's state as the webhook last reported it.
+export const PR_STATES = ["open", "draft", "merged", "closed"] as const;
+export type PrState = (typeof PR_STATES)[number];
+
 // Many-to-many link between items and GitHub pull requests. Explicit, agent-set
 // link so a future merge handler can deterministically resolve PR → item(s)
 // without fuzzy matching. Cascades on item delete; PR rows are just URLs.
+// prState mirrors the PR on GitHub, kept by the owner's webhook; null until a
+// delivery reports it (no webhook, or linked before one arrived).
 export const itemPrLinks = sqliteTable(
   "item_pr_links",
   {
@@ -203,6 +209,7 @@ export const itemPrLinks = sqliteTable(
       .references(() => items.id, { onDelete: "cascade" }),
     prUrl: text("pr_url").notNull(),
     linkedBySource: text("linked_by_source").$type<AuditSource>().notNull(),
+    prState: text("pr_state").$type<PrState>(),
     createdAt: integer("created_at")
       .notNull()
       .default(sql`(unixepoch() * 1000)`),

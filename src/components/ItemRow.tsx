@@ -285,7 +285,7 @@ export function ItemRow({
           {prLinks.length > 0 && (
             <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 pt-0.5">
               {prLinks.map((link) => (
-                <PrLink key={link.id} url={link.prUrl} className="text-[11px]" />
+                <PrLink key={link.id} url={link.prUrl} state={link.prState} className="text-[11px]" />
               ))}
             </div>
           )}

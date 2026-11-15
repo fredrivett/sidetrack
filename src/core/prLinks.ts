@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { hasProjectAccess } from "./access";
 import { type AuditOrigin, recordAudit } from "./audit";
@@ -8,6 +8,7 @@ import {
   type ItemPrLink,
   items,
   itemPrLinks,
+  type PrState,
   projects,
 } from "./schema";
 
@@ -139,6 +140,8 @@ export function linkItemToPr(
         itemId,
         prUrl,
         linkedBySource: typeof source === "string" ? source : source.source,
+        // A PR the webhook already reported on keeps its state for new links.
+        prState: listItemsForPr(db, userId, prUrl).find((l) => l.prState)?.prState ?? null,
       })
       .run();
     recordAudit(tx as unknown as Db, {
@@ -196,4 +199,16 @@ export function unlinkItemFromPr(
       detail: `unlinked PR ${prUrl} from "${item.title}"`,
     });
   });
+}
+
+/**
+ * Record a PR's state, as GitHub reports it, on every link to it the user can
+ * see. Called for each webhook delivery about the PR.
+ */
+export function setPrState(db: Db, userId: string, prUrlRaw: string, state: PrState): void {
+  const ids = listItemsForPr(db, userId, canonicalizePrUrl(prUrlRaw)).map((l) => l.id);
+  if (ids.length === 0) return;
+  // audit-exempt: mirrors the PR's state on GitHub, not a change made in
+  // Sidetrack; the links and completions a delivery makes are audited.
+  db.update(itemPrLinks).set({ prState: state }).where(inArray(itemPrLinks.id, ids)).run();
 }
