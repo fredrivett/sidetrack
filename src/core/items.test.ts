@@ -9,7 +9,9 @@ import {
   listItems,
   reopenDueRepeats,
   reorderItem,
+  setItemOrder,
   setItemParent,
+  sortItems,
   uncompleteItem,
   updateItem,
 } from "./items";
@@ -1217,5 +1219,113 @@ describe("repeating items", () => {
     completeAt(db, userId, it.id, Date.UTC(2026, 10, 1, 12));
     expect(reopenDueRepeats(db, other, { timeZone: tz, now: Date.UTC(2026, 10, 14, 12) })).toBe(0);
     expect(getItem(db, userId, it.id)?.completedAt).not.toBeNull();
+  });
+});
+
+describe("sorting a list", () => {
+  const titles = (db: ReturnType<typeof seedProject>["db"], userId: string, projectId: string) =>
+    nestItems(listItems(db, userId, projectId)).map((i) => i.title);
+
+  it("sorts by due date soonest first, a span by its last day, undated last, ties in list order", () => {
+    const { db, userId, projectId } = seedProject();
+    addItem(db, userId, { projectId, title: "undated A" }, "web");
+    addItem(db, userId, { projectId, title: "Nov 20", dueDate: "2026-11-20" }, "web");
+    // Starts first but ends after Nov 20, so it sorts after it.
+    addItem(
+      db,
+      userId,
+      { projectId, title: "span to Nov 22", dueFrom: "2026-11-01", dueDate: "2026-11-22" },
+      "web",
+    );
+    addItem(db, userId, { projectId, title: "Nov 10 first", dueDate: "2026-11-10" }, "web");
+    addItem(db, userId, { projectId, title: "undated B" }, "web");
+    addItem(db, userId, { projectId, title: "Nov 10 second", dueDate: "2026-11-10" }, "web");
+
+    expect(sortItems(db, userId, projectId, "due", "web")).not.toBeNull();
+    expect(titles(db, userId, projectId)).toEqual([
+      "Nov 10 first",
+      "Nov 10 second",
+      "Nov 20",
+      "span to Nov 22",
+      "undated A",
+      "undated B",
+    ]);
+  });
+
+  it("sorts by date created newest first, and by name A to Z with numbers in order", () => {
+    const { db, userId, projectId } = seedProject();
+    const made = ["item 10", "Banana", "apple", "item 9"].map((title) =>
+      addItem(db, userId, { projectId, title }, "web"),
+    );
+    // Created out of list order, so newest first isn't just the list reversed.
+    [3, 1, 4, 2].forEach((ts, i) =>
+      db.update(items).set({ createdAt: ts }).where(eq(items.id, made[i].id)).run(),
+    );
+
+    sortItems(db, userId, projectId, "created", "web");
+    expect(titles(db, userId, projectId)).toEqual(["apple", "item 10", "item 9", "Banana"]);
+
+    sortItems(db, userId, projectId, "title", "web");
+    expect(titles(db, userId, projectId)).toEqual(["apple", "Banana", "item 9", "item 10"]);
+  });
+
+  it("moves sub-items with their parent and keeps their own order", () => {
+    const { db, userId, projectId } = seedProject();
+    const b = addItem(db, userId, { projectId, title: "B", subItems: ["z", "y"] }, "web");
+    addItem(db, userId, { projectId, title: "A" }, "web");
+
+    sortItems(db, userId, projectId, "title", "web");
+    const tree = nestItems(listItems(db, userId, projectId));
+    expect(tree.map((i) => i.title)).toEqual(["A", "B"]);
+    expect(tree[1].id).toBe(b.id);
+    expect(tree[1].children.map((s) => s.title)).toEqual(["z", "y"]);
+  });
+
+  it("audits a sort once, and writes nothing when the list is already in order", () => {
+    const { db, userId, projectId } = seedProject();
+    addItem(db, userId, { projectId, title: "b" }, "web");
+    addItem(db, userId, { projectId, title: "a" }, "web");
+    const before = listAudit(db, userId, { projectId }).length;
+
+    // As the sort_items tool calls it, so the row names the agent.
+    const agent = { source: "mcp" as const, agent: { keyId: "key1", name: "Amp" } };
+    sortItems(db, userId, projectId, "title", agent);
+    const log = listAudit(db, userId, { projectId });
+    expect(log).toHaveLength(before + 1);
+    expect(log[0]).toMatchObject({
+      source: "mcp",
+      agentKeyId: "key1",
+      agentName: "Amp",
+      action: "reorder",
+      entityType: "project",
+      entityId: projectId,
+      detail: 'sorted "P" by name',
+    });
+
+    expect(sortItems(db, userId, projectId, "title", agent)).toBeNull();
+    expect(listAudit(db, userId, { projectId })).toHaveLength(before + 1);
+  });
+
+  it("undoes a sort, keeping items added since at the end", () => {
+    const { db, userId, projectId } = seedProject();
+    for (const title of ["c", "a", "b"]) addItem(db, userId, { projectId, title }, "web");
+    const previous = sortItems(db, userId, projectId, "title", "web");
+    addItem(db, userId, { projectId, title: "new" }, "web");
+
+    if (!previous) throw new Error("expected the sort to change the order");
+    setItemOrder(db, userId, projectId, previous, "web");
+    expect(titles(db, userId, projectId)).toEqual(["c", "a", "b", "new"]);
+    expect(listAudit(db, userId, { projectId })[0].detail).toBe('reordered the items in "P"');
+  });
+
+  it("refuses a list the user can't see, and an unknown sort", () => {
+    const { db, userId, projectId } = seedProject();
+    addItem(db, userId, { projectId, title: "b" }, "web");
+    addItem(db, userId, { projectId, title: "a" }, "web");
+    const other = createTestUser(db);
+    expect(() => sortItems(db, other, projectId, "title", "web")).toThrow(/list not found/);
+    expect(() => setItemOrder(db, other, projectId, [], "web")).toThrow(/list not found/);
+    expect(() => sortItems(db, userId, projectId, "size" as never, "web")).toThrow(/invalid sort/);
+    expect(titles(db, userId, projectId)).toEqual(["b", "a"]);
   });
 });

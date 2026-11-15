@@ -1,0 +1,1 @@
+CREATE INDEX `audit_log_entity_ts` ON `audit_log` (`entity_id`,`ts`);

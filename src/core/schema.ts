@@ -342,6 +342,8 @@ export const auditLog = sqliteTable(
     // listAudit always filters by actor and orders by ts desc; this composite
     // serves the per-user "my activity" read without a full-table scan.
     index("audit_log_actor_ts").on(t.actor, t.ts),
+    // An item's history (listAudit with itemId) reads by entity, newest first.
+    index("audit_log_entity_ts").on(t.entityId, t.ts),
   ],
 );
 

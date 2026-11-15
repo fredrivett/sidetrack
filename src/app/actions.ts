@@ -22,8 +22,11 @@ import {
   addItem as addItemCore,
   completeItem as completeItemCore,
   deleteItem as deleteItemCore,
+  type ItemSort,
   reorderItem as reorderItemCore,
+  setItemOrder as setItemOrderCore,
   setItemParent as setItemParentCore,
+  sortItems as sortItemsCore,
   uncompleteItem as uncompleteItemCore,
   updateItem as updateItemCore,
 } from "@/core/items";
@@ -292,6 +295,7 @@ export async function addItemAction(input: {
   parentId?: string | null;
   dueDate?: string | null;
   dueFrom?: string | null;
+  assigneeIds?: string[];
   repeat?: Repeat | null;
   subItems?: string[];
 }) {
@@ -345,6 +349,21 @@ export async function reorderItemAction(id: string, ref: string) {
   const it = reorderItemCore(db, userId, id, ref, SOURCE);
   refresh();
   return it;
+}
+
+export async function sortItemsAction(projectId: string, by: ItemSort) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const previous = sortItemsCore(db, userId, projectId, by, SOURCE);
+  refresh();
+  return previous;
+}
+
+export async function setItemOrderAction(projectId: string, ids: string[]) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  setItemOrderCore(db, userId, projectId, ids, SOURCE);
+  refresh();
 }
 
 export async function setItemParentAction(
@@ -427,6 +446,7 @@ export async function listCategoriesAction(projectId: string) {
 
 export async function listAuditAction(opts: {
   projectId?: string;
+  itemId?: string;
   source?: AuditSource;
   limit?: number;
 } = {}) {
