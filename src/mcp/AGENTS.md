@@ -24,6 +24,9 @@ authenticated the request, so the audit log records which agent acted.
   tool performs no mutation — never guess an item. Pass the resolved `item.id` to
   the core function, and shape item-returning output with `withItemRef` /
   `withRefs` so the agent gets each item's display `ref` to echo back.
+- **Tests:** behaviour the tool layer owns (ref resolution, positions,
+  output shaping, error results) is tested in `tools.test.ts` through a real
+  MCP client and an in-memory DB; core behaviour is tested in `src/core`.
 - **Descriptions are agent-facing.** Write the `description` field as
   instructions for how the calling agent should render or use the result —
   see `list_all_items` and `add_item` for the tree-rendering pattern.
