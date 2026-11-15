@@ -36,7 +36,7 @@ const item = (title: string, dueDate: string | null, more: Partial<Item> = {}): 
   title,
   description: null,
   category: null,
-  assigneeId: null,
+  assigneeIds: [],
   parentId: null,
   dueDate,
   repeatEvery: null,
@@ -66,8 +66,10 @@ const section = (name: RegExp) =>
 describe("TodayView", () => {
   it("splits overdue from today and counts open items per filter", () => {
     renderToday([
-      item("today, mine", "2026-11-14", { assigneeId: "me" }),
-      item("late, theirs", "2026-11-10", { assigneeId: "them" }),
+      item("today, mine", "2026-11-14", { assigneeIds: ["me"] }),
+      item("late, theirs", "2026-11-10", { assigneeIds: ["them"] }),
+      // A joint item that includes the viewer counts as Mine, not Theirs.
+      item("today, ours", "2026-11-14", { assigneeIds: ["them", "me"] }),
       item("today, done", "2026-11-14", { completedAt: new Date(2026, 10, 14, 9).getTime() }),
       item("tomorrow", "2026-11-15"),
       item("no date", null),
@@ -83,14 +85,19 @@ describe("TodayView", () => {
 
     // Counts are open items only: the finished one shows but doesn't count.
     const filters = within(screen.getByRole("group", { name: "Whose items" }));
-    expect(filters.getByRole("button", { name: /All/ }).textContent).toBe("All2");
-    expect(filters.getByRole("button", { name: /Mine/ }).textContent).toBe("Mine1");
+    expect(filters.getByRole("button", { name: /All/ }).textContent).toBe("All3");
+    expect(filters.getByRole("button", { name: /Mine/ }).textContent).toBe("Mine2");
     expect(filters.getByRole("button", { name: /Theirs/ }).textContent).toBe("Theirs1");
     expect(filters.getByRole("button", { name: /Unassigned/ }).textContent).toBe("Unassigned");
 
     fireEvent.click(filters.getByRole("button", { name: /Theirs/ }));
     expect(screen.getByText("late, theirs")).toBeTruthy();
     expect(screen.queryByText("today, mine")).toBeNull();
+    expect(screen.queryByText("today, ours")).toBeNull();
+
+    fireEvent.click(filters.getByRole("button", { name: /Mine/ }));
+    expect(screen.getByText("today, ours")).toBeTruthy();
+    expect(screen.queryByText("late, theirs")).toBeNull();
   });
 
   it("says when nothing is due, and when a filter hides everything", () => {
@@ -98,7 +105,7 @@ describe("TodayView", () => {
     expect(screen.getByText(/Nothing due today/)).toBeTruthy();
     cleanup();
 
-    renderToday([item("mine", "2026-11-14", { assigneeId: "me" })]);
+    renderToday([item("mine", "2026-11-14", { assigneeIds: ["me"] })]);
     fireEvent.click(screen.getByRole("button", { name: /Theirs/ }));
     expect(screen.getByText("Nothing here for this filter.")).toBeTruthy();
   });

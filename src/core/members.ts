@@ -308,16 +308,27 @@ export function removeMember(
     tx.delete(projectMembers)
       .where(eq(projectMembers.id, membership.id))
       .run();
-    // Unassign them from any items they held here: once they lose access they
-    // can't action that work, so leaving it assigned would be a lie. Like the
-    // ordering-slot cleanup below, this is a mechanical consequence of the
-    // (audited) removal, not its own event — so no per-item audit row.
-    tx.update(items)
-      .set({ assigneeId: null })
+    // Take them off any items they held here, leaving any other assignees of
+    // a joint item in place: once they lose access they can't action that
+    // work, so leaving it assigned would be a lie. Like the ordering-slot
+    // cleanup below, this is a consequence of the (audited) removal, not its
+    // own event, so no per-item audit row: the removal's row says how many.
+    const held = tx
+      .select({ id: items.id, assigneeIds: items.assigneeIds })
+      .from(items)
       .where(
-        and(eq(items.projectId, projectId), eq(items.assigneeId, targetUserId)),
+        and(
+          eq(items.projectId, projectId),
+          sql`exists (select 1 from json_each(${items.assigneeIds}) where value = ${targetUserId})`,
+        ),
       )
-      .run();
+      .all();
+    for (const it of held) {
+      tx.update(items)
+        .set({ assigneeIds: it.assigneeIds.filter((a) => a !== targetUserId) })
+        .where(eq(items.id, it.id))
+        .run();
+    }
     // Drop their ordering slot too (no user FK to cascade it). A pending
     // member never had one, so this is a harmless no-op in that case.
     tx.delete(projectPositions)
@@ -335,7 +346,9 @@ export function removeMember(
       entityType: "member",
       entityId: membership.id,
       projectId,
-      detail,
+      detail: held.length
+        ? `${detail}, unassigned from ${held.length} item${held.length === 1 ? "" : "s"}`
+        : detail,
     });
   });
 }

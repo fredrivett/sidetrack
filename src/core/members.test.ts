@@ -145,16 +145,31 @@ describe("project membership", () => {
       ).not.toThrow();
     });
 
-    it("unassigns the removed member from items they held", () => {
-      const item = addItem(
-        db,
-        owner,
-        { projectId, title: "t" },
-        "web",
-      );
-      updateItem(db, owner, item.id, { assigneeId: alice }, "web");
+    it("takes a removed member off their items, keeping joint items' other assignees", () => {
+      const add = (pid: string, title: string, assigneeIds: string[]) => {
+        const it = addItem(db, owner, { projectId: pid, title }, "web");
+        return updateItem(db, owner, it.id, { assigneeIds }, "web").id;
+      };
+      const joint = add(projectId, "joint", [owner, alice]);
+      const hers = add(projectId, "hers", [alice]);
+      const mine = add(projectId, "mine", [owner]);
+      // Her assignment on another of the owner's lists she stays on is kept.
+      const other = createProject(db, owner, { name: "Other" }, "web").id;
+      inviteMember(db, owner, other, "alice", "web");
+      acceptInvite(db, alice, other, "web");
+      const elsewhere = add(other, "elsewhere", [alice]);
+
       removeMember(db, owner, projectId, alice, "web");
-      expect(getItem(db, owner, item.id)?.assigneeId).toBeNull();
+      const assigneesOf = (id: string) => getItem(db, owner, id)?.assigneeIds;
+      expect(assigneesOf(joint)).toEqual([owner]);
+      expect(assigneesOf(hers)).toEqual([]);
+      expect(assigneesOf(mine)).toEqual([owner]);
+      expect(assigneesOf(elsewhere)).toEqual([alice]);
+      // One audit row for the removal, in the same transaction, saying how many.
+      const entry = listAudit(db, owner).find(
+        (e) => e.entityType === "member" && e.action === "delete",
+      );
+      expect(entry?.detail).toBe("removed @alice, unassigned from 2 items");
     });
 
     it("unassigns a member's items when they leave", () => {
@@ -164,9 +179,9 @@ describe("project membership", () => {
         { projectId, title: "t" },
         "web",
       );
-      updateItem(db, owner, item.id, { assigneeId: alice }, "web");
+      updateItem(db, owner, item.id, { assigneeIds: [alice] }, "web");
       removeMember(db, alice, projectId, alice, "web");
-      expect(getItem(db, owner, item.id)?.assigneeId).toBeNull();
+      expect(getItem(db, owner, item.id)?.assigneeIds).toEqual([]);
     });
   });
 

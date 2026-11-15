@@ -17,6 +17,60 @@ export function assigneeName(u: AvatarUser): string {
     : (u.name ?? u.email ?? u.userId);
 }
 
+/** Everyone on an item, for labels: "@fred", "@fred and @lorna". */
+export function assigneeNames(users: AvatarUser[]): string {
+  return new Intl.ListFormat("en", { type: "conjunction" }).format(
+    users.map(assigneeName),
+  );
+}
+
+/**
+ * An item's assignees as overlapping avatars, each ringed in the surface
+ * colour behind it (`ringClassName`) so the overlaps read as separate people.
+ * The leftmost sits on top, in reading order, and past `max` the last slot
+ * becomes a "+N" chip tucked beneath the rest.
+ */
+export function AvatarStack({
+  users,
+  size = 20,
+  max = 3,
+  ringClassName = "ring-white dark:ring-neutral-900",
+}: {
+  users: AvatarUser[];
+  size?: number;
+  max?: number;
+  ringClassName?: string;
+}) {
+  const shown = users.length > max ? users.slice(0, max - 1) : users;
+  const extra = users.length - shown.length;
+  const overlap = { marginLeft: -Math.round(size * 0.2) };
+  return (
+    <span className="isolate flex items-center">
+      {shown.map((u, i) => (
+        <span
+          key={u.userId}
+          className="relative flex"
+          style={{ ...(i > 0 ? overlap : {}), zIndex: shown.length - i }}
+        >
+          <UserAvatar user={u} size={size} className={cn("ring-2", ringClassName)} />
+        </span>
+      ))}
+      {extra > 0 && (
+        <span
+          aria-hidden
+          className={cn(
+            "inline-flex shrink-0 items-center justify-center rounded-full bg-neutral-100 font-medium text-neutral-500 ring-2 dark:bg-neutral-800 dark:text-neutral-300",
+            ringClassName,
+          )}
+          style={{ ...overlap, width: size, height: size, fontSize: Math.round(size * 0.45) }}
+        >
+          +{extra}
+        </span>
+      )}
+    </span>
+  );
+}
+
 function initial(u: AvatarUser): string {
   const source = u.name ?? u.displayUsername ?? u.email ?? "";
   return source.trim().charAt(0).toUpperCase() || "?";

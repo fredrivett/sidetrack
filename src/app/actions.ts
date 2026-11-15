@@ -182,7 +182,9 @@ export async function updateItemAction(
     title?: string;
     description?: string | null;
     category?: string | null;
-    assigneeId?: string | null;
+    assigneeIds?: string[];
+    addAssigneeIds?: string[];
+    removeAssigneeIds?: string[];
     dueDate?: string | null;
     repeat?: Repeat | null;
   },
