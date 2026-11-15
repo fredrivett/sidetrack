@@ -41,6 +41,7 @@ import {
   setTimeZone as setTimeZoneCore,
   setAvatarUrl as setAvatarUrlCore,
   setUploadedAvatar as setUploadedAvatarCore,
+  setUsername as setUsernameCore,
 } from "@/core/users";
 import { getCurrentSession, requireUserId } from "@/auth/session";
 import { notifyInvite } from "@/lib/email";
@@ -257,6 +258,24 @@ export async function uploadAvatarAction(formData: FormData) {
   if (!(file instanceof File)) throw new Error("no avatar file");
   const { db } = getDb();
   setUploadedAvatarCore(db, userId, new Uint8Array(await file.arrayBuffer()), SOURCE);
+  refresh();
+}
+
+/**
+ * Change the signed-in user's username, keeping the casing they typed.
+ * Returns the reason it was refused ("taken", "reserved", …): production
+ * builds hide a thrown Server Action's message, and these are expected.
+ */
+export async function setUsernameAction(
+  username: string,
+): Promise<{ error: string } | undefined> {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  try {
+    setUsernameCore(db, userId, username, SOURCE);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Couldn't update username." };
+  }
   refresh();
 }
 

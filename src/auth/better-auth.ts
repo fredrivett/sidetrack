@@ -128,6 +128,10 @@ function withNormalizedAvatar<T extends { image?: unknown }>(
   }
 }
 
+// User fields people edit, which core owns and audits. `name` has no editor
+// yet; it's blocked so a direct API call can't change it unaudited either.
+const PROFILE_FIELDS = ["name", "image", "username", "displayUsername"] as const;
+
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
     provider: "sqlite",
@@ -186,13 +190,14 @@ export const auth = betterAuth({
         },
       },
       update: {
-        // Avatar changes go through setAvatarUrl / setUploadedAvatar in core,
-        // which audit them in the same transaction. /update-user would write
-        // the image with no audit row, so it may not touch it.
+        // Profile changes go through core (setUsername, setAvatarUrl,
+        // setUploadedAvatar), which audit them in the same transaction.
+        // /update-user would write them with no audit row, so it may not
+        // touch them. Better Auth's own updates (e.g. emailVerified) pass.
         before: async (user) => {
-          if (user.image !== undefined) {
+          if (PROFILE_FIELDS.some((field) => user[field] !== undefined)) {
             throw new APIError("BAD_REQUEST", {
-              message: "Change your avatar from the Profile page.",
+              message: "Change your profile from the Profile page.",
             });
           }
         },

@@ -1,9 +1,10 @@
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { avatars, users } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
 import { uploadedAvatarPath } from "../lib/avatar";
 import { normalizeWebUrl } from "../lib/url";
+import { isReservedUsername, validateUsername } from "../lib/username";
 
 /** The IANA timezone the user's browser last reported, or null. */
 export function getTimeZone(db: Db, userId: string): string | null {
@@ -31,6 +32,62 @@ export function getProfile(db: Db, userId: string) {
       .where(eq(users.id, userId))
       .get() ?? null
   );
+}
+
+/**
+ * Change the user's handle. `raw` keeps the casing they typed (shown as
+ * displayUsername); lookups and uniqueness use it lowercased, as Better Auth's
+ * username plugin does at sign-up, with the same rules (lib/username.ts).
+ * A case-only change is a real change. No-op when identical.
+ */
+export function setUsername(
+  db: Db,
+  userId: string,
+  raw: string,
+  source: AuditOrigin,
+): string {
+  const problem = validateUsername(raw);
+  if (problem) throw new Error(problem);
+  if (isReservedUsername(raw)) throw new Error(`${raw} is reserved.`);
+  const username = raw.toLowerCase();
+  const current = db
+    .select({ displayUsername: users.displayUsername })
+    .from(users)
+    .where(eq(users.id, userId))
+    .get();
+  if (!current) throw new Error("unknown user");
+  if (current.displayUsername === raw) return raw;
+  const taken = () => new Error(`${raw} is taken.`);
+  if (
+    db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.username, username), ne(users.id, userId)))
+      .get()
+  ) {
+    throw taken();
+  }
+  try {
+    db.transaction((tx) => {
+      tx.update(users)
+        .set({ username, displayUsername: raw, updatedAt: new Date() })
+        .where(eq(users.id, userId))
+        .run();
+      recordAudit(tx as unknown as Db, {
+        actor: userId,
+        source,
+        action: "update",
+        entityType: "profile",
+        entityId: userId,
+        detail: `username from @${current.displayUsername} to @${raw}`,
+      });
+    });
+  } catch (error) {
+    // Someone else took it between the check and the write.
+    if ((error as { code?: string }).code === "SQLITE_CONSTRAINT_UNIQUE") throw taken();
+    throw error;
+  }
+  return raw;
 }
 
 /**

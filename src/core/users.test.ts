@@ -7,8 +7,11 @@ import {
   setAvatarUrl,
   setTimeZone,
   setUploadedAvatar,
+  setUsername,
 } from "./users";
+import { eq } from "drizzle-orm";
 import { listAudit } from "./audit";
+import { users } from "./auth-schema";
 
 describe("user timezone", () => {
   it("is unknown until saved, then round-trips", () => {
@@ -92,5 +95,39 @@ describe("avatar", () => {
         ["delete", "avatar", userId, "web"],
       ]),
     );
+  });
+});
+
+describe("username", () => {
+  it("renames, keeping the typed casing for display, and audits each real change", () => {
+    const { db } = createTestDb();
+    const userId = createTestUser(db, { username: "fred" });
+    const handle = () =>
+      db.select().from(users).where(eq(users.id, userId)).get();
+
+    setUsername(db, userId, "Fred", "web");
+    expect(handle()).toMatchObject({ username: "fred", displayUsername: "Fred" });
+    setUsername(db, userId, "Fred", "web"); // unchanged: no row
+    setUsername(db, userId, "FredR", "web");
+    expect(handle()).toMatchObject({ username: "fredr", displayUsername: "FredR" });
+
+    const log = listAudit(db, userId)
+      .filter((e) => e.entityType === "profile")
+      .map((e) => e.detail);
+    expect(log).toHaveLength(2);
+    expect(log).toEqual(
+      expect.arrayContaining(["username from @fred to @Fred", "username from @Fred to @FredR"]),
+    );
+  });
+
+  it("rejects a handle someone else has (any casing), a reserved one, or a malformed one", () => {
+    const { db } = createTestDb();
+    createTestUser(db, { username: "alice" });
+    const userId = createTestUser(db, { username: "bob" });
+    expect(() => setUsername(db, userId, "ALICE", "web")).toThrow(/taken/);
+    expect(() => setUsername(db, userId, "Admin", "web")).toThrow(/reserved/);
+    expect(() => setUsername(db, userId, "bob-2", "web")).toThrow(/Letters, numbers/);
+    expect(db.select().from(users).where(eq(users.id, userId)).get()?.username).toBe("bob");
+    expect(listAudit(db, userId).filter((e) => e.entityType === "profile")).toEqual([]);
   });
 });

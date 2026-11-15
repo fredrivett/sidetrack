@@ -90,6 +90,10 @@ commit or fail together — never write one without the other.
   `ensureCategory`, telemetry, backfills) outside a transaction, with the
   reason. `audit.test.ts` lists every table as audited or exempt; a new table
   fails it until you decide.
+- Profile fields (`name`, `image`, `username`, `displayUsername`) change only
+  through core (`setUsername`, `setAvatarUrl`, `setUploadedAvatar`); Better
+  Auth's `/update-user` refuses them, since its writes can't be audited in our
+  transactions.
 
 # Review
 
