@@ -74,40 +74,29 @@ const space = { id: "s1", name: "Team", icon: null } as SpaceView;
 describe.each([
   ["without Spaces", [] as SpaceView[], null],
   ["in a Space's tray", [space], space.id],
-])("Kanban, pausing a list %s", (_, spaces, spaceId) => {
-  const before = board(
-    [list("a", "Home", "active", spaceId), list("b", "Work", "active", spaceId)],
-    spaces,
-  );
-  // Paused lists follow the active ones, so Home moves behind Work.
-  const after = board(
-    [list("a", "Home", "paused", spaceId), list("b", "Work", "active", spaceId)],
-    spaces,
-  );
+])("Kanban, an archived list %s", (_, spaces, spaceId) => {
+  const columns = () =>
+    [...document.querySelectorAll("[data-project-id]")].map((c) =>
+      c.getAttribute("data-project-id"),
+    );
 
-  it("keeps its column, and focus in it", () => {
-    const { rerender } = render(before);
-    const [trigger] = screen.getAllByRole("button", { name: "List options" });
-    trigger.focus();
+  it("shows only in the Archived view", () => {
+    render(
+      board(
+        [list("a", "Home", "archived", spaceId), list("b", "Work", "active", spaceId)],
+        spaces,
+      ),
+    );
+    expect(columns()).toEqual(["b"]);
 
-    rerender(after);
+    const account = screen.getByRole("button", { name: "Account" });
+    fireEvent.pointerDown(account);
+    fireEvent.click(account);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Archived lists (1)" }));
+    expect(screen.getByRole("heading", { name: "Archived lists" })).toBeTruthy();
+    expect(columns()).toEqual(["a"]);
 
-    const columns = [...document.querySelectorAll("[data-project-id]")];
-    expect(columns.map((c) => c.getAttribute("data-project-id"))).toEqual(["b", "a"]);
-    expect(document.activeElement).toBe(trigger);
-    expect(columns[1].contains(trigger)).toBe(true);
-  });
-
-  it("keeps its details dialog open", () => {
-    const { rerender } = render(before);
-    const [trigger] = screen.getAllByRole("button", { name: "List options" });
-    fireEvent.pointerDown(trigger);
-    fireEvent.click(trigger);
-    fireEvent.click(screen.getByRole("menuitem", { name: "List details" }));
-    expect(screen.getByRole("dialog").textContent).toContain("Home");
-
-    rerender(after);
-
-    expect(screen.getByRole("dialog").textContent).toContain("Home");
+    fireEvent.click(screen.getByRole("button", { name: "Back to board" }));
+    expect(columns()).toEqual(["b"]);
   });
 });

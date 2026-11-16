@@ -66,7 +66,8 @@ const BOARD_VIEWS = [
   ["agenda", "Agenda"],
   ["done", "Done"],
 ] as const;
-export type BoardView = (typeof BOARD_VIEWS)[number][0];
+/** The switch's views, plus Archived, which the account menu opens. */
+export type BoardView = (typeof BOARD_VIEWS)[number][0] | "archived";
 
 /** How many more older finished items the Done view loads at a time. */
 const DONE_PAGE = 50;
@@ -286,14 +287,15 @@ export function Kanban({
     projectName: string;
   }>({ open: false, projectId: null, projectName: "" });
 
-  // Active lists keep the viewer's order; paused lists follow, collapsed at the
-  // end; archived lists leave the board for the Account menu's Archived lists. Each group
-  // keeps its own neighbours and ends for the Move items, so a move never crosses
-  // into another group (where the position change wouldn't show).
+  // Active lists are on the board, in the viewer's order. Archived lists, and
+  // their items, show only in the Archived view, in the same order. Each
+  // keeps its own neighbours and ends for the Move items, so a move never
+  // crosses into the other (where the position change wouldn't show).
   const active = projects.filter((p) => p.status === "active");
-  const paused = projects.filter((p) => p.status === "paused");
   const archived = projects.filter((p) => p.status === "archived");
-  const onBoard = [...active, ...paused];
+  // The lists the views' dialogs (an item's, New item) can reach: archived
+  // ones too only from the Archived view.
+  const shown = view === "archived" ? projects : active;
 
   // For someone in a Space, the board groups lists on trays, in their own
   // order: "Personal" for lists in none of their Spaces, and one per Space,
@@ -311,7 +313,7 @@ export function Kanban({
   const trayOf = (p: ProjectView) =>
     spaces.find((s) => s.id === p.spaceId)?.id ?? "personal";
   const trayByList: Record<string, string> = Object.fromEntries(
-    onBoard.map((p) => [p.id, trayOf(p)]),
+    active.map((p) => [p.id, trayOf(p)]),
   );
   const [collapsedTrays, setCollapsedTrays] = useState(() => {
     const collapsed = new Set(initialCollapsedTrays);
@@ -337,14 +339,14 @@ export function Kanban({
   // since left every list no longer narrows anything.
   const people = [
     ...new Map(
-      onBoard.flatMap((p) => assigneesByProject[p.id] ?? []).map((a) => [a.userId, a]),
+      active.flatMap((p) => assigneesByProject[p.id] ?? []).map((a) => [a.userId, a]),
     ).values(),
   ].sort((a, b) => assigneeName(a).localeCompare(assigneeName(b)));
   // Every label on the board's lists; the same name in two lists is one
   // choice. A label since removed everywhere no longer narrows either.
   const labelChoices = [
     ...new Map(
-      onBoard
+      active
         .flatMap((p) => labelsByProject[p.id] ?? [])
         .reverse()
         .map((l) => [l.name, { name: l.name, emoji: l.emoji }]),
@@ -373,7 +375,7 @@ export function Kanban({
   const [paletteOpen, setPaletteOpen] = useState(false);
   // Items opened from the palette get their own dialog here, since the item
   // may sit in a list the current view doesn't show.
-  const boardItems = onBoard.flatMap((p) => itemsByProject[p.id] ?? []);
+  const boardItems = shown.flatMap((p) => itemsByProject[p.id] ?? []);
 
   // Whether an item just added shows under the viewer's filters, as its list
   // decides (shownInGroups): it matches, taking the date and labels it lacks
@@ -389,7 +391,7 @@ export function Kanban({
     );
   };
   const paletteDetail = useItemDetailDialog(boardItems);
-  const paletteProject = onBoard.find(
+  const paletteProject = shown.find(
     (p) => p.id === paletteDetail.item?.projectId,
   );
 
@@ -429,22 +431,19 @@ export function Kanban({
   // start a list instead.
   const openNewItem = useCallback(
     (projectId?: string) => {
-      if (!projects.some((p) => p.status !== "archived")) {
+      if (!projects.some((p) => view === "archived" || p.status === "active")) {
         setNewList({ open: true, spaceId: "" });
         return;
       }
       setNewItem({ open: true, projectId: projectId ?? null });
     },
-    [projects],
+    [projects, view],
   );
 
-  // The columns of a tray (or of the whole board without Spaces), given as its
-  // active and paused lists; the ⋯ menu's moves stay within each group. They
-  // render as one array, not one per group: keys only match within an array,
-  // so pausing or resuming a list would otherwise remount its column, closing
-  // its details dialog and dropping focus.
-  const columns = (groups: ProjectView[][]) =>
-    groups.flatMap((group) => group.map((p, idx) => (
+  // The columns of a tray, the whole board without Spaces, or the Archived
+  // view; the ⋯ menu's moves stay within the group.
+  const columns = (group: ProjectView[]) =>
+    group.map((p, idx) => (
       <ProjectColumn
         key={p.id}
         project={p}
@@ -462,7 +461,7 @@ export function Kanban({
         spaces={spaces}
         filters={shownFilters}
       />
-    )));
+    ));
 
   // Global shortcuts: ⌘K / Ctrl+K toggles the command palette, even from a
   // field. Then Linear-style bare keys: / → palette, C → new item, ⇧C → new
@@ -569,7 +568,7 @@ export function Kanban({
         >
           {/* The count gives way on phones and small tablets, where the header is full. */}
           <span className="hidden whitespace-nowrap text-xs text-neutral-400 md:inline">
-            {onBoard.length} list{onBoard.length === 1 ? "" : "s"}
+            {active.length} list{active.length === 1 ? "" : "s"}
           </span>
           <FilterMenu
             filters={shownFilters}
@@ -588,7 +587,11 @@ export function Kanban({
             <History />
             <span className="hidden sm:inline">Activity</span>
           </Button>
-          <UserMenu user={viewer} archived={archived} />
+          <UserMenu
+            user={viewer}
+            archivedCount={archived.length}
+            onShowArchived={() => switchView("archived")}
+          />
         </BoardHeader>
         <InvitesBanner invites={pendingInvites} spaceInvites={pendingSpaceInvites} />
         {view === "agenda" ? (
@@ -603,7 +606,7 @@ export function Kanban({
           />
         ) : view === "done" ? (
           <DoneView
-            projects={onBoard}
+            projects={active}
             itemsByProject={itemsByProject}
             assigneesByProject={assigneesByProject}
             prLinksByItem={prLinksByItem}
@@ -616,24 +619,45 @@ export function Kanban({
             onLoadMore={loadMoreDone}
             onRetry={retryDone}
           />
+        ) : view === "archived" ? (
+          // The one place archived lists and their items show. No rail ref:
+          // ?p= follows the board's lists only. None of the switch's views is
+          // on, so a title says where this is.
+          <>
+            <div className="flex items-center justify-between gap-2 px-3 pt-3 sm:px-4">
+              <h2 className="text-sm font-semibold">Archived lists</h2>
+              <Button variant="outline" size="sm" onClick={() => switchView("board")}>
+                Back to board
+              </Button>
+            </div>
+            <BoardRail>
+              {archived.length === 0 ? (
+                <div className="m-auto text-sm text-neutral-500">
+                  No archived lists — archive one from its ⋯ menu.
+                </div>
+              ) : (
+                columns(archived)
+              )}
+            </BoardRail>
+          </>
         ) : (
           <BoardRail ref={railRef}>
             {spaces.length === 0 ? (
               <>
-                {onBoard.length === 0 && (
+                {active.length === 0 && (
                   <div className="m-auto text-sm text-neutral-500">
                     {archived.length > 0
-                      ? "Every list is archived — restore one from your account menu, or tap + Add list."
+                      ? "Every list is archived — restore one from Archived lists in the account menu, or tap + Add list."
                       : "No lists yet — tap + Add list to start."}
                   </div>
                 )}
-                {columns([active, paused])}
+                {columns(active)}
                 <AddProjectButton onClick={() => setNewList({ open: true, spaceId: "" })} />
               </>
             ) : (
               trays.map((tray, at) => {
                 const inTray = (p: ProjectView) => trayOf(p) === tray.id;
-                const lists = onBoard.filter(inTray);
+                const lists = active.filter(inTray);
                 const spaceId = tray.id === "personal" ? "" : tray.id;
                 const saving = movingTrays.includes(tray.id);
                 return (
@@ -666,9 +690,8 @@ export function Kanban({
                         onClick={() => setNewList({ open: true, spaceId })}
                       />
                     ) : (
-                      // Moves stay within the tray (and within its active or
-                      // paused lists), where the new order shows.
-                      columns([active.filter(inTray), paused.filter(inTray)])
+                      // Moves stay within the tray, where the new order shows.
+                      columns(lists)
                     )}
                   </SpaceTray>
                 );
@@ -699,7 +722,7 @@ export function Kanban({
             setNewItem((s) => ({ ...s, open: false }));
             paletteDetail.openDetail(item);
           }}
-          projects={onBoard}
+          projects={shown}
           assigneesByProject={assigneesByProject}
           viewerId={viewerId}
           initialProjectId={newItem.projectId}
@@ -719,7 +742,7 @@ export function Kanban({
         <CommandPalette
           open={paletteOpen}
           onOpenChange={setPaletteOpen}
-          lists={onBoard}
+          lists={active}
           itemsByProject={itemsByProject}
           onNewItem={() => openNewItem()}
           onNewList={() => setNewList({ open: true, spaceId: "" })}

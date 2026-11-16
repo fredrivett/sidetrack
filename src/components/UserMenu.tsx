@@ -1,11 +1,9 @@
 "use client";
 
-import { Boxes, Check, CircleUserRound, KeyRound, Loader2, LogOut, UserRound } from "lucide-react";
+import { Archive, Boxes, Check, CircleUserRound, KeyRound, Loader2, LogOut, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
-import { updateProjectAction } from "@/app/actions";
-import type { Project } from "@/core/schema";
 import { useCopy } from "@/components/ui/use-copy";
 import {
   DropdownMenu,
@@ -18,31 +16,24 @@ import { GitHubMark } from "@/components/GitHubMark";
 import { UserAvatar, type AvatarUser } from "@/components/UserAvatar";
 import { signOut } from "@/auth/client";
 import { RELEASE } from "@/lib/release";
-import { ArchivedListsSubmenu } from "./ArchivedListsMenu";
-import { runAction } from "./run-action";
 
 /**
- * The avatar's menu: settings, archived lists (restoring one brings it back
- * to the board), sign out and the build.
+ * The avatar's menu: settings, the Archived lists view, sign out and the
+ * build.
  */
 export function UserMenu({
   user,
-  archived = [],
+  archivedCount,
+  onShowArchived,
 }: {
   user: AvatarUser | null;
-  /** Lists off the board, restorable from here. */
-  archived?: Project[];
+  /** How many lists are archived, for the Archived lists item. */
+  archivedCount: number;
+  /** Opens the Archived lists view. */
+  onShowArchived: () => void;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  // A restore holds the avatar, dimmed and ignoring another restore, until
-  // the list is back on the board.
-  const [restoring, startRestore] = useTransition();
-  const restore = (l: Project) =>
-    !restoring &&
-    startRestore(async () => {
-      await runAction(updateProjectAction(l.id, { status: "active" }), `restore “${l.name}”`);
-    });
 
   function onSignOut() {
     startTransition(async () => {
@@ -64,11 +55,7 @@ export function UserMenu({
           <button
             type="button"
             aria-label="Account"
-            aria-busy={restoring || undefined}
-            aria-disabled={restoring || undefined}
-            className={`shrink-0 rounded-full outline-none transition-opacity hover:opacity-80 focus-visible:ring-3 focus-visible:ring-ring/50 ${
-              restoring ? "opacity-50" : ""
-            }`}
+            className="shrink-0 rounded-full outline-none transition-opacity hover:opacity-80 focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             {user ? (
               <UserAvatar user={user} size={28} />
@@ -111,12 +98,11 @@ export function UserMenu({
             </Link>
           }
         />
-        {archived.length > 0 && (
-          <>
-            <DropdownMenuSeparator />
-            <ArchivedListsSubmenu lists={archived} onRestore={restore} />
-          </>
-        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={onShowArchived}>
+          <Archive />
+          Archived lists{archivedCount > 0 ? ` (${archivedCount})` : ""}
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         {/* Stays open so "Signing out…" shows until the redirect to /login. */}
         <DropdownMenuItem closeOnClick={false} onClick={onSignOut} disabled={pending}>

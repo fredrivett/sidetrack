@@ -2,6 +2,7 @@
 
 import {
   Archive,
+  ArchiveRestore,
   ArrowDownAZ,
   ArrowDownUp,
   Boxes,
@@ -13,8 +14,6 @@ import {
   History,
   Info,
   LogOut,
-  Pause,
-  Play,
   Plus,
   Trash2,
   Undo2,
@@ -116,8 +115,8 @@ export function ProjectMenu({
     save(() => runAction(fn(), what));
   }
 
-  function setStatus(next: ProjectStatus) {
-    run(() => updateProjectAction(projectId, { status: next }), `update “${name}”`);
+  function restore() {
+    run(() => updateProjectAction(projectId, { status: "active" }), `restore “${name}”`);
   }
 
   function archive() {
@@ -126,8 +125,8 @@ export function ProjectMenu({
         return;
       }
       toast(`Archived "${name}"`, {
-        description: "Restore it any time from Archived in the header.",
-        action: { label: UNDO, onClick: () => setStatus(status) },
+        description: "Restore it any time from Archived lists in the account menu.",
+        action: { label: UNDO, onClick: restore },
       });
     });
   }
@@ -279,21 +278,17 @@ export function ProjectMenu({
           Activity
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        {status === "paused" ? (
-          <DropdownMenuItem onClick={() => setStatus("active")}>
-            <Play />
-            Resume list
+        {status === "archived" ? (
+          <DropdownMenuItem onClick={restore}>
+            <ArchiveRestore />
+            Restore list
           </DropdownMenuItem>
         ) : (
-          <DropdownMenuItem onClick={() => setStatus("paused")}>
-            <Pause />
-            Pause list
+          <DropdownMenuItem onClick={archive}>
+            <Archive />
+            Archive list
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem onClick={archive}>
-          <Archive />
-          Archive list
-        </DropdownMenuItem>
         {isOwner && (
           <DropdownMenuItem onClick={() => onShare(projectId, name)}>
             <UserPlus />

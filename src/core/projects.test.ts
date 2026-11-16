@@ -95,15 +95,15 @@ describe("projects", () => {
     const u = createTestUser(db);
     const home = createProject(db, u, { name: "Home" }, "web");
     const trip = createProject(db, u, { name: "Trip" }, "web");
-    const paused = createProject(db, u, { name: "Someday" }, "web");
+    const archived = createProject(db, u, { name: "Someday" }, "web");
     for (const title of ["Water plants", "Descale", "Mow lawn"]) {
       addItem(db, u, { projectId: home.id, title }, "web");
     }
     const done = addItem(db, u, { projectId: trip.id, title: "Book flights" }, "web");
     completeItem(db, u, done.id, "web");
     addItem(db, u, { projectId: trip.id, title: "Pack" }, "web");
-    addItem(db, u, { projectId: paused.id, title: "Learn piano" }, "web");
-    updateProject(db, u, paused.id, { status: "paused" }, "web");
+    addItem(db, u, { projectId: archived.id, title: "Learn piano" }, "web");
+    updateProject(db, u, archived.id, { status: "archived" }, "web");
 
     expect(Object.fromEntries(sampleOpenItemTitles(db, u, 2))).toEqual({
       [home.id]: ["Water plants", "Descale"],
