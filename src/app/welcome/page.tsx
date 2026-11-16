@@ -10,6 +10,7 @@ import { getCurrentSession } from "@/auth/session";
 import { isSignUpOpen } from "@/auth/signup";
 import { dayOf } from "@/lib/time";
 import { cn } from "@/lib/utils";
+import { appBaseUrl, SITE_DESCRIPTION } from "../site";
 import { PreviewBoard } from "./PreviewBoard";
 
 // The landing page. src/proxy.ts shows it at / to signed-out visitors (the
@@ -17,10 +18,11 @@ import { PreviewBoard } from "./PreviewBoard";
 
 export const dynamic = "force-dynamic";
 
+// The description, Open Graph and social card come from the root layout.
+// The canonical URL is /, where signed-out visitors see this page.
 export const metadata: Metadata = {
-  title: "Sidetrack · the home for everything you get sidetracked by",
-  description:
-    "A calm, self-hostable board for your side projects, with an MCP server built in so your AI agents can keep it up to date.",
+  title: { absolute: "Sidetrack · the home for everything you get sidetracked by" },
+  alternates: { canonical: "/" },
 };
 
 const REPO = "https://github.com/fredrivett/sidetrack";
@@ -68,7 +70,11 @@ function renderedAt() {
 }
 
 export default async function Welcome() {
-  const [session, stars] = await Promise.all([getCurrentSession(), repoStars()]);
+  const [session, stars, url] = await Promise.all([
+    getCurrentSession(),
+    repoStars(),
+    appBaseUrl(),
+  ]);
   const signedIn = Boolean(session);
   const { now, today } = renderedAt();
   // Self-hosted instances usually lock signup after the first account, so
@@ -81,6 +87,10 @@ export default async function Welcome() {
 
   return (
     <div className="relative isolate flex min-h-dvh flex-col overflow-x-hidden">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: structuredData(`${url}/`) }}
+      />
       <DotGrid className="h-[44rem] [mask-image:radial-gradient(ellipse_at_top,black_10%,transparent_65%)]" />
 
       <header className="mx-auto flex w-full max-w-5xl items-center justify-between px-5 py-4 sm:px-8">
@@ -166,11 +176,17 @@ export default async function Welcome() {
           className="relative top-0 mx-auto mt-16 max-w-6xl px-5 motion-safe:animate-[rise-in_600ms_cubic-bezier(0.2,0.8,0.2,1)_backwards] [animation-delay:150ms] sm:mt-20 sm:px-8"
         >
           <PreviewBoard today={today} now={now} />
-          {/* What the agent on FIX-12 last reported, below its list. */}
-          <div className="absolute -bottom-14 right-10 w-72 rotate-1 rounded-xl border border-neutral-200 bg-white p-3 text-left text-sm shadow-lg motion-safe:animate-[slide-in_500ms_cubic-bezier(0.2,0.8,0.2,1)_both] [--slide-from:0_12px] [animation-delay:1100ms] max-sm:hidden dark:border-neutral-800 dark:bg-neutral-900">
-            <p className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Sparkles className="size-3.5 text-violet-500" />
-              Amp, working on FIX-12
+          {/* What the agent on FIX-12 last reported, below its list. Violet,
+              the agents' colour, in both themes, as on the social card
+              (opengraph-image.tsx). */}
+          <div className="absolute -bottom-14 right-10 w-72 rotate-1 rounded-xl border border-violet-600 bg-linear-135 from-[#3b1d7a] to-[#1e1035] p-3 text-left text-sm text-violet-50 shadow-lg shadow-violet-950/30 motion-safe:animate-[slide-in_500ms_cubic-bezier(0.2,0.8,0.2,1)_both] [--slide-from:0_12px] [animation-delay:1100ms] max-sm:hidden dark:shadow-black/60">
+            <p className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-violet-200">
+              <Sparkles className="size-3.5 text-violet-300" />
+              Claude · FIX-12
+              <span className="ml-auto flex items-center gap-1 rounded-full bg-green-500/15 px-1.5 py-px text-[10px] text-green-400">
+                <span className="size-1.5 rounded-full bg-green-500" />
+                Working
+              </span>
             </p>
             <p>
               Two of the three roofers have quoted. Chasing the third, then
@@ -209,6 +225,30 @@ export default async function Welcome() {
       </footer>
     </div>
   );
+}
+
+/**
+ * What search engines read about the site: its name (shown above results)
+ * and what Sidetrack is. `<` is escaped so no text can close the script tag.
+ */
+function structuredData(url: string) {
+  return JSON.stringify({
+    "@context": "https://schema.org",
+    "@graph": [
+      { "@type": "WebSite", name: "Sidetrack", url },
+      {
+        "@type": "SoftwareApplication",
+        name: "Sidetrack",
+        url,
+        description: SITE_DESCRIPTION,
+        applicationCategory: "ProductivityApplication",
+        operatingSystem: "Web",
+        offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+        license: "https://www.gnu.org/licenses/agpl-3.0.html",
+        sameAs: [REPO],
+      },
+    ],
+  }).replace(/</g, "\\u003c");
 }
 
 function Feature({

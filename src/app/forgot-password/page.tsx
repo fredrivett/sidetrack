@@ -1,9 +1,12 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { AuthShell, AuthTitle } from "@/components/AuthShell";
 import { ForgotPasswordForm } from "@/components/ForgotPasswordForm";
 import { getEnv } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: "Forgot password", robots: { index: false } };
 
 export default function ForgotPasswordPage() {
   // With no Resend key the reset link only appears in the server console, so

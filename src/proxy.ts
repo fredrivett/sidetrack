@@ -43,6 +43,16 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // What search engines and link previews fetch: robots.txt, the sitemap and
+  // the social card (src/app/opengraph-image.tsx, at /opengraph-image-<hash>).
+  if (
+    pathname === "/robots.txt" ||
+    pathname === "/sitemap.xml" ||
+    pathname.startsWith("/opengraph-image")
+  ) {
+    return NextResponse.next();
+  }
+
   // Presence check only — the real session validation happens in route
   // handlers / RSCs via auth.api.getSession (which hits the DB). The proxy
   // just bounces unauthenticated traffic to /login so we don't render any

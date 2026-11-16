@@ -96,6 +96,43 @@ install_mailpit() {
 }
 step "Mailpit v$mailpit_version" install_mailpit
 
+# --- Apple emoji ------------------------------------------------------------
+# Screenshots show emoji as Apple draws them, as most of Sidetrack's users see
+# them (AGENTS.md, "Screenshots and images"). Chromium here falls back to Noto
+# Color Emoji, so install Apple's (repackaged by samuelngs/apple-emoji-ttf) and
+# have fontconfig pick it for every emoji.
+apple_emoji_release="macos-26-20260722-484daf4e"
+apple_emoji_sha256="e37c7af6265ac4a0af6d57bc65e86109a776d9966e8343334557f63da482516f"
+apple_emoji_font="$HOME/.local/share/fonts/AppleColorEmoji.ttf"
+
+install_apple_emoji() {
+  if [[ -f "$apple_emoji_font" ]] &&
+    echo "$apple_emoji_sha256  $apple_emoji_font" | sha256sum -c --quiet - 2>/dev/null; then
+    echo "    Apple Color Emoji already installed"
+  else
+    mkdir -p "$(dirname "$apple_emoji_font")"
+    curl -fsSL "https://github.com/samuelngs/apple-emoji-ttf/releases/download/$apple_emoji_release/AppleColorEmoji-Linux.ttf" \
+      -o "$apple_emoji_font.tmp"
+    echo "$apple_emoji_sha256  $apple_emoji_font.tmp" | sha256sum -c --quiet -
+    mv "$apple_emoji_font.tmp" "$apple_emoji_font"
+  fi
+  mkdir -p "$HOME/.config/fontconfig/conf.d"
+  cat >"$HOME/.config/fontconfig/conf.d/60-apple-emoji.conf" <<'EOF'
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+<fontconfig>
+  <alias binding="strong"><family>emoji</family><prefer><family>Apple Color Emoji</family></prefer></alias>
+  <alias binding="strong"><family>sans-serif</family><prefer><family>Apple Color Emoji</family></prefer></alias>
+  <match target="pattern">
+    <test name="family"><string>Noto Color Emoji</string></test>
+    <edit name="family" mode="assign" binding="strong"><string>Apple Color Emoji</string></edit>
+  </match>
+</fontconfig>
+EOF
+  fc-cache -f >/dev/null
+}
+step "Apple Color Emoji" install_apple_emoji
+
 # --- Dependencies -----------------------------------------------------------
 # pnpm in the orb matches package.json's packageManager; pnpm also switches to
 # that version itself if it ever differs.

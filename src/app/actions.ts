@@ -1,8 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { appBaseUrl } from "./site";
 import {
   createApiKey as createApiKeyCore,
   revokeApiKey as revokeApiKeyCore,
@@ -307,17 +307,6 @@ export async function listSuggestedCollaboratorsAction(projectId: string) {
   const userId = await requireUserId();
   const { db } = getDb();
   return listSuggestedCollaboratorsCore(db, userId, projectId);
-}
-
-/** Absolute base URL for links in outgoing email: the configured
- * BETTER_AUTH_URL, else derived from the incoming request's headers. */
-async function appBaseUrl(): Promise<string> {
-  const configured = getEnv().BETTER_AUTH_URL;
-  if (configured) return configured.replace(/\/$/, "");
-  const h = await headers();
-  const host = h.get("host");
-  const proto = h.get("x-forwarded-proto") ?? "https";
-  return host ? `${proto}://${host}` : "";
 }
 
 export async function inviteMemberAction(projectId: string, person: string) {

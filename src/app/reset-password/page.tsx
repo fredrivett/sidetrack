@@ -1,8 +1,11 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { AuthShell, AuthTitle } from "@/components/AuthShell";
 import { ResetPasswordForm } from "@/components/ResetPasswordForm";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: "Reset password", robots: { index: false } };
 
 // Where the emailed reset link lands: Better Auth's
 // GET /api/auth/reset-password/:token validates the token and redirects here
