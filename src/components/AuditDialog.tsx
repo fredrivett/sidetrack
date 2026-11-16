@@ -306,7 +306,9 @@ export function AuditDialog({
   const commentGroups = useMemo(() => byDay(comments, (c) => c.createdAt), [comments]);
   const shownCount = showingComments ? comments.length : entries.length;
 
-  const maybeMore = shownCount === limit;
+  // 500 is the most the log or the feed returns, so there's no more to show
+  // past it.
+  const maybeMore = shownCount === limit && limit < 500;
 
   return (
     <ResponsiveDialog open={open} onOpenChange={(o) => !o && onClose()}>

@@ -141,5 +141,15 @@ describe("comments", () => {
     ]);
     // Not a list the user can open.
     expect(listRecentComments(db, owner, { projectId: alicesList.id })).toEqual([]);
+
+    // A member's feed has the shared list's comments with their own, and
+    // still not the lists that aren't shared with them.
+    inviteMember(db, owner, projectId, "alice", "web");
+    acceptInvite(db, alice, projectId, "web");
+    expect(listRecentComments(db, alice).map((c) => c.item.title)).toEqual([
+      "Fix tap",
+      "Hers",
+      "Fix tap",
+    ]);
   });
 });
