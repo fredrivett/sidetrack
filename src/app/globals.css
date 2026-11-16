@@ -204,4 +204,9 @@ body {
   html {
     @apply font-sans;
   }
+  /* Tailwind v4 dropped the pointer from buttons; anything clickable gets it. */
+  button:not(:disabled):not([aria-disabled="true"]),
+  [role="button"]:not(:disabled):not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
 }

@@ -172,7 +172,7 @@ export function MentionTextarea({
               onMouseDown={(e) => e.preventDefault()}
               onMouseMove={() => setActive(i)}
               onClick={() => pick(p)}
-              className="flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm select-none aria-selected:bg-accent aria-selected:text-accent-foreground"
+              className="flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-sm select-none aria-selected:bg-accent aria-selected:text-accent-foreground"
             >
               <UserAvatar user={p} size={18} />
               <span className="truncate">{p.name ?? assigneeName(p)}</span>
