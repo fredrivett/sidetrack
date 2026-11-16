@@ -1,7 +1,13 @@
 import { eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import { listAudit } from "./audit";
-import { addComment, deleteComment, listComments, updateComment } from "./comments";
+import {
+  addComment,
+  deleteComment,
+  listComments,
+  listRecentComments,
+  updateComment,
+} from "./comments";
 import { addItem, deleteItem } from "./items";
 import { acceptInvite, inviteMember } from "./members";
 import { createProject } from "./projects";
@@ -101,5 +107,49 @@ describe("comments", () => {
     );
     deleteItem(db, owner, itemId, "web");
     expect(db.select().from(comments).where(eq(comments.itemId, itemId)).all()).toEqual([]);
+  });
+
+  it("feeds the newest comments the user can see, across lists or in one", () => {
+    const { db, owner, alice, projectId, itemId } = seed();
+    const garden = createProject(db, owner, { name: "Garden" }, "web");
+    const hedge = addItem(db, owner, { projectId: garden.id, title: "Trim hedge" }, "web");
+    const alicesList = createProject(db, alice, { name: "Alice's" }, "web");
+    const hers = addItem(db, alice, { projectId: alicesList.id, title: "Hers" }, "web");
+
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_800_000_000_000);
+    const tap = addComment(db, owner, itemId, "Washer is worn", "web");
+    const hedgeNote = addComment(db, owner, hedge.id, "Wait for spring", "web");
+    addComment(db, alice, hers.id, "Not yours", "web");
+    now.mockReturnValue(1_800_000_000_001);
+    const fitted = addComment(db, owner, itemId, "Fitted it", AMP);
+    now.mockRestore();
+
+    const all = listRecentComments(db, owner);
+    expect(all.map((c) => c.id)).toEqual([fitted.id, hedgeNote.id, tap.id]);
+    expect(all[0]).toMatchObject({
+      body: "Fitted it",
+      agentName: "Amp",
+      item: { id: itemId, title: "Fix tap", number: 1, projectId },
+    });
+
+    expect(listRecentComments(db, owner, { projectId: garden.id }).map((c) => c.id)).toEqual([
+      hedgeNote.id,
+    ]);
+    expect(listRecentComments(db, owner, { limit: 2 }).map((c) => c.id)).toEqual([
+      fitted.id,
+      hedgeNote.id,
+    ]);
+    // Not a list the user can open.
+    expect(listRecentComments(db, owner, { projectId: alicesList.id })).toEqual([]);
+
+    // A member's feed has the shared list's comments with their own, and
+    // still not the lists that aren't shared with them.
+    inviteMember(db, owner, projectId, "alice", "web");
+    acceptInvite(db, alice, projectId, "web");
+    expect(listRecentComments(db, alice).map((c) => c.item.title)).toEqual([
+      "Fix tap",
+      "Hers",
+      "Fix tap",
+    ]);
   });
 });
