@@ -5,8 +5,6 @@ import { unstable_rethrow } from "next/navigation";
 import {
   startTransition,
   useEffect,
-  useId,
-  useLayoutEffect,
   useOptimistic,
   useRef,
   useState,
@@ -22,7 +20,6 @@ import type { CommentView } from "@/core/comments";
 import type { AssigneeView } from "@/core/members";
 import { COMMENT_MAX, type Item } from "@/core/schema";
 import { modifierSymbol } from "@/lib/keyboard";
-import { mentionQueryAt, suggestPeople } from "@/lib/mentions";
 import { formatRelative } from "@/lib/time";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,11 +29,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Kbd } from "@/components/ui/kbd";
-import { Textarea } from "@/components/ui/textarea";
 import { EditableText } from "./EditableText";
 import { Markdown } from "./Markdown";
 import { runAction } from "./run-action";
-import { AvatarStack, assigneeName, UserAvatar } from "./UserAvatar";
+import { MentionTextarea } from "./MentionTextarea";
+import { AvatarStack, assigneeName } from "./UserAvatar";
 
 /**
  * The item's comments, oldest first, with a box to add one. Loaded when the
@@ -56,6 +53,11 @@ export function ItemComments({
   people: AssigneeView[];
 }) {
   const [comments, setComments] = useState<CommentView[] | null>(null);
+  // Suggested with you last: you rarely mention yourself.
+  const mentionable = [
+    ...people.filter((p) => p.userId !== viewerId),
+    ...people.filter((p) => p.userId === viewerId),
+  ];
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   // Deleting is optimistic: the comment goes at once and comes back if the
@@ -137,7 +139,7 @@ export function ItemComments({
               <CommentCard
                 key={c.id}
                 comment={c}
-                people={people}
+                people={mentionable}
                 own={
                   c.userId === viewerId
                     ? {
@@ -155,11 +157,7 @@ export function ItemComments({
       <Composer
         itemId={item.id}
         title={item.title}
-        // You last: you rarely mention yourself.
-        people={[
-          ...people.filter((p) => p.userId !== viewerId),
-          ...people.filter((p) => p.userId === viewerId),
-        ]}
+        people={mentionable}
         onAdded={(comment) => change((cur) => [...cur, comment])}
       />
     </div>
@@ -180,7 +178,8 @@ export function CommentCard({
   clamp = false,
 }: {
   comment: CommentView;
-  /** Who can open its item, whose `@username` shows as a mention. */
+  /** Who can open its item, whose `@username` shows as a mention, and
+   * who editing it suggests. */
   people?: AssigneeView[];
   own?: { onEdited: (comment: CommentView) => void; onDelete: () => void };
   context?: React.ReactNode;
@@ -241,6 +240,7 @@ export function CommentCard({
               runAction(updateCommentAction(c.id, next).then(own.onEdited), "save the comment")
             }
             multiline
+            mentions={people}
             required
             maxLength={COMMENT_MAX}
             className="block w-full"
@@ -258,9 +258,7 @@ export function CommentCard({
 /**
  * The box a new comment is written in, with its send button inside. It holds
  * while the comment saves: the dialog stays open, so the box is where you're
- * looking. Typing `@` suggests the people who can open the item, as Linear
- * and Slack do: ↑↓ to choose, Enter or Tab to put in their `@username`, Esc
- * to carry on typing without one.
+ * looking. Typing `@` suggests people to mention (MentionTextarea).
  */
 function Composer({
   itemId,
@@ -276,47 +274,6 @@ function Composer({
   const [draft, setDraft] = useState("");
   const [saving, start] = useTransition();
   const empty = !draft.trim();
-  const box = useRef<HTMLTextAreaElement>(null);
-  // The `@…` before the caret, and which suggestion is highlighted.
-  const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
-  const [active, setActive] = useState(0);
-  // The `@` Esc dismissed, so its suggestions stay away while you type on.
-  const [dismissed, setDismissed] = useState<number | null>(null);
-  // Where the caret goes once a picked mention is in the text.
-  const caretAfter = useRef<number | null>(null);
-  const listId = useId();
-
-  const suggestions =
-    mention && mention.start !== dismissed ? suggestPeople(people, mention.query) : [];
-  const open = suggestions.length > 0;
-  const highlighted = Math.min(active, suggestions.length - 1);
-
-  useLayoutEffect(() => {
-    if (caretAfter.current === null || !box.current) return;
-    box.current.setSelectionRange(caretAfter.current, caretAfter.current);
-    caretAfter.current = null;
-  }, [draft]);
-
-  // Follows the caret, which typing, clicking and the arrow keys all move.
-  function track(el: HTMLTextAreaElement) {
-    const next = mentionQueryAt(el.value, el.selectionStart);
-    if (next?.start !== mention?.start) setActive(0);
-    if (!next) setDismissed(null);
-    setMention(next);
-  }
-
-  function pick(person: AssigneeView) {
-    const el = box.current;
-    if (saving || !mention || !el) return;
-    const text = `@${person.displayUsername ?? person.username} `;
-    const next = draft.slice(0, mention.start) + text + draft.slice(el.selectionStart);
-    // Like typing past maxLength: no room, no change. Counted as the server
-    // counts, in characters.
-    if ([...next].length > COMMENT_MAX) return;
-    caretAfter.current = mention.start + text.length;
-    setDraft(next);
-    setMention(null);
-  }
 
   function submit() {
     if (saving || empty) return;
@@ -334,41 +291,14 @@ function Composer({
   return (
     <div
       aria-busy={saving || undefined}
-      className={`relative rounded-lg border border-input transition-[color,box-shadow,opacity] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 dark:bg-input/30 ${saving ? "opacity-60" : ""}`}
+      className={`rounded-lg border border-input transition-[color,box-shadow,opacity] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 dark:bg-input/30 ${saving ? "opacity-60" : ""}`}
     >
-      <Textarea
-        ref={box}
+      <MentionTextarea
+        people={people}
         value={draft}
-        onChange={(e) => {
-          if (saving) return;
-          setDraft(e.target.value);
-          track(e.target);
-        }}
-        onSelect={(e) => track(e.currentTarget)}
-        onBlur={() => setMention(null)}
+        onValueChange={setDraft}
         onKeyDown={(e) => {
-          if (e.nativeEvent.isComposing) return;
-          if (open && !e.metaKey && !e.ctrlKey) {
-            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-              e.preventDefault();
-              const step = e.key === "ArrowDown" ? 1 : -1;
-              setActive((highlighted + step + suggestions.length) % suggestions.length);
-              return;
-            }
-            if (e.key === "Enter" || e.key === "Tab") {
-              e.preventDefault();
-              pick(suggestions[highlighted]);
-              return;
-            }
-            if (e.key === "Escape") {
-              // Closes the suggestions, not the dialog.
-              e.preventDefault();
-              e.stopPropagation();
-              setDismissed(mention?.start ?? null);
-              return;
-            }
-          }
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
             e.preventDefault();
             submit();
           }
@@ -377,45 +307,8 @@ function Composer({
         placeholder="Leave a comment…"
         maxLength={COMMENT_MAX}
         aria-label="Add a comment"
-        role="combobox"
-        aria-autocomplete="list"
-        aria-expanded={open}
-        aria-controls={open ? listId : undefined}
-        aria-activedescendant={open ? `${listId}-${highlighted}` : undefined}
-        className="max-h-60 min-h-12 resize-none rounded-none border-0 bg-transparent px-3 pt-2.5 pb-0 focus-visible:ring-0 dark:bg-transparent"
+        className="flex field-sizing-content max-h-60 min-h-12 w-full resize-none bg-transparent px-3 pt-2.5 pb-0 text-base outline-none transition-colors placeholder:text-muted-foreground md:text-sm"
       />
-      {open && (
-        <ul
-          id={listId}
-          role="listbox"
-          aria-label="People to mention"
-          // Above the box, as in Slack: the box sits at the foot of the
-          // dialog, whose scrolling would cut off a list below it.
-          className="absolute right-0 bottom-full left-0 z-50 mb-1 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10"
-        >
-          {suggestions.map((p, i) => (
-            <li
-              key={p.userId}
-              id={`${listId}-${i}`}
-              role="option"
-              aria-selected={i === highlighted}
-              // Keeps focus (and the caret) in the box.
-              onMouseDown={(e) => e.preventDefault()}
-              onMouseMove={() => setActive(i)}
-              onClick={() => pick(p)}
-              className="flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm select-none aria-selected:bg-accent aria-selected:text-accent-foreground"
-            >
-              <UserAvatar user={p} size={18} />
-              <span className="truncate">{p.name ?? assigneeName(p)}</span>
-              {p.name && (
-                <span className="shrink-0 text-muted-foreground">
-                  @{p.displayUsername ?? p.username}
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
       <div className="flex justify-end px-2 pb-2">
         <Button
           type="button"
