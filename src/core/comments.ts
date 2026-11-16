@@ -4,7 +4,11 @@ import { hasProjectAccess } from "./access";
 import { users } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
+import { formatItemRef } from "../lib/itemRef";
+import { mentionedHandles } from "../lib/mentions";
 import { getItem } from "./items";
+import { listAssignees } from "./members";
+import { getProject } from "./projects";
 import { type Comment, COMMENT_MAX, comments, type Item, items, projects } from "./schema";
 
 // Comments are accessed through their item → project, like PR links: whoever
@@ -103,7 +107,7 @@ export function listComments(db: Db, userId: string, itemId: string): CommentVie
   return selectComments(db, userId, eq(comments.itemId, itemId)).map(withoutItem);
 }
 
-function getComment(db: Db, userId: string, id: string): CommentView | undefined {
+export function getComment(db: Db, userId: string, id: string): CommentView | undefined {
   return selectComments(db, userId, eq(comments.id, id)).map(withoutItem)[0];
 }
 
@@ -112,6 +116,54 @@ function withoutItem(comment: FeedComment): CommentView {
   const view: CommentView & { item?: unknown } = { ...comment };
   delete view.item;
   return view;
+}
+
+/** Who a comment's mentions reach, and what to tell them. */
+export interface MentionNotice {
+  to: { userId: string; email: string; name: string | null }[];
+  /** Who wrote it, and the agent that wrote it for them. */
+  authorName: string;
+  itemRef: string;
+  itemTitle: string;
+  body: string;
+}
+
+/**
+ * The people a comment @mentions who can open its item, to notify. `before`,
+ * the text an edit replaced, leaves out who it already mentioned. The author
+ * mentioning themselves isn't news, unless an agent wrote it for them: then
+ * it's how the agent gets their attention. Null when there's no one to tell.
+ */
+export function mentionNotice(
+  db: Db,
+  userId: string,
+  comment: CommentView,
+  before?: string,
+): MentionNotice | null {
+  const item = getItem(db, userId, comment.itemId);
+  const project = item && getProject(db, userId, item.projectId);
+  if (!item || !project) return null;
+  const already = new Set(before === undefined ? [] : mentionedHandles(before));
+  const handles = new Set(mentionedHandles(comment.body).filter((h) => !already.has(h)));
+  const to = listAssignees(db, userId, item.projectId).flatMap((p) =>
+    p.username &&
+    handles.has(p.username) &&
+    p.email &&
+    (comment.agentName || p.userId !== comment.userId)
+      ? [{ userId: p.userId, email: p.email, name: p.name }]
+      : [],
+  );
+  if (to.length === 0) return null;
+  const a = comment.author;
+  const author =
+    a?.name ?? (a?.displayUsername ? `@${a.displayUsername}` : a?.email) ?? "Someone";
+  return {
+    to,
+    authorName: comment.agentName ? `${comment.agentName} (for ${author})` : author,
+    itemRef: formatItemRef(project.prefix, item.number),
+    itemTitle: item.title,
+    body: comment.body,
+  };
 }
 
 /** The comment and its item, for a change only its author may make. */

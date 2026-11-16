@@ -14,7 +14,7 @@ import {
   withAutoLabelRename,
   withAutoListIcon,
 } from "@/core/autoEmoji";
-import { addComment, listComments } from "@/core/comments";
+import { addComment, listComments, mentionNotice } from "@/core/comments";
 import { addLabel, getLabel, listLabels, updateLabel } from "@/core/labels";
 import { getDb } from "@/core/db";
 import { getTimeZone } from "@/core/users";
@@ -84,7 +84,7 @@ import {
   setSpaceMemberRole,
   updateSpace,
 } from "@/core/spaces";
-import { type InviteKind, notifyInvite } from "@/lib/email";
+import { type InviteKind, notifyInvite, notifyMentions } from "@/lib/email";
 import { getEnv } from "@/lib/env";
 import { formatItemRef, workPrTitle } from "@/lib/itemRef";
 import { checkDraftItem } from "@/lib/itemSuggest";
@@ -668,6 +668,9 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Comment on an item: body is Markdown, shown in the item's detail view under your name and the user's. " +
         "Use it for what people discussing the item should read later, such as a question for the user, a decision and why, or a summary of findings. " +
         "Use report_work for one-line progress updates and update_item for what the item itself should say. " +
+        "To get someone's attention, mention them with @ and their username (e.g. \"@fred\"): a comment author's displayUsername, " +
+        "or a member's username from list_members. Anyone mentioned who can open the item is emailed the comment, " +
+        "including the user you act for, so mention them when you need their answer and not otherwise. " +
         `Max ${COMMENT_MAX} characters. Returns the comment. ` +
         "item_id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: { item_id: z.string(), body: z.string().min(1) },
@@ -676,11 +679,17 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       const { db } = getDb();
       const { item, error } = resolveItemArg(db, userId, item_id);
       if (error) return error;
+      let comment;
       try {
-        return json(addComment(db, userId, item.id, body, SOURCE));
+        comment = addComment(db, userId, item.id, body, SOURCE);
       } catch (e) {
         return errorText(`${(e as Error).message} — no change was made.`);
       }
+      const notice = mentionNotice(db, userId, comment);
+      if (notice) {
+        await notifyMentions(notice, getEnv().BETTER_AUTH_URL?.replace(/\/$/, "") ?? "");
+      }
+      return json(comment);
     },
   );
 

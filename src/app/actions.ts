@@ -33,8 +33,10 @@ import {
 import {
   addComment as addCommentCore,
   deleteComment as deleteCommentCore,
+  getComment as getCommentCore,
   listComments as listCommentsCore,
   listRecentComments as listRecentCommentsCore,
+  mentionNotice as mentionNoticeCore,
   updateComment as updateCommentCore,
 } from "@/core/comments";
 import { getDb } from "@/core/db";
@@ -96,7 +98,7 @@ import {
   setUsername as setUsernameCore,
 } from "@/core/users";
 import { getCurrentSession, requireUserId } from "@/auth/session";
-import { notifyInvite } from "@/lib/email";
+import { notifyInvite, notifyMentions } from "@/lib/email";
 import { suggestEmoji, suggestLabelEmoji } from "@/lib/emojiSuggest";
 import { getEnv } from "@/lib/env";
 import { checkDraftItem, suggestList } from "@/lib/itemSuggest";
@@ -584,6 +586,8 @@ export async function addCommentAction(itemId: string, body: string) {
   const userId = await requireUserId();
   const { db } = getDb();
   const comment = addCommentCore(db, userId, itemId, body, SOURCE);
+  const notice = mentionNoticeCore(db, userId, comment);
+  if (notice) await notifyMentions(notice, await appBaseUrl());
   refresh();
   return comment;
 }
@@ -591,7 +595,11 @@ export async function addCommentAction(itemId: string, body: string) {
 export async function updateCommentAction(id: string, body: string) {
   const userId = await requireUserId();
   const { db } = getDb();
+  const before = getCommentCore(db, userId, id)?.body;
   const comment = updateCommentCore(db, userId, id, body, SOURCE);
+  // Only the people the edit newly mentions hear about it.
+  const notice = mentionNoticeCore(db, userId, comment, before);
+  if (notice) await notifyMentions(notice, await appBaseUrl());
   refresh();
   return comment;
 }

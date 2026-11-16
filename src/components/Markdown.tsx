@@ -1,5 +1,7 @@
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import type { AssigneeView } from "@/core/members";
+import { splitMentions } from "@/lib/mentions";
 
 const codeClassName =
   "rounded bg-neutral-100 px-1 py-0.5 font-mono text-[0.85em] text-neutral-800 dark:bg-neutral-800 dark:text-neutral-100";
@@ -61,12 +63,66 @@ const components: Components = {
   ),
 };
 
+/** Someone an `@username` can mention. */
+export type MentionPerson = Pick<AssigneeView, "username" | "displayUsername" | "name">;
+
+// The bits of an mdast tree the mention pass touches.
+interface MdNode {
+  type: string;
+  value?: string;
+  children?: MdNode[];
+  data?: { hName: string; hProperties: Record<string, string> };
+}
+
+const mentionClassName =
+  "rounded bg-blue-50 px-0.5 font-medium text-blue-700 dark:bg-blue-950/60 dark:text-blue-300";
+
+// Turns each `@username` of someone in `people` into a highlighted span named
+// as they write it. Only text nodes, so code and links stay as written.
+function remarkMentions(people: MentionPerson[]) {
+  const byHandle = new Map(people.flatMap((p) => (p.username ? [[p.username, p]] : [])));
+  const walk = (node: MdNode) => {
+    if (!node.children || node.type === "link") return;
+    node.children = node.children.flatMap((child): MdNode[] => {
+      if (child.type !== "text") {
+        walk(child);
+        return [child];
+      }
+      return splitMentions(child.value ?? "").map((part) => {
+        const person = typeof part === "string" ? undefined : byHandle.get(part.handle.toLowerCase());
+        if (typeof part === "string" || !person) {
+          return { type: "text", value: typeof part === "string" ? part : `@${part.handle}` };
+        }
+        return {
+          type: "mention",
+          data: {
+            hName: "span",
+            hProperties: { className: mentionClassName, title: person.name ?? "" },
+          },
+          children: [{ type: "text", value: `@${person.displayUsername ?? person.username}` }],
+        };
+      });
+    });
+  };
+  return () => walk;
+}
+
 // Renders a markdown string with GitHub-flavored extensions (tables, task
 // lists, strikethrough, autolinks). Block-level margins collapse at the edges
-// so it sits flush inside a field.
-export function Markdown({ children }: { children: string }) {
+// so it sits flush inside a field. `mentions` highlights `@username` for each
+// of those people, as in comments.
+export function Markdown({
+  children,
+  mentions,
+}: {
+  children: string;
+  mentions?: MentionPerson[];
+}) {
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+    <ReactMarkdown
+      remarkPlugins={mentions?.length ? [remarkGfm, remarkMentions(mentions)] : [remarkGfm]}
+      components={components}
+    >
       {children}
     </ReactMarkdown>
   );
