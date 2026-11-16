@@ -84,7 +84,12 @@ export function SpacesPanel({ spaces, viewerId }: { spaces: SpaceView[]; viewerI
               Create
             </Button>
           </div>
-          <SpaceColorPicker value={color} onChange={setColor} label="New space colour" />
+          <SpaceColorPicker
+            value={color}
+            onChange={setColor}
+            label="New space colour"
+            disabled={pending}
+          />
         </form>
       </section>
 

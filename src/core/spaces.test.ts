@@ -122,7 +122,11 @@ describe("spaces", () => {
     expect(() =>
       createSpace(db, fred, { name: "Shed", color: "chartreuse" as "slate" }, "web"),
     ).toThrow(/unknown space colour/);
-    expect(colorOf()).toBeNull();
+    updateSpace(db, fred, garden, { color: "slate" }, "web");
+    expect(() =>
+      updateSpace(db, fred, garden, { color: "" as "slate" }, "web"),
+    ).toThrow(/unknown space colour/);
+    expect(colorOf()).toBe("slate");
     expect(listSpaces(db, fred).map((s) => s.name)).not.toContain("Shed");
   });
 

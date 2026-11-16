@@ -1543,7 +1543,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       title: "List Spaces",
       description:
         "List the Spaces the user has joined, oldest first. A Space is a group of people who share every list in it. " +
-        "Each has id, name, icon and the user's role: admin (manages its people and the Space itself) or member. " +
+        "Each has id, name, icon, color (null is grey) and the user's role: admin (manages its people and the Space itself) or member. " +
         "A list's spaceId (list_lists) says which Space it's in. Pending Space invites are in list_pending_invites.",
       inputSchema: {},
     },

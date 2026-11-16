@@ -45,14 +45,23 @@ export function SpaceColorPicker({
   value,
   onChange,
   label = "Colour",
+  disabled,
 }: {
   value: SpaceColor | null;
   onChange: (color: SpaceColor | null) => void;
   label?: string;
+  /** Dimmed and won't change; stays focusable (aria-disabled), like
+   * IconPicker, so a save landing doesn't drop keyboard focus. */
+  disabled?: boolean;
 }) {
   const name = useId();
   return (
-    <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1.5">
+    <div
+      role="radiogroup"
+      aria-label={label}
+      aria-disabled={disabled || undefined}
+      className="flex flex-wrap gap-1.5 aria-disabled:opacity-60"
+    >
       {[null, ...SPACE_COLORS].map((color) => (
         <label key={color ?? "none"} title={color ? capitalise(color) : "No colour"}>
           <input
@@ -60,7 +69,8 @@ export function SpaceColorPicker({
             name={name}
             className="peer sr-only"
             checked={value === color}
-            onChange={() => onChange(color)}
+            onChange={() => !disabled && onChange(color)}
+            aria-disabled={disabled || undefined}
             aria-label={color ? capitalise(color) : "No colour"}
           />
           <span

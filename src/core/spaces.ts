@@ -114,7 +114,8 @@ function listIdsInSpace(db: Db, spaceId: string): string[] {
 }
 
 function assertColor(color: string | null | undefined): SpaceColor | null {
-  if (!color) return null;
+  // Only null (or leaving it out) clears; "" and other junk are refused.
+  if (color === null || color === undefined) return null;
   if (!(SPACE_COLORS as readonly string[]).includes(color)) {
     throw new Error(`unknown space colour: ${color}`);
   }
