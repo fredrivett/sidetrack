@@ -16,6 +16,9 @@ vi.mock("@/app/actions", () => ({
   reorderItemAction: vi.fn(),
   setItemsCollapsedAction: vi.fn(),
   setOverdueCollapsedAction: vi.fn(),
+  // The item dialog reads its comments when it opens, and its history when expanded.
+  listCommentsAction: vi.fn(async () => []),
+  listAuditAction: vi.fn(async () => []),
 }));
 
 beforeAll(() => {

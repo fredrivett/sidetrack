@@ -2,6 +2,7 @@ import { and, eq, ne } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { avatars, users } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
+import { announceChange } from "./changes";
 import type { Db } from "./db";
 import { uploadedAvatarPath } from "../lib/avatar";
 import { normalizeWebUrl } from "../lib/url";
@@ -37,6 +38,8 @@ export function getOverdueCollapsed(db: Db, userId: string): boolean {
 export function setOverdueCollapsed(db: Db, userId: string, collapsed: boolean): void {
   // audit-exempt: view state, not a change to anything shown to others.
   db.update(users).set({ overdueCollapsed: collapsed }).where(eq(users.id, userId)).run();
+  // Unaudited, so announced here: the user's other tabs and devices fold too.
+  announceChange({ actor: userId, projectId: null });
 }
 
 /** The display fields for the user's own avatar and name, or null if unknown. */

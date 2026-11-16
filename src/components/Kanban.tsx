@@ -406,7 +406,7 @@ export function Kanban({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [openNewItem]);
 
-  // On first paint, and on coming back from Today or No date (which unmount
+  // On first paint, and on coming back from Agenda or Done (which unmount
   // the rail):
   // scroll to ?p=<id> if present.
   useEffect(() => {
