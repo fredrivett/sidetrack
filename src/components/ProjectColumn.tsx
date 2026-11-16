@@ -41,6 +41,7 @@ export function ProjectColumn({
   onShare,
   spaces,
   filters,
+  aiEnabled,
 }: {
   project: ProjectView;
   viewerId: string;
@@ -56,6 +57,7 @@ export function ProjectColumn({
   onShare: (projectId: string, projectName: string) => void;
   spaces: SpaceView[];
   filters: ItemFilters;
+  aiEnabled: boolean;
 }) {
   // Items arrive in list order, flat. Group sub-items under their parent; the
   // split below is by the top-level item, and its checklist goes with it.
@@ -206,6 +208,7 @@ export function ProjectColumn({
             onShowDetails={() => setDetailsOpen(true)}
             onAddItem={onAddItem}
             onShare={onShare}
+            aiEnabled={aiEnabled}
           />
         </>
       }

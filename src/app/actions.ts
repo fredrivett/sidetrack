@@ -35,6 +35,7 @@ import {
   withAutoLabelRename,
   withAutoListIcon,
 } from "@/core/autoEmoji";
+import { itemPriorities as itemPrioritiesCore } from "@/core/autoPriority";
 import {
   addComment as addCommentCore,
   deleteComment as deleteCommentCore,
@@ -576,10 +577,14 @@ export async function setItemsCollapsedAction(ids: string[], collapsed: boolean)
   refresh();
 }
 
+// The order from before the sort, null when it was already sorted, or false
+// when Jev couldn't rank the items for a priority sort (AI off or failed).
 export async function sortItemsAction(projectId: string, by: ItemSort) {
   const userId = await requireUserId();
   const { db } = getDb();
-  const previous = sortItemsCore(db, userId, projectId, by, SOURCE);
+  const priority = by === "priority" ? await itemPrioritiesCore(db, userId, projectId) : undefined;
+  if (priority === null) return false;
+  const previous = sortItemsCore(db, userId, projectId, by, SOURCE, priority);
   refresh();
   return previous;
 }

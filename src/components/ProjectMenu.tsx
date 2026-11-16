@@ -15,6 +15,7 @@ import {
   Info,
   LogOut,
   Plus,
+  Sparkles,
   Trash2,
   Undo2,
   UserPlus,
@@ -51,11 +52,13 @@ import { ARMED_MENU_ITEM, useTapToConfirm } from "./use-tap-to-confirm";
 import { runAction } from "./run-action";
 import { useListSave, useRemoveList } from "./use-list-saves";
 
-// Each sort runs one way: soonest due first, newest first, and A to Z.
+// Each sort runs one way: soonest due first, newest first, A to Z, and
+// Jev's highest priority first.
 const SORTS: Array<[ItemSort, string, LucideIcon]> = [
   ["due", "Due date", CalendarClock],
   ["created", "Date created", Clock],
   ["title", "Name", ArrowDownAZ],
+  ["priority", "Priority", Sparkles],
 ];
 
 // The label for the Undo button on this menu's toasts.
@@ -83,6 +86,7 @@ export function ProjectMenu({
   onShowDetails,
   onAddItem,
   onShare,
+  aiEnabled,
 }: {
   projectId: string;
   prevId: string | null;
@@ -103,6 +107,8 @@ export function ProjectMenu({
   onShowDetails: () => void;
   onAddItem: (projectId: string) => void;
   onShare: (projectId: string, projectName: string) => void;
+  /** Whether Jev is set up: sorting by priority asks it. */
+  aiEnabled: boolean;
 }) {
   // Changes to the list hold on its column until they land; deleting or
   // leaving takes it off the board at once.
@@ -137,9 +143,12 @@ export function ProjectMenu({
     save(async () => {
       const sorted = sortItemsAction(projectId, by);
       if (!(await runAction(sorted, `sort “${name}”`))) return;
-      // The order from before the sort, or null when it was already sorted.
+      // The order from before the sort, null when it was already sorted, or
+      // false when Jev couldn't rank the items by priority.
       const previous = await sorted;
-      if (previous === null) {
+      if (previous === false) {
+        toast.error(`Couldn't sort "${name}" by ${label}: AI suggestions aren't available right now.`);
+      } else if (previous === null) {
         toast(`"${name}" is already sorted by ${label}`);
       } else {
         toast(`Sorted "${name}" by ${label}`, {
@@ -261,7 +270,7 @@ export function ProjectMenu({
             Sort items by
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent>
-            {SORTS.map(([by, label, Icon]) => (
+            {SORTS.filter(([by]) => aiEnabled || by !== "priority").map(([by, label, Icon]) => (
               <DropdownMenuItem key={by} onClick={() => sortItems(by, label.toLowerCase())}>
                 <Icon />
                 {label}

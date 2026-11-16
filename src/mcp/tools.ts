@@ -14,6 +14,7 @@ import {
   withAutoLabelRename,
   withAutoListIcon,
 } from "@/core/autoEmoji";
+import { itemPriorities } from "@/core/autoPriority";
 import { addComment, listComments, mentionNotice } from "@/core/comments";
 import { addLabel, getLabel, listLabels, updateLabel } from "@/core/labels";
 import { moveItem, previewMoveItem } from "@/core/move";
@@ -1053,8 +1054,10 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       description:
         "Sort a list's top-level items once, as the web's \"Sort items by\" does. by is one of: " +
         "\"due\" (due date, soonest first, a span by its last day, undated items last), " +
-        "\"created\" (date created, newest first) or \"title\" (A to Z). " +
+        "\"created\" (date created, newest first), \"title\" (A to Z) " +
+        "or \"priority\" (most important or urgent first, as an AI model judges each open item against the rest of the list; done items last). " +
         "Items that tie keep their current order, and sub-items move with their parent. " +
+        "A priority sort fails, changing nothing, when AI suggestions are off or unavailable. " +
         "It rewrites the list's order rather than keeping it sorted: items added or moved later go where they're put. " +
         "Returns changed (false when the list was already in that order, so nothing changed) and the list's open items in their new order.",
       inputSchema: {
@@ -1066,7 +1069,13 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       const { db } = getDb();
       const project = getProject(db, userId, list_id);
       if (!project) return notFound("list", list_id);
-      const changed = sortItems(db, userId, list_id, by, SOURCE) !== null;
+      const priority = by === "priority" ? await itemPriorities(db, userId, list_id) : undefined;
+      if (priority === null) {
+        return errorText(
+          "Couldn't rank the items by priority: AI suggestions are off or unavailable right now — no change was made.",
+        );
+      }
+      const changed = sortItems(db, userId, list_id, by, SOURCE, priority) !== null;
       const refPrefix = projectRefPrefixes(db, userId)[list_id] ?? project.prefix;
       return json({ changed, items: withRefs(refPrefix, listItems(db, userId, list_id)) });
     },

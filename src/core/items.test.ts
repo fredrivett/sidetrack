@@ -1423,6 +1423,28 @@ describe("sorting a list", () => {
     expect(titles(db, userId, projectId)).toEqual(["apple", "Banana", "item 9", "item 10"]);
   });
 
+  it("sorts by priority highest first, ties in list order, items without a score last", () => {
+    const { db, userId, projectId } = seedProject();
+    const [low, done, tieA, high, tieB] = ["low", "done", "tie A", "high", "tie B"].map(
+      (title) => addItem(db, userId, { projectId, title }, "web"),
+    );
+    completeItem(db, userId, done.id, "web");
+    const priority = new Map([
+      [low.id, 0.1],
+      [tieA.id, 0.5],
+      [high.id, 0.9],
+      [tieB.id, 0.5],
+    ]);
+
+    expect(sortItems(db, userId, projectId, "priority", "web", priority)).not.toBeNull();
+    expect(
+      listItems(db, userId, projectId, { includeCompleted: true }).map((i) => i.title),
+    ).toEqual(["high", "tie A", "tie B", "low", "done"]);
+    expect(listAudit(db, userId, { projectId })[0].detail).toBe('sorted "P" by priority');
+    // Without Jev's scores there's nothing to sort by.
+    expect(() => sortItems(db, userId, projectId, "priority", "web")).toThrow(/needs each item's score/);
+  });
+
   it("moves sub-items with their parent and keeps their own order", () => {
     const { db, userId, projectId } = seedProject();
     const b = addItem(db, userId, { projectId, title: "B", subItems: ["z", "y"] }, "web");

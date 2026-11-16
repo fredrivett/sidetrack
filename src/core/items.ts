@@ -860,14 +860,15 @@ export const ITEM_SORTS = {
   due: "due date",
   created: "date created",
   title: "name",
+  priority: "priority",
 } as const;
 export type ItemSort = keyof typeof ITEM_SORTS;
 
 const byTitle = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
 // Each compares two top-level items; the sort is stable, so ties keep the
-// list's current order.
-const COMPARE: Record<ItemSort, (a: Item, b: Item) => number> = {
+// list's current order. Priority compares by Jev's scores (see sortItems).
+const COMPARE: Record<Exclude<ItemSort, "priority">, (a: Item, b: Item) => number> = {
   // Soonest first, a span by its last day; undated items last.
   due: (a, b) =>
     a.dueDate === b.dueDate
@@ -930,7 +931,9 @@ const sameOrder = (a: Item[], b: Item[]) => a.every((item, i) => item.id === b[i
  * Sort a list's top-level items once, rewriting their order; dragging works
  * as before afterwards. Returns the ids in their order before the sort, for
  * setItemOrder to undo it, or null when they were already in that order and
- * nothing changed.
+ * nothing changed. Sorting by priority takes `priority`, each open item's
+ * score from itemPriorities (autoPriority.ts): highest first, then the
+ * items without one, such as done items.
  */
 export function sortItems(
   db: Db,
@@ -938,11 +941,16 @@ export function sortItems(
   projectId: string,
   by: ItemSort,
   source: AuditOrigin,
+  priority?: ReadonlyMap<string, number>,
 ): string[] | null {
   if (!Object.hasOwn(ITEM_SORTS, by)) throw new Error(`invalid sort: ${by}`);
+  if (by === "priority" && !priority) throw new Error("a priority sort needs each item's score");
   const name = projectNameOrThrow(db, userId, projectId);
   const current = getAllSiblings(db, userId, projectId, null);
-  const sorted = current.toSorted(COMPARE[by]);
+  const score = (it: Item) => priority?.get(it.id) ?? -1;
+  const sorted = current.toSorted(
+    by === "priority" ? (a, b) => score(b) - score(a) : COMPARE[by],
+  );
   if (sameOrder(sorted, current)) return null;
   applyItemOrder(db, userId, projectId, sorted, `sorted "${name}" by ${ITEM_SORTS[by]}`, source);
   return current.map((i) => i.id);

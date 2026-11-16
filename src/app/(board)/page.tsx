@@ -17,6 +17,7 @@ import { listProjects } from "@/core/projects";
 import { listPendingSpaceInvites, listSpaces, listTrays } from "@/core/spaces";
 import { COLLAPSED_TRAYS_COOKIE, parseCollapsedTrays } from "@/components/SpaceTray";
 import { getBoardFilters, getOverdueCollapsed, getProfile, getTimeZone } from "@/core/users";
+import { getEnv } from "@/lib/env";
 import { weekStartBound } from "@/lib/time";
 import type { ItemPrLink } from "@/core/schema";
 import { requireUserId } from "@/auth/session";
@@ -105,6 +106,7 @@ export default async function Home({
           (await cookies()).get(COLLAPSED_TRAYS_COOKIE)?.value,
         )}
         filters={getBoardFilters(db, userId)}
+        aiEnabled={Boolean(getEnv().TYPESAFE_API_KEY)}
       />
       <LiveUpdates />
     </AgentSessionsProvider>
