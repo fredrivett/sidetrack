@@ -2,9 +2,12 @@
 
 import { useEffect } from "react";
 import posthog from "posthog-js";
+import { fontVariables } from "./fonts";
+import "./globals.css";
 
 // Captures errors thrown in the root layout itself, which the route-level
-// error boundary cannot reach. Must render its own <html>/<body>.
+// error boundary cannot reach. Must render its own <html>/<body>, and load
+// its own styles and fonts, since the root layout's are gone.
 export default function GlobalError({
   error,
 }: {
@@ -15,7 +18,7 @@ export default function GlobalError({
   }, [error]);
 
   return (
-    <html lang="en">
+    <html lang="en" className={`${fontVariables} h-full antialiased`}>
       <body className="min-h-dvh flex items-center justify-center p-6 bg-neutral-50 dark:bg-neutral-950">
         <div className="w-full max-w-sm space-y-2 text-center">
           <h1 className="text-lg font-medium">Something went wrong</h1>

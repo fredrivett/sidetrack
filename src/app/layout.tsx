@@ -1,17 +1,12 @@
 import type { Metadata, Viewport } from "next";
-import { Geist } from "next/font/google";
 import { LatestDeploy } from "@/components/LatestDeploy";
 import { PhysicalKeyboard } from "@/components/PhysicalKeyboard";
 import { ServiceWorker } from "@/components/ServiceWorker";
 import { Toaster } from "@/components/ui/sonner";
 import { PHYSICAL_KEYBOARD_STORAGE_KEY } from "@/lib/keyboard";
 import { STARTUP_IMAGES } from "@/lib/startupImages";
+import { fontVariables } from "./fonts";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "Sidetrack",
@@ -55,7 +50,7 @@ export default function RootLayout({
     // data-physical-keyboard before React hydrates.
     <html
       lang="en"
-      className={`${geistSans.variable} h-full antialiased`}
+      className={`${fontVariables} h-full antialiased`}
       suppressHydrationWarning
     >
       <head>

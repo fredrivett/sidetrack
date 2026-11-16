@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "114f5297-69d0-4aa0-97f2-c0868c8b57c2",
+  "id": "11bc676a-2a8d-4f3f-aaa0-78a99251581f",
   "prevId": "f63c5716-3fad-4040-b7e6-629c1e665af0",
   "tables": {
     "agent_sessions": {
@@ -111,58 +111,6 @@
           "tableTo": "items",
           "columnsFrom": [
             "item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "agent_webhooks": {
-      "name": "agent_webhooks",
-      "columns": {
-        "key_id": {
-          "name": "key_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "url": {
-          "name": "url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "secret": {
-          "name": "secret",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "agent_webhooks_key_id_api_keys_id_fk": {
-          "name": "agent_webhooks_key_id_api_keys_id_fk",
-          "tableFrom": "agent_webhooks",
-          "tableTo": "api_keys",
-          "columnsFrom": [
-            "key_id"
           ],
           "columnsTo": [
             "id"
@@ -429,6 +377,13 @@
           "name": "comments_item_created",
           "columns": [
             "item_id",
+            "created_at"
+          ],
+          "isUnique": false
+        },
+        "comments_created": {
+          "name": "comments_created",
+          "columns": [
             "created_at"
           ],
           "isUnique": false
