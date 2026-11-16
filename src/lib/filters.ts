@@ -30,7 +30,10 @@ export const itemFiltersSchema = z.object({
   /** Items with no labels, alongside `labels`. */
   unlabelled: z.boolean(),
   /** Quick due choices; an item matching any of these or `dueRange` shows. */
-  due: z.array(z.enum(DUE_FILTERS.map(([key]) => key))),
+  due: z
+    .array(z.enum(DUE_FILTERS.map(([key]) => key)))
+    .max(DUE_FILTERS.length)
+    .refine((keys) => new Set(keys).size === keys.length),
   /** Due on any day from one to the other, inclusive. */
   dueRange: z
     .object({ from: day, to: day })

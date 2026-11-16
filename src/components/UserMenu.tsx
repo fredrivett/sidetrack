@@ -35,9 +35,11 @@ export function UserMenu({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  // A restore holds the avatar dimmed until the list is back on the board.
+  // A restore holds the avatar, dimmed and ignoring another restore, until
+  // the list is back on the board.
   const [restoring, startRestore] = useTransition();
   const restore = (l: Project) =>
+    !restoring &&
     startRestore(async () => {
       await runAction(updateProjectAction(l.id, { status: "active" }), `restore “${l.name}”`);
     });
@@ -63,6 +65,7 @@ export function UserMenu({
             type="button"
             aria-label="Account"
             aria-busy={restoring || undefined}
+            aria-disabled={restoring || undefined}
             className={`shrink-0 rounded-full outline-none transition-opacity hover:opacity-80 focus-visible:ring-3 focus-visible:ring-ring/50 ${
               restoring ? "opacity-50" : ""
             }`}

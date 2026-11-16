@@ -621,11 +621,12 @@ export async function setTimeZoneAction(timeZone: string) {
   setTimeZoneCore(db, userId, timeZone);
 }
 
-// No refresh: the board already shows the filters, and nothing else changed.
 export async function setBoardFiltersAction(filters: ItemFilters) {
   const userId = await requireUserId();
   const { db } = getDb();
   setBoardFiltersCore(db, userId, filters);
+  // So a board the router kept (back from Settings) opens with them too.
+  refresh();
 }
 
 /** Upload an avatar image (already shrunk by the browser) for the signed-in user. */

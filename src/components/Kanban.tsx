@@ -11,7 +11,7 @@ import {
 } from "@/app/actions";
 import type { Item, ItemPrLink, Label, Project } from "@/core/schema";
 import type { PendingSpaceInviteView, SpaceView } from "@/core/spaces";
-import type { ItemFilters } from "@/lib/filters";
+import { type ItemFilters, matchesFilters } from "@/lib/filters";
 import { isEditableTarget, matchesShortcut } from "@/lib/keyboard";
 import { Button } from "@/components/ui/button";
 import { AddProjectButton } from "./AddProjectButton";
@@ -30,7 +30,7 @@ import { PullToSearch } from "./PullToSearch";
 import { runAction } from "./run-action";
 import { ShareDialog } from "./ShareDialog";
 import { saveCollapsedTrays, SpaceTray } from "./SpaceTray";
-import { useDayStart } from "./use-day-start";
+import { useDayStart, useToday } from "./use-day-start";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
 import { LabelsContext } from "./Labels";
 import { RemoveListContext, useOptimisticLists } from "./use-list-saves";
@@ -343,6 +343,20 @@ export function Kanban({
   // Items opened from the palette get their own dialog here, since the item
   // may sit in a list the current view doesn't show.
   const boardItems = onBoard.flatMap((p) => itemsByProject[p.id] ?? []);
+
+  // Whether an item just added shows under the viewer's filters, as its list
+  // decides (shownInGroups): it matches, taking the date and labels it lacks
+  // from its parent, or one of its new sub-items does. Those are bare titles,
+  // so they go by their parent's date and labels and have nobody on them.
+  const today = useToday();
+  const shownOnBoard = (item: Item, subItems: number) => {
+    const parent = boardItems.find((i) => i.id === item.parentId);
+    const bare = { assigneeIds: [], labels: [], dueDate: null, dueFrom: null };
+    return (
+      matchesFilters(item, parent, shownFilters, today) ||
+      (subItems > 0 && matchesFilters(bare, item, shownFilters, today))
+    );
+  };
   const paletteDetail = useItemDetailDialog(boardItems);
   const paletteProject = onBoard.find(
     (p) => p.id === paletteDetail.item?.projectId,
@@ -643,7 +657,7 @@ export function Kanban({
           assigneesByProject={assigneesByProject}
           viewerId={viewerId}
           initialProjectId={newItem.projectId}
-          filters={shownFilters}
+          shownOnBoard={shownOnBoard}
         />
 
         <NewProjectDialog

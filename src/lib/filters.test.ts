@@ -35,7 +35,7 @@ describe("matchesFilters", () => {
   });
 
   it("matches a span by any day in it, and This week from today on", () => {
-    // Started last week, ends Monday: overlaps next week, not today.
+    // From Thursday to next Monday: today and next week are in it.
     const span = it_("2026-11-16", "2026-11-12");
     expect(matchesFilters(span, undefined, f({ due: ["next-week"] }), today)).toBe(true);
     expect(matchesFilters(span, undefined, f({ due: ["today"] }), today)).toBe(true);
@@ -84,6 +84,7 @@ describe("parseItemFilters", () => {
   it("falls back to none for missing or broken saved filters", () => {
     expect(parseItemFilters(null)).toEqual(NO_FILTERS);
     expect(parseItemFilters({ ...NO_FILTERS, due: ["someday"] })).toEqual(NO_FILTERS);
+    expect(parseItemFilters({ ...NO_FILTERS, due: ["today", "today"] })).toEqual(NO_FILTERS);
     expect(parseItemFilters({ ...NO_FILTERS, dueRange: { from: "2026-11-20", to: "2026-11-01" } })).toEqual(
       NO_FILTERS,
     );
