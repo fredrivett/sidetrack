@@ -139,12 +139,13 @@ export function LoginForm({
       </AuthTitle>
       <form action={onSubmit} className="space-y-4">
         {mode === "sign-up" && (
-          <Field label="Name" hint="Optional">
-            <Input name="name" autoComplete="name" className="h-9" />
+          <Field id="name" label="Name" hint="Optional">
+            <Input id="name" name="name" autoComplete="name" className="h-9" />
           </Field>
         )}
         {mode === "sign-up" && (
           <Field
+            id="username"
             label="Username"
             note={
               <>
@@ -173,6 +174,7 @@ export function LoginForm({
             }
           >
             <Input
+              id="username"
               name="username"
               autoComplete="username"
               required
@@ -188,8 +190,9 @@ export function LoginForm({
             />
           </Field>
         )}
-        <Field label="Email">
+        <Field id="email" label="Email">
           <Input
+            id="email"
             name="email"
             type="email"
             autoComplete="email"
@@ -200,6 +203,7 @@ export function LoginForm({
           />
         </Field>
         <Field
+          id="password"
           label="Password"
           hint={
             mode === "sign-in" ? (
@@ -215,6 +219,7 @@ export function LoginForm({
           }
         >
           <Input
+            id="password"
             name="password"
             type="password"
             autoComplete={mode === "sign-up" ? "new-password" : "current-password"}
@@ -269,15 +274,18 @@ export function LoginForm({
 }
 
 /**
- * A labelled input, with an optional hint or link on the label's right and a
+ * A labelled input (give it `id`), with an optional hint or link on the label's right and a
  * note, such as the username's availability, under the input.
  */
 function Field({
+  id,
   label,
   hint,
   note,
   children,
 }: {
+  /** The input's id, which the label points at. */
+  id: string;
   label: string;
   hint?: ReactNode;
   note?: ReactNode;
@@ -285,13 +293,15 @@ function Field({
 }) {
   return (
     <div className="space-y-1.5">
-      <label className="block space-y-1.5">
-        <span className="flex items-baseline justify-between gap-2">
-          <span className="text-sm font-medium">{label}</span>
-          {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
-        </span>
-        {children}
-      </label>
+      {/* The hint stays outside the label: a link inside one would be part
+          of the input's label and its click target. */}
+      <div className="flex items-baseline justify-between gap-2">
+        <label htmlFor={id} className="text-sm font-medium">
+          {label}
+        </label>
+        {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
+      </div>
+      {children}
       {note}
     </div>
   );

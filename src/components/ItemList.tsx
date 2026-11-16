@@ -222,16 +222,23 @@ function applyDrop(
 /**
  * A drop applied to a flat, position-ordered list of items, as the server
  * applies it (reorderItem, setItemParent): for the landing page's preview
- * board, which keeps its items locally.
+ * board, which keeps its items locally. Nesting an open item reopens a
+ * finished parent.
  */
 export function moveItem(
   list: Item[],
   id: string,
   target: Pick<DropTarget, "parentId" | "position">,
 ): Item[] {
+  const moved = list.find((i) => i.id === id);
+  const reopens =
+    target.parentId !== null &&
+    moved?.parentId !== target.parentId &&
+    moved?.completedAt === null;
   return applyDrop(flatten(nestItems(list)), id, target).map((f) => ({
     ...f.item,
     parentId: f.parentId,
+    ...(reopens && f.item.id === target.parentId && { completedAt: null }),
   }));
 }
 

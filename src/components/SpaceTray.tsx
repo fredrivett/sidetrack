@@ -58,7 +58,8 @@ export function SpaceTray({
   /** The tray's ⋯ menu, after the +. */
   menu?: ReactNode;
   onToggle: () => void;
-  onAddList: () => void;
+  /** Omit to leave out the add list button, as the landing page's preview does. */
+  onAddList?: () => void;
   /** From the collapsed tray's names: expand it and centre that list. */
   onOpenList: (projectId: string) => void;
   children: ReactNode;
@@ -94,15 +95,17 @@ export function SpaceTray({
           <span className="max-w-48 truncate">{name}</span>
           <span className="text-xs font-normal text-neutral-500">{lists.length}</span>
         </button>
-        <button
-          type="button"
-          onClick={onAddList}
-          aria-label={`Add list to ${name}`}
-          title="Add list"
-          className="ml-auto flex size-7 shrink-0 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-300/50 hover:text-neutral-700 dark:hover:bg-neutral-700/50 dark:hover:text-neutral-300"
-        >
-          <Plus className="size-4" />
-        </button>
+        {onAddList && (
+          <button
+            type="button"
+            onClick={onAddList}
+            aria-label={`Add list to ${name}`}
+            title="Add list"
+            className="ml-auto flex size-7 shrink-0 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-300/50 hover:text-neutral-700 dark:hover:bg-neutral-700/50 dark:hover:text-neutral-300"
+          >
+            <Plus className="size-4" />
+          </button>
+        )}
         {menu}
       </header>
       {/* The lists' track animates between its full width (1fr) and none

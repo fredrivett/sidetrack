@@ -221,18 +221,21 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
   const [sessions, setSessions] = useState(initial.sessions);
   const [collapsedTrays, setCollapsedTrays] = useState<ReadonlySet<string>>(new Set());
 
+  // Finished work needs no agent, as on the server: completing an item ends
+  // the sessions on it, and on the sub-items and parent it completes with it.
+  // Adjusted while rendering, so a finished row never shows an agent at work.
+  const doneAt = new Map(items.map((i) => [i.id, i.completedAt]));
+  const finished = sessions.map((s) => ({
+    ...s,
+    finishedAt: s.finishedAt ?? doneAt.get(s.itemId) ?? null,
+  }));
+  if (finished.some((s, i) => s.finishedAt !== sessions[i].finishedAt)) setSessions(finished);
+
   // The board's saves, applied here instead of on the server.
   const changes = useMemo<ItemChanges>(
     () => ({
-      setCompleted: (item, done) => {
-        setItems((list) => applyItemChange(list, { kind: "complete", item, done, at: Date.now() }));
-        // Finishing an item ends the agents' work on it, as on the server.
-        if (done) {
-          setSessions((list) =>
-            list.map((s) => (s.itemId === item.id ? { ...s, finishedAt: Date.now() } : s)),
-          );
-        }
-      },
+      setCompleted: (item, done) =>
+        setItems((list) => applyItemChange(list, { kind: "complete", item, done, at: Date.now() })),
       deleteItem: (item) => setItems((list) => applyItemChange(list, { kind: "delete", item })),
       setParent: (item, parentId) =>
         setItems((list) => applyItemChange(list, { kind: "parent", item, parentId })),
@@ -362,7 +365,6 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
                   lists={tray.lists}
                   collapsed={collapsedTrays.has(tray.id)}
                   onToggle={() => toggleTray(tray.id, !collapsedTrays.has(tray.id))}
-                  onAddList={noop}
                   onOpenList={() => toggleTray(tray.id, false)}
                 >
                   {tray.lists.map((list) => (
