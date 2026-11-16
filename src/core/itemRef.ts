@@ -4,7 +4,7 @@ import { hasProjectAccess } from "./access";
 import { users } from "./auth-schema";
 import type { Db } from "./db";
 import { getItem } from "./items";
-import { type Item, items, projects } from "./schema";
+import { type Item, itemRefAliases, items, projects } from "./schema";
 
 export type ResolveItemResult =
   | { status: "ok"; item: Item }
@@ -20,15 +20,30 @@ export type ResolveItemResult =
     }
   | { status: "not_found"; reason: "format" | "user" | "prefix" | "number" };
 
-/** Resolve `(projectId, number)` to an item, or null if no such number. */
-function itemByNumber(db: Db, projectId: string, number: number): Item | null {
-  return (
-    db
-      .select({ items })
-      .from(items)
-      .where(and(eq(items.projectId, projectId), eq(items.number, number)))
-      .get()?.items ?? null
-  );
+/**
+ * Resolve `(projectId, number)` to an item, or null if no such number: the
+ * item there now, or one that had that ref before it moved to another list
+ * (item_ref_aliases). The item is returned only if the viewer can still see
+ * where it is now.
+ */
+function itemByNumber(
+  db: Db,
+  userId: string,
+  projectId: string,
+  number: number,
+): Item | null {
+  const here = db
+    .select({ items })
+    .from(items)
+    .where(and(eq(items.projectId, projectId), eq(items.number, number)))
+    .get()?.items;
+  if (here) return here;
+  const alias = db
+    .select({ itemId: itemRefAliases.itemId })
+    .from(itemRefAliases)
+    .where(and(eq(itemRefAliases.projectId, projectId), eq(itemRefAliases.number, number)))
+    .get();
+  return (alias && getItem(db, userId, alias.itemId)) || null;
 }
 
 /**
@@ -77,7 +92,7 @@ export function resolveItemRef(
       )
       .get();
     if (!project) return { status: "not_found", reason: "prefix" };
-    const item = itemByNumber(db, project.id, parsed.number);
+    const item = itemByNumber(db, userId, project.id, parsed.number);
     return item ? { status: "ok", item } : { status: "not_found", reason: "number" };
   }
 
@@ -106,7 +121,7 @@ export function resolveItemRef(
     };
   }
 
-  const item = itemByNumber(db, matches[0].id, parsed.number);
+  const item = itemByNumber(db, userId, matches[0].id, parsed.number);
   return item ? { status: "ok", item } : { status: "not_found", reason: "number" };
 }
 

@@ -16,6 +16,7 @@ import {
 } from "@/core/autoEmoji";
 import { addComment, listComments, mentionNotice } from "@/core/comments";
 import { addLabel, getLabel, listLabels, updateLabel } from "@/core/labels";
+import { moveItem, previewMoveItem } from "@/core/move";
 import { getDb } from "@/core/db";
 import { getTimeZone } from "@/core/users";
 import { nestItems } from "@/lib/itemTree";
@@ -1108,6 +1109,53 @@ export function registerTools(server: McpServer, ctx: McpContext) {
             setItemParent(db, userId, item.id, parentId, SOURCE, pos.position),
           ),
         );
+      } catch (e) {
+        return errorText(`${(e as Error).message} — no change was made.`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "move_item",
+    {
+      title: "Move item to another list",
+      description:
+        "Move an item, with its sub-items, to the top of another list (a sub-item moved on its own leaves its checklist). " +
+        "Moving changes the item's ref: each item that moves gets the next number in the new list, or its old one if it was there before, " +
+        "and its old ref keeps working everywhere. " +
+        "Call it first without token: that only previews the move and changes nothing. It returns refs (each item's ref now and the one it gets), " +
+        "matchedLabels (labels the list already has, which the items take on), missingLabels (labels it doesn't have), " +
+        "unassigned (people who can't see the list, so they come off the items) and a token. " +
+        "Show the user all of that and ask them to confirm the move; when missingLabels isn't empty, also ask whether to create those labels in the new list or drop them from the items. " +
+        "Then call again with that token, and missing_labels \"create\" or \"drop\" as they chose (required when there are missing labels). " +
+        "The move only happens with the token from its preview, and is refused if anything in it has changed since: then preview again and show the user the new one. " +
+        "Never pass the token for a move the user hasn't seen and agreed to. " +
+        "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id; list_id is the target list's id.",
+      inputSchema: {
+        id: z.string(),
+        list_id: z.string(),
+        missing_labels: z.enum(["create", "drop"]).optional(),
+        token: z.string().optional(),
+      },
+    },
+    async ({ id, list_id, missing_labels, token }) => {
+      const { db } = getDb();
+      const { item, error } = resolveItemArg(db, userId, id);
+      if (error) return error;
+      if (!getProject(db, userId, list_id)) return notFound("list", list_id);
+      try {
+        if (token === undefined) {
+          return json({ moved: false, ...previewMoveItem(db, userId, item.id, list_id) });
+        }
+        const { item: moved, ...plan } = moveItem(
+          db,
+          userId,
+          item.id,
+          { projectId: list_id, token, missingLabels: missing_labels },
+          SOURCE,
+        );
+        // The token is spent: the move changed what it named.
+        return json({ moved: true, ...plan, token: undefined, item: withItemRef(db, userId, moved) });
       } catch (e) {
         return errorText(`${(e as Error).message} — no change was made.`);
       }

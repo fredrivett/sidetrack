@@ -423,3 +423,81 @@ describe("comments", () => {
     ]);
   });
 });
+
+describe("move_item", () => {
+  it("previews without changing anything, needs a labels choice, then moves as the agent", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const eng = createProject(db, fred, { name: "Engineering" }, "web");
+    const ops = createProject(db, fred, { name: "Ops" }, "web");
+    addItem(db, fred, { projectId: ops.id, title: "Rotate keys", labels: ["Bug"] }, "web");
+    const item = addItem(
+      db,
+      fred,
+      { projectId: eng.id, title: "Fix login", labels: ["bug", "Frontend"], subItems: ["Repro"] },
+      "web",
+    );
+    const call = await connectAs(fred);
+
+    const preview = await call("move_item", { id: "ENG-1", list_id: ops.id });
+    expect(preview.data).toEqual({
+      moved: false,
+      from: { id: eng.id, name: "Engineering" },
+      to: { id: ops.id, name: "Ops" },
+      refs: [
+        { id: item.id, title: "Fix login", from: "ENG-1", to: "OPS-2" },
+        expect.objectContaining({ title: "Repro", from: "ENG-2", to: "OPS-3" }),
+      ],
+      matchedLabels: [{ from: "bug", to: "Bug" }],
+      missingLabels: ["Frontend"],
+      unassigned: [],
+      token: expect.any(String),
+    });
+    expect(getItem(db, fred, item.id)?.projectId).toBe(eng.id);
+    const { token } = preview.data;
+
+    // A made-up token, or none with missing labels to decide, moves nothing.
+    const made = await call("move_item", { id: "ENG-1", list_id: ops.id, token: "x", missing_labels: "drop" });
+    expect(made.error).toMatch(/preview it again — no change was made/);
+    const refused = await call("move_item", { id: "ENG-1", list_id: ops.id, token });
+    expect(refused.error).toMatch(/Frontend.*no change was made/);
+    expect(getItem(db, fred, item.id)?.projectId).toBe(eng.id);
+
+    const done = await call("move_item", {
+      id: "ENG-1",
+      list_id: ops.id,
+      token,
+      missing_labels: "drop",
+    });
+    expect(done.data).not.toHaveProperty("token");
+    expect(done.data).toMatchObject({
+      moved: true,
+      item: { id: item.id, listId: ops.id, ref: "OPS-2", labels: ["Bug"] },
+    });
+    // The old ref still finds it.
+    expect((await call("get_item", { id: "ENG-1" })).data).toMatchObject({ ref: "OPS-2" });
+    const moves = listAudit(db, fred, { itemId: item.id })
+      .filter((e) => e.entityId === item.id && e.detail.startsWith("moved"))
+      .map((e) => [e.agentKeyId, e.projectId]);
+    expect(moves.sort()).toEqual(
+      [
+        [AGENT.keyId, eng.id],
+        [AGENT.keyId, ops.id],
+      ].sort(),
+    );
+  });
+
+  it("returns not found for a list the caller can't see", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const bob = createTestUser(db, { username: "bob" });
+    const eng = createProject(db, fred, { name: "Engineering" }, "web");
+    const bobs = createProject(db, bob, { name: "Bob's" }, "web");
+    const item = addItem(db, fred, { projectId: eng.id, title: "Fix login" }, "web");
+    const { error } = await (await connectAs(fred))("move_item", {
+      id: "ENG-1",
+      list_id: bobs.id,
+      token: "x",
+    });
+    expect(error).toBe(`list not found: ${bobs.id}`);
+    expect(getItem(db, fred, item.id)?.projectId).toBe(eng.id);
+  });
+});
