@@ -117,13 +117,12 @@ export default async function Welcome() {
         </section>
 
         {/* The real board on made-up lists, to try out (see PreviewBoard).
-            Wider than the text so its three lists fit side by side. Its
-            slide-in fills backwards only: a translate animation still in
-            effect makes the section the containing block for fixed
-            elements, which would offset the dragged card's overlay. */}
+            Wider than the text so its three lists fit side by side. It
+            rises in by `top`, not slide-in's translate, which would offset
+            the dragged card's overlay (see rise-in). */}
         <section
           aria-label="A sample board to try"
-          className="relative mx-auto mt-16 max-w-6xl px-5 motion-safe:animate-[slide-in_600ms_cubic-bezier(0.2,0.8,0.2,1)_backwards] [--slide-from:0_16px] [animation-delay:150ms] sm:mt-20 sm:px-8"
+          className="relative top-0 mx-auto mt-16 max-w-6xl px-5 motion-safe:animate-[rise-in_600ms_cubic-bezier(0.2,0.8,0.2,1)_backwards] [animation-delay:150ms] sm:mt-20 sm:px-8"
         >
           <PreviewBoard today={today} now={now} />
           {/* What the agent on FIX-12 last reported, below its list. */}
