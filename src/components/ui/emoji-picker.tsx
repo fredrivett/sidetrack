@@ -72,7 +72,7 @@ function EmojiPickerSkinTones({
   }, [skinTone]);
   return (
     <div
-      role="radiogroup"
+      role="group"
       aria-label="Skin tone"
       className={cn("flex h-10 shrink-0 items-center gap-1.5 border-t px-3", className)}
       data-slot="emoji-picker-skin-tones"
@@ -83,16 +83,32 @@ function EmojiPickerSkinTones({
         <button
           key={tone}
           type="button"
-          role="radio"
-          aria-checked={skinTone === tone}
+          aria-pressed={skinTone === tone}
           aria-label={label}
           title={label}
           onClick={() => setSkinTone(tone)}
-          className="size-4 rounded-full outline-offset-2 ring-offset-2 ring-offset-popover aria-checked:ring-[1.5px] aria-checked:ring-foreground"
+          className="size-4 rounded-full outline-offset-2 ring-offset-2 ring-offset-popover aria-pressed:ring-[1.5px] aria-pressed:ring-foreground"
           style={{ backgroundColor: color }}
         />
       ))}
     </div>
+  );
+}
+
+/**
+ * `emoji` in the picker's current skin tone, unchanged when it has none, for
+ * emoji shown outside the grid, such as suggestions.
+ */
+function EmojiPickerToned({
+  emoji,
+  children,
+}: {
+  emoji: string;
+  children: (toned: string) => React.ReactNode;
+}) {
+  const [skinTone, , variations] = useSkinTone(emoji);
+  return children(
+    variations.find((v) => v.skinTone === skinTone)?.emoji ?? emoji,
   );
 }
 
@@ -198,4 +214,5 @@ export {
   EmojiPickerSearch,
   EmojiPickerContent,
   EmojiPickerSkinTones,
+  EmojiPickerToned,
 };

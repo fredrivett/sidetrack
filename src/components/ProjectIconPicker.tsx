@@ -13,6 +13,7 @@ import {
   EmojiPickerContent,
   EmojiPickerSearch,
   EmojiPickerSkinTones,
+  EmojiPickerToned,
 } from "@/components/ui/emoji-picker";
 import { Input } from "@/components/ui/input";
 import {
@@ -81,6 +82,10 @@ export function ProjectIconPicker({
     />
   );
 }
+
+// Two rows of the grid's 9 columns, so however many Jev rates a fit, the grid and the
+// skin tone footer keep their room in the fixed-height picker.
+const MAX_SUGGESTIONS = 18;
 
 /**
  * The icon picker itself, controlled: `icon` is what shows (an emoji or
@@ -232,20 +237,24 @@ export function IconPicker({
               <div className="px-3 pt-3.5 pb-2 text-xs leading-none text-muted-foreground">
                 Suggested
               </div>
-              <div className="flex flex-wrap px-1">
-                {suggestions.map((emoji) => (
-                  <button
-                    key={emoji}
-                    type="button"
-                    aria-label={`Use ${emoji}`}
-                    onClick={() => select(emoji)}
-                    className={cn(
-                      "flex size-7 items-center justify-center rounded-sm text-base hover:bg-accent",
-                      icon === emoji && "bg-accent",
+              {/* As wide as the grid's 9 columns, so they line up. */}
+              <div className="flex max-w-[16.25rem] flex-wrap px-1">
+                {suggestions.slice(0, MAX_SUGGESTIONS).map((emoji) => (
+                  <EmojiPickerToned key={emoji} emoji={emoji}>
+                    {(toned) => (
+                      <button
+                        type="button"
+                        aria-label={`Use ${toned}`}
+                        onClick={() => select(toned)}
+                        className={cn(
+                          "flex size-7 items-center justify-center rounded-sm text-base hover:bg-accent",
+                          icon === toned && "bg-accent",
+                        )}
+                      >
+                        {toned}
+                      </button>
                     )}
-                  >
-                    {emoji}
-                  </button>
+                  </EmojiPickerToned>
                 ))}
               </div>
             </div>
