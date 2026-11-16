@@ -10,6 +10,7 @@ import { getCurrentSession } from "@/auth/session";
 import { isSignUpOpen } from "@/auth/signup";
 import { dayOf } from "@/lib/time";
 import { cn } from "@/lib/utils";
+import { appBaseUrl, SITE_DESCRIPTION } from "../site";
 import { PreviewBoard } from "./PreviewBoard";
 
 // The landing page. src/proxy.ts shows it at / to signed-out visitors (the
@@ -17,10 +18,11 @@ import { PreviewBoard } from "./PreviewBoard";
 
 export const dynamic = "force-dynamic";
 
+// The description, Open Graph and social card come from the root layout.
+// The canonical URL is /, where signed-out visitors see this page.
 export const metadata: Metadata = {
-  title: "Sidetrack · the home for everything you get sidetracked by",
-  description:
-    "A calm, self-hostable board for your side projects, with an MCP server built in so your AI agents can keep it up to date.",
+  title: { absolute: "Sidetrack · the home for everything you get sidetracked by" },
+  alternates: { canonical: "/" },
 };
 
 const REPO = "https://github.com/fredrivett/sidetrack";
@@ -68,7 +70,11 @@ function renderedAt() {
 }
 
 export default async function Welcome() {
-  const [session, stars] = await Promise.all([getCurrentSession(), repoStars()]);
+  const [session, stars, url] = await Promise.all([
+    getCurrentSession(),
+    repoStars(),
+    appBaseUrl(),
+  ]);
   const signedIn = Boolean(session);
   const { now, today } = renderedAt();
   // Self-hosted instances usually lock signup after the first account, so
@@ -81,6 +87,10 @@ export default async function Welcome() {
 
   return (
     <div className="relative isolate flex min-h-dvh flex-col overflow-x-hidden">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: structuredData(`${url}/`) }}
+      />
       <DotGrid className="h-[44rem] [mask-image:radial-gradient(ellipse_at_top,black_10%,transparent_65%)]" />
 
       <header className="mx-auto flex w-full max-w-5xl items-center justify-between px-5 py-4 sm:px-8">
@@ -209,6 +219,30 @@ export default async function Welcome() {
       </footer>
     </div>
   );
+}
+
+/**
+ * What search engines read about the site: its name (shown above results)
+ * and what Sidetrack is. `<` is escaped so no text can close the script tag.
+ */
+function structuredData(url: string) {
+  return JSON.stringify({
+    "@context": "https://schema.org",
+    "@graph": [
+      { "@type": "WebSite", name: "Sidetrack", url },
+      {
+        "@type": "SoftwareApplication",
+        name: "Sidetrack",
+        url,
+        description: SITE_DESCRIPTION,
+        applicationCategory: "ProductivityApplication",
+        operatingSystem: "Web",
+        offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+        license: "https://www.gnu.org/licenses/agpl-3.0.html",
+        sameAs: [REPO],
+      },
+    ],
+  }).replace(/</g, "\\u003c");
 }
 
 function Feature({

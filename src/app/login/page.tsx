@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { AuthShell } from "@/components/AuthShell";
 import { LoginForm } from "@/components/LoginForm";
@@ -6,6 +7,8 @@ import { getCurrentSession } from "@/auth/session";
 import { isSignUpOpen } from "@/auth/signup";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: "Sign in" };
 
 export default async function LoginPage({
   searchParams,

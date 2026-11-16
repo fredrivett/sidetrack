@@ -3,32 +3,49 @@ import { LatestDeploy } from "@/components/LatestDeploy";
 import { PhysicalKeyboard } from "@/components/PhysicalKeyboard";
 import { ServiceWorker } from "@/components/ServiceWorker";
 import { Toaster } from "@/components/ui/sonner";
+import { getEnv } from "@/lib/env";
 import { PHYSICAL_KEYBOARD_STORAGE_KEY } from "@/lib/keyboard";
 import { STARTUP_IMAGES } from "@/lib/startupImages";
 import { fontVariables } from "./fonts";
+import { SITE_DESCRIPTION } from "./site";
 import "./globals.css";
 
-export const metadata: Metadata = {
-  title: "Sidetrack",
-  description: "Side-project tracker",
-  applicationName: "Sidetrack",
-  appleWebApp: {
-    capable: true,
-    title: "Sidetrack",
-    statusBarStyle: "default",
-    startupImage: STARTUP_IMAGES.map(({ name, media }) => ({
-      // Bump v when the images change: Cloudflare and browsers cache them by URL.
-      url: `/icons/startup/${name}?v=2`,
-      media,
-    })),
-  },
-  icons: {
-    apple: "/icons/apple-touch-icon.png",
-  },
-  // appleWebApp.capable emits only the unprefixed mobile-web-app-capable, and
-  // iOS shows the startup images above only with the apple- prefixed tag.
-  other: { "apple-mobile-web-app-capable": "yes" },
-};
+// A function, not an object, so metadataBase is read when the server runs:
+// BETTER_AUTH_URL is set on the deployed instance, not at build. It turns the
+// social card's path (opengraph-image.tsx) into the absolute URL link
+// previews need.
+export function generateMetadata(): Metadata {
+  const url = getEnv().BETTER_AUTH_URL;
+  return {
+    metadataBase: url ? new URL(url) : undefined,
+    title: { default: "Sidetrack", template: "%s · Sidetrack" },
+    description: SITE_DESCRIPTION,
+    applicationName: "Sidetrack",
+    openGraph: {
+      type: "website",
+      siteName: "Sidetrack",
+      title: "Sidetrack · the home for everything you get sidetracked by",
+      description: SITE_DESCRIPTION,
+    },
+    twitter: { card: "summary_large_image" },
+    appleWebApp: {
+      capable: true,
+      title: "Sidetrack",
+      statusBarStyle: "default",
+      startupImage: STARTUP_IMAGES.map(({ name, media }) => ({
+        // Bump v when the images change: Cloudflare and browsers cache them by URL.
+        url: `/icons/startup/${name}?v=2`,
+        media,
+      })),
+    },
+    icons: {
+      apple: "/icons/apple-touch-icon.png",
+    },
+    // appleWebApp.capable emits only the unprefixed mobile-web-app-capable, and
+    // iOS shows the startup images above only with the apple- prefixed tag.
+    other: { "apple-mobile-web-app-capable": "yes" },
+  };
+}
 
 export const viewport: Viewport = {
   width: "device-width",
