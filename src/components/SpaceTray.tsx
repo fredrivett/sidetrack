@@ -76,13 +76,20 @@ export function SpaceTray({
         collapsed ? "snap-start" : ""
       }`}
     >
-      <header className="flex h-8 shrink-0 items-center gap-1 pl-1 pr-0.5">
+      {/* As the board scrolls, the name sticks to the screen's left edge and
+          the buttons to its right, so the header spans whatever part of the
+          tray is on screen. Each is kept clear of the other: the name stops
+          at the header's padding, which the buttons' --tray-actions width
+          fills, and the buttons stop at the name, where their wrapper
+          starts. Insets count from inside the board's p-3; on phones they
+          line up with a centred column, (100vw - column width) / 2. */}
+      <header className="flex h-8 shrink-0 items-center gap-1 pl-1 pr-[calc(var(--tray-actions)+0.125rem)] [--tray-actions:3.75rem]">
         <button
           type="button"
           onClick={onToggle}
           aria-expanded={!collapsed}
           title={collapsed ? `Show ${name}` : `Collapse ${name}`}
-          className="flex h-7 min-w-0 items-center gap-1.5 rounded-lg px-1.5 text-sm font-semibold hover:bg-neutral-300/50 dark:hover:bg-neutral-700/50"
+          className="sticky left-[4vw] flex h-7 min-w-0 items-center gap-1.5 rounded-lg px-1.5 text-sm font-semibold hover:bg-neutral-300/50 sm:left-3 dark:hover:bg-neutral-700/50"
         >
           <ChevronRight
             aria-hidden
@@ -94,16 +101,20 @@ export function SpaceTray({
           <span className="max-w-48 truncate">{name}</span>
           <span className="text-xs font-normal text-neutral-500">{lists.length}</span>
         </button>
-        <button
-          type="button"
-          onClick={onAddList}
-          aria-label={`Add list to ${name}`}
-          title="Add list"
-          className="ml-auto flex size-7 shrink-0 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-300/50 hover:text-neutral-700 dark:hover:bg-neutral-700/50 dark:hover:text-neutral-300"
-        >
-          <Plus className="size-4" />
-        </button>
-        {menu}
+        <div className="-mr-[var(--tray-actions)] flex min-w-0 flex-1 justify-end">
+          <div className="sticky right-[calc(4vw-0.125rem)] flex shrink-0 items-center gap-1 sm:right-2.5">
+            <button
+              type="button"
+              onClick={onAddList}
+              aria-label={`Add list to ${name}`}
+              title="Add list"
+              className="flex size-7 shrink-0 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-300/50 hover:text-neutral-700 dark:hover:bg-neutral-700/50 dark:hover:text-neutral-300"
+            >
+              <Plus className="size-4" />
+            </button>
+            {menu}
+          </div>
+        </div>
       </header>
       {/* The lists' track animates between its full width (1fr) and none
           (0fr), clipping the columns from the right as they fade, so they
