@@ -244,7 +244,7 @@ export function ProjectDetailDialog({
                   onClick={() => {
                     if (!saving) void saveRepository(suggested);
                   }}
-                  title="Most of this list's linked pull requests are in this repository"
+                  title="Suggested from this list's linked pull requests"
                   className="inline-flex max-w-full items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 dark:text-blue-300 dark:hover:bg-blue-950/40"
                 >
                   <Sparkles className="size-3.5 shrink-0" />

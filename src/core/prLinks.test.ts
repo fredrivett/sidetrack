@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { listAudit } from "./audit";
 import { addItem, deleteItem } from "./items";
+import { acceptInvite, inviteMember } from "./members";
 import {
   canonicalizePrUrl,
   linkItemToPr,
@@ -180,7 +181,20 @@ describe("suggestedRepositories", () => {
     linkItemToPr(db, userId, add(set.id), "https://github.com/acme/web/pull/4", "web");
     createProject(db, userId, { name: "No PRs" }, "web");
 
-    expect(suggestedRepositories(db, userId)).toEqual({ [projectId]: "acme/web" });
+    // Equal counts, linked in reverse order: the alphabetically first wins.
+    const tie = createProject(db, userId, { name: "Tie" }, "web");
+    linkItemToPr(db, userId, add(tie.id), "https://github.com/zed/app/pull/5", "web");
+    linkItemToPr(db, userId, add(tie.id), "https://github.com/acme/app/pull/6", "web");
+
+    expect(suggestedRepositories(db, userId)).toEqual({
+      [projectId]: "acme/web",
+      [tie.id]: "acme/app",
+    });
+    // A member of the list sees the same suggestion; a stranger sees none.
+    const bob = createTestUser(db, { username: "bob" });
+    inviteMember(db, userId, projectId, "bob", "web");
+    acceptInvite(db, bob, projectId, "web");
+    expect(suggestedRepositories(db, bob)).toEqual({ [projectId]: "acme/web" });
     expect(suggestedRepositories(db, createTestUser(db))).toEqual({});
   });
 });
