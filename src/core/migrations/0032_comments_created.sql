@@ -1,0 +1,1 @@
+CREATE INDEX `comments_created` ON `comments` (`created_at`);

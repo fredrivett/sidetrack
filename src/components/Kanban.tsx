@@ -571,12 +571,23 @@ export function Kanban({
           open={audit.open}
           projectId={audit.projectId}
           projects={projects}
+          items={boardItems}
+          // Opening a comment's item swaps Activity for the item's dialog.
+          onOpenItem={(item) => {
+            setAudit({ open: false });
+            paletteDetail.openDetail(item);
+          }}
           onClose={() => setAudit({ open: false })}
         />
 
         <NewItemDialog
           open={newItem.open}
           onOpenChange={(open) => setNewItem((s) => ({ ...s, open }))}
+          // From the toast: the item opens in place of New item, not over it.
+          onOpenItem={(item) => {
+            setNewItem((s) => ({ ...s, open: false }));
+            paletteDetail.openDetail(item);
+          }}
           projects={onBoard}
           categoriesByProject={categoriesByProject}
           assigneesByProject={assigneesByProject}

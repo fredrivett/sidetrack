@@ -345,7 +345,11 @@ export const comments = sqliteTable(
     // When its author last edited it; null if they never have.
     editedAt: integer("edited_at"),
   },
-  (t) => [index("comments_item_created").on(t.itemId, t.createdAt)],
+  (t) => [
+    index("comments_item_created").on(t.itemId, t.createdAt),
+    // Activity's Comments tab reads the newest across lists.
+    index("comments_created").on(t.createdAt),
+  ],
 );
 
 // A user's GitHub webhook: the id goes in the payload URL GitHub posts to

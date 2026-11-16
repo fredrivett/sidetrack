@@ -21,6 +21,7 @@ import {
   addComment as addCommentCore,
   deleteComment as deleteCommentCore,
   listComments as listCommentsCore,
+  listRecentComments as listRecentCommentsCore,
   updateComment as updateCommentCore,
 } from "@/core/comments";
 import { getDb } from "@/core/db";
@@ -529,6 +530,15 @@ export async function listCommentsAction(itemId: string) {
   const userId = await requireUserId();
   const { db } = getDb();
   return listCommentsCore(db, userId, itemId);
+}
+
+export async function listRecentCommentsAction(opts: {
+  projectId?: string;
+  limit?: number;
+} = {}) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  return listRecentCommentsCore(db, userId, opts);
 }
 
 export async function addCommentAction(itemId: string, body: string) {
