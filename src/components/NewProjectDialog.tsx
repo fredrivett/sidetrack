@@ -156,7 +156,8 @@ export function NewProjectDialog({
                   name={trimmedName}
                   size={20}
                   disabled={pending}
-                  className="size-9 border border-input"
+                  // The input's height and corners, so the two read as one row.
+                  className="size-8 rounded-lg border border-input"
                   faded={icon.faded}
                   suggestions={suggestions}
                   onOpen={onOpen}
