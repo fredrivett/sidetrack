@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, Bot, History, Server, Sparkles } from "lucide-react";
+import { ArrowRight, Bot, History, Server, Sparkles, Star } from "lucide-react";
 import { DotGrid } from "@/components/AuthShell";
 import { GitHubMark } from "@/components/GitHubMark";
 import { LogoMark } from "@/components/LogoMark";
@@ -25,6 +25,31 @@ export const metadata: Metadata = {
 
 const REPO = "https://github.com/fredrivett/sidetrack";
 
+// The repo's star count, kept for an hour: unauthenticated GitHub API calls
+// are limited to 60 an hour, and the page renders per request.
+const STARS_TTL_MS = 60 * 60 * 1000;
+let starsCache: { stars: number | null; at: number } | null = null;
+
+/** The repo's stars, or null when GitHub doesn't answer within a second. */
+async function repoStars(): Promise<number | null> {
+  if (starsCache && Date.now() - starsCache.at < STARS_TTL_MS) return starsCache.stars;
+  let stars: number | null = null;
+  try {
+    const res = await fetch("https://api.github.com/repos/fredrivett/sidetrack", {
+      headers: { Accept: "application/vnd.github+json" },
+      signal: AbortSignal.timeout(1000),
+    });
+    if (res.ok) {
+      const { stargazers_count } = (await res.json()) as { stargazers_count?: unknown };
+      if (typeof stargazers_count === "number") stars = stargazers_count;
+    }
+  } catch {
+    // Offline or slow: show the badge without a count.
+  }
+  starsCache = { stars, at: Date.now() };
+  return stars;
+}
+
 /**
  * When this page renders, as a time and the server's day. The preview's
  * dates count from here, so its server render and the browser's match; due
@@ -36,7 +61,8 @@ function renderedAt() {
 }
 
 export default async function Welcome() {
-  const signedIn = Boolean(await getCurrentSession());
+  const [session, stars] = await Promise.all([getCurrentSession(), repoStars()]);
+  const signedIn = Boolean(session);
   const { now, today } = renderedAt();
   // Self-hosted instances usually lock signup after the first account, so
   // the call to action falls back to signing in.
@@ -61,10 +87,18 @@ export default async function Welcome() {
         <nav className="flex items-center gap-1 sm:gap-2">
           <a
             href={REPO}
-            className={buttonVariants({ variant: "ghost", size: "icon" })}
-            aria-label="Sidetrack on GitHub"
+            className="mr-1 flex h-7 items-center gap-1.5 rounded-full border border-neutral-200 bg-white/60 px-2.5 text-xs font-medium text-muted-foreground tabular-nums outline-none transition-colors hover:border-neutral-300 hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 dark:border-neutral-800 dark:bg-neutral-900/60 dark:hover:border-neutral-700"
+            aria-label={
+              stars === null ? "Sidetrack on GitHub" : `Sidetrack on GitHub, ${stars} ${stars === 1 ? "star" : "stars"}`
+            }
           >
-            <GitHubMark className="size-4" />
+            <GitHubMark className="size-3.5" />
+            {stars !== null && (
+              <span className="flex items-center gap-1">
+                <Star className="size-3 fill-current" aria-hidden />
+                {new Intl.NumberFormat("en", { notation: "compact" }).format(stars)}
+              </span>
+            )}
           </a>
           {!signedIn && cta.href !== "/login" && (
             <Link href="/login" className={buttonVariants({ variant: "ghost" })}>
