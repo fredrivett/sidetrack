@@ -55,10 +55,12 @@ function stopMessage(ref: string): string {
  * created. A stop that arrives before its start leaves a stopped entry, so the
  * start never runs.
  *
- * Each side effect is recorded before it happens and undone only when it
- * fails cleanly, so a crash in between can lose it but never repeat it: an
- * orb started twice, or a thread told twice to start, is worse than one that
- * didn't happen, which assigning again in Sidetrack (a new session) fixes.
+ * Each side effect is recorded before it happens and never retried: a call
+ * that fails or times out may still have happened (a thread created, a
+ * message sent, with the answer lost), so it's logged and left. An orb
+ * started twice, or a thread told twice to start, is worse than one that
+ * didn't happen, which unassigning and assigning again in Sidetrack (a new
+ * session) fixes.
  */
 type Sessions = Record<
 	string,
@@ -118,60 +120,65 @@ export default async function sidetrackDispatch(amp: PluginAPI) {
 			known.stopped = true
 			save(sessions)
 			if (!known.thread || !known.prompted) return
-			try {
-				await amp.threads
-					.get(known.thread)
-					.appendUserMessage({ type: 'user-message', content: stopMessage(request.ref) }, { steer: true })
-			} catch (error) {
-				known.stopped = false
-				save(sessions)
-				throw error
-			}
+			const thread = known.thread
+			await once(`stop ${thread} on ${request.ref}`, ctx.signal, () =>
+				amp.threads
+					.get(thread)
+					.appendUserMessage({ type: 'user-message', content: stopMessage(request.ref) }, { steer: true }),
+			)
 			return
 		}
 
-		// Stopped, already prompted, or a thread begun before a crash (it may
-		// exist, so don't make another): nothing to redo.
-		if (known && (known.stopped || known.prompted || !known.thread)) return
-		const entry: Sessions[string] = known ?? {
-			ref: request.ref,
-			thread: null,
-			prompted: false,
-			stopped: false,
-		}
-		if (!entry.thread) {
-			sessions[request.sessionId] = entry
-			save(sessions)
-			try {
-				const agent = await ctx.thread.agent()
-				const thread = await agent.createThread({
-					executor: 'orb',
-					// Signed by Sidetrack, where only the list's admin sets it.
-					project: request.repository,
-					multiplayerTTLSeconds: null,
-				})
-				entry.thread = thread.id
-			} catch (error) {
-				// No thread was made, so a retry may try again.
-				delete sessions[request.sessionId]
-				save(sessions)
-				throw error
-			}
-		}
-		const thread = entry.thread
+		// Already started, stopped, or begun and failed: nothing to redo.
+		if (known) return
+		const entry: Sessions[string] = { ref: request.ref, thread: null, prompted: false, stopped: false }
+		sessions[request.sessionId] = entry
+		save(sessions)
+		const created = await once(`start a thread on ${request.ref}`, ctx.signal, async () => {
+			const agent = await ctx.thread.agent()
+			return agent.createThread({
+				executor: 'orb',
+				// Signed by Sidetrack, where only the list's admin sets it.
+				project: request.repository,
+				multiplayerTTLSeconds: null,
+			})
+		})
+		if (!created) return
+		const thread = created.value
+		entry.thread = thread.id
 		entry.prompted = true
 		save(sessions)
+		const prompted = await once(`prompt ${thread.id} on ${request.ref}`, ctx.signal, () =>
+			amp.threads
+				.get(thread.id)
+				.appendUserMessage({ type: 'user-message', content: startMessage(request.ref) }),
+		)
+		if (prompted) amp.logger.log(`Started ${thread.id} on ${request.ref}.`)
+	}
+
+	/**
+	 * Make one Amp call that must not be repeated, bounded by the delivery's
+	 * deadline so a call that never answers can't hold up the deliveries
+	 * queued behind it. Returns its result wrapped, or null, logged, when it
+	 * fails or runs out of time; the caller has already recorded it as done.
+	 */
+	const once = async <T>(what: string, signal: AbortSignal, call: () => Promise<T>) => {
 		try {
-			await amp.threads
-				.get(thread)
-				.appendUserMessage({ type: 'user-message', content: startMessage(request.ref) })
+			const value = await new Promise<T>((resolve, reject) => {
+				if (signal.aborted) return reject(new Error('the delivery ran out of time'))
+				signal.addEventListener('abort', () => reject(new Error('the delivery ran out of time')), {
+					once: true,
+				})
+				call().then(resolve, reject)
+			})
+			return { value }
 		} catch (error) {
-			// Not prompted: a retry prompts the same thread rather than making another.
-			entry.prompted = false
-			save(sessions)
-			throw error
+			amp.logger.log(
+				`Couldn't ${what} (${String(error)}); not retrying, as it may have happened. ` +
+					'Unassign and assign the agent again in Sidetrack to start over.',
+			)
+			return null
 		}
-		amp.logger.log(`Started ${entry.thread} on ${request.ref}.`)
 	}
 	let queue: Promise<void> = Promise.resolve()
 
