@@ -335,12 +335,12 @@ describe("project membership", () => {
         db,
         alice,
         projectId,
-        { name: "Renamed", status: "paused", summary: "by alice" },
+        { name: "Renamed", status: "archived", summary: "by alice" },
         "web",
       );
       const p = getProject(db, owner, projectId);
       expect(p?.name).toBe("Renamed");
-      expect(p?.status).toBe("paused");
+      expect(p?.status).toBe("archived");
       expect(p?.summary).toBe("by alice");
     });
 

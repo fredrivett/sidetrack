@@ -1,24 +1,24 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { dayLabel } from "@/lib/time";
-import { matchesWhose, type WhoseFilter } from "@/lib/whose";
+import { type ItemFilters, matchesFilters } from "@/lib/filters";
 import { Button } from "@/components/ui/button";
 import { ItemDetailDialog } from "./ItemDetailDialog";
 import { ItemRow } from "./ItemRow";
 import type { ProjectView } from "./Kanban";
-import { useDayStart } from "./use-day-start";
+import { useToday } from "./use-day-start";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
-import { WhoseFilterBar } from "./WhoseFilterBar";
 
 /**
  * Everything finished across the lists on the board, newest first, under a
  * heading per day. The board's items cover this week; older ones load in
  * pages as the end of the list scrolls into view (see Kanban), and `since`
  * is how far back they reach. Sub-items show as their own rows, naming
- * their parent.
+ * their parent. The header's person and due filters narrow it; its finished
+ * ones don't, since everything here is finished.
  */
 export function DoneView({
   projects,
@@ -26,6 +26,7 @@ export function DoneView({
   assigneesByProject,
   prLinksByItem,
   viewerId,
+  filters,
   since,
   more,
   loading,
@@ -33,12 +34,13 @@ export function DoneView({
   onLoadMore,
   onRetry,
 }: {
-  /** The lists on the board (active, then paused); archived lists stay out. */
+  /** The lists on the board; archived lists stay out. */
   projects: ProjectView[];
   itemsByProject: Record<string, Item[]>;
   assigneesByProject: Record<string, AssigneeView[]>;
   prLinksByItem: Record<string, ItemPrLink[]>;
   viewerId: string;
+  filters: ItemFilters;
   /** Items finished at or after this are all loaded. */
   since: number;
   /** Whether older finished items remain to load. */
@@ -50,8 +52,8 @@ export function DoneView({
   onRetry: () => void;
 }) {
   // Day labels depend on the viewer's clock, so rows wait for the browser.
-  const known = Number.isFinite(useDayStart());
-  const [filter, setFilter] = useState<WhoseFilter>("all");
+  const today = useToday();
+  const known = today !== null;
 
   const all = projects.flatMap((p) => itemsByProject[p.id] ?? []);
   const byId = new Map(all.map((i) => [i.id, i]));
@@ -64,7 +66,9 @@ export function DoneView({
         i.completedAt !== null && i.completedAt >= since,
     )
     .sort((a, b) => b.completedAt - a.completedAt || b.id.localeCompare(a.id));
-  const shown = done.filter((i) => matchesWhose(i, filter, viewerId));
+  const shown = done.filter((i) =>
+    matchesFilters(i, i.parentId ? byId.get(i.parentId) : undefined, filters, today),
+  );
   const days: Array<[string, Item[]]> = [];
   for (const item of shown) {
     const label = dayLabel(item.completedAt);
@@ -92,8 +96,6 @@ export function DoneView({
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-xl space-y-4 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        <WhoseFilterBar value={filter} onChange={setFilter} />
-
         {known &&
           days.map(([label, rows]) => (
             <section key={label} className="space-y-1.5">
@@ -135,7 +137,7 @@ export function DoneView({
             : known && shown.length === 0
               ? done.length === 0
                 ? "Nothing finished yet."
-                : "Nothing here for this filter."
+                : "Nothing here for your filters."
               : known && "That's everything."}
         </div>
       </div>

@@ -218,7 +218,7 @@ function activeItemsForDay(
  * What's due now on the Agenda view, across every active list the user can see: items due on or
  * before `today`, or in a span ("this week") that has started, that are open
  * or were finished today, overdue first, then by
- * board order and list order. Paused and archived lists are left out.
+ * board order and list order. Archived lists are left out.
  * `timeZone` decides which day a completion fell on, and the default `today`
  * is the current day there (with the 4am turnover).
  */
@@ -254,7 +254,7 @@ export function listToday(
  * The Agenda view's No date section, across every active list the user can see: tasks with no
  * due date that are open or were finished today (see isOnNoDate), grouped by
  * list in board order, each list's items in list order (a parent, then its
- * sub-items). Lists with nothing undated are left out, as are paused and archived lists. A sub-item
+ * sub-items). Lists with nothing undated are left out, as are archived lists. A sub-item
  * of a dated parent is planned with its parent, so stays out. `timeZone` and
  * `today` work as in listToday.
  */

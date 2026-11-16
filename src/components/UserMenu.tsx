@@ -1,6 +1,6 @@
 "use client";
 
-import { Boxes, Check, CircleUserRound, KeyRound, Loader2, LogOut, UserRound } from "lucide-react";
+import { Archive, Boxes, Check, CircleUserRound, KeyRound, Loader2, LogOut, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
@@ -17,7 +17,21 @@ import { UserAvatar, type AvatarUser } from "@/components/UserAvatar";
 import { signOut } from "@/auth/client";
 import { RELEASE } from "@/lib/release";
 
-export function UserMenu({ user }: { user: AvatarUser | null }) {
+/**
+ * The avatar's menu: settings, the Archived lists view, sign out and the
+ * build.
+ */
+export function UserMenu({
+  user,
+  archivedCount,
+  onShowArchived,
+}: {
+  user: AvatarUser | null;
+  /** How many lists are archived, for the Archived lists item. */
+  archivedCount: number;
+  /** Opens the Archived lists view. */
+  onShowArchived: () => void;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
@@ -84,6 +98,11 @@ export function UserMenu({ user }: { user: AvatarUser | null }) {
             </Link>
           }
         />
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={onShowArchived}>
+          <Archive />
+          Archived lists{archivedCount > 0 ? ` (${archivedCount})` : ""}
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         {/* Stays open so "Signing out…" shows until the redirect to /login. */}
         <DropdownMenuItem closeOnClick={false} onClick={onSignOut} disabled={pending}>

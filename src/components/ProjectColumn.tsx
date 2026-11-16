@@ -6,6 +6,7 @@ import { updateProjectAction } from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import type { SpaceView } from "@/core/spaces";
+import { filtersByDue, type ItemFilters, matchesFilters, shownInGroups } from "@/lib/filters";
 import { nestItems } from "@/lib/itemTree";
 import { startOfWeek } from "@/lib/time";
 import { ColumnCard } from "./BoardLayout";
@@ -20,7 +21,7 @@ import { ProjectMenu } from "./ProjectMenu";
 import { StatusBadge } from "./StatusBadge";
 import { SummaryBlock } from "./SummaryBlock";
 import { useCollapsedItems } from "./use-collapsed-items";
-import { useDayStart } from "./use-day-start";
+import { useDayStart, useToday } from "./use-day-start";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
 import { runAction } from "./run-action";
 import { ListSaveContext, useNewListSave } from "./use-list-saves";
@@ -39,6 +40,7 @@ export function ProjectColumn({
   onAddItem,
   onShare,
   spaces,
+  filters,
 }: {
   project: ProjectView;
   viewerId: string;
@@ -53,6 +55,7 @@ export function ProjectColumn({
   onAddItem: (projectId: string) => void;
   onShare: (projectId: string, projectName: string) => void;
   spaces: SpaceView[];
+  filters: ItemFilters;
 }) {
   // Items arrive in list order, flat. Group sub-items under their parent; the
   // split below is by the top-level item, and its checklist goes with it.
@@ -60,46 +63,61 @@ export function ProjectColumn({
   // in place); anything finished earlier this week goes to Done, newest
   // first, and older ones leave the board. Before the browser knows its day
   // (dayStart is Infinity), Done shows every finished item the server sent.
+  // The viewer's filters can send today's to Done straight away, and leave
+  // Done out.
   const dayStart = useDayStart();
   // A list in one of the viewer's Spaces sits on that Space's tray, which
   // already says who shares it, so it drops the "Shared" badge.
   const inSpace = spaces.some((s) => s.id === project.spaceId);
+  const today = useToday();
   const weekStart = Number.isFinite(dayStart) ? startOfWeek(dayStart) : -Infinity;
   // "Tidy done items" in the list's menu moves today's early too.
   const doneBefore = Math.max(dayStart, project.doneClearedAt ?? -Infinity);
   const groups = nestItems(items);
   const active = groups.filter((i) => i.completedAt === null);
   const inList = groups.filter(
-    (i) => i.completedAt === null || i.completedAt >= doneBefore,
+    (i) =>
+      i.completedAt === null || (filters.doneToday && i.completedAt >= doneBefore),
   );
-  const done = groups
-    .filter(
-      (i) =>
-        i.completedAt !== null &&
-        i.completedAt < doneBefore &&
-        i.completedAt >= weekStart,
-    )
-    .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
+  const done = filters.doneThisWeek
+    ? groups
+        .filter(
+          (i) =>
+            i.completedAt !== null && !inList.includes(i) && i.completedAt >= weekStart,
+        )
+        .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0))
+    : [];
+  // The rows the filters leave, kept as ids so the list still knows every
+  // item's real place and checklist: a drag lands among the rows on view, and
+  // an item with hidden sub-items still can't become one.
+  const shownInList = shownInGroups(
+    inList,
+    (i, parent) =>
+      (filters.doneToday || i.completedAt === null) &&
+      matchesFilters(i, parent, filters, today),
+  );
+  const shownDone = shownInGroups(done, (i, parent) => matchesFilters(i, parent, filters, today));
+  const doneShown = done.filter((g) => shownDone.has(g.id));
+  // Due filters wait for the browser's day (see matchesFilters), so the list
+  // doesn't say nothing matches before it knows.
+  const waiting = today === null && filtersByDue(filters);
 
   // Lives above the list/done split so it survives an item moving between
   // DraggableItemList and DoneSection when it's reopened or the day turns
   // over — see the hook for the live-lookup / closing-snapshot details.
   const detail = useItemDetailDialog(items);
-  // The column re-renders with fresh server props on every edit, and stays
-  // mounted when the list is paused or resumed (Kanban keys every column in
-  // one array), so the dialog stays open across a status change. It unmounts
-  // when the list is deleted, left, archived or moved to another Space's
-  // tray, which closes it; plain open-state is enough — no
+  // The column re-renders with fresh server props on every edit. It unmounts
+  // when the list is deleted, left, archived, restored or moved to another
+  // Space's tray, which closes it; plain open-state is enough — no
   // live-lookup/closing-snapshot dance like the item dialog needs.
   const [detailsOpen, setDetailsOpen] = useState(false);
-  // A paused list sits collapsed at the end of the board until opened.
-  const [showPaused, setShowPaused] = useState(false);
-  const collapsed = project.status === "paused" && !showPaused;
   // Parents in the list whose sub-items are hidden. Kept here, not in
   // DraggableItemList, so the header's button can collapse or expand them all
   // at once; it shows only while the list has a parent with sub-items on view.
   const { collapsed: collapsedItems, setCollapsed } = useCollapsedItems(items);
-  const parents = inList.filter((g) => g.children.length > 0).map((g) => g.id);
+  const parents = inList
+    .filter((g) => g.children.length > 0 && shownInList.has(g.id))
+    .map((g) => g.id);
   const allCollapsed = parents.every((id) => collapsedItems.has(id));
   // The list's held saves (status, order, prefix, icon…) dim the whole column
   // until they land, whichever control started them.
@@ -142,10 +160,7 @@ export function ProjectColumn({
             {(project.status !== "active" || (!project.isOwner && !inSpace)) && (
               <div className="flex items-center gap-1.5">
                 {project.status !== "active" && (
-                  <StatusBadge
-                    projectId={project.id}
-                    status={project.status}
-                  />
+                  <StatusBadge status={project.status} />
                 )}
                 {!project.isOwner && !inSpace && (
                   <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sky-700 dark:bg-sky-950 dark:text-sky-400">
@@ -155,7 +170,7 @@ export function ProjectColumn({
               </div>
             )}
           </div>
-          {!collapsed && parents.length > 0 && (
+          {parents.length > 0 && (
             <button
               type="button"
               aria-label={allCollapsed ? "Expand all sub-items" : "Collapse all sub-items"}
@@ -195,69 +210,44 @@ export function ProjectColumn({
         </>
       }
     >
-      {collapsed ? (
-        <div className="space-y-1 py-1 text-sm text-neutral-500">
-          <p>
-            {active.length} open item{active.length === 1 ? "" : "s"}, set
-            aside for now.
-          </p>
-          <button
-            type="button"
-            onClick={() => setShowPaused(true)}
-            className="text-xs font-medium hover:text-neutral-700 dark:hover:text-neutral-300"
-          >
-            Show items
-          </button>
-        </div>
-      ) : (
-        <>
-          {project.status === "paused" && (
-            <button
-              type="button"
-              onClick={() => setShowPaused(false)}
-              className="mb-2 text-xs font-medium text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
-            >
-              Hide items
-            </button>
-          )}
-          {/* Only shown once written; an empty summary is added from the
-              details dialog, so it doesn't take up room on every card. */}
-          {project.summary.trim() && (
-            <SummaryBlock
-              projectId={project.id}
-              summary={project.summary}
-              summaryUpdatedAt={project.summaryUpdatedAt}
-            />
-          )}
-
-          <div className="space-y-3 pt-1.5">
-            <DraggableItemList
-              projectId={project.id}
-              groups={inList}
-              collapsed={collapsedItems}
-              onToggleCollapsed={(id) =>
-                setCollapsed([id], !collapsedItems.has(id))
-              }
-              prefix={project.refPrefix}
-              assignees={assignees}
-              viewerId={viewerId}
-              prLinksByItem={prLinksByItem}
-              onOpenDetail={detail.openDetail}
-              onAddItem={() => onAddItem(project.id)}
-            />
-            {done.length > 0 && (
-              <DoneSection
-                groups={done}
-                prefix={project.refPrefix}
-                assignees={assignees}
-                viewerId={viewerId}
-                prLinksByItem={prLinksByItem}
-                onOpenDetail={detail.openDetail}
-              />
-            )}
-          </div>
-        </>
+      {/* Only shown once written; an empty summary is added from the
+          details dialog, so it doesn't take up room on every card. */}
+      {project.summary.trim() && (
+        <SummaryBlock
+          projectId={project.id}
+          summary={project.summary}
+          summaryUpdatedAt={project.summaryUpdatedAt}
+        />
       )}
+
+      <div className="space-y-3 pt-1.5">
+        {!waiting && <DraggableItemList
+          projectId={project.id}
+          groups={inList}
+          shown={shownInList}
+          collapsed={collapsedItems}
+          onToggleCollapsed={(id) =>
+            setCollapsed([id], !collapsedItems.has(id))
+          }
+          prefix={project.refPrefix}
+          assignees={assignees}
+          viewerId={viewerId}
+          prLinksByItem={prLinksByItem}
+          onOpenDetail={detail.openDetail}
+          onAddItem={() => onAddItem(project.id)}
+        />}
+        {doneShown.length > 0 && (
+          <DoneSection
+            groups={doneShown}
+            shown={shownDone}
+            prefix={project.refPrefix}
+            assignees={assignees}
+            viewerId={viewerId}
+            prLinksByItem={prLinksByItem}
+            onOpenDetail={detail.openDetail}
+          />
+        )}
+      </div>
       {detail.item && (
         <ItemDetailDialog
           item={detail.item}

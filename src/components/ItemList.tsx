@@ -151,22 +151,29 @@ const progress = (children: Item[]) => ({
 export function ItemGroupView({
   group,
   collapsed: given,
+  shown,
   ...row
 }: RowProps & {
   group: ItemGroup;
   /** Shown as given rather than as stored, as the drag overlay copies its list. */
   collapsed?: boolean;
+  /**
+   * The sub-items to show, when the viewer's filters hide some; the
+   * checklist's count still covers them all.
+   */
+  shown?: ReadonlySet<string>;
 }) {
   const { collapsed, setCollapsed } = useCollapsedItems([group]);
   const expanded = !(given ?? collapsed.has(group.id));
-  const { children } = group;
+  const all = group.children;
+  const children = shown ? all.filter((c) => shown.has(c.id)) : all;
   return (
     <div className="space-y-1.5">
       {rowFor(row, group, {
         checklist:
-          children.length > 0
+          all.length > 0
             ? {
-                ...progress(children),
+                ...progress(all),
                 expanded,
                 onToggle: () => setCollapsed([group.id], expanded),
               }
@@ -206,6 +213,9 @@ function applyDrop(
     if (target.parentId) {
       at = rest.findIndex((f) => f.item.id === target.parentId) + 1;
     }
+  } else if (target.position.startsWith("before:")) {
+    const anchor = target.position.slice("before:".length);
+    at = rest.findIndex((f) => f.item.id === anchor);
   } else {
     // After the anchor and its checklist, if it has one ("end" anchors on the
     // parent, landing after its last sub-item).
@@ -284,10 +294,18 @@ function Sortable({
  * level (see `projectDrop` for what each spot allows). A parent drags with its
  * checklist. From the keyboard: Space picks up a focused row, the arrows move
  * and indent it, and Space drops it.
+ *
+ * With the viewer's filters on, only the `shown` rows are in the list. A drop
+ * lands among those: just after the row on view above it (ahead of any hidden
+ * ones that follow), or just before the one below it, so hidden items keep
+ * their places around it. The tree stays the real one, so a sub-item
+ * always drags in its own checklist, and a row with hidden sub-items still
+ * counts them, and still can't become a sub-item itself.
  */
 export function DraggableItemList({
   projectId,
   groups,
+  shown,
   collapsed,
   onToggleCollapsed,
   onAddItem,
@@ -295,6 +313,8 @@ export function DraggableItemList({
 }: RowProps & {
   projectId: string;
   groups: ItemGroup[];
+  /** The rows the viewer's filters leave; all when omitted. */
+  shown?: ReadonlySet<string>;
   /** Parents whose sub-items are hidden. */
   collapsed: ReadonlySet<string>;
   onToggleCollapsed: (id: string) => void;
@@ -326,8 +346,9 @@ export function DraggableItemList({
   // the list while it's dragged.
   const visible = full.filter(
     (f) =>
-      f.parentId === null ||
-      (!collapsed.has(f.parentId) && f.parentId !== activeId),
+      (!shown || shown.has(f.item.id)) &&
+      (f.parentId === null ||
+        (!collapsed.has(f.parentId) && f.parentId !== activeId)),
   );
   const treeRows: TreeRow[] = visible.map((f) => ({
     id: f.item.id,
@@ -422,8 +443,16 @@ export function DraggableItemList({
 
   function onDragEnd({ active, over }: DragEndEvent) {
     const id = String(active.id);
-    const target = over ? project(id, String(over.id), offsetX) : null;
+    let target = over ? project(id, String(over.id), offsetX) : null;
     reset();
+    // First among the rows on view isn't first in the list when the filters
+    // hide some above it: land just before the sibling on view below instead.
+    if (shown && target?.position === "top") {
+      const below = visible.find(
+        (f) => f.item.id !== id && f.parentId !== id && f.parentId === target?.parentId,
+      );
+      if (below) target = { ...target, position: `before:${below.item.id}` };
+    }
     const from = byId.get(id);
     if (!over || !target || !from) return;
     const sameParent = target.parentId === from.parentId;
@@ -463,6 +492,13 @@ export function DraggableItemList({
           Add item
         </Button>
       </div>
+    );
+  }
+  if (visible.length === 0) {
+    return (
+      <p className="rounded-lg border border-dashed border-neutral-200 bg-neutral-50 px-3 py-4 text-center text-xs text-balance text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/30 dark:text-neutral-400">
+        Nothing here for your filters.
+      </p>
     );
   }
 
@@ -614,6 +650,7 @@ export function DraggableItemList({
                 {...row}
                 group={{ ...active.item, children: childrenOf(active.item.id) }}
                 collapsed={collapsed.has(active.item.id)}
+                shown={shown}
               />
             )}
           </div>

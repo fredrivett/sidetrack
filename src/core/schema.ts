@@ -12,9 +12,9 @@ import type { RepeatUnit } from "../lib/repeat";
 import { apiKeys } from "./auth-schema";
 
 // A list's lifecycle (a "project" in code; "list" to people and agents).
-// active lists are on the board; paused lists sit collapsed at its end;
-// archived lists leave the board but keep their items and can be restored.
-export const PROJECT_STATUSES = ["active", "paused", "archived"] as const;
+// active lists are on the board; archived lists leave it, and every other
+// view, for the Archived view, keeping their items until they're restored.
+export const PROJECT_STATUSES = ["active", "archived"] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 
 // `system` is a change nobody made, such as a repeating item reopening on its

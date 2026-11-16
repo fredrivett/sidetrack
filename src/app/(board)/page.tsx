@@ -16,7 +16,7 @@ import { listAllPrLinks } from "@/core/prLinks";
 import { listProjects } from "@/core/projects";
 import { listPendingSpaceInvites, listSpaces, listTrays } from "@/core/spaces";
 import { COLLAPSED_TRAYS_COOKIE, parseCollapsedTrays } from "@/components/SpaceTray";
-import { getOverdueCollapsed, getProfile, getTimeZone } from "@/core/users";
+import { getBoardFilters, getOverdueCollapsed, getProfile, getTimeZone } from "@/core/users";
 import { weekStartBound } from "@/lib/time";
 import type { ItemPrLink } from "@/core/schema";
 import { requireUserId } from "@/auth/session";
@@ -81,7 +81,7 @@ export default async function Home({
         timeZone={timeZone}
         overdueCollapsed={getOverdueCollapsed(db, userId)}
         initialView={
-          view === "agenda" || view === "done"
+          view === "agenda" || view === "done" || view === "archived"
             ? view
             : // Links from before Today and No date became Agenda.
               view === "today" || view === "no-date"
@@ -102,6 +102,7 @@ export default async function Home({
         initialCollapsedTrays={parseCollapsedTrays(
           (await cookies()).get(COLLAPSED_TRAYS_COOKIE)?.value,
         )}
+        filters={getBoardFilters(db, userId)}
       />
       <LiveUpdates />
     </AgentSessionsProvider>

@@ -14,6 +14,7 @@ import { type ItemGroup, ItemGroupView } from "./ItemList";
  */
 export function DoneSection({
   groups,
+  shown,
   prefix,
   assignees,
   viewerId,
@@ -21,6 +22,8 @@ export function DoneSection({
   onOpenDetail,
 }: {
   groups: ItemGroup[];
+  /** The sub-items the viewer's filters leave; all when omitted. */
+  shown?: ReadonlySet<string>;
   prefix: string;
   assignees: AssigneeView[];
   viewerId: string;
@@ -50,6 +53,7 @@ export function DoneSection({
             <ItemGroupView
               key={g.id}
               group={g}
+              shown={shown}
               prefix={prefix}
               assignees={assignees}
               viewerId={viewerId}

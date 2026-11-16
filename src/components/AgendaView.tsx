@@ -1,13 +1,13 @@
 "use client";
 
 import { ChevronDown } from "lucide-react";
-import { useId, useOptimistic, useState, useTransition } from "react";
+import { useId, useOptimistic, useTransition } from "react";
 import { setOverdueCollapsedAction } from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { nestItems } from "@/lib/itemTree";
 import { AGENDA_SECTIONS, agendaSection, type AgendaSection } from "@/lib/time";
-import { matchesWhose, type WhoseFilter } from "@/lib/whose";
+import { type ItemFilters, matchesFilters } from "@/lib/filters";
 import { ItemDetailDialog } from "./ItemDetailDialog";
 import { ItemGroupView } from "./ItemList";
 import { ItemRow } from "./ItemRow";
@@ -16,7 +16,6 @@ import { ProjectIcon } from "./ProjectIcon";
 import { runAction } from "./run-action";
 import { useToday } from "./use-day-start";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
-import { WhoseFilterBar } from "./WhoseFilterBar";
 
 const openCount = (rows: Item[]) => rows.filter((i) => i.completedAt === null).length;
 
@@ -28,6 +27,7 @@ const openCount = (rows: Item[]) => rows.filter((i) => i.completedAt === null).l
  * list order; No date groups its items by list, an undated parent with its
  * undated sub-items under it. Overdue sits in a faint red card the viewer can
  * fold away, which stays folded on every device until they open it again.
+ * The header's filters narrow it.
  */
 export function AgendaView({
   projects,
@@ -36,8 +36,9 @@ export function AgendaView({
   prLinksByItem,
   viewerId,
   overdueCollapsed: savedCollapsed,
+  filters,
 }: {
-  /** Active lists in board order; paused and archived lists stay out. */
+  /** Active lists in board order; archived lists stay out. */
   projects: ProjectView[];
   itemsByProject: Record<string, Item[]>;
   assigneesByProject: Record<string, AssigneeView[]>;
@@ -45,9 +46,9 @@ export function AgendaView({
   viewerId: string;
   /** Whether the viewer keeps Overdue folded away, as saved on their account. */
   overdueCollapsed: boolean;
+  filters: ItemFilters;
 }) {
   const today = useToday();
-  const [filter, setFilter] = useState<WhoseFilter>("all");
   // Folds at once, then saves; a failed save unfolds it again with a toast.
   const [overdueCollapsed, showOverdueCollapsed] = useOptimistic(savedCollapsed);
   const [, start] = useTransition();
@@ -81,7 +82,11 @@ export function AgendaView({
   const onAgenda = all
     .filter((i) => sectionOf.has(i.id))
     .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""));
-  const shown = onAgenda.filter((i) => matchesWhose(i, filter, viewerId));
+  const shown = onAgenda.filter(
+    (i) =>
+      (filters.doneToday || i.completedAt === null) &&
+      matchesFilters(i, i.parentId ? byId.get(i.parentId) : undefined, filters, today),
+  );
   const sections = AGENDA_SECTIONS.map(
     (label) => [label, shown.filter((i) => sectionOf.get(i.id) === label)] as const,
   ).filter(([, rows]) => rows.length > 0);
@@ -154,15 +159,9 @@ export function AgendaView({
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-xl space-y-4 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        <WhoseFilterBar
-          value={filter}
-          onChange={setFilter}
-          count={(f) => openCount(onAgenda.filter((i) => matchesWhose(i, f, viewerId)))}
-        />
-
         {today && shown.length === 0 && (
           <p className="py-8 text-center text-sm text-neutral-400">
-            {onAgenda.length === 0 ? "Nothing to do." : "Nothing here for this filter."}
+            {onAgenda.length === 0 ? "Nothing to do." : "Nothing here for your filters."}
           </p>
         )}
 
