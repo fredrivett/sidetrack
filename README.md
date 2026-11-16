@@ -1,77 +1,243 @@
 # Sidetrack
 
-Sidetrack is an agent-first, self-hostable side-project tracker. Designed for
-simplicity and to work where you're already working.
+Sidetrack is an agent-first, self-hostable side-project tracker: a calm board
+for everything you're building on the side, with a
+[Model Context Protocol](https://modelcontextprotocol.io) server built in so
+your AI agents can keep it up to date.
 
-- 🤖 **Agent first** — a built-in [Model Context Protocol](https://modelcontextprotocol.io) server so AI agents can read and update your lists
-- 🖥️ **Web UI** for everyday use
-- 📁 **Lists → items → labels (with emoji)**, with drag-to-reorder. Pause or archive a list to set it aside
-- 📜 **Audit log** — every change recorded, web or agent
+![A Sidetrack board with three lists: Recipe app, Blog and Home](docs/board.png)
+
+- 🤖 **Agent first.** Agents read and update your lists over MCP, mark what
+  they're working on, and link their pull requests
+- 📁 **Lists, items and sub-items**, with emoji labels, due dates, repeats and
+  drag to reorder. Pause or archive a list to set it aside
+- 🗓️ **Board, Agenda and Done** views, updating live as you or your agents
+  make changes
+- 👥 **Sharing.** Share a list with someone, or put lists in a Space for a
+  household or small team
+- 🔀 **GitHub integration.** Pull requests that name an item link to it and
+  complete it when they merge
+- 📜 **Audit log.** Every change is recorded with who made it: you, a
+  collaborator, an agent or GitHub
 - 📱 **Installable** as an iOS PWA
 
-## Quick start (Docker)
+Don't want to run it yourself? Sign up at [sidetrack.it](https://sidetrack.it).
 
-The easiest way to run Sidetrack is with [Docker](https://docs.docker.com/get-docker/)
-and Docker Compose.
+## Self-hosting
 
-1. Create a `.env` file alongside `docker-compose.yml`:
+Sidetrack is a single Node.js server with a SQLite database: no separate
+database, cache or queue to run. Any machine with Docker and a persistent disk
+will do, such as a VPS or a home server, or a platform with persistent volumes
+such as Railway or Fly.io. SQLite rules out serverless platforms without
+durable disk.
+
+### Quick start (Docker)
+
+You need [Docker](https://docs.docker.com/get-docker/) with Docker Compose.
+There's no prebuilt image yet, so Compose builds one from the source; the
+first build takes a few minutes.
+
+1. Get the code:
 
    ```bash
-   BETTER_AUTH_SECRET=...                  # signs session cookies
-   BETTER_AUTH_URL=http://localhost:3000   # the URL you serve from
+   git clone https://github.com/fredrivett/sidetrack.git
+   cd sidetrack
    ```
 
-   Generate the secret with `openssl rand -hex 32`. Set `BETTER_AUTH_URL`
-   to the public URL you actually reach the app at — the session cookie's
-   attributes depend on it.
-
-2. Start it:
+2. Create a `.env` file next to `docker-compose.yml`, with a fresh secret and
+   the URL you'll open Sidetrack at:
 
    ```bash
-   docker compose up -d
+   touch .env
+   grep -q '^BETTER_AUTH_SECRET=' .env ||
+     echo "BETTER_AUTH_SECRET=$(openssl rand -hex 32)" >> .env
+   grep -q '^BETTER_AUTH_URL=' .env ||
+     echo "BETTER_AUTH_URL=http://localhost:3000" >> .env
+   grep -q '^NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=' .env ||
+     echo "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env
    ```
 
-Sidetrack is now running at [http://localhost:3000](http://localhost:3000).
-Migrations run automatically on startup, and your data persists in the
-`sidetrack-data` volume. Open the app and sign up — after the first signup,
-registration locks automatically (see `ALLOW_SIGNUP` to keep it open).
+   Each line adds a setting only if `.env` doesn't have it yet, so it's safe to
+   re-run, and it fills in anything an older `.env` lacks. It never replaces a
+   secret, which would sign everyone out. `BETTER_AUTH_URL` must be the exact
+   address in your browser's address bar, or sign-in fails. To reach
+   Sidetrack from another device, use that address instead, such as
+   `http://192.168.1.20:3000` or `https://sidetrack.example.com`. Keep `.env`
+   safe: anyone with the secret can forge a session.
+
+3. Build and start it:
+
+   ```bash
+   docker compose up -d --build
+   ```
+
+4. Open [http://localhost:3000](http://localhost:3000) and sign up. The
+   **first** account claims the instance and signup then locks, so create
+   yours before you expose the instance to the internet. To let others sign
+   up, set `ALLOW_SIGNUP=true` in `.env` and run `docker compose up -d`; to
+   let in a few people, remove it again once they have accounts. Lists can
+   then be shared with them from each list's **Share** menu item.
+
+Migrations run automatically on startup, and your data lives in the
+`sidetrack-data` Docker volume, which survives rebuilds and restarts. If the
+container doesn't come up, `docker compose logs sidetrack` says why: a missing
+or invalid setting stops startup with a message naming it.
+
+To serve on a different port, change the left side of `"3000:3000"` in
+`docker-compose.yml` (and the port in `BETTER_AUTH_URL`).
+
+### HTTPS and a domain
+
+To use Sidetrack away from home, and to connect claude.ai or GitHub to it, put
+it behind a reverse proxy that terminates HTTPS. With
+[Caddy](https://caddyserver.com), which fetches certificates itself, the whole
+`Caddyfile` is:
+
+```caddyfile
+sidetrack.example.com {
+	reverse_proxy localhost:3000
+}
+```
+
+Then set `BETTER_AUTH_URL=https://sidetrack.example.com` in `.env` and apply
+it with `docker compose up -d`. Any other proxy works too (nginx, Traefik,
+Cloudflare Tunnel); boards update live over a long-lived
+[server-sent events](https://developer.mozilla.org/docs/Web/API/Server-sent_events)
+connection at `/api/events`, so don't put a short read timeout on it. Once the
+proxy is in front, you can change the port mapping to `"127.0.0.1:3000:3000"`
+so the plain-HTTP port is only reachable from the machine itself.
+
+### Updating
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+Database migrations run on startup. To be able to go back, copy out the latest
+backup first (see [Backups](#backups)). Keep
+`NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` the same across updates: Server Action
+IDs are derived from it, so with a new key every build, a tab left open through
+an update fails its next save and reloads.
+
+### Backups
+
+Sidetrack copies its database to `/data/backups` inside the volume once a day,
+keeping the last 7 (`sidetrack-YYYY-MM-DD.db`). Those copies sit on the same
+disk as the data, so also copy them somewhere else now and then:
+
+```bash
+docker cp sidetrack:/data/backups ./sidetrack-backups
+```
+
+To restore one, stop Sidetrack, list the backups, and copy the one you want
+over the database, replacing `sidetrack-YYYY-MM-DD.db` with its name. Then
+start Sidetrack again:
+
+```bash
+docker compose stop sidetrack
+docker compose run --rm --no-deps --entrypoint ls sidetrack /data/backups
+docker compose run --rm --no-deps --entrypoint sh sidetrack -c \
+  'cp /data/backups/sidetrack-YYYY-MM-DD.db /data/sidetrack.db && rm -f /data/sidetrack.db-wal /data/sidetrack.db-shm'
+docker compose up -d
+```
+
+### Password resets
+
+Without email configured, a password-reset link is printed to the server log
+instead of being sent. When someone forgets their password, have them request
+a reset, then find the link with `docker compose logs sidetrack` and pass it
+on. To send it by email, set `SMTP_URL` (any SMTP server, such as your email
+provider's), or set `RESEND_API_KEY` plus `EMAIL_FROM`; see
+[Configuration](#configuration).
+
+### Without Docker
+
+Sidetrack runs anywhere with [Node.js](https://nodejs.org) 22 and
+[pnpm](https://pnpm.io) (`corepack enable` provides it). In the cloned
+repository, create a Server Actions key for the build (see
+[Updating](#updating)) unless you have one, then build it and copy the static
+files next to the standalone server:
+
+```bash
+grep -qs NEXT_SERVER_ACTIONS_ENCRYPTION_KEY .env.local ||
+  echo "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env.local
+pnpm install --frozen-lockfile
+pnpm build
+cp -r public .next/standalone/ && cp -r .next/static .next/standalone/.next/
+```
+
+The build reads `.env.local`, but the server doesn't read `.env` files itself,
+and it runs from inside `.next/standalone`, which the next build replaces. So
+put its settings in a file such as `sidetrack.env`, with the data at absolute
+paths outside the build:
+
+```bash
+BETTER_AUTH_SECRET=...
+BETTER_AUTH_URL=https://sidetrack.example.com
+DB_PATH=/var/lib/sidetrack/sidetrack.db
+BACKUP_DIR=/var/lib/sidetrack/backups
+PORT=3000
+```
+
+Create the data directory, owned by the user that will run Sidetrack:
+
+```bash
+sudo mkdir -p /var/lib/sidetrack
+sudo chown "$USER" /var/lib/sidetrack   # or your service account
+```
+
+Then start it, and keep it running with your service manager of choice
+(systemd, pm2, …):
+
+```bash
+NODE_ENV=production node --env-file=sidetrack.env .next/standalone/server.js
+```
+
+To update, `git pull`, repeat the build steps, and restart it. The key in
+`.env.local` stays the same, so open tabs keep working.
 
 ## Configuration
 
-Sidetrack is configured with environment variables, read the same way whether
-you run it via Docker or locally. Set them in `.env` for Docker Compose, or
-`.env.local` for local development.
+Sidetrack is configured with environment variables. With Docker Compose, put
+them in `.env` and apply a change with `docker compose up -d` (build-time
+variables, marked below, need `docker compose up -d --build`). Without Docker,
+see [Without Docker](#without-docker); for `pnpm dev`, use `.env.local`. A missing or malformed required setting stops the
+server at startup with a message saying what to fix.
 
-**Required** — authentication (the only configuration most users need):
+**Required** in production (the only settings most instances need):
 
 | Variable | Description |
 | --- | --- |
-| `BETTER_AUTH_SECRET` | Signs session cookies. Generate with `openssl rand -hex 32` |
-| `BETTER_AUTH_URL` | The public URL you serve from (e.g. `https://sidetrack.example.com`) |
+| `BETTER_AUTH_SECRET` | Signs session cookies. Generate with `openssl rand -hex 32`, and keep it: changing it signs everyone out |
+| `BETTER_AUTH_URL` | The URL you open Sidetrack at, such as `https://sidetrack.example.com`. It must match the browser's address bar exactly (scheme, host and port), and is used for links in emails and the GitHub webhook URL |
 
-Accounts are managed in-app with email + password. The **first** person to
-sign up claims the instance; after that, registration is locked.
+**Recommended:**
 
-**Optional** — registration and data location. The Docker image already sets
-the data paths to `/data`, so self-hosters can ignore those:
+| Variable | Description |
+| --- | --- |
+| `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` | **Build-time.** Keeps Server Action IDs the same across builds, so a tab left open through an update can still save. Generate once with `openssl rand -base64 32` and keep it. With plain `docker build`, pass it as `--build-arg` |
+
+**Optional** — signup and data location. The Docker image already puts the
+data in its `/data` volume, so leave the paths alone there:
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `ALLOW_SIGNUP` | `false` | `true` keeps signup open after the first user (multi-tenant instances) |
-| `SIDETRACK_SEED` | `false` | `true` seeds a fresh DB with a demo user + sample data. For ephemeral envs (local, previews) only — never set it in production/staging |
+| `ALLOW_SIGNUP` | `false` | `true` keeps signup open after the first account. With `false`, the first person to sign up claims the instance and signup then locks |
 | `DB_PATH` | `./data/sidetrack.db` | SQLite database path |
-| `BACKUP_DIR` | `./data/backups` | Where periodic backups are written |
+| `BACKUP_DIR` | `./data/backups` | Where the daily backups are written (the last 7 are kept) |
+| `SIDETRACK_SEED` | `false` | `true` lets `pnpm db:seed` fill a fresh DB with a demo user and sample data. Development and previews only; never set it on a real instance |
 
-**Optional** — outbound email, used for password resets. With nothing set,
-reset links are printed to the server console instead (run `docker compose
-logs` / check your process output and pass the link to the user):
+**Optional** — outbound email, used for password resets and signup notices.
+With nothing set, reset links are printed to the server log instead
+(`docker compose logs sidetrack`) for you to pass on:
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `RESEND_API_KEY` | unset | [Resend](https://resend.com) API key. Set it to deliver password reset emails |
-| `EMAIL_FROM` | unset | From address for outbound email, e.g. `Sidetrack <no-reply@your-domain.com>`. Required when `RESEND_API_KEY` is set; the domain must be verified in Resend |
-| `SIGNUP_NOTIFY_EMAIL` | unset | Address to email whenever someone new signs up, e.g. the operator's own. Best-effort: sent through the SMTP/Resend transport above (with neither, the signup is only logged), and a failed send never blocks the signup. Unset sends nothing |
-| `SMTP_URL` | unset (auto in dev) | Send over SMTP instead of Resend, e.g. `smtp://localhost:1025`. Takes precedence over `RESEND_API_KEY`. In development it defaults to a local mail catcher — see [Development](#development) |
+| `SMTP_URL` | unset | Send through any SMTP server, such as `smtps://user:password@smtp.example.com:465` (URL-encode special characters in the password). Takes precedence over Resend. In development it defaults to a local mail catcher; see [`CONTRIBUTING.md`](./CONTRIBUTING.md#email-in-development) |
+| `RESEND_API_KEY` | unset | Send through [Resend](https://resend.com) instead |
+| `EMAIL_FROM` | `Sidetrack <no-reply@sidetrack.local>` with SMTP | From address, such as `Sidetrack <no-reply@example.com>`. Set it with SMTP too, or mail servers may reject the default. Required with Resend, where its domain must be verified |
+| `SIGNUP_NOTIFY_EMAIL` | unset | Your address, to get an email whenever someone new signs up. Sent through SMTP or Resend as above (with neither, the signup is only logged); a failed send never blocks the signup |
 
 **Optional** — AI list-icon suggestions. With it set, the list icon picker
 offers emoji picked by [TypeSafe's Jev](https://docs.typesafe.ai) from the
@@ -82,75 +248,77 @@ titles, which are sent to TypeSafe:
 | --- | --- | --- |
 | `TYPESAFE_API_KEY` | unset | TypeSafe API key. Unset turns suggestions off |
 
-In Docker, `/data` is mounted as a persistent volume. Any host with a
-persistent filesystem works (e.g. a VPS or Railway); SQLite rules out serverless
-platforms without durable disk.
-
-**Optional** — analytics and error tracking via [PostHog](https://posthog.com).
-Entirely opt-in: with no keys set, nothing is sent anywhere. There are two
-independent halves:
+**Optional** — analytics and error tracking with your own
+[PostHog](https://posthog.com) project. Entirely opt-in: with no keys set,
+nothing is sent anywhere, including to the Sidetrack project.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `POSTHOG_KEY` | _(unset)_ | Server key for server-side error tracking. Read at runtime |
-| `NEXT_PUBLIC_POSTHOG_KEY` | _(unset)_ | Client key for pageviews, autocapture, and client-side errors |
-| `POSTHOG_HOST` / `NEXT_PUBLIC_POSTHOG_HOST` | `https://us.i.posthog.com` | Ingestion host (use `https://eu.i.posthog.com` for EU Cloud) |
+| `POSTHOG_KEY` | unset | Project key for server-side error tracking |
+| `POSTHOG_HOST` | `https://us.i.posthog.com` | Ingestion host for the server (`https://eu.i.posthog.com` for EU Cloud) |
+| `NEXT_PUBLIC_POSTHOG_KEY` | unset | **Build-time.** Project key for pageviews, autocapture and browser errors |
+| `NEXT_PUBLIC_POSTHOG_HOST` | `https://us.i.posthog.com` | **Build-time.** Ingestion host for the browser. The Docker build doesn't pass it through, so Docker images always use the US host |
 
-`POSTHOG_KEY` is read at runtime, so it never enters the build output. The
-`NEXT_PUBLIC_` key, however, is **inlined into the client bundle at build
-time** — that is how all browser analytics work. Building from source without
-it (the default `docker compose up`) ships zero analytics. **Do not bake a
-`NEXT_PUBLIC_POSTHOG_KEY` into a published/prebuilt image**, or every instance
-running that image would report into your PostHog project.
+`NEXT_PUBLIC_POSTHOG_KEY` is inlined into the browser bundle at build time,
+as all browser analytics are. **Don't bake it into an image you publish**, or
+every instance running that image reports into your PostHog project.
 
-The following are **build-time only** and used for tying errors back to the
-commit that shipped them. They are entirely optional; without them a build is
-unaffected. They power the hosted deploy and are not needed for self-hosting.
+<details>
+<summary>Build-time variables used by the hosted sidetrack.it deploy (not needed to self-host)</summary>
+
+These tie errors back to the commit that shipped them. Without them a build is
+unaffected.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `SOURCE_COMMIT` | `$GITHUB_SHA` | Commit SHA, inlined as `NEXT_PUBLIC_RELEASE` and tagged onto every PostHog capture |
-| `POSTHOG_API_KEY` | _(unset)_ | Personal API key. When set with `POSTHOG_PROJECT_ID`, `next build` uploads source maps to PostHog (and deletes them after) so stack traces symbolicate |
-| `POSTHOG_PROJECT_ID` | _(unset)_ | PostHog project id for the source-map upload |
+| `SOURCE_COMMIT` | `$GITHUB_SHA` | Commit SHA, inlined as `NEXT_PUBLIC_RELEASE`, shown in the account menu and tagged onto every PostHog capture |
+| `POSTHOG_API_KEY` | unset | Personal API key. When set with `POSTHOG_PROJECT_ID`, `next build` uploads source maps to PostHog (and deletes them after) so stack traces symbolicate |
+| `POSTHOG_PROJECT_ID` | unset | PostHog project id for the source-map upload |
 | `POSTHOG_API_HOST` | `https://us.posthog.com` | API host for the upload (note: not the `us.i.` ingestion host) |
 
-**Optional, build-time** — `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`, a base64 AES
-key (`openssl rand -base64 32`). Server Action IDs are derived from it, so
-without one every build makes a fresh key and renames every action: a tab left
-open through an update fails its next save and reloads into the new build. Set
-it once and keep it to keep IDs the same across builds. `docker compose` passes
-it from your `.env` into the build; with plain `docker build`, pass
-`--build-arg NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`.
+</details>
 
-## Connecting an MCP client
+## Using Sidetrack
 
-The MCP server is exposed at `/mcp` and authenticates with a personal API key.
-Mint one from **Account → API keys** in the web UI (the plaintext is shown
-once — copy it then), and pass it either way:
+### Connecting an agent
+
+Sidetrack's MCP server is at `/mcp` on your instance. It authenticates with a
+personal API key: create one from **API keys** in the menu under your avatar,
+and copy it when it's shown, as it's shown only once. Keys act as the person
+who created them, and are revoked from the same page.
+
+**Claude Code:**
 
 ```bash
-# Authorization header — curl, Claude Desktop, scripts
-curl -X POST https://your-host/mcp \
-  -H "Authorization: Bearer sk_…" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
-
-# ?key= query param — claude.ai custom connectors, which can't set a
-# custom header, so the key rides in the URL
-https://your-host/mcp?key=sk_…
+claude mcp add --transport http sidetrack https://your-host/mcp \
+  --header "Authorization: Bearer sk_…"
 ```
 
-Point an MCP-capable client (e.g. Claude) at it to list, create, and update
-lists and items. Web requests are tagged `web` and MCP requests `mcp` in
-the audit log, so you always know what changed and through which interface.
-Keys are scoped to the user who minted them; revoke them from the same page.
+**claude.ai:** under Settings → Connectors, add a custom connector with the
+URL `https://your-host/mcp?key=sk_…`. claude.ai can't send a custom header, so
+the key goes in the URL; treat that URL as a secret.
 
-## GitHub webhook
+**Other MCP clients:** point them at `https://your-host/mcp` with an
+`Authorization: Bearer sk_…` header, or the `?key=` URL if they can't set
+headers.
 
-Sidetrack can follow pull requests on its own. Under **Account → GitHub**, set
-up a webhook to get a payload URL and secret, then add them to a repository
-(Settings → Webhooks, content type `application/json`, the **Pull requests**
-event only; untick **Pushes**, which GitHub leaves ticked). After that:
+Hosted clients such as claude.ai connect from the internet, so they need your
+instance on a public HTTPS address (see [HTTPS and a domain](#https-and-a-domain)).
+A client on the same machine can use `http://localhost:3000/mcp`.
+
+Agents get tools to read and search your lists, add, edit, complete and move
+items, mark the item they're working on and report progress, link pull
+requests, and manage sharing. Each change appears in the audit log under the
+key's name, so you can see which agent did what.
+
+### GitHub webhook
+
+Sidetrack can follow pull requests on its own. Under **GitHub** in the menu
+under your avatar, set up a webhook to get a payload URL and secret, then add
+them to a repository (Settings → Webhooks, content type `application/json`,
+the **Pull requests** event only; untick **Pushes**, which GitHub leaves
+ticked). GitHub must be able to reach your instance, so it needs a public
+address. After that:
 
 - A PR whose title names items in square brackets, such as
   `Fix login [SDT-1]` or `[SDT-1, SDT-2]`, is linked to those items. Refs
@@ -171,78 +339,13 @@ Each delivery is checked against the webhook's secret, and its changes appear
 in the audit log with the `github` source. The webhook works with any number
 of repositories; make a new secret or remove it from the same page.
 
-## Development
+## Contributing
 
-To run Sidetrack locally to make changes, you'll need
-[Node.js](https://nodejs.org) and [pnpm](https://pnpm.io).
-
-```bash
-pnpm install
-```
-
-Add an auth secret to `.env.local`, then start the dev server:
-
-```bash
-echo "BETTER_AUTH_SECRET=$(openssl rand -hex 32)" >> .env.local
-pnpm dev
-```
-
-The app starts at [http://localhost:3000](http://localhost:3000), creating a
-SQLite database at `./data/sidetrack.db` and running migrations automatically.
-`BETTER_AUTH_URL` is optional locally — Better Auth infers the origin from each
-request, which also keeps things working when the dev server runs on a
-non-default port (e.g. one per git worktree). Set it only for a fixed
-deployment origin.
-
-To start with a populated board instead of an empty one, seed a fresh DB with
-a demo user and sample lists:
-
-```bash
-SIDETRACK_SEED=true pnpm db:seed   # then log in as demo@sidetrack.local / sidetrack-demo
-```
-
-After changing the schema in `src/core/schema.ts`, generate a migration with
-`pnpm db:generate` (it's then applied on the next startup).
-
-### Email in development
-
-By default, development sends outbound mail (e.g. password resets) to a local
-[Mailpit](https://mailpit.axllent.org) mail catcher rather than a real
-provider — so a dev box won't send live email unless you opt in, and you can
-read the rendered messages in a web UI. Start it (requires Docker) before you
-trigger a send:
-
-```bash
-pnpm mailpit   # web UI at http://localhost:8025
-```
-
-It's a single shared catcher on fixed ports — one instance serves every
-Conductor workspace, so there's nothing per-workspace to configure. The app
-defaults to `smtp://localhost:1025` in development automatically; no env var
-needed. **If Mailpit isn't running, sends fail** (the server logs a message
-pointing you back here) — that's the cost of guaranteeing dev never sends real
-mail. To opt a dev box out and send for real, set `RESEND_API_KEY` (and
-`EMAIL_FROM`); to point at a different catcher, set `SMTP_URL` explicitly.
-
-| Command | Description |
-| --- | --- |
-| `pnpm dev` | Start the development server |
-| `pnpm mailpit` | Start a local Mailpit mail catcher for outbound email |
-| `pnpm build` | Production build |
-| `pnpm start` | Serve the production build |
-| `pnpm lint` | Run ESLint |
-| `pnpm test` | Run the Vitest suite |
-| `pnpm db:generate` | Generate Drizzle migrations from schema changes |
-| `pnpm db:migrate` | Apply pending migrations manually |
-| `pnpm db:seed` | Seed a fresh DB with demo data (needs `SIDETRACK_SEED=true`) |
-
-Built with [Next.js 16](https://nextjs.org), [React 19](https://react.dev),
-[SQLite](https://www.sqlite.org) via
-[better-sqlite3](https://github.com/WiseLibs/better-sqlite3) and
-[Drizzle ORM](https://orm.drizzle.team),
-[Tailwind CSS v4](https://tailwindcss.com) with
-[shadcn/ui](https://ui.shadcn.com) and [Base UI](https://base-ui.com), and
-[dnd-kit](https://dndkit.com) for drag-to-reorder.
+Sidetrack is built with [Next.js](https://nextjs.org),
+[React](https://react.dev), [SQLite](https://www.sqlite.org) via
+[Drizzle ORM](https://orm.drizzle.team), and
+[Tailwind CSS](https://tailwindcss.com) with [shadcn/ui](https://ui.shadcn.com).
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md) to run it locally and make changes.
 
 ## License
 
@@ -258,11 +361,9 @@ In short:
   example, by hosting it for them), you must offer those users the source code
   of your modified version under the same license.
 
-Contributions are accepted under the same license. See [`LICENSE`](./LICENSE)
-for the full terms.
-
-Versions released before this change remain available under the
-[Functional Source License (FSL-1.1-ALv2)](https://github.com/fredrivett/sidetrack/blob/d5d4a56c6285cd916b8a54692aa6d52c8ebd5efb/LICENSE.md)
+See [`LICENSE`](./LICENSE) for the full terms. Versions released before the
+switch to the AGPL remain under the
+[FSL-1.1-ALv2](https://github.com/fredrivett/sidetrack/blob/d5d4a56c6285cd916b8a54692aa6d52c8ebd5efb/LICENSE.md)
 they shipped with, and each converts to the
 [Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0) two
 years after its release.
