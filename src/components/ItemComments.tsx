@@ -309,8 +309,12 @@ function Composer({
     const el = box.current;
     if (saving || !mention || !el) return;
     const text = `@${person.displayUsername ?? person.username} `;
+    const next = draft.slice(0, mention.start) + text + draft.slice(el.selectionStart);
+    // Like typing past maxLength: no room, no change. Counted as the server
+    // counts, in characters.
+    if ([...next].length > COMMENT_MAX) return;
     caretAfter.current = mention.start + text.length;
-    setDraft(draft.slice(0, mention.start) + text + draft.slice(el.selectionStart));
+    setDraft(next);
     setMention(null);
   }
 

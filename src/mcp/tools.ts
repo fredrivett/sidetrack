@@ -96,6 +96,8 @@ import { matchesWhose, WHOSE_FILTERS } from "@/lib/whose";
 export interface McpContext {
   userId: string;
   agent: { keyId: string; name: string };
+  /** The app's address, for links in the emails a tool sends. */
+  baseUrl: string;
 }
 
 const Status = z.enum(PROJECT_STATUSES);
@@ -687,7 +689,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       }
       const notice = mentionNotice(db, userId, comment);
       if (notice) {
-        await notifyMentions(notice, getEnv().BETTER_AUTH_URL?.replace(/\/$/, "") ?? "");
+        await notifyMentions(notice, ctx.baseUrl);
       }
       return json(comment);
     },

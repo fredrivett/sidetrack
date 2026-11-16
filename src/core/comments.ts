@@ -5,7 +5,7 @@ import { users } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
 import { formatItemRef } from "../lib/itemRef";
-import { mentionedHandles } from "../lib/mentions";
+import { mentionedPeople } from "../lib/mentions";
 import { getItem } from "./items";
 import { listAssignees } from "./members";
 import { getProject } from "./projects";
@@ -143,13 +143,10 @@ export function mentionNotice(
   const item = getItem(db, userId, comment.itemId);
   const project = item && getProject(db, userId, item.projectId);
   if (!item || !project) return null;
-  const already = new Set(before === undefined ? [] : mentionedHandles(before));
-  const handles = new Set(mentionedHandles(comment.body).filter((h) => !already.has(h)));
-  const to = listAssignees(db, userId, item.projectId).flatMap((p) =>
-    p.username &&
-    handles.has(p.username) &&
-    p.email &&
-    (comment.agentName || p.userId !== comment.userId)
+  const people = listAssignees(db, userId, item.projectId);
+  const already = new Set(before === undefined ? [] : mentionedPeople(before, people));
+  const to = mentionedPeople(comment.body, people).flatMap((p) =>
+    !already.has(p) && p.email && (comment.agentName || p.userId !== comment.userId)
       ? [{ userId: p.userId, email: p.email, name: p.name }]
       : [],
   );
