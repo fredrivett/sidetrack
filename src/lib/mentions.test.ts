@@ -9,7 +9,7 @@ const names = (people: { username: string | null }[]) => people.map((p) => p.use
 describe("mentions", () => {
   it("finds the people mentioned in the text, not in emails, code or links", () => {
     const body = [
-      "Thanks @Fred.Rivett. (@lorna) and @nobody",
+      "Thanks @Fred.Rivett. (@lorna) and @nobody, again @FRED.rivett",
       "mail me@lorna.dev, `@al.` [ask @al.](https://x.dev) [@al.][ref]",
       "~~~\n@al.\n~~~",
       "    @al. in indented code",
