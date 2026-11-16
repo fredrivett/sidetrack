@@ -14,7 +14,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { type ReactNode, useEffect } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useSyncExternalStore } from "react";
 import type { Item } from "@/core/schema";
 import { formatItemRef } from "@/lib/itemRef";
 import {
@@ -69,6 +69,11 @@ export function CommandPalette({
   onSearch: (search: string) => void;
 }) {
   const router = useRouter();
+  const visibleBottom = useSyncExternalStore(
+    subscribeVisualViewport,
+    visualViewportBottom,
+    () => undefined,
+  );
 
   // Close first, then act, so a dialog the action opens isn't stacked under
   // the closing palette.
@@ -109,12 +114,21 @@ export function CommandPalette({
       description="Search commands, lists and items"
       className="top-4 sm:top-1/4 sm:max-w-lg"
     >
-      <Command>
+      <Command style={{ "--visible-bottom": `${visibleBottom ?? 0}px` } as CSSProperties}>
         {/* Uncontrolled: cmdk keeps the search, and it unmounts with the
             dialog, so every way of closing (Esc, ⌘K, a pick) clears it. */}
         <CommandInput placeholder="Search commands, lists, items…" />
         <ReportSearch onSearch={onSearch} />
-        <CommandList className="max-h-[min(24rem,60dvh)]">
+        {/* On phones the list runs down to the bottom of what's visible, so
+            it fits above the on-screen keyboard and grows back when it
+            closes; dvh can't, as iOS lays the keyboard over the page
+            without resizing it. 4.75rem is the palette's 1rem top offset,
+            the search field and padding (2.75rem), and a 1rem gap below.
+            It animates its real height, from cmdk's measured content
+            height, so it eases with the keyboard: a max-height transition
+            spends most of its time above the content and looks like a
+            snap. */}
+        <CommandList className="max-sm:h-[min(var(--cmdk-list-height),calc(var(--visible-bottom)-4.75rem))] max-sm:max-h-none max-sm:transition-[height] max-sm:duration-250 max-sm:ease-out sm:max-h-[min(24rem,60dvh)]">
           <CommandEmpty>No matches.</CommandEmpty>
           <CommandGroup heading="Commands">
             {commands.map((c) => (
@@ -201,6 +215,23 @@ export function CommandPalette({
       </Command>
     </CommandDialog>
   );
+}
+
+/** Where the visible part of the page ends, in the layout viewport's pixels:
+ * above the on-screen keyboard while it's open. */
+function visualViewportBottom() {
+  const vv = window.visualViewport;
+  return vv ? vv.offsetTop + vv.height : window.innerHeight;
+}
+
+function subscribeVisualViewport(onChange: () => void) {
+  const vv = window.visualViewport;
+  vv?.addEventListener("resize", onChange);
+  vv?.addEventListener("scroll", onChange);
+  return () => {
+    vv?.removeEventListener("resize", onChange);
+    vv?.removeEventListener("scroll", onChange);
+  };
 }
 
 /** Passes the search up once typing pauses. */
