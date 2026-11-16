@@ -202,7 +202,7 @@ function AgentWebhookControl({
 
   function onSave(formData: FormData) {
     const raw = String(formData.get("url") ?? "").trim();
-    if (!raw) return;
+    if (!raw || pending) return;
     setError(null);
     startTransition(async () => {
       try {
@@ -219,6 +219,7 @@ function AgentWebhookControl({
   }
 
   function onRemove() {
+    if (pending) return;
     setError(null);
     startTransition(async () => {
       try {
@@ -246,7 +247,14 @@ function AgentWebhookControl({
             autoComplete="off"
             autoFocus
           />
-          <Button type="submit" size="sm" disabled={pending || !url.trim()}>
+          {/* aria-disabled while saving, not disabled, so focus stays put. */}
+          <Button
+            type="submit"
+            size="sm"
+            disabled={!url.trim()}
+            aria-disabled={pending || undefined}
+            className="aria-disabled:opacity-50"
+          >
             {pending ? "…" : "Save"}
           </Button>
           <Button
@@ -255,6 +263,7 @@ function AgentWebhookControl({
             size="sm"
             onClick={() => {
               setEditing(false);
+              setUrl("");
               setError(null);
             }}
           >
@@ -264,15 +273,25 @@ function AgentWebhookControl({
       ) : webhook ? (
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span>Starts work when assigned · set {fmt(webhook.createdAt)}</span>
-          <Button variant="ghost" size="xs" onClick={() => setEditing(true)} disabled={pending}>
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={() => !pending && setEditing(true)}
+            aria-disabled={pending || undefined}
+            className="aria-disabled:opacity-50"
+          >
             Change
           </Button>
           <Button
             variant="ghost"
             size="xs"
-            onClick={() => tap.confirm(onRemove, keyId)}
-            disabled={pending}
-            className={tap.isArmed(keyId) ? "text-destructive!" : undefined}
+            onClick={() => !pending && tap.confirm(onRemove, keyId)}
+            aria-disabled={pending || undefined}
+            className={
+              tap.isArmed(keyId)
+                ? "text-destructive! aria-disabled:opacity-50"
+                : "aria-disabled:opacity-50"
+            }
           >
             {tap.isArmed(keyId) ? "Confirm?" : "Remove"}
           </Button>

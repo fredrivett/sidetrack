@@ -44,17 +44,24 @@ export function setAgentWebhook(
 ): { secret: string } {
   const key = ownKey(db, userId, keyId);
   if (!key) throw new Error(`API key not found: ${keyId}`);
-  const url = normalizeWebUrl(rawUrl, "webhook URL");
+  // normalizeWebUrl's error quotes what it was given; the URL is a
+  // credential, so say what's wrong without it.
+  let url: string | null;
+  try {
+    url = normalizeWebUrl(rawUrl, "webhook URL");
+  } catch {
+    throw new Error("invalid webhook URL");
+  }
   if (!url) throw new Error("webhook URL required");
   if (!url.startsWith("https://")) throw new Error("webhook URL must use https");
   const secret = randomBytes(32).toString("hex");
-  const existing = db
-    .select({ keyId: agentWebhooks.keyId })
-    .from(agentWebhooks)
-    .where(eq(agentWebhooks.keyId, keyId))
-    .get();
   const now = Date.now();
   db.transaction((tx) => {
+    const existing = tx
+      .select({ keyId: agentWebhooks.keyId })
+      .from(agentWebhooks)
+      .where(eq(agentWebhooks.keyId, keyId))
+      .get();
     tx.insert(agentWebhooks)
       .values({ keyId, url, secret, createdAt: now })
       .onConflictDoUpdate({

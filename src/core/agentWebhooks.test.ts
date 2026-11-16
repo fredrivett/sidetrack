@@ -29,7 +29,9 @@ describe("agent webhooks", () => {
     expect(listAgentWebhooks(db, fred).map((w) => w.keyId)).toEqual([keyId]);
 
     const rows = listAudit(db, fred).filter((e) => e.entityId === keyId);
-    expect(rows.map((e) => e.action)).toEqual(["update", "create", "create"]);
+    // The key's mint and the first save are creates, the second an update.
+    // Sorted, since rows written in the same millisecond have no set order.
+    expect(rows.map((e) => e.action).sort()).toEqual(["create", "create", "update"]);
     for (const e of rows) {
       expect(e.detail).not.toContain("abc123secretpath");
       expect(e.detail).not.toContain(first.secret);
@@ -43,6 +45,10 @@ describe("agent webhooks", () => {
       /https/,
     );
     expect(() => setAgentWebhook(db, other, keyId, HOOK_URL, "web")).toThrow(/not found/);
+    // A malformed paste is refused without being quoted back, since it's a credential.
+    expect(() => setAgentWebhook(db, fred, keyId, "https://sec ret/x", "web")).toThrow(
+      /^invalid webhook URL$/,
+    );
     expect(db.select().from(agentWebhooks).all()).toEqual([]);
     expect(listAgentWebhooks(db, other)).toEqual([]);
   });
