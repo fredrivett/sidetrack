@@ -8,7 +8,7 @@ function respond(status: number, body: unknown): typeof fetch {
 }
 
 describe("suggestEmoji", () => {
-  it("returns up to three known emoji, most likely first, dropping the long tail", async () => {
+  it("returns Jev's likely picks, then every other emoji it rates a fit, dropping the long tail", async () => {
     const fetchImpl = respond(200, {
       answers: {
         icon: {
@@ -24,12 +24,21 @@ describe("suggestEmoji", () => {
             "📚": 0.02,
           },
         },
+        // Rated on their own: a strong fit follows the picks even when it
+        // rates above them, and the pick isn't offered twice.
+        "fits:🏃": { type: "noul", noul: 0.97 },
+        "fits:📚": { type: "noul", noul: 0.9 },
+        "fits:🗓️": { type: "noul", noul: 0.75 },
+        "fits:🌱": { type: "noul", noul: 0.69 },
       },
     });
     expect(await suggestEmoji(CONTEXT, "key", fetchImpl)).toEqual([
       "🏃",
       "💪",
       "🥾",
+      "🎯",
+      "📚",
+      "🗓️",
     ]);
   });
 
