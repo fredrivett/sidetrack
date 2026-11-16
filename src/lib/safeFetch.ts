@@ -95,16 +95,22 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
  * redirect, too many redirects, a network error, or after 5 seconds (or when
  * `signal` aborts). `allowAddress` exists for tests, which serve from
  * loopback; leave it at its default.
+ *
+ * With `post`, it POSTs that body and headers instead, and follows no
+ * redirects: a redirect comes back as its own response, so a signed request
+ * is only ever sent to the URL it was signed for.
  */
 export async function safeFetch(
   url: string,
   {
     maxBytes,
     signal,
+    post,
     allowAddress = isPublicAddress,
   }: {
     maxBytes: number;
     signal?: AbortSignal;
+    post?: { body: string; headers: Record<string, string> };
     allowAddress?: (address: string) => boolean;
   },
 ): Promise<SafeFetchResult> {
@@ -116,9 +122,9 @@ export async function safeFetch(
     // an Authorization header).
     current.username = "";
     current.password = "";
-    const res = await get(current, maxBytes, abort, allowAddress);
+    const res = await get(current, maxBytes, abort, allowAddress, post);
     const location = res.location;
-    if (!REDIRECT_STATUSES.has(res.status) || location === undefined) {
+    if (post || !REDIRECT_STATUSES.has(res.status) || location === undefined) {
       return { ...res, url: current.toString() };
     }
     if (hop >= MAX_REDIRECTS) throw new Error("too many redirects");
@@ -131,6 +137,7 @@ function get(
   maxBytes: number,
   signal: AbortSignal,
   allowAddress: (address: string) => boolean,
+  post?: { body: string; headers: Record<string, string> },
 ): Promise<Omit<SafeFetchResult, "url"> & { location?: string }> {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     return Promise.reject(new Error(`refused ${url.protocol} URL`));
@@ -169,10 +176,10 @@ function get(
     const req = (url.protocol === "https:" ? https : http).request(
       url,
       {
-        method: "GET",
+        method: post ? "POST" : "GET",
         lookup,
         signal,
-        headers: {
+        headers: post?.headers ?? {
           // Some sites refuse requests without a browser-like agent.
           "User-Agent":
             "Mozilla/5.0 (compatible; SidetrackFavicon/1.0; +https://sidetrack.it)",
@@ -240,6 +247,6 @@ function get(
       },
     );
     req.on("error", reject);
-    req.end();
+    req.end(post?.body);
   });
 }

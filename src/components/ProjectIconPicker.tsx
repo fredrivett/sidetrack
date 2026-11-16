@@ -86,7 +86,7 @@ export function ProjectIconPicker({
  * image URL; null shows the homepage favicon, else the letter), and
  * `onSelect` reports someone's choice, null meaning "no icon". Used for saved
  * lists, the New list dialog, which holds the choice until the list is
- * created, and, `emojiOnly`, for labels.
+ * created, Spaces, and, `emojiOnly`, for labels.
  */
 export function IconPicker({
   icon,

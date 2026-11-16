@@ -2,10 +2,19 @@
 
 import { History } from "lucide-react";
 import { unstable_rethrow, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useOptimistic,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import type { AssigneeView, PendingInviteView } from "@/core/members";
 import {
   listDoneBeforeAction,
+  reorderSpaceAction,
   setBoardFiltersAction,
   setTimeZoneAction,
 } from "@/app/actions";
@@ -29,6 +38,7 @@ import { ProjectColumn } from "./ProjectColumn";
 import { PullToSearch } from "./PullToSearch";
 import { runAction } from "./run-action";
 import { ShareDialog } from "./ShareDialog";
+import { SpaceMenu } from "./SpaceMenu";
 import { saveCollapsedTrays, SpaceTray } from "./SpaceTray";
 import { useDayStart, useToday } from "./use-day-start";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
@@ -75,6 +85,7 @@ export function Kanban({
   prLinksByItem,
   pendingInvites,
   spaces,
+  trayOrder,
   pendingSpaceInvites,
   initialCollapsedTrays,
   initialListId,
@@ -104,6 +115,8 @@ export function Kanban({
   pendingInvites: PendingInviteView[];
   /** The Spaces the viewer has joined, with their role in each. */
   spaces: SpaceView[];
+  /** The trays' ids in the viewer's order: "personal" and their Spaces. */
+  trayOrder: string[];
   pendingSpaceInvites: PendingSpaceInviteView[];
   /** Trays ("personal" or Space ids) this browser has collapsed, from its cookie. */
   initialCollapsedTrays: string[];
@@ -282,15 +295,19 @@ export function Kanban({
   const archived = projects.filter((p) => p.status === "archived");
   const onBoard = [...active, ...paused];
 
-  // For someone in a Space, the board groups lists on trays: "Personal" for
-  // lists in none of their Spaces, then one per Space, empty ones included.
+  // For someone in a Space, the board groups lists on trays, in their own
+  // order: "Personal" for lists in none of their Spaces, and one per Space,
+  // empty ones included.
   // Collapsed trays are remembered per browser in a cookie, so the board
   // renders them collapsed from the first paint. The tray holding ?p='s list
   // starts open, so a link to a list shows it.
-  const trays = [
-    { id: "personal", name: "Personal", icon: null },
-    ...spaces.map((s) => ({ id: s.id, name: s.name, icon: s.icon })),
-  ];
+  const trays = trayOrder.flatMap((id) =>
+    id === "personal"
+      ? [{ id, name: "Personal", icon: null, color: null }]
+      : spaces
+          .filter((s) => s.id === id)
+          .map((s) => ({ id, name: s.name, icon: s.icon, color: s.color })),
+  );
   const trayOf = (p: ProjectView) =>
     spaces.find((s) => s.id === p.spaceId)?.id ?? "personal";
   const trayByList: Record<string, string> = Object.fromEntries(
@@ -338,6 +355,20 @@ export function Kanban({
     assignees: filters.assignees.filter((id) => people.some((p) => p.userId === id)),
     labels: filters.labels.filter((name) => labelChoices.some((l) => l.name === name)),
   };
+
+  // Moving a tray holds it, dimmed, until the board comes back in the new
+  // order, as moving a list holds its column.
+  const [movingTrays, markTrayMoving] = useOptimistic(
+    [] as string[],
+    (cur, trayId: string) => [...cur, trayId],
+  );
+  const [, startTrayMove] = useTransition();
+  function moveTray(tray: { id: string; name: string }, ref: string) {
+    startTrayMove(async () => {
+      markTrayMoving(tray.id);
+      await runAction(reorderSpaceAction(tray.id, ref), `move “${tray.name}”`);
+    });
+  }
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   // Items opened from the palette get their own dialog here, since the item
@@ -600,17 +631,31 @@ export function Kanban({
                 <AddProjectButton onClick={() => setNewList({ open: true, spaceId: "" })} />
               </>
             ) : (
-              trays.map((tray) => {
+              trays.map((tray, at) => {
                 const inTray = (p: ProjectView) => trayOf(p) === tray.id;
                 const lists = onBoard.filter(inTray);
                 const spaceId = tray.id === "personal" ? "" : tray.id;
+                const saving = movingTrays.includes(tray.id);
                 return (
                   <SpaceTray
                     key={tray.id}
                     name={tray.name}
                     icon={tray.icon}
+                    color={tray.color}
                     lists={lists}
                     collapsed={collapsedTrays.has(tray.id)}
+                    saving={saving}
+                    menu={
+                      <SpaceMenu
+                        name={tray.name}
+                        prevId={trays[at - 1]?.id ?? null}
+                        nextId={trays[at + 1]?.id ?? null}
+                        firstId={trays[0].id}
+                        lastId={trays[trays.length - 1].id}
+                        saving={saving}
+                        onMove={(ref) => moveTray(tray, ref)}
+                      />
+                    }
                     onToggle={() => setTrayCollapsed(tray.id, !collapsedTrays.has(tray.id))}
                     onAddList={() => setNewList({ open: true, spaceId })}
                     onOpenList={openList}
@@ -636,6 +681,7 @@ export function Kanban({
           open={audit.open}
           projectId={audit.projectId}
           projects={projects}
+          assigneesByProject={assigneesByProject}
           items={boardItems}
           // Opening a comment's item swaps Activity for the item's dialog.
           onOpenItem={(item) => {

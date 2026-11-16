@@ -2,6 +2,7 @@ import { and, asc, count, eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { normalizeProjectIcon } from "../lib/projectIcon";
 import { hasProjectAccess } from "./access";
+import { parseProjectRef, resolvePosition } from "./fracidx";
 import { users } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
@@ -16,7 +17,9 @@ import {
 import {
   type MembershipStatus,
   projects,
+  SPACE_COLORS,
   SPACE_ROLES,
+  type SpaceColor,
   type SpaceRole,
   spaceMembers,
   spaces,
@@ -34,6 +37,7 @@ export interface SpaceView {
   id: string;
   name: string;
   icon: string | null;
+  color: SpaceColor | null;
   createdBy: string;
   createdAt: number;
   role: SpaceRole;
@@ -110,6 +114,15 @@ function listIdsInSpace(db: Db, spaceId: string): string[] {
     .map((r) => r.id);
 }
 
+function assertColor(color: string | null | undefined): SpaceColor | null {
+  // Only null (or leaving it out) clears; "" and other junk are refused.
+  if (color === null || color === undefined) return null;
+  if (!(SPACE_COLORS as readonly string[]).includes(color)) {
+    throw new Error(`unknown space colour: ${color}`);
+  }
+  return color as SpaceColor;
+}
+
 function assertName(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) throw new Error("space name cannot be empty");
@@ -120,15 +133,16 @@ function assertName(name: string): string {
 export function createSpace(
   db: Db,
   userId: string,
-  input: { name: string; icon?: string | null },
+  input: { name: string; icon?: string | null; color?: SpaceColor | null },
   source: AuditOrigin,
 ): SpaceView {
   const name = assertName(input.name);
   const icon = input.icon ? normalizeProjectIcon(input.icon) : null;
+  const color = assertColor(input.color);
   const id = nanoid(12);
   const now = Date.now();
   db.transaction((tx) => {
-    tx.insert(spaces).values({ id, createdBy: userId, name, icon, createdAt: now }).run();
+    tx.insert(spaces).values({ id, createdBy: userId, name, icon, color, createdAt: now }).run();
     tx.insert(spaceMembers)
       .values({
         id: nanoid(12),
@@ -136,6 +150,7 @@ export function createSpace(
         userId,
         status: "accepted",
         role: "admin",
+        position: nextTrayPosition(tx as unknown as Db, userId),
         createdAt: now,
       })
       .run();
@@ -145,22 +160,22 @@ export function createSpace(
       action: "create",
       entityType: "space",
       entityId: id,
-      detail: `created space "${name}"`,
+      detail: `created space "${name}"${color ? ` (${color})` : ""}`,
     });
   });
-  return { id, name, icon, createdBy: userId, createdAt: now, role: "admin" };
+  return { id, name, icon, color, createdBy: userId, createdAt: now, role: "admin" };
 }
 
-/** Rename a Space or change its icon (null clears it). Admin-only. */
+/** Rename a Space or change its icon or colour (null clears either). Admin-only. */
 export function updateSpace(
   db: Db,
   userId: string,
   spaceId: string,
-  input: { name?: string; icon?: string | null },
+  input: { name?: string; icon?: string | null; color?: SpaceColor | null },
   source: AuditOrigin,
 ): void {
   const { space } = requireAdmin(db, userId, spaceId, "edit the space");
-  const set: { name?: string; icon?: string | null } = {};
+  const set: { name?: string; icon?: string | null; color?: SpaceColor | null } = {};
   const changes: string[] = [];
   if (input.name !== undefined) {
     const name = assertName(input.name);
@@ -174,6 +189,13 @@ export function updateSpace(
     if (icon !== space.icon) {
       set.icon = icon;
       changes.push(icon ? `icon set to ${icon}` : "icon cleared");
+    }
+  }
+  if (input.color !== undefined) {
+    const color = assertColor(input.color);
+    if (color !== space.color) {
+      set.color = color;
+      changes.push(color ? `colour set to ${color}` : "colour cleared");
     }
   }
   if (!changes.length) return;
@@ -300,7 +322,7 @@ export function acceptSpaceInvite(
     // Flip only if still pending, so a revoke racing this accept can't be undone.
     const flipped = tx
       .update(spaceMembers)
-      .set({ status: "accepted" })
+      .set({ status: "accepted", position: nextTrayPosition(tx as unknown as Db, userId) })
       .where(and(eq(spaceMembers.id, membership.id), eq(spaceMembers.status, "pending")))
       .run();
     if (flipped.changes === 0) throw new Error("no pending invite for this space");
@@ -501,16 +523,133 @@ export function setProjectSpace(
   });
 }
 
-/** The Spaces `userId` has joined, with their role in each, oldest first. */
-export function listSpaces(db: Db, userId: string): SpaceView[] {
+/** The Spaces `userId` has joined, in their own order, with their role and
+ * position in each. Memberships from before trays could move have no
+ * position until they're placed (placeTrays); they follow, oldest first, as
+ * the board showed them then. */
+function joinedSpaces(db: Db, userId: string) {
   return db
-    .select({ space: spaces, role: spaceMembers.role })
+    .select({ space: spaces, role: spaceMembers.role, position: spaceMembers.position })
     .from(spaceMembers)
     .innerJoin(spaces, eq(spaces.id, spaceMembers.spaceId))
     .where(and(eq(spaceMembers.userId, userId), eq(spaceMembers.status, "accepted")))
-    .orderBy(asc(spaces.createdAt), asc(spaces.id))
-    .all()
-    .map(({ space, role }) => ({ ...space, role }));
+    .orderBy(
+      sql`${spaceMembers.position} is null`,
+      asc(spaceMembers.position),
+      asc(spaces.createdAt),
+      asc(spaces.id),
+    )
+    .all();
+}
+
+/** The Spaces `userId` has joined, with their role in each, in their order. */
+export function listSpaces(db: Db, userId: string): SpaceView[] {
+  return joinedSpaces(db, userId).map(({ space, role }) => ({ ...space, role }));
+}
+
+/** The board's tray for the viewer's lists in none of their Spaces, in tray
+ * order alongside Space ids. Space ids are 12-character nanoids, so it can't
+ * clash with one. */
+export const PERSONAL_TRAY = "personal";
+
+type TrayPosition = { id: string; position: string | null };
+
+/** `userId`'s trays in board order, each with its position: Personal and
+ * their Spaces. Until placed, Personal comes first and Spaces last. */
+function trayPositions(db: Db, userId: string): TrayPosition[] {
+  const personal =
+    db
+      .select({ position: users.personalTrayPosition })
+      .from(users)
+      .where(eq(users.id, userId))
+      .get()?.position ?? null;
+  const joined = joinedSpaces(db, userId).map(({ space, position }) => ({
+    id: space.id,
+    position,
+  }));
+  const at =
+    personal === null
+      ? 0
+      : joined.findIndex((s) => s.position === null || s.position > personal);
+  return joined.toSpliced(at === -1 ? joined.length : at, 0, {
+    id: PERSONAL_TRAY,
+    position: personal,
+  });
+}
+
+/** The ids of `userId`'s trays in board order: PERSONAL_TRAY and the Spaces
+ * they've joined. */
+export function listTrays(db: Db, userId: string): string[] {
+  return trayPositions(db, userId).map((t) => t.id);
+}
+
+/**
+ * Move a tray on the caller's board, among their Spaces: a Space, or
+ * PERSONAL_TRAY for their lists in none. ref is start | end | after:<id> |
+ * before:<id>, anchored on either. Only their order changes, never another
+ * member's. Any tray they haven't placed yet first gets a position where it
+ * shows now, so the ref can anchor on any of them.
+ */
+export function reorderSpace(
+  db: Db,
+  userId: string,
+  trayId: string,
+  refRaw: string,
+  source: AuditOrigin,
+): void {
+  const name =
+    trayId === PERSONAL_TRAY ? "Personal" : requireMember(db, userId, trayId).space.name;
+  const ref = parseProjectRef(refRaw);
+  db.transaction((tx) => {
+    const others = placeTrays(tx as unknown as Db, userId).filter((t) => t.id !== trayId);
+    setTrayPosition(tx as unknown as Db, userId, trayId, resolvePosition(others, ref));
+    recordAudit(tx as unknown as Db, {
+      actor: userId,
+      source,
+      action: "reorder",
+      // Personal is logged as a Space-level event too, with its tray id.
+      entityType: "space",
+      entityId: trayId,
+      detail: trayId === PERSONAL_TRAY ? "reordered Personal" : `reordered space "${name}"`,
+    });
+  });
+}
+
+/** Give each of `userId`'s unplaced trays a position where it shows now
+ * (Personal first, Spaces last), and return them all, sorted. */
+// audit-exempt: runs inside its callers' audited transactions.
+function placeTrays(db: Db, userId: string): { id: string; position: string }[] {
+  const trays = trayPositions(db, userId);
+  const placed = trays.filter((t): t is { id: string; position: string } => t.position !== null);
+  for (const { id, position } of trays) {
+    if (position !== null) continue;
+    const first = id === PERSONAL_TRAY;
+    const next = resolvePosition(placed, first ? "first" : "last");
+    setTrayPosition(db, userId, id, next);
+    if (first) placed.unshift({ id, position: next });
+    else placed.push({ id, position: next });
+  }
+  return placed;
+}
+
+/** The position for a Space `userId` creates or joins: after all their
+ * trays, so it shows last, as a new list does. Call it before the membership
+ * is accepted, so it isn't counted among them. */
+// audit-exempt: runs inside createSpace's and acceptSpaceInvite's audited transactions.
+function nextTrayPosition(db: Db, userId: string): string {
+  return resolvePosition(placeTrays(db, userId), "last");
+}
+
+// audit-exempt: runs inside its callers' audited transactions.
+function setTrayPosition(db: Db, userId: string, trayId: string, position: string): void {
+  if (trayId === PERSONAL_TRAY) {
+    db.update(users).set({ personalTrayPosition: position }).where(eq(users.id, userId)).run();
+  } else {
+    db.update(spaceMembers)
+      .set({ position })
+      .where(and(eq(spaceMembers.spaceId, trayId), eq(spaceMembers.userId, userId)))
+      .run();
+  }
 }
 
 /** Everyone in a Space and everyone invited, in the order they were added.

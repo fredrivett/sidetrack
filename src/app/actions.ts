@@ -11,6 +11,11 @@ import {
   removeAgentWebhook as removeAgentWebhookCore,
   setAgentWebhook as setAgentWebhookCore,
 } from "@/core/agentWebhooks";
+import {
+  endAgentSession as endAgentSessionCore,
+  requestWork as requestWorkCore,
+  stopRequest as stopRequestCore,
+} from "@/core/agentSessions";
 import { listAudit as listAuditCore } from "@/core/audit";
 import {
   addGithubWebhookSecret as addGithubWebhookSecretCore,
@@ -33,8 +38,10 @@ import {
 import {
   addComment as addCommentCore,
   deleteComment as deleteCommentCore,
+  getComment as getCommentCore,
   listComments as listCommentsCore,
   listRecentComments as listRecentCommentsCore,
+  mentionNotice as mentionNoticeCore,
   updateComment as updateCommentCore,
 } from "@/core/comments";
 import { getDb } from "@/core/db";
@@ -72,7 +79,7 @@ import {
   reorderProject as reorderProjectCore,
   updateProject as updateProjectCore,
 } from "@/core/projects";
-import type { AuditSource, ProjectStatus } from "@/core/schema";
+import type { AuditSource, ProjectStatus, SpaceColor } from "@/core/schema";
 import {
   acceptSpaceInvite as acceptSpaceInviteCore,
   createSpace as createSpaceCore,
@@ -83,6 +90,7 @@ import {
   listSpaces as listSpacesCore,
   listSuggestedSpaceMembers as listSuggestedSpaceMembersCore,
   removeSpaceMember as removeSpaceMemberCore,
+  reorderSpace as reorderSpaceCore,
   setProjectSpace as setProjectSpaceCore,
   setSpaceMemberRole as setSpaceMemberRoleCore,
   updateSpace as updateSpaceCore,
@@ -97,7 +105,8 @@ import {
   setUsername as setUsernameCore,
 } from "@/core/users";
 import { getCurrentSession, requireUserId } from "@/auth/session";
-import { notifyInvite } from "@/lib/email";
+import { sendAgentRequest } from "@/lib/agentRequest";
+import { notifyInvite, notifyMentions } from "@/lib/email";
 import { suggestEmoji, suggestLabelEmoji } from "@/lib/emojiSuggest";
 import { getEnv } from "@/lib/env";
 import type { ItemFilters } from "@/lib/filters";
@@ -149,6 +158,7 @@ export async function updateProjectAction(
     repository?: string | null;
     icon?: string | null;
     iconChosen?: boolean;
+    doneClearedAt?: number | null;
   },
 ) {
   const userId = await requireUserId();
@@ -162,6 +172,20 @@ export async function updateProjectAction(
   );
   refresh();
   return p;
+}
+
+/**
+ * Move the list's done items into Done now rather than when the day turns
+ * over. Stamped with the server's clock, which also stamps completedAt.
+ * Returns the previous value, for undo through updateProjectAction.
+ */
+export async function clearDoneItemsAction(id: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const previous = getProjectCore(db, userId, id)?.doneClearedAt ?? null;
+  updateProjectCore(db, userId, id, { doneClearedAt: Date.now() }, SOURCE);
+  refresh();
+  return previous;
 }
 
 /** Move a list into a Space, to another, or out of its Space (null). */
@@ -326,21 +350,45 @@ export async function removeMemberAction(projectId: string, targetUserId: string
   refresh();
 }
 
-export async function createSpaceAction(input: { name: string; icon?: string | null }) {
+export async function createSpaceAction(input: {
+  name: string;
+  icon?: string | null;
+  color?: SpaceColor | null;
+}) {
   const userId = await requireUserId();
   const { db } = getDb();
-  const space = createSpaceCore(db, userId, { name: input.name, icon: input.icon }, SOURCE);
+  const space = createSpaceCore(
+    db,
+    userId,
+    { name: input.name, icon: input.icon, color: input.color },
+    SOURCE,
+  );
   refresh();
   return space;
 }
 
 export async function updateSpaceAction(
   spaceId: string,
-  patch: { name?: string; icon?: string | null },
+  patch: { name?: string; icon?: string | null; color?: SpaceColor | null },
 ) {
   const userId = await requireUserId();
   const { db } = getDb();
-  updateSpaceCore(db, userId, spaceId, { name: patch.name, icon: patch.icon }, SOURCE);
+  updateSpaceCore(
+    db,
+    userId,
+    spaceId,
+    { name: patch.name, icon: patch.icon, color: patch.color },
+    SOURCE,
+  );
+  refresh();
+}
+
+/** Move a tray (a Space, or "personal") on the caller's board: start | end |
+ * after:<id> | before:<id>. */
+export async function reorderSpaceAction(trayId: string, ref: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  reorderSpaceCore(db, userId, trayId, ref, SOURCE);
   refresh();
 }
 
@@ -587,6 +635,8 @@ export async function addCommentAction(itemId: string, body: string) {
   const userId = await requireUserId();
   const { db } = getDb();
   const comment = addCommentCore(db, userId, itemId, body, SOURCE);
+  const notice = mentionNoticeCore(db, userId, comment);
+  if (notice) await notifyMentions(notice, await appBaseUrl());
   refresh();
   return comment;
 }
@@ -594,7 +644,11 @@ export async function addCommentAction(itemId: string, body: string) {
 export async function updateCommentAction(id: string, body: string) {
   const userId = await requireUserId();
   const { db } = getDb();
+  const before = getCommentCore(db, userId, id)?.body;
   const comment = updateCommentCore(db, userId, id, body, SOURCE);
+  // Only the people the edit newly mentions hear about it.
+  const notice = mentionNoticeCore(db, userId, comment, before);
+  if (notice) await notifyMentions(notice, await appBaseUrl());
   refresh();
   return comment;
 }
@@ -766,4 +820,39 @@ export async function removeAgentWebhookAction(keyId: string) {
   const { db } = getDb();
   removeAgentWebhookCore(db, userId, keyId, SOURCE);
   revalidatePath("/settings/keys");
+}
+
+/**
+ * Start one of the viewer's agents on an item (assigning it in the picker).
+ * The session opens first, so the board shows the agent at once; if its
+ * webhook can't be reached, that session ends again and this throws.
+ */
+export async function startAgentAction(itemId: string, keyId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const { session, request } = requestWorkCore(db, userId, itemId, keyId, SOURCE);
+  try {
+    if (request) await sendAgentRequest(request);
+  } catch (e) {
+    endAgentSessionCore(db, userId, session.id, SOURCE, (e as Error).message);
+    refresh();
+    throw e;
+  }
+  refresh();
+}
+
+/**
+ * Stop one of the viewer's agents on an item (unassigning it). The agent is
+ * told first and the session ends once it has been, so a stop that couldn't
+ * be delivered stays on the board to try again. With no webhook left to
+ * tell, it just ends.
+ */
+export async function stopAgentAction(itemId: string, keyId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const found = stopRequestCore(db, userId, itemId, keyId);
+  if (!found) return;
+  if (found.request) await sendAgentRequest(found.request);
+  endAgentSessionCore(db, userId, found.session.id, SOURCE);
+  refresh();
 }

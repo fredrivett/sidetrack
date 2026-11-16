@@ -2,7 +2,11 @@ import { cookies } from "next/headers";
 import { AgentSessionsProvider } from "@/components/agent-sessions";
 import { Kanban } from "@/components/Kanban";
 import { LiveUpdates } from "@/components/LiveUpdates";
-import { listAllAgentSessions } from "@/core/agentSessions";
+import {
+  listAllAgentSessions,
+  listStartableAgents,
+  listStartableLists,
+} from "@/core/agentSessions";
 import { listLabels } from "@/core/labels";
 import { getDb } from "@/core/db";
 import { projectRefPrefixes } from "@/core/itemRef";
@@ -10,7 +14,7 @@ import { listItems, reopenDueRepeats } from "@/core/items";
 import { listAssignees, listPendingInvites } from "@/core/members";
 import { listAllPrLinks } from "@/core/prLinks";
 import { listProjects } from "@/core/projects";
-import { listPendingSpaceInvites, listSpaces } from "@/core/spaces";
+import { listPendingSpaceInvites, listSpaces, listTrays } from "@/core/spaces";
 import { COLLAPSED_TRAYS_COOKIE, parseCollapsedTrays } from "@/components/SpaceTray";
 import { getBoardFilters, getOverdueCollapsed, getProfile, getTimeZone } from "@/core/users";
 import { weekStartBound } from "@/lib/time";
@@ -65,7 +69,12 @@ export default async function Home({
 
   return (
     // Agents' work sessions reach every row and detail dialog in every view.
-    <AgentSessionsProvider sessions={listAllAgentSessions(db, userId)}>
+    <AgentSessionsProvider
+      sessions={listAllAgentSessions(db, userId)}
+      viewerId={userId}
+      startable={listStartableAgents(db, userId)}
+      startableIn={listStartableLists(db, userId)}
+    >
       <Kanban
         viewerId={userId}
         viewer={getProfile(db, userId)}
@@ -87,6 +96,7 @@ export default async function Home({
         prLinksByItem={prLinksByItem}
         pendingInvites={pendingInvites}
         spaces={listSpaces(db, userId)}
+        trayOrder={listTrays(db, userId)}
         pendingSpaceInvites={listPendingSpaceInvites(db, userId)}
         initialListId={typeof p === "string" ? p : null}
         initialCollapsedTrays={parseCollapsedTrays(

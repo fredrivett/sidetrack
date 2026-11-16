@@ -4,12 +4,9 @@ import {
   Archive,
   ArrowDownAZ,
   ArrowDownUp,
-  ArrowLeft,
-  ArrowLeftToLine,
-  ArrowRight,
-  ArrowRightToLine,
   Boxes,
   CalendarClock,
+  CheckCheck,
   Clock,
   Hash,
   type LucideIcon,
@@ -20,10 +17,12 @@ import {
   Play,
   Plus,
   Trash2,
+  Undo2,
   UserPlus,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
+  clearDoneItemsAction,
   reorderProjectAction,
   setItemOrderAction,
   setProjectSpaceAction,
@@ -48,6 +47,7 @@ import type { ItemSort } from "@/core/items";
 import type { ProjectStatus } from "@/core/schema";
 import type { SpaceView } from "@/core/spaces";
 import { validatePrefix } from "@/lib/itemRef";
+import { MoveMenuItems } from "./MoveMenuItems";
 import { ARMED_MENU_ITEM, useTapToConfirm } from "./use-tap-to-confirm";
 import { runAction } from "./run-action";
 import { useListSave, useRemoveList } from "./use-list-saves";
@@ -58,6 +58,14 @@ const SORTS: Array<[ItemSort, string, LucideIcon]> = [
   ["created", "Date created", Clock],
   ["title", "Name", ArrowDownAZ],
 ];
+
+// The label for the Undo button on this menu's toasts.
+const UNDO = (
+  <span className="flex items-center gap-1">
+    <Undo2 className="size-3.5" />
+    Undo
+  </span>
+);
 
 export function ProjectMenu({
   projectId,
@@ -71,6 +79,7 @@ export function ProjectMenu({
   isOwner,
   spaceId,
   spaces,
+  doneInList,
   onShowActivity,
   onShowDetails,
   onAddItem,
@@ -89,6 +98,8 @@ export function ProjectMenu({
   spaceId: string | null;
   /** The Spaces the viewer has joined, with their role in each. */
   spaces: SpaceView[];
+  /** Done items still showing in the list: those finished today. */
+  doneInList: number;
   onShowActivity: (projectId: string) => void;
   onShowDetails: () => void;
   onAddItem: (projectId: string) => void;
@@ -116,7 +127,7 @@ export function ProjectMenu({
       }
       toast(`Archived "${name}"`, {
         description: "Restore it any time from Archived in the header.",
-        action: { label: "Undo", onClick: () => setStatus(status) },
+        action: { label: UNDO, onClick: () => setStatus(status) },
       });
     });
   }
@@ -134,11 +145,34 @@ export function ProjectMenu({
       } else {
         toast(`Sorted "${name}" by ${label}`, {
           action: {
-            label: "Undo",
+            label: UNDO,
             onClick: () => run(() => setItemOrderAction(projectId, previous), "undo the sort"),
           },
         });
       }
+    });
+  }
+
+  // Today's done items normally stay crossed out in the list until the day
+  // turns over; this sends them to Done now. Undo brings them back.
+  function clearDone() {
+    save(async () => {
+      const cleared = clearDoneItemsAction(projectId);
+      if (!(await runAction(cleared, `tidy “${name}”’s done items`))) return;
+      const previous = await cleared;
+      toast(
+        `Moved ${doneInList} done item${doneInList === 1 ? "" : "s"} to “Done this week”`,
+        {
+          action: {
+            label: UNDO,
+            onClick: () =>
+              run(
+                () => updateProjectAction(projectId, { doneClearedAt: previous }),
+                "bring the done items back",
+              ),
+          },
+        },
+      );
     });
   }
 
@@ -215,42 +249,13 @@ export function ProjectMenu({
           </DropdownMenuShortcut>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          disabled={!prevId}
-          onClick={() =>
-            run(() => reorderProjectAction(projectId, `before:${firstId}`), `move “${name}”`)
-          }
-        >
-          <ArrowLeftToLine />
-          Move to start
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          disabled={!prevId}
-          onClick={() =>
-            run(() => reorderProjectAction(projectId, `before:${prevId}`), `move “${name}”`)
-          }
-        >
-          <ArrowLeft />
-          Move left
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          disabled={!nextId}
-          onClick={() =>
-            run(() => reorderProjectAction(projectId, `after:${nextId}`), `move “${name}”`)
-          }
-        >
-          <ArrowRight />
-          Move right
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          disabled={!nextId}
-          onClick={() =>
-            run(() => reorderProjectAction(projectId, `after:${lastId}`), `move “${name}”`)
-          }
-        >
-          <ArrowRightToLine />
-          Move to end
-        </DropdownMenuItem>
+        <MoveMenuItems
+          prevId={prevId}
+          nextId={nextId}
+          firstId={firstId}
+          lastId={lastId}
+          onMove={(ref) => run(() => reorderProjectAction(projectId, ref), `move “${name}”`)}
+        />
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
             <ArrowDownUp />
@@ -265,6 +270,10 @@ export function ProjectMenu({
             ))}
           </DropdownMenuSubContent>
         </DropdownMenuSub>
+        <DropdownMenuItem disabled={doneInList === 0} onClick={clearDone}>
+          <CheckCheck />
+          Tidy done items
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={() => onShowActivity(projectId)}>
           <History />
           Activity

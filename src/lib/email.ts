@@ -192,6 +192,69 @@ export async function deliverInviteEmail(
   );
 }
 
+// Single source of truth for the mention email's copy.
+function mentionMessage({
+  authorName,
+  itemRef,
+  itemTitle,
+  body,
+  url,
+}: MentionEmail): { subject: string; text: string } {
+  return {
+    subject: `${authorName} mentioned you on ${itemRef}: ${itemTitle}`,
+    text:
+      `${authorName} mentioned you in a comment on ${itemRef} "${itemTitle}":` +
+      `\n\n${body}\n\nOpen Sidetrack to reply: ${url}`,
+  };
+}
+
+/** A comment's mention, for one person. */
+export interface MentionEmail {
+  to: string;
+  authorName: string;
+  itemRef: string;
+  itemTitle: string;
+  body: string;
+  url: string;
+}
+
+/** Pure-dependency core for the mention email; app code uses `notifyMentions`. */
+export async function deliverMentionEmail(
+  message: MentionEmail,
+  deps: EmailDeps,
+): Promise<void> {
+  const { subject, text } = mentionMessage(message);
+  await deliverEmail(
+    {
+      to: message.to,
+      subject,
+      text,
+      logLine: `[email] no SMTP_URL or RESEND_API_KEY set — ${message.to} was mentioned on ${message.itemRef}`,
+      errorLabel: "mention email",
+    },
+    deps,
+  );
+}
+
+/**
+ * Emails everyone a comment mentions, best-effort like `notifyInvite`: the
+ * comment is already saved and shows the mention, so a failed send is logged
+ * and swallowed. The web action and the MCP tool both call this.
+ */
+export async function notifyMentions(
+  notice: Omit<MentionEmail, "to" | "url"> & { to: { email: string }[] },
+  url: string,
+): Promise<void> {
+  const deps = liveDeps();
+  await Promise.all(
+    notice.to.map(({ email }) =>
+      deliverMentionEmail({ ...notice, to: email, url }, deps).catch((err) => {
+        console.error("[mention] email send failed:", err);
+      }),
+    ),
+  );
+}
+
 // Drop any embedded credentials (smtp://user:pass@host) before a URL reaches
 // a log line, keeping only scheme + host:port for diagnostics. Falls back to a
 // generic label if the value somehow doesn't parse as a URL.

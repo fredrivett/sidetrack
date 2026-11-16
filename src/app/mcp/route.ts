@@ -2,6 +2,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { verifyApiKey } from "@/core/api-keys";
 import { getDb } from "@/core/db";
 import { reopenDueRepeats } from "@/core/items";
+import { getEnv } from "@/lib/env";
 import { buildServer } from "@/mcp/server";
 
 export const runtime = "nodejs";
@@ -38,6 +39,8 @@ async function handle(request: Request): Promise<Response> {
   const server = buildServer({
     userId: caller.userId,
     agent: { keyId: caller.keyId, name: caller.name },
+    // As the web actions do: the configured address, else the request's.
+    baseUrl: getEnv().BETTER_AUTH_URL?.replace(/\/$/, "") ?? new URL(request.url).origin,
   });
   const transport = new WebStandardStreamableHTTPServerTransport({
     enableJsonResponse: true,

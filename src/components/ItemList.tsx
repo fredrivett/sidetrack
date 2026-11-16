@@ -444,26 +444,34 @@ export function DraggableItemList({
     });
   }
 
-  if (groups.length === 0 || visible.length === 0) {
-    return groups.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-neutral-200 bg-neutral-50 px-3 py-8 text-center text-xs text-balance text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/30 dark:text-neutral-400">
-          <p>Nothing to do yet.</p>
-          <Button
-            variant="outline"
-            size="xs"
-            onClick={onAddItem}
-            // Dark like an item row, so it sits below the card, not on it.
-            className="dark:bg-neutral-900"
-          >
-            <Plus />
-            Add item
-          </Button>
-        </div>
-      ) : (
-        <p className="rounded-lg border border-dashed border-neutral-200 bg-neutral-50 px-3 py-4 text-center text-xs text-balance text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/30 dark:text-neutral-400">
-          Nothing here for your filters.
-        </p>
-      );
+  if (groups.length === 0) {
+    return (
+      // The whole card is a pointer target, like the board's Add list column;
+      // the button inside is the keyboard one, and its click bubbles up here.
+      <div
+        onClick={onAddItem}
+        className="group/add-item flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-dashed border-neutral-200 bg-neutral-50 px-3 py-8 text-center text-xs text-balance text-neutral-500 transition-colors hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-800/30 dark:text-neutral-400 dark:hover:border-neutral-700"
+      >
+        <p>Nothing to do yet.</p>
+        <Button
+          variant="outline"
+          size="xs"
+          // Dark like an item row, so it sits below the card, not on it, and in
+          // its hover state while the card is hovered.
+          className="dark:bg-neutral-900 group-hover/add-item:bg-muted group-hover/add-item:text-foreground dark:group-hover/add-item:bg-neutral-800"
+        >
+          <Plus />
+          Add item
+        </Button>
+      </div>
+    );
+  }
+  if (visible.length === 0) {
+    return (
+      <p className="rounded-lg border border-dashed border-neutral-200 bg-neutral-50 px-3 py-4 text-center text-xs text-balance text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/30 dark:text-neutral-400">
+        Nothing here for your filters.
+      </p>
+    );
   }
 
   const active = activeId ? byId.get(activeId) : undefined;

@@ -6,11 +6,12 @@ import {
   deleteComment,
   listComments,
   listRecentComments,
+  mentionNotice,
   updateComment,
 } from "./comments";
 import { addItem, deleteItem } from "./items";
 import { acceptInvite, inviteMember } from "./members";
-import { createProject } from "./projects";
+import { createProject, getProject } from "./projects";
 import { comments } from "./schema";
 import { createTestDb, createTestUser } from "./test-helpers";
 
@@ -151,5 +152,51 @@ describe("comments", () => {
       "Hers",
       "Fix tap",
     ]);
+  });
+
+  it("notifies the people a comment mentions who can open its item", () => {
+    const { db, owner, alice, projectId, itemId } = seed();
+    inviteMember(db, owner, projectId, "alice", "web");
+    acceptInvite(db, alice, projectId, "web");
+    // Bob has an account but can't open the item, so mentioning him tells no one.
+    const bob = createTestUser(db, { username: "bob", name: "Bob" });
+
+    const comment = addComment(
+      db,
+      owner,
+      itemId,
+      "@Alice. can you check? cc @bob, me@fred `@fred` @fred",
+      "web",
+    );
+    const notice = mentionNotice(db, owner, comment);
+    const prefix = getProject(db, owner, projectId)?.prefix;
+    // Fred mentioning himself isn't news; neither is an email address or code.
+    expect(notice).toMatchObject({
+      authorName: "Fred",
+      itemRef: `${prefix}-1`,
+      itemTitle: "Fix tap",
+      body: comment.body,
+    });
+    expect(notice?.to.map((t) => t.userId)).toEqual([alice]);
+    expect(mentionNotice(db, bob, comment)).toBeNull();
+  });
+
+  it("tells an edit's newly mentioned people only, and the user when an agent asks", () => {
+    const { db, owner, alice, projectId, itemId } = seed();
+    inviteMember(db, owner, projectId, "alice", "web");
+    acceptInvite(db, alice, projectId, "web");
+
+    const first = addComment(db, alice, itemId, "Over to @fred", "web");
+    expect(mentionNotice(db, alice, first)?.to.map((t) => t.userId)).toEqual([owner]);
+    // Fred already heard; Alice adding herself isn't news.
+    const edited = updateComment(db, alice, first.id, "Over to @fred and @alice", "web");
+    expect(mentionNotice(db, alice, edited, first.body)).toBeNull();
+
+    // An agent mentioning the user it acts for is how it asks for their answer.
+    const asked = addComment(db, owner, itemId, "@fred which washer size?", AMP);
+    expect(mentionNotice(db, owner, asked)).toMatchObject({
+      authorName: "Amp (for Fred)",
+      to: [{ userId: owner }],
+    });
   });
 });

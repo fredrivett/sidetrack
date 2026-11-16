@@ -5,6 +5,7 @@ import { unstable_rethrow } from "next/navigation";
 import { listAuditAction, listRecentCommentsAction } from "@/app/actions";
 import type { AuditEntryWithActor } from "@/core/audit";
 import type { FeedComment } from "@/core/comments";
+import type { AssigneeView } from "@/core/members";
 import type { AuditSource, Item, Project } from "@/core/schema";
 import { formatItemRef } from "@/lib/itemRef";
 import { dayLabel, formatRelative } from "@/lib/time";
@@ -156,11 +157,13 @@ function byDay<T>(rows: T[], ts: (row: T) => number) {
 function FeedCommentRow({
   comment: c,
   project,
+  people,
   showList,
   onOpen,
 }: {
   comment: FeedComment;
   project: Project | undefined;
+  people: AssigneeView[] | undefined;
   showList: boolean;
   onOpen?: () => void;
 }) {
@@ -181,6 +184,7 @@ function FeedCommentRow({
   return (
     <CommentCard
       comment={c}
+      people={people}
       clamp
       context={
         onOpen ? (
@@ -203,6 +207,7 @@ export function AuditDialog({
   open,
   projectId,
   projects,
+  assigneesByProject = {},
   items = [],
   onOpenItem,
   onClose,
@@ -210,6 +215,8 @@ export function AuditDialog({
   open: boolean;
   projectId?: string;
   projects: Project[];
+  /** Who can open each list's items, for the comments' mentions. */
+  assigneesByProject?: Record<string, AssigneeView[]>;
   /** The items the board has, which a comment's item can be opened from. */
   items?: Item[];
   onOpenItem?: (item: Item) => void;
@@ -368,6 +375,7 @@ export function AuditDialog({
                         key={c.id}
                         comment={c}
                         project={projectById.get(c.item.projectId)}
+                        people={assigneesByProject[c.item.projectId]}
                         showList={!projectId}
                         onOpen={item && onOpenItem ? () => onOpenItem(item) : undefined}
                       />

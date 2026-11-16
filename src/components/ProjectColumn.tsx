@@ -71,11 +71,13 @@ export function ProjectColumn({
   const inSpace = spaces.some((s) => s.id === project.spaceId);
   const today = useToday();
   const weekStart = Number.isFinite(dayStart) ? startOfWeek(dayStart) : -Infinity;
+  // "Tidy done items" in the list's menu moves today's early too.
+  const doneBefore = Math.max(dayStart, project.doneClearedAt ?? -Infinity);
   const groups = nestItems(items);
   const active = groups.filter((i) => i.completedAt === null);
   const inList = groups.filter(
     (i) =>
-      i.completedAt === null || (filters.doneToday && i.completedAt >= dayStart),
+      i.completedAt === null || (filters.doneToday && i.completedAt >= doneBefore),
   );
   const done = filters.doneThisWeek
     ? groups
@@ -207,6 +209,7 @@ export function ProjectColumn({
             isOwner={project.isOwner}
             spaceId={project.spaceId}
             spaces={spaces}
+            doneInList={inList.length - active.length}
             onShowActivity={onShowActivity}
             onShowDetails={() => setDetailsOpen(true)}
             onAddItem={onAddItem}

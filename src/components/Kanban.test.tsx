@@ -61,6 +61,7 @@ const board = (projects: ProjectView[], spaces: SpaceView[]) => (
     prLinksByItem={{}}
     pendingInvites={[]}
     spaces={spaces}
+    trayOrder={["personal", ...spaces.map((s) => s.id)]}
     pendingSpaceInvites={[]}
     initialCollapsedTrays={[]}
     initialListId={null}
