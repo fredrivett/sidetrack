@@ -62,6 +62,11 @@ import {
 } from "@/core/items";
 import { projectRefPrefixes as projectRefPrefixesCore } from "@/core/itemRef";
 import {
+  type MissingLabels,
+  moveItem as moveItemCore,
+  previewMoveItem as previewMoveItemCore,
+} from "@/core/move";
+import {
   acceptInvite as acceptInviteCore,
   declineInvite as declineInviteCore,
   inviteMember as inviteMemberCore,
@@ -596,6 +601,38 @@ export async function setItemParentAction(
   const it = setItemParentCore(db, userId, id, parentId, SOURCE, position);
   refresh();
   return it;
+}
+
+export async function previewMoveItemAction(id: string, projectId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  return previewMoveItemCore(db, userId, id, projectId);
+}
+
+/**
+ * Move an item to another list as its preview (`token`) showed. If the move
+ * has changed since, nothing moves and this returns the new preview to show
+ * instead, since a thrown error's message doesn't reach the browser.
+ */
+export async function moveItemAction(
+  id: string,
+  projectId: string,
+  token: string,
+  missingLabels?: MissingLabels,
+) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const now = previewMoveItemCore(db, userId, id, projectId);
+  if (now.token !== token) return { moved: false as const, plan: now };
+  const { item, ...plan } = moveItemCore(
+    db,
+    userId,
+    id,
+    { projectId, token, missingLabels },
+    SOURCE,
+  );
+  refresh();
+  return { moved: true as const, plan, item };
 }
 
 export async function deleteItemAction(id: string) {
