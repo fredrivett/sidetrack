@@ -182,6 +182,13 @@ export function moveItem(
     throw new Error("the move has changed since it was previewed, or wasn't previewed: preview it again");
   }
   const choice = input.missingLabels;
+  // Server Action payloads aren't type-checked, so check each value.
+  const values = typeof choice === "object" && choice ? Object.values(choice) : [choice];
+  for (const v of values) {
+    if (v !== undefined && v !== "create" && v !== "drop") {
+      throw new Error(`not a label choice: ${String(v)} (expected create or drop)`);
+    }
+  }
   const decide = (name: string) =>
     typeof choice === "string" ? choice : choice?.[name];
   const undecided = p.missingLabels.filter((l) => !decide(l.name)).map((l) => l.name);

@@ -240,6 +240,8 @@ describe("moveItem", () => {
     // Every missing label needs a choice, and only those labels take one.
     expect(() => move({ infra: "create" })).toThrow(/no urgent label/);
     expect(() => move({ infra: "create", urgent: "drop", Bug: "drop" })).toThrow(/not a missing label of this move: Bug/);
+    // A forged value isn't taken as a choice.
+    expect(() => move({ infra: "create", urgent: "keep" as "drop" })).toThrow(/not a label choice: keep/);
     expect(getItem(db, fred, item.id)?.projectId).toBe(eng.id);
 
     move({ infra: "create", urgent: "drop" });

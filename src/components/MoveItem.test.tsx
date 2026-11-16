@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { toast } from "sonner";
 import { moveItemAction, previewMoveItemAction } from "@/app/actions";
 import type { MovePlan } from "@/core/move";
 import type { Item } from "@/core/schema";
@@ -66,8 +67,7 @@ describe("MoveItemDialog", () => {
     vi.mocked(previewMoveItemAction).mockResolvedValue(plan());
     vi.mocked(moveItemAction).mockResolvedValue({
       moved: true,
-      plan: plan(),
-      item: { ...item, projectId: "p2" },
+      plan: plan()
     });
     await open();
 
@@ -79,6 +79,7 @@ describe("MoveItemDialog", () => {
     fireEvent.click(screen.getByRole("radio", { name: /^Remove from item/ }));
     await act(async () => fireEvent.click(move));
     expect(moveItemAction).toHaveBeenCalledWith("i1", "p2", "t1", { Frontend: "drop" });
+    expect(toast).toHaveBeenCalledWith("Moved “Fix login” to Ops as OPS-3");
   });
 
   it("asks about each of several missing labels, with a shortcut for all", async () => {
@@ -90,19 +91,19 @@ describe("MoveItemDialog", () => {
         ],
       }),
     );
-    vi.mocked(moveItemAction).mockResolvedValue({ moved: true, plan: plan(), item });
+    vi.mocked(moveItemAction).mockResolvedValue({ moved: true, plan: plan() });
     await open();
     const move = screen.getByRole("button", { name: "Move" });
 
     // One label decided isn't enough.
     const urgent = screen.getByRole("radiogroup", { name: "“urgent”" });
-    fireEvent.click(urgent.querySelector("[aria-checked]:last-child") as HTMLElement);
+    fireEvent.click(within(urgent).getByRole("radio", { name: "Remove" }));
     await act(async () => fireEvent.click(move));
     expect(moveItemAction).not.toHaveBeenCalled();
 
     // Add all, then take urgent back off.
     fireEvent.click(screen.getByRole("button", { name: "Add all" }));
-    fireEvent.click(urgent.querySelector("[aria-checked]:last-child") as HTMLElement);
+    fireEvent.click(within(urgent).getByRole("radio", { name: "Remove" }));
     await act(async () => fireEvent.click(move));
     expect(moveItemAction).toHaveBeenCalledWith("i1", "p2", "t1", {
       Frontend: "create",
@@ -126,7 +127,7 @@ describe("MoveItemDialog", () => {
     expect(screen.getByText("OPS-4")).toBeTruthy();
 
     // Confirming again uses the new preview.
-    vi.mocked(moveItemAction).mockResolvedValueOnce({ moved: true, plan: plan(), item });
+    vi.mocked(moveItemAction).mockResolvedValueOnce({ moved: true, plan: plan() });
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Move" })));
     expect(moveItemAction).toHaveBeenLastCalledWith("i1", "p2", "t2", undefined);
   });

@@ -85,7 +85,9 @@ function ListOption({
 /** "Move to list" in an item row's right-click menu. */
 export function MoveToListContextMenu({ item }: { item: Item }) {
   const move = useMoveItem();
-  if (!move) return null;
+  // Not for an item in an archived list, which isn't among them; as the
+  // details' List field.
+  if (!move?.groups.some((g) => g.lists.some((l) => l.id === item.projectId))) return null;
   const labelled = move.groups.length > 1;
   return (
     <ContextMenuSub>
@@ -128,16 +130,18 @@ export function MoveToListPicker({
   onPick: (projectId: string) => void;
 }) {
   const move = useMoveItem();
+  const [open, setOpen] = useState(false);
   const current = move?.groups
     .flatMap((g) => g.lists)
     .find((l) => l.id === item.projectId);
   if (!move || !current) return null;
   const labelled = move.groups.length > 1;
   return (
-    <DropdownMenu>
+    // Held, not disabled, while another change saves, so it keeps focus.
+    <DropdownMenu open={open} onOpenChange={(next) => setOpen(next && !disabled)}>
       <DropdownMenuTrigger
-        disabled={disabled}
-        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-neutral-100 disabled:opacity-50 dark:hover:bg-neutral-800"
+        aria-disabled={disabled}
+        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-neutral-100 aria-disabled:opacity-50 dark:hover:bg-neutral-800"
       >
         <ProjectIcon
           icon={current.icon}

@@ -618,21 +618,25 @@ export async function moveItemAction(
   id: string,
   projectId: string,
   token: string,
-  missingLabels?: MissingLabelChoice,
+  labelChoice?: MissingLabelChoice,
 ) {
   const userId = await requireUserId();
   const { db } = getDb();
   const now = previewMoveItemCore(db, userId, id, projectId);
   if (now.token !== token) return { moved: false as const, plan: now };
-  const { item, ...plan } = moveItemCore(
+  // The browser only shows what moved; it reads the item back on refresh.
+  const { from, to, refs, matchedLabels, missingLabels, unassigned } = moveItemCore(
     db,
     userId,
     id,
-    { projectId, token, missingLabels },
+    { projectId, token, missingLabels: labelChoice },
     SOURCE,
   );
   refresh();
-  return { moved: true as const, plan, item };
+  return {
+    moved: true as const,
+    plan: { from, to, refs, matchedLabels, missingLabels, unassigned, token },
+  };
 }
 
 export async function deleteItemAction(id: string) {
