@@ -589,6 +589,11 @@ export function Kanban({
         <NewItemDialog
           open={newItem.open}
           onOpenChange={(open) => setNewItem((s) => ({ ...s, open }))}
+          // From the toast: the item opens in place of New item, not over it.
+          onOpenItem={(item) => {
+            setNewItem((s) => ({ ...s, open: false }));
+            paletteDetail.openDetail(item);
+          }}
           projects={onBoard}
           categoriesByProject={categoriesByProject}
           assigneesByProject={assigneesByProject}
