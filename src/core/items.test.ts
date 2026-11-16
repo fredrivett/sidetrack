@@ -156,7 +156,10 @@ describe("items", () => {
     // An existing label keeps its emoji: labelEmoji is only for new ones.
     expect(byName.bug).toMatchObject({ emoji: "🐛", emojiChosen: true });
     const log = listAudit(db, userId);
-    expect(log.find((e) => e.entityId === item.id)?.detail).toContain("labelled infra, bug");
+    expect(log.find((e) => e.entityId === item.id)).toMatchObject({
+      action: "create",
+      detail: 'added task "with labels", labelled infra, bug',
+    });
     // ensureLabels is intentionally NOT audited — the parent create is the
     // logged event (the one label row is addLabel's).
     expect(log.filter((e) => e.entityType === "label")).toHaveLength(1);

@@ -189,7 +189,9 @@ export async function suggestLabelEmojiAction(projectId: string, name: string) {
   const apiKey = getEnv().TYPESAFE_API_KEY;
   if (!apiKey || !name.trim()) return [];
   const { db } = getDb();
+  // No list chosen yet is fine (New item); a list they can't see isn't.
   const project = projectId ? getProjectCore(db, userId, projectId) : undefined;
+  if (projectId && !project) return [];
   return suggestLabelEmoji({ name: name.trim(), listName: project?.name ?? "" }, apiKey);
 }
 

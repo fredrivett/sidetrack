@@ -295,7 +295,14 @@ export async function autoListIcon(
   return (await suggestEmoji(context, apiKey, fetchImpl))[0];
 }
 
-/** Jev's top emoji for each new label, by name; names it has none for are left out. */
+// At most this many labels are asked about at once (one request each), so a
+// change adding many can't flood Jev; the rest get one when renamed or picked.
+const MAX_AUTO_LABELS = 10;
+
+/**
+ * Jev's top emoji for each new label, by name, for the first
+ * MAX_AUTO_LABELS of them; names it has none for are left out.
+ */
 export async function autoLabelEmoji(
   names: string[],
   listName: string,
@@ -304,7 +311,7 @@ export async function autoLabelEmoji(
 ): Promise<Record<string, string>> {
   if (!apiKey) return {};
   const picks = await Promise.all(
-    names.map(async (name) => {
+    names.slice(0, MAX_AUTO_LABELS).map(async (name) => {
       const [top] = await suggestLabelEmoji({ name, listName }, apiKey, fetchImpl);
       return [name, top] as const;
     }),

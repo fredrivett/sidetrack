@@ -50,12 +50,10 @@ describe("labels", () => {
     expect(getItem(db, userId, a.id)?.labels).toEqual(["bug", "frontend"]);
     expect(getItem(db, userId, b.id)?.labels).toEqual(["frontend"]);
     expect(getItem(db, userId, c.id)?.labels).toEqual(["ui"]);
-    expect(listAudit(db, userId)[0]).toMatchObject({
-      action: "update",
-      entityType: "label",
-      entityId: ui.id,
-      detail: 'label "ui": renamed to "frontend"',
-    });
+    // Rows written in the same millisecond have no set order, so find it.
+    expect(
+      listAudit(db, userId).filter((e) => e.entityId === ui.id && e.action === "update"),
+    ).toMatchObject([{ entityType: "label", detail: 'label "ui": renamed to "frontend"' }]);
     // Renaming onto another label's name would merge them; refuse instead.
     expect(() => updateLabel(db, userId, ui.id, { name: "bug" }, "web")).toThrow(/already/);
   });

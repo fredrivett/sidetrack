@@ -508,14 +508,15 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       description:
         "Create a new list, such as \"Home\", \"Buy\" or \"Launch Library\". Appends at the right of the board. " +
         "status defaults to active. summary, homepage_url, and icon are optional and work as in update_list; " +
-        "without an icon, the list gets an emoji suggested for its name (or shows its homepage's favicon), as on the web. " +
+        "without an icon, the list gets an emoji suggested for its name (or shows its homepage's favicon), as on the web; " +
+        "icon: null creates it with no icon, as the user's choice. " +
         "space_id (from list_spaces) creates it in a Space the user has joined, shared with everyone in it; leave it out for a list of their own.",
       inputSchema: {
         name: z.string().min(1),
         status: Status.optional(),
         summary: z.string().optional(),
         homepage_url: z.string().optional(),
-        icon: z.string().optional(),
+        icon: z.string().nullable().optional(),
         space_id: z.string().min(1).optional(),
       },
     },

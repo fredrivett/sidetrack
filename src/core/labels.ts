@@ -46,6 +46,13 @@ export function newLabelNames(db: Db, projectId: string, names: string[]): strin
   return normalizeLabelNames(names).filter((n) => !known.has(n));
 }
 
+/** `emoji` keyed by label names as they're stored: trimmed. */
+export function normalizeLabelEmoji(
+  emoji: Record<string, LabelEmoji> = {},
+): Record<string, LabelEmoji> {
+  return Object.fromEntries(Object.entries(emoji).map(([name, e]) => [name.trim(), e]));
+}
+
 /** A label's emoji for storage: blank is none; anything else must be one emoji. */
 function normalizeEmoji(raw: string | null): string | null {
   const trimmed = raw?.trim();
@@ -69,8 +76,9 @@ export function ensureLabels(
   db: Db,
   projectId: string,
   names: string[],
-  emoji: Record<string, LabelEmoji> = {},
+  given: Record<string, LabelEmoji> = {},
 ): void {
+  const emoji = normalizeLabelEmoji(given);
   for (const name of names) {
     const existing = db
       .select({ id: labels.id })

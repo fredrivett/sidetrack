@@ -55,13 +55,23 @@ export function LabelBadge({
 const CHIP =
   "inline-flex h-7 max-w-full items-center rounded-md border border-input pr-0.5 pl-1.5 text-sm";
 
-function RemoveButton({ name, onRemove }: { name: string; onRemove: () => void }) {
+function RemoveButton({
+  name,
+  onRemove,
+  disabled,
+}: {
+  name: string;
+  onRemove: () => void;
+  /** Ignores clicks, staying focusable (aria-disabled), while a save holds. */
+  disabled?: boolean;
+}) {
   return (
     <button
       type="button"
       aria-label={`Remove label ${name}`}
-      onClick={onRemove}
-      className="inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+      aria-disabled={disabled || undefined}
+      onClick={() => !disabled && onRemove()}
+      className="inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground aria-disabled:pointer-events-none aria-disabled:opacity-50"
     >
       <X className="size-3" />
     </button>
@@ -77,10 +87,13 @@ function RemoveButton({ name, onRemove }: { name: string; onRemove: () => void }
 export function SavedLabelChip({
   label,
   onRemove,
+  onRenamed,
   disabled,
 }: {
   label: Label;
   onRemove: () => void;
+  /** The rename saved, for a form holding the item's labels by name. */
+  onRenamed?: (name: string) => void;
   disabled?: boolean;
 }) {
   const [saving, start] = useTransition();
@@ -91,10 +104,9 @@ export function SavedLabelChip({
     suggest: (name) => suggestLabelEmojiAction(label.projectId, name),
   });
   const save = (patch: Parameters<typeof updateLabelAction>[1], what: string) =>
-    new Promise<void>((resolve) =>
+    new Promise<boolean>((resolve) =>
       start(async () => {
-        await runAction(updateLabelAction(label.id, patch), what);
-        resolve();
+        resolve(await runAction(updateLabelAction(label.id, patch), what));
       }),
     );
   return (
@@ -119,12 +131,14 @@ export function SavedLabelChip({
       />
       <EditableText
         value={label.name}
-        onSave={(next) => {
+        onSave={async (next) => {
           const auto = emoji.toSave();
-          return save(
+          const ok = await save(
             auto ? { name: next, emoji: auto.emoji, emojiChosen: false } : { name: next },
             `rename the label “${label.name}”`,
           );
+          // `next` is trimmed, as the server saves it.
+          if (ok) onRenamed?.(next);
         }}
         onDraftChange={emoji.onDraftChange}
         required
@@ -132,7 +146,7 @@ export function SavedLabelChip({
         className="min-w-0 truncate rounded pr-1 pl-0.5 hover:bg-muted"
         inputClassName="field-sizing-content h-6 min-w-12 pr-1 pl-0.5 py-0 text-sm"
       />
-      <RemoveButton name={label.name} onRemove={onRemove} />
+      <RemoveButton name={label.name} onRemove={onRemove} disabled={saving || disabled} />
     </span>
   );
 }
@@ -172,7 +186,7 @@ export function DraftLabelChip({
         onSelect={(next) => onEmoji?.(next)}
       />
       <span className="min-w-0 truncate pr-1 pl-0.5">{name}</span>
-      <RemoveButton name={name} onRemove={onRemove} />
+      <RemoveButton name={name} onRemove={onRemove} disabled={disabled} />
     </span>
   );
 }
@@ -284,6 +298,7 @@ export function LabelsField({
   onChange,
   draftEmoji,
   onDraftEmoji,
+  onRenamed,
   disabled,
 }: {
   projectId: string;
@@ -293,6 +308,9 @@ export function LabelsField({
   draftEmoji: Record<string, LabelEmoji>;
   /** Someone chose an emoji for a label not saved yet; omit when they can't. */
   onDraftEmoji?: (name: string, emoji: string | null) => void;
+  /** A label on it was renamed. Only a form holding the labels needs this:
+   * a saved item's labels are renamed with the label. */
+  onRenamed?: (from: string, to: string) => void;
   disabled?: boolean;
 }) {
   const labels = useListLabels(projectId);
@@ -309,6 +327,7 @@ export function LabelsField({
                 label={label}
                 disabled={disabled}
                 onRemove={() => remove(name)}
+                onRenamed={onRenamed && ((to) => onRenamed(name, to))}
               />
             ) : (
               <DraftLabelChip

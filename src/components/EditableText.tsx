@@ -47,10 +47,14 @@ export function EditableText({
   const [shown, showSaving] = useOptimistic(value);
   const [saving, startSaving] = useTransition();
   const ref = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+  // Counts edits, so a save that lands after the next edit has started
+  // doesn't end that edit's draft.
+  const edits = useRef(0);
 
   // Draft only matters while editing; the non-editing branch renders `shown`
   // directly. Seed draft at the moment editing starts, not via an effect.
   function startEditing() {
+    edits.current += 1;
     setDraft(shown);
     setEditing(true);
   }
@@ -72,10 +76,11 @@ export function EditableText({
       return;
     }
     if (trimmed !== shown.trim()) {
+      const edit = edits.current;
       startSaving(async () => {
         if (!hold) showSaving(trimmed);
         await onSave(trimmed);
-        onDraftChange?.(null);
+        if (edits.current === edit) onDraftChange?.(null);
       });
     } else {
       setDraft(shown);

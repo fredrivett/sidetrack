@@ -389,6 +389,10 @@ export function NewItemDialog({
                   }
                 }}
                 draftEmoji={labelEmoji}
+                // The label is renamed on the server; keep this item's name for it in step.
+                onRenamed={(from, to) =>
+                  setLabels((cur) => cur.map((n) => (n === from ? to : n)))
+                }
                 onDraftEmoji={(name, emoji) =>
                   setLabelEmoji((cur) => ({ ...cur, [name]: { emoji, chosen: true } }))
                 }

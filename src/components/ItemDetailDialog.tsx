@@ -484,6 +484,12 @@ export function ItemDetailDialog({
   // new ones until the list has them.
   const [labels, showLabels] = useOptimistic(item.labels);
   const [newLabelEmoji, setNewLabelEmoji] = useState<Record<string, LabelEmoji>>({});
+  // Switching to another item (a sub-item or the parent) drops the last one's.
+  const [labelsFor, setLabelsFor] = useState(item.id);
+  if (labelsFor !== item.id) {
+    setLabelsFor(item.id);
+    setNewLabelEmoji({});
+  }
   const [, startLabels] = useTransition();
   function setLabels(names: string[], added?: { name: string; emoji?: LabelEmoji }) {
     const emoji = added?.emoji;

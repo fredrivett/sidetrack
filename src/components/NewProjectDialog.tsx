@@ -29,7 +29,6 @@ import { IconPicker } from "./ProjectIconPicker";
 import { runAction } from "./run-action";
 import { type EmojiChoice, UNCHOSEN, useTitleEmoji } from "./use-emoji-choice";
 
-
 function Label({
   htmlFor,
   children,
@@ -101,7 +100,7 @@ export function NewProjectDialog({
   const homepageUrl = homepagePreview(homepage);
   // Until the user picks, a homepage shows its favicon; otherwise the top AI
   // suggestion stands in, so the list is created with what the preview shows.
-  const { shown: icon, suggestions } = useTitleEmoji({
+  const { shown: icon, suggestions, onOpen } = useTitleEmoji({
     saved: picked,
     title: open ? trimmedName : "",
     savedTitle: null,
@@ -160,6 +159,7 @@ export function NewProjectDialog({
                   className="size-9 border border-input"
                   faded={icon.faded}
                   suggestions={suggestions}
+                  onOpen={onOpen}
                   onSelect={(emoji) => setPicked({ emoji, chosen: true })}
                 />
                 <Input

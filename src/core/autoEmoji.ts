@@ -8,7 +8,7 @@
 import { autoLabelEmoji, autoListIcon } from "@/lib/emojiSuggest";
 import { getEnv } from "@/lib/env";
 import type { Db } from "./db";
-import { getLabel, type LabelEmoji, newLabelNames } from "./labels";
+import { getLabel, type LabelEmoji, newLabelNames, normalizeLabelEmoji } from "./labels";
 import { getProject, getProjectWithItems } from "./projects";
 
 /**
@@ -74,8 +74,9 @@ export async function withAutoLabelEmoji(
   userId: string,
   projectId: string,
   names: string[] | undefined,
-  given: Record<string, LabelEmoji> = {},
+  raw: Record<string, LabelEmoji> = {},
 ): Promise<Record<string, LabelEmoji>> {
+  const given = normalizeLabelEmoji(raw);
   const project = getProject(db, userId, projectId);
   if (!names || !project) return given;
   const missing = newLabelNames(db, projectId, names).filter((n) => !Object.hasOwn(given, n));
@@ -103,7 +104,8 @@ export async function withAutoLabelRename(
   if (!name || patch.emoji !== undefined) return patch;
   const label = getLabel(db, userId, id);
   const project = label && getProject(db, userId, label.projectId);
-  if (!label || !project || label.emojiChosen) return patch;
+  // Repeating its current name isn't a rename, so nothing to re-suggest.
+  if (!label || !project || label.emojiChosen || label.name === name) return patch;
   const { [name]: emoji } = await autoLabelEmoji([name], project.name, getEnv().TYPESAFE_API_KEY);
   return emoji ? { ...patch, emoji, emojiChosen: false } : patch;
 }
