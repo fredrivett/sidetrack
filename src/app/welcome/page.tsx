@@ -28,11 +28,19 @@ const REPO = "https://github.com/fredrivett/sidetrack";
 // The repo's star count, kept for an hour: unauthenticated GitHub API calls
 // are limited to 60 an hour, and the page renders per request.
 const STARS_TTL_MS = 60 * 60 * 1000;
-let starsCache: { stars: number | null; at: number } | null = null;
+// Holds the lookup itself, not its result, so renders that arrive while it's
+// in flight share it instead of each calling GitHub.
+let starsCache: { stars: Promise<number | null>; at: number } | null = null;
+
+function repoStars(): Promise<number | null> {
+  if (!starsCache || Date.now() - starsCache.at >= STARS_TTL_MS) {
+    starsCache = { stars: fetchRepoStars(), at: Date.now() };
+  }
+  return starsCache.stars;
+}
 
 /** The repo's stars, or null when GitHub doesn't answer within a second. */
-async function repoStars(): Promise<number | null> {
-  if (starsCache && Date.now() - starsCache.at < STARS_TTL_MS) return starsCache.stars;
+async function fetchRepoStars(): Promise<number | null> {
   let stars: number | null = null;
   try {
     const res = await fetch("https://api.github.com/repos/fredrivett/sidetrack", {
@@ -46,7 +54,6 @@ async function repoStars(): Promise<number | null> {
   } catch {
     // Offline or slow: show the badge without a count.
   }
-  starsCache = { stars, at: Date.now() };
   return stars;
 }
 
