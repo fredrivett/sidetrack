@@ -76,7 +76,7 @@ describe("MoveItemDialog", () => {
     await act(async () => fireEvent.click(move));
     expect(moveItemAction).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("radio", { name: "Remove from item" }));
+    fireEvent.click(screen.getByRole("radio", { name: /^Remove from item/ }));
     await act(async () => fireEvent.click(move));
     expect(moveItemAction).toHaveBeenCalledWith("i1", "p2", "t1", "drop");
   });

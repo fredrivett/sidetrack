@@ -2,6 +2,8 @@
 
 import {
   ArrowRight,
+  BadgeMinus,
+  BadgePlus,
   Check,
   ChevronDown,
   FolderInput,
@@ -386,31 +388,63 @@ function MoveSheet({
                 <div
                   role="radiogroup"
                   aria-label="Labels the list doesn't have"
-                  className="grid grid-cols-2 gap-2"
+                  className="grid gap-2 sm:grid-cols-2"
                 >
                   {(
                     [
-                      ["create", `Add to ${plan.to.name}`],
-                      ["drop", "Remove from item"],
+                      [
+                        "create",
+                        BadgePlus,
+                        `Add to ${plan.to.name}`,
+                        `Keep ${plan.missingLabels.length > 1 ? "them" : "it"}, emoji and all`,
+                      ],
+                      [
+                        "drop",
+                        BadgeMinus,
+                        "Remove from item",
+                        `Move it without ${plan.missingLabels.length > 1 ? "these labels" : "this label"}`,
+                      ],
                     ] as const
-                  ).map(([value, label]) => (
-                    <Button
-                      key={value}
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      role="radio"
-                      aria-checked={labelChoice === value}
-                      aria-disabled={pending}
-                      onClick={() => !pending && setLabelChoice(value)}
-                      className={`justify-start truncate ${labelChoice === value ? "border-primary bg-accent" : ""}`}
-                    >
-                      {labelChoice === value && (
-                        <Check data-icon="inline-start" />
-                      )}
-                      <span className="truncate">{label}</span>
-                    </Button>
-                  ))}
+                  ).map(([value, Icon, title, hint]) => {
+                    const checked = labelChoice === value;
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        role="radio"
+                        aria-checked={checked}
+                        aria-disabled={pending}
+                        onClick={() => !pending && setLabelChoice(value)}
+                        className={`flex items-start gap-2.5 rounded-lg border p-2.5 text-left transition outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+                          checked
+                            ? "border-primary bg-accent"
+                            : "border-input hover:bg-neutral-50 dark:hover:bg-neutral-800/50"
+                        }`}
+                      >
+                        <span
+                          className={`flex size-7 shrink-0 items-center justify-center rounded-md ${
+                            checked
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
+                          }`}
+                        >
+                          <Icon className="size-4" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium">{title}</span>
+                          <span className="block text-xs text-muted-foreground">{hint}</span>
+                        </span>
+                        <span
+                          aria-hidden
+                          className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border ${
+                            checked ? "border-primary bg-primary text-primary-foreground" : "border-input"
+                          }`}
+                        >
+                          {checked && <Check className="size-3" />}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </section>
             )}
