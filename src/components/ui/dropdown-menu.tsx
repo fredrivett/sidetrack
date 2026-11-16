@@ -119,7 +119,8 @@ function DropdownMenuSubTrigger({
       {...props}
     >
       {children}
-      <ChevronRightIcon className="ml-auto" />
+      {/* A shortcut before it takes the auto margin, so it sits right beside the chevron. */}
+      <ChevronRightIcon className="ml-auto [[data-slot=dropdown-menu-shortcut]~&]:ml-0" />
     </MenuPrimitive.SubmenuTrigger>
   )
 }
