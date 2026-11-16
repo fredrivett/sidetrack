@@ -22,6 +22,16 @@ This version has breaking changes — APIs, conventions, and file structure may 
   unless `SIDETRACK_SEED=true` and the DB has no users. Ephemeral envs only
   (local, previews) — never production/staging.
 
+# Screenshots and images
+
+Emoji in any screenshot, recording or generated image (PR screenshots, the
+social card, docs) are Apple's, as most people see them, never Noto, Twemoji
+or another set. Orbs install Apple Color Emoji for Chromium (`.agents/setup`);
+elsewhere, take screenshots on a Mac or install the same font first. Code that
+draws its own emoji, like `src/app/opengraph-image.tsx`, downloads Apple's
+images at build (`appleEmoji()`) rather than committing them: the artwork is
+Apple's, not covered by this repo's licence.
+
 # Deployment
 
 Deployed on **Railway**, not Vercel — built from the root `Dockerfile`.
