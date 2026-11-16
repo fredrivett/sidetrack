@@ -14,7 +14,7 @@ import {
   withAutoLabelRename,
   withAutoListIcon,
 } from "@/core/autoEmoji";
-import { addComment, listComments } from "@/core/comments";
+import { addComment, listComments, mentionNotice } from "@/core/comments";
 import { addLabel, getLabel, listLabels, updateLabel } from "@/core/labels";
 import { getDb } from "@/core/db";
 import { getTimeZone } from "@/core/users";
@@ -80,12 +80,15 @@ import {
   listPendingSpaceInvites,
   listSpaceMembers,
   listSpaces,
+  listTrays,
+  PERSONAL_TRAY,
   removeSpaceMember,
+  reorderSpace,
   setProjectSpace,
   setSpaceMemberRole,
   updateSpace,
 } from "@/core/spaces";
-import { type InviteKind, notifyInvite } from "@/lib/email";
+import { type InviteKind, notifyInvite, notifyMentions } from "@/lib/email";
 import { getEnv } from "@/lib/env";
 import { formatItemRef, workPrTitle } from "@/lib/itemRef";
 import { checkDraftItem } from "@/lib/itemSuggest";
@@ -97,6 +100,8 @@ import { matchesWhose, WHOSE_FILTERS } from "@/lib/whose";
 export interface McpContext {
   userId: string;
   agent: { keyId: string; name: string };
+  /** The app's address, for links in the emails a tool sends. */
+  baseUrl: string;
 }
 
 const Status = z.enum(PROJECT_STATUSES);
@@ -277,10 +282,11 @@ function withRefs(prefix: string, list: Item[]) {
 }
 
 // Notify an invitee by email (best-effort; notifyInvite never throws). The
-// link is the app root (BETTER_AUTH_URL); with no transport set, the email
+// link is the app root (McpContext.baseUrl); with no transport set, the email
 // layer logs it server-side.
 async function sendInviteNotification(
   db: Db,
+  url: string,
   inviterId: string,
   name: string,
   toEmail: string | null,
@@ -291,7 +297,7 @@ async function sendInviteNotification(
     to: toEmail,
     inviterName: getUserName(db, inviterId) ?? "Someone",
     projectName: name,
-    url: getEnv().BETTER_AUTH_URL?.replace(/\/$/, "") ?? "",
+    url,
     kind,
   });
 }
@@ -669,6 +675,9 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Comment on an item: body is Markdown, shown in the item's detail view under your name and the user's. " +
         "Use it for what people discussing the item should read later, such as a question for the user, a decision and why, or a summary of findings. " +
         "Use report_work for one-line progress updates and update_item for what the item itself should say. " +
+        "To get someone's attention, mention them with @ and their username (e.g. \"@fred\"): a comment author's displayUsername, " +
+        "or a member's username from list_members. Anyone mentioned who can open the item is emailed the comment, " +
+        "including the user you act for, so mention them when you need their answer and not otherwise. " +
         `Max ${COMMENT_MAX} characters. Returns the comment. ` +
         "item_id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: { item_id: z.string(), body: z.string().min(1) },
@@ -677,11 +686,17 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       const { db } = getDb();
       const { item, error } = resolveItemArg(db, userId, item_id);
       if (error) return error;
+      let comment;
       try {
-        return json(addComment(db, userId, item.id, body, SOURCE));
+        comment = addComment(db, userId, item.id, body, SOURCE);
       } catch (e) {
         return errorText(`${(e as Error).message} — no change was made.`);
       }
+      const notice = mentionNotice(db, userId, comment);
+      if (notice) {
+        await notifyMentions(notice, ctx.baseUrl);
+      }
+      return json(comment);
     },
   );
 
@@ -1436,7 +1451,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       const project = getProject(db, userId, list_id);
       if (!project) return notFound("list", list_id);
       const member = inviteMember(db, userId, list_id, person, SOURCE);
-      await sendInviteNotification(db, userId, project.name, member.email);
+      await sendInviteNotification(db, ctx.baseUrl, userId, project.name, member.email);
       return json(member);
     },
   );
@@ -1542,7 +1557,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "List Spaces",
       description:
-        "List the Spaces the user has joined, oldest first. A Space is a group of people who share every list in it. " +
+        "List the Spaces the user has joined, in the order their board shows them. A Space is a group of people who share every list in it. " +
         "Each has id, name, icon, color (null is grey) and the user's role: admin (manages its people and the Space itself) or member. " +
         "A list's spaceId (list_lists) says which Space it's in. Pending Space invites are in list_pending_invites.",
       inputSchema: {},
@@ -1592,6 +1607,25 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       if (!isJoined(db, space_id)) return notFound("space", space_id);
       updateSpace(db, userId, space_id, { name, icon, color }, SOURCE);
       return json(listSpaces(db, userId).find((s) => s.id === space_id));
+    },
+  );
+
+  server.registerTool(
+    "reorder_space",
+    {
+      title: "Reorder Space",
+      description:
+        "Move a Space on the user's board, among the Spaces they've joined; only their own board changes. " +
+        "Their lists in no Space sit among them as a Personal group: pass space_id \"personal\" to move it, or use it as an anchor. " +
+        "position is one of: start | end | after:<space_id> | before:<space_id>. " +
+        "Returns the board's groups in their new order, as space ids and \"personal\".",
+      inputSchema: { space_id: z.string(), position: ListPosRef },
+    },
+    async ({ space_id, position }) => {
+      const { db } = getDb();
+      if (space_id !== PERSONAL_TRAY && !isJoined(db, space_id)) return notFound("space", space_id);
+      reorderSpace(db, userId, space_id, position, SOURCE);
+      return json(listTrays(db, userId));
     },
   );
 
@@ -1646,7 +1680,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       const space = listSpaces(db, userId).find((s) => s.id === space_id);
       if (!space) return notFound("space", space_id);
       const member = inviteSpaceMember(db, userId, space_id, person, SOURCE);
-      await sendInviteNotification(db, userId, space.name, member.email, "space");
+      await sendInviteNotification(db, ctx.baseUrl, userId, space.name, member.email, "space");
       return json(member);
     },
   );

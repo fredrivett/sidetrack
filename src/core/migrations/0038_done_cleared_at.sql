@@ -1,0 +1,1 @@
+ALTER TABLE `projects` ADD `done_cleared_at` integer;

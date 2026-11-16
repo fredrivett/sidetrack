@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "28b7b8f4-0992-49ce-938c-9c5bd9f4681f",
+  "id": "2129c5f7-a6d3-4171-8c28-2b09a4ba57cf",
   "prevId": "5a5076b3-8ce3-4abb-815c-2debc769fdd2",
   "tables": {
     "agent_sessions": {
@@ -1187,6 +1187,13 @@
           "autoincrement": false,
           "default": "'member'"
         },
+        "position": {
+          "name": "position",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -1260,13 +1267,6 @@
         },
         "icon": {
           "name": "icon",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "color": {
-          "name": "color",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -1698,6 +1698,13 @@
           "notNull": true,
           "autoincrement": false,
           "default": false
+        },
+        "personal_tray_position": {
+          "name": "personal_tray_position",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         },
         "created_at": {
           "name": "created_at",

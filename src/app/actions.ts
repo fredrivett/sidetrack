@@ -33,8 +33,10 @@ import {
 import {
   addComment as addCommentCore,
   deleteComment as deleteCommentCore,
+  getComment as getCommentCore,
   listComments as listCommentsCore,
   listRecentComments as listRecentCommentsCore,
+  mentionNotice as mentionNoticeCore,
   updateComment as updateCommentCore,
 } from "@/core/comments";
 import { getDb } from "@/core/db";
@@ -83,6 +85,7 @@ import {
   listSpaces as listSpacesCore,
   listSuggestedSpaceMembers as listSuggestedSpaceMembersCore,
   removeSpaceMember as removeSpaceMemberCore,
+  reorderSpace as reorderSpaceCore,
   setProjectSpace as setProjectSpaceCore,
   setSpaceMemberRole as setSpaceMemberRoleCore,
   updateSpace as updateSpaceCore,
@@ -96,7 +99,7 @@ import {
   setUsername as setUsernameCore,
 } from "@/core/users";
 import { getCurrentSession, requireUserId } from "@/auth/session";
-import { notifyInvite } from "@/lib/email";
+import { notifyInvite, notifyMentions } from "@/lib/email";
 import { suggestEmoji, suggestLabelEmoji } from "@/lib/emojiSuggest";
 import { getEnv } from "@/lib/env";
 import { checkDraftItem, suggestList } from "@/lib/itemSuggest";
@@ -147,6 +150,7 @@ export async function updateProjectAction(
     repository?: string | null;
     icon?: string | null;
     iconChosen?: boolean;
+    doneClearedAt?: number | null;
   },
 ) {
   const userId = await requireUserId();
@@ -160,6 +164,20 @@ export async function updateProjectAction(
   );
   refresh();
   return p;
+}
+
+/**
+ * Move the list's done items into Done now rather than when the day turns
+ * over. Stamped with the server's clock, which also stamps completedAt.
+ * Returns the previous value, for undo through updateProjectAction.
+ */
+export async function clearDoneItemsAction(id: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const previous = getProjectCore(db, userId, id)?.doneClearedAt ?? null;
+  updateProjectCore(db, userId, id, { doneClearedAt: Date.now() }, SOURCE);
+  refresh();
+  return previous;
 }
 
 /** Move a list into a Space, to another, or out of its Space (null). */
@@ -354,6 +372,15 @@ export async function updateSpaceAction(
     { name: patch.name, icon: patch.icon, color: patch.color },
     SOURCE,
   );
+  refresh();
+}
+
+/** Move a tray (a Space, or "personal") on the caller's board: start | end |
+ * after:<id> | before:<id>. */
+export async function reorderSpaceAction(trayId: string, ref: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  reorderSpaceCore(db, userId, trayId, ref, SOURCE);
   refresh();
 }
 
@@ -600,6 +627,8 @@ export async function addCommentAction(itemId: string, body: string) {
   const userId = await requireUserId();
   const { db } = getDb();
   const comment = addCommentCore(db, userId, itemId, body, SOURCE);
+  const notice = mentionNoticeCore(db, userId, comment);
+  if (notice) await notifyMentions(notice, await appBaseUrl());
   refresh();
   return comment;
 }
@@ -607,7 +636,11 @@ export async function addCommentAction(itemId: string, body: string) {
 export async function updateCommentAction(id: string, body: string) {
   const userId = await requireUserId();
   const { db } = getDb();
+  const before = getCommentCore(db, userId, id)?.body;
   const comment = updateCommentCore(db, userId, id, body, SOURCE);
+  // Only the people the edit newly mentions hear about it.
+  const notice = mentionNoticeCore(db, userId, comment, before);
+  if (notice) await notifyMentions(notice, await appBaseUrl());
   refresh();
   return comment;
 }
