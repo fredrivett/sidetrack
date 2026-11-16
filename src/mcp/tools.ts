@@ -1125,16 +1125,21 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "and its old ref keeps working for anyone who can see the list it's in now. " +
         "Call it first without token: that only previews the move and changes nothing. It returns refs (each item's ref now and the one it gets), " +
         "matchedLabels (labels the list already has, which the items take on), missingLabels (labels it doesn't have), " +
-        "unassigned (people who can't see the list, so they come off the items) and a token. " +
-        "Show the user all of that and ask them to confirm the move; when missingLabels isn't empty, also ask whether to create those labels in the new list or drop them from the items. " +
-        "Then call again with that token, and missing_labels \"create\" or \"drop\" as they chose (required when there are missing labels). " +
+        "unassigned (people who can't see the list, so they come off the items) and a token. Each label and person has itemIds: the moving items it's on (match them to refs by id), so say which items when sub-items move. " +
+        "Show the user all of that and ask them to confirm the move; when missingLabels isn't empty, also ask, for each of those labels, whether to create it in the new list or drop it from the items. " +
+        "Then call again with that token, and missing_labels as they chose (required when there are missing labels): \"create\" or \"drop\" for all of them, or an object from each missing label's name to \"create\" or \"drop\". " +
         "The move only happens with the token from its preview, and is refused if anything in it has changed since: then preview again and show the user the new one. " +
         "Never pass the token for a move the user hasn't seen and agreed to. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id; list_id is the target list's id.",
       inputSchema: {
         id: z.string(),
         list_id: z.string(),
-        missing_labels: z.enum(["create", "drop"]).optional(),
+        missing_labels: z
+          .union([
+            z.enum(["create", "drop"]),
+            z.record(z.string(), z.enum(["create", "drop"])),
+          ])
+          .optional(),
         token: z.string().optional(),
       },
     },

@@ -62,7 +62,7 @@ import {
 } from "@/core/items";
 import { projectRefPrefixes as projectRefPrefixesCore } from "@/core/itemRef";
 import {
-  type MissingLabels,
+  type MissingLabelChoice,
   moveItem as moveItemCore,
   previewMoveItem as previewMoveItemCore,
 } from "@/core/move";
@@ -618,7 +618,7 @@ export async function moveItemAction(
   id: string,
   projectId: string,
   token: string,
-  missingLabels?: MissingLabels,
+  missingLabels?: MissingLabelChoice,
 ) {
   const userId = await requireUserId();
   const { db } = getDb();

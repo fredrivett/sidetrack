@@ -229,7 +229,10 @@ function MoveSheet({
 }) {
   const [plan, setPlan] = useState<MovePlan | null>(null);
   const [changed, setChanged] = useState(false);
-  const [labelChoice, setLabelChoice] = useState<MissingLabels | null>(null);
+  // What to do with each missing label, by name.
+  const [labelChoice, setLabelChoice] = useState<Record<string, MissingLabels>>(
+    {},
+  );
   const [failed, setFailed] = useState(false);
   const fromLabels = useListLabels(item.projectId);
   const toLabels = useListLabels(projectId);
@@ -252,7 +255,8 @@ function MoveSheet({
     };
   }, [item.id, item.title, projectId]);
 
-  const needsChoice = (plan?.missingLabels.length ?? 0) > 0 && !labelChoice;
+  const needsChoice =
+    plan?.missingLabels.some((l) => !labelChoice[l.name]) ?? false;
   function confirm() {
     if (!plan || pending || needsChoice) return;
     start(async () => {
@@ -261,14 +265,20 @@ function MoveSheet({
           item.id,
           plan.to.id,
           plan.token,
-          labelChoice ?? undefined,
+          plan.missingLabels.length ? labelChoice : undefined,
         ).then((r) => {
           if (!r.moved) {
             // Something changed since the preview: show the move as it is now.
             setPlan(r.plan);
             setChanged(true);
-            if (r.plan.missingLabels.join() !== plan.missingLabels.join())
-              setLabelChoice(null);
+            // Keep the choices for labels that are still missing.
+            setLabelChoice((cur) =>
+              Object.fromEntries(
+                r.plan.missingLabels.flatMap((l) =>
+                  cur[l.name] ? [[l.name, cur[l.name]]] : [],
+                ),
+              ),
+            );
             return;
           }
           onClose();
@@ -347,117 +357,133 @@ function MoveSheet({
             {plan.matchedLabels.length > 0 && (
               <section className="space-y-1.5">
                 <h3 className="text-xs font-medium text-muted-foreground">
-                  Labels
+                  Labels {plan.to.name} has
                 </h3>
-                <ul className="flex flex-wrap gap-1.5">
+                <ul className="space-y-1">
                   {plan.matchedLabels.map((l) => (
-                    <li key={l.from}>
+                    <li
+                      key={l.to}
+                      className="flex flex-wrap items-center gap-x-2 gap-y-0.5"
+                    >
                       <LabelBadge name={l.to} emoji={emojiIn(toLabels, l.to)} />
+                      {l.from !== l.to && (
+                        <span className="text-xs whitespace-nowrap text-muted-foreground">
+                          was “{l.from}”
+                        </span>
+                      )}
+                      <OnItems ids={l.itemIds} refs={plan.refs} />
                     </li>
                   ))}
                 </ul>
-                <p className="text-xs text-muted-foreground">
-                  {plan.to.name} has{" "}
-                  {plan.matchedLabels.length > 1 ? "these" : "this"} already.
-                </p>
               </section>
             )}
 
-            {plan.missingLabels.length > 0 && (
+            {plan.missingLabels.length === 1 && (
               <section className="space-y-1.5">
                 <h3 className="text-xs font-medium text-muted-foreground">
-                  {plan.matchedLabels.length
-                    ? "Labels it doesn't have"
-                    : "Labels"}
+                  {`Label ${plan.to.name} doesn't have`}
                 </h3>
-                <ul className="flex flex-wrap gap-1.5">
-                  {plan.missingLabels.map((name) => (
-                    <li key={name}>
-                      <LabelBadge
-                        name={name}
-                        emoji={emojiIn(fromLabels, name)}
+                <div className="flex items-center gap-2">
+                  <LabelBadge
+                    name={plan.missingLabels[0].name}
+                    emoji={emojiIn(fromLabels, plan.missingLabels[0].name)}
+                  />
+                  <OnItems
+                    ids={plan.missingLabels[0].itemIds}
+                    refs={plan.refs}
+                  />
+                </div>
+                <LabelChoiceCards
+                  name={plan.missingLabels[0].name}
+                  listName={plan.to.name}
+                  value={labelChoice[plan.missingLabels[0].name]}
+                  pending={pending}
+                  onChange={(v) =>
+                    setLabelChoice({ [plan.missingLabels[0].name]: v })
+                  }
+                />
+              </section>
+            )}
+
+            {plan.missingLabels.length > 1 && (
+              <section className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xs font-medium text-muted-foreground">
+                    {`Labels ${plan.to.name} doesn't have`}
+                  </h3>
+                  <span className="ml-auto flex gap-1">
+                    {(
+                      [
+                        ["create", "Add all"],
+                        ["drop", "Remove all"],
+                      ] as const
+                    ).map(([value, label]) => (
+                      <Button
+                        key={value}
+                        type="button"
+                        variant="ghost"
+                        size="xs"
+                        aria-disabled={pending}
+                        onClick={() =>
+                          !pending &&
+                          setLabelChoice(
+                            Object.fromEntries(
+                              plan.missingLabels.map((l) => [l.name, value]),
+                            ),
+                          )
+                        }
+                      >
+                        {label}
+                      </Button>
+                    ))}
+                  </span>
+                </div>
+                <ul className="divide-y divide-neutral-200 rounded-lg border border-input dark:divide-neutral-800">
+                  {plan.missingLabels.map((l) => (
+                    <li
+                      key={l.name}
+                      className="flex items-center gap-2 px-2.5 py-2"
+                    >
+                      <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5">
+                        <LabelBadge
+                          name={l.name}
+                          emoji={emojiIn(fromLabels, l.name)}
+                        />
+                        <OnItems ids={l.itemIds} refs={plan.refs} />
+                      </span>
+                      <LabelChoiceToggle
+                        name={l.name}
+                        listName={plan.to.name}
+                        value={labelChoice[l.name]}
+                        pending={pending}
+                        onChange={(v) =>
+                          setLabelChoice((cur) => ({ ...cur, [l.name]: v }))
+                        }
                       />
                     </li>
                   ))}
                 </ul>
-                <p className="text-xs text-muted-foreground">
-                  {plan.to.name} has no{" "}
-                  {plan.missingLabels.length > 1 ? "labels" : "label"} by{" "}
-                  {plan.missingLabels.length > 1 ? "these names" : "this name"}.
-                </p>
-                <div
-                  role="radiogroup"
-                  aria-label="Labels the list doesn't have"
-                  className="grid gap-2 sm:grid-cols-2"
-                >
-                  {(
-                    [
-                      [
-                        "create",
-                        BadgePlus,
-                        `Add to ${plan.to.name}`,
-                        `Keep ${plan.missingLabels.length > 1 ? "them" : "it"}, emoji and all`,
-                      ],
-                      [
-                        "drop",
-                        BadgeMinus,
-                        "Remove from item",
-                        `Move it without ${plan.missingLabels.length > 1 ? "these labels" : "this label"}`,
-                      ],
-                    ] as const
-                  ).map(([value, Icon, title, hint]) => {
-                    const checked = labelChoice === value;
-                    return (
-                      <button
-                        key={value}
-                        type="button"
-                        role="radio"
-                        aria-checked={checked}
-                        aria-disabled={pending}
-                        onClick={() => !pending && setLabelChoice(value)}
-                        className={`flex items-start gap-2.5 rounded-lg border p-2.5 text-left transition outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
-                          checked
-                            ? "border-primary bg-accent"
-                            : "border-input hover:bg-neutral-50 dark:hover:bg-neutral-800/50"
-                        }`}
-                      >
-                        <span
-                          className={`flex size-7 shrink-0 items-center justify-center rounded-md ${
-                            checked
-                              ? "bg-primary text-primary-foreground"
-                              : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                          }`}
-                        >
-                          <Icon className="size-4" />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate font-medium">{title}</span>
-                          <span className="block text-xs text-muted-foreground">{hint}</span>
-                        </span>
-                        <span
-                          aria-hidden
-                          className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border ${
-                            checked ? "border-primary bg-primary text-primary-foreground" : "border-input"
-                          }`}
-                        >
-                          {checked && <Check className="size-3" />}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
               </section>
             )}
 
             {plan.unassigned.length > 0 && (
               <section className="space-y-1.5">
                 <h3 className="text-xs font-medium text-muted-foreground">
-                  Assignees
+                  Coming off {subs.length ? "the items" : "it"}
                 </h3>
-                <p>
-                  {plan.unassigned.map((u) => u.name).join(", ")} can&apos;t see{" "}
-                  {plan.to.name}, so they&apos;ll come off{" "}
-                  {subs.length ? "these items" : "it"}.
+                <ul className="space-y-1">
+                  {plan.unassigned.map((u) => (
+                    <li
+                      key={u.userId}
+                      className="flex flex-wrap items-center gap-x-2 gap-y-0.5"
+                    >
+                      <span>{u.name}</span>
+                      <OnItems ids={u.itemIds} refs={plan.refs} />
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-xs text-muted-foreground">
+                  They can&apos;t see {plan.to.name}.
                 </p>
               </section>
             )}
@@ -493,6 +519,155 @@ function MoveSheet({
           )}
         </Button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Which of the moving items a label or person is on, when sub-items move
+ * too: nothing when it's only the one item, "all 4 items", the titles of one
+ * or two, or "3 of 6 items".
+ */
+function OnItems({ ids, refs }: { ids: string[]; refs: MovePlan["refs"] }) {
+  if (refs.length < 2) return null;
+  const titles = refs.filter((r) => ids.includes(r.id)).map((r) => r.title);
+  const text =
+    ids.length === refs.length
+      ? `all ${refs.length} items`
+      : ids.length <= 2
+        ? titles.map((t) => `“${t}”`).join(", ")
+        : `${ids.length} of ${refs.length} items`;
+  return (
+    <span className="min-w-0 text-xs text-pretty text-muted-foreground">
+      on {text}
+    </span>
+  );
+}
+
+const CHOICES = [
+  ["create", BadgePlus, "Add"],
+  ["drop", BadgeMinus, "Remove"],
+] as const;
+
+/** The choice for a single missing label, as two cards. */
+function LabelChoiceCards({
+  name,
+  listName,
+  value,
+  pending,
+  onChange,
+}: {
+  name: string;
+  listName: string;
+  value: MissingLabels | undefined;
+  pending: boolean;
+  onChange: (value: MissingLabels) => void;
+}) {
+  const text = {
+    create: [`Add to ${listName}`, "Keep it, emoji and all"],
+    drop: ["Remove from item", "Move it without this label"],
+  } as const;
+  return (
+    <div
+      role="radiogroup"
+      aria-label={`“${name}”`}
+      className="grid gap-2 sm:grid-cols-2"
+    >
+      {CHOICES.map(([choice, Icon]) => {
+        const checked = value === choice;
+        const [title, hint] = text[choice];
+        return (
+          <button
+            key={choice}
+            type="button"
+            role="radio"
+            aria-checked={checked}
+            aria-disabled={pending}
+            onClick={() => !pending && onChange(choice)}
+            className={`flex items-start gap-2.5 rounded-lg border p-2.5 text-left transition outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+              checked
+                ? "border-primary bg-accent"
+                : "border-input hover:bg-neutral-50 dark:hover:bg-neutral-800/50"
+            }`}
+          >
+            <span
+              className={`flex size-7 shrink-0 items-center justify-center rounded-md ${
+                checked
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
+              }`}
+            >
+              <Icon className="size-4" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-medium">{title}</span>
+              <span className="block text-xs text-muted-foreground">
+                {hint}
+              </span>
+            </span>
+            <span
+              aria-hidden
+              className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border ${
+                checked
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-input"
+              }`}
+            >
+              {checked && <Check className="size-3" />}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** The choice for one of several missing labels: Add or Remove, side by side. */
+function LabelChoiceToggle({
+  name,
+  listName,
+  value,
+  pending,
+  onChange,
+}: {
+  name: string;
+  listName: string;
+  value: MissingLabels | undefined;
+  pending: boolean;
+  onChange: (value: MissingLabels) => void;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label={`“${name}”`}
+      className="flex shrink-0 rounded-md border border-input p-0.5"
+    >
+      {CHOICES.map(([choice, Icon, label]) => {
+        const checked = value === choice;
+        return (
+          <button
+            key={choice}
+            type="button"
+            role="radio"
+            aria-checked={checked}
+            aria-disabled={pending}
+            title={
+              choice === "create"
+                ? `Add “${name}” to ${listName}`
+                : `Remove “${name}” from the item`
+            }
+            onClick={() => !pending && onChange(choice)}
+            className={`flex items-center gap-1 rounded px-2 py-1 text-xs font-medium transition outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+              checked
+                ? "bg-primary text-primary-foreground"
+                : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
+            }`}
+          >
+            <Icon className="size-3.5" />
+            {label}
+          </button>
+        );
+      })}
     </div>
   );
 }

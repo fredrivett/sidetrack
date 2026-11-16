@@ -50,7 +50,7 @@ const plan = (over: Partial<MovePlan> = {}): MovePlan => ({
   to: { id: "p2", name: "Ops" },
   refs: [{ id: "i1", title: "Fix login", from: "ENG-2", to: "OPS-3" }],
   matchedLabels: [],
-  missingLabels: ["Frontend"],
+  missingLabels: [{ name: "Frontend", itemIds: ["i1"] }],
   unassigned: [],
   token: "t1",
   ...over,
@@ -78,7 +78,36 @@ describe("MoveItemDialog", () => {
 
     fireEvent.click(screen.getByRole("radio", { name: /^Remove from item/ }));
     await act(async () => fireEvent.click(move));
-    expect(moveItemAction).toHaveBeenCalledWith("i1", "p2", "t1", "drop");
+    expect(moveItemAction).toHaveBeenCalledWith("i1", "p2", "t1", { Frontend: "drop" });
+  });
+
+  it("asks about each of several missing labels, with a shortcut for all", async () => {
+    vi.mocked(previewMoveItemAction).mockResolvedValue(
+      plan({
+        missingLabels: [
+          { name: "Frontend", itemIds: ["i1"] },
+          { name: "urgent", itemIds: ["i1"] },
+        ],
+      }),
+    );
+    vi.mocked(moveItemAction).mockResolvedValue({ moved: true, plan: plan(), item });
+    await open();
+    const move = screen.getByRole("button", { name: "Move" });
+
+    // One label decided isn't enough.
+    const urgent = screen.getByRole("radiogroup", { name: "“urgent”" });
+    fireEvent.click(urgent.querySelector("[aria-checked]:last-child") as HTMLElement);
+    await act(async () => fireEvent.click(move));
+    expect(moveItemAction).not.toHaveBeenCalled();
+
+    // Add all, then take urgent back off.
+    fireEvent.click(screen.getByRole("button", { name: "Add all" }));
+    fireEvent.click(urgent.querySelector("[aria-checked]:last-child") as HTMLElement);
+    await act(async () => fireEvent.click(move));
+    expect(moveItemAction).toHaveBeenCalledWith("i1", "p2", "t1", {
+      Frontend: "create",
+      urgent: "drop",
+    });
   });
 
   it("shows the move as it is now when it changed since the preview", async () => {

@@ -180,8 +180,8 @@ describe("moveItem", () => {
 
     const item = make();
     expect(previewMoveItem(db, fred, item.id, ops.id)).toMatchObject({
-      matchedLabels: [{ from: "bug", to: "Bug" }],
-      missingLabels: ["Frontend"],
+      matchedLabels: [{ from: "bug", to: "Bug", itemIds: [item.id] }],
+      missingLabels: [{ name: "Frontend", itemIds: [item.id] }],
     });
     // Missing labels need a choice; without one nothing moves.
     expect(() => moveItem(db, fred, item.id, { projectId: ops.id, token: tokenFor(db, fred, item.id, ops.id) }, "web")).toThrow(/Frontend/);
@@ -204,7 +204,9 @@ describe("moveItem", () => {
     const { db, fred, eng, ops } = seed();
     const item = addItem(db, fred, { projectId: eng.id, title: "Fix login", labels: ["Bug"] }, "web");
     const sub = addItem(db, fred, { projectId: eng.id, title: "Repro", parentId: item.id, labels: ["bug"] }, "web");
-    expect(previewMoveItem(db, fred, item.id, ops.id).missingLabels).toEqual(["Bug"]);
+    expect(previewMoveItem(db, fred, item.id, ops.id).missingLabels).toEqual([
+      { name: "Bug", itemIds: [item.id, sub.id] },
+    ]);
     moveItem(
       db,
       fred,
@@ -214,6 +216,39 @@ describe("moveItem", () => {
     );
     expect(listLabels(db, fred, ops.id).map((l) => l.name)).toEqual(["Bug"]);
     expect(getItem(db, fred, sub.id)?.labels).toEqual(["Bug"]);
+  });
+
+  it("creates or drops each missing label as chosen for it, and says which items carry each", () => {
+    const { db, fred, eng, ops } = seed();
+    addLabel(db, fred, ops.id, { name: "Bug" }, "web");
+    const item = addItem(db, fred, { projectId: eng.id, title: "Fix login", labels: ["infra"] }, "web");
+    const sub = addItem(
+      db,
+      fred,
+      { projectId: eng.id, title: "Repro", parentId: item.id, labels: ["bug", "infra", "urgent"] },
+      "web",
+    );
+    const preview = previewMoveItem(db, fred, item.id, ops.id);
+    expect(preview.matchedLabels).toEqual([{ from: "bug", to: "Bug", itemIds: [sub.id] }]);
+    expect(preview.missingLabels).toEqual([
+      { name: "infra", itemIds: [item.id, sub.id] },
+      { name: "urgent", itemIds: [sub.id] },
+    ]);
+    const move = (missingLabels: Record<string, "create" | "drop">) =>
+      moveItem(db, fred, item.id, { projectId: ops.id, token: preview.token, missingLabels }, "web");
+
+    // Every missing label needs a choice, and only those labels take one.
+    expect(() => move({ infra: "create" })).toThrow(/no urgent label/);
+    expect(() => move({ infra: "create", urgent: "drop", Bug: "drop" })).toThrow(/not a missing label of this move: Bug/);
+    expect(getItem(db, fred, item.id)?.projectId).toBe(eng.id);
+
+    move({ infra: "create", urgent: "drop" });
+    expect(getItem(db, fred, item.id)?.labels).toEqual(["infra"]);
+    expect(getItem(db, fred, sub.id)?.labels).toEqual(["Bug", "infra"]);
+    expect(listLabels(db, fred, ops.id).map((l) => l.name)).toEqual(["Bug", "infra"]);
+    expect(
+      listAudit(db, fred, { projectId: ops.id }).find((e) => e.entityId === item.id)?.detail,
+    ).toMatch(/dropped labels urgent$/);
   });
 
   it("takes people who can't see the list off the items", () => {
@@ -230,7 +265,7 @@ describe("moveItem", () => {
     const sub = addItem(db, fred, { projectId: eng.id, title: "Repro", parentId: item.id, assigneeIds: [amy] }, "web");
 
     expect(previewMoveItem(db, fred, item.id, ops.id).unassigned).toEqual([
-      { userId: amy, name: "@amy" },
+      { userId: amy, name: "@amy", itemIds: [item.id, sub.id] },
     ]);
     moveItem(db, fred, item.id, { projectId: ops.id, token: tokenFor(db, fred, item.id, ops.id) }, "web");
     expect(getItem(db, fred, item.id)?.assigneeIds).toEqual([fred]);
