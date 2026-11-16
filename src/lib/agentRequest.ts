@@ -8,7 +8,7 @@
 // The receiver should refuse a signature that doesn't match, or a timestamp
 // more than five minutes old, and use Idempotency-Key to drop repeats.
 
-import { createHmac } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { safeFetch } from "./safeFetch";
 
 export type AgentRequestBody =
@@ -68,4 +68,57 @@ export async function sendAgentRequest(
   if (status < 200 || status >= 300) {
     throw new Error(`the agent's webhook answered ${status}`);
   }
+}
+
+/** How old a signed request may be when it's received. */
+export const MAX_REQUEST_AGE_SECONDS = 5 * 60;
+
+// The shapes Sidetrack sends: a ref is a list prefix (2–5 uppercase letters)
+// and an item number, a repository GitHub's owner/repo (normalizeRepository),
+// and ids are nanoids.
+const REF = /^[A-Z]{2,5}-[1-9][0-9]{0,8}$/;
+const REPOSITORY = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/;
+const ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * The receiving side: check a request's signature and age, then its fields,
+ * and return it, or why it was refused. `receivedAt` is when the request
+ * arrived, so a receiver that redelivers it later still judges it fresh.
+ * Nothing in a refused request is trusted, and the reason never quotes it.
+ * The Amp dispatcher plugin (.amp/plugins/sidetrack-dispatch.ts) uses this.
+ */
+export function readAgentRequest(
+  body: Uint8Array,
+  headers: Readonly<Record<string, string | undefined>>,
+  secret: string,
+  receivedAt: Date,
+): AgentRequestBody | { refused: string } {
+  const timestamp = Number(headers["x-sidetrack-timestamp"]);
+  if (!Number.isInteger(timestamp)) return { refused: "no timestamp" };
+  const raw = Buffer.from(body).toString("utf8");
+  const expected = Buffer.from(signAgentRequest(secret, timestamp, raw));
+  const given = Buffer.from(headers["x-sidetrack-signature"] ?? "");
+  if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
+    return { refused: "bad signature" };
+  }
+  const age = receivedAt.getTime() / 1000 - timestamp;
+  if (Math.abs(age) > MAX_REQUEST_AGE_SECONDS) return { refused: "stale timestamp" };
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { refused: "body isn't JSON" };
+  }
+  const r = (parsed ?? {}) as Record<string, unknown>;
+  const { sessionId, itemId, ref } = r;
+  if (typeof sessionId !== "string" || !ID.test(sessionId)) return { refused: "bad sessionId" };
+  if (typeof itemId !== "string" || !ID.test(itemId)) return { refused: "bad itemId" };
+  if (typeof ref !== "string" || !REF.test(ref)) return { refused: "bad ref" };
+  if (r.type === "stop") return { type: "stop", sessionId, itemId, ref };
+  if (r.type !== "start") return { refused: "unknown type" };
+  if (typeof r.repository !== "string" || !REPOSITORY.test(r.repository)) {
+    return { refused: "bad repository" };
+  }
+  return { type: "start", sessionId, itemId, ref, repository: r.repository };
 }
