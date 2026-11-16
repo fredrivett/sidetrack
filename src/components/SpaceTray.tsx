@@ -71,9 +71,16 @@ export function SpaceTray({
       style={{ opacity: saving ? 0.7 : 1 }}
       // Columns fill a phone's width less the tray's padding, so the tray
       // fits on screen with its list centred. Collapsed, its hidden columns
-      // stop being snap points and the tray itself takes their place.
+      // stop being snap points and the tray itself takes their place. On a
+      // phone it snaps where it sat with its first column centred, so
+      // collapsing doesn't shift it: 4vw in, or for an empty Space, its 18rem
+      // Add list column plus 1rem of padding centred.
       className={`relative flex h-full shrink-0 flex-col rounded-3xl p-2 [--column-width:calc(92vw-1rem)] ${spaceTint(color)} ${
-        collapsed ? "snap-start" : ""
+        !collapsed
+          ? ""
+          : lists.length > 0
+            ? "snap-start max-sm:scroll-ml-[4vw]"
+            : "snap-start max-sm:scroll-ml-[calc((100vw-19rem)/2)]"
       }`}
     >
       <header className="flex h-8 shrink-0 items-center gap-1 pl-1 pr-0.5">
