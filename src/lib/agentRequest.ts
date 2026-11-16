@@ -73,10 +73,11 @@ export async function sendAgentRequest(
 /** How old a signed request may be when it's received. */
 export const MAX_REQUEST_AGE_SECONDS = 5 * 60;
 
-// The shapes Sidetrack sends: a ref is a list prefix (2–5 uppercase letters)
-// and an item number, a repository GitHub's owner/repo (normalizeRepository),
+// The shapes Sidetrack sends: a ref is a list prefix (2–5 characters, an
+// uppercase letter then letters, or digits for a deduplicated one such as
+// ENG2, see dedupePrefix) and an item number, a repository GitHub's owner/repo (normalizeRepository),
 // and ids are nanoids.
-const REF = /^[A-Z]{2,5}-[1-9][0-9]{0,8}$/;
+const REF = /^(?=[A-Z0-9]{2,5}-)[A-Z]+[0-9]*-[1-9][0-9]{0,8}$/;
 const REPOSITORY = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/;
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -102,7 +103,8 @@ export function readAgentRequest(
     return { refused: "bad signature" };
   }
   const age = receivedAt.getTime() / 1000 - timestamp;
-  if (Math.abs(age) > MAX_REQUEST_AGE_SECONDS) return { refused: "stale timestamp" };
+  // Written to fail closed: a NaN age (an invalid receivedAt) is refused too.
+  if (!(Math.abs(age) <= MAX_REQUEST_AGE_SECONDS)) return { refused: "stale timestamp" };
 
   let parsed: unknown;
   try {

@@ -1,4 +1,4 @@
-import type { PluginAPI, ThreadID } from '@ampcode/plugin'
+import type { PluginAPI, ThreadID, WebhookEvent, WebhookHandlerContext } from '@ampcode/plugin'
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { readAgentRequest } from '../../src/lib/agentRequest'
@@ -49,11 +49,16 @@ function stopMessage(ref: string): string {
 }
 
 /**
- * Which thread each Sidetrack session started. It makes a redelivered start
- * a no-op and lets a stop reach only the thread its start created. `thread`
- * is null between deciding to start and the thread existing, so a start that
- * crashed there isn't repeated (an orb is costly to start twice); assigning
- * again in Sidetrack makes a new session.
+ * What happened for each Sidetrack session: which thread its start created,
+ * and whether that thread has been prompted and stopped. It makes a
+ * redelivered start a no-op and lets a stop reach only the thread its start
+ * created. A stop that arrives before its start leaves a stopped entry, so the
+ * start never runs.
+ *
+ * Each side effect is recorded before it happens and undone only when it
+ * fails cleanly, so a crash in between can lose it but never repeat it: an
+ * orb started twice, or a thread told twice to start, is worse than one that
+ * didn't happen, which assigning again in Sidetrack (a new session) fixes.
  */
 type Sessions = Record<
 	string,
@@ -74,8 +79,11 @@ export default async function sidetrackDispatch(amp: PluginAPI) {
 	const load = (): Sessions => {
 		try {
 			return JSON.parse(readFileSync(statePath, 'utf8')) as Sessions
-		} catch {
-			return {}
+		} catch (error) {
+			// Only a missing file means no sessions yet. Anything else fails the
+			// delivery, so Amp retries it rather than it acting on forgotten state.
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}
+			throw error
 		}
 	}
 	const save = (sessions: Sessions) => {
@@ -84,74 +92,99 @@ export default async function sidetrackDispatch(amp: PluginAPI) {
 		renameSync(`${statePath}.tmp`, statePath)
 	}
 
+	const handle = async (event: WebhookEvent, ctx: WebhookHandlerContext) => {
+		const secret = process.env[SECRET_ENV]
+		if (!secret) {
+			amp.logger.log(`Ignored a request: ${SECRET_ENV} isn't set.`)
+			return
+		}
+		const request = readAgentRequest(event.body, event.headers, secret, new Date(event.receivedAt))
+		// Refused requests aren't retried: the same bytes would be refused again.
+		if ('refused' in request) {
+			amp.logger.log(`Refused request ${event.id}: ${request.refused}.`)
+			return
+		}
+		const sessions = load()
+		const known = sessions[request.sessionId]
+
+		if (request.type === 'stop') {
+			if (!known) {
+				// Stopped before it started: keep it from starting.
+				sessions[request.sessionId] = { ref: request.ref, thread: null, prompted: false, stopped: true }
+				save(sessions)
+				return
+			}
+			if (known.stopped) return
+			known.stopped = true
+			save(sessions)
+			if (!known.thread || !known.prompted) return
+			try {
+				await amp.threads
+					.get(known.thread)
+					.appendUserMessage({ type: 'user-message', content: stopMessage(request.ref) }, { steer: true })
+			} catch (error) {
+				known.stopped = false
+				save(sessions)
+				throw error
+			}
+			return
+		}
+
+		// Stopped, already prompted, or a thread begun before a crash (it may
+		// exist, so don't make another): nothing to redo.
+		if (known && (known.stopped || known.prompted || !known.thread)) return
+		const entry: Sessions[string] = known ?? {
+			ref: request.ref,
+			thread: null,
+			prompted: false,
+			stopped: false,
+		}
+		if (!entry.thread) {
+			sessions[request.sessionId] = entry
+			save(sessions)
+			try {
+				const agent = await ctx.thread.agent()
+				const thread = await agent.createThread({
+					executor: 'orb',
+					// Signed by Sidetrack, where only the list's admin sets it.
+					project: request.repository,
+					multiplayerTTLSeconds: null,
+				})
+				entry.thread = thread.id
+			} catch (error) {
+				// No thread was made, so a retry may try again.
+				delete sessions[request.sessionId]
+				save(sessions)
+				throw error
+			}
+		}
+		const thread = entry.thread
+		entry.prompted = true
+		save(sessions)
+		try {
+			await amp.threads
+				.get(thread)
+				.appendUserMessage({ type: 'user-message', content: startMessage(request.ref) })
+		} catch (error) {
+			// Not prompted: a retry prompts the same thread rather than making another.
+			entry.prompted = false
+			save(sessions)
+			throw error
+		}
+		amp.logger.log(`Started ${entry.thread} on ${request.ref}.`)
+	}
+	let queue: Promise<void> = Promise.resolve()
+
 	let url: string
 	try {
 		;({ url } = await amp.createWebhook({
 			key: 'sidetrack-agent',
 			headers: ['x-sidetrack-timestamp', 'x-sidetrack-signature'],
-			handler: async (event, ctx) => {
-				const secret = process.env[SECRET_ENV]
-				if (!secret) {
-					amp.logger.log(`Ignored a request: ${SECRET_ENV} isn't set.`)
-					return
-				}
-				const request = readAgentRequest(
-					event.body,
-					event.headers,
-					secret,
-					new Date(event.receivedAt),
-				)
-				// Refused requests aren't retried: the same bytes would be refused again.
-				if ('refused' in request) {
-					amp.logger.log(`Refused request ${event.id}: ${request.refused}.`)
-					return
-				}
-				const sessions = load()
-				const known = sessions[request.sessionId]
-
-				if (request.type === 'stop') {
-					if (!known?.thread || known.stopped) return
-					await amp.threads
-						.get(known.thread)
-						.appendUserMessage(
-							{ type: 'user-message', content: stopMessage(request.ref) },
-							{ steer: true },
-						)
-					known.stopped = true
-					save(sessions)
-					return
-				}
-
-				if (known?.prompted || (known && !known.thread)) return
-				let entry = known
-				if (!entry) {
-					entry = { ref: request.ref, thread: null, prompted: false, stopped: false }
-					sessions[request.sessionId] = entry
-					save(sessions)
-					try {
-						const agent = await ctx.thread.agent()
-						const thread = await agent.createThread({
-							executor: 'orb',
-							// Signed by Sidetrack, where only the list's admin sets it.
-							project: request.repository,
-							multiplayerTTLSeconds: null,
-						})
-						entry.thread = thread.id
-					} catch (error) {
-						// No thread was made, so a retry may try again.
-						delete sessions[request.sessionId]
-						save(sessions)
-						throw error
-					}
-					save(sessions)
-				}
-				if (!entry.thread) return
-				await amp.threads
-					.get(entry.thread)
-					.appendUserMessage({ type: 'user-message', content: startMessage(request.ref) })
-				entry.prompted = true
-				save(sessions)
-				amp.logger.log(`Started ${entry.thread} on ${request.ref}.`)
+			// One delivery at a time, so each reads the state the last one left.
+			handler: (event, ctx) => {
+				const run = queue.then(() => handle(event, ctx))
+				queue = run.catch(() => {})
+				return run
 			},
 		}))
 	} catch (error) {
