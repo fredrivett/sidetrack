@@ -11,6 +11,11 @@ import {
   removeAgentWebhook as removeAgentWebhookCore,
   setAgentWebhook as setAgentWebhookCore,
 } from "@/core/agentWebhooks";
+import {
+  endAgentSession as endAgentSessionCore,
+  requestWork as requestWorkCore,
+  stopRequest as stopRequestCore,
+} from "@/core/agentSessions";
 import { listAudit as listAuditCore } from "@/core/audit";
 import {
   addGithubWebhookSecret as addGithubWebhookSecretCore,
@@ -99,6 +104,7 @@ import {
   setUsername as setUsernameCore,
 } from "@/core/users";
 import { getCurrentSession, requireUserId } from "@/auth/session";
+import { sendAgentRequest } from "@/lib/agentRequest";
 import { notifyInvite, notifyMentions } from "@/lib/email";
 import { suggestEmoji, suggestLabelEmoji } from "@/lib/emojiSuggest";
 import { getEnv } from "@/lib/env";
@@ -804,4 +810,39 @@ export async function removeAgentWebhookAction(keyId: string) {
   const { db } = getDb();
   removeAgentWebhookCore(db, userId, keyId, SOURCE);
   revalidatePath("/settings/keys");
+}
+
+/**
+ * Start one of the viewer's agents on an item (assigning it in the picker).
+ * The session opens first, so the board shows the agent at once; if its
+ * webhook can't be reached, that session ends again and this throws.
+ */
+export async function startAgentAction(itemId: string, keyId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const { session, request } = requestWorkCore(db, userId, itemId, keyId, SOURCE);
+  try {
+    if (request) await sendAgentRequest(request);
+  } catch (e) {
+    endAgentSessionCore(db, userId, session.id, SOURCE, (e as Error).message);
+    refresh();
+    throw e;
+  }
+  refresh();
+}
+
+/**
+ * Stop one of the viewer's agents on an item (unassigning it). The agent is
+ * told first and the session ends once it has been, so a stop that couldn't
+ * be delivered stays on the board to try again. With no webhook left to
+ * tell, it just ends.
+ */
+export async function stopAgentAction(itemId: string, keyId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const found = stopRequestCore(db, userId, itemId, keyId);
+  if (!found) return;
+  if (found.request) await sendAgentRequest(found.request);
+  endAgentSessionCore(db, userId, found.session.id, SOURCE);
+  refresh();
 }

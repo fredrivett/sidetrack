@@ -2,7 +2,11 @@ import { cookies } from "next/headers";
 import { AgentSessionsProvider } from "@/components/agent-sessions";
 import { Kanban } from "@/components/Kanban";
 import { LiveUpdates } from "@/components/LiveUpdates";
-import { listAllAgentSessions } from "@/core/agentSessions";
+import {
+  listAllAgentSessions,
+  listStartableAgents,
+  listStartableLists,
+} from "@/core/agentSessions";
 import { listLabels } from "@/core/labels";
 import { getDb } from "@/core/db";
 import { projectRefPrefixes } from "@/core/itemRef";
@@ -65,7 +69,12 @@ export default async function Home({
 
   return (
     // Agents' work sessions reach every row and detail dialog in every view.
-    <AgentSessionsProvider sessions={listAllAgentSessions(db, userId)}>
+    <AgentSessionsProvider
+      sessions={listAllAgentSessions(db, userId)}
+      viewerId={userId}
+      startable={listStartableAgents(db, userId)}
+      startableIn={listStartableLists(db, userId)}
+    >
       <Kanban
         viewerId={userId}
         viewer={getProfile(db, userId)}

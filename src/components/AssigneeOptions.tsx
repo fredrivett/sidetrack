@@ -1,13 +1,15 @@
 "use client";
 
-import { Check, CircleDashed } from "lucide-react";
+import { Bot, Check, CircleDashed } from "lucide-react";
 import type { AssigneeView } from "@/core/members";
 import {
   DropdownMenuCheckboxItem,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuShortcut,
 } from "@/components/ui/dropdown-menu";
 import { Kbd } from "@/components/ui/kbd";
+import type { AgentOption } from "./agent-sessions";
 import { assigneeName, UserAvatar } from "./UserAvatar";
 
 /**
@@ -30,12 +32,18 @@ export function AssigneeOptions({
   viewerId,
   onChange,
   onClear = () => onChange([]),
+  agents = [],
+  onAgentChange,
 }: {
   selected: string[];
   assignees: AssigneeView[];
   viewerId: string | null;
   onChange: (assigneeIds: string[]) => void;
   onClear?: () => void;
+  /** The viewer's agents (useAgentAssignment): ticking one starts it on the
+   * item, unticking stops it. Listed after the people, under a divider. */
+  agents?: AgentOption[];
+  onAgentChange?: (keyId: string, on: boolean) => void;
 }) {
 
   const ordered = viewerId
@@ -71,6 +79,23 @@ export function AssigneeOptions({
           )}
         </DropdownMenuCheckboxItem>
       ))}
+      {onAgentChange && agents.length > 0 && (
+        <>
+          <DropdownMenuSeparator />
+          {agents.map((a) => (
+            <DropdownMenuCheckboxItem
+              key={a.keyId}
+              checked={a.working}
+              // Starting or stopping an agent holds the item, so close the menu.
+              closeOnClick
+              onCheckedChange={(on) => onAgentChange(a.keyId, on)}
+            >
+              <Bot className="size-[18px] text-violet-600 dark:text-violet-400" />
+              <span className="truncate">{a.name}</span>
+            </DropdownMenuCheckboxItem>
+          ))}
+        </>
+      )}
     </>
   );
 }

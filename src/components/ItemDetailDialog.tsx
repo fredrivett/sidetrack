@@ -73,7 +73,7 @@ import { useOptimisticAssignees } from "./use-optimistic-assignees";
 import { useItemChanges } from "./use-optimistic-items";
 import { useCopyItemRef } from "./useCopyItemRef";
 import { AgentAvatar, AvatarStack, assigneeName, assigneeNames } from "./UserAvatar";
-import { useItemAgentSessions } from "./agent-sessions";
+import { useAgentAssignment, useItemAgentSessions } from "./agent-sessions";
 
 /**
  * The agents working on the item, each with its status, latest note, thread
@@ -471,6 +471,7 @@ export function ItemDetailDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const [pending, start] = useTransition();
+  const { agentOptions, setAgent } = useAgentAssignment(item, start);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   // A sub-item's assignee picker in the checklist, when one is open.
@@ -690,6 +691,8 @@ export function ItemDetailDialog({
                   assignees={assignees}
                   viewerId={viewerId}
                   onChange={assign}
+                  agents={agentOptions}
+                  onAgentChange={setAgent}
                 />
               </DropdownMenuContent>
             </DropdownMenu>

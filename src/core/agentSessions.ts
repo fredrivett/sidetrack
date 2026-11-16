@@ -1,15 +1,19 @@
-import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import type { AgentRequest } from "../lib/agentRequest";
 import { formatItemRef, workBranchName } from "../lib/itemRef";
 import { normalizeWebUrl } from "../lib/url";
-import { hasProjectAccess } from "./access";
+import { hasProjectAccess, isListAdmin } from "./access";
+import { apiKeys } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
 import { assigneeLabel, getItem } from "./items";
 import {
   type AgentSession,
   type Item,
+  type Project,
   agentSessions,
+  agentWebhooks,
   items,
   projects,
 } from "./schema";
@@ -289,4 +293,218 @@ export function endAgentSessions(
     }
   });
   return open.length;
+}
+
+// Starting and stopping an agent from Sidetrack: the list's admin assigns one
+// of their agents (an API key with a webhook, see agentWebhooks.ts) in the
+// assignee picker. That opens the agent's session at once, with no thread
+// yet, and returns the request for the caller to send to the agent's webhook
+// once the change has committed. When the agent's thread calls start_work
+// with the same key, it resumes that session and fills in its thread URL.
+
+/** One of the user's agents that Sidetrack can start: a key with a webhook. */
+export type StartableAgent = { keyId: string; name: string };
+
+export function listStartableAgents(db: Db, userId: string): StartableAgent[] {
+  return db
+    .select({ keyId: apiKeys.id, name: apiKeys.name })
+    .from(agentWebhooks)
+    .innerJoin(apiKeys, eq(apiKeys.id, agentWebhooks.keyId))
+    .where(eq(apiKeys.userId, userId))
+    .orderBy(asc(apiKeys.name), asc(apiKeys.id))
+    .all();
+}
+
+/**
+ * Why `userId` can't start an agent on the list's items, or null if they
+ * can: only its admin may, and only once it has a repository, since that
+ * decides where the agent works and with whose secrets.
+ */
+function startRefusal(
+  db: Db,
+  userId: string,
+  project: Pick<Project, "name" | "userId" | "spaceId" | "repository">,
+): string | null {
+  if (!isListAdmin(db, userId, project)) {
+    return "only the list's admin can start an agent on its items";
+  }
+  if (!project.repository) return `"${project.name}" has no repository for an agent to work in`;
+  return null;
+}
+
+/** The lists, of those `userId` can see, they can start an agent on. */
+export function listStartableLists(db: Db, userId: string): string[] {
+  return db
+    .select()
+    .from(projects)
+    .where(and(hasProjectAccess(userId), isNotNull(projects.repository)))
+    .all()
+    .filter((p) => startRefusal(db, userId, p) === null)
+    .map((p) => p.id);
+}
+
+function projectOf(db: Db, item: Item) {
+  const project = db.select().from(projects).where(eq(projects.id, item.projectId)).get();
+  if (!project) throw new Error(`list not found: ${item.projectId}`);
+  return project;
+}
+
+/** A key's webhook, if it still has one. */
+function webhookOf(db: Db, keyId: string) {
+  return db
+    .select({ url: agentWebhooks.url, secret: agentWebhooks.secret })
+    .from(agentWebhooks)
+    .where(eq(agentWebhooks.keyId, keyId))
+    .get();
+}
+
+/**
+ * Ask one of the user's agents to work on an item: open its session and
+ * return the start request to send. If the agent already has a session open
+ * on the item, nothing changes and there's no request, so assigning twice
+ * starts it once.
+ */
+export function requestWork(
+  db: Db,
+  userId: string,
+  itemId: string,
+  keyId: string,
+  source: AuditOrigin,
+): { session: AgentSession; request: AgentRequest | null } {
+  const item = itemOrThrow(db, userId, itemId);
+  const project = projectOf(db, item);
+  const refusal = startRefusal(db, userId, project);
+  const { repository } = project;
+  if (refusal || !repository) throw new Error(refusal ?? "no repository");
+  const key = db
+    .select({ name: apiKeys.name })
+    .from(apiKeys)
+    .where(and(eq(apiKeys.id, keyId), eq(apiKeys.userId, userId)))
+    .get();
+  if (!key) throw new Error(`agent not found: ${keyId}`);
+  const hook = webhookOf(db, keyId);
+  if (!hook) throw new Error(`${key.name} isn't set to start work when assigned`);
+  if (item.completedAt !== null) {
+    throw new Error(`"${item.title}" is completed; reopen it before starting an agent on it`);
+  }
+
+  const ref = formatItemRef(project.prefix, item.number);
+  const now = Date.now();
+  const fresh: AgentSession = {
+    id: nanoid(12),
+    itemId,
+    userId,
+    agentKeyId: keyId,
+    agentName: key.name,
+    threadUrl: null,
+    branch: workBranchName(ref, item.title),
+    note: null,
+    startedAt: now,
+    lastActiveAt: now,
+    finishedAt: null,
+  };
+  // The check and the insert share the transaction, so the open-session
+  // index can't be hit by two assignments landing together.
+  const existing = db.transaction((tx) => {
+    const open = openSession(tx as unknown as Db, itemId, keyId);
+    if (open) return open;
+    tx.insert(agentSessions).values(fresh).run();
+    recordAudit(tx as unknown as Db, {
+      actor: userId,
+      source,
+      action: "start",
+      entityType: "item",
+      entityId: itemId,
+      projectId: item.projectId,
+      detail: `asked ${key.name} to work on "${item.title}"`,
+    });
+    return null;
+  });
+  if (existing) return { session: existing, request: null };
+  return {
+    session: fresh,
+    request: {
+      url: hook.url,
+      secret: hook.secret,
+      idempotencyKey: fresh.id,
+      body: { type: "start", sessionId: fresh.id, itemId, ref, repository },
+    },
+  };
+}
+
+/**
+ * The user's agent's open session on an item and the stop request to send
+ * it, or null when its key has no webhook left (or was revoked). Changes
+ * nothing: send the request, then end the session with endAgentSession, so a
+ * stop that couldn't be delivered can be tried again. Any agent's owner can
+ * stop it, admin or not. Undefined when it has no open session there.
+ */
+export function stopRequest(
+  db: Db,
+  userId: string,
+  itemId: string,
+  keyId: string,
+): { session: AgentSession; request: AgentRequest | null } | undefined {
+  const item = itemOrThrow(db, userId, itemId);
+  const session = openSession(db, itemId, keyId);
+  // The session holds who the agent works for, so this works after the key
+  // itself is revoked.
+  if (!session || session.userId !== userId) return undefined;
+  const hook = webhookOf(db, keyId);
+  if (!hook) return { session, request: null };
+  const project = projectOf(db, item);
+  return {
+    session,
+    request: {
+      url: hook.url,
+      secret: hook.secret,
+      idempotencyKey: `${session.id}:stop`,
+      body: {
+        type: "stop",
+        sessionId: session.id,
+        itemId,
+        ref: formatItemRef(project.prefix, item.number),
+      },
+    },
+  };
+}
+
+/**
+ * End one of the user's agent sessions, by id: the board stops showing the
+ * agent and its later reports are refused. `reason`, when given, is kept as
+ * its last note, such as why a start didn't go through. Returns false,
+ * writing nothing, when it's already ended or isn't theirs.
+ */
+export function endAgentSession(
+  db: Db,
+  userId: string,
+  sessionId: string,
+  source: AuditOrigin,
+  reason?: string,
+): boolean {
+  const session = db
+    .select()
+    .from(agentSessions)
+    .where(and(eq(agentSessions.id, sessionId), isNull(agentSessions.finishedAt)))
+    .get();
+  if (!session || session.userId !== userId) return false;
+  const item = getItem(db, userId, session.itemId);
+  if (!item) return false;
+  const now = Date.now();
+  db.transaction((tx) => {
+    tx.update(agentSessions)
+      .set({ finishedAt: now, note: reason ?? "Unassigned in Sidetrack" })
+      .where(eq(agentSessions.id, session.id))
+      .run();
+    recordAudit(tx as unknown as Db, {
+      actor: userId,
+      source,
+      action: "finish",
+      entityType: "item",
+      entityId: item.id,
+      projectId: item.projectId,
+      detail: `stopped ${session.agentName} on "${item.title}"${reason ? `: ${reason}` : ""}`,
+    });
+  });
+  return true;
 }
