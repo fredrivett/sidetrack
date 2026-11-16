@@ -53,6 +53,7 @@ import { formatItemRef } from "@/lib/itemRef";
 import { repeatOf } from "@/lib/repeat";
 import { AssigneeOptions } from "./AssigneeOptions";
 import { LabelBadge, useListLabels } from "./Labels";
+import { MoveToListContextMenu } from "./MoveItem";
 import { DueBadge } from "./DueBadge";
 import { PrLink } from "./PrLink";
 import { RepeatBadge } from "./RepeatBadge";
@@ -476,6 +477,7 @@ export function ItemRow({
             </ContextMenuSubContent>
           </ContextMenuSub>
         )}
+        <MoveToListContextMenu item={item} />
         {(nestUnder || parentTitle) && (
           <>
             <ContextMenuSeparator />

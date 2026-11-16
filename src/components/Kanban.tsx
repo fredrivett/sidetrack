@@ -32,6 +32,7 @@ import { DoneView } from "./DoneView";
 import { FilterMenu } from "./FilterMenu";
 import { InvitesBanner } from "./InvitesBanner";
 import { ItemDetailDialog } from "./ItemDetailDialog";
+import { MoveItemContext, MoveItemDialog } from "./MoveItem";
 import { NewItemDialog } from "./NewItemDialog";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { ProjectColumn } from "./ProjectColumn";
@@ -346,6 +347,24 @@ export function Kanban({
       window.history.replaceState(null, "", url.toString());
     }
   }
+  // Where an item can move: the board's lists, on their trays (one group
+  // without Spaces), in the viewer's order. Nowhere with a single list.
+  const [moveRequest, setMoveRequest] = useState<{ item: Item; projectId: string } | null>(
+    null,
+  );
+  const moveGroups =
+    spaces.length === 0
+      ? [{ id: "personal", name: "Lists", lists: active }]
+      : trays
+          .map((t) => ({ ...t, lists: active.filter((p) => trayByList[p.id] === t.id) }))
+          .filter((t) => t.lists.length > 0);
+  const moveTargets =
+    active.length > 1
+      ? {
+          groups: moveGroups,
+          open: (item: Item, projectId: string) => setMoveRequest({ item, projectId }),
+        }
+      : null;
   // Everyone on the board's lists, to filter by. Someone filtered by who has
   // since left every list no longer narrows anything.
   const people = [
@@ -551,6 +570,7 @@ export function Kanban({
     <ItemChangesContext value={itemChanges}>
     <LabelsContext value={labelsByProject}>
     <RemoveListContext value={removeList}>
+    <MoveItemContext value={moveTargets}>
       <BoardMain>
         <BoardHeader
           nav={
@@ -785,6 +805,8 @@ export function Kanban({
           />
         )}
 
+        <MoveItemDialog request={moveRequest} onClose={() => setMoveRequest(null)} />
+
         <ShareDialog
           open={share.open}
           onOpenChange={(open) => setShare((s) => ({ ...s, open }))}
@@ -792,6 +814,7 @@ export function Kanban({
           projectName={share.projectName}
         />
       </BoardMain>
+    </MoveItemContext>
     </RemoveListContext>
     </LabelsContext>
     </ItemChangesContext>

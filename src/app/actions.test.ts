@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { addItem } from "@/core/items";
+import { addItem, getItem } from "@/core/items";
+import { addLabel } from "@/core/labels";
+import { previewMoveItem } from "@/core/move";
 import { acceptInvite, inviteMember } from "@/core/members";
 import { createProject } from "@/core/projects";
 import { createTestDb, createTestUser } from "@/core/test-helpers";
 import { checkDraftItem } from "@/lib/itemSuggest";
-import { suggestForNewItemAction } from "./actions";
+import { moveItemAction, suggestForNewItemAction } from "./actions";
 
 // The actions run against a real in-memory DB as `viewer`; only the
 // framework seams (session, cache, env) and the Jev request are stubbed.
@@ -48,5 +50,33 @@ describe("suggestForNewItemAction", () => {
       description: "",
     });
     expect(result.duplicate?.ref).toBe(`fred/ENG-${target.number}`);
+  });
+});
+
+describe("moveItemAction", () => {
+  it("moves nothing on a stale preview and returns the move as it is now", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    ctx.viewer = fred;
+    const eng = createProject(db, fred, { name: "Engineering" }, "web");
+    const ops = createProject(db, fred, { name: "Ops" }, "web");
+    const item = addItem(db, fred, { projectId: eng.id, title: "Fix login", labels: ["Bug"] }, "web");
+    const { token } = previewMoveItem(db, fred, item.id, ops.id);
+    // Ops gains the label, so "Bug" would now match instead of being dropped.
+    addLabel(db, fred, ops.id, { name: "Bug" }, "web");
+
+    const stale = await moveItemAction(item.id, ops.id, token, "drop");
+    expect(stale).toEqual({
+      moved: false,
+      plan: expect.objectContaining({
+        matchedLabels: [{ from: "Bug", to: "Bug", itemIds: [item.id] }],
+        missingLabels: [],
+      }),
+    });
+    expect(getItem(db, fred, item.id)?.projectId).toBe(eng.id);
+
+    if (stale.moved) throw new Error("unreachable");
+    const done = await moveItemAction(item.id, ops.id, stale.plan.token);
+    expect(done.moved).toBe(true);
+    expect(getItem(db, fred, item.id)).toMatchObject({ projectId: ops.id, labels: ["Bug"] });
   });
 });

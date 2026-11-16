@@ -14,6 +14,9 @@ import { type Item, itemRefAliases, items, labels, type Project, projects } from
 /** What to do with an item's labels that the list it moves to doesn't have. */
 export type MissingLabels = "create" | "drop";
 
+/** One choice for every missing label, or one per label by name. */
+export type MissingLabelChoice = MissingLabels | Record<string, MissingLabels>;
+
 /**
  * What moving an item to another list will do, for the person to confirm
  * before it happens: every item that moves (the item, then its sub-items,
@@ -26,12 +29,13 @@ export interface MovePlan {
   /** Each item that moves, with its display ref now and the one it gets. */
   refs: { id: string; title: string; from: string; to: string }[];
   /** Labels the list has already, matched by name ignoring case: the name
-   * on the item, and the list's own spelling it takes. */
-  matchedLabels: { from: string; to: string }[];
-  /** Labels the list doesn't have: created there or dropped, as chosen. */
-  missingLabels: string[];
+   * on the items, and the list's own spelling they take. `itemIds` are the
+   * moving items that carry it, as in `refs`; so for the rest below. */
+  matchedLabels: { from: string; to: string; itemIds: string[] }[];
+  /** Labels the list doesn't have: each created there or dropped, as chosen. */
+  missingLabels: { name: string; itemIds: string[] }[];
   /** People assigned who can't see the list, so they come off the items. */
-  unassigned: { userId: string; name: string }[];
+  unassigned: { userId: string; name: string; itemIds: string[] }[];
   /** Names this exact plan; moveItem needs it back, so a move can't skip
    * its preview, and is refused if anything above changed since. */
   token: string;
@@ -86,22 +90,33 @@ function plan(db: Db, userId: string, id: string, projectId: string): Planned {
       .all()
       .map((l) => [l.name.toLowerCase(), l.name]),
   );
+  // Each label once, by name ignoring case, as first spelt, with the items
+  // that carry it in any spelling.
+  const byLabel = new Map<string, { name: string; itemIds: string[] }>();
+  for (const it of moving) {
+    for (const name of it.labels) {
+      const key = name.toLowerCase();
+      const entry = byLabel.get(key) ?? { name, itemIds: [] };
+      byLabel.set(key, entry);
+      if (!entry.itemIds.includes(it.id)) entry.itemIds.push(it.id);
+    }
+  }
   const matchedLabels: MovePlan["matchedLabels"] = [];
-  const missingLabels: string[] = [];
-  const seen = new Set<string>();
-  for (const name of moving.flatMap((it) => it.labels)) {
-    const key = name.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
+  const missingLabels: MovePlan["missingLabels"] = [];
+  for (const [key, { name, itemIds }] of byLabel) {
     const there = targetLabels.get(key);
-    if (there) matchedLabels.push({ from: name, to: there });
-    else missingLabels.push(name);
+    if (there) matchedLabels.push({ from: name, to: there, itemIds });
+    else missingLabels.push({ name, itemIds });
   }
 
   const allowed = new Set(listAssignees(db, userId, target.id).map((a) => a.userId));
   const unassigned = [
     ...new Set(moving.flatMap((it) => it.assigneeIds).filter((a) => !allowed.has(a))),
-  ].map((a) => ({ userId: a, name: assigneeLabel(db, a) }));
+  ].map((a) => ({
+    userId: a,
+    name: assigneeLabel(db, a),
+    itemIds: moving.filter((it) => it.assigneeIds.includes(a)).map((it) => it.id),
+  }));
 
   return {
     from: { id: source.id, name: source.name },
@@ -147,8 +162,8 @@ function describe(userId: string, p: Planned): MovePlan {
  * see; a sub-item moves out of its checklist on its own. Each gets the next
  * ref there (or its old one, moving back), and its old ref keeps resolving to
  * it (item_ref_aliases). Labels the list has are matched by name; the rest
- * are created there or dropped, as `missingLabels` says, which is required
- * when there are any. People who can't see the list come off the items.
+ * are created there or dropped, as `missingLabels` says: one choice for all,
+ * or one per label by name. Every missing label needs a choice. People who can't see the list come off the items.
  * Logged in both lists' history. Needs the `token` from previewMoveItem,
  * so it only does a move someone has seen, and refuses it if anything the
  * preview showed has changed since. Returns what it did, as previewMoveItem
@@ -158,7 +173,7 @@ export function moveItem(
   db: Db,
   userId: string,
   id: string,
-  input: { projectId: string; token: string; missingLabels?: MissingLabels },
+  input: { projectId: string; token: string; missingLabels?: MissingLabelChoice },
   source: AuditOrigin,
 ): MovePlan & { item: Item } {
   const p = plan(db, userId, id, input.projectId);
@@ -166,14 +181,32 @@ export function moveItem(
   if (input.token !== shown.token) {
     throw new Error("the move has changed since it was previewed, or wasn't previewed: preview it again");
   }
-  if (p.missingLabels.length > 0 && !input.missingLabels) {
+  const choice = input.missingLabels;
+  // Server Action payloads aren't type-checked, so check each value.
+  const values = typeof choice === "object" && choice ? Object.values(choice) : [choice];
+  for (const v of values) {
+    if (v !== undefined && v !== "create" && v !== "drop") {
+      throw new Error(`not a label choice: ${String(v)} (expected create or drop)`);
+    }
+  }
+  const decide = (name: string) =>
+    typeof choice === "string" ? choice : choice?.[name];
+  const undecided = p.missingLabels.filter((l) => !decide(l.name)).map((l) => l.name);
+  if (undecided.length > 0) {
     throw new Error(
-      `"${p.target.name}" has no ${p.missingLabels.join(", ")} label: choose whether to create or drop them`,
+      `"${p.target.name}" has no ${undecided.join(", ")} label: choose whether to create or drop ${undecided.length > 1 ? "each" : "it"}`,
     );
   }
-  const create = input.missingLabels === "create";
+  if (choice && typeof choice !== "string") {
+    const unknown = Object.keys(choice).filter((n) => !p.missingLabels.some((l) => l.name === n));
+    if (unknown.length > 0) {
+      throw new Error(`not a missing label of this move: ${unknown.join(", ")}`);
+    }
+  }
+  const created = p.missingLabels.filter((l) => decide(l.name) === "create").map((l) => l.name);
+  const dropped = p.missingLabels.filter((l) => decide(l.name) === "drop").map((l) => l.name);
   const emoji: Record<string, LabelEmoji> = {};
-  if (create) {
+  if (created.length > 0) {
     for (const l of db
       .select()
       .from(labels)
@@ -191,11 +224,10 @@ export function moveItem(
       .all(),
     "first",
   );
-  const dropped = p.missingLabels.length > 0 && !create ? p.missingLabels : [];
 
   db.transaction((tx) => {
     const t = tx as unknown as Db;
-    if (create) ensureLabels(t, p.target.id, p.missingLabels, emoji);
+    if (created.length > 0) ensureLabels(t, p.target.id, created, emoji);
     p.moving.forEach((it, i) => {
       // The item and its sub-items leave their numbers behind as aliases.
       tx.delete(itemRefAliases)
@@ -221,7 +253,7 @@ export function moveItem(
             const there = p.targetLabels.get(key);
             if (there) return [there];
             // Spellings of one missing label become the one created.
-            return create ? p.missingLabels.filter((m) => m.toLowerCase() === key) : [];
+            return created.filter((m) => m.toLowerCase() === key);
           }),
         ),
       ];

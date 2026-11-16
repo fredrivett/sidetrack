@@ -447,8 +447,8 @@ describe("move_item", () => {
         { id: item.id, title: "Fix login", from: "ENG-1", to: "OPS-2" },
         expect.objectContaining({ title: "Repro", from: "ENG-2", to: "OPS-3" }),
       ],
-      matchedLabels: [{ from: "bug", to: "Bug" }],
-      missingLabels: ["Frontend"],
+      matchedLabels: [{ from: "bug", to: "Bug", itemIds: [item.id] }],
+      missingLabels: [{ name: "Frontend", itemIds: [item.id] }],
       unassigned: [],
       token: expect.any(String),
     });
@@ -466,7 +466,7 @@ describe("move_item", () => {
       id: "ENG-1",
       list_id: ops.id,
       token,
-      missing_labels: "drop",
+      missing_labels: { Frontend: "drop" },
     });
     expect(done.data).not.toHaveProperty("token");
     expect(done.data).toMatchObject({

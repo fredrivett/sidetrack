@@ -67,6 +67,7 @@ import { runAction } from "./run-action";
 import { EditableText } from "./EditableText";
 import { ItemComments } from "./ItemComments";
 import { LabelsField } from "./Labels";
+import { MoveToListPicker, useMoveItem } from "./MoveItem";
 import { InlineCode, Markdown } from "./Markdown";
 import { useAssignShortcuts } from "./useAssignShortcuts";
 import { useOptimisticAssignees } from "./use-optimistic-assignees";
@@ -564,6 +565,7 @@ export function ItemDetailDialog({
   }
 
   const changes = useItemChanges();
+  const move = useMoveItem();
   function toggle() {
     changes.setCompleted(item, !completed);
   }
@@ -697,6 +699,21 @@ export function ItemDetailDialog({
               </DropdownMenuContent>
             </DropdownMenu>
           </Field>
+
+          {/* Not for an item in an archived list, which isn't a move target. */}
+          {move?.groups.some((g) => g.lists.some((l) => l.id === item.projectId)) && (
+            <Field label="List">
+              <MoveToListPicker
+                item={item}
+                disabled={pending}
+                onPick={(projectId) => {
+                  // The item leaves this list, so the sheet takes over.
+                  change(false);
+                  move?.open(item, projectId);
+                }}
+              />
+            </Field>
+          )}
 
           <Field label="Due">
             <DueDatePicker
