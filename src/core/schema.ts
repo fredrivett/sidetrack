@@ -302,6 +302,28 @@ export const items = sqliteTable(
   ],
 );
 
+// The refs an item had in lists it has since moved out of, so `OLD-12` keeps
+// resolving to it (resolveItemRef: MCP, PR titles) after it becomes `NEW-4`. Keyed
+// like items' own refs, by list and number; that list's counter never reuses
+// the number, so an alias can't clash with an item still there. Goes with
+// either the old list or the item.
+export const itemRefAliases = sqliteTable(
+  "item_ref_aliases",
+  {
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    number: integer("number").notNull(),
+    itemId: text("item_id")
+      .notNull()
+      .references(() => items.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.projectId, t.number] }),
+    index("item_ref_aliases_item").on(t.itemId),
+  ],
+);
+
 // A GitHub pull request's state as the webhook last reported it.
 export const PR_STATES = ["open", "draft", "merged", "closed"] as const;
 export type PrState = (typeof PR_STATES)[number];
