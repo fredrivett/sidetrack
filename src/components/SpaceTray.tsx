@@ -36,6 +36,8 @@ export function SpaceTray({
   icon,
   lists,
   collapsed,
+  saving = false,
+  menu,
   onToggle,
   onAddList,
   onOpenList,
@@ -45,6 +47,10 @@ export function SpaceTray({
   icon: string | null;
   lists: { id: string; name: string }[];
   collapsed: boolean;
+  /** A held save to the tray, such as a move: dims it until it lands. */
+  saving?: boolean;
+  /** The tray's ⋯ menu, after the +. */
+  menu?: ReactNode;
   onToggle: () => void;
   onAddList: () => void;
   /** From the collapsed tray's names: expand it and centre that list. */
@@ -56,6 +62,8 @@ export function SpaceTray({
   return (
     <section
       aria-label={name}
+      aria-busy={saving || undefined}
+      style={{ opacity: saving ? 0.7 : 1 }}
       // Columns fill a phone's width less the tray's padding, so the tray
       // fits on screen with its list centred. Collapsed, its hidden columns
       // stop being snap points and the tray itself takes their place.
@@ -90,6 +98,7 @@ export function SpaceTray({
         >
           <Plus className="size-4" />
         </button>
+        {menu}
       </header>
       {/* The lists' track animates between its full width (1fr) and none
           (0fr), clipping the columns from the right as they fade, so they

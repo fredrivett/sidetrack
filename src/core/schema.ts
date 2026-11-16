@@ -99,6 +99,11 @@ export const spaceMembers = sqliteTable(
       .notNull()
       .default("pending"),
     role: text("role").$type<SpaceRole>().notNull().default("member"),
+    // Where the Space sits among this member's own Spaces on their board, as a
+    // fractional index, so reordering moves it only for whoever did it. Null
+    // until their first reorder (see reorderSpace); those sort last, oldest
+    // Space first.
+    position: text("position"),
     createdAt: integer("created_at")
       .notNull()
       .default(sql`(unixepoch() * 1000)`),

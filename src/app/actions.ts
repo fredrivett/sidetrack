@@ -85,6 +85,7 @@ import {
   listSpaces as listSpacesCore,
   listSuggestedSpaceMembers as listSuggestedSpaceMembersCore,
   removeSpaceMember as removeSpaceMemberCore,
+  reorderSpace as reorderSpaceCore,
   setProjectSpace as setProjectSpaceCore,
   setSpaceMemberRole as setSpaceMemberRoleCore,
   updateSpace as updateSpaceCore,
@@ -341,6 +342,15 @@ export async function updateSpaceAction(
   const userId = await requireUserId();
   const { db } = getDb();
   updateSpaceCore(db, userId, spaceId, { name: patch.name, icon: patch.icon }, SOURCE);
+  refresh();
+}
+
+/** Move a tray (a Space, or "personal") on the caller's board: start | end |
+ * after:<id> | before:<id>. */
+export async function reorderSpaceAction(trayId: string, ref: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  reorderSpaceCore(db, userId, trayId, ref, SOURCE);
   refresh();
 }
 

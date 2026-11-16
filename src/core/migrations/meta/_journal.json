@@ -260,6 +260,13 @@
       "when": 1794789137757,
       "tag": "0036_list_repository",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "6",
+      "when": 1794789814897,
+      "tag": "0037_tray_positions",
+      "breakpoints": true
     }
   ]
 }

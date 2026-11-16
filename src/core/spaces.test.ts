@@ -25,7 +25,10 @@ import {
   listSpaceMembers,
   listSpaces,
   listSuggestedSpaceMembers,
+  listTrays,
+  PERSONAL_TRAY,
   removeSpaceMember,
+  reorderSpace,
   setProjectSpace,
   setSpaceMemberRole,
   updateSpace,
@@ -239,6 +242,47 @@ describe("spaces", () => {
     expect(names(listProjects(db, alice))).toEqual([first.name, "Mine", second.name]);
     // Fred's board is untouched.
     expect(names(listProjects(db, fred))).toEqual(["A", "B"]);
+  });
+
+  it("reorders a member's own trays only, Personal among them, keeping spaces joined later at the end", () => {
+    const work = createSpace(db, fred, { name: "Work" }, "web").id;
+    const play = createSpace(db, fred, { name: "Play" }, "web").id;
+    inviteSpaceMember(db, fred, work, "alice", "web");
+    acceptSpaceInvite(db, alice, work, "web");
+    join(alice, "alice");
+    const alicesBefore = listTrays(db, alice);
+    // Unplaced: Personal first, then spaces oldest first (ids tie-break).
+    const [personal, a, b, c] = listTrays(db, fred);
+    expect(personal).toBe(PERSONAL_TRAY);
+    expect(new Set([a, b, c])).toEqual(new Set([spaceId, work, play]));
+
+    // Personal moves among spaces nobody has placed yet.
+    reorderSpace(db, fred, PERSONAL_TRAY, `after:${b}`, agent("k1"));
+    expect(listTrays(db, fred)).toEqual([a, b, PERSONAL_TRAY, c]);
+    // A space moves anchored on Personal, and listSpaces keeps their order.
+    reorderSpace(db, fred, a, `after:${PERSONAL_TRAY}`, "web");
+    expect(listTrays(db, fred)).toEqual([b, PERSONAL_TRAY, a, c]);
+    expect(listSpaces(db, fred).map((s) => s.id)).toEqual([b, a, c]);
+    reorderSpace(db, fred, PERSONAL_TRAY, "end", "web");
+    expect(listTrays(db, fred)).toEqual([b, a, c, PERSONAL_TRAY]);
+    expect(listTrays(db, alice)).toEqual(alicesBefore);
+    expect(
+      listAudit(db, fred)
+        .filter((e) => e.action === "reorder")
+        .map((e) => [e.source, e.entityType, e.entityId, e.detail]),
+    ).toEqual([
+      ["web", "space", PERSONAL_TRAY, "reordered Personal"],
+      ["web", "space", a, `reordered space "${listSpaces(db, fred).find((s) => s.id === a)?.name}"`],
+      ["mcp", "space", PERSONAL_TRAY, "reordered Personal"],
+    ]);
+
+    // A space joined after reordering goes last, even after Personal.
+    const later = createSpace(db, bob, { name: "Later" }, "web").id;
+    inviteSpaceMember(db, bob, later, "fred", "web");
+    acceptSpaceInvite(db, fred, later, "web");
+    expect(listTrays(db, fred)).toEqual([b, a, c, PERSONAL_TRAY, later]);
+
+    expect(() => reorderSpace(db, alice, play, "start", "web")).toThrow(/space not found/);
   });
 
   it("suggests space members for the owner's other lists, but not ones they can already see", () => {
