@@ -7,6 +7,10 @@ services:
         # left open through an update can still save. Generate with:
         # openssl rand -base64 32. Unset = a fresh key on every build.
         NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: ${NEXT_SERVER_ACTIONS_ENCRYPTION_KEY:-}
+        # Optional. Your own PostHog project key for browser analytics; it is
+        # inlined into the client bundle, so it must be present at build time.
+        # Unset = no browser analytics.
+        NEXT_PUBLIC_POSTHOG_KEY: ${NEXT_PUBLIC_POSTHOG_KEY:-}
     image: sidetrack:latest
     container_name: sidetrack
     restart: unless-stopped
@@ -23,6 +27,16 @@ services:
       # Optional. unset/false → first signup wins, then signup is locked.
       # true → signup stays open (multi-tenant instances).
       ALLOW_SIGNUP: ${ALLOW_SIGNUP:-false}
+      # Optional. Outbound email for password resets: SMTP_URL (any
+      # smtp(s):// server) or RESEND_API_KEY + EMAIL_FROM. Unset = reset
+      # links are printed to `docker compose logs` instead.
+      SMTP_URL: ${SMTP_URL:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      # Optional. Emails this address whenever someone new signs up.
+      SIGNUP_NOTIFY_EMAIL: ${SIGNUP_NOTIFY_EMAIL:-}
+      # Optional. Enables AI list-icon suggestions. Unset = off.
+      TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
       # Optional. Set your own PostHog key to enable server-side error tracking.
       # Unset = disabled, nothing is sent anywhere.
       POSTHOG_KEY: ${POSTHOG_KEY:-}
