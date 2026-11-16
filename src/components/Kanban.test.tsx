@@ -51,6 +51,7 @@ const board = (projects: ProjectView[], spaces: SpaceView[]) => (
     viewer={null}
     timeZone={Intl.DateTimeFormat().resolvedOptions().timeZone}
     initialView="board"
+    overdueCollapsed={false}
     projects={projects}
     itemsByProject={{ a: [], b: [] }}
     completedSince={0}

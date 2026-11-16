@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "20d52ee4-394c-47d6-ae2b-7cf8af26aac8",
+  "id": "11bc676a-2a8d-4f3f-aaa0-78a99251581f",
   "prevId": "f63c5716-3fad-4040-b7e6-629c1e665af0",
   "tables": {
     "agent_sessions": {
@@ -258,6 +258,60 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "categories": {
+      "name": "categories",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "categories_project_name": {
+          "name": "categories_project_name",
+          "columns": [
+            "project_id",
+            "name"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "categories_project_id_projects_id_fk": {
+          "name": "categories_project_id_projects_id_fk",
+          "tableFrom": "categories",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "comments": {
       "name": "comments",
       "columns": {
@@ -323,6 +377,13 @@
           "name": "comments_item_created",
           "columns": [
             "item_id",
+            "created_at"
+          ],
+          "isUnique": false
+        },
+        "comments_created": {
+          "name": "comments_created",
+          "columns": [
             "created_at"
           ],
           "isUnique": false
@@ -574,13 +635,12 @@
           "notNull": false,
           "autoincrement": false
         },
-        "labels": {
-          "name": "labels",
+        "category": {
+          "name": "category",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'[]'"
+          "notNull": false,
+          "autoincrement": false
         },
         "assignee_ids": {
           "name": "assignee_ids",
@@ -708,75 +768,6 @@
           "tableTo": "items",
           "columnsFrom": [
             "parent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "labels": {
-      "name": "labels",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "emoji": {
-          "name": "emoji",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "emoji_chosen": {
-          "name": "emoji_chosen",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": false
-        }
-      },
-      "indexes": {
-        "labels_project_name": {
-          "name": "labels_project_name",
-          "columns": [
-            "project_id",
-            "name"
-          ],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {
-        "labels_project_id_projects_id_fk": {
-          "name": "labels_project_id_projects_id_fk",
-          "tableFrom": "labels",
-          "tableTo": "projects",
-          "columnsFrom": [
-            "project_id"
           ],
           "columnsTo": [
             "id"
@@ -1005,14 +996,6 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
-        },
-        "icon_chosen": {
-          "name": "icon_chosen",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": false
         },
         "prefix": {
           "name": "prefix",
@@ -1711,9 +1694,7 @@
   "enums": {},
   "_meta": {
     "schemas": {},
-    "tables": {
-      "\"categories\"": "\"labels\""
-    },
+    "tables": {},
     "columns": {}
   },
   "internal": {

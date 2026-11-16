@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestDb, createTestUser } from "./test-helpers";
 import {
+  getOverdueCollapsed,
   getProfile,
   getTimeZone,
   getUploadedAvatar,
   setAvatarUrl,
+  setOverdueCollapsed,
   setTimeZone,
   setUploadedAvatar,
   setUsername,
@@ -29,6 +31,21 @@ describe("user timezone", () => {
     expect(() => setTimeZone(db, userId, "Foo/Bar")).toThrow(/unknown timezone/);
     expect(() => setTimeZone(db, userId, "+05:00")).toThrow(/unknown timezone/);
     expect(getTimeZone(db, userId)).toBe("Asia/Tokyo");
+  });
+});
+
+describe("Agenda's Overdue fold", () => {
+  it("is open by default and saves per user, without an audit row", () => {
+    const { db } = createTestDb();
+    const me = createTestUser(db);
+    const other = createTestUser(db);
+    expect(getOverdueCollapsed(db, me)).toBe(false);
+    setOverdueCollapsed(db, me, true);
+    expect(getOverdueCollapsed(db, me)).toBe(true);
+    expect(getOverdueCollapsed(db, other)).toBe(false);
+    setOverdueCollapsed(db, me, false);
+    expect(getOverdueCollapsed(db, me)).toBe(false);
+    expect(listAudit(db, me, {})).toHaveLength(0);
   });
 });
 

@@ -7,6 +7,10 @@ import {
   createApiKey as createApiKeyCore,
   revokeApiKey as revokeApiKeyCore,
 } from "@/core/api-keys";
+import {
+  removeAgentWebhook as removeAgentWebhookCore,
+  setAgentWebhook as setAgentWebhookCore,
+} from "@/core/agentWebhooks";
 import { listAudit as listAuditCore } from "@/core/audit";
 import {
   addGithubWebhookSecret as addGithubWebhookSecretCore,
@@ -30,6 +34,7 @@ import {
   addComment as addCommentCore,
   deleteComment as deleteCommentCore,
   listComments as listCommentsCore,
+  listRecentComments as listRecentCommentsCore,
   updateComment as updateCommentCore,
 } from "@/core/comments";
 import { getDb } from "@/core/db";
@@ -84,6 +89,7 @@ import {
 } from "@/core/spaces";
 import {
   AVATAR_MAX_BYTES,
+  setOverdueCollapsed as setOverdueCollapsedCore,
   setTimeZone as setTimeZoneCore,
   setAvatarUrl as setAvatarUrlCore,
   setUploadedAvatar as setUploadedAvatarCore,
@@ -565,6 +571,15 @@ export async function listCommentsAction(itemId: string) {
   return listCommentsCore(db, userId, itemId);
 }
 
+export async function listRecentCommentsAction(opts: {
+  projectId?: string;
+  limit?: number;
+} = {}) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  return listRecentCommentsCore(db, userId, opts);
+}
+
 export async function addCommentAction(itemId: string, body: string) {
   const userId = await requireUserId();
   const { db } = getDb();
@@ -585,6 +600,14 @@ export async function deleteCommentAction(id: string) {
   const userId = await requireUserId();
   const { db } = getDb();
   deleteCommentCore(db, userId, id, SOURCE);
+  refresh();
+}
+
+/** Fold away or show the Agenda's Overdue section, for the signed-in user. */
+export async function setOverdueCollapsedAction(collapsed: boolean) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  setOverdueCollapsedCore(db, userId, collapsed);
   refresh();
 }
 
@@ -716,4 +739,20 @@ export async function revokeApiKeyAction(id: string) {
   const removed = revokeApiKeyCore(db, userId, id, SOURCE);
   revalidatePath("/settings/keys");
   return { removed };
+}
+
+export async function setAgentWebhookAction(keyId: string, url: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const { secret } = setAgentWebhookCore(db, userId, keyId, url, SOURCE);
+  revalidatePath("/settings/keys");
+  // The signing secret is shown once, to give to whatever receives the webhook.
+  return { secret };
+}
+
+export async function removeAgentWebhookAction(keyId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  removeAgentWebhookCore(db, userId, keyId, SOURCE);
+  revalidatePath("/settings/keys");
 }

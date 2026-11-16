@@ -9,6 +9,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 import type { RepeatUnit } from "../lib/repeat";
+import { apiKeys } from "./auth-schema";
 
 // A list's lifecycle (a "project" in code; "list" to people and agents).
 // active lists are on the board; paused lists sit collapsed at its end;
@@ -358,7 +359,11 @@ export const comments = sqliteTable(
     // When its author last edited it; null if they never have.
     editedAt: integer("edited_at"),
   },
-  (t) => [index("comments_item_created").on(t.itemId, t.createdAt)],
+  (t) => [
+    index("comments_item_created").on(t.itemId, t.createdAt),
+    // Activity's Comments tab reads the newest across lists.
+    index("comments_created").on(t.createdAt),
+  ],
 );
 
 // A user's GitHub webhook: the id goes in the payload URL GitHub posts to
@@ -394,6 +399,20 @@ export const githubWebhookSecrets = sqliteTable(
   },
   (t) => [index("github_webhook_secrets_webhook").on(t.webhookId)],
 );
+
+// An API key whose agent Sidetrack can start: assigning the agent to an item
+// posts to `url` (say, an Amp plugin's webhook), signed with `secret` so the
+// receiver knows the request came from here. One per key, gone with the key.
+// Both are credentials: settings never shows the URL back, and the secret is
+// handed out once, when it's made. Stored as is, since signing needs it.
+export const agentWebhooks = sqliteTable("agent_webhooks", {
+  keyId: text("key_id")
+    .primaryKey()
+    .references(() => apiKeys.id, { onDelete: "cascade" }),
+  url: text("url").notNull(),
+  secret: text("secret").notNull(),
+  createdAt: integer("created_at").notNull(),
+});
 
 // A list's labels. Items carry them by name (items.labels). The emoji is
 // optional and works like projects.icon: emojiChosen says whether someone

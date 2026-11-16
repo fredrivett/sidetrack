@@ -12,7 +12,7 @@ import {
   inviteSpaceMember,
   setProjectSpace,
 } from "./spaces";
-import { setUsername } from "./users";
+import { setOverdueCollapsed, setUsername } from "./users";
 
 type Db = ReturnType<typeof createTestDb>["db"];
 
@@ -166,5 +166,12 @@ describe("watchChanges", () => {
     setItemsCollapsed(db, owner, [trip.id], true);
     await settle();
     expect(heard).toEqual({ [member]: 1, [other]: 0, [stranger]: 0 });
+  });
+
+  it("tells the user's other pages about folding the Agenda's Overdue section", async () => {
+    watch(owner, stranger);
+    setOverdueCollapsed(db, owner, true);
+    await settle();
+    expect(heard).toEqual({ [owner]: 1, [stranger]: 0 });
   });
 });

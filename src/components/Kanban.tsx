@@ -14,17 +14,16 @@ import { ArchivedListsMenu } from "./ArchivedListsMenu";
 import { AuditDialog } from "./AuditDialog";
 import { BoardHeader, BoardMain, BoardRail } from "./BoardLayout";
 import { CommandPalette } from "./CommandPalette";
+import { AgendaView } from "./AgendaView";
 import { DoneView } from "./DoneView";
 import { InvitesBanner } from "./InvitesBanner";
 import { ItemDetailDialog } from "./ItemDetailDialog";
 import { NewItemDialog } from "./NewItemDialog";
-import { NoDateView } from "./NoDateView";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { ProjectColumn } from "./ProjectColumn";
 import { PullToSearch } from "./PullToSearch";
 import { ShareDialog } from "./ShareDialog";
 import { saveCollapsedTrays, SpaceTray } from "./SpaceTray";
-import { TodayView } from "./TodayView";
 import { useDayStart } from "./use-day-start";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
 import { LabelsContext } from "./Labels";
@@ -48,8 +47,7 @@ export type ProjectView = Project & { isOwner: boolean; refPrefix: string };
 /** The header's views; the board's is the default, and has no `?view=`. */
 const BOARD_VIEWS = [
   ["board", "Board"],
-  ["today", "Today"],
-  ["no-date", "No date"],
+  ["agenda", "Agenda"],
   ["done", "Done"],
 ] as const;
 export type BoardView = (typeof BOARD_VIEWS)[number][0];
@@ -62,6 +60,7 @@ export function Kanban({
   viewer,
   timeZone,
   initialView,
+  overdueCollapsed,
   projects: serverProjects,
   itemsByProject: serverItemsByProject,
   completedSince,
@@ -81,6 +80,8 @@ export function Kanban({
   timeZone: string | null;
   /** From `?view=`, so a reload or shared link opens on the same view. */
   initialView: BoardView;
+  /** Whether the viewer keeps the Agenda's Overdue section folded away. */
+  overdueCollapsed: boolean;
   projects: ProjectView[];
   /**
    * Every list's open items and its items finished at or after this, with
@@ -407,7 +408,7 @@ export function Kanban({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [openNewItem]);
 
-  // On first paint, and on coming back from Today or No date (which unmount
+  // On first paint, and on coming back from Agenda or Done (which unmount
   // the rail):
   // scroll to ?p=<id> if present.
   useEffect(() => {
@@ -499,17 +500,10 @@ export function Kanban({
           <UserMenu user={viewer} />
         </BoardHeader>
         <InvitesBanner invites={pendingInvites} spaceInvites={pendingSpaceInvites} />
-        {view === "today" ? (
-          <TodayView
+        {view === "agenda" ? (
+          <AgendaView
             projects={active}
-            itemsByProject={itemsByProject}
-            assigneesByProject={assigneesByProject}
-            prLinksByItem={prLinksByItem}
-            viewerId={viewerId}
-          />
-        ) : view === "no-date" ? (
-          <NoDateView
-            projects={active}
+            overdueCollapsed={overdueCollapsed}
             itemsByProject={itemsByProject}
             assigneesByProject={assigneesByProject}
             prLinksByItem={prLinksByItem}
@@ -580,12 +574,23 @@ export function Kanban({
           open={audit.open}
           projectId={audit.projectId}
           projects={projects}
+          items={boardItems}
+          // Opening a comment's item swaps Activity for the item's dialog.
+          onOpenItem={(item) => {
+            setAudit({ open: false });
+            paletteDetail.openDetail(item);
+          }}
           onClose={() => setAudit({ open: false })}
         />
 
         <NewItemDialog
           open={newItem.open}
           onOpenChange={(open) => setNewItem((s) => ({ ...s, open }))}
+          // From the toast: the item opens in place of New item, not over it.
+          onOpenItem={(item) => {
+            setNewItem((s) => ({ ...s, open: false }));
+            paletteDetail.openDetail(item);
+          }}
           projects={onBoard}
           assigneesByProject={assigneesByProject}
           viewerId={viewerId}
