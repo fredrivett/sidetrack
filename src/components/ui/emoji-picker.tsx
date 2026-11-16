@@ -63,14 +63,19 @@ const SKIN_TONES: { tone: SkinTone; label: string; color: string }[] = [
 function EmojiPickerSkinTones({
   emoji,
   onEmojiChange,
+  disabled,
   className,
   ...props
 }: React.ComponentProps<"div"> & {
   emoji?: string | null;
   onEmojiChange?: (emoji: string) => void;
+  /** Dimmed and ignores clicks, e.g. while the last retone saves, so the
+   * next one isn't compared with the icon it's replacing. Stays focusable. */
+  disabled?: boolean;
 }) {
   const [skinTone, setSkinTone, variations] = useSkinTone(emoji ?? undefined);
   function pick(tone: SkinTone) {
+    if (disabled) return;
     setSkinTone(tone);
     const toned = variations.find((v) => v.skinTone === tone)?.emoji;
     if (emoji && toned && toned !== emoji) onEmojiChange?.(toned);
@@ -96,10 +101,11 @@ function EmojiPickerSkinTones({
           key={tone}
           type="button"
           aria-pressed={skinTone === tone}
+          aria-disabled={disabled || undefined}
           aria-label={label}
           title={label}
           onClick={() => pick(tone)}
-          className="size-4 rounded-full outline-offset-2 ring-offset-2 ring-offset-popover aria-pressed:ring-[1.5px] aria-pressed:ring-foreground"
+          className="size-4 rounded-full outline-offset-2 ring-offset-2 ring-offset-popover aria-pressed:ring-[1.5px] aria-pressed:ring-foreground aria-disabled:opacity-60"
           style={{ backgroundColor: color }}
         />
       ))}

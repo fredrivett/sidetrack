@@ -266,6 +266,7 @@ export function IconPicker({
           <EmojiPickerSkinTones
             emoji={icon}
             onEmojiChange={onSelect}
+            disabled={disabled}
           />
         </EmojiPicker>
 
