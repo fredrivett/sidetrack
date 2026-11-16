@@ -278,6 +278,10 @@ export function ProjectColumn({
 
       <ProjectDetailDialog
         project={project}
+        isAdmin={
+          project.isOwner ||
+          spaces.some((s) => s.id === project.spaceId && s.role === "admin")
+        }
         open={detailsOpen}
         onOpenChange={setDetailsOpen}
       />

@@ -121,6 +121,12 @@ export const projects = sqliteTable(
     // Optional public homepage / landing URL. Normalized to an absolute
     // http(s) URL on write (see normalizeHomepageUrl); null when unset.
     homepageUrl: text("homepage_url"),
+    // The GitHub repository the list's code lives in, as "owner/repo"
+    // (normalizeRepository), so an agent started on one of its items knows
+    // what to check out. Only the list's admin sets it (isListAdmin), since it
+    // decides where agents work. null = none: nobody can start an agent on
+    // its items from Sidetrack, though an agent can still start_work itself.
+    repository: text("repository"),
     // Optional project icon: either an emoji grapheme (e.g. "🚀") or an
     // absolute http(s) image URL. Null falls back to the homepage favicon
     // when a homepageUrl is set, else a generic glyph. See lib/projectIcon.ts.

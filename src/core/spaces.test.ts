@@ -8,7 +8,13 @@ import {
   listAssignees,
   listSuggestedCollaborators,
 } from "./members";
-import { createProject, getProject, listProjects, reorderProject } from "./projects";
+import {
+  createProject,
+  getProject,
+  listProjects,
+  reorderProject,
+  updateProject,
+} from "./projects";
 import {
   acceptSpaceInvite,
   createSpace,
@@ -54,6 +60,25 @@ describe("spaces", () => {
     alice = createTestUser(db, { username: "alice" });
     bob = createTestUser(db, { username: "bob" });
     spaceId = createSpace(db, fred, { name: "Home" }, "web").id;
+  });
+
+  it("lets only the list's owner or its Space's admins set its repository", () => {
+    join(alice, "alice");
+    join(bob, "bob");
+    const list = createProject(db, alice, { name: "Code" }, "web");
+    putInSpace(alice, list.id);
+    const setRepo = (userId: string, repository: string) =>
+      updateProject(db, userId, list.id, { repository }, "web").repository;
+
+    // bob is a plain member: he can edit the list, but not where agents work.
+    expect(() => setRepo(bob, "bob/evil")).toThrow(/only the list's admin/);
+    expect(updateProject(db, bob, list.id, { summary: "Ours" }, "web").summary).toBe("Ours");
+    expect(getProject(db, alice, list.id)?.repository).toBeNull();
+    // alice owns it; fred administers its Space without owning it.
+    expect(setRepo(alice, "alice/code")).toBe("alice/code");
+    expect(setRepo(fred, "fred/code")).toBe("fred/code");
+    setSpaceMemberRole(db, fred, spaceId, bob, "admin", "web");
+    expect(setRepo(bob, "bob/code")).toBe("bob/code");
   });
 
   it("makes the creator its only admin, and audits it", () => {

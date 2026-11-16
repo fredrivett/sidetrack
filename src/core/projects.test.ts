@@ -262,6 +262,38 @@ describe("projects", () => {
     expect(getProject(db, u, p.id)?.homepageUrl).toBeNull();
   });
 
+  it("stores a pasted GitHub URL as owner/repo, audits it, then clears it", () => {
+    const { db } = createTestDb();
+    const u = createTestUser(db);
+    const p = createProject(db, u, { name: "Sidetrack" }, "web");
+
+    const set = updateProject(
+      db,
+      u,
+      p.id,
+      { repository: "https://github.com/fredrivett/sidetrack.git" },
+      "web",
+    );
+    expect(set.repository).toBe("fredrivett/sidetrack");
+    expect(listAudit(db, u)[0].detail).toBe(
+      "Sidetrack: set repository to fredrivett/sidetrack",
+    );
+    // The same repository pasted differently changes nothing, so isn't logged.
+    const logged = listAudit(db, u).length;
+    updateProject(db, u, p.id, { repository: "fredrivett/sidetrack" }, "web");
+    expect(listAudit(db, u).length).toBe(logged);
+
+    expect(() =>
+      updateProject(db, u, p.id, { repository: "gitlab.com/a/b" }, "web"),
+    ).toThrow(/invalid repository/);
+    updateProject(db, u, p.id, { repository: "fredrivett/abode" }, "web");
+    expect(listAudit(db, u)[0].detail).toBe(
+      "Sidetrack: repository fredrivett/sidetrack→fredrivett/abode",
+    );
+    expect(updateProject(db, u, p.id, { repository: null }, "web").repository).toBeNull();
+    expect(listAudit(db, u)[0].detail).toBe("Sidetrack: cleared repository fredrivett/abode");
+  });
+
   it("sets an emoji icon, normalizes an image-URL icon, then clears it", () => {
     const { db } = createTestDb();
     const u = createTestUser(db);

@@ -4,8 +4,9 @@ import { derivePrefix, dedupePrefix, validatePrefix } from "../lib/itemRef";
 import { nestItems } from "../lib/itemTree";
 import { normalizeProjectIcon } from "../lib/projectIcon";
 import { addDays, dayOf, isOnNoDate, isOnToday } from "../lib/time";
+import { normalizeRepository } from "../lib/repository";
 import { normalizeHomepageUrl } from "../lib/url";
-import { hasProjectAccess } from "./access";
+import { hasProjectAccess, isListAdmin } from "./access";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
 import { parseProjectRef, resolvePosition } from "./fracidx";
@@ -421,6 +422,7 @@ export function updateProject(
     summary?: string;
     prefix?: string;
     homepageUrl?: string | null;
+    repository?: string | null;
     icon?: string | null;
     /** False when `icon` is Jev's suggestion for the list as it now reads:
      * it never replaces an icon someone chose, including their choice of
@@ -432,7 +434,8 @@ export function updateProject(
   const existing = getProject(db, userId, id);
   if (!existing) throw new Error(`list not found: ${id}`);
   // getProject authorizes any member; the editable fields below (name, status,
-  // summary, homepage) are open to members, but the prefix is owner-only.
+  // summary, homepage) are open to members, but the prefix is owner-only and
+  // the repository admin-only.
   const isOwner = existing.userId === userId;
 
   const next: Partial<Project> = {};
@@ -485,6 +488,25 @@ export function updateProject(
           : existing.homepageUrl
             ? "edited homepage"
             : "set homepage",
+      );
+    }
+  }
+  if (patch.repository !== undefined) {
+    const normalized =
+      patch.repository === null ? null : normalizeRepository(patch.repository);
+    if (normalized !== existing.repository) {
+      // The repository decides where agents started on the list's items
+      // work, with that repository's secrets, so it's the admin's call.
+      if (!isListAdmin(db, userId, existing)) {
+        throw new Error("only the list's admin can change its repository");
+      }
+      next.repository = normalized;
+      changes.push(
+        normalized === null
+          ? `cleared repository ${existing.repository}`
+          : existing.repository
+            ? `repository ${existing.repository}→${normalized}`
+            : `set repository to ${normalized}`,
       );
     }
   }

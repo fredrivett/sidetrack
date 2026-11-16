@@ -1,5 +1,32 @@
-import { eq, or, sql } from "drizzle-orm";
-import { projectMembers, projects, spaceMembers } from "./schema";
+import { and, eq, or, sql } from "drizzle-orm";
+import type { Db } from "./db";
+import { type Project, projectMembers, projects, spaceMembers } from "./schema";
+
+/**
+ * Whether `userId` is the list's admin: its owner, or an admin of the Space
+ * it's in. Admins decide where agents work on a list (its repository) and
+ * which agents do, so these stay with them rather than every member.
+ */
+export function isListAdmin(
+  db: Db,
+  userId: string,
+  project: Pick<Project, "userId" | "spaceId">,
+): boolean {
+  if (project.userId === userId) return true;
+  if (!project.spaceId) return false;
+  const row = db
+    .select({ role: spaceMembers.role })
+    .from(spaceMembers)
+    .where(
+      and(
+        eq(spaceMembers.spaceId, project.spaceId),
+        eq(spaceMembers.userId, userId),
+        eq(spaceMembers.status, "accepted"),
+      ),
+    )
+    .get();
+  return row?.role === "admin";
+}
 
 /**
  * The read/edit access predicate for a project: the owner (`projects.userId`),
