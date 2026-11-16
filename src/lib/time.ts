@@ -314,7 +314,7 @@ export function dueLabel(due: string, today: string, from?: string | null): stri
 }
 
 /**
- * Whether an item belongs in the Today view on `today`: it's due on or before
+ * Whether an item is due now on `today` (list_today): it's due on or before
  * today, or in a span that has started ("this week" from Monday), and it's
  * either still open or was finished today (shown crossed out, like the
  * lists). `timeZone` decides which day a completion fell on.
@@ -329,8 +329,8 @@ export function isOnToday(
 }
 
 /**
- * Whether an item belongs in the No date view on `today`: an item with no due
- * date that's open or was finished today (crossed out, as on Today). A
+ * Whether an item belongs in the Agenda's No date section on `today`: an item
+ * with no due date that's open or was finished today (crossed out). A
  * sub-item of a dated parent stays out, since it's planned with its parent.
  */
 export function isOnNoDate(
@@ -344,4 +344,41 @@ export function isOnNoDate(
 ): boolean {
   if (item.dueDate || parent?.dueDate) return false;
   return item.completedAt === null || dayOf(item.completedAt, timeZone) === today;
+}
+
+/** The Agenda view's sections, in the order it shows them. */
+export const AGENDA_SECTIONS = [
+  "Overdue",
+  "Today",
+  "This week",
+  "Next week",
+  "Later",
+  "No date",
+] as const;
+export type AgendaSection = (typeof AGENDA_SECTIONS)[number];
+
+/**
+ * Which section of the Agenda view an item shows in on `today`, or null when
+ * it's off it. Every open item is on it, and so is one finished today, crossed
+ * out in place. A dated item goes under Overdue once its last day has passed;
+ * one due today alone under Today; otherwise by the week it starts in, so a
+ * span under way ("this week") is under This week to its last day. An
+ * undated item goes under No date, except a sub-item of a dated parent, which
+ * is planned with its parent (see isOnNoDate).
+ */
+export function agendaSection(
+  item: { dueDate: string | null; dueFrom?: string | null; completedAt: number | null },
+  parent: { dueDate: string | null } | undefined,
+  today: string,
+  timeZone?: string,
+): AgendaSection | null {
+  if (!item.dueDate) return isOnNoDate(item, parent, today, timeZone) ? "No date" : null;
+  if (item.completedAt !== null && dayOf(item.completedAt, timeZone) !== today) return null;
+  if (item.dueDate < today) return "Overdue";
+  if (!item.dueFrom && item.dueDate === today) return "Today";
+  const start = item.dueFrom ?? item.dueDate;
+  const sunday = weekSpan(today, 0, "week").dueDate;
+  if (start <= sunday) return "This week";
+  if (start <= addDays(sunday, 7)) return "Next week";
+  return "Later";
 }

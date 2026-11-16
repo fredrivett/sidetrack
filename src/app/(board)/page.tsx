@@ -12,7 +12,7 @@ import { listAllPrLinks } from "@/core/prLinks";
 import { listProjects } from "@/core/projects";
 import { listPendingSpaceInvites, listSpaces } from "@/core/spaces";
 import { COLLAPSED_TRAYS_COOKIE, parseCollapsedTrays } from "@/components/SpaceTray";
-import { getProfile, getTimeZone } from "@/core/users";
+import { getOverdueCollapsed, getProfile, getTimeZone } from "@/core/users";
 import { weekStartBound } from "@/lib/time";
 import type { ItemPrLink } from "@/core/schema";
 import { requireUserId } from "@/auth/session";
@@ -70,8 +70,14 @@ export default async function Home({
         viewerId={userId}
         viewer={getProfile(db, userId)}
         timeZone={timeZone}
+        overdueCollapsed={getOverdueCollapsed(db, userId)}
         initialView={
-          view === "today" || view === "no-date" || view === "done" ? view : "board"
+          view === "agenda" || view === "done"
+            ? view
+            : // Links from before Today and No date became Agenda.
+              view === "today" || view === "no-date"
+              ? "agenda"
+              : "board"
         }
         projects={projects}
         itemsByProject={itemsByProject}

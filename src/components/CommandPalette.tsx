@@ -3,7 +3,6 @@
 import {
   Boxes,
   CalendarDays,
-  CalendarOff,
   CircleCheck,
   Circle,
   Columns3,
@@ -86,8 +85,7 @@ export function CommandPalette({
     { label: "New item", icon: <Plus />, shortcut: "C", action: onNewItem },
     { label: "New list", icon: <ListPlus />, shortcut: "⇧C", action: onNewList },
     { label: "Go to Board", icon: <Columns3 />, action: () => onSwitchView("board") },
-    { label: "Go to Today", icon: <CalendarDays />, action: () => onSwitchView("today") },
-    { label: "Go to No date", icon: <CalendarOff />, action: () => onSwitchView("no-date") },
+    { label: "Go to Agenda", icon: <CalendarDays />, action: () => onSwitchView("agenda") },
     { label: "Go to Done", icon: <CircleCheck />, action: () => onSwitchView("done") },
     { label: "Show activity", icon: <History />, action: onShowActivity },
     { label: "Profile settings", icon: <UserRound />, action: () => router.push("/settings/profile") },
