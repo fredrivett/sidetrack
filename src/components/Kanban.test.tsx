@@ -66,6 +66,7 @@ const board = (projects: ProjectView[], spaces: SpaceView[]) => (
     initialCollapsedTrays={[]}
     initialListId={null}
     filters={NO_FILTERS}
+    aiEnabled={false}
   />
 );
 

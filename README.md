@@ -239,10 +239,13 @@ With nothing set, reset links are printed to the server log instead
 | `EMAIL_FROM` | `Sidetrack <no-reply@sidetrack.local>` with SMTP | From address, such as `Sidetrack <no-reply@example.com>`. Set it with SMTP too, or mail servers may reject the default. Required with Resend, where its domain must be verified |
 | `SIGNUP_NOTIFY_EMAIL` | unset | Your address, to get an email whenever someone new signs up. Sent through SMTP or Resend as above (with neither, the signup is only logged); a failed send never blocks the signup |
 
-**Optional** — AI list-icon suggestions. With it set, the list icon picker
-offers emoji picked by [TypeSafe's Jev](https://docs.typesafe.ai) from the
-list's name, summary, homepage domain (not the full URL), and open item
-titles, which are sent to TypeSafe:
+**Optional** — AI list-icon suggestions and priority sorting. With it set,
+the list icon picker offers emoji picked by
+[TypeSafe's Jev](https://docs.typesafe.ai) from the list's name, summary,
+homepage domain (not the full URL), and open item titles, and a list's
+**Sort items by → Priority** orders its open items as Jev ranks them. That
+sort also sends each open item's description, due date and open sub-item
+titles. All of this is sent to TypeSafe:
 
 | Variable | Default | Description |
 | --- | --- | --- |

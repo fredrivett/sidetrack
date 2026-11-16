@@ -97,6 +97,7 @@ export function Kanban({
   initialCollapsedTrays,
   initialListId,
   filters: savedFilters,
+  aiEnabled,
 }: {
   viewerId: string;
   /** The viewer's own display fields, for the avatar on the Account button. */
@@ -131,6 +132,8 @@ export function Kanban({
   initialListId: string | null;
   /** The viewer's own filters, as they last set them. */
   filters: ItemFilters;
+  /** Whether Jev (TYPESAFE_API_KEY) is set up, for AI-only actions. */
+  aiEnabled: boolean;
 }) {
   const railRef = useRef<HTMLDivElement>(null);
 
@@ -481,6 +484,7 @@ export function Kanban({
         onShare={openShare}
         spaces={spaces}
         filters={shownFilters}
+        aiEnabled={aiEnabled}
       />
     ));
 
