@@ -10,7 +10,6 @@ import type { PendingSpaceInviteView, SpaceView } from "@/core/spaces";
 import { isEditableTarget, matchesShortcut } from "@/lib/keyboard";
 import { Button } from "@/components/ui/button";
 import { AddProjectButton } from "./AddProjectButton";
-import { ArchivedListsMenu } from "./ArchivedListsMenu";
 import { AuditDialog } from "./AuditDialog";
 import { BoardHeader, BoardMain, BoardRail } from "./BoardLayout";
 import { CommandPalette } from "./CommandPalette";
@@ -257,7 +256,7 @@ export function Kanban({
   }>({ open: false, projectId: null, projectName: "" });
 
   // Active lists keep the viewer's order; paused lists follow, collapsed at the
-  // end; archived lists leave the board for the Archived menu. Each group
+  // end; archived lists leave the board for the Account menu's Archived lists. Each group
   // keeps its own neighbours and ends for the Move items, so a move never crosses
   // into another group (where the position change wouldn't show).
   const active = projects.filter((p) => p.status === "active");
@@ -486,7 +485,6 @@ export function Kanban({
           <span className="hidden whitespace-nowrap text-xs text-neutral-400 md:inline">
             {onBoard.length} list{onBoard.length === 1 ? "" : "s"}
           </span>
-          <ArchivedListsMenu lists={archived} />
           {/* Icon and label on desktop, just the icon on phones. */}
           <Button
             variant="outline"
@@ -497,7 +495,7 @@ export function Kanban({
             <History />
             <span className="hidden sm:inline">Activity</span>
           </Button>
-          <UserMenu user={viewer} />
+          <UserMenu user={viewer} archived={archived} />
         </BoardHeader>
         <InvitesBanner invites={pendingInvites} spaceInvites={pendingSpaceInvites} />
         {view === "agenda" ? (
@@ -530,7 +528,7 @@ export function Kanban({
                 {onBoard.length === 0 && (
                   <div className="m-auto text-sm text-neutral-500">
                     {archived.length > 0
-                      ? "Every list is archived — restore one from Archived, or tap + Add list."
+                      ? "Every list is archived — restore one from your account menu, or tap + Add list."
                       : "No lists yet — tap + Add list to start."}
                   </div>
                 )}

@@ -4,6 +4,8 @@ import { Boxes, Check, CircleUserRound, KeyRound, Loader2, LogOut, UserRound } f
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
+import { updateProjectAction } from "@/app/actions";
+import type { Project } from "@/core/schema";
 import { useCopy } from "@/components/ui/use-copy";
 import {
   DropdownMenu,
@@ -16,10 +18,29 @@ import { GitHubMark } from "@/components/GitHubMark";
 import { UserAvatar, type AvatarUser } from "@/components/UserAvatar";
 import { signOut } from "@/auth/client";
 import { RELEASE } from "@/lib/release";
+import { ArchivedListsSubmenu } from "./ArchivedListsMenu";
+import { runAction } from "./run-action";
 
-export function UserMenu({ user }: { user: AvatarUser | null }) {
+/**
+ * The avatar's menu: settings, archived lists (restoring one brings it back
+ * to the board), sign out and the build.
+ */
+export function UserMenu({
+  user,
+  archived = [],
+}: {
+  user: AvatarUser | null;
+  /** Lists off the board, restorable from here. */
+  archived?: Project[];
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  // A restore holds the avatar dimmed until the list is back on the board.
+  const [restoring, startRestore] = useTransition();
+  const restore = (l: Project) =>
+    startRestore(async () => {
+      await runAction(updateProjectAction(l.id, { status: "active" }), `restore “${l.name}”`);
+    });
 
   function onSignOut() {
     startTransition(async () => {
@@ -41,7 +62,10 @@ export function UserMenu({ user }: { user: AvatarUser | null }) {
           <button
             type="button"
             aria-label="Account"
-            className="shrink-0 rounded-full outline-none transition-opacity hover:opacity-80 focus-visible:ring-3 focus-visible:ring-ring/50"
+            aria-busy={restoring || undefined}
+            className={`shrink-0 rounded-full outline-none transition-opacity hover:opacity-80 focus-visible:ring-3 focus-visible:ring-ring/50 ${
+              restoring ? "opacity-50" : ""
+            }`}
           >
             {user ? (
               <UserAvatar user={user} size={28} />
@@ -84,6 +108,12 @@ export function UserMenu({ user }: { user: AvatarUser | null }) {
             </Link>
           }
         />
+        {archived.length > 0 && (
+          <>
+            <DropdownMenuSeparator />
+            <ArchivedListsSubmenu lists={archived} onRestore={restore} />
+          </>
+        )}
         <DropdownMenuSeparator />
         {/* Stays open so "Signing out…" shows until the redirect to /login. */}
         <DropdownMenuItem closeOnClick={false} onClick={onSignOut} disabled={pending}>
