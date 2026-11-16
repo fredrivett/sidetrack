@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2, LogIn, UserPlus } from "lucide-react";
+import { AuthTitle } from "@/components/AuthShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LoadingEllipsis } from "@/components/ui/loading-ellipsis";
@@ -11,7 +12,7 @@ import { authClient, signIn, signUp } from "@/auth/client";
 import { sanitizeNext } from "@/lib/safe-next";
 import { USERNAME_MAX, USERNAME_MIN, validateUsername } from "@/lib/username";
 
-type Mode = "sign-in" | "sign-up";
+export type Mode = "sign-in" | "sign-up";
 
 type UsernameStatus =
   | { kind: "idle" }
@@ -25,13 +26,15 @@ type UsernameStatus =
 
 export function LoginForm({
   allowSignUp,
+  initialMode,
   next,
 }: {
   allowSignUp: boolean;
+  initialMode: Mode;
   next: string;
 }) {
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>("sign-in");
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [username, setUsername] = useState("");
@@ -122,126 +125,174 @@ export function LoginForm({
       usernameStatus.kind === "checking" ||
       username === "");
 
+  const switchMode = (to: Mode) => {
+    setMode(to);
+    setError(null);
+  };
+
   return (
-    <form action={onSubmit} className="space-y-3">
-      {allowSignUp && (
-        <div className="flex gap-1 rounded-lg bg-muted p-1 text-sm">
-          <button
-            type="button"
-            onClick={() => setMode("sign-in")}
-            disabled={pending}
-            className={`flex-1 rounded-md py-1 disabled:pointer-events-none disabled:opacity-50 ${
-              mode === "sign-in" ? "bg-background shadow-sm" : "text-muted-foreground"
-            }`}
-          >
-            Sign in
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode("sign-up")}
-            disabled={pending}
-            className={`flex-1 rounded-md py-1 disabled:pointer-events-none disabled:opacity-50 ${
-              mode === "sign-up" ? "bg-background shadow-sm" : "text-muted-foreground"
-            }`}
-          >
-            Sign up
-          </button>
-        </div>
-      )}
-      {mode === "sign-up" && (
-        <Input name="name" autoComplete="name" placeholder="Name (optional)" />
-      )}
-      {mode === "sign-up" && (
-        <div className="space-y-1">
-          <Input
-            name="username"
-            autoComplete="username"
-            placeholder="Username"
-            required
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            minLength={USERNAME_MIN}
-            maxLength={USERNAME_MAX}
-            aria-invalid={
-              usernameStatus.kind === "taken" ||
-              usernameStatus.kind === "invalid"
+    <>
+      <AuthTitle title={mode === "sign-up" ? "Create your account" : "Welcome back"}>
+        {mode === "sign-up"
+          ? "Get your side projects back on track."
+          : "Sign in to your board."}
+      </AuthTitle>
+      <form action={onSubmit} className="space-y-4">
+        {mode === "sign-up" && (
+          <Field label="Name" hint="Optional">
+            <Input name="name" autoComplete="name" className="h-9" />
+          </Field>
+        )}
+        {mode === "sign-up" && (
+          <Field
+            label="Username"
+            note={
+              <>
+                {usernameStatus.kind === "checking" && (
+                  <p className="text-xs text-muted-foreground">Checking…</p>
+                )}
+                {usernameStatus.kind === "available" && (
+                  <p className="text-xs text-emerald-600 dark:text-emerald-500">
+                    {username} is available.
+                  </p>
+                )}
+                {usernameStatus.kind === "taken" && (
+                  <p className="text-xs text-destructive">
+                    {username} is taken.
+                  </p>
+                )}
+                {usernameStatus.kind === "invalid" && (
+                  <p className="text-xs text-destructive">{usernameStatus.message}</p>
+                )}
+                {usernameStatus.kind === "error" && (
+                  <p className="text-xs text-muted-foreground">
+                    Couldn&apos;t check availability — you can still try.
+                  </p>
+                )}
+              </>
             }
-          />
-          {usernameStatus.kind === "checking" && (
-            <p className="text-xs text-muted-foreground">Checking…</p>
-          )}
-          {usernameStatus.kind === "available" && (
-            <p className="text-xs text-emerald-600 dark:text-emerald-500">
-              {username} is available.
-            </p>
-          )}
-          {usernameStatus.kind === "taken" && (
-            <p className="text-xs text-destructive">
-              {username} is taken.
-            </p>
-          )}
-          {usernameStatus.kind === "invalid" && (
-            <p className="text-xs text-destructive">{usernameStatus.message}</p>
-          )}
-          {usernameStatus.kind === "error" && (
-            <p className="text-xs text-muted-foreground">
-              Couldn&apos;t check availability — you can still try.
-            </p>
-          )}
-        </div>
-      )}
-      <Input
-        name="email"
-        type="email"
-        autoComplete="email"
-        placeholder="Email"
-        required
-        autoFocus
-      />
-      <Input
-        name="password"
-        type="password"
-        autoComplete={mode === "sign-up" ? "new-password" : "current-password"}
-        placeholder="Password"
-        required
-        minLength={8}
-      />
-      {mode === "sign-in" && (
-        <p className="text-right text-xs">
-          <Link
-            href="/forgot-password"
-            className="text-muted-foreground hover:text-foreground hover:underline"
           >
-            Forgot password?
-          </Link>
+            <Input
+              name="username"
+              autoComplete="username"
+              required
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              minLength={USERNAME_MIN}
+              maxLength={USERNAME_MAX}
+              className="h-9"
+              aria-invalid={
+                usernameStatus.kind === "taken" ||
+                usernameStatus.kind === "invalid"
+              }
+            />
+          </Field>
+        )}
+        <Field label="Email">
+          <Input
+            name="email"
+            type="email"
+            autoComplete="email"
+            placeholder="you@example.com"
+            required
+            autoFocus
+            className="h-9"
+          />
+        </Field>
+        <Field
+          label="Password"
+          hint={
+            mode === "sign-in" ? (
+              <Link
+                href="/forgot-password"
+                className="hover:text-foreground hover:underline"
+              >
+                Forgot password?
+              </Link>
+            ) : (
+              "At least 8 characters"
+            )
+          }
+        >
+          <Input
+            name="password"
+            type="password"
+            autoComplete={mode === "sign-up" ? "new-password" : "current-password"}
+            required
+            minLength={8}
+            className="h-9"
+          />
+        </Field>
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <Button
+          type="submit"
+          size="lg"
+          disabled={pending || usernameBlocksSubmit}
+          className="w-full"
+        >
+          {pending ? (
+            <>
+              <Loader2 className="animate-spin" />
+              <span>
+                {mode === "sign-up" ? "Creating account" : "Signing in"}
+                <LoadingEllipsis />
+              </span>
+            </>
+          ) : mode === "sign-up" ? (
+            <>
+              <UserPlus data-icon="inline-start" />
+              Create account
+            </>
+          ) : (
+            <>
+              <LogIn data-icon="inline-start" />
+              Sign in
+            </>
+          )}
+        </Button>
+      </form>
+      {allowSignUp && (
+        <p className="border-t border-neutral-200 pt-4 text-center text-sm text-muted-foreground dark:border-neutral-800">
+          {mode === "sign-up" ? "Already have an account?" : "New to Sidetrack?"}{" "}
+          <button
+            type="button"
+            onClick={() => switchMode(mode === "sign-up" ? "sign-in" : "sign-up")}
+            disabled={pending}
+            className="font-medium text-foreground hover:underline disabled:pointer-events-none disabled:opacity-50"
+          >
+            {mode === "sign-up" ? "Sign in" : "Create an account"}
+          </button>
         </p>
       )}
-      {error && <p className="text-sm text-destructive">{error}</p>}
-      <Button
-        type="submit"
-        disabled={pending || usernameBlocksSubmit}
-        className="w-full"
-      >
-        {pending ? (
-          <>
-            <Loader2 className="animate-spin" />
-            <span>
-              {mode === "sign-up" ? "Creating account" : "Signing in"}
-              <LoadingEllipsis />
-            </span>
-          </>
-        ) : mode === "sign-up" ? (
-          <>
-            <UserPlus data-icon="inline-start" />
-            Create account
-          </>
-        ) : (
-          <>
-            <LogIn data-icon="inline-start" />
-            Sign in
-          </>
-        )}
-      </Button>
-    </form>
+    </>
+  );
+}
+
+/**
+ * A labelled input, with an optional hint or link on the label's right and a
+ * note, such as the username's availability, under the input.
+ */
+function Field({
+  label,
+  hint,
+  note,
+  children,
+}: {
+  label: string;
+  hint?: ReactNode;
+  note?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <label className="block space-y-1.5">
+        <span className="flex items-baseline justify-between gap-2">
+          <span className="text-sm font-medium">{label}</span>
+          {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
+        </span>
+        {children}
+      </label>
+      {note}
+    </div>
   );
 }

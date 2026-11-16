@@ -42,7 +42,7 @@ export function ForgotPasswordForm({
 
   if (sent) {
     return (
-      <p className="text-sm text-muted-foreground">
+      <p className="text-center text-sm text-muted-foreground">
         {emailEnabled
           ? "If an account exists for that email, a reset link is on its way. The link expires in 1 hour."
           : "If an account exists for that email, a reset link has been logged to the server console. The link expires in 1 hour."}
@@ -51,17 +51,18 @@ export function ForgotPasswordForm({
   }
 
   return (
-    <form action={onSubmit} className="space-y-3">
+    <form action={onSubmit} className="space-y-4">
       <Input
         name="email"
         type="email"
         autoComplete="email"
         placeholder="Email"
         required
+        className="h-9"
         autoFocus
       />
       {error && <p className="text-sm text-destructive">{error}</p>}
-      <Button type="submit" disabled={pending} className="w-full">
+      <Button type="submit" size="lg" disabled={pending} className="w-full">
         {pending ? (
           <>
             <Loader2 className="animate-spin" />
