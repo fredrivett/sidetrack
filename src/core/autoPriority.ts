@@ -23,10 +23,14 @@ export async function itemPriorities(
   const project = getProject(db, userId, projectId);
   if (!project) throw new Error(`list not found: ${projectId}`);
   const open = listItems(db, userId, projectId);
-  const steps = Map.groupBy(
-    open.filter((it) => it.parentId !== null),
-    (it) => it.parentId,
-  );
+  // Each parent's open sub-items' titles.
+  const steps = new Map<string, string[]>();
+  for (const it of open) {
+    if (it.parentId === null) continue;
+    const titles = steps.get(it.parentId) ?? [];
+    titles.push(it.title);
+    steps.set(it.parentId, titles);
+  }
   const tasks = open
     .filter((it) => it.parentId === null)
     .map((it) => ({
@@ -35,7 +39,7 @@ export async function itemPriorities(
       description: it.description,
       dueDate: it.dueDate,
       dueFrom: it.dueFrom,
-      steps: (steps.get(it.id) ?? []).map((s) => s.title),
+      steps: steps.get(it.id) ?? [],
     }));
   const today = dayOf(Date.now(), getTimeZone(db, userId) ?? "UTC");
   return rankByPriority(project, tasks, today, apiKey);
