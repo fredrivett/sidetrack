@@ -153,6 +153,10 @@ export const projects = sqliteTable(
     // The Space this list is in, shared with everyone in it; null = none.
     // Deleting a Space returns its lists to their owners, never deletes them.
     spaceId: text("space_id").references(() => spaces.id, { onDelete: "set null" }),
+    // When someone last moved the list's done items into Done ahead of the
+    // day turning over (see ProjectColumn); items finished before it leave
+    // the list for Done. Null = never.
+    doneClearedAt: integer("done_cleared_at"),
     createdAt: integer("created_at")
       .notNull()
       .default(sql`(unixepoch() * 1000)`),

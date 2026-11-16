@@ -65,16 +65,18 @@ export function ProjectColumn({
   // already says who shares it, so it drops the "Shared" badge.
   const inSpace = spaces.some((s) => s.id === project.spaceId);
   const weekStart = Number.isFinite(dayStart) ? startOfWeek(dayStart) : -Infinity;
+  // "Tidy done items" in the list's menu moves today's early too.
+  const doneBefore = Math.max(dayStart, project.doneClearedAt ?? -Infinity);
   const groups = nestItems(items);
   const active = groups.filter((i) => i.completedAt === null);
   const inList = groups.filter(
-    (i) => i.completedAt === null || i.completedAt >= dayStart,
+    (i) => i.completedAt === null || i.completedAt >= doneBefore,
   );
   const done = groups
     .filter(
       (i) =>
         i.completedAt !== null &&
-        i.completedAt < dayStart &&
+        i.completedAt < doneBefore &&
         i.completedAt >= weekStart,
     )
     .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
@@ -184,6 +186,7 @@ export function ProjectColumn({
             isOwner={project.isOwner}
             spaceId={project.spaceId}
             spaces={spaces}
+            doneInList={inList.length - active.length}
             onShowActivity={onShowActivity}
             onShowDetails={() => setDetailsOpen(true)}
             onAddItem={onAddItem}

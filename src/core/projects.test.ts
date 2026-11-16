@@ -211,6 +211,26 @@ describe("projects", () => {
     );
   });
 
+  it("audits moving done items to Done and undoing it, but not a repeat or a future time", () => {
+    const { db } = createTestDb();
+    const u = createTestUser(db);
+    const p = createProject(db, u, { name: "Trip" }, "web");
+    const audits = () =>
+      listAudit(db, u, { projectId: p.id }).filter((a) => a.action === "update");
+
+    expect(updateProject(db, u, p.id, { doneClearedAt: 2000 }, "web").doneClearedAt).toBe(2000);
+    updateProject(db, u, p.id, { doneClearedAt: 2000 }, "web");
+    expect(() =>
+      updateProject(db, u, p.id, { doneClearedAt: Date.now() + 60_000 }, "web"),
+    ).toThrow(/invalid done-cleared time/);
+    // Undoing a list's first tidy puts back null.
+    expect(updateProject(db, u, p.id, { doneClearedAt: null }, "web").doneClearedAt).toBeNull();
+    expect(audits().map((a) => a.detail).reverse()).toEqual([
+      "Trip: moved done items to Done",
+      "Trip: moved done items back to the list",
+    ]);
+  });
+
   it("auto-suffixes a colliding prefix on edit", () => {
     const { db } = createTestDb();
     const u = createTestUser(db);

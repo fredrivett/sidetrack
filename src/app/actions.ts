@@ -150,6 +150,7 @@ export async function updateProjectAction(
     repository?: string | null;
     icon?: string | null;
     iconChosen?: boolean;
+    doneClearedAt?: number | null;
   },
 ) {
   const userId = await requireUserId();
@@ -163,6 +164,20 @@ export async function updateProjectAction(
   );
   refresh();
   return p;
+}
+
+/**
+ * Move the list's done items into Done now rather than when the day turns
+ * over. Stamped with the server's clock, which also stamps completedAt.
+ * Returns the previous value, for undo through updateProjectAction.
+ */
+export async function clearDoneItemsAction(id: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const previous = getProjectCore(db, userId, id)?.doneClearedAt ?? null;
+  updateProjectCore(db, userId, id, { doneClearedAt: Date.now() }, SOURCE);
+  refresh();
+  return previous;
 }
 
 /** Move a list into a Space, to another, or out of its Space (null). */
