@@ -44,9 +44,9 @@ export function LabelBadge({
 }) {
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-neutral-500 dark:bg-neutral-800 ${className}`}
+      className={`inline-flex items-center gap-1 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] text-neutral-500 dark:bg-neutral-800 ${className}`}
     >
-      {emoji && <span className="text-[11px] leading-none normal-case">{emoji}</span>}
+      {emoji && <span className="text-[11px] leading-none">{emoji}</span>}
       {name}
     </span>
   );
