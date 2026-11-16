@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, useTransition } from "react";
+import { useId, useRef, useState, useTransition } from "react";
 import { Boxes, ChevronDown, Plus } from "lucide-react";
-import { unstable_rethrow } from "next/navigation";
 import { toast } from "sonner";
-import { createProjectAction, suggestNewListIconsAction } from "@/app/actions";
+import { createProjectAction, suggestListIconsAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -28,9 +27,8 @@ import { dedupePrefix, derivePrefix } from "@/lib/itemRef";
 import { normalizeHomepageUrl } from "@/lib/url";
 import { IconPicker } from "./ProjectIconPicker";
 import { runAction } from "./run-action";
+import { type EmojiChoice, UNCHOSEN, useTitleEmoji } from "./use-emoji-choice";
 
-// Wait for a pause in typing before asking for icon suggestions.
-const SUGGEST_DELAY_MS = 400;
 
 function Label({
   htmlFor,
@@ -79,14 +77,8 @@ export function NewProjectDialog({
   const [homepage, setHomepage] = useState("");
   // "" for no Space.
   const [spaceId, setSpaceId] = useState("");
-  // The icon the user picked in the picker; undefined until they pick one,
-  // null when they removed it.
-  const [picked, setPicked] = useState<string | null | undefined>(undefined);
-  // Suggestions with the form contents they were made for, so they're only
-  // used while the form still says the same thing.
-  const [suggested, setSuggested] = useState<{ for: string; emoji: string[] }>(
-    { for: "", emoji: [] },
-  );
+  // The icon the user chose in the picker, if any (null for none).
+  const [picked, setPicked] = useState<EmojiChoice>(UNCHOSEN);
   const [pending, start] = useTransition();
   const nameRef = useRef<HTMLInputElement>(null);
   const id = useId();
@@ -101,40 +93,23 @@ export function NewProjectDialog({
       setSummary("");
       setHomepage("");
       setSpaceId(defaultSpaceId);
-      setPicked(undefined);
-      setSuggested({ for: "", emoji: [] });
+      setPicked(UNCHOSEN);
     }
   }
 
   const trimmedName = name.trim();
   const homepageUrl = homepagePreview(homepage);
-  const context = JSON.stringify([trimmedName, summary, homepageUrl]);
-  const suggestions =
-    trimmedName && suggested.for === context ? suggested.emoji : [];
   // Until the user picks, a homepage shows its favicon; otherwise the top AI
   // suggestion stands in, so the list is created with what the preview shows.
-  const provisional =
-    picked === undefined && !homepageUrl ? (suggestions[0] ?? null) : null;
-  const icon = picked === undefined ? provisional : picked;
+  const { shown: icon, suggestions } = useTitleEmoji({
+    saved: picked,
+    title: open ? trimmedName : "",
+    savedTitle: null,
+    context: [summary, homepageUrl],
+    suggest: (next) => suggestListIconsAction({ name: next, summary, homepageUrl }),
+    none: Boolean(homepageUrl),
+  });
   const prefix = dedupePrefix(derivePrefix(trimmedName), new Set(takenPrefixes));
-
-  useEffect(() => {
-    if (!open || !trimmedName) return;
-    let current = true;
-    const timer = setTimeout(() => {
-      void suggestNewListIconsAction({ name: trimmedName, summary, homepageUrl })
-        .then((emoji) => {
-          if (current) setSuggested({ for: context, emoji });
-        })
-        // A suggestion that fails is just left out, but a signed-out
-        // session's redirect to /login goes through to Next.
-        .catch((e) => unstable_rethrow(e));
-    }, SUGGEST_DELAY_MS);
-    return () => {
-      current = false;
-      clearTimeout(timer);
-    };
-  }, [open, trimmedName, summary, homepageUrl, context]);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -149,7 +124,8 @@ export function NewProjectDialog({
           name: trimmedName,
           summary,
           homepageUrl,
-          icon,
+          icon: icon.emoji,
+          iconChosen: icon.chosen,
           spaceId: spaceId || null,
         }),
         "create the list",
@@ -175,15 +151,16 @@ export function NewProjectDialog({
               <Label htmlFor={`${id}-name`}>Name</Label>
               <div className="flex items-center gap-2">
                 <IconPicker
-                  icon={icon}
+                  icon={icon.emoji}
+                  chosen={icon.chosen}
                   homepageUrl={homepageUrl}
                   name={trimmedName}
                   size={20}
                   disabled={pending}
                   className="size-9 border border-input"
-                  faded={Boolean(provisional)}
+                  faded={icon.faded}
                   suggestions={suggestions}
-                  onSelect={setPicked}
+                  onSelect={(emoji) => setPicked({ emoji, chosen: true })}
                 />
                 <Input
                   ref={nameRef}

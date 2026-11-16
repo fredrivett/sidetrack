@@ -63,7 +63,7 @@ const item: Item = {
   projectId: "p1",
   title: "Write docs",
   description: null,
-  category: null,
+  labels: [],
   assigneeIds: [],
   parentId: null,
   collapsed: false,

@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { listAudit } from "./audit";
+import { addLabel, listLabels } from "./labels";
 import {
   addItem,
   completeItem,
@@ -135,19 +136,43 @@ describe("items", () => {
     expect(titles()).toEqual(["c", first.title, second.title]);
   });
 
-  it("auto-creates inline categories without auditing them", () => {
+  it("auto-creates inline labels with their emoji, without auditing them", () => {
     const { db, userId, projectId } = seedProject();
+    addLabel(db, userId, projectId, { name: "bug", emoji: "🐛" }, "web");
     const item = addItem(
       db,
       userId,
-      { projectId, title: "with cat", category: "infra" },
+      {
+        projectId,
+        title: "with labels",
+        labels: [" infra ", "bug", "infra", ""],
+        labelEmoji: { infra: { emoji: "⚙️", chosen: false }, bug: { emoji: "🔥", chosen: true } },
+      },
       "web",
     );
+    expect(item.labels).toEqual(["infra", "bug"]);
+    const byName = Object.fromEntries(listLabels(db, userId, projectId).map((l) => [l.name, l]));
+    expect(byName.infra).toMatchObject({ emoji: "⚙️", emojiChosen: false });
+    // An existing label keeps its emoji: labelEmoji is only for new ones.
+    expect(byName.bug).toMatchObject({ emoji: "🐛", emojiChosen: true });
     const log = listAudit(db, userId);
-    expect(log.find((e) => e.entityId === item.id)?.action).toBe("create");
-    // ensureCategory is intentionally NOT audited — the parent create is the
-    // logged event.
-    expect(log.some((e) => e.entityType === "category")).toBe(false);
+    expect(log.find((e) => e.entityId === item.id)?.detail).toContain("labelled infra, bug");
+    // ensureLabels is intentionally NOT audited — the parent create is the
+    // logged event (the one label row is addLabel's).
+    expect(log.filter((e) => e.entityType === "label")).toHaveLength(1);
+  });
+
+  it("replaces an item's labels, logging what was added and taken off", () => {
+    const { db, userId, projectId } = seedProject();
+    const item = addItem(db, userId, { projectId, title: "t", labels: ["a", "b"] }, "web");
+    // The same labels in another order change nothing.
+    updateItem(db, userId, item.id, { labels: ["b", "a"] }, "web");
+    const updated = updateItem(db, userId, item.id, { labels: ["b", "c"] }, "web");
+    expect(updated.labels).toEqual(["b", "c"]);
+    const updates = listAudit(db, userId).filter(
+      (e) => e.entityId === item.id && e.action === "update",
+    );
+    expect(updates.map((e) => e.detail)).toEqual(["t: labelled c, unlabelled a"]);
   });
 
   it("completes then uncompletes, logging both actions", () => {

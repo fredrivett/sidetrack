@@ -54,7 +54,7 @@ const board = (projects: ProjectView[], spaces: SpaceView[]) => (
     projects={projects}
     itemsByProject={{ a: [], b: [] }}
     completedSince={0}
-    categoriesByProject={{}}
+    labelsByProject={{}}
     assigneesByProject={{}}
     prLinksByItem={{}}
     pendingInvites={[]}

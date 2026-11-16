@@ -33,6 +33,7 @@ import {
   updateItemAction,
 } from "@/app/actions";
 import type { AuditEntryWithActor } from "@/core/audit";
+import type { LabelEmoji } from "@/core/labels";
 import type { AssigneeView } from "@/core/members";
 import type { AgentSession, Item, ItemPrLink } from "@/core/schema";
 import { toggleAssignee } from "@/lib/assignees";
@@ -59,13 +60,13 @@ import {
 } from "@/components/ui/responsive-dialog";
 import { AssigneeOptions } from "./AssigneeOptions";
 import { AuditEntryRow } from "./AuditDialog";
-import { CategoryBadge } from "./CategoryBadge";
 import { DueDatePicker } from "./DueDatePicker";
 import { PrLink } from "./PrLink";
 import { RepeatPicker } from "./RepeatPicker";
 import { runAction } from "./run-action";
 import { EditableText } from "./EditableText";
 import { ItemComments } from "./ItemComments";
+import { LabelsField } from "./Labels";
 import { InlineCode, Markdown } from "./Markdown";
 import { useAssignShortcuts } from "./useAssignShortcuts";
 import { useOptimisticAssignees } from "./use-optimistic-assignees";
@@ -479,6 +480,25 @@ export function ItemDetailDialog({
   const { assigneesById, setAssignees } = useOptimisticAssignees([item, ...checklist]);
   const assigneeIds = assigneesById[item.id];
   const assigned = assignees.filter((a) => assigneeIds.includes(a.userId));
+  // The item's labels ahead of the server (rule 3), with the emoji shown for
+  // new ones until the list has them.
+  const [labels, showLabels] = useOptimistic(item.labels);
+  const [newLabelEmoji, setNewLabelEmoji] = useState<Record<string, LabelEmoji>>({});
+  const [, startLabels] = useTransition();
+  function setLabels(names: string[], added?: { name: string; emoji?: LabelEmoji }) {
+    const emoji = added?.emoji;
+    if (added && emoji) setNewLabelEmoji((cur) => ({ ...cur, [added.name]: emoji }));
+    startLabels(async () => {
+      showLabels(names);
+      await runAction(
+        updateItemAction(item.id, {
+          labels: names,
+          labelEmoji: added && emoji ? { [added.name]: emoji } : undefined,
+        }),
+        `change the labels of “${item.title}”`,
+      );
+    });
+  }
   const canAssignSelf = useMemo(
     () => assignees.some((a) => a.userId === viewerId),
     [assignees, viewerId],
@@ -624,19 +644,13 @@ export function ItemDetailDialog({
             />
           </Field>
 
-          <Field label="Category">
-            <EditableText
-              value={item.category ?? ""}
-              onSave={(next) =>
-                runAction(
-                  updateItemAction(item.id, { category: next || null }),
-                  `change the category of “${item.title}”`,
-                )
-              }
-              placeholder="Add category…"
-              className="block w-full break-words text-sm text-neutral-600 dark:text-neutral-300"
-              inputClassName="w-full text-sm"
-              renderValue={(category) => <CategoryBadge category={category} />}
+          <Field label="Labels">
+            <LabelsField
+              key={item.id}
+              projectId={item.projectId}
+              value={labels}
+              onChange={setLabels}
+              draftEmoji={newLabelEmoji}
             />
           </Field>
 

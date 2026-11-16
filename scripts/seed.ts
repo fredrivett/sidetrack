@@ -23,9 +23,15 @@ import type { ProjectStatus } from "@/core/schema";
 // Seeded rows look like the owner created them in the web UI.
 const SOURCE = "web" as const;
 
+const SEED_LABEL_EMOJI = {
+  infra: { emoji: "⚙️", chosen: false },
+  growth: { emoji: "📈", chosen: false },
+  writing: { emoji: "✍️", chosen: false },
+};
+
 interface SeedItem {
   title: string;
-  category?: string;
+  labels?: string[];
   done?: boolean;
   pr?: string;
 }
@@ -56,12 +62,12 @@ function plan(): SeedUser[] {
             { title: "Launch v1.0" },
             {
               title: "Set up error tracking",
-              category: "infra",
+              labels: ["infra"],
               done: true,
               pr: "https://github.com/fredrivett/sidetrack/pull/1",
             },
-            { title: "Write the launch post", category: "growth" },
-            { title: "Triage early feedback", category: "growth" },
+            { title: "Write the launch post", labels: ["growth", "writing"] },
+            { title: "Triage early feedback", labels: ["growth"] },
           ],
         },
         {
@@ -160,7 +166,9 @@ async function seed() {
           {
             projectId: project.id,
             title: item.title,
-            category: item.category,
+            labels: item.labels,
+            // As if Jev suggested them when the labels were typed.
+            labelEmoji: SEED_LABEL_EMOJI,
           },
           SOURCE,
         );

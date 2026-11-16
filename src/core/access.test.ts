@@ -1,7 +1,7 @@
 import { nanoid } from "nanoid";
 import { beforeEach, describe, expect, it } from "vitest";
 import { listAudit } from "./audit";
-import { addCategory, listCategories } from "./categories";
+import { addLabel, listLabels } from "./labels";
 import { createTestDb, createTestUser } from "./test-helpers";
 import { addItem, getItem, listItems } from "./items";
 import {
@@ -63,7 +63,7 @@ describe("project access (owner + members)", () => {
     expect(listItems(db, stranger, p.id)).toHaveLength(0);
   });
 
-  it("a member can edit: add items and categories", () => {
+  it("a member can edit: add items and labels", () => {
     const p = createProject(db, owner, { name: "Shared" }, "web");
     addMember(db, p.id, member);
 
@@ -75,8 +75,8 @@ describe("project access (owner + members)", () => {
     );
     expect(getItem(db, owner, item.id)?.title).toBe("By member");
 
-    addCategory(db, member, p.id, "infra", "web");
-    expect(listCategories(db, owner, p.id).map((c) => c.name)).toContain(
+    addLabel(db, member, p.id, { name: "infra" }, "web");
+    expect(listLabels(db, owner, p.id).map((l) => l.name)).toContain(
       "infra",
     );
   });

@@ -5,7 +5,7 @@ simplicity and to work where you're already working.
 
 - 🤖 **Agent first** — a built-in [Model Context Protocol](https://modelcontextprotocol.io) server so AI agents can read and update your lists
 - 🖥️ **Web UI** for everyday use
-- 📁 **Lists → items → categories**, with drag-to-reorder. Pause or archive a list to set it aside
+- 📁 **Lists → items → labels (with emoji)**, with drag-to-reorder. Pause or archive a list to set it aside
 - 📜 **Audit log** — every change recorded, web or agent
 - 📱 **Installable** as an iOS PWA
 

@@ -38,7 +38,7 @@ const item = (projectId: string, title: string, more: Partial<Item> = {}): Item 
   projectId,
   title,
   description: null,
-  category: null,
+  labels: [],
   assigneeIds: [],
   parentId: null,
   collapsed: false,

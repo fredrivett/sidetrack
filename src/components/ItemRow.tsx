@@ -53,7 +53,7 @@ import { toggleAssignee } from "@/lib/assignees";
 import { formatItemRef } from "@/lib/itemRef";
 import { repeatOf } from "@/lib/repeat";
 import { AssigneeOptions } from "./AssigneeOptions";
-import { CategoryBadge } from "./CategoryBadge";
+import { LabelBadge, useListLabels } from "./Labels";
 import { DueBadge } from "./DueBadge";
 import { PrLink } from "./PrLink";
 import { RepeatBadge } from "./RepeatBadge";
@@ -130,6 +130,7 @@ export function ItemRow({
   }, [isDragging]);
   const completed = item.completedAt !== null;
   const repeat = repeatOf(item);
+  const listLabels = useListLabels(item.projectId);
   const ref = formatItemRef(prefix, item.number);
   // Shown in the list's member order, so joint items line up across rows.
   const { assigneesById, setAssignees } = useOptimisticAssignees([item]);
@@ -284,7 +285,7 @@ export function ItemRow({
                 {context}
               </span>
             )}
-            {(item.category || item.dueDate || repeat) && (
+            {(item.labels.length > 0 || item.dueDate || repeat) && (
               <span className="flex flex-wrap items-center gap-1">
                 {item.dueDate && (
                   <DueBadge due={item.dueDate} from={item.dueFrom} done={completed} />
@@ -292,7 +293,13 @@ export function ItemRow({
                 {repeat && (
                   <RepeatBadge repeat={repeat} completedAt={item.completedAt} due={item} />
                 )}
-                {item.category && <CategoryBadge category={item.category} />}
+                {item.labels.map((name) => (
+                  <LabelBadge
+                    key={name}
+                    name={name}
+                    emoji={listLabels.find((l) => l.name === name)?.emoji ?? null}
+                  />
+                ))}
               </span>
             )}
           </button>
