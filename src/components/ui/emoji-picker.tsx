@@ -56,13 +56,25 @@ const SKIN_TONES: { tone: SkinTone; label: string; color: string }[] = [
 
 /**
  * A footer of skin tone swatches. The tone applies to every emoji that has
- * them, in every picker on this device; saved icons keep theirs.
+ * them, in every picker on this device. Picking one also reports `emoji`,
+ * the icon currently set, in that tone, so it can follow; an icon without
+ * skin tones (or an image URL) is left alone.
  */
 function EmojiPickerSkinTones({
+  emoji,
+  onEmojiChange,
   className,
   ...props
-}: React.ComponentProps<"div">) {
-  const [skinTone, setSkinTone] = useSkinTone();
+}: React.ComponentProps<"div"> & {
+  emoji?: string | null;
+  onEmojiChange?: (emoji: string) => void;
+}) {
+  const [skinTone, setSkinTone, variations] = useSkinTone(emoji ?? undefined);
+  function pick(tone: SkinTone) {
+    setSkinTone(tone);
+    const toned = variations.find((v) => v.skinTone === tone)?.emoji;
+    if (emoji && toned && toned !== emoji) onEmojiChange?.(toned);
+  }
   useEffect(() => {
     try {
       localStorage.setItem(SKIN_TONE_KEY, skinTone);
@@ -86,7 +98,7 @@ function EmojiPickerSkinTones({
           aria-pressed={skinTone === tone}
           aria-label={label}
           title={label}
-          onClick={() => setSkinTone(tone)}
+          onClick={() => pick(tone)}
           className="size-4 rounded-full outline-offset-2 ring-offset-2 ring-offset-popover aria-pressed:ring-[1.5px] aria-pressed:ring-foreground"
           style={{ backgroundColor: color }}
         />

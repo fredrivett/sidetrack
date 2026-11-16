@@ -260,7 +260,13 @@ export function IconPicker({
             </div>
           )}
           <EmojiPickerContent />
-          <EmojiPickerSkinTones />
+          {/* Retones the icon in place, keeping the picker open to compare
+              tones. A faded suggestion is saved in the new tone as the
+              choice, as picking a tone for it is choosing it. */}
+          <EmojiPickerSkinTones
+            emoji={icon}
+            onEmojiChange={onSelect}
+          />
         </EmojiPicker>
 
         {!emojiOnly && (
