@@ -176,11 +176,17 @@ export default async function Welcome() {
           className="relative top-0 mx-auto mt-16 max-w-6xl px-5 motion-safe:animate-[rise-in_600ms_cubic-bezier(0.2,0.8,0.2,1)_backwards] [animation-delay:150ms] sm:mt-20 sm:px-8"
         >
           <PreviewBoard today={today} now={now} />
-          {/* What the agent on FIX-12 last reported, below its list. */}
-          <div className="absolute -bottom-14 right-10 w-72 rotate-1 rounded-xl border border-neutral-200 bg-white p-3 text-left text-sm shadow-lg motion-safe:animate-[slide-in_500ms_cubic-bezier(0.2,0.8,0.2,1)_both] [--slide-from:0_12px] [animation-delay:1100ms] max-sm:hidden dark:border-neutral-800 dark:bg-neutral-900">
-            <p className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Sparkles className="size-3.5 text-violet-500" />
-              Amp, working on FIX-12
+          {/* What the agent on FIX-12 last reported, below its list. Violet,
+              the agents' colour, in both themes, as on the social card
+              (opengraph-image.tsx). */}
+          <div className="absolute -bottom-14 right-10 w-72 rotate-1 rounded-xl border border-violet-600 bg-linear-135 from-[#3b1d7a] to-[#1e1035] p-3 text-left text-sm text-violet-50 shadow-lg shadow-violet-950/30 motion-safe:animate-[slide-in_500ms_cubic-bezier(0.2,0.8,0.2,1)_both] [--slide-from:0_12px] [animation-delay:1100ms] max-sm:hidden dark:shadow-black/60">
+            <p className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-violet-200">
+              <Sparkles className="size-3.5 text-violet-300" />
+              Claude · FIX-12
+              <span className="ml-auto flex items-center gap-1 rounded-full bg-green-500/15 px-1.5 py-px text-[10px] text-green-400">
+                <span className="size-1.5 rounded-full bg-green-500" />
+                Working
+              </span>
             </p>
             <p>
               Two of the three roofers have quoted. Chasing the third, then

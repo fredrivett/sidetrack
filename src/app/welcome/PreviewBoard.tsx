@@ -141,6 +141,7 @@ function demo(today: string, now: number) {
     dueDate: today,
     repeatEvery: 1,
     repeatUnit: "week",
+    completedAt: hoursAgo(3),
   });
   add("cho", 5, "Take the bins out", {
     assigneeIds: ["sam"],
@@ -188,8 +189,8 @@ function demo(today: string, now: number) {
   const sessions = [
     agentSession("syn-14", "Amp", now - 60_000),
     agentSession("syn-12", "Claude", hoursAgo(2)),
-    agentSession("fix-11", "Amp", now - 4 * 60_000),
-    agentSession("fix-12", "Amp", now - 4 * 60_000),
+    agentSession("fix-11", "Claude", now - 4 * 60_000),
+    agentSession("fix-12", "Claude", now - 4 * 60_000),
   ];
   return { items, sessions };
 }
