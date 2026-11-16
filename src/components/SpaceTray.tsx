@@ -130,9 +130,12 @@ export function SpaceTray({
           (0fr), clipping the columns from the right as they fade, so they
           slide away whole rather than squashing. overflow-clip, not hidden:
           hidden makes this a scroll container, which the columns would snap
-          to instead of the board, so swiping wouldn't step between lists. */}
+          to instead of the board, so swiping wouldn't step between lists.
+          grid-rows-1 caps the row at the tray's height: without a scroll
+          container's zero minimum, an auto row grows to the longest list,
+          so a list never overflows its own body and can't scroll. */}
       <div
-        className={`grid min-h-0 flex-1 transition-[grid-template-columns] ${ease} ${
+        className={`grid min-h-0 flex-1 grid-rows-1 transition-[grid-template-columns] ${ease} ${
           collapsed ? "grid-cols-[0fr]" : "grid-cols-[1fr]"
         }`}
       >
