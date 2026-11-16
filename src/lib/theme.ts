@@ -14,6 +14,8 @@ export const THEME_COLORS = { light: "#fafafa", dark: "#0a0a0a" };
 
 export const THEME_COOKIE = "theme";
 const ONE_YEAR_IN_SECONDS = 60 * 60 * 24 * 365;
+/** Carries a new choice to the site's other open tabs. */
+const THEME_CHANNEL = "sidetrack:theme";
 
 export function parseTheme(value: string | null | undefined): Theme {
   return value === "light" || value === "dark" ? value : "system";
@@ -49,13 +51,21 @@ function applyTheme(theme: Theme, colors: typeof THEME_COLORS) {
 
 /**
  * Applies the cookie's theme before first paint, so no page flashes the wrong
- * mode. Inlined in the root layout; built from constants only.
+ * mode, then applies the choices other tabs make (setTheme) while it's open.
+ * Inlined in the root layout; built from constants only.
  */
-export const THEME_INIT_SCRIPT = `try{var m=document.cookie.match(/(?:^|; )${THEME_COOKIE}=(light|dark)(?:;|$)/);(${applyTheme})(m?m[1]:"system",${JSON.stringify(THEME_COLORS)})}catch(e){}`;
+export const THEME_INIT_SCRIPT = `try{var m=document.cookie.match(/(?:^|; )${THEME_COOKIE}=(light|dark)(?:;|$)/),a=(${applyTheme}),c=${JSON.stringify(THEME_COLORS)};a(m?m[1]:"system",c);new BroadcastChannel(${JSON.stringify(THEME_CHANNEL)}).onmessage=function(e){a(e.data==="light"||e.data==="dark"?e.data:"system",c)}}catch(e){}`;
 
-/** Applies a theme to this page and remembers it for the next load. */
+/**
+ * Applies a theme to this page, remembers it for the next load, and tells the
+ * site's other open tabs.
+ */
 export function setTheme(theme: Theme): void {
   applyTheme(theme, THEME_COLORS);
   const secure = location.protocol === "https:" ? "; Secure" : "";
   document.cookie = `${THEME_COOKIE}=${theme}; path=/; max-age=${ONE_YEAR_IN_SECONDS}; SameSite=Lax${secure}`;
+  if (typeof BroadcastChannel === "undefined") return;
+  const channel = new BroadcastChannel(THEME_CHANNEL);
+  channel.postMessage(theme);
+  channel.close();
 }

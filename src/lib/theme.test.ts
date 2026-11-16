@@ -49,4 +49,14 @@ describe("theme", () => {
     expect(themeColor("dark")).toBe("#0a0a0a");
     expect(themeColor("light")).toBe("#fafafa");
   });
+
+  it("follows a theme chosen in another tab", async () => {
+    loadPage();
+    // Another tab's setTheme, from its own channel.
+    const otherTab = new BroadcastChannel("sidetrack:theme");
+    otherTab.postMessage("dark");
+    otherTab.close();
+    await expect.poll(() => document.documentElement.dataset.theme).toBe("dark");
+    expect(themeColor("light")).toBe("#0a0a0a");
+  });
 });
