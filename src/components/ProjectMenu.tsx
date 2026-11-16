@@ -4,10 +4,6 @@ import {
   Archive,
   ArrowDownAZ,
   ArrowDownUp,
-  ArrowLeft,
-  ArrowLeftToLine,
-  ArrowRight,
-  ArrowRightToLine,
   Boxes,
   CalendarClock,
   Clock,
@@ -48,6 +44,7 @@ import type { ItemSort } from "@/core/items";
 import type { ProjectStatus } from "@/core/schema";
 import type { SpaceView } from "@/core/spaces";
 import { validatePrefix } from "@/lib/itemRef";
+import { MoveMenuItems } from "./MoveMenuItems";
 import { ARMED_MENU_ITEM, useTapToConfirm } from "./use-tap-to-confirm";
 import { runAction } from "./run-action";
 import { useListSave, useRemoveList } from "./use-list-saves";
@@ -215,42 +212,13 @@ export function ProjectMenu({
           </DropdownMenuShortcut>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          disabled={!prevId}
-          onClick={() =>
-            run(() => reorderProjectAction(projectId, `before:${firstId}`), `move “${name}”`)
-          }
-        >
-          <ArrowLeftToLine />
-          Move to start
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          disabled={!prevId}
-          onClick={() =>
-            run(() => reorderProjectAction(projectId, `before:${prevId}`), `move “${name}”`)
-          }
-        >
-          <ArrowLeft />
-          Move left
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          disabled={!nextId}
-          onClick={() =>
-            run(() => reorderProjectAction(projectId, `after:${nextId}`), `move “${name}”`)
-          }
-        >
-          <ArrowRight />
-          Move right
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          disabled={!nextId}
-          onClick={() =>
-            run(() => reorderProjectAction(projectId, `after:${lastId}`), `move “${name}”`)
-          }
-        >
-          <ArrowRightToLine />
-          Move to end
-        </DropdownMenuItem>
+        <MoveMenuItems
+          prevId={prevId}
+          nextId={nextId}
+          firstId={firstId}
+          lastId={lastId}
+          onMove={(ref) => run(() => reorderProjectAction(projectId, ref), `move “${name}”`)}
+        />
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
             <ArrowDownUp />

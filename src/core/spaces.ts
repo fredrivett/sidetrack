@@ -2,6 +2,7 @@ import { and, asc, count, eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { normalizeProjectIcon } from "../lib/projectIcon";
 import { hasProjectAccess } from "./access";
+import { parseProjectRef, resolvePosition } from "./fracidx";
 import { users } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
@@ -136,6 +137,7 @@ export function createSpace(
         userId,
         status: "accepted",
         role: "admin",
+        position: nextTrayPosition(tx as unknown as Db, userId),
         createdAt: now,
       })
       .run();
@@ -300,7 +302,7 @@ export function acceptSpaceInvite(
     // Flip only if still pending, so a revoke racing this accept can't be undone.
     const flipped = tx
       .update(spaceMembers)
-      .set({ status: "accepted" })
+      .set({ status: "accepted", position: nextTrayPosition(tx as unknown as Db, userId) })
       .where(and(eq(spaceMembers.id, membership.id), eq(spaceMembers.status, "pending")))
       .run();
     if (flipped.changes === 0) throw new Error("no pending invite for this space");
@@ -501,16 +503,133 @@ export function setProjectSpace(
   });
 }
 
-/** The Spaces `userId` has joined, with their role in each, oldest first. */
-export function listSpaces(db: Db, userId: string): SpaceView[] {
+/** The Spaces `userId` has joined, in their own order, with their role and
+ * position in each. Memberships from before trays could move have no
+ * position until they're placed (placeTrays); they follow, oldest first, as
+ * the board showed them then. */
+function joinedSpaces(db: Db, userId: string) {
   return db
-    .select({ space: spaces, role: spaceMembers.role })
+    .select({ space: spaces, role: spaceMembers.role, position: spaceMembers.position })
     .from(spaceMembers)
     .innerJoin(spaces, eq(spaces.id, spaceMembers.spaceId))
     .where(and(eq(spaceMembers.userId, userId), eq(spaceMembers.status, "accepted")))
-    .orderBy(asc(spaces.createdAt), asc(spaces.id))
-    .all()
-    .map(({ space, role }) => ({ ...space, role }));
+    .orderBy(
+      sql`${spaceMembers.position} is null`,
+      asc(spaceMembers.position),
+      asc(spaces.createdAt),
+      asc(spaces.id),
+    )
+    .all();
+}
+
+/** The Spaces `userId` has joined, with their role in each, in their order. */
+export function listSpaces(db: Db, userId: string): SpaceView[] {
+  return joinedSpaces(db, userId).map(({ space, role }) => ({ ...space, role }));
+}
+
+/** The board's tray for the viewer's lists in none of their Spaces, in tray
+ * order alongside Space ids. Space ids are 12-character nanoids, so it can't
+ * clash with one. */
+export const PERSONAL_TRAY = "personal";
+
+type TrayPosition = { id: string; position: string | null };
+
+/** `userId`'s trays in board order, each with its position: Personal and
+ * their Spaces. Until placed, Personal comes first and Spaces last. */
+function trayPositions(db: Db, userId: string): TrayPosition[] {
+  const personal =
+    db
+      .select({ position: users.personalTrayPosition })
+      .from(users)
+      .where(eq(users.id, userId))
+      .get()?.position ?? null;
+  const joined = joinedSpaces(db, userId).map(({ space, position }) => ({
+    id: space.id,
+    position,
+  }));
+  const at =
+    personal === null
+      ? 0
+      : joined.findIndex((s) => s.position === null || s.position > personal);
+  return joined.toSpliced(at === -1 ? joined.length : at, 0, {
+    id: PERSONAL_TRAY,
+    position: personal,
+  });
+}
+
+/** The ids of `userId`'s trays in board order: PERSONAL_TRAY and the Spaces
+ * they've joined. */
+export function listTrays(db: Db, userId: string): string[] {
+  return trayPositions(db, userId).map((t) => t.id);
+}
+
+/**
+ * Move a tray on the caller's board, among their Spaces: a Space, or
+ * PERSONAL_TRAY for their lists in none. ref is start | end | after:<id> |
+ * before:<id>, anchored on either. Only their order changes, never another
+ * member's. Any tray they haven't placed yet first gets a position where it
+ * shows now, so the ref can anchor on any of them.
+ */
+export function reorderSpace(
+  db: Db,
+  userId: string,
+  trayId: string,
+  refRaw: string,
+  source: AuditOrigin,
+): void {
+  const name =
+    trayId === PERSONAL_TRAY ? "Personal" : requireMember(db, userId, trayId).space.name;
+  const ref = parseProjectRef(refRaw);
+  db.transaction((tx) => {
+    const others = placeTrays(tx as unknown as Db, userId).filter((t) => t.id !== trayId);
+    setTrayPosition(tx as unknown as Db, userId, trayId, resolvePosition(others, ref));
+    recordAudit(tx as unknown as Db, {
+      actor: userId,
+      source,
+      action: "reorder",
+      // Personal is logged as a Space-level event too, with its tray id.
+      entityType: "space",
+      entityId: trayId,
+      detail: trayId === PERSONAL_TRAY ? "reordered Personal" : `reordered space "${name}"`,
+    });
+  });
+}
+
+/** Give each of `userId`'s unplaced trays a position where it shows now
+ * (Personal first, Spaces last), and return them all, sorted. */
+// audit-exempt: runs inside its callers' audited transactions.
+function placeTrays(db: Db, userId: string): { id: string; position: string }[] {
+  const trays = trayPositions(db, userId);
+  const placed = trays.filter((t): t is { id: string; position: string } => t.position !== null);
+  for (const { id, position } of trays) {
+    if (position !== null) continue;
+    const first = id === PERSONAL_TRAY;
+    const next = resolvePosition(placed, first ? "first" : "last");
+    setTrayPosition(db, userId, id, next);
+    if (first) placed.unshift({ id, position: next });
+    else placed.push({ id, position: next });
+  }
+  return placed;
+}
+
+/** The position for a Space `userId` creates or joins: after all their
+ * trays, so it shows last, as a new list does. Call it before the membership
+ * is accepted, so it isn't counted among them. */
+// audit-exempt: runs inside createSpace's and acceptSpaceInvite's audited transactions.
+function nextTrayPosition(db: Db, userId: string): string {
+  return resolvePosition(placeTrays(db, userId), "last");
+}
+
+// audit-exempt: runs inside its callers' audited transactions.
+function setTrayPosition(db: Db, userId: string, trayId: string, position: string): void {
+  if (trayId === PERSONAL_TRAY) {
+    db.update(users).set({ personalTrayPosition: position }).where(eq(users.id, userId)).run();
+  } else {
+    db.update(spaceMembers)
+      .set({ position })
+      .where(and(eq(spaceMembers.spaceId, trayId), eq(spaceMembers.userId, userId)))
+      .run();
+  }
 }
 
 /** Everyone in a Space and everyone invited, in the order they were added.

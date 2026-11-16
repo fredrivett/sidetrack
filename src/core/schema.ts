@@ -99,6 +99,12 @@ export const spaceMembers = sqliteTable(
       .notNull()
       .default("pending"),
     role: text("role").$type<SpaceRole>().notNull().default("member"),
+    // Where the Space sits among this member's own trays on their board, as a
+    // fractional index, so reordering moves it only for whoever did it. Set
+    // to the end when they create or join it. Null for memberships from
+    // before trays could move, until placed (see placeTrays in spaces.ts);
+    // those sort last, oldest Space first.
+    position: text("position"),
     createdAt: integer("created_at")
       .notNull()
       .default(sql`(unixepoch() * 1000)`),

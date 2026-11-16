@@ -79,7 +79,10 @@ import {
   listPendingSpaceInvites,
   listSpaceMembers,
   listSpaces,
+  listTrays,
+  PERSONAL_TRAY,
   removeSpaceMember,
+  reorderSpace,
   setProjectSpace,
   setSpaceMemberRole,
   updateSpace,
@@ -1552,7 +1555,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "List Spaces",
       description:
-        "List the Spaces the user has joined, oldest first. A Space is a group of people who share every list in it. " +
+        "List the Spaces the user has joined, in the order their board shows them. A Space is a group of people who share every list in it. " +
         "Each has id, name, icon and the user's role: admin (manages its people and the Space itself) or member. " +
         "A list's spaceId (list_lists) says which Space it's in. Pending Space invites are in list_pending_invites.",
       inputSchema: {},
@@ -1596,6 +1599,25 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       if (!isJoined(db, space_id)) return notFound("space", space_id);
       updateSpace(db, userId, space_id, { name, icon }, SOURCE);
       return json(listSpaces(db, userId).find((s) => s.id === space_id));
+    },
+  );
+
+  server.registerTool(
+    "reorder_space",
+    {
+      title: "Reorder Space",
+      description:
+        "Move a Space on the user's board, among the Spaces they've joined; only their own board changes. " +
+        "Their lists in no Space sit among them as a Personal group: pass space_id \"personal\" to move it, or use it as an anchor. " +
+        "position is one of: start | end | after:<space_id> | before:<space_id>. " +
+        "Returns the board's groups in their new order, as space ids and \"personal\".",
+      inputSchema: { space_id: z.string(), position: ListPosRef },
+    },
+    async ({ space_id, position }) => {
+      const { db } = getDb();
+      if (space_id !== PERSONAL_TRAY && !isJoined(db, space_id)) return notFound("space", space_id);
+      reorderSpace(db, userId, space_id, position, SOURCE);
+      return json(listTrays(db, userId));
     },
   );
 
