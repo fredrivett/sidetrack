@@ -305,10 +305,16 @@ export function Kanban({
   // starts open, so a link to a list shows it.
   const trays = trayOrder.flatMap((id) =>
     id === "personal"
-      ? [{ id, name: "Personal", icon: null, color: null }]
+      ? [{ id, name: "Personal", icon: null, color: null, admin: false }]
       : spaces
           .filter((s) => s.id === id)
-          .map((s) => ({ id, name: s.name, icon: s.icon, color: s.color })),
+          .map((s) => ({
+            id,
+            name: s.name,
+            icon: s.icon,
+            color: s.color,
+            admin: s.role === "admin",
+          })),
   );
   const trayOf = (p: ProjectView) =>
     spaces.find((s) => s.id === p.spaceId)?.id ?? "personal";
@@ -667,6 +673,7 @@ export function Kanban({
                     saving={saving}
                     menu={
                       <SpaceMenu
+                        editId={tray.admin ? tray.id : null}
                         name={tray.name}
                         prevId={trays[at - 1]?.id ?? null}
                         nextId={trays[at + 1]?.id ?? null}

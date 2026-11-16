@@ -1,18 +1,24 @@
 "use client";
 
+import { Pencil } from "lucide-react";
+import Link from "next/link";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MoveMenuItems } from "./MoveMenuItems";
 
 /**
- * A tray's ⋯ menu (a Space's, or Personal's): its moves among the board's
- * trays, as a list's menu moves it among its tray's lists. The board holds the
- * tray while a move saves (`saving`), and the menu won't open meanwhile.
+ * A tray's ⋯ menu (a Space's, or Personal's): for a Space's admin, a link to
+ * its card in Spaces settings, and for anyone, moves among the board's
+ * trays, as a list's menu moves it among its tray's lists. The board holds
+ * the tray while a move saves (`saving`), and the menu won't open meanwhile.
  */
 export function SpaceMenu({
+  editId,
   name,
   prevId,
   nextId,
@@ -21,6 +27,9 @@ export function SpaceMenu({
   saving,
   onMove,
 }: {
+  /** The Space to edit, or null when there's none the viewer may edit:
+   * Personal, or a Space they're only a member of. */
+  editId: string | null;
   name: string;
   prevId: string | null;
   nextId: string | null;
@@ -44,6 +53,19 @@ export function SpaceMenu({
         ⋯
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
+        {editId && (
+          <>
+            <DropdownMenuItem
+              render={
+                <Link href={`/settings/spaces#space-${editId}`}>
+                  <Pencil />
+                  Edit space
+                </Link>
+              }
+            />
+            <DropdownMenuSeparator />
+          </>
+        )}
         <MoveMenuItems
           prevId={prevId}
           nextId={nextId}
