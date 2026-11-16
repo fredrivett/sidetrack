@@ -428,6 +428,7 @@ export function updateProject(
      * it never replaces an icon someone chose, including their choice of
      * none. Otherwise (the default) `icon` is someone's choice. */
     iconChosen?: boolean;
+    doneClearedAt?: number | null;
   },
   source: AuditOrigin,
 ): Project {
@@ -529,6 +530,19 @@ export function updateProject(
       // Choosing the icon it already had (Jev's) is still a choice.
       if (normalized === existing.icon) changes.push(normalized ? "chose icon" : "chose no icon");
     }
+  }
+  if (
+    patch.doneClearedAt !== undefined &&
+    patch.doneClearedAt !== existing.doneClearedAt
+  ) {
+    next.doneClearedAt = patch.doneClearedAt;
+    // A later time clears; an earlier one is an undo bringing them back.
+    changes.push(
+      patch.doneClearedAt !== null &&
+        patch.doneClearedAt > (existing.doneClearedAt ?? 0)
+        ? "moved done items to Done"
+        : "moved done items back to the list",
+    );
   }
   if (Object.keys(next).length === 0) return existing;
 
