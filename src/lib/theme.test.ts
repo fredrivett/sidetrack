@@ -1,12 +1,26 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { setTheme, THEME_INIT_SCRIPT } from "./theme";
+
+/** The channels loaded pages listen on, closed after each test. */
+const pageChannels: BroadcastChannel[] = [];
 
 /** What the page loads as, given the cookies: the inline script's result. */
 function loadPage(): string | undefined {
   document.head.innerHTML = "";
   delete document.documentElement.dataset.theme;
-  new Function(THEME_INIT_SCRIPT)();
+  const Channel = globalThis.BroadcastChannel;
+  globalThis.BroadcastChannel = class extends Channel {
+    constructor(name: string) {
+      super(name);
+      pageChannels.push(this);
+    }
+  };
+  try {
+    new Function(THEME_INIT_SCRIPT)();
+  } finally {
+    globalThis.BroadcastChannel = Channel;
+  }
   return document.documentElement.dataset.theme;
 }
 
@@ -20,6 +34,10 @@ describe("theme", () => {
   beforeEach(() => {
     document.cookie = "theme=; path=/; max-age=0";
     document.cookie = "xtheme=; path=/; max-age=0";
+  });
+
+  afterEach(() => {
+    pageChannels.splice(0).forEach((c) => c.close());
   });
 
   it("keeps the chosen theme across a reload", () => {
