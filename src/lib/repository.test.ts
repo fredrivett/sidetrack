@@ -9,6 +9,7 @@ describe("normalizeRepository", () => {
     ["github.com/fredrivett/sidetrack.git", "fredrivett/sidetrack"],
     ["https://www.github.com/fredrivett/sidetrack/pull/191", "fredrivett/sidetrack"],
     ["git@github.com:fredrivett/side.track.git", "fredrivett/side.track"],
+    ["ssh://git@github.com/fredrivett/sidetrack.git", "fredrivett/sidetrack"],
     ["https://github.com/fredrivett/sidetrack?tab=readme", "fredrivett/sidetrack"],
   ])("reads %j as %j", (raw, expected) => {
     expect(normalizeRepository(raw)).toBe(expected);

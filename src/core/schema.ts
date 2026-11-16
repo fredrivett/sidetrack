@@ -122,7 +122,8 @@ export const projects = sqliteTable(
     // The GitHub repository the list's code lives in, as "owner/repo"
     // (normalizeRepository), so an agent started on one of its items knows
     // what to check out. Only the list's admin sets it (isListAdmin), since it
-    // decides where agents work. null = none, and no agent can be started.
+    // decides where agents work. null = none: nobody can start an agent on
+    // its items from Sidetrack, though an agent can still start_work itself.
     repository: text("repository"),
     // Optional project icon: either an emoji grapheme (e.g. "🚀") or an
     // absolute http(s) image URL. Null falls back to the homepage favicon

@@ -286,8 +286,12 @@ describe("projects", () => {
     expect(() =>
       updateProject(db, u, p.id, { repository: "gitlab.com/a/b" }, "web"),
     ).toThrow(/invalid repository/);
+    updateProject(db, u, p.id, { repository: "fredrivett/abode" }, "web");
+    expect(listAudit(db, u)[0].detail).toBe(
+      "Sidetrack: repository fredrivett/sidetrack→fredrivett/abode",
+    );
     expect(updateProject(db, u, p.id, { repository: null }, "web").repository).toBeNull();
-    expect(listAudit(db, u)[0].detail).toBe("Sidetrack: cleared repository");
+    expect(listAudit(db, u)[0].detail).toBe("Sidetrack: cleared repository fredrivett/abode");
   });
 
   it("sets an emoji icon, normalizes an image-URL icon, then clears it", () => {

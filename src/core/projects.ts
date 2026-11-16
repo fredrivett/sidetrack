@@ -493,7 +493,11 @@ export function updateProject(
       }
       next.repository = normalized;
       changes.push(
-        normalized === null ? "cleared repository" : `set repository to ${normalized}`,
+        normalized === null
+          ? `cleared repository ${existing.repository}`
+          : existing.repository
+            ? `repository ${existing.repository}→${normalized}`
+            : `set repository to ${normalized}`,
       );
     }
   }

@@ -8,7 +8,7 @@ const REPO = /^[A-Za-z0-9._-]{1,100}$/;
  * Normalize what someone pastes for a repository to "owner/repo". Accepts
  * "owner/repo", a github.com URL (with or without a scheme, a trailing ".git",
  * or a path past the repo, such as /pull/12) and an SSH remote
- * ("git@github.com:owner/repo.git"). Blank → null (the field is cleared).
+ * ("git@github.com:owner/repo.git", "ssh://git@github.com/owner/repo"). Blank → null (the field is cleared).
  * Throws on anything else, including another host, since only GitHub
  * repositories can be checked out today.
  */
@@ -16,7 +16,7 @@ export function normalizeRepository(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
   const path = trimmed
-    .replace(/^git@github\.com:/i, "")
+    .replace(/^(?:ssh:\/\/)?git@github\.com[:/]/i, "")
     .replace(/^(?:https?:\/\/)?(?:www\.)?github\.com\//i, "");
   const [owner, rawRepo] = path.split(/[/?#]/);
   const repo = rawRepo?.replace(/\.git$/i, "");
