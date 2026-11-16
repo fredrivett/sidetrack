@@ -2,7 +2,9 @@
 
 import { useEffect, useOptimistic, useRef, useState, useTransition } from "react";
 
+import type { AssigneeView } from "@/core/members";
 import { cn } from "@/lib/utils";
+import { MentionTextarea } from "./MentionTextarea";
 
 export function EditableText({
   value,
@@ -16,6 +18,7 @@ export function EditableText({
   inputClassName = "",
   renderValue,
   onDraftChange,
+  mentions,
 }: {
   value: string;
   /** Saves the new text. Wrap the action in runAction, so a failure toasts
@@ -39,6 +42,9 @@ export function EditableText({
   /** The text as it's typed, then null once the edit is over (after the
    * save lands, for a change), e.g. so an emoji follows a title being typed. */
   onDraftChange?: (draft: string | null) => void;
+  /** Multiline only: typing `@` suggests these people to mention, as the
+   * new-comment box does. */
+  mentions?: AssigneeView[];
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -115,10 +121,11 @@ export function EditableText({
 
   if (multiline) {
     return (
-      <textarea
+      <MentionTextarea
         ref={ref as React.RefObject<HTMLTextAreaElement>}
+        people={mentions ?? []}
         value={draft}
-        onChange={(e) => type(e.target.value)}
+        onValueChange={type}
         onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === "Escape") cancel();
