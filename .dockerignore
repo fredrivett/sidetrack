@@ -9,3 +9,5 @@ README.md
 *.log
 .DS_Store
 scripts
+CONTRIBUTING.md
+docs
