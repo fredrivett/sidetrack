@@ -535,6 +535,15 @@ export function updateProject(
     patch.doneClearedAt !== undefined &&
     patch.doneClearedAt !== existing.doneClearedAt
   ) {
+    // A time from the future would keep sending items finished later to Done.
+    if (
+      patch.doneClearedAt !== null &&
+      !(Number.isSafeInteger(patch.doneClearedAt) &&
+        patch.doneClearedAt >= 0 &&
+        patch.doneClearedAt <= Date.now())
+    ) {
+      throw new Error("invalid done-cleared time");
+    }
     next.doneClearedAt = patch.doneClearedAt;
     // A later time clears; an earlier one is an undo bringing them back.
     changes.push(
