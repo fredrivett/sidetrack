@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "62560e60-cc57-4b96-8acf-b3508e862339",
+  "id": "11bc676a-2a8d-4f3f-aaa0-78a99251581f",
   "prevId": "f63c5716-3fad-4040-b7e6-629c1e665af0",
   "tables": {
     "agent_sessions": {
@@ -377,6 +377,13 @@
           "name": "comments_item_created",
           "columns": [
             "item_id",
+            "created_at"
+          ],
+          "isUnique": false
+        },
+        "comments_created": {
+          "name": "comments_created",
+          "columns": [
             "created_at"
           ],
           "isUnique": false
@@ -978,13 +985,6 @@
         },
         "homepage_url": {
           "name": "homepage_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "repository": {
-          "name": "repository",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

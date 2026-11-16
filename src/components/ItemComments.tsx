@@ -127,14 +127,18 @@ export function ItemComments({
         shown.length > 0 && (
           <ul className="space-y-2">
             {shown.map((c) => (
-              <CommentRow
+              <CommentCard
                 key={c.id}
                 comment={c}
-                mine={c.userId === viewerId}
-                onEdited={(comment) =>
-                  change((cur) => cur.map((x) => (x.id === comment.id ? comment : x)))
+                own={
+                  c.userId === viewerId
+                    ? {
+                        onEdited: (comment) =>
+                          change((cur) => cur.map((x) => (x.id === comment.id ? comment : x))),
+                        onDelete: () => remove(c.id),
+                      }
+                    : undefined
                 }
-                onDelete={() => remove(c.id)}
               />
             ))}
           </ul>
@@ -149,16 +153,23 @@ export function ItemComments({
   );
 }
 
-function CommentRow({
+/**
+ * One comment as a card: who wrote it and when, then what it says. `own`
+ * makes it editable in place with a ⋯ menu to delete it, for the viewer's own
+ * comments on the item they're looking at. `context` goes between the header
+ * and the text, such as the item a comment is on in a feed across items.
+ */
+export function CommentCard({
   comment: c,
-  mine,
-  onEdited,
-  onDelete,
+  own,
+  context,
+  clamp = false,
 }: {
   comment: CommentView;
-  mine: boolean;
-  onEdited: (comment: CommentView) => void;
-  onDelete: () => void;
+  own?: { onEdited: (comment: CommentView) => void; onDelete: () => void };
+  context?: React.ReactNode;
+  /** Cut it off after a few lines, so a long comment can't fill a feed. */
+  clamp?: boolean;
 }) {
   const users = c.author ? [c.author] : [];
   const agents = c.agentName ? [{ id: c.id, name: c.agentName }] : [];
@@ -182,7 +193,7 @@ function CommentRow({
           {formatRelative(c.createdAt)}
           {c.editedAt !== null ? " (edited)" : ""}
         </span>
-        {mine && (
+        {own && (
           <DropdownMenu>
             <DropdownMenuTrigger
               aria-label="Comment actions"
@@ -193,7 +204,7 @@ function CommentRow({
               <MoreHorizontal className="size-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem variant="destructive" onClick={onDelete}>
+              <DropdownMenuItem variant="destructive" onClick={own.onDelete}>
                 <Trash2 />
                 Delete comment
               </DropdownMenuItem>
@@ -201,14 +212,17 @@ function CommentRow({
           </DropdownMenu>
         )}
       </div>
-      <div className="mt-1 break-words text-sm text-neutral-700 dark:text-neutral-200">
-        {mine ? (
+      {context}
+      <div
+        className={`mt-1 break-words text-sm text-neutral-700 dark:text-neutral-200 ${clamp ? "line-clamp-6" : ""}`}
+      >
+        {own ? (
           // Your own comments edit in place, like the description: click,
           // then ⌘Enter or click away to save.
           <EditableText
             value={c.body}
             onSave={(next) =>
-              runAction(updateCommentAction(c.id, next).then(onEdited), "save the comment")
+              runAction(updateCommentAction(c.id, next).then(own.onEdited), "save the comment")
             }
             multiline
             required

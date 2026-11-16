@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ApiKeysPanel } from "@/components/ApiKeysPanel";
+import { listAgentWebhooks } from "@/core/agentWebhooks";
 import { listApiKeys } from "@/core/api-keys";
 import { getDb } from "@/core/db";
 import { requireUserId } from "@/auth/session";
@@ -30,7 +31,7 @@ export default async function ApiKeysPage() {
             <code className="font-mono">/mcp</code> URL.
           </p>
         </header>
-        <ApiKeysPanel initial={keys} />
+        <ApiKeysPanel initial={keys} webhooks={listAgentWebhooks(db, userId)} />
       </div>
     </main>
   );
