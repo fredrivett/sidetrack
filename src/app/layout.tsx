@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { getEnv } from "@/lib/env";
 import { PHYSICAL_KEYBOARD_STORAGE_KEY } from "@/lib/keyboard";
 import { STARTUP_IMAGES } from "@/lib/startupImages";
+import { THEME_INIT_SCRIPT } from "@/lib/theme";
 import { fontVariables } from "./fonts";
 import { SITE_DESCRIPTION } from "./site";
 import "./globals.css";
@@ -53,24 +54,24 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#fafafa" },
-    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
-  ],
+  // No themeColor: the theme script writes it, to follow the chosen theme
+  // (applyTheme in lib/theme).
 };
 
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    // suppressHydrationWarning: the inline script below may add
-    // data-physical-keyboard before React hydrates.
+    // suppressHydrationWarning: the inline scripts below add data-theme and
+    // may add data-physical-keyboard before React hydrates.
     <html
       lang="en"
       className={`${fontVariables} h-full antialiased`}
       suppressHydrationWarning
     >
       <head>
+        {/* Applies the chosen theme before first paint, on every page. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         {/* Restores PhysicalKeyboard's mark before first paint, so touch
             devices with a keyboard don't flash their shortcut hints in. */}
         <script

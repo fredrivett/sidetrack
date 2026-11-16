@@ -2,6 +2,20 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/* Dark mode follows the theme the user picks (src/lib/theme.ts), set on
+   <html data-theme>: "dark" forces it, "light" turns it off, and anything
+   else, "system" or no script, follows the OS, live. */
+@custom-variant dark {
+  &:where(:root[data-theme="dark"], :root[data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+}
+
 
 @theme inline {
   --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
@@ -124,10 +138,12 @@ body {
   --space-tint: 0.945;
   --space-swatch: 0.86;
   --space-chroma: 1;
+  /* Native controls and scrollbars match the theme too. */
+  color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
+:root {
+  @variant dark {
     --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
@@ -162,6 +178,7 @@ body {
   --space-tint: 0.185;
   --space-swatch: 0.42;
   --space-chroma: 0.9;
+  color-scheme: dark;
   }
 }
 
