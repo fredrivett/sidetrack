@@ -194,10 +194,14 @@ export const EMOJI_OPTIONS: Record<string, string> = {
   "🧰": "toolkit, resources, essentials",
 };
 
-// Up to three suggestions, each at least this likely, so the row shows a few
-// real candidates rather than the long tail of a flat distribution.
-const MAX_SUGGESTIONS = 3;
+// Jev's single pick is usually near-certain (🏃 at 100% for "Marathon
+// training"), so its runners-up, each at least MIN_PROBABILITY, rarely add
+// any. Alongside it Jev rates every emoji on its own ("would 💪 fit?"), and
+// each it rates at least MIN_FIT follows the pick, so there are alternatives
+// to choose from. The pick stays first: it's better at the single best one.
 const MIN_PROBABILITY = 0.05;
+const MIN_FIT = 0.7;
+const fitId = (emoji: string) => `fits:${emoji}`;
 
 export interface IconContext {
   name: string;
@@ -234,6 +238,7 @@ export function suggestEmoji(
       website: domainOf(context.homepageUrl),
     },
     "Which emoji best represents this to-do list as its icon?",
+    "Would `emoji` be a fitting icon for this to-do list?",
     apiKey,
     fetchImpl,
   );
@@ -248,6 +253,7 @@ export function suggestLabelEmoji(
   return ask(
     { label: context.name, list_name: context.listName },
     "Which emoji best represents this label, used to tag tasks on the to-do list?",
+    "Would `emoji` be a fitting icon for this label, used to tag tasks on the to-do list?",
     apiKey,
     fetchImpl,
   );
@@ -256,23 +262,45 @@ export function suggestLabelEmoji(
 async function ask(
   state: unknown,
   instructions: string,
+  /** The same as a yes/no question about one `emoji`. */
+  fitQuestion: string,
   apiKey: string,
   fetchImpl: typeof fetch,
 ): Promise<string[]> {
+  const emoji = Object.keys(EMOJI_OPTIONS);
   const answers = await askJev(
     state,
-    { icon: { type: "choice", instructions, criteria: EMOJI_OPTIONS } },
+    {
+      icon: { type: "choice", instructions, criteria: EMOJI_OPTIONS },
+      ...Object.fromEntries(
+        emoji.map((e) => [
+          fitId(e),
+          {
+            type: "noul" as const,
+            instructions: {
+              emoji: e,
+              meaning: EMOJI_OPTIONS[e],
+              question: fitQuestion,
+            },
+          },
+        ]),
+      ),
+    },
     apiKey,
     fetchImpl,
   );
-  const probabilities = answers?.icon ?? {};
-  return Object.entries(probabilities)
-    .filter(
-      ([emoji, p]) => Object.hasOwn(EMOJI_OPTIONS, emoji) && p >= MIN_PROBABILITY,
-    )
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, MAX_SUGGESTIONS)
-    .map(([emoji]) => emoji);
+  if (!answers) return [];
+  const ranked = (scores: [string, number][], min: number) =>
+    scores
+      .filter(([e, p]) => Object.hasOwn(EMOJI_OPTIONS, e) && p >= min)
+      .sort((a, b) => b[1] - a[1])
+      .map(([e]) => e);
+  const picks = ranked(Object.entries(answers.icon ?? {}), MIN_PROBABILITY);
+  const fits = ranked(
+    emoji.map((e) => [e, answers[fitId(e)]?.true ?? 0]),
+    MIN_FIT,
+  );
+  return [...new Set([...picks, ...fits])];
 }
 
 // An emoji nobody chose follows Jev's top suggestion for the text it goes
