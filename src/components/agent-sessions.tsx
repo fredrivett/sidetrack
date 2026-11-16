@@ -3,11 +3,16 @@
 import {
   createContext,
   type ReactNode,
+  type TransitionStartFunction,
+  useCallback,
   useContext,
   useMemo,
   useSyncExternalStore,
 } from "react";
-import type { AgentSession } from "@/core/schema";
+import { startAgentAction, stopAgentAction } from "@/app/actions";
+import type { StartableAgent } from "@/core/agentSessions";
+import type { AgentSession, Item } from "@/core/schema";
+import { runAction } from "./run-action";
 import type { AgentAvatarView } from "./UserAvatar";
 
 /** An agent with no report for this long shows as idle rather than working. */
@@ -18,6 +23,11 @@ const TICK_MS = 60_000;
 // (useItemAgentSessions) instead of being passed down through every view.
 const SessionsContext = createContext<Record<string, AgentSession[]>>({});
 const NO_SESSIONS: AgentSession[] = [];
+// The viewer's agents Sidetrack can start, and the lists they may start them on.
+const StartableContext = createContext<{
+  agents: StartableAgent[];
+  lists: ReadonlySet<string>;
+}>({ agents: [], lists: new Set() });
 
 // One minute clock for every agent on the page, so working turns idle on time.
 let now = Date.now();
@@ -65,9 +75,13 @@ function useMinuteClock(active: boolean): number | null {
  */
 export function AgentSessionsProvider({
   sessions,
+  startable = [],
+  startableIn = [],
   children,
 }: {
   sessions: AgentSession[];
+  startable?: StartableAgent[];
+  startableIn?: string[];
   children: ReactNode;
 }) {
   const byItem = useMemo(() => {
@@ -75,7 +89,57 @@ export function AgentSessionsProvider({
     for (const s of sessions) (map[s.itemId] ??= []).push(s);
     return map;
   }, [sessions]);
-  return <SessionsContext value={byItem}>{children}</SessionsContext>;
+  // Joined so the set (and every picker) only changes when the lists do.
+  const listsKey = startableIn.join(",");
+  const startableValue = useMemo(
+    () => ({ agents: startable, lists: new Set(listsKey ? listsKey.split(",") : []) }),
+    [startable, listsKey],
+  );
+  return (
+    <SessionsContext value={byItem}>
+      <StartableContext value={startableValue}>{children}</StartableContext>
+    </SessionsContext>
+  );
+}
+
+/** One of the viewer's agents as the assignee picker lists it. */
+export type AgentOption = StartableAgent & { working: boolean };
+
+/**
+ * The viewer's agents for an item's assignee picker, and how to start or stop
+ * one. They're offered where the viewer can start them (see AgentSessionsProvider);
+ * one already working stays listed anywhere, so it can always be stopped.
+ * The change holds: `start` is the item's transition, which dims it until the
+ * agent's webhook answers, and a failure says so in a toast.
+ */
+export function useAgentAssignment(
+  item: Pick<Item, "id" | "projectId">,
+  start: TransitionStartFunction,
+): { agentOptions: AgentOption[]; setAgent: (keyId: string, on: boolean) => void } {
+  const startable = useContext(StartableContext);
+  const sessions = useContext(SessionsContext)[item.id] ?? NO_SESSIONS;
+  const canStart = startable.lists.has(item.projectId);
+  const agentOptions = useMemo(() => {
+    const working = new Set(
+      sessions.filter((s) => s.finishedAt === null).map((s) => s.agentKeyId),
+    );
+    return startable.agents
+      .filter((a) => canStart || working.has(a.keyId))
+      .map((a) => ({ ...a, working: working.has(a.keyId) }));
+  }, [startable.agents, sessions, canStart]);
+  const setAgent = useCallback(
+    (keyId: string, on: boolean) => {
+      const name = startable.agents.find((a) => a.keyId === keyId)?.name ?? "the agent";
+      start(async () => {
+        await runAction(
+          on ? startAgentAction(item.id, keyId) : stopAgentAction(item.id, keyId),
+          `${on ? "start" : "stop"} ${name}`,
+        );
+      });
+    },
+    [startable.agents, start, item.id],
+  );
+  return { agentOptions, setAgent };
 }
 
 /**

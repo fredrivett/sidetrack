@@ -2,7 +2,8 @@ import { cookies } from "next/headers";
 import { AgentSessionsProvider } from "@/components/agent-sessions";
 import { Kanban } from "@/components/Kanban";
 import { LiveUpdates } from "@/components/LiveUpdates";
-import { listAllAgentSessions } from "@/core/agentSessions";
+import { isListAdmin } from "@/core/access";
+import { listAllAgentSessions, listStartableAgents } from "@/core/agentSessions";
 import { listCategories } from "@/core/categories";
 import { getDb } from "@/core/db";
 import { projectRefPrefixes } from "@/core/itemRef";
@@ -65,7 +66,15 @@ export default async function Home({
 
   return (
     // Agents' work sessions reach every row and detail dialog in every view.
-    <AgentSessionsProvider sessions={listAllAgentSessions(db, userId)}>
+    <AgentSessionsProvider
+      sessions={listAllAgentSessions(db, userId)}
+      startable={listStartableAgents(db, userId)}
+      // The lists the viewer can start an agent on: theirs to admin, with a
+      // repository for it to work in (core checks the same).
+      startableIn={projects
+        .filter((p) => p.repository && isListAdmin(db, userId, p))
+        .map((p) => p.id)}
+    >
       <Kanban
         viewerId={userId}
         viewer={getProfile(db, userId)}

@@ -11,6 +11,10 @@ import {
   removeAgentWebhook as removeAgentWebhookCore,
   setAgentWebhook as setAgentWebhookCore,
 } from "@/core/agentWebhooks";
+import {
+  requestWork as requestWorkCore,
+  stopWork as stopWorkCore,
+} from "@/core/agentSessions";
 import { listAudit as listAuditCore } from "@/core/audit";
 import {
   addGithubWebhookSecret as addGithubWebhookSecretCore,
@@ -86,6 +90,7 @@ import {
   setUsername as setUsernameCore,
 } from "@/core/users";
 import { getCurrentSession, requireUserId } from "@/auth/session";
+import { sendAgentRequest } from "@/lib/agentRequest";
 import { notifyInvite } from "@/lib/email";
 import { suggestEmoji } from "@/lib/emojiSuggest";
 import { getEnv } from "@/lib/env";
@@ -701,4 +706,35 @@ export async function removeAgentWebhookAction(keyId: string) {
   const { db } = getDb();
   removeAgentWebhookCore(db, userId, keyId, SOURCE);
   revalidatePath("/settings/keys");
+}
+
+/**
+ * Start one of the viewer's agents on an item (assigning it in the picker).
+ * The session opens first, so the board shows the agent at once; if its
+ * webhook can't be reached, the session ends again and this throws.
+ */
+export async function startAgentAction(itemId: string, keyId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const { request } = requestWorkCore(db, userId, itemId, keyId, SOURCE);
+  try {
+    if (request) await sendAgentRequest(request);
+  } catch (e) {
+    stopWorkCore(db, userId, itemId, keyId, SOURCE, (e as Error).message);
+    refresh();
+    throw e;
+  }
+  refresh();
+}
+
+/**
+ * Stop one of the viewer's agents on an item (unassigning it). The session
+ * ends here whatever happens; this throws if the agent couldn't be told.
+ */
+export async function stopAgentAction(itemId: string, keyId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const request = stopWorkCore(db, userId, itemId, keyId, SOURCE);
+  refresh();
+  if (request) await sendAgentRequest(request);
 }

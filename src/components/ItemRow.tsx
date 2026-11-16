@@ -63,7 +63,7 @@ import { useOptimisticAssignees } from "./use-optimistic-assignees";
 import { useItemChanges } from "./use-optimistic-items";
 import { useCopyItemRef } from "./useCopyItemRef";
 import { agentLabel, AvatarStack, assigneeNames } from "./UserAvatar";
-import { useItemAgentSessions } from "./agent-sessions";
+import { useAgentAssignment, useItemAgentSessions } from "./agent-sessions";
 import { runAction } from "./run-action";
 
 /** Drag wiring from the sortable wrapper that owns this row (see DraggableItemList). */
@@ -141,6 +141,7 @@ export function ItemRow({
   );
   // Agents working on it lead the stack, ahead of the people assigned.
   const { agents } = useItemAgentSessions(item.id);
+  const { agentOptions, setAgent } = useAgentAssignment(item, start);
 
   // ⌘./Ctrl+. copies the ref while the card is hovered (Linear's shortcut),
   // deferring to an open detail dialog so we don't copy the wrong ref. The
@@ -377,6 +378,8 @@ export function ItemRow({
                 assignees={assignees}
                 viewerId={viewerId}
                 onChange={assign}
+                agents={agentOptions}
+                onAgentChange={setAgent}
               />
             </DropdownMenuContent>
           </DropdownMenu>
@@ -423,6 +426,8 @@ export function ItemRow({
               assignees={assignees}
               viewerId={viewerId}
               onChange={assign}
+              agents={agentOptions}
+              onAgentChange={setAgent}
             />
           </ContextMenuSubContent>
         </ContextMenuSub>

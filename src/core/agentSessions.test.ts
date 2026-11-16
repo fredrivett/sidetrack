@@ -4,12 +4,16 @@ import {
   finishWork,
   listAllAgentSessions,
   reportWork,
+  requestWork,
   startWork,
+  stopWork,
 } from "./agentSessions";
+import { removeAgentWebhook, setAgentWebhook } from "./agentWebhooks";
+import { createApiKey } from "./api-keys";
 import { listAudit } from "./audit";
 import { addItem, completeItem, getItem } from "./items";
 import { acceptInvite, inviteMember } from "./members";
-import { createProject } from "./projects";
+import { createProject, updateProject } from "./projects";
 import { createTestDb, createTestUser } from "./test-helpers";
 
 const AMP: AgentOrigin = { source: "mcp", agent: { keyId: "key-amp", name: "Amp" } };
@@ -217,5 +221,107 @@ describe("completing an item", () => {
     const sessions = listAllAgentSessions(db, userId);
     expect(sessions.map((s) => s.itemId).sort()).toEqual([itemId, child.id].sort());
     expect(sessions.map((s) => s.finishedAt)).not.toContain(null);
+  });
+});
+
+describe("requestWork and stopWork", () => {
+  // fred's Amp key, set to start work, on a list with a repository.
+  function seedAgent() {
+    const s = seed();
+    const { record } = createApiKey(s.db, s.userId, "Amp", "web");
+    setAgentWebhook(s.db, s.userId, record.id, "https://hooks.example.com/amp", "web");
+    updateProject(s.db, s.userId, s.projectId, { repository: "fredrivett/sidetrack" }, "web");
+    return { ...s, keyId: record.id };
+  }
+
+  it("opens a starting session and returns a start request, which start_work then resumes", () => {
+    const { db, userId, itemId, keyId } = seedAgent();
+    const { session, request } = requestWork(db, userId, itemId, keyId, "web");
+
+    expect(session).toMatchObject({ agentKeyId: keyId, agentName: "Amp", threadUrl: null });
+    expect(request).toEqual({
+      url: "https://hooks.example.com/amp",
+      secret: expect.stringMatching(/^[0-9a-f]{64}$/),
+      idempotencyKey: session.id,
+      body: {
+        type: "start",
+        sessionId: session.id,
+        itemId,
+        ref: "SID-1",
+        repository: "fredrivett/sidetrack",
+      },
+    });
+    // People's assignments are left alone; the agent shows by its session.
+    expect(getItem(db, userId, itemId)?.assigneeIds).toEqual([]);
+    expect(listAudit(db, userId)[0]).toMatchObject({
+      source: "web",
+      action: "start",
+      detail: 'asked Amp to work on "Ship it"',
+    });
+
+    // Assigning it again changes nothing and sends nothing.
+    const logged = listAudit(db, userId).length;
+    expect(requestWork(db, userId, itemId, keyId, "web")).toEqual({ session, request: null });
+    expect(listAudit(db, userId).length).toBe(logged);
+
+    // The started thread calls start_work with the same key: same session.
+    const agent: AgentOrigin = { source: "mcp", agent: { keyId, name: "Amp" } };
+    const resumed = startWork(db, userId, itemId, { threadUrl: THREAD }, agent);
+    expect(resumed).toMatchObject({ id: session.id, threadUrl: THREAD });
+  });
+
+  it("ends the session on stop, refusing the agent's later reports", () => {
+    const { db, userId, itemId, keyId } = seedAgent();
+    const { session } = requestWork(db, userId, itemId, keyId, "web");
+
+    const request = stopWork(db, userId, itemId, keyId, "web");
+    expect(request).toMatchObject({
+      idempotencyKey: `${session.id}:stop`,
+      body: { type: "stop", sessionId: session.id, itemId, ref: "SID-1" },
+    });
+    expect(listAllAgentSessions(db, userId)).toEqual([
+      expect.objectContaining({ id: session.id, finishedAt: expect.any(Number) }),
+    ]);
+    expect(listAudit(db, userId)[0]).toMatchObject({
+      action: "finish",
+      detail: 'stopped Amp on "Ship it"',
+    });
+    const agent: AgentOrigin = { source: "mcp", agent: { keyId, name: "Amp" } };
+    expect(() => reportWork(db, userId, itemId, "Still going", agent)).toThrow(/no open work session/);
+    // Nothing left to stop.
+    expect(stopWork(db, userId, itemId, keyId, "web")).toBeUndefined();
+  });
+
+  it("refuses a member who isn't the list's admin, and lists without a repository", () => {
+    const { db, userId, projectId, itemId, keyId } = seedAgent();
+    const lorna = createTestUser(db, { username: "lorna" });
+    inviteMember(db, userId, projectId, "lorna", "web");
+    acceptInvite(db, lorna, projectId, "web");
+    const { record } = createApiKey(db, lorna, "Lorna's Amp", "web");
+    setAgentWebhook(db, lorna, record.id, "https://hooks.example.com/lorna", "web");
+
+    expect(() => requestWork(db, lorna, itemId, record.id, "web")).toThrow(/only the list's admin/);
+    // Nor can anyone start someone else's agent.
+    expect(() => requestWork(db, lorna, itemId, keyId, "web")).toThrow(/only the list's admin/);
+    expect(() => requestWork(db, userId, itemId, record.id, "web")).toThrow(/agent not found/);
+
+    updateProject(db, userId, projectId, { repository: null }, "web");
+    expect(() => requestWork(db, userId, itemId, keyId, "web")).toThrow(/no repository/);
+    completeItem(db, userId, itemId, "web");
+    updateProject(db, userId, projectId, { repository: "fredrivett/sidetrack" }, "web");
+    expect(() => requestWork(db, userId, itemId, keyId, "web")).toThrow(/completed/);
+    expect(listAllAgentSessions(db, userId)).toEqual([]);
+  });
+
+  it("refuses a key that isn't set to start work, but still stops one whose webhook went", () => {
+    const { db, userId, itemId, keyId } = seedAgent();
+    const { record } = createApiKey(db, userId, "Claude", "web");
+    expect(() => requestWork(db, userId, itemId, record.id, "web")).toThrow(/isn't set to start/);
+
+    requestWork(db, userId, itemId, keyId, "web");
+    removeAgentWebhook(db, userId, keyId, "web");
+    // Ended, with no webhook left to tell.
+    expect(stopWork(db, userId, itemId, keyId, "web")).toBeNull();
+    expect(listAllAgentSessions(db, userId)[0].finishedAt).not.toBeNull();
   });
 });
