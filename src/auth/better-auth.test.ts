@@ -16,6 +16,7 @@ vi.mock("@/lib/email", () => ({
   sendPasswordResetEmail: async ({ url }: { url: string }) => {
     mail.resetUrls.push(url);
   },
+  notifySignup: async () => {},
 }));
 
 type Auth = (typeof import("./better-auth"))["auth"];

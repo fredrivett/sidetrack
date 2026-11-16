@@ -255,6 +255,53 @@ export async function notifyMentions(
   );
 }
 
+/** A new account, for the operator's signup notice. */
+export interface SignupNotice {
+  to: string;
+  name: string;
+  email: string;
+  username: string | null | undefined;
+  /** Where this account falls in signup order: the instance's Nth user. */
+  userNumber: number;
+}
+
+/** Pure-dependency core for the signup notice; app code uses `notifySignup`. */
+export async function deliverSignupNotificationEmail(
+  { to, name, email, username, userNumber }: SignupNotice,
+  deps: EmailDeps,
+): Promise<void> {
+  await deliverEmail(
+    {
+      to,
+      subject: `Sidetrack signup #${userNumber}: ${name}`,
+      text:
+        `${name} just signed up to Sidetrack.\n\nUser #${userNumber}` +
+        `\nEmail: ${email}` +
+        (username ? `\nUsername: @${username}` : ""),
+      logLine: `[email] no SMTP_URL or RESEND_API_KEY set — new signup: ${email}`,
+      errorLabel: "signup notification email",
+    },
+    deps,
+  );
+}
+
+/**
+ * Tells the operator (SIGNUP_NOTIFY_EMAIL) about a new account, best-effort
+ * like `notifyInvite`: the account already exists, so a failed send is logged
+ * and swallowed. Sends nothing when SIGNUP_NOTIFY_EMAIL is unset.
+ */
+export async function notifySignup(
+  user: Omit<SignupNotice, "to">,
+): Promise<void> {
+  const to = getEnv().SIGNUP_NOTIFY_EMAIL;
+  if (!to) return;
+  try {
+    await deliverSignupNotificationEmail({ ...user, to }, liveDeps());
+  } catch (err) {
+    console.error("[signup] notification email failed:", err);
+  }
+}
+
 // Drop any embedded credentials (smtp://user:pass@host) before a URL reaches
 // a log line, keeping only scheme + host:port for diagnostics. Falls back to a
 // generic label if the value somehow doesn't parse as a URL.

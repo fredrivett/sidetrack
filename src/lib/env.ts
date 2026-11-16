@@ -61,6 +61,8 @@ export interface ServerEnv {
   SMTP_URL: string | undefined;
   RESEND_API_KEY: string | undefined;
   EMAIL_FROM: string | undefined;
+  // Where to email a notice of each new signup. Unset sends none.
+  SIGNUP_NOTIFY_EMAIL: string | undefined;
   // TypeSafe Jev key for AI list-icon suggestions. Unset turns them off.
   TYPESAFE_API_KEY: string | undefined;
 }
@@ -113,6 +115,7 @@ function schemaFor(mode: EnvMode) {
       SMTP_URL: optionalTrimmed,
       RESEND_API_KEY: optionalTrimmed,
       EMAIL_FROM: optionalTrimmed,
+      SIGNUP_NOTIFY_EMAIL: optionalTrimmed,
       TYPESAFE_API_KEY: optionalTrimmed,
     })
     .superRefine((env, ctx) => {
@@ -178,6 +181,7 @@ function schemaFor(mode: EnvMode) {
           : undefined),
       RESEND_API_KEY: env.RESEND_API_KEY,
       EMAIL_FROM: env.EMAIL_FROM,
+      SIGNUP_NOTIFY_EMAIL: env.SIGNUP_NOTIFY_EMAIL,
       TYPESAFE_API_KEY: env.TYPESAFE_API_KEY,
     }));
 }
