@@ -1,12 +1,11 @@
 "use client";
 
-import { ArrowLeft, ArrowLeftToLine, ArrowRight, ArrowRightToLine } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { MoveMenuItems } from "./MoveMenuItems";
 
 /**
  * A tray's ⋯ menu (a Space's, or Personal's): its moves among the board's
@@ -45,22 +44,13 @@ export function SpaceMenu({
         ⋯
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
-        <DropdownMenuItem disabled={!prevId} onClick={() => onMove(`before:${firstId}`)}>
-          <ArrowLeftToLine />
-          Move to start
-        </DropdownMenuItem>
-        <DropdownMenuItem disabled={!prevId} onClick={() => onMove(`before:${prevId}`)}>
-          <ArrowLeft />
-          Move left
-        </DropdownMenuItem>
-        <DropdownMenuItem disabled={!nextId} onClick={() => onMove(`after:${nextId}`)}>
-          <ArrowRight />
-          Move right
-        </DropdownMenuItem>
-        <DropdownMenuItem disabled={!nextId} onClick={() => onMove(`after:${lastId}`)}>
-          <ArrowRightToLine />
-          Move to end
-        </DropdownMenuItem>
+        <MoveMenuItems
+          prevId={prevId}
+          nextId={nextId}
+          firstId={firstId}
+          lastId={lastId}
+          onMove={onMove}
+        />
       </DropdownMenuContent>
     </DropdownMenu>
   );

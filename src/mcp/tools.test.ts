@@ -10,6 +10,7 @@ import {
   createSpace,
   inviteSpaceMember,
   listPendingSpaceInvites,
+  listTrays,
   setSpaceMemberRole,
 } from "@/core/spaces";
 import { createTestDb, createTestUser } from "@/core/test-helpers";
@@ -342,6 +343,28 @@ describe("error results", () => {
     expect(out.data).toEqual({ id: list.id, note: expect.stringMatching(/no longer has access/) });
     expect(getProject(db, fred, list.id)?.spaceId).toBeNull();
     expect(getProject(db, bob, list.id)).toBeUndefined();
+  });
+
+  it("moves a Space or Personal on the caller's board, and refuses a move it can't make", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const eve = createTestUser(db, { username: "eve" });
+    const home = createSpace(db, fred, { name: "Household" }, "web");
+    const work = createSpace(db, fred, { name: "Work" }, "web");
+    const hers = createSpace(db, eve, { name: "Eve's" }, "web");
+    const call = await connectAs(fred);
+
+    const moved = await call("reorder_space", { space_id: "personal", position: `after:${work.id}` });
+    expect(moved.data).toEqual([home.id, work.id, "personal"]);
+    const anchored = await call("reorder_space", { space_id: home.id, position: "after:personal" });
+    expect(anchored.data).toEqual([work.id, "personal", home.id]);
+
+    // Not a Space they've joined, nor an anchor off their board: nothing moves.
+    expect((await call("reorder_space", { space_id: hers.id, position: "start" })).error).toBe(
+      `space not found: ${hers.id}`,
+    );
+    const offBoard = await call("reorder_space", { space_id: home.id, position: `after:${hers.id}` });
+    expect(offBoard.error).toMatch(/anchor not found/);
+    expect(listTrays(db, fred)).toEqual([work.id, "personal", home.id]);
   });
 
   it("returns not found for a list the caller can't see", async () => {

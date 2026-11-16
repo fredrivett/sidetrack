@@ -137,6 +137,7 @@ export function createSpace(
         userId,
         status: "accepted",
         role: "admin",
+        position: nextTrayPosition(tx as unknown as Db, userId),
         createdAt: now,
       })
       .run();
@@ -301,7 +302,7 @@ export function acceptSpaceInvite(
     // Flip only if still pending, so a revoke racing this accept can't be undone.
     const flipped = tx
       .update(spaceMembers)
-      .set({ status: "accepted" })
+      .set({ status: "accepted", position: nextTrayPosition(tx as unknown as Db, userId) })
       .where(and(eq(spaceMembers.id, membership.id), eq(spaceMembers.status, "pending")))
       .run();
     if (flipped.changes === 0) throw new Error("no pending invite for this space");
@@ -503,8 +504,9 @@ export function setProjectSpace(
 }
 
 /** The Spaces `userId` has joined, in their own order, with their role and
- * position in each. Spaces they haven't placed yet (position null: none until
- * their first reorder) follow, oldest first. */
+ * position in each. Memberships from before trays could move have no
+ * position until they're placed (placeTrays); they follow, oldest first, as
+ * the board showed them then. */
 function joinedSpaces(db: Db, userId: string) {
   return db
     .select({ space: spaces, role: spaceMembers.role, position: spaceMembers.position })
@@ -595,7 +597,7 @@ export function reorderSpace(
 
 /** Give each of `userId`'s unplaced trays a position where it shows now
  * (Personal first, Spaces last), and return them all, sorted. */
-// audit-exempt: runs inside reorderSpace's audited transaction.
+// audit-exempt: runs inside its callers' audited transactions.
 function placeTrays(db: Db, userId: string): { id: string; position: string }[] {
   const trays = trayPositions(db, userId);
   const placed = trays.filter((t): t is { id: string; position: string } => t.position !== null);
@@ -610,7 +612,15 @@ function placeTrays(db: Db, userId: string): { id: string; position: string }[] 
   return placed;
 }
 
-// audit-exempt: runs inside reorderSpace's audited transaction.
+/** The position for a Space `userId` creates or joins: after all their
+ * trays, so it shows last, as a new list does. Call it before the membership
+ * is accepted, so it isn't counted among them. */
+// audit-exempt: runs inside createSpace's and acceptSpaceInvite's audited transactions.
+function nextTrayPosition(db: Db, userId: string): string {
+  return resolvePosition(placeTrays(db, userId), "last");
+}
+
+// audit-exempt: runs inside its callers' audited transactions.
 function setTrayPosition(db: Db, userId: string, trayId: string, position: string): void {
   if (trayId === PERSONAL_TRAY) {
     db.update(users).set({ personalTrayPosition: position }).where(eq(users.id, userId)).run();
