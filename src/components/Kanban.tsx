@@ -566,10 +566,6 @@ export function Kanban({
             </div>
           }
         >
-          {/* The count gives way on phones and small tablets, where the header is full. */}
-          <span className="hidden whitespace-nowrap text-xs text-neutral-400 md:inline">
-            {active.length} list{active.length === 1 ? "" : "s"}
-          </span>
           <FilterMenu
             filters={shownFilters}
             onChange={changeFilters}

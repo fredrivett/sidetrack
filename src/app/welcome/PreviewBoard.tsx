@@ -6,6 +6,7 @@ import type { AssigneeView } from "@/core/members";
 import type { AgentSession, Item, Label } from "@/core/schema";
 import { AgentSessionsProvider } from "@/components/agent-sessions";
 import { BoardHeader, BoardRail, ColumnCard } from "@/components/BoardLayout";
+import { FilterMenu } from "@/components/FilterMenu";
 import { type ItemSaves, ItemSavesContext } from "@/components/item-saves";
 import { DraggableItemList, moveItem } from "@/components/ItemList";
 import { LabelsContext } from "@/components/Labels";
@@ -13,12 +14,14 @@ import { ProjectIcon } from "@/components/ProjectIcon";
 import { SpaceTray } from "@/components/SpaceTray";
 import { buttonVariants } from "@/components/ui/button";
 import { useCollapsedItems } from "@/components/use-collapsed-items";
+import { useToday } from "@/components/use-day-start";
 import {
   applyItemChange,
   type ItemChanges,
   ItemChangesContext,
 } from "@/components/use-optimistic-items";
 import { UserAvatar } from "@/components/UserAvatar";
+import { type ItemFilters, matchesFilters, NO_FILTERS, shownInGroups } from "@/lib/filters";
 import { nestItems } from "@/lib/itemTree";
 import { addDays, weekSpan } from "@/lib/time";
 
@@ -197,6 +200,11 @@ const AGENTS = [
   { keyId: "claude", name: "Claude" },
 ];
 const ALL_LISTS = [...PERSONAL, ...HOME].map((l) => l.id);
+// The Filter menu's choices: everyone and every label on the lists.
+const PEOPLE = [FRED, JO, SAM];
+const LABEL_CHOICES = Object.values(LABELS)
+  .flat()
+  .sort((a, b) => a.name.localeCompare(b.name));
 
 /** One of the viewer's agents at work on an item, last heard from then. */
 function agentSession(itemId: string, agentName: string, lastActiveAt: number): AgentSession {
@@ -220,6 +228,7 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
   const [items, setItems] = useState(initial.items);
   const [sessions, setSessions] = useState(initial.sessions);
   const [collapsedTrays, setCollapsedTrays] = useState<ReadonlySet<string>>(new Set());
+  const [filters, setFilters] = useState(NO_FILTERS);
 
   // Finished work needs no agent, as on the server: completing an item ends
   // the sessions on it, and on the sub-items and parent it completes with it.
@@ -346,9 +355,13 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
                 </div>
               }
             >
-              <span className="hidden whitespace-nowrap text-xs text-neutral-400 md:inline">
-                3 lists
-              </span>
+              <FilterMenu
+                filters={filters}
+                onChange={setFilters}
+                people={PEOPLE}
+                labels={LABEL_CHOICES}
+                viewerId={VIEWER}
+              />
               <span className={buttonVariants({ variant: "outline", size: "sm" })}>
                 <History />
                 <span className="hidden sm:inline">Activity</span>
@@ -372,6 +385,7 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
                       key={list.id}
                       list={list}
                       items={items.filter((i) => i.projectId === list.id)}
+                      filters={filters}
                     />
                   ))}
                 </SpaceTray>
@@ -386,8 +400,27 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
 }
 
 /** A list's column as ProjectColumn draws it, without its editing controls. */
-function PreviewColumn({ list, items }: { list: PreviewList; items: Item[] }) {
+function PreviewColumn({
+  list,
+  items,
+  filters,
+}: {
+  list: PreviewList;
+  items: Item[];
+  filters: ItemFilters;
+}) {
   const { collapsed, setCollapsed } = useCollapsedItems(items);
+  const today = useToday();
+  // The rows the filters leave, as ProjectColumn decides them. Finished items
+  // stay in the list here, with no Done section, so "Done today" says
+  // whether they show.
+  const groups = nestItems(items);
+  const shown = shownInGroups(
+    groups,
+    (i, parent) =>
+      (filters.doneToday || i.completedAt === null) &&
+      matchesFilters(i, parent, filters, today),
+  );
   return (
     <ColumnCard
       data-project-id={list.id}
@@ -408,7 +441,8 @@ function PreviewColumn({ list, items }: { list: PreviewList; items: Item[] }) {
       <div className="pt-1.5">
         <DraggableItemList
           projectId={list.id}
-          groups={nestItems(items)}
+          groups={groups}
+          shown={shown}
           collapsed={collapsed}
           onToggleCollapsed={(id) => setCollapsed([id], !collapsed.has(id))}
           onAddItem={noop}
