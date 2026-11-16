@@ -48,19 +48,22 @@ first build takes a few minutes.
    the URL you'll open Sidetrack at:
 
    ```bash
-   [ -f .env ] || cat > .env <<EOF
-   BETTER_AUTH_SECRET=$(openssl rand -hex 32)
-   BETTER_AUTH_URL=http://localhost:3000
-   NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=$(openssl rand -base64 32)
-   EOF
+   touch .env
+   grep -q '^BETTER_AUTH_SECRET=' .env ||
+     echo "BETTER_AUTH_SECRET=$(openssl rand -hex 32)" >> .env
+   grep -q '^BETTER_AUTH_URL=' .env ||
+     echo "BETTER_AUTH_URL=http://localhost:3000" >> .env
+   grep -q '^NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=' .env ||
+     echo "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env
    ```
 
-   This leaves an existing `.env` alone, since new secrets would sign everyone
-   out. `BETTER_AUTH_URL` must be the exact address in your browser's address bar,
-   or sign-in fails. To reach Sidetrack from another device, use that address
-   instead, such as `http://192.168.1.20:3000` or
-   `https://sidetrack.example.com`. Keep `.env` safe: anyone with the secret
-   can forge a session.
+   Each line adds a setting only if `.env` doesn't have it yet, so it's safe to
+   re-run, and it fills in anything an older `.env` lacks. It never replaces a
+   secret, which would sign everyone out. `BETTER_AUTH_URL` must be the exact
+   address in your browser's address bar, or sign-in fails. To reach
+   Sidetrack from another device, use that address instead, such as
+   `http://192.168.1.20:3000` or `https://sidetrack.example.com`. Keep `.env`
+   safe: anyone with the secret can forge a session.
 
 3. Build and start it:
 
