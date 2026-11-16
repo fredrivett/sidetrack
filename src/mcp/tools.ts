@@ -1120,7 +1120,9 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Move item to another list",
       description:
-        "Move an item, with its sub-items, to the top of another list (a sub-item moved on its own leaves its checklist). " +
+        "Move an item, with its sub-items, to another list (a sub-item moved on its own leaves its checklist). " +
+        "It lands at the top of the list unless position says where among its top-level items: top | end | after:<item> | before:<item>, " +
+        "where <item> is a short ref (e.g. \"OPS-12\") or an id of a top-level item in that list. Pass the same position on both calls. " +
         "Moving changes the item's ref: each item that moves gets the next number in the new list, or its old one if it was there before, " +
         "and its old ref keeps working for anyone who can see the list it's in now. " +
         "Call it first without token: that only previews the move and changes nothing. It returns refs (each item's ref now and the one it gets), " +
@@ -1134,6 +1136,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       inputSchema: {
         id: z.string(),
         list_id: z.string(),
+        position: PosRef.optional(),
         missing_labels: z
           .union([
             z.enum(["create", "drop"]),
@@ -1143,11 +1146,14 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         token: z.string().optional(),
       },
     },
-    async ({ id, list_id, missing_labels, token }) => {
+    async ({ id, list_id, position, missing_labels, token }) => {
       const { db } = getDb();
       const { item, error } = resolveItemArg(db, userId, id);
       if (error) return error;
       if (!getProject(db, userId, list_id)) return notFound("list", list_id);
+      // Checked on the preview too, so a bad anchor shows before the user agrees.
+      const pos = resolvePositionArg(db, userId, position, list_id, null);
+      if (pos.error) return pos.error;
       try {
         if (token === undefined) {
           return json({ moved: false, ...previewMoveItem(db, userId, item.id, list_id) });
@@ -1156,7 +1162,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           db,
           userId,
           item.id,
-          { projectId: list_id, token, missingLabels: missing_labels },
+          { projectId: list_id, token, missingLabels: missing_labels, position: pos.position },
           SOURCE,
         );
         // The token is spent: the move changed what it named.
