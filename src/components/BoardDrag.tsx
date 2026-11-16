@@ -255,7 +255,13 @@ export function BoardDrag({
   };
   function close(moved?: boolean) {
     setRequest(null);
-    const dropped = latest.current?.dropped ? latest.current : null;
+    // Only the row dropped for this move: another may still be waiting for
+    // the refresh of one already made.
+    const now = latest.current;
+    const dropped =
+      now?.dropped && now.item.id === request?.item.id && now.to === request.projectId
+        ? now
+        : null;
     // Moved: it waits there until the refresh that brings the real row
     // (DraggableItemList).
     if (!dropped || moved) return;

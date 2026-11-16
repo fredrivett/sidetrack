@@ -671,40 +671,6 @@ export function DraggableItemList({
     data: { projectId },
   });
 
-  if (rows.length === 0) {
-    return (
-      // The whole card is a pointer target, like the board's Add list column;
-      // the button inside is the keyboard one, and its click bubbles up here.
-      <div
-        ref={setListRef}
-        onClick={onAddItem}
-        className="group/add-item flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-dashed border-neutral-200 bg-neutral-50 px-3 py-8 text-center text-xs text-balance text-neutral-500 transition-colors hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-800/30 dark:text-neutral-400 dark:hover:border-neutral-700"
-      >
-        <p>Nothing to do yet.</p>
-        <Button
-          variant="outline"
-          size="xs"
-          // Dark like an item row, so it sits below the card, not on it, and in
-          // its hover state while the card is hovered.
-          className="dark:bg-neutral-900 group-hover/add-item:bg-muted group-hover/add-item:text-foreground dark:group-hover/add-item:bg-neutral-800"
-        >
-          <Plus />
-          Add item
-        </Button>
-      </div>
-    );
-  }
-  if (visible.length === 0 && !activeId) {
-    return (
-      <p
-        ref={setListRef}
-        className="rounded-lg border border-dashed border-neutral-200 bg-neutral-50 px-3 py-4 text-center text-xs text-balance text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/30 dark:text-neutral-400"
-      >
-        Nothing here for your filters.
-      </p>
-    );
-  }
-
   const active = activeId ? own.get(activeId) : undefined;
   // How far in the dragged card sits: the depth it would land at, or its own
   // where it can't land; flush away from its list. (Each row's sortable node
@@ -714,6 +680,76 @@ export function DraggableItemList({
   // depth it would land at, rather than sliding freely. Away from its list it
   // follows the pointer.
   const lockX: Modifier = ({ transform }) => (away ? transform : { ...transform, x: 0 });
+  // What follows the pointer: the row, with a parent's checklist, lifted off
+  // the list (scaled up with a deep shadow) until it's dropped. Drawn by the
+  // list it's from, wherever it goes, even once that list is empty without it.
+  const overlay = board.source === projectId && (
+    <DragOverlay modifiers={[lockX]} dropAnimation={dropAnimation}>
+      {active && (
+        <div
+          // The column's own background, so rows under a parent's checklist
+          // don't show through the gaps between its rows.
+          className="cursor-grabbing rounded-lg bg-white shadow-xl transition-[margin,width,scale,box-shadow] duration-200 ease-out in-[.dnd-dropping]:scale-100! in-[.dnd-dropping]:shadow-none motion-safe:scale-[1.03] motion-safe:animate-[lift_150ms_ease-out] dark:bg-neutral-900"
+          style={{
+            marginLeft: shift,
+            width: `calc(100% - ${shift}px)`,
+          }}
+        >
+          {active.parentId ? (
+            rowFor(row, active.item)
+          ) : (
+            <ItemGroupView
+              {...row}
+              group={{ ...active.item, children: ownChildren(active.item.id) }}
+              collapsed={collapsed.has(active.item.id)}
+              shown={shown}
+            />
+          )}
+        </div>
+      )}
+    </DragOverlay>
+  );
+
+  if (rows.length === 0) {
+    return (
+      <>
+        {/* The whole card is a pointer target, like the board's Add list column;
+            the button inside is the keyboard one, and its click bubbles up here. */}
+        <div
+          ref={setListRef}
+          onClick={onAddItem}
+          className="group/add-item flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-dashed border-neutral-200 bg-neutral-50 px-3 py-8 text-center text-xs text-balance text-neutral-500 transition-colors hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-800/30 dark:text-neutral-400 dark:hover:border-neutral-700"
+        >
+          <p>Nothing to do yet.</p>
+          <Button
+            variant="outline"
+            size="xs"
+            // Dark like an item row, so it sits below the card, not on it, and in
+            // its hover state while the card is hovered.
+            className="dark:bg-neutral-900 group-hover/add-item:bg-muted group-hover/add-item:text-foreground dark:group-hover/add-item:bg-neutral-800"
+          >
+            <Plus />
+            Add item
+          </Button>
+        </div>
+        {overlay}
+      </>
+    );
+  }
+  if (visible.length === 0 && !activeId) {
+    return (
+      <>
+        <p
+          ref={setListRef}
+          className="rounded-lg border border-dashed border-neutral-200 bg-neutral-50 px-3 py-4 text-center text-xs text-balance text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/30 dark:text-neutral-400"
+        >
+          Nothing here for your filters.
+        </p>
+        {overlay}
+      </>
+    );
+  }
+
   // The top-level task above each top-level row, for the row menu's "Sub-item of".
   const above = new Map<string, Item>();
   let prevTop: Item | undefined;
@@ -723,118 +759,94 @@ export function DraggableItemList({
     prevTop = f.item;
   }
 
+  // The overlay sits in the same place in every branch, so it stays mounted
+  // (and keeps its drop animation) when the list empties mid-drag.
   return (
-    <div ref={setListRef}>
-      <SortableContext
-        items={visible.map((f) => f.item.id)}
-        strategy={entering ? placed : verticalListSortingStrategy}
-      >
-        <div className="space-y-1.5">
-          {visible.map((f, i) => {
-            const { item } = f;
-            const isActive = item.id === activeId;
-            const isEntering = enteringIds.has(item.id);
-            // A row from another list shows its own ref and people.
-            const rp = isEntering && entering ? entering.row : row;
-            const children = childrenOf(item.id);
-            const node = (drag: RowDrag) => {
-              if (f.parentId) {
+    <>
+      <div ref={setListRef}>
+        <SortableContext
+          items={visible.map((f) => f.item.id)}
+          strategy={entering ? placed : verticalListSortingStrategy}
+        >
+          <div className="space-y-1.5">
+            {visible.map((f, i) => {
+              const { item } = f;
+              const isActive = item.id === activeId;
+              const isEntering = enteringIds.has(item.id);
+              // A row from another list shows its own ref and people.
+              const rp = isEntering && entering ? entering.row : row;
+              const children = childrenOf(item.id);
+              const node = (drag: RowDrag) => {
+                if (f.parentId) {
+                  return rowFor(rp, item, {
+                    drag,
+                    parentTitle: byId.get(f.parentId)?.item.title,
+                  });
+                }
+                // A plain task can become a sub-item of the task just above it.
+                const prev = above.get(item.id);
+                const canNest = children.length === 0 && prev !== undefined && !isEntering;
                 return rowFor(rp, item, {
                   drag,
-                  parentTitle: byId.get(f.parentId)?.item.title,
+                  nestUnder: canNest ? { id: prev.id, title: prev.title } : undefined,
+                  checklist:
+                    children.length > 0
+                      ? {
+                          ...progress(children),
+                          expanded: !folded(item.id),
+                          onToggle: () => onToggleCollapsed(item.id),
+                        }
+                      : undefined,
                 });
-              }
-              // A plain task can become a sub-item of the task just above it.
-              const prev = above.get(item.id);
-              const canNest = children.length === 0 && prev !== undefined && !isEntering;
-              return rowFor(rp, item, {
-                drag,
-                nestUnder: canNest ? { id: prev.id, title: prev.title } : undefined,
-                checklist:
-                  children.length > 0
-                    ? {
-                        ...progress(children),
-                        expanded: !folded(item.id),
-                        onToggle: () => onToggleCollapsed(item.id),
-                      }
-                    : undefined,
-              });
-            };
-            return (
-              <Sortable
-                key={item.id}
-                id={item.id}
-                data={{
-                  projectId,
-                  home: isEntering && entering ? entering.from : projectId,
-                  row: true,
-                  parentId: f.parentId,
-                }}
-                dim={activeId !== null && !away}
-                pending={isEntering && entering?.dropped === true}
-              >
-                {(drag) => {
-                  // The dragged row stays in the list as the drop placeholder,
-                  // indented to the depth it would land at, without tree lines.
-                  const depth = isActive
-                    ? (projection?.depth ?? (f.parentId ? 1 : 0))
-                    : f.parentId
-                      ? 1
-                      : 0;
-                  const next = visible[i + 1];
-                  const last =
-                    !next ||
-                    next.parentId !== f.parentId ||
-                    (next.item.id === activeId &&
-                      visible[i + 2]?.parentId !== f.parentId);
-                  const lines =
-                    f.parentId && !isActive
-                      ? last
-                        ? BRANCH
-                        : `${BRANCH} ${TRUNK}`
-                      : undefined;
-                  // The same elements at every depth, so a row that's nested or
-                  // moved out keeps its DOM node, and keyboard focus with it.
-                  return (
-                    <div className={depth ? "ml-4 pl-5" : undefined}>
-                      <div className={lines}>{node(drag)}</div>
-                    </div>
-                  );
-                }}
-              </Sortable>
-            );
-          })}
-        </div>
-      </SortableContext>
-      {/* What follows the pointer: the row, with a parent's checklist, lifted
-          off the list (scaled up with a deep shadow) until it's dropped. Drawn
-          by the list it's from, wherever it goes. */}
-      {board.source === projectId && (
-        <DragOverlay modifiers={[lockX]} dropAnimation={dropAnimation}>
-          {active && (
-            <div
-              // The column's own background, so rows under a parent's checklist
-              // don't show through the gaps between its rows.
-              className="cursor-grabbing rounded-lg bg-white shadow-xl transition-[margin,width,scale,box-shadow] duration-200 ease-out in-[.dnd-dropping]:scale-100! in-[.dnd-dropping]:shadow-none motion-safe:scale-[1.03] motion-safe:animate-[lift_150ms_ease-out] dark:bg-neutral-900"
-              style={{
-                marginLeft: shift,
-                width: `calc(100% - ${shift}px)`,
-              }}
-            >
-              {active.parentId ? (
-                rowFor(row, active.item)
-              ) : (
-                <ItemGroupView
-                  {...row}
-                  group={{ ...active.item, children: ownChildren(active.item.id) }}
-                  collapsed={collapsed.has(active.item.id)}
-                  shown={shown}
-                />
-              )}
-            </div>
-          )}
-        </DragOverlay>
-      )}
-    </div>
+              };
+              return (
+                <Sortable
+                  key={item.id}
+                  id={item.id}
+                  data={{
+                    projectId,
+                    home: isEntering && entering ? entering.from : projectId,
+                    row: true,
+                    parentId: f.parentId,
+                  }}
+                  dim={activeId !== null && !away}
+                  pending={isEntering && entering?.dropped === true}
+                >
+                  {(drag) => {
+                    // The dragged row stays in the list as the drop placeholder,
+                    // indented to the depth it would land at, without tree lines.
+                    const depth = isActive
+                      ? (projection?.depth ?? (f.parentId ? 1 : 0))
+                      : f.parentId
+                        ? 1
+                        : 0;
+                    const next = visible[i + 1];
+                    const last =
+                      !next ||
+                      next.parentId !== f.parentId ||
+                      (next.item.id === activeId &&
+                        visible[i + 2]?.parentId !== f.parentId);
+                    const lines =
+                      f.parentId && !isActive
+                        ? last
+                          ? BRANCH
+                          : `${BRANCH} ${TRUNK}`
+                        : undefined;
+                    // The same elements at every depth, so a row that's nested or
+                    // moved out keeps its DOM node, and keyboard focus with it.
+                    return (
+                      <div className={depth ? "ml-4 pl-5" : undefined}>
+                        <div className={lines}>{node(drag)}</div>
+                      </div>
+                    );
+                  }}
+                </Sortable>
+              );
+            })}
+          </div>
+        </SortableContext>
+      </div>
+      {overlay}
+    </>
   );
 }
