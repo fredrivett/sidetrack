@@ -8,6 +8,7 @@ import { users as authUsers, verifications } from "@/core/auth-schema";
 import { getDb } from "@/core/db";
 import { auditLog, meta, projects } from "@/core/schema";
 import { sendPasswordResetEmail } from "@/lib/email";
+import { SIGNUP_LOCK_KEY } from "./signup";
 import { getEnv } from "@/lib/env";
 import { normalizeWebUrl } from "@/lib/url";
 import { isReservedUsername, USERNAME_RE } from "@/lib/username";
@@ -37,7 +38,6 @@ const USERNAME_MAX_LENGTH = 30;
 // Auth runs hooks across async boundaries, which is what made the naive
 // `userCount() === 0` check racey).
 const ALLOW_SIGNUP = env.ALLOW_SIGNUP;
-const SIGNUP_LOCK_KEY = "signups_first_claimed";
 const ME_ADOPTION_KEY = "me_data_adopted";
 
 function userCount(): number {

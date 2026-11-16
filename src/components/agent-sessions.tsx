@@ -9,9 +9,9 @@ import {
   useMemo,
   useSyncExternalStore,
 } from "react";
-import { startAgentAction, stopAgentAction } from "@/app/actions";
 import type { StartableAgent } from "@/core/agentSessions";
 import type { AgentSession, Item } from "@/core/schema";
+import { useItemSaves } from "./item-saves";
 import { runAction } from "./run-action";
 import type { AgentAvatarView } from "./UserAvatar";
 
@@ -128,6 +128,7 @@ export function useAgentAssignment(
 ): { agentOptions: AgentOption[]; setAgent: (keyId: string, on: boolean) => void } {
   const startable = useContext(StartableContext);
   const sessions = useContext(SessionsContext)[item.id] ?? NO_SESSIONS;
+  const { startAgent, stopAgent } = useItemSaves();
   const canStart = startable.lists.has(item.projectId) && item.completedAt === null;
   const agentOptions = useMemo(() => {
     const working = sessions
@@ -145,12 +146,12 @@ export function useAgentAssignment(
       const name = agentOptions.find((a) => a.keyId === keyId)?.name ?? "the agent";
       start(async () => {
         await runAction(
-          on ? startAgentAction(item.id, keyId) : stopAgentAction(item.id, keyId),
+          on ? startAgent(item.id, keyId) : stopAgent(item.id, keyId),
           `${on ? "start" : "stop"} ${name}`,
         );
       });
     },
-    [agentOptions, start, item.id],
+    [agentOptions, start, item.id, startAgent, stopAgent],
   );
   return { agentOptions, setAgent };
 }

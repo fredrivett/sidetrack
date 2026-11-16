@@ -1,8 +1,8 @@
 "use client";
 
 import { useOptimistic, useTransition } from "react";
-import { setItemsCollapsedAction } from "@/app/actions";
 import type { Item } from "@/core/schema";
+import { useItemSaves } from "./item-saves";
 import { runAction } from "./run-action";
 
 /**
@@ -23,11 +23,12 @@ export function useCollapsedItems(items: Item[]) {
     },
   );
   const [, start] = useTransition();
+  const { setItemsCollapsed } = useItemSaves();
   const setCollapsed = (ids: string[], value: boolean) =>
     start(async () => {
       apply([ids, value]);
       await runAction(
-        setItemsCollapsedAction(ids, value),
+        setItemsCollapsed(ids, value),
         value ? "collapse sub-items" : "expand sub-items",
       );
     });

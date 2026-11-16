@@ -165,6 +165,15 @@ body {
   }
 }
 
+/* The landing page's cards sliding into place: each element sets --slide-from
+   to where it starts, and its own delay. Wrapped in motion-safe: at use. */
+@keyframes slide-in {
+  from {
+    translate: var(--slide-from, 0 8px);
+    opacity: 0;
+  }
+}
+
 /* A dragged card rising out of its list (see DraggableItemList's
    DragOverlay): from flat to whatever lift its classes give it. */
 @keyframes lift {

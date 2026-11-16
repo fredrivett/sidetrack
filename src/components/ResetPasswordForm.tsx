@@ -39,7 +39,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
 
   if (done) {
     return (
-      <p className="text-sm text-muted-foreground">
+      <p className="text-center text-sm text-muted-foreground">
         Password updated.{" "}
         <Link href="/login" className="text-foreground underline">
           Sign in
@@ -50,13 +50,14 @@ export function ResetPasswordForm({ token }: { token: string }) {
   }
 
   return (
-    <form action={onSubmit} className="space-y-3">
+    <form action={onSubmit} className="space-y-4">
       <Input
         name="password"
         type="password"
         autoComplete="new-password"
         placeholder="New password"
         required
+        className="h-9"
         minLength={8}
         autoFocus
       />
@@ -66,10 +67,11 @@ export function ResetPasswordForm({ token }: { token: string }) {
         autoComplete="new-password"
         placeholder="Confirm new password"
         required
+        className="h-9"
         minLength={8}
       />
       {error && <p className="text-sm text-destructive">{error}</p>}
-      <Button type="submit" disabled={pending} className="w-full">
+      <Button type="submit" size="lg" disabled={pending} className="w-full">
         {pending ? (
           <>
             <Loader2 className="animate-spin" />

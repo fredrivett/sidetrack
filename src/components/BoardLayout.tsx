@@ -1,4 +1,5 @@
 import type { ComponentProps, ReactNode, Ref } from "react";
+import { LogoMark } from "@/components/LogoMark";
 
 // The board's frame, shared by the live board (Kanban, ProjectColumn) and its
 // loading skeleton (BoardSkeleton), so the skeleton the app launches into
@@ -31,13 +32,7 @@ export function BoardHeader({
             nav ? "max-[375px]:sr-only" : ""
           }`}
         >
-          {/* The logo mark, generated from scripts/icons/icon.svg, in the text
-              colour. 18×19px is 1/16 of the icon, so every edge lands on a
-              whole pixel. */}
-          <span
-            aria-hidden="true"
-            className="h-[19px] w-[18px] shrink-0 bg-current [mask:url(/icons/mark.svg)_center/contain_no-repeat]"
-          />
+          <LogoMark />
           {/* The name gives way to the view switch on phones. */}
           <span className={nav ? "sr-only sm:not-sr-only" : undefined}>Sidetrack</span>
         </h1>

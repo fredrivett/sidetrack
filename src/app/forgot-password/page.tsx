@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AuthShell, AuthTitle } from "@/components/AuthShell";
 import { ForgotPasswordForm } from "@/components/ForgotPasswordForm";
 import { getEnv } from "@/lib/env";
 
@@ -10,22 +11,17 @@ export default function ForgotPasswordPage() {
   const emailEnabled = Boolean(getEnv().RESEND_API_KEY);
 
   return (
-    <main className="min-h-dvh flex items-center justify-center p-6 bg-neutral-50 dark:bg-neutral-950">
-      <div className="w-full max-w-sm space-y-4 rounded-2xl bg-white dark:bg-neutral-900 p-6 shadow-sm border border-neutral-200 dark:border-neutral-800">
-        <div className="space-y-1">
-          <h1 className="text-lg font-medium">Reset your password</h1>
-          <p className="text-sm text-muted-foreground">
-            Enter your email and we&apos;ll send you a reset link.
-          </p>
-        </div>
-        <ForgotPasswordForm emailEnabled={emailEnabled} />
-        <p className="text-xs text-muted-foreground">
-          Remembered it?{" "}
-          <Link href="/login" className="text-foreground hover:underline">
-            Back to sign in
-          </Link>
-        </p>
-      </div>
-    </main>
+    <AuthShell>
+      <AuthTitle title="Reset your password">
+        Enter your email and we&apos;ll send you a reset link.
+      </AuthTitle>
+      <ForgotPasswordForm emailEnabled={emailEnabled} />
+      <p className="border-t border-neutral-200 pt-4 text-center text-sm text-muted-foreground dark:border-neutral-800">
+        Remembered it?{" "}
+        <Link href="/login" className="font-medium text-foreground hover:underline">
+          Back to sign in
+        </Link>
+      </p>
+    </AuthShell>
   );
 }

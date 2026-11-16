@@ -23,7 +23,6 @@ import {
   useState,
   useTransition,
 } from "react";
-import { updateItemAction } from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { modifierSymbol } from "@/lib/keyboard";
@@ -64,6 +63,7 @@ import { useItemChanges } from "./use-optimistic-items";
 import { useCopyItemRef } from "./useCopyItemRef";
 import { agentLabel, AvatarStack, assigneeNames } from "./UserAvatar";
 import { useAgentAssignment, useItemAgentSessions } from "./agent-sessions";
+import { useItemSaves } from "./item-saves";
 import { runAction } from "./run-action";
 
 /** Drag wiring from the sortable wrapper that owns this row (see DraggableItemList). */
@@ -115,6 +115,7 @@ export function ItemRow({
   const isDragging = drag?.isDragging ?? false;
   const [pending, start] = useTransition();
   const changes = useItemChanges();
+  const saves = useItemSaves();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
@@ -174,7 +175,7 @@ export function ItemRow({
   function setDue(due: Due | null) {
     start(async () => {
       await runAction(
-        updateItemAction(item.id, due ?? { dueDate: null }),
+        saves.updateItem(item.id, due ?? { dueDate: null }),
         `change the due date of “${item.title}”`,
       );
     });
