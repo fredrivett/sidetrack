@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useOptimistic, useTransition } from "react";
-import { updateItemAction } from "@/app/actions";
 import type { Item } from "@/core/schema";
+import { useItemSaves } from "./item-saves";
 import { runAction } from "./run-action";
 
 /**
@@ -28,6 +28,7 @@ export function useOptimisticAssignees(items: Item[]) {
   // Its own transition, so a pending assignment doesn't dim or disable the
   // rest of the item the way the caller's other pending changes do.
   const [, start] = useTransition();
+  const { updateItem } = useItemSaves();
   const setAssignees = useCallback(
     (id: string, assigneeIds: string[]) => {
       const current = byId[id] ?? [];
@@ -36,7 +37,7 @@ export function useOptimisticAssignees(items: Item[]) {
       start(async () => {
         apply([id, assigneeIds]);
         await runAction(
-          updateItemAction(
+          updateItem(
             id,
             assigneeIds.length === 0
               ? { assigneeIds: [] }
@@ -49,7 +50,7 @@ export function useOptimisticAssignees(items: Item[]) {
         );
       });
     },
-    [apply, byId],
+    [apply, byId, updateItem],
   );
   return { assigneesById: byId, setAssignees };
 }

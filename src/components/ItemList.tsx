@@ -36,10 +36,10 @@ import {
   useState,
   useTransition,
 } from "react";
-import { reorderItemAction, setItemParentAction } from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
-import { type DropTarget, projectDrop, type TreeRow } from "@/lib/itemTree";
+import { type DropTarget, nestItems, projectDrop, type TreeRow } from "@/lib/itemTree";
+import { useItemSaves } from "./item-saves";
 import { ItemRow, type RowDrag } from "./ItemRow";
 import { Button } from "./ui/button";
 import { runAction } from "./run-action";
@@ -192,7 +192,11 @@ const flatten = (groups: ItemGroup[]): Flat[] =>
   ]);
 
 /** The order after a drop: the item (and a parent's checklist) at `target`. */
-function applyDrop(full: Flat[], id: string, target: DropTarget): Flat[] {
+function applyDrop(
+  full: Flat[],
+  id: string,
+  target: Pick<DropTarget, "parentId" | "position">,
+): Flat[] {
   const block = full
     .filter((f) => f.item.id === id || f.parentId === id)
     .map((f) => (f.item.id === id ? { ...f, parentId: target.parentId } : f));
@@ -213,6 +217,22 @@ function applyDrop(full: Flat[], id: string, target: DropTarget): Flat[] {
     while (at < rest.length && rest[at].parentId === anchor) at++;
   }
   return [...rest.slice(0, at), ...block, ...rest.slice(at)];
+}
+
+/**
+ * A drop applied to a flat, position-ordered list of items, as the server
+ * applies it (reorderItem, setItemParent): for the landing page's preview
+ * board, which keeps its items locally.
+ */
+export function moveItem(
+  list: Item[],
+  id: string,
+  target: Pick<DropTarget, "parentId" | "position">,
+): Item[] {
+  return applyDrop(flatten(nestItems(list)), id, target).map((f) => ({
+    ...f.item,
+    parentId: f.parentId,
+  }));
 }
 
 function Sortable({
@@ -279,6 +299,7 @@ export function DraggableItemList({
   // between the action returning and the new order rendering.
   const [full, setFull] = useOptimistic(flatten(groups));
   const [, start] = useTransition();
+  const saves = useItemSaves();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const [offsetX, setOffsetX] = useState(0);
@@ -408,8 +429,8 @@ export function DraggableItemList({
       setFull(applyDrop(full, id, target));
       await runAction(
         sameParent
-          ? reorderItemAction(id, target.position)
-          : setItemParentAction(id, target.parentId, target.position),
+          ? saves.reorderItem(id, target.position)
+          : saves.setItemParent(id, target.parentId, target.position),
         `move “${from.item.title}”`,
       );
     });
