@@ -1029,8 +1029,6 @@ describe("due dates and Today", () => {
     const userId = createTestUser(db);
     const home = createProject(db, userId, { name: "Home" }, "web");
     const work = createProject(db, userId, { name: "Work" }, "web");
-    const paused = createProject(db, userId, { name: "Later" }, "web");
-    updateProject(db, userId, paused.id, { status: "paused" }, "web");
     const archived = createProject(db, userId, { name: "Old" }, "web");
     updateProject(db, userId, archived.id, { status: "archived" }, "web");
     const add = (projectId: string, title: string, dueDate: string | null) =>
@@ -1047,7 +1045,6 @@ describe("due dates and Today", () => {
     span("this week", "2026-11-09", "2026-11-15");
     span("next week", "2026-11-16", "2026-11-22");
     add(home.id, "no date", null);
-    add(paused.id, "paused list", "2026-11-14");
     add(archived.id, "archived list", "2026-11-14");
     const doneOld = add(home.id, "done before today", "2026-11-12");
     const doneNow = add(home.id, "done today", "2026-11-13");
@@ -1086,8 +1083,6 @@ describe("due dates and Today", () => {
     const home = createProject(db, userId, { name: "Home" }, "web");
     const buy = createProject(db, userId, { name: "Buy" }, "web");
     const empty = createProject(db, userId, { name: "All dated" }, "web");
-    const paused = createProject(db, userId, { name: "Later" }, "web");
-    updateProject(db, userId, paused.id, { status: "paused" }, "web");
     const archived = createProject(db, userId, { name: "Old" }, "web");
     updateProject(db, userId, archived.id, { status: "archived" }, "web");
     // Board order, not creation order: Buy moves to the front.
@@ -1116,7 +1111,6 @@ describe("due dates and Today", () => {
     const plan = add(home.id, "phone plan", "2026-11-18");
     add(home.id, "fred's sim", null, { parentId: plan.id });
     add(empty.id, "dated", "2026-11-15");
-    add(paused.id, "paused undated", null);
     add(archived.id, "archived undated", null);
     const doneOld = add(home.id, "done yesterday", null);
     const doneNow = add(home.id, "done today", null);
@@ -1126,7 +1120,7 @@ describe("due dates and Today", () => {
     const r = listNoDate(db, userId, { timeZone: tz, now });
     expect(r.today).toBe("2026-11-14");
     // Board order (Buy before Home), list order within; lists with nothing
-    // undated, paused lists and archived lists go.
+    // undated and archived lists go.
     expect(r.lists.map((l) => [l.project.name, l.items.map((i) => i.title)])).toEqual([
       ["Buy", ["slippers"]],
       ["Home", ["tiling", "tidy flat", "lounge", "done today"]],

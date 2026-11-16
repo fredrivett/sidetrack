@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Archive,
   Boxes,
   CalendarDays,
   CircleCheck,
@@ -52,7 +53,7 @@ export function CommandPalette({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** The lists on the board (active, then paused), in board order. */
+  /** The lists on the board, in board order; archived lists stay out. */
   lists: ProjectView[];
   itemsByProject: Record<string, Item[]>;
   onNewItem: () => void;
@@ -87,6 +88,7 @@ export function CommandPalette({
     { label: "Go to Board", icon: <Columns3 />, action: () => onSwitchView("board") },
     { label: "Go to Agenda", icon: <CalendarDays />, action: () => onSwitchView("agenda") },
     { label: "Go to Done", icon: <CircleCheck />, action: () => onSwitchView("done") },
+    { label: "Go to Archived", icon: <Archive />, action: () => onSwitchView("archived") },
     { label: "Show activity", icon: <History />, action: onShowActivity },
     { label: "Profile settings", icon: <UserRound />, action: () => router.push("/settings/profile") },
     { label: "Spaces", icon: <Boxes />, action: () => router.push("/settings/spaces") },
@@ -141,9 +143,6 @@ export function CommandPalette({
                   size={16}
                 />
                 <span className="truncate">{list.name}</span>
-                {list.status === "paused" && (
-                  <CommandShortcut className="tracking-normal">Paused</CommandShortcut>
-                )}
               </CommandItem>
             ))}
           </CommandGroup>

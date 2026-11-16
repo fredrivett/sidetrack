@@ -81,7 +81,7 @@ function plan(): SeedUser[] {
         },
         {
           name: "Mobile app",
-          status: "paused",
+          status: "archived",
           items: [
             { title: "Cut a TestFlight build" },
             { title: "Wire push notifications" },

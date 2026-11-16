@@ -106,16 +106,11 @@ export function ProjectColumn({
   // DraggableItemList and DoneSection when it's reopened or the day turns
   // over — see the hook for the live-lookup / closing-snapshot details.
   const detail = useItemDetailDialog(items);
-  // The column re-renders with fresh server props on every edit, and stays
-  // mounted when the list is paused or resumed (Kanban keys every column in
-  // one array), so the dialog stays open across a status change. It unmounts
-  // when the list is deleted, left, archived or moved to another Space's
-  // tray, which closes it; plain open-state is enough — no
+  // The column re-renders with fresh server props on every edit. It unmounts
+  // when the list is deleted, left, archived, restored or moved to another
+  // Space's tray, which closes it; plain open-state is enough — no
   // live-lookup/closing-snapshot dance like the item dialog needs.
   const [detailsOpen, setDetailsOpen] = useState(false);
-  // A paused list sits collapsed at the end of the board until opened.
-  const [showPaused, setShowPaused] = useState(false);
-  const collapsed = project.status === "paused" && !showPaused;
   // Parents in the list whose sub-items are hidden. Kept here, not in
   // DraggableItemList, so the header's button can collapse or expand them all
   // at once; it shows only while the list has a parent with sub-items on view.
@@ -165,10 +160,7 @@ export function ProjectColumn({
             {(project.status !== "active" || (!project.isOwner && !inSpace)) && (
               <div className="flex items-center gap-1.5">
                 {project.status !== "active" && (
-                  <StatusBadge
-                    projectId={project.id}
-                    status={project.status}
-                  />
+                  <StatusBadge status={project.status} />
                 )}
                 {!project.isOwner && !inSpace && (
                   <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sky-700 dark:bg-sky-950 dark:text-sky-400">
@@ -178,7 +170,7 @@ export function ProjectColumn({
               </div>
             )}
           </div>
-          {!collapsed && parents.length > 0 && (
+          {parents.length > 0 && (
             <button
               type="button"
               aria-label={allCollapsed ? "Expand all sub-items" : "Collapse all sub-items"}
@@ -218,71 +210,44 @@ export function ProjectColumn({
         </>
       }
     >
-      {collapsed ? (
-        <div className="space-y-1 py-1 text-sm text-neutral-500">
-          <p>
-            {active.length} open item{active.length === 1 ? "" : "s"}, set
-            aside for now.
-          </p>
-          <button
-            type="button"
-            onClick={() => setShowPaused(true)}
-            className="text-xs font-medium hover:text-neutral-700 dark:hover:text-neutral-300"
-          >
-            Show items
-          </button>
-        </div>
-      ) : (
-        <>
-          {project.status === "paused" && (
-            <button
-              type="button"
-              onClick={() => setShowPaused(false)}
-              className="mb-2 text-xs font-medium text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
-            >
-              Hide items
-            </button>
-          )}
-          {/* Only shown once written; an empty summary is added from the
-              details dialog, so it doesn't take up room on every card. */}
-          {project.summary.trim() && (
-            <SummaryBlock
-              projectId={project.id}
-              summary={project.summary}
-              summaryUpdatedAt={project.summaryUpdatedAt}
-            />
-          )}
-
-          <div className="space-y-3 pt-1.5">
-            {!waiting && <DraggableItemList
-              projectId={project.id}
-              groups={inList}
-              shown={shownInList}
-              collapsed={collapsedItems}
-              onToggleCollapsed={(id) =>
-                setCollapsed([id], !collapsedItems.has(id))
-              }
-              prefix={project.refPrefix}
-              assignees={assignees}
-              viewerId={viewerId}
-              prLinksByItem={prLinksByItem}
-              onOpenDetail={detail.openDetail}
-              onAddItem={() => onAddItem(project.id)}
-            />}
-            {doneShown.length > 0 && (
-              <DoneSection
-                groups={doneShown}
-                shown={shownDone}
-                prefix={project.refPrefix}
-                assignees={assignees}
-                viewerId={viewerId}
-                prLinksByItem={prLinksByItem}
-                onOpenDetail={detail.openDetail}
-              />
-            )}
-          </div>
-        </>
+      {/* Only shown once written; an empty summary is added from the
+          details dialog, so it doesn't take up room on every card. */}
+      {project.summary.trim() && (
+        <SummaryBlock
+          projectId={project.id}
+          summary={project.summary}
+          summaryUpdatedAt={project.summaryUpdatedAt}
+        />
       )}
+
+      <div className="space-y-3 pt-1.5">
+        {!waiting && <DraggableItemList
+          projectId={project.id}
+          groups={inList}
+          shown={shownInList}
+          collapsed={collapsedItems}
+          onToggleCollapsed={(id) =>
+            setCollapsed([id], !collapsedItems.has(id))
+          }
+          prefix={project.refPrefix}
+          assignees={assignees}
+          viewerId={viewerId}
+          prLinksByItem={prLinksByItem}
+          onOpenDetail={detail.openDetail}
+          onAddItem={() => onAddItem(project.id)}
+        />}
+        {doneShown.length > 0 && (
+          <DoneSection
+            groups={doneShown}
+            shown={shownDone}
+            prefix={project.refPrefix}
+            assignees={assignees}
+            viewerId={viewerId}
+            prLinksByItem={prLinksByItem}
+            onOpenDetail={detail.openDetail}
+          />
+        )}
+      </div>
       {detail.item && (
         <ItemDetailDialog
           item={detail.item}

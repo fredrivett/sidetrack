@@ -34,7 +34,7 @@ export function DoneView({
   onLoadMore,
   onRetry,
 }: {
-  /** The lists on the board (active, then paused); archived lists stay out. */
+  /** The lists on the board; archived lists stay out. */
   projects: ProjectView[];
   itemsByProject: Record<string, Item[]>;
   assigneesByProject: Record<string, AssigneeView[]>;

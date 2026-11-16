@@ -38,7 +38,7 @@ export function AgendaView({
   overdueCollapsed: savedCollapsed,
   filters,
 }: {
-  /** Active lists in board order; paused and archived lists stay out. */
+  /** Active lists in board order; archived lists stay out. */
   projects: ProjectView[];
   itemsByProject: Record<string, Item[]>;
   assigneesByProject: Record<string, AssigneeView[]>;

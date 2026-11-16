@@ -81,7 +81,7 @@ export default async function Home({
         timeZone={timeZone}
         overdueCollapsed={getOverdueCollapsed(db, userId)}
         initialView={
-          view === "agenda" || view === "done"
+          view === "agenda" || view === "done" || view === "archived"
             ? view
             : // Links from before Today and No date became Agenda.
               view === "today" || view === "no-date"

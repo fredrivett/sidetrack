@@ -319,7 +319,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       title: "List lists",
       description:
         "List the user's lists in board order (left to right, per their own board). Returns id, name, status, summary, summaryUpdatedAt and more. " +
-        "status is active (on the board), paused (collapsed at the end of the board; set aside for now) or archived (off the board, kept for reference). " +
+        "status is active (on the board) or archived (off the board and every other view, kept for reference in the Archived view). " +
         "Archived lists are left out unless include_archived is true. " +
         "spaceId is the Space the list is in (null for none); everyone in that Space can see and edit it. list_spaces gives each Space's name.",
       inputSchema: { include_archived: z.boolean().optional() },
@@ -371,7 +371,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Archived lists are left out unless include_archived is true. " +
         "include_completed defaults to false; pass true only when the user explicitly wants completed items.\n" +
         "Render the result for the user as an indented tree:\n" +
-        "- Each list is a top-level node; its items nest beneath it. Mark a paused list as paused.\n" +
+        "- Each list is a top-level node; its items nest beneath it. Mark an archived list as archived.\n" +
         "- Keep lists and items in the order returned; do not re-sort unless the user asked for a different order.\n" +
         "- Do not show completed items in the tree.\n" +
         "- A task is a box-drawing branch, e.g. `├── Write the docs`.\n" +
@@ -403,7 +403,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "List today",
       description:
-        "What's due now on the user's Agenda view: items across their active lists (not paused or archived) that are due today or overdue, " +
+        "What's due now on the user's Agenda view: items across their active lists (not archived) that are due today or overdue, " +
         "items due in a span that has started (dueFrom on or before today, e.g. due this week from Monday), " +
         "plus items finished today, which the user sees crossed out. Overdue items come first, then by board order. " +
         "The user sees them under Overdue (dueDate before today), Today (due today alone) and This week (a span under way); " +
@@ -456,7 +456,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "List items with no date",
       description:
-        "The No date section of the user's Agenda view: tasks with no due date across their active lists (not paused or archived), " +
+        "The No date section of the user's Agenda view: tasks with no due date across their active lists (not archived), " +
         "for planning when to do them. Sub-items of a dated parent are left out, since they are planned with their parent. " +
         "Items finished today are included, which the user sees crossed out. " +
         "Returns { today, timeZone, lists }, plus a note when the timezone is a UTC fallback; today works as in list_today. " +
@@ -554,7 +554,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       title: "Update list",
       description:
         "Patch name/status/summary/prefix/homepage_url/icon. Setting summary stamps summaryUpdatedAt. " +
-        "status is active, paused (collapse it at the end of the board) or archived (take it off the board; its items are kept, and setting active restores it). " +
+        "status is active or archived (take it off the board and every other view, into the Archived view; its items are kept, and setting active restores it). Archive a list the user wants to set aside for now. " +
         "Archive a finished list rather than deleting it unless the user asks to delete. " +
         "prefix is the short item-ID prefix (2–5 letters, e.g. \"ENG\" → items like ENG-42); " +
         "it is uppercased, and an auto-suffix is applied if it collides with another list. " +
