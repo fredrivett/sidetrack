@@ -53,9 +53,16 @@ import { runAction } from "./run-action";
 /** The lists an item can move to, on their trays: Personal and each Space. */
 export interface MoveTargets {
   groups: { id: string; name: string; lists: ProjectView[] }[];
-  /** Ask to move `item` to list `projectId`: opens the confirmation sheet. */
-  open: (item: Item, projectId: string) => void;
+  /**
+   * Ask to move `item` to list `projectId`: opens the confirmation sheet.
+   * `position` is where among its top-level items (see moveItem); the top
+   * when omitted.
+   */
+  open: (item: Item, projectId: string, position?: string) => void;
 }
+
+/** A move to confirm: `item` to list `projectId`, at `position` (MoveTargets.open). */
+export type MoveRequest = { item: Item; projectId: string; position?: string };
 
 /** Provided by the board; absent (no moving) where there's only one list. */
 export const MoveItemContext = createContext<MoveTargets | null>(null);
@@ -193,8 +200,9 @@ export function MoveItemDialog({
   request,
   onClose,
 }: {
-  request: { item: Item; projectId: string } | null;
-  onClose: () => void;
+  request: MoveRequest | null;
+  /** Closed: `moved` once the item has moved, in the move's transition. */
+  onClose: (moved?: boolean) => void;
 }) {
   // The last request stays on show while the sheet closes.
   const [shown, setShown] = useState(request);
@@ -212,6 +220,7 @@ export function MoveItemDialog({
             key={`${shown.item.id}:${shown.projectId}`}
             item={shown.item}
             projectId={shown.projectId}
+            position={shown.position}
             pending={pending}
             start={start}
             onClose={onClose}
@@ -225,15 +234,17 @@ export function MoveItemDialog({
 function MoveSheet({
   item,
   projectId,
+  position,
   pending,
   start,
   onClose,
 }: {
   item: Item;
   projectId: string;
+  position?: string;
   pending: boolean;
   start: (action: () => Promise<void>) => void;
-  onClose: () => void;
+  onClose: (moved?: boolean) => void;
 }) {
   const [plan, setPlan] = useState<MovePlan | null>(null);
   const [changed, setChanged] = useState(false);
@@ -274,6 +285,7 @@ function MoveSheet({
           plan.to.id,
           plan.token,
           plan.missingLabels.length ? labelChoice : undefined,
+          position,
         ).then((r) => {
           if (!r.moved) {
             // Something changed since the preview: show the move as it is now.
@@ -289,7 +301,7 @@ function MoveSheet({
             );
             return;
           }
-          onClose();
+          onClose(true);
           toast(
             `Moved “${item.title}” to ${r.plan.to.name} as ${r.plan.refs[0].to}`,
           );

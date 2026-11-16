@@ -57,8 +57,8 @@ const plan = (over: Partial<MovePlan> = {}): MovePlan => ({
   ...over,
 });
 
-async function open() {
-  render(<MoveItemDialog request={{ item, projectId: "p2" }} onClose={() => {}} />);
+async function open(position?: string) {
+  render(<MoveItemDialog request={{ item, projectId: "p2", position }} onClose={() => {}} />);
   await screen.findByText("OPS-3");
 }
 
@@ -69,7 +69,7 @@ describe("MoveItemDialog", () => {
       moved: true,
       plan: plan()
     });
-    await open();
+    await open("after:i9");
 
     const move = screen.getByRole("button", { name: "Move" });
     expect(move.getAttribute("aria-disabled")).toBe("true");
@@ -78,7 +78,8 @@ describe("MoveItemDialog", () => {
 
     fireEvent.click(screen.getByRole("radio", { name: "Remove" }));
     await act(async () => fireEvent.click(move));
-    expect(moveItemAction).toHaveBeenCalledWith("i1", "p2", "t1", { Frontend: "drop" });
+    // Where it was dropped, if it was dragged there.
+    expect(moveItemAction).toHaveBeenCalledWith("i1", "p2", "t1", { Frontend: "drop" }, "after:i9");
     expect(toast).toHaveBeenCalledWith("Moved “Fix login” to Ops as OPS-3");
   });
 
@@ -108,7 +109,7 @@ describe("MoveItemDialog", () => {
     expect(moveItemAction).toHaveBeenCalledWith("i1", "p2", "t1", {
       Frontend: "create",
       urgent: "drop",
-    });
+    }, undefined);
   });
 
   it("shows the move as it is now when it changed since the preview", async () => {
@@ -129,6 +130,6 @@ describe("MoveItemDialog", () => {
     // Confirming again uses the new preview.
     vi.mocked(moveItemAction).mockResolvedValueOnce({ moved: true, plan: plan() });
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Move" })));
-    expect(moveItemAction).toHaveBeenLastCalledWith("i1", "p2", "t2", undefined);
+    expect(moveItemAction).toHaveBeenLastCalledWith("i1", "p2", "t2", undefined, undefined);
   });
 });

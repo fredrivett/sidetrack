@@ -73,9 +73,11 @@ export function ColumnCard({
   // checkboxes and its ⋯ menu over their 20px avatars: a row's border and p-2
   // put its checkbox centre 17px in (5px + half the 24px icon) and its avatar
   // centre 19px in (7px + half the menu's 24px button).
+  // `data-drop-target`: a row from another list is being dragged over it
+  // (DraggableItemList).
   return (
     <article
-      className="flex h-full snap-center shrink-0 flex-col gap-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white p-3 pt-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 w-[var(--column-width,92vw)] sm:w-80"
+      className="flex h-full snap-center shrink-0 flex-col gap-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white p-3 pt-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 w-[var(--column-width,92vw)] sm:w-80 transition-shadow data-[drop-target]:ring-2 data-[drop-target]:ring-neutral-900 dark:data-[drop-target]:ring-neutral-100"
       {...props}
     >
       <header className="flex items-start gap-2 shrink-0 pl-[5px] pr-[7px]">{header}</header>

@@ -8,6 +8,7 @@ import { AgentSessionsProvider } from "@/components/agent-sessions";
 import { BoardHeader, BoardRail, ColumnCard } from "@/components/BoardLayout";
 import { FilterMenu } from "@/components/FilterMenu";
 import { type ItemSaves, ItemSavesContext } from "@/components/item-saves";
+import { BoardDrag } from "@/components/BoardDrag";
 import { DraggableItemList, moveItem } from "@/components/ItemList";
 import { LabelsContext } from "@/components/Labels";
 import { ProjectIcon } from "@/components/ProjectIcon";
@@ -325,6 +326,7 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
     <ItemChangesContext value={changes}>
       <ItemSavesContext value={saves}>
         <LabelsContext value={LABELS}>
+        <BoardDrag groups={null}>
         <AgentSessionsProvider
           sessions={sessions}
           viewerId={VIEWER}
@@ -394,6 +396,7 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
             </BoardRail>
           </div>
         </AgentSessionsProvider>
+        </BoardDrag>
         </LabelsContext>
       </ItemSavesContext>
     </ItemChangesContext>

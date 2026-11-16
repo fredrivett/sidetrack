@@ -1,35 +1,33 @@
 "use client";
 
 import {
+  type Active,
   type Announcements,
-  type CollisionDescriptor,
-  type CollisionDetection,
-  DndContext,
   type DragEndEvent,
   type DragMoveEvent,
   DragOverlay,
   type DropAnimation,
+  type DroppableContainer,
   defaultDropAnimationSideEffects,
   type KeyboardCoordinateGetter,
-  KeyboardSensor,
-  MeasuringStrategy,
   type Modifier,
-  MouseSensor,
-  TouchSensor,
+  type Over,
   type UniqueIdentifier,
-  useSensor,
-  useSensors,
+  useDndMonitor,
+  useDroppable,
 } from "@dnd-kit/core";
 import {
   SortableContext,
+  type SortingStrategy,
   sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
+import { CSS, getEventCoordinates } from "@dnd-kit/utilities";
 import { Plus } from "lucide-react";
 import {
   type ReactNode,
+  useEffect,
   useLayoutEffect,
   useOptimistic,
   useRef,
@@ -39,8 +37,10 @@ import {
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { type DropTarget, nestItems, projectDrop, type TreeRow } from "@/lib/itemTree";
+import { columnEl, useBoardDrag } from "./BoardDrag";
 import { useItemSaves } from "./item-saves";
 import { ItemRow, type RowDrag } from "./ItemRow";
+import { useMoveItem } from "./MoveItem";
 import { Button } from "./ui/button";
 import { runAction } from "./run-action";
 import { useCollapsedItems } from "./use-collapsed-items";
@@ -48,7 +48,7 @@ import { useCollapsedItems } from "./use-collapsed-items";
 /** A top-level item with its sub-items, in list order. */
 export type ItemGroup = Item & { children: Item[] };
 
-type RowProps = {
+export type RowProps = {
   prefix: string;
   assignees: AssigneeView[];
   viewerId: string;
@@ -98,10 +98,6 @@ function SubItem({ last, children }: { last: boolean; children: ReactNode }) {
   );
 }
 
-// The dragged card moves only up and down; sideways it snaps to the depth it
-// would land at (see the DragOverlay below), rather than sliding freely.
-const lockX: Modifier = ({ transform }) => ({ ...transform, x: 0 });
-
 // On drop the card glides into its slot and settles back down (the
 // `dnd-dropping` class undoes its lift), while the slot's real row stays hidden
 // under it until it lands. Hidden by visibility, not dnd-kit's default opacity,
@@ -113,29 +109,6 @@ const dropAnimation: DropAnimation = {
     styles: { active: { visibility: "hidden" } },
     className: { dragOverlay: "dnd-dropping" },
   }),
-};
-
-// The row whose middle is nearest the dragged row's middle, by height alone.
-// The dragged card's box can't stand in for the row: dnd-kit measures it with
-// a parent's checklist (so its middle sits rows lower), and sideways it snaps
-// to an indent, which mustn't change the row it's over. The row's own height
-// comes from its placeholder in the list.
-const closestRow: CollisionDetection = ({
-  active,
-  collisionRect,
-  droppableRects,
-  droppableContainers,
-}) => {
-  const height = droppableRects.get(active.id)?.height ?? collisionRect.height;
-  const middle = collisionRect.top + height / 2;
-  const hits: CollisionDescriptor[] = [];
-  for (const c of droppableContainers) {
-    const r = droppableRects.get(c.id);
-    if (!r) continue;
-    const value = Math.abs(r.top + r.height / 2 - middle);
-    hits.push({ id: c.id, data: { droppableContainer: c, value } });
-  }
-  return hits.sort((a, b) => a.data.value - b.data.value);
 };
 
 const progress = (children: Item[]) => ({
@@ -254,9 +227,18 @@ export function moveItem(
 
 function Sortable({
   id,
+  data,
+  dim,
+  pending,
   children,
 }: {
   id: string;
+  /** Where it's shown and whose it is (see BoardDrag). */
+  data: { projectId: string; home: string; row: true; parentId: string | null };
+  /** Another row of its list is being dragged. */
+  dim: boolean;
+  /** Dropped here from another list, waiting for its move. */
+  pending: boolean;
   children: (drag: RowDrag) => ReactNode;
 }) {
   const {
@@ -267,25 +249,32 @@ function Sortable({
     transform,
     transition,
     isDragging,
-    active,
-  } = useSortable({ id });
+  } = useSortable({ id, data, disabled: pending });
   return (
     <div
       ref={setNodeRef}
+      data-row-id={id}
+      aria-disabled={pending || undefined}
+      className={pending ? "pointer-events-none" : undefined}
       style={{
         // Translate, not Transform: rows differ in height, and a scale would
         // stretch one into its neighbour's size.
         transform: CSS.Translate.toString(transform),
         // The other rows fade back while one is dragged, so the card in hand
-        // and the slot it would drop into stand out.
+        // and the slot it would drop into stand out. A row waiting for its
+        // move stays faded until it lands, then fades in.
         transition: [transition, "opacity 200ms ease"].filter(Boolean).join(", "),
-        opacity: active && !isDragging ? 0.5 : 1,
+        opacity: pending || (dim && !isDragging) ? 0.5 : 1,
       }}
     >
       {children({ attributes, listeners, setActivatorNodeRef, isDragging })}
     </div>
   );
 }
+
+// A row from another list is placed where it's dragged (Incoming.position),
+// so the list mustn't shift its rows again to sort it.
+const placed: SortingStrategy = () => null;
 
 /**
  * The open list as one sortable tree: top-level items with their sub-items
@@ -294,6 +283,12 @@ function Sortable({
  * level (see `projectDrop` for what each spot allows). A parent drags with its
  * checklist. From the keyboard: Space picks up a focused row, the arrows move
  * and indent it, and Space drops it.
+ *
+ * Dragged out of its column and into another list, a row leaves this one
+ * and that list makes room for it among its top-level items. Dropped there,
+ * it waits, faded, while the move is confirmed (BoardDrag); it stays put
+ * until then. Mouse and touch only: from the keyboard, it's the row menu's
+ * Move to list.
  *
  * With the viewer's filters on, only the `shown` rows are in the list. A drop
  * lands among those: just after the row on view above it (ahead of any hidden
@@ -327,28 +322,61 @@ export function DraggableItemList({
   const [full, setFull] = useOptimistic(flatten(groups));
   const [, start] = useTransition();
   const saves = useItemSaves();
+  const board = useBoardDrag();
+  const move = useMoveItem();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const [offsetX, setOffsetX] = useState(0);
+  // Its row is over another list, or between lists.
+  const [away, setAway] = useState(false);
+
+  // A row from another list on its way in, and one of this list's on its
+  // way out, which is gone from here meanwhile.
+  const { incoming } = board;
+  const entering =
+    incoming?.to === projectId && incoming.from !== projectId ? incoming : null;
+  const leaving =
+    incoming?.from === projectId && incoming.to !== projectId ? incoming.item.id : null;
+  const enteringIds = new Set(
+    entering ? [entering.item.id, ...entering.children.map((c) => c.id)] : [],
+  );
+  const own = new Map(full.map((f) => [f.item.id, f]));
+  const ownChildren = (id: string) =>
+    full.filter((f) => f.parentId === id).map((f) => f.item);
+  const rows: Flat[] = entering
+    ? applyDrop(
+        [
+          ...full.filter((f) => !enteringIds.has(f.item.id)),
+          { item: entering.item, parentId: null },
+          ...entering.children.map((c) => ({ item: c, parentId: entering.item.id })),
+        ],
+        entering.item.id,
+        { parentId: null, position: entering.position },
+      )
+    : leaving
+      ? full.filter((f) => f.item.id !== leaving && f.parentId !== leaving)
+      : full;
 
   // Indexed once per render: a drag re-renders on every pointer move.
   const kids = new Map<string, Item[]>();
-  for (const f of full) {
+  for (const f of rows) {
     if (!f.parentId) continue;
     const siblings = kids.get(f.parentId);
     if (siblings) siblings.push(f.item);
     else kids.set(f.parentId, [f.item]);
   }
   const childrenOf = (id: string) => kids.get(id) ?? [];
-  const byId = new Map(full.map((f) => [f.item.id, f]));
+  const byId = new Map([...own, ...rows.map((f) => [f.item.id, f] as const)]);
 
   // Rows as shown. A dragged parent's sub-items travel with it, so they leave
-  // the list while it's dragged.
-  const visible = full.filter(
+  // the list while it's dragged, here or into another list.
+  const carried = activeId ?? (entering && !entering.dropped ? entering.item.id : null);
+  const folded = (id: string) =>
+    enteringIds.has(id) ? entering?.collapsed : collapsed.has(id);
+  const visible = rows.filter(
     (f) =>
-      (!shown || shown.has(f.item.id)) &&
-      (f.parentId === null ||
-        (!collapsed.has(f.parentId) && f.parentId !== activeId)),
+      (enteringIds.has(f.item.id) || !shown || shown.has(f.item.id)) &&
+      (f.parentId === null || (!folded(f.parentId) && f.parentId !== carried)),
   );
   const treeRows: TreeRow[] = visible.map((f) => ({
     id: f.item.id,
@@ -360,17 +388,21 @@ export function DraggableItemList({
   const project = (active: string, over: string, dx: number) =>
     projectDrop(treeRows, active, over, Math.round(dx / INDENT));
   const projection =
-    activeId && overId ? project(activeId, overId, offsetX) : null;
+    activeId && overId && !away ? project(activeId, overId, offsetX) : null;
 
   // The keyboard sensor and the screen-reader announcements read the drag as
   // it is now: dnd-kit announces a move in the same tick as onDragMove, before
   // this re-renders with the new offset.
   const live = useRef({
     offsetX: 0,
+    away: false,
     projection,
     activeDepth: 0,
     project,
     spot: null as string | null,
+    // The pointer's y during a drag, from its own listener: dnd-kit's rects
+    // for the dragged row are off once it's shown in another list.
+    pointerY: null as number | null,
   });
   useLayoutEffect(() => {
     live.current.projection = projection;
@@ -390,24 +422,35 @@ export function DraggableItemList({
         y: at.y,
       };
     }
-    // Up and down move between rows; keep the sideways offset as it was, so
-    // the depth picked carries over to the new spot.
-    const next = sortableKeyboardCoordinates(event, args);
+    // Up and down move between rows of this list (the board's other lists
+    // aren't reachable from the keyboard); keep the sideways offset as it
+    // was, so the depth picked carries over to the new spot.
+    const all = args.context.droppableContainers;
+    const Rows = all.constructor as new (
+      entries: Iterable<[UniqueIdentifier, DroppableContainer]>,
+    ) => typeof all;
+    const next = sortableKeyboardCoordinates(event, {
+      ...args,
+      context: {
+        ...args.context,
+        droppableContainers: new Rows(
+          [...all].filter(
+            ([, c]) => c.data.current?.projectId === projectId && c.data.current?.row,
+          ),
+        ),
+      },
+    });
     return next && { x: at.x, y: next.y };
   };
 
-  const sensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, {
-      activationConstraint: { delay: 200, tolerance: 5 },
-    }),
-    useSensor(KeyboardSensor, { coordinateGetter }),
-  );
-
   const title = (id: UniqueIdentifier) => byId.get(String(id))?.item.title ?? "item";
-  function describe(active: UniqueIdentifier, over: UniqueIdentifier | undefined) {
+  const listName = (id: string) =>
+    move?.groups.flatMap((g) => g.lists).find((l) => l.id === id)?.name ?? "another list";
+  function describe(active: UniqueIdentifier, over: Over | null) {
+    const to = over?.data.current?.projectId as string | undefined;
+    if (to && to !== projectId) return `“${title(active)}” would move to ${listName(to)}.`;
     const p = over
-      ? live.current.project(String(active), String(over), live.current.offsetX)
+      ? live.current.project(String(active), String(over.id), live.current.offsetX)
       : null;
     if (!p) return `“${title(active)}” can't go here.`;
     if (!p.parentId) return `“${title(active)}” is at the top level.`;
@@ -415,12 +458,12 @@ export function DraggableItemList({
   }
   const announcements: Announcements = {
     onDragStart: ({ active }) => `Picked up “${title(active.id)}”.`,
-    onDragMove: ({ active, over }) => describe(active.id, over?.id),
-    onDragOver: ({ active, over }) => describe(active.id, over?.id),
-    onDragEnd: ({ active, over }) =>
-      `Dropped. ${describe(active.id, over?.id)}`,
+    onDragMove: ({ active, over }) => describe(active.id, over),
+    onDragOver: ({ active, over }) => describe(active.id, over),
+    onDragEnd: ({ active, over }) => `Dropped. ${describe(active.id, over)}`,
     onDragCancel: ({ active }) => `Put “${title(active.id)}” back.`,
   };
+  useLayoutEffect(() => board.register(projectId, { coordinateGetter, announcements }));
 
   // A light tick each time the drag moves the drop spot to somewhere new (a
   // slot up or down, or nesting and un-nesting), like a native list reorder.
@@ -435,15 +478,79 @@ export function DraggableItemList({
     navigator.vibrate?.(8);
   }
 
+  // Where among another list's top-level items the row would land: before
+  // or after the row it's over, by which half it's in. Over a sub-item,
+  // after its checklist; over an empty list, in it. Over its own slot there,
+  // where it already is.
+  function spotIn(active: Active, over: Over): string | null {
+    if (over.id === active.id) return board.getIncoming()?.position ?? null;
+    const d = over.data.current;
+    if (!d?.row) return "end";
+    if (d.parentId) return `after:${d.parentId}`;
+    const y = live.current.pointerY ?? 0;
+    return y > over.rect.top + over.rect.height / 2
+      ? `after:${over.id}`
+      : `before:${over.id}`;
+  }
+
+  // Follows its row as it's dragged: over its own list, or away, maybe
+  // into another one, which then makes room for it.
+  function follow(active: Active, over: Over | null, dx: number) {
+    const to = over?.data.current?.projectId as string | undefined;
+    const isAway = to !== projectId;
+    live.current.offsetX = dx;
+    setOffsetX(dx);
+    if (isAway !== live.current.away) {
+      live.current.away = isAway;
+      setAway(isAway);
+    }
+    const id = String(active.id);
+    const position = to && isAway && over ? spotIn(active, over) : null;
+    const now = board.getIncoming();
+    if (!to || !position) {
+      if (now && !now.dropped) board.setIncoming(null);
+    } else if (now?.to !== to || now.position !== position) {
+      const f = own.get(id);
+      if (!f) return;
+      board.setIncoming({
+        item: f.item,
+        children: ownChildren(id),
+        from: projectId,
+        to,
+        position,
+        dropped: false,
+        collapsed: collapsed.has(id),
+        row,
+      });
+      navigator.vibrate?.(8);
+    }
+    if (!isAway) tickOnNewSpot(active.id, over?.id, live.current.offsetX);
+  }
+
   function reset() {
     setActiveId(null);
     setOverId(null);
     setOffsetX(0);
+    setAway(false);
+    live.current.away = false;
   }
 
   function onDragEnd({ active, over }: DragEndEvent) {
     const id = String(active.id);
-    let target = over ? project(id, String(over.id), offsetX) : null;
+    if (live.current.away) {
+      reset();
+      const now = board.getIncoming();
+      if (now && !now.dropped && now.from === projectId && move) {
+        // It waits there, faded, for the move's confirmation (BoardDrag).
+        board.setIncoming({ ...now, dropped: true });
+        navigator.vibrate?.(15);
+        move.open(now.item, now.to, now.position);
+      } else {
+        board.setIncoming(null);
+      }
+      return;
+    }
+    let target = over ? project(id, String(over.id), live.current.offsetX) : null;
     reset();
     // First among the rows on view isn't first in the list when the filters
     // hide some above it: land just before the sibling on view below instead.
@@ -453,7 +560,7 @@ export function DraggableItemList({
       );
       if (below) target = { ...target, position: `before:${below.item.id}` };
     }
-    const from = byId.get(id);
+    const from = own.get(id);
     if (!over || !target || !from) return;
     const sameParent = target.parentId === from.parentId;
     // Dropped where it started.
@@ -472,11 +579,104 @@ export function DraggableItemList({
     });
   }
 
-  if (groups.length === 0) {
+  // Only drags of this list's own rows, wherever they're shown.
+  const mine = (active: Active) => active.data.current?.home === projectId;
+  useDndMonitor({
+    onDragStart({ active, activatorEvent }) {
+      if (!mine(active)) return;
+      live.current.pointerY = getEventCoordinates(activatorEvent)?.y ?? null;
+      const id = String(active.id);
+      setActiveId(id);
+      setOverId(id);
+      live.current.offsetX = 0;
+      live.current.activeDepth = own.get(id)?.parentId ? 1 : 0;
+      // Where it sits now, among the rows as the drag shows them: without
+      // a parent's sub-items, which leave the list on this re-render.
+      const home = projectDrop(
+        treeRows.filter((r) => r.parentId !== id),
+        id,
+        id,
+        0,
+      );
+      live.current.spot = home && `${home.parentId}|${home.position}`;
+      // A tick under the finger when a long-press picks the row up
+      // (where the browser supports it; Safari doesn't).
+      if (!(activatorEvent instanceof KeyboardEvent)) navigator.vibrate?.(10);
+    },
+    onDragMove({ active, over, delta }: DragMoveEvent) {
+      if (mine(active)) follow(active, over, delta.x);
+    },
+    onDragOver({ active, over, delta }) {
+      if (!mine(active)) return;
+      setOverId(over ? String(over.id) : null);
+      follow(active, over, delta.x);
+    },
+    onDragEnd(event) {
+      if (mine(event.active)) onDragEnd(event);
+    },
+    onDragCancel({ active }) {
+      if (!mine(active)) return;
+      reset();
+      board.setIncoming(null);
+    },
+  });
+
+  // Follow the pointer while a row of this list is dragged, ahead of
+  // dnd-kit's own listeners (capture), so its events read where it is now.
+  const dragging = activeId !== null && move !== null;
+  useEffect(() => {
+    if (!dragging) return;
+    const follow = (e: PointerEvent | TouchEvent) => {
+      live.current.pointerY = getEventCoordinates(e)?.y ?? live.current.pointerY;
+    };
+    window.addEventListener("pointermove", follow, true);
+    window.addEventListener("touchmove", follow, true);
+    return () => {
+      window.removeEventListener("pointermove", follow, true);
+      window.removeEventListener("touchmove", follow, true);
+    };
+  }, [dragging]);
+
+  // Away from its column, the board stops snapping to columns, so it can
+  // scroll smoothly under the card.
+  useEffect(() => {
+    if (!away) return;
+    const rail = columnEl(projectId)?.closest<HTMLElement>(".kanban-rail");
+    if (!rail) return;
+    rail.style.scrollSnapType = "none";
+    return () => {
+      rail.style.scrollSnapType = "";
+    };
+  }, [away, projectId]);
+  // Moved: once the refresh has taken it out of this list, the list it went
+  // to has the real row, which takes the waiting one's place and fades in.
+  const gone = leaving !== null && incoming?.dropped === true && !own.has(leaving);
+  useEffect(() => {
+    if (gone) board.setIncoming(null);
+  }, [gone, board]);
+  // A row from another list over this one lights it up.
+  const lit = entering !== null && !entering.dropped;
+  useEffect(() => {
+    const el = lit ? columnEl(projectId) : undefined;
+    if (!el) return;
+    el.dataset.dropTarget = "";
+    return () => {
+      delete el.dataset.dropTarget;
+    };
+  }, [lit, projectId]);
+
+  // The list itself takes a row from another list when it has none.
+  const { setNodeRef: setListRef } = useDroppable({
+    id: `list:${projectId}`,
+    data: { projectId },
+  });
+
+  if (rows.length === 0) {
     return (
       // The whole card is a pointer target, like the board's Add list column;
       // the button inside is the keyboard one, and its click bubbles up here.
       <div
+        ref={setListRef}
         onClick={onAddItem}
         className="group/add-item flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-dashed border-neutral-200 bg-neutral-50 px-3 py-8 text-center text-xs text-balance text-neutral-500 transition-colors hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-800/30 dark:text-neutral-400 dark:hover:border-neutral-700"
       >
@@ -494,18 +694,26 @@ export function DraggableItemList({
       </div>
     );
   }
-  if (visible.length === 0) {
+  if (visible.length === 0 && !activeId) {
     return (
-      <p className="rounded-lg border border-dashed border-neutral-200 bg-neutral-50 px-3 py-4 text-center text-xs text-balance text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/30 dark:text-neutral-400">
+      <p
+        ref={setListRef}
+        className="rounded-lg border border-dashed border-neutral-200 bg-neutral-50 px-3 py-4 text-center text-xs text-balance text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/30 dark:text-neutral-400"
+      >
         Nothing here for your filters.
       </p>
     );
   }
 
-  const active = activeId ? byId.get(activeId) : undefined;
+  const active = activeId ? own.get(activeId) : undefined;
   // How far in the dragged card sits: the depth it would land at, or its own
-  // where it can't land. (Each row's sortable node spans the full width.)
-  const shift = (projection?.depth ?? (active?.parentId ? 1 : 0)) * INDENT;
+  // where it can't land; flush away from its list. (Each row's sortable node
+  // spans the full width.)
+  const shift = away ? 0 : (projection?.depth ?? (active?.parentId ? 1 : 0)) * INDENT;
+  // The card moves only up and down in its list; sideways it snaps to the
+  // depth it would land at, rather than sliding freely. Away from its list it
+  // follows the pointer.
+  const lockX: Modifier = ({ transform }) => (away ? transform : { ...transform, x: 0 });
   // The top-level task above each top-level row, for the row menu's "Sub-item of".
   const above = new Map<string, Item>();
   let prevTop: Item | undefined;
@@ -516,87 +724,55 @@ export function DraggableItemList({
   }
 
   return (
-    <DndContext
-      // Stable, unique id so dnd-kit's aria-describedby is deterministic
-      // across SSR and client. Without it, dnd-kit falls back to a global
-      // counter that diverges between server and client and warns on hydration.
-      id={`item-list-${projectId}`}
-      sensors={sensors}
-      collisionDetection={closestRow}
-      // A dragged parent's sub-items leave the list, so re-measure the rows.
-      measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
-      accessibility={{
-        announcements,
-        screenReaderInstructions: {
-          draggable:
-            "To move an item, press Space. Use the up and down arrows to move it, right to make it a sub-item of the task above and left to move it out of a checklist. Press Space to drop it, or Escape to cancel.",
-        },
-      }}
-      onDragStart={({ active }) => {
-        const id = String(active.id);
-        setActiveId(id);
-        setOverId(id);
-        live.current.offsetX = 0;
-        live.current.activeDepth = byId.get(id)?.parentId ? 1 : 0;
-        // Where it sits now, among the rows as the drag shows them: without
-        // a parent's sub-items, which leave the list on this re-render.
-        const home = projectDrop(
-          treeRows.filter((r) => r.parentId !== id),
-          id,
-          id,
-          0,
-        );
-        live.current.spot = home && `${home.parentId}|${home.position}`;
-        // A tick under the finger when a long-press picks the row up
-        // (where the browser supports it; Safari doesn't).
-        navigator.vibrate?.(10);
-      }}
-      onDragMove={({ active, over, delta }: DragMoveEvent) => {
-        live.current.offsetX = delta.x;
-        setOffsetX(delta.x);
-        tickOnNewSpot(active.id, over?.id, delta.x);
-      }}
-      onDragOver={({ active, over, delta }) => {
-        setOverId(over ? String(over.id) : null);
-        tickOnNewSpot(active.id, over?.id, delta.x);
-      }}
-      onDragEnd={onDragEnd}
-      onDragCancel={reset}
-    >
+    <div ref={setListRef}>
       <SortableContext
         items={visible.map((f) => f.item.id)}
-        strategy={verticalListSortingStrategy}
+        strategy={entering ? placed : verticalListSortingStrategy}
       >
         <div className="space-y-1.5">
           {visible.map((f, i) => {
             const { item } = f;
             const isActive = item.id === activeId;
+            const isEntering = enteringIds.has(item.id);
+            // A row from another list shows its own ref and people.
+            const rp = isEntering && entering ? entering.row : row;
             const children = childrenOf(item.id);
             const node = (drag: RowDrag) => {
               if (f.parentId) {
-                return rowFor(row, item, {
+                return rowFor(rp, item, {
                   drag,
                   parentTitle: byId.get(f.parentId)?.item.title,
                 });
               }
               // A plain task can become a sub-item of the task just above it.
               const prev = above.get(item.id);
-              const canNest = children.length === 0 && prev !== undefined;
-              return rowFor(row, item, {
+              const canNest = children.length === 0 && prev !== undefined && !isEntering;
+              return rowFor(rp, item, {
                 drag,
                 nestUnder: canNest ? { id: prev.id, title: prev.title } : undefined,
                 checklist:
                   children.length > 0
                     ? {
                         ...progress(children),
-                        expanded: !collapsed.has(item.id),
+                        expanded: !folded(item.id),
                         onToggle: () => onToggleCollapsed(item.id),
                       }
                     : undefined,
               });
             };
             return (
-              <Sortable key={item.id} id={item.id}>
+              <Sortable
+                key={item.id}
+                id={item.id}
+                data={{
+                  projectId,
+                  home: isEntering && entering ? entering.from : projectId,
+                  row: true,
+                  parentId: f.parentId,
+                }}
+                dim={activeId !== null && !away}
+                pending={isEntering && entering?.dropped === true}
+              >
                 {(drag) => {
                   // The dragged row stays in the list as the drop placeholder,
                   // indented to the depth it would land at, without tree lines.
@@ -631,31 +807,34 @@ export function DraggableItemList({
         </div>
       </SortableContext>
       {/* What follows the pointer: the row, with a parent's checklist, lifted
-          off the list (scaled up with a deep shadow) until it's dropped. */}
-      <DragOverlay modifiers={[lockX]} dropAnimation={dropAnimation}>
-        {active && (
-          <div
-            // The column's own background, so rows under a parent's checklist
-            // don't show through the gaps between its rows.
-            className="cursor-grabbing rounded-lg bg-white shadow-xl transition-[margin,width,scale,box-shadow] duration-200 ease-out in-[.dnd-dropping]:scale-100! in-[.dnd-dropping]:shadow-none motion-safe:scale-[1.03] motion-safe:animate-[lift_150ms_ease-out] dark:bg-neutral-900"
-            style={{
-              marginLeft: shift,
-              width: `calc(100% - ${shift}px)`,
-            }}
-          >
-            {active.parentId ? (
-              rowFor(row, active.item)
-            ) : (
-              <ItemGroupView
-                {...row}
-                group={{ ...active.item, children: childrenOf(active.item.id) }}
-                collapsed={collapsed.has(active.item.id)}
-                shown={shown}
-              />
-            )}
-          </div>
-        )}
-      </DragOverlay>
-    </DndContext>
+          off the list (scaled up with a deep shadow) until it's dropped. Drawn
+          by the list it's from, wherever it goes. */}
+      {board.source === projectId && (
+        <DragOverlay modifiers={[lockX]} dropAnimation={dropAnimation}>
+          {active && (
+            <div
+              // The column's own background, so rows under a parent's checklist
+              // don't show through the gaps between its rows.
+              className="cursor-grabbing rounded-lg bg-white shadow-xl transition-[margin,width,scale,box-shadow] duration-200 ease-out in-[.dnd-dropping]:scale-100! in-[.dnd-dropping]:shadow-none motion-safe:scale-[1.03] motion-safe:animate-[lift_150ms_ease-out] dark:bg-neutral-900"
+              style={{
+                marginLeft: shift,
+                width: `calc(100% - ${shift}px)`,
+              }}
+            >
+              {active.parentId ? (
+                rowFor(row, active.item)
+              ) : (
+                <ItemGroupView
+                  {...row}
+                  group={{ ...active.item, children: ownChildren(active.item.id) }}
+                  collapsed={collapsed.has(active.item.id)}
+                  shown={shown}
+                />
+              )}
+            </div>
+          )}
+        </DragOverlay>
+      )}
+    </div>
   );
 }
