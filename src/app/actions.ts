@@ -12,8 +12,9 @@ import {
   setAgentWebhook as setAgentWebhookCore,
 } from "@/core/agentWebhooks";
 import {
+  endAgentSession as endAgentSessionCore,
   requestWork as requestWorkCore,
-  stopWork as stopWorkCore,
+  stopRequest as stopRequestCore,
 } from "@/core/agentSessions";
 import { listAudit as listAuditCore } from "@/core/audit";
 import {
@@ -774,16 +775,16 @@ export async function removeAgentWebhookAction(keyId: string) {
 /**
  * Start one of the viewer's agents on an item (assigning it in the picker).
  * The session opens first, so the board shows the agent at once; if its
- * webhook can't be reached, the session ends again and this throws.
+ * webhook can't be reached, that session ends again and this throws.
  */
 export async function startAgentAction(itemId: string, keyId: string) {
   const userId = await requireUserId();
   const { db } = getDb();
-  const { request } = requestWorkCore(db, userId, itemId, keyId, SOURCE);
+  const { session, request } = requestWorkCore(db, userId, itemId, keyId, SOURCE);
   try {
     if (request) await sendAgentRequest(request);
   } catch (e) {
-    stopWorkCore(db, userId, itemId, keyId, SOURCE, (e as Error).message);
+    endAgentSessionCore(db, userId, session.id, SOURCE, (e as Error).message);
     refresh();
     throw e;
   }
@@ -791,13 +792,17 @@ export async function startAgentAction(itemId: string, keyId: string) {
 }
 
 /**
- * Stop one of the viewer's agents on an item (unassigning it). The session
- * ends here whatever happens; this throws if the agent couldn't be told.
+ * Stop one of the viewer's agents on an item (unassigning it). The agent is
+ * told first and the session ends once it has been, so a stop that couldn't
+ * be delivered stays on the board to try again. With no webhook left to
+ * tell, it just ends.
  */
 export async function stopAgentAction(itemId: string, keyId: string) {
   const userId = await requireUserId();
   const { db } = getDb();
-  const request = stopWorkCore(db, userId, itemId, keyId, SOURCE);
+  const found = stopRequestCore(db, userId, itemId, keyId);
+  if (!found) return;
+  if (found.request) await sendAgentRequest(found.request);
+  endAgentSessionCore(db, userId, found.session.id, SOURCE);
   refresh();
-  if (request) await sendAgentRequest(request);
 }

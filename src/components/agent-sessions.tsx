@@ -25,9 +25,10 @@ const SessionsContext = createContext<Record<string, AgentSession[]>>({});
 const NO_SESSIONS: AgentSession[] = [];
 // The viewer's agents Sidetrack can start, and the lists they may start them on.
 const StartableContext = createContext<{
+  viewerId: string | null;
   agents: StartableAgent[];
   lists: ReadonlySet<string>;
-}>({ agents: [], lists: new Set() });
+}>({ viewerId: null, agents: [], lists: new Set() });
 
 // One minute clock for every agent on the page, so working turns idle on time.
 let now = Date.now();
@@ -75,11 +76,13 @@ function useMinuteClock(active: boolean): number | null {
  */
 export function AgentSessionsProvider({
   sessions,
+  viewerId = null,
   startable = [],
   startableIn = [],
   children,
 }: {
   sessions: AgentSession[];
+  viewerId?: string | null;
   startable?: StartableAgent[];
   startableIn?: string[];
   children: ReactNode;
@@ -92,8 +95,12 @@ export function AgentSessionsProvider({
   // Joined so the set (and every picker) only changes when the lists do.
   const listsKey = startableIn.join(",");
   const startableValue = useMemo(
-    () => ({ agents: startable, lists: new Set(listsKey ? listsKey.split(",") : []) }),
-    [startable, listsKey],
+    () => ({
+      viewerId,
+      agents: startable,
+      lists: new Set(listsKey ? listsKey.split(",") : []),
+    }),
+    [viewerId, startable, listsKey],
   );
   return (
     <SessionsContext value={byItem}>
@@ -107,29 +114,34 @@ export type AgentOption = StartableAgent & { working: boolean };
 
 /**
  * The viewer's agents for an item's assignee picker, and how to start or stop
- * one. They're offered where the viewer can start them (see AgentSessionsProvider);
- * one already working stays listed anywhere, so it can always be stopped.
+ * one. They're offered on open items in lists the viewer can start them on
+ * (see AgentSessionsProvider). One of theirs already working on the item is
+ * listed whatever else is true, even with its webhook removed or its key
+ * revoked, so it can always be stopped.
  * The change holds: `start` is the item's transition, which dims it until the
  * agent's webhook answers, and a failure says so in a toast.
  */
 export function useAgentAssignment(
-  item: Pick<Item, "id" | "projectId">,
+  item: Pick<Item, "id" | "projectId" | "completedAt">,
   start: TransitionStartFunction,
 ): { agentOptions: AgentOption[]; setAgent: (keyId: string, on: boolean) => void } {
   const startable = useContext(StartableContext);
   const sessions = useContext(SessionsContext)[item.id] ?? NO_SESSIONS;
-  const canStart = startable.lists.has(item.projectId);
+  const canStart = startable.lists.has(item.projectId) && item.completedAt === null;
   const agentOptions = useMemo(() => {
-    const working = new Set(
-      sessions.filter((s) => s.finishedAt === null).map((s) => s.agentKeyId),
-    );
-    return startable.agents
-      .filter((a) => canStart || working.has(a.keyId))
-      .map((a) => ({ ...a, working: working.has(a.keyId) }));
-  }, [startable.agents, sessions, canStart]);
+    const working = sessions
+      .filter((s) => s.finishedAt === null && s.userId === startable.viewerId)
+      .map((s) => ({ keyId: s.agentKeyId, name: s.agentName, working: true }));
+    const idle = canStart
+      ? startable.agents
+          .filter((a) => !working.some((w) => w.keyId === a.keyId))
+          .map((a) => ({ ...a, working: false }))
+      : [];
+    return [...working, ...idle].sort((a, b) => a.name.localeCompare(b.name));
+  }, [startable, sessions, canStart]);
   const setAgent = useCallback(
     (keyId: string, on: boolean) => {
-      const name = startable.agents.find((a) => a.keyId === keyId)?.name ?? "the agent";
+      const name = agentOptions.find((a) => a.keyId === keyId)?.name ?? "the agent";
       start(async () => {
         await runAction(
           on ? startAgentAction(item.id, keyId) : stopAgentAction(item.id, keyId),
@@ -137,7 +149,7 @@ export function useAgentAssignment(
         );
       });
     },
-    [startable.agents, start, item.id],
+    [agentOptions, start, item.id],
   );
   return { agentOptions, setAgent };
 }

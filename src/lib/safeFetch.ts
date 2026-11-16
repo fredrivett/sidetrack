@@ -179,13 +179,12 @@ function get(
         method: post ? "POST" : "GET",
         lookup,
         signal,
-        headers: {
+        headers: post?.headers ?? {
           // Some sites refuse requests without a browser-like agent.
           "User-Agent":
             "Mozilla/5.0 (compatible; SidetrackFavicon/1.0; +https://sidetrack.it)",
           Accept: "text/html,application/xhtml+xml,image/*,*/*;q=0.8",
           "Accept-Encoding": "gzip, deflate, br",
-          ...post?.headers,
         },
       },
       (res) => {

@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type { AgentRequest } from "../lib/agentRequest";
 import { formatItemRef, workBranchName } from "../lib/itemRef";
@@ -11,6 +11,7 @@ import { assigneeLabel, getItem } from "./items";
 import {
   type AgentSession,
   type Item,
+  type Project,
   agentSessions,
   agentWebhooks,
   items,
@@ -314,16 +315,32 @@ export function listStartableAgents(db: Db, userId: string): StartableAgent[] {
     .all();
 }
 
-/** The user's own key, with its webhook when it has one. */
-function ownAgent(db: Db, userId: string, keyId: string) {
-  const agent = db
-    .select({ name: apiKeys.name, url: agentWebhooks.url, secret: agentWebhooks.secret })
-    .from(apiKeys)
-    .leftJoin(agentWebhooks, eq(agentWebhooks.keyId, apiKeys.id))
-    .where(and(eq(apiKeys.id, keyId), eq(apiKeys.userId, userId)))
-    .get();
-  if (!agent) throw new Error(`agent not found: ${keyId}`);
-  return agent;
+/**
+ * Why `userId` can't start an agent on the list's items, or null if they
+ * can: only its admin may, and only once it has a repository, since that
+ * decides where the agent works and with whose secrets.
+ */
+function startRefusal(
+  db: Db,
+  userId: string,
+  project: Pick<Project, "name" | "userId" | "spaceId" | "repository">,
+): string | null {
+  if (!isListAdmin(db, userId, project)) {
+    return "only the list's admin can start an agent on its items";
+  }
+  if (!project.repository) return `"${project.name}" has no repository for an agent to work in`;
+  return null;
+}
+
+/** The lists, of those `userId` can see, they can start an agent on. */
+export function listStartableLists(db: Db, userId: string): string[] {
+  return db
+    .select()
+    .from(projects)
+    .where(and(hasProjectAccess(userId), isNotNull(projects.repository)))
+    .all()
+    .filter((p) => startRefusal(db, userId, p) === null)
+    .map((p) => p.id);
 }
 
 function projectOf(db: Db, item: Item) {
@@ -332,12 +349,20 @@ function projectOf(db: Db, item: Item) {
   return project;
 }
 
+/** A key's webhook, if it still has one. */
+function webhookOf(db: Db, keyId: string) {
+  return db
+    .select({ url: agentWebhooks.url, secret: agentWebhooks.secret })
+    .from(agentWebhooks)
+    .where(eq(agentWebhooks.keyId, keyId))
+    .get();
+}
+
 /**
  * Ask one of the user's agents to work on an item: open its session and
- * return the start request to send. Only the list's admin may, on a list with
- * a repository, since that decides where the agent works and with whose
- * secrets. If the agent already has a session open on the item, nothing
- * changes and there's no request, so assigning twice starts it once.
+ * return the start request to send. If the agent already has a session open
+ * on the item, nothing changes and there's no request, so assigning twice
+ * starts it once.
  */
 export function requestWork(
   db: Db,
@@ -348,30 +373,29 @@ export function requestWork(
 ): { session: AgentSession; request: AgentRequest | null } {
   const item = itemOrThrow(db, userId, itemId);
   const project = projectOf(db, item);
-  if (!isListAdmin(db, userId, project)) {
-    throw new Error("only the list's admin can start an agent on its items");
-  }
-  const agent = ownAgent(db, userId, keyId);
-  if (!agent.url || !agent.secret) {
-    throw new Error(`${agent.name} isn't set to start work when assigned`);
-  }
-  if (!project.repository) {
-    throw new Error(`"${project.name}" has no repository for an agent to work in`);
-  }
+  const refusal = startRefusal(db, userId, project);
+  const { repository } = project;
+  if (refusal || !repository) throw new Error(refusal ?? "no repository");
+  const key = db
+    .select({ name: apiKeys.name })
+    .from(apiKeys)
+    .where(and(eq(apiKeys.id, keyId), eq(apiKeys.userId, userId)))
+    .get();
+  if (!key) throw new Error(`agent not found: ${keyId}`);
+  const hook = webhookOf(db, keyId);
+  if (!hook) throw new Error(`${key.name} isn't set to start work when assigned`);
   if (item.completedAt !== null) {
     throw new Error(`"${item.title}" is completed; reopen it before starting an agent on it`);
   }
-  const existing = openSession(db, itemId, keyId);
-  if (existing) return { session: existing, request: null };
 
   const ref = formatItemRef(project.prefix, item.number);
   const now = Date.now();
-  const session: AgentSession = {
+  const fresh: AgentSession = {
     id: nanoid(12),
     itemId,
     userId,
     agentKeyId: keyId,
-    agentName: agent.name,
+    agentName: key.name,
     threadUrl: null,
     branch: workBranchName(ref, item.title),
     note: null,
@@ -379,8 +403,12 @@ export function requestWork(
     lastActiveAt: now,
     finishedAt: null,
   };
-  db.transaction((tx) => {
-    tx.insert(agentSessions).values(session).run();
+  // The check and the insert share the transaction, so the open-session
+  // index can't be hit by two assignments landing together.
+  const existing = db.transaction((tx) => {
+    const open = openSession(tx as unknown as Db, itemId, keyId);
+    if (open) return open;
+    tx.insert(agentSessions).values(fresh).run();
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
@@ -388,40 +416,80 @@ export function requestWork(
       entityType: "item",
       entityId: itemId,
       projectId: item.projectId,
-      detail: `asked ${agent.name} to work on "${item.title}"`,
+      detail: `asked ${key.name} to work on "${item.title}"`,
     });
+    return null;
   });
+  if (existing) return { session: existing, request: null };
   return {
-    session,
+    session: fresh,
     request: {
-      url: agent.url,
-      secret: agent.secret,
-      idempotencyKey: session.id,
-      body: { type: "start", sessionId: session.id, itemId, ref, repository: project.repository },
+      url: hook.url,
+      secret: hook.secret,
+      idempotencyKey: fresh.id,
+      body: { type: "start", sessionId: fresh.id, itemId, ref, repository },
     },
   };
 }
 
 /**
- * Stop one of the user's agents working on an item: end its open session,
- * so the board stops showing it and its reports are refused, and return the
- * stop request to send, or null when its key has no webhook left. Any key's
- * owner can stop their own agent, admin or not. `reason`, when given, is kept
- * as the session's last note, such as why a start didn't go through. Returns
- * undefined, writing nothing, when the agent has no open session there.
+ * The user's agent's open session on an item and the stop request to send
+ * it, or null when its key has no webhook left (or was revoked). Changes
+ * nothing: send the request, then end the session with endAgentSession, so a
+ * stop that couldn't be delivered can be tried again. Any agent's owner can
+ * stop it, admin or not. Undefined when it has no open session there.
  */
-export function stopWork(
+export function stopRequest(
   db: Db,
   userId: string,
   itemId: string,
   keyId: string,
+): { session: AgentSession; request: AgentRequest | null } | undefined {
+  const item = itemOrThrow(db, userId, itemId);
+  const session = openSession(db, itemId, keyId);
+  // The session holds who the agent works for, so this works after the key
+  // itself is revoked.
+  if (!session || session.userId !== userId) return undefined;
+  const hook = webhookOf(db, keyId);
+  if (!hook) return { session, request: null };
+  const project = projectOf(db, item);
+  return {
+    session,
+    request: {
+      url: hook.url,
+      secret: hook.secret,
+      idempotencyKey: `${session.id}:stop`,
+      body: {
+        type: "stop",
+        sessionId: session.id,
+        itemId,
+        ref: formatItemRef(project.prefix, item.number),
+      },
+    },
+  };
+}
+
+/**
+ * End one of the user's agent sessions, by id: the board stops showing the
+ * agent and its later reports are refused. `reason`, when given, is kept as
+ * its last note, such as why a start didn't go through. Returns false,
+ * writing nothing, when it's already ended or isn't theirs.
+ */
+export function endAgentSession(
+  db: Db,
+  userId: string,
+  sessionId: string,
   source: AuditOrigin,
   reason?: string,
-): AgentRequest | null | undefined {
-  const item = itemOrThrow(db, userId, itemId);
-  const agent = ownAgent(db, userId, keyId);
-  const session = openSession(db, itemId, keyId);
-  if (!session) return undefined;
+): boolean {
+  const session = db
+    .select()
+    .from(agentSessions)
+    .where(and(eq(agentSessions.id, sessionId), isNull(agentSessions.finishedAt)))
+    .get();
+  if (!session || session.userId !== userId) return false;
+  const item = getItem(db, userId, session.itemId);
+  if (!item) return false;
   const now = Date.now();
   db.transaction((tx) => {
     tx.update(agentSessions)
@@ -433,22 +501,10 @@ export function stopWork(
       source,
       action: "finish",
       entityType: "item",
-      entityId: itemId,
+      entityId: item.id,
       projectId: item.projectId,
-      detail: `stopped ${agent.name} on "${item.title}"${reason ? `: ${reason}` : ""}`,
+      detail: `stopped ${session.agentName} on "${item.title}"${reason ? `: ${reason}` : ""}`,
     });
   });
-  if (!agent.url || !agent.secret) return null;
-  const project = projectOf(db, item);
-  return {
-    url: agent.url,
-    secret: agent.secret,
-    idempotencyKey: `${session.id}:stop`,
-    body: {
-      type: "stop",
-      sessionId: session.id,
-      itemId,
-      ref: formatItemRef(project.prefix, item.number),
-    },
-  };
+  return true;
 }

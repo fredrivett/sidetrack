@@ -4,12 +4,14 @@ import {
   finishWork,
   listAllAgentSessions,
   reportWork,
+  endAgentSession,
+  listStartableLists,
   requestWork,
   startWork,
-  stopWork,
+  stopRequest,
 } from "./agentSessions";
 import { removeAgentWebhook, setAgentWebhook } from "./agentWebhooks";
-import { createApiKey } from "./api-keys";
+import { createApiKey, revokeApiKey } from "./api-keys";
 import { listAudit } from "./audit";
 import { addItem, completeItem, getItem } from "./items";
 import { acceptInvite, inviteMember } from "./members";
@@ -270,15 +272,20 @@ describe("requestWork and stopWork", () => {
     expect(resumed).toMatchObject({ id: session.id, threadUrl: THREAD });
   });
 
-  it("ends the session on stop, refusing the agent's later reports", () => {
+  it("stops by telling the agent first, then ending the session by its id", () => {
     const { db, userId, itemId, keyId } = seedAgent();
     const { session } = requestWork(db, userId, itemId, keyId, "web");
 
-    const request = stopWork(db, userId, itemId, keyId, "web");
-    expect(request).toMatchObject({
+    // Reading the stop request changes nothing, so a failed delivery can be retried.
+    const found = stopRequest(db, userId, itemId, keyId);
+    expect(found?.request).toMatchObject({
       idempotencyKey: `${session.id}:stop`,
       body: { type: "stop", sessionId: session.id, itemId, ref: "SID-1" },
     });
+    expect(stopRequest(db, userId, itemId, keyId)?.session.id).toBe(session.id);
+    expect(listAllAgentSessions(db, userId)[0].finishedAt).toBeNull();
+
+    expect(endAgentSession(db, userId, session.id, "web")).toBe(true);
     expect(listAllAgentSessions(db, userId)).toEqual([
       expect.objectContaining({ id: session.id, finishedAt: expect.any(Number) }),
     ]);
@@ -288,8 +295,22 @@ describe("requestWork and stopWork", () => {
     });
     const agent: AgentOrigin = { source: "mcp", agent: { keyId, name: "Amp" } };
     expect(() => reportWork(db, userId, itemId, "Still going", agent)).toThrow(/no open work session/);
-    // Nothing left to stop.
-    expect(stopWork(db, userId, itemId, keyId, "web")).toBeUndefined();
+    // Nothing left to stop, and ending it again writes nothing.
+    expect(stopRequest(db, userId, itemId, keyId)).toBeUndefined();
+    const logged = listAudit(db, userId).length;
+    expect(endAgentSession(db, userId, session.id, "web")).toBe(false);
+    expect(listAudit(db, userId).length).toBe(logged);
+  });
+
+  it("rolls back only the session it opened, not a newer one", () => {
+    const { db, userId, itemId, keyId } = seedAgent();
+    const first = requestWork(db, userId, itemId, keyId, "web").session;
+    endAgentSession(db, userId, first.id, "web");
+    const second = requestWork(db, userId, itemId, keyId, "web").session;
+
+    // A late rollback of the first start leaves the second running.
+    expect(endAgentSession(db, userId, first.id, "web", "webhook answered 500")).toBe(false);
+    expect(stopRequest(db, userId, itemId, keyId)?.session.id).toBe(second.id);
   });
 
   it("refuses a member who isn't the list's admin, and lists without a repository", () => {
@@ -313,15 +334,34 @@ describe("requestWork and stopWork", () => {
     expect(listAllAgentSessions(db, userId)).toEqual([]);
   });
 
-  it("refuses a key that isn't set to start work, but still stops one whose webhook went", () => {
+  it("refuses a key that isn't set to start work, but still stops one whose webhook or key went", () => {
     const { db, userId, itemId, keyId } = seedAgent();
     const { record } = createApiKey(db, userId, "Claude", "web");
     expect(() => requestWork(db, userId, itemId, record.id, "web")).toThrow(/isn't set to start/);
 
     requestWork(db, userId, itemId, keyId, "web");
     removeAgentWebhook(db, userId, keyId, "web");
-    // Ended, with no webhook left to tell.
-    expect(stopWork(db, userId, itemId, keyId, "web")).toBeNull();
-    expect(listAllAgentSessions(db, userId)[0].finishedAt).not.toBeNull();
+    // No webhook left to tell, so there's no request; the session still ends.
+    const found = stopRequest(db, userId, itemId, keyId);
+    expect(found?.request).toBeNull();
+    const sessionId = found?.session.id ?? "";
+
+    revokeApiKey(db, userId, keyId, "web");
+    // Revoking the key doesn't strand its session either.
+    expect(stopRequest(db, userId, itemId, keyId)?.session.id).toBe(sessionId);
+    expect(endAgentSession(db, userId, sessionId, "web")).toBe(true);
+  });
+
+  it("lists the lists the user can start agents on: theirs to admin, with a repository", () => {
+    const { db, userId, projectId } = seedAgent();
+    const bare = createProject(db, userId, { name: "No repo" }, "web");
+    const lorna = createTestUser(db, { username: "lorna" });
+    inviteMember(db, userId, projectId, "lorna", "web");
+    acceptInvite(db, lorna, projectId, "web");
+
+    expect(listStartableLists(db, userId)).toEqual([projectId]);
+    expect(listStartableLists(db, userId)).not.toContain(bare.id);
+    // A member who isn't its admin can't start agents on it.
+    expect(listStartableLists(db, lorna)).toEqual([]);
   });
 });
