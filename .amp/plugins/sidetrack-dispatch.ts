@@ -55,8 +55,8 @@ function stopMessage(ref: string): string {
  * created. A stop that arrives before its start leaves a stopped entry, so the
  * start never runs.
  *
- * Each side effect is recorded before it happens and never retried: a call
- * that fails or times out may still have happened (a thread created, a
+ * Each side effect is recorded just before it starts and never retried once
+ * started: a call that fails or times out may still have happened (a thread created, a
  * message sent, with the answer lost), so it's logged and left. An orb
  * started twice, or a thread told twice to start, is worse than one that
  * didn't happen, which unassigning and assigning again in Sidetrack (a new
@@ -106,6 +106,9 @@ export default async function sidetrackDispatch(amp: PluginAPI) {
 			amp.logger.log(`Refused request ${event.id}: ${request.refused}.`)
 			return
 		}
+		// A delivery that waited past its deadline in the queue hasn't done
+		// anything yet, so it fails for Amp to deliver again.
+		ctx.signal.throwIfAborted()
 		const sessions = load()
 		const known = sessions[request.sessionId]
 
@@ -129,8 +132,12 @@ export default async function sidetrackDispatch(amp: PluginAPI) {
 			return
 		}
 
-		// Already started, stopped, or begun and failed: nothing to redo.
-		if (known) return
+		if (known) {
+			// Its thread was made, then the plugin stopped before the prompt.
+			if (known.thread && !known.prompted && !known.stopped) await prompt(sessions, request.sessionId, ctx.signal)
+			// Otherwise already started, stopped, or begun and failed.
+			return
+		}
 		const entry: Sessions[string] = { ref: request.ref, thread: null, prompted: false, stopped: false }
 		sessions[request.sessionId] = entry
 		save(sessions)
@@ -144,16 +151,22 @@ export default async function sidetrackDispatch(amp: PluginAPI) {
 			})
 		})
 		if (!created) return
-		const thread = created.value
-		entry.thread = thread.id
+		entry.thread = created.value.id
+		save(sessions)
+		await prompt(sessions, request.sessionId, ctx.signal)
+	}
+
+	/** Send a started session's thread its start prompt, once. */
+	const prompt = async (sessions: Sessions, sessionId: string, signal: AbortSignal) => {
+		const entry = sessions[sessionId]
+		const { ref } = entry
+		const thread = entry.thread!
 		entry.prompted = true
 		save(sessions)
-		const prompted = await once(`prompt ${thread.id} on ${request.ref}`, ctx.signal, () =>
-			amp.threads
-				.get(thread.id)
-				.appendUserMessage({ type: 'user-message', content: startMessage(request.ref) }),
+		const prompted = await once(`prompt ${thread} on ${ref}`, signal, () =>
+			amp.threads.get(thread).appendUserMessage({ type: 'user-message', content: startMessage(ref) }),
 		)
-		if (prompted) amp.logger.log(`Started ${thread.id} on ${request.ref}.`)
+		if (prompted) amp.logger.log(`Started ${thread} on ${ref}.`)
 	}
 
 	/**
@@ -165,7 +178,6 @@ export default async function sidetrackDispatch(amp: PluginAPI) {
 	const once = async <T>(what: string, signal: AbortSignal, call: () => Promise<T>) => {
 		try {
 			const value = await new Promise<T>((resolve, reject) => {
-				if (signal.aborted) return reject(new Error('the delivery ran out of time'))
 				signal.addEventListener('abort', () => reject(new Error('the delivery ran out of time')), {
 					once: true,
 				})
