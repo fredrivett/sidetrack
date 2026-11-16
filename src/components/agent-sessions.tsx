@@ -76,13 +76,14 @@ function useMinuteClock(active: boolean): number | null {
  */
 export function AgentSessionsProvider({
   sessions,
-  viewerId = null,
+  viewerId,
   startable = [],
   startableIn = [],
   children,
 }: {
   sessions: AgentSession[];
-  viewerId?: string | null;
+  /** Whose agents the pickers offer and can stop. */
+  viewerId: string;
   startable?: StartableAgent[];
   startableIn?: string[];
   children: ReactNode;

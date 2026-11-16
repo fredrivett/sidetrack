@@ -166,7 +166,7 @@ describe("ItemRow agents", () => {
       finishedAt: null,
     };
     render(
-      <AgentSessionsProvider sessions={[session]}>
+      <AgentSessionsProvider sessions={[session]} viewerId={session.userId}>
         <ItemRow
           item={item}
           prefix="ENG"
