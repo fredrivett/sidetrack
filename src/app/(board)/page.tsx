@@ -12,7 +12,7 @@ import { getDb } from "@/core/db";
 import { projectRefPrefixes } from "@/core/itemRef";
 import { listItems, reopenDueRepeats } from "@/core/items";
 import { listAssignees, listPendingInvites } from "@/core/members";
-import { listAllPrLinks } from "@/core/prLinks";
+import { listAllPrLinks, suggestedRepositories } from "@/core/prLinks";
 import { listProjects } from "@/core/projects";
 import { listPendingSpaceInvites, listSpaces, listTrays } from "@/core/spaces";
 import { COLLAPSED_TRAYS_COOKIE, parseCollapsedTrays } from "@/components/SpaceTray";
@@ -38,10 +38,12 @@ export default async function Home({
   // qualified (alice/SID) only when a shared project's prefix clashes on this
   // viewer's board, bare (SID) otherwise.
   const refPrefixes = projectRefPrefixes(db, userId);
+  const repoSuggestions = suggestedRepositories(db, userId);
   const projects = listProjects(db, userId).map((p) => ({
     ...p,
     isOwner: p.userId === userId,
     refPrefix: refPrefixes[p.id] ?? p.prefix,
+    suggestedRepository: repoSuggestions[p.id],
   }));
   const pendingInvites = listPendingInvites(db, userId);
   // Finished items stay on the board until their week is over (in each

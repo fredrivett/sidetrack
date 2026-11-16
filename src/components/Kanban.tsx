@@ -58,7 +58,12 @@ import { UserMenu } from "./UserMenu";
  * being shared with them), and its display ref-prefix (qualified `alice/SID`
  * when the prefix clashes on this board, bare `SID` otherwise).
  */
-export type ProjectView = Project & { isOwner: boolean; refPrefix: string };
+export type ProjectView = Project & {
+  isOwner: boolean;
+  refPrefix: string;
+  /** Offered to the admin while the list has no repository: see suggestedRepositories. */
+  suggestedRepository?: string;
+};
 
 /** The header's views; the board's is the default, and has no `?view=`. */
 const BOARD_VIEWS = [

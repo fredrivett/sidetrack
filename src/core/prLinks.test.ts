@@ -7,9 +7,10 @@ import {
   listItemsForPr,
   listLinkedRepos,
   listPrLinksForItem,
+  suggestedRepositories,
   unlinkItemFromPr,
 } from "./prLinks";
-import { createProject } from "./projects";
+import { createProject, updateProject } from "./projects";
 import { createTestDb, createTestUser } from "./test-helpers";
 
 function seedItem() {
@@ -160,5 +161,26 @@ describe("listLinkedRepos", () => {
 
     expect(listLinkedRepos(db, userId)).toEqual(["acme/web", "zed/app"]);
     expect(listLinkedRepos(db, createTestUser(db))).toEqual([]);
+  });
+});
+
+describe("suggestedRepositories", () => {
+  it("suggests the repo with the most distinct PRs, for lists without a repository", () => {
+    const { db, userId, projectId, itemId } = seedItem();
+    const add = (pid: string) => addItem(db, userId, { projectId: pid, title: "t" }, "web").id;
+    // One busy PR linked from three items counts once, so two PRs win.
+    for (const id of [itemId, add(projectId), add(projectId)]) {
+      linkItemToPr(db, userId, id, "https://github.com/acme/busy/pull/1", "web");
+    }
+    linkItemToPr(db, userId, add(projectId), "https://github.com/acme/web/pull/2", "web");
+    linkItemToPr(db, userId, add(projectId), "https://github.com/acme/web/pull/3", "web");
+
+    const set = createProject(db, userId, { name: "Set" }, "web");
+    updateProject(db, userId, set.id, { repository: "acme/set" }, "web");
+    linkItemToPr(db, userId, add(set.id), "https://github.com/acme/web/pull/4", "web");
+    createProject(db, userId, { name: "No PRs" }, "web");
+
+    expect(suggestedRepositories(db, userId)).toEqual({ [projectId]: "acme/web" });
+    expect(suggestedRepositories(db, createTestUser(db))).toEqual({});
   });
 });
