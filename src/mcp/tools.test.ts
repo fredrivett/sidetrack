@@ -121,6 +121,27 @@ describe("tool output", () => {
   });
 });
 
+describe("emails", () => {
+  it("link invites to the app's address the request came in on", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    createTestUser(db, { username: "bob" });
+    const list = createProject(db, fred, { name: "Home" }, "web");
+    const space = createSpace(db, fred, { name: "Household" }, "web");
+    // With no email transport set, the email layer logs each link instead.
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const call = await connectAs(fred);
+      expect((await call("invite_member", { list_id: list.id, person: "bob" })).error).toBeNull();
+      expect((await call("invite_space_member", { space_id: space.id, person: "bob" })).error).toBeNull();
+      const invites = log.mock.calls.map(([line]) => String(line)).filter((l) => l.includes("invite for"));
+      expect(invites).toHaveLength(2);
+      for (const line of invites) expect(line).toMatch(/: http:\/\/localhost:3000$/);
+    } finally {
+      log.mockRestore();
+    }
+  });
+});
+
 describe("item targeting", () => {
   // Fred shares his ENG list with Bob, who has an ENG list of his own, so a
   // bare ENG-1 could be either on Bob's board.

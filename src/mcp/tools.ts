@@ -278,10 +278,11 @@ function withRefs(prefix: string, list: Item[]) {
 }
 
 // Notify an invitee by email (best-effort; notifyInvite never throws). The
-// link is the app root (BETTER_AUTH_URL); with no transport set, the email
+// link is the app root (McpContext.baseUrl); with no transport set, the email
 // layer logs it server-side.
 async function sendInviteNotification(
   db: Db,
+  url: string,
   inviterId: string,
   name: string,
   toEmail: string | null,
@@ -292,7 +293,7 @@ async function sendInviteNotification(
     to: toEmail,
     inviterName: getUserName(db, inviterId) ?? "Someone",
     projectName: name,
-    url: getEnv().BETTER_AUTH_URL?.replace(/\/$/, "") ?? "",
+    url,
     kind,
   });
 }
@@ -1446,7 +1447,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       const project = getProject(db, userId, list_id);
       if (!project) return notFound("list", list_id);
       const member = inviteMember(db, userId, list_id, person, SOURCE);
-      await sendInviteNotification(db, userId, project.name, member.email);
+      await sendInviteNotification(db, ctx.baseUrl, userId, project.name, member.email);
       return json(member);
     },
   );
@@ -1650,7 +1651,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       const space = listSpaces(db, userId).find((s) => s.id === space_id);
       if (!space) return notFound("space", space_id);
       const member = inviteSpaceMember(db, userId, space_id, person, SOURCE);
-      await sendInviteNotification(db, userId, space.name, member.email, "space");
+      await sendInviteNotification(db, ctx.baseUrl, userId, space.name, member.email, "space");
       return json(member);
     },
   );
