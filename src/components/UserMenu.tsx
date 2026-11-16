@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, Boxes, Check, CircleUserRound, KeyRound, Loader2, LogOut, UserRound } from "lucide-react";
+import { Archive, Boxes, Check, CircleUserRound, KeyRound, Loader2, LogOut, Moon, Sun, SunMoon, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
@@ -9,17 +9,30 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { GitHubMark } from "@/components/GitHubMark";
 import { UserAvatar, type AvatarUser } from "@/components/UserAvatar";
 import { signOut } from "@/auth/client";
 import { RELEASE } from "@/lib/release";
+import { parseTheme, setTheme, THEMES, type Theme } from "@/lib/theme";
+import { useTheme } from "@/components/use-theme";
+
+const THEME_OPTIONS: Record<Theme, { label: string; Icon: typeof Sun }> = {
+  system: { label: "System", Icon: SunMoon },
+  light: { label: "Light", Icon: Sun },
+  dark: { label: "Dark", Icon: Moon },
+};
 
 /**
- * The avatar's menu: settings, the Archived lists view, sign out and the
- * build.
+ * The avatar's menu: settings, theme, the Archived lists view, sign out and
+ * the build.
  */
 export function UserMenu({
   user,
@@ -45,6 +58,9 @@ export function UserMenu({
 
   // The full SHA, for pasting into a bug report, an agent thread, or `git show`.
   const release = useCopy(RELEASE);
+
+  const theme = useTheme();
+  const ThemeIcon = THEME_OPTIONS[theme].Icon;
 
   return (
     <DropdownMenu>
@@ -98,6 +114,28 @@ export function UserMenu({
             </Link>
           }
         />
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <ThemeIcon />
+            Theme
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            <DropdownMenuRadioGroup
+              value={theme}
+              onValueChange={(next: string) => setTheme(parseTheme(next))}
+            >
+              {THEMES.map((value) => {
+                const { label, Icon } = THEME_OPTIONS[value];
+                return (
+                  <DropdownMenuRadioItem key={value} value={value}>
+                    <Icon />
+                    {label}
+                  </DropdownMenuRadioItem>
+                );
+              })}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onShowArchived}>
           <Archive />
