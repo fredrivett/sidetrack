@@ -825,7 +825,7 @@ export function ItemDetailDialog({
           )}
 
           <Field label="Comments">
-            <ItemComments key={item.id} item={item} viewerId={viewerId} />
+            <ItemComments key={item.id} item={item} viewerId={viewerId} people={assignees} />
           </Field>
 
           <ItemActivity item={item} />

@@ -574,6 +574,7 @@ export function Kanban({
           open={audit.open}
           projectId={audit.projectId}
           projects={projects}
+          assigneesByProject={assigneesByProject}
           items={boardItems}
           // Opening a comment's item swaps Activity for the item's dialog.
           onOpenItem={(item) => {

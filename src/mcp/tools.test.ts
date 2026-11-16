@@ -39,7 +39,7 @@ afterEach(() => {
 
 /** Connect an MCP client as `userId` and return a tool caller. */
 async function connectAs(userId: string) {
-  const server = buildServer({ userId, agent: AGENT });
+  const server = buildServer({ userId, agent: AGENT, baseUrl: "http://localhost:3000" });
   const [serverSide, clientSide] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test", version: "0" });
   await Promise.all([server.connect(serverSide), client.connect(clientSide)]);
