@@ -3,7 +3,7 @@ import { nanoid } from "nanoid";
 import { hasProjectAccess } from "./access";
 import { users } from "./auth-schema";
 import { type AuditOrigin, recordAudit, SYSTEM_ACTOR } from "./audit";
-import { ensureCategory } from "./categories";
+import { ensureLabels, type LabelEmoji, normalizeLabelNames } from "./labels";
 import { announceChange } from "./changes";
 import type { Db } from "./db";
 import { getTimeZone } from "./users";
@@ -326,7 +326,10 @@ export function addItem(
     projectId: string;
     title: string;
     description?: string | null;
-    category?: string | null;
+    /** Label names; any the list doesn't have yet are added to it. */
+    labels?: string[];
+    /** The emoji for labels this adds to the list, by name. */
+    labelEmoji?: Record<string, LabelEmoji>;
     positionRef?: string;
     parentId?: string | null;
     dueDate?: string | null;
@@ -367,14 +370,14 @@ export function addItem(
     parent?.id ?? null,
   );
   const position = resolvePosition(siblings, ref);
-  const category = input.category?.trim() || null;
+  const itemLabels = normalizeLabelNames(input.labels ?? []);
   const description = input.description?.trim() || null;
   const title = assertTitle(input.title);
   const id = nanoid(12);
   const now = Date.now();
 
   db.transaction((tx) => {
-    if (category) ensureCategory(tx as unknown as Db, input.projectId, category);
+    ensureLabels(tx as unknown as Db, input.projectId, itemLabels, input.labelEmoji);
     // Bump the project's counter and read the new value back in one atomic
     // statement, so the allocated number can't drift and we avoid a separate
     // read-modify-write. Monotonic — a deleted item's number is never reused.
@@ -392,7 +395,7 @@ export function addItem(
         projectId: input.projectId,
         title,
         description,
-        category,
+        labels: itemLabels,
         parentId: parent?.id ?? null,
         ...due,
         assigneeIds,
@@ -416,6 +419,7 @@ export function addItem(
           ? `added "${title}" to "${parent.title}"`
           : `added task "${title}"`) +
         (due.dueDate ? `, due ${dueText(due)}` : "") +
+        (itemLabels.length ? `, labelled ${itemLabels.join(", ")}` : "") +
         (assigneeIds.length
           ? `, assigned to ${assigneeIds.map((a) => assigneeLabel(tx as unknown as Db, a)).join(", ")}`
           : "") +
@@ -480,7 +484,10 @@ export function updateItem(
   patch: {
     title?: string;
     description?: string | null;
-    category?: string | null;
+    /** Every label it has, replacing the ones it had; [] takes them all off. */
+    labels?: string[];
+    /** The emoji for labels this adds to the list, by name. */
+    labelEmoji?: Record<string, LabelEmoji>;
     /** Everyone it's assigned to, replacing who it had; [] unassigns everyone. */
     assigneeIds?: string[];
     /** People to add or take off, leaving anyone else as they are now. */
@@ -516,11 +523,15 @@ export function updateItem(
       changes.push(d ? "edited description" : "description cleared");
     }
   }
-  if (patch.category !== undefined) {
-    const c = patch.category?.trim() || null;
-    if (c !== existing.category) {
-      next.category = c;
-      changes.push(c ? `category → ${c}` : "category cleared");
+  if (patch.labels !== undefined) {
+    const names = normalizeLabelNames(patch.labels);
+    // Order isn't meaningful, so the same labels in another order is a no-op.
+    const added = names.filter((l) => !existing.labels.includes(l));
+    const removed = existing.labels.filter((l) => !names.includes(l));
+    if (added.length || removed.length) {
+      next.labels = names;
+      if (added.length) changes.push(`labelled ${added.join(", ")}`);
+      if (removed.length) changes.push(`unlabelled ${removed.join(", ")}`);
     }
   }
   if (
@@ -577,8 +588,8 @@ export function updateItem(
   if (Object.keys(next).length === 0) return existing;
 
   db.transaction((tx) => {
-    if (next.category) {
-      ensureCategory(tx as unknown as Db, existing.projectId, next.category);
+    if (next.labels) {
+      ensureLabels(tx as unknown as Db, existing.projectId, next.labels, patch.labelEmoji);
     }
     tx.update(items).set(next).where(eq(items.id, id)).run();
     recordAudit(tx as unknown as Db, {

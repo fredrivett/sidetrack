@@ -5,7 +5,7 @@ import { unstable_rethrow, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { AssigneeView, PendingInviteView } from "@/core/members";
 import { listDoneBeforeAction, setTimeZoneAction } from "@/app/actions";
-import type { Category, Item, ItemPrLink, Project } from "@/core/schema";
+import type { Item, ItemPrLink, Label, Project } from "@/core/schema";
 import type { PendingSpaceInviteView, SpaceView } from "@/core/spaces";
 import { isEditableTarget, matchesShortcut } from "@/lib/keyboard";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,7 @@ import { ShareDialog } from "./ShareDialog";
 import { saveCollapsedTrays, SpaceTray } from "./SpaceTray";
 import { useDayStart } from "./use-day-start";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
+import { LabelsContext } from "./Labels";
 import { RemoveListContext, useOptimisticLists } from "./use-list-saves";
 import {
   applyItemChange,
@@ -63,7 +64,7 @@ export function Kanban({
   projects: serverProjects,
   itemsByProject: serverItemsByProject,
   completedSince,
-  categoriesByProject,
+  labelsByProject,
   assigneesByProject,
   prLinksByItem,
   pendingInvites,
@@ -89,7 +90,8 @@ export function Kanban({
    */
   itemsByProject: Record<string, Item[]>;
   completedSince: number;
-  categoriesByProject: Record<string, Category[]>;
+  /** Each list's labels, for every item's labels' emoji. */
+  labelsByProject: Record<string, Label[]>;
   assigneesByProject: Record<string, AssigneeView[]>;
   prLinksByItem: Record<string, ItemPrLink[]>;
   pendingInvites: PendingInviteView[];
@@ -452,6 +454,7 @@ export function Kanban({
 
   return (
     <ItemChangesContext value={itemChanges}>
+    <LabelsContext value={labelsByProject}>
     <RemoveListContext value={removeList}>
       <BoardMain>
         <BoardHeader
@@ -589,7 +592,6 @@ export function Kanban({
             paletteDetail.openDetail(item);
           }}
           projects={onBoard}
-          categoriesByProject={categoriesByProject}
           assigneesByProject={assigneesByProject}
           viewerId={viewerId}
           initialProjectId={newItem.projectId}
@@ -651,6 +653,7 @@ export function Kanban({
         />
       </BoardMain>
     </RemoveListContext>
+    </LabelsContext>
     </ItemChangesContext>
   );
 }

@@ -1,8 +1,8 @@
-// Suggest list icons with TypeSafe's Jev, a decision model: it reads a list's
-// name, summary, and item titles and picks from a fixed set of emoji, returning
-// a probability for each. It can only answer with an emoji from EMOJI_OPTIONS,
-// so every suggestion is a valid, savable icon. Off unless TYPESAFE_API_KEY is
-// set (see env.ts). No DB access.
+// Suggest list icons and label emoji with TypeSafe's Jev, a decision model: it
+// reads a list's name, summary, and item titles (or a label's name) and picks
+// from a fixed set of emoji, returning a probability for each. It can only
+// answer with an emoji from EMOJI_OPTIONS, so every suggestion is a valid,
+// savable icon. Off unless TYPESAFE_API_KEY is set (see env.ts). No DB access.
 
 import { askJev } from "./jev";
 
@@ -221,25 +221,47 @@ function domainOf(url: string | null | undefined): string | undefined {
  * request (network, rate limit, bad key) yields [] so the picker just shows no
  * suggestions. `fetchImpl` is injectable for tests.
  */
-export async function suggestEmoji(
+export function suggestEmoji(
   context: IconContext,
   apiKey: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<string[]> {
-  const answers = await askJev(
+  return ask(
     {
       list_name: context.name,
       summary: context.summary,
       items: context.itemTitles,
       website: domainOf(context.homepageUrl),
     },
-    {
-      icon: {
-        type: "choice",
-        instructions: "Which emoji best represents this to-do list as its icon?",
-        criteria: EMOJI_OPTIONS,
-      },
-    },
+    "Which emoji best represents this to-do list as its icon?",
+    apiKey,
+    fetchImpl,
+  );
+}
+
+/** The same for a label on a list's tasks, from its name and the list's. */
+export function suggestLabelEmoji(
+  context: { name: string; listName: string },
+  apiKey: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string[]> {
+  return ask(
+    { label: context.name, list_name: context.listName },
+    "Which emoji best represents this label, used to tag tasks on the to-do list?",
+    apiKey,
+    fetchImpl,
+  );
+}
+
+async function ask(
+  state: unknown,
+  instructions: string,
+  apiKey: string,
+  fetchImpl: typeof fetch,
+): Promise<string[]> {
+  const answers = await askJev(
+    state,
+    { icon: { type: "choice", instructions, criteria: EMOJI_OPTIONS } },
     apiKey,
     fetchImpl,
   );
@@ -251,4 +273,48 @@ export async function suggestEmoji(
     .sort((a, b) => b[1] - a[1])
     .slice(0, MAX_SUGGESTIONS)
     .map(([emoji]) => emoji);
+}
+
+// An emoji nobody chose follows Jev's top suggestion for the text it goes
+// with, as the pickers show it faded (see use-emoji-choice.ts). These are the
+// same rule for saves the client couldn't show a suggestion for: an agent's,
+// or one made before Jev answered.
+
+/**
+ * The icon for a list nobody chose one for, as it now reads: null when it
+ * has a homepage (its favicon shows instead), else Jev's top suggestion.
+ * Undefined leaves the icon as it is: AI is off or Jev has nothing to offer.
+ */
+export async function autoListIcon(
+  context: IconContext,
+  apiKey: string | undefined,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string | null | undefined> {
+  if (context.homepageUrl) return null;
+  if (!apiKey || !context.name.trim()) return undefined;
+  return (await suggestEmoji(context, apiKey, fetchImpl))[0];
+}
+
+// At most this many labels are asked about at once (one request each), so a
+// change adding many can't flood Jev; the rest get one when renamed or picked.
+const MAX_AUTO_LABELS = 10;
+
+/**
+ * Jev's top emoji for each new label, by name, for the first
+ * MAX_AUTO_LABELS of them; names it has none for are left out.
+ */
+export async function autoLabelEmoji(
+  names: string[],
+  listName: string,
+  apiKey: string | undefined,
+  fetchImpl: typeof fetch = fetch,
+): Promise<Record<string, string>> {
+  if (!apiKey) return {};
+  const picks = await Promise.all(
+    names.slice(0, MAX_AUTO_LABELS).map(async (name) => {
+      const [top] = await suggestLabelEmoji({ name, listName }, apiKey, fetchImpl);
+      return [name, top] as const;
+    }),
+  );
+  return Object.fromEntries(picks.filter(([, top]) => top));
 }

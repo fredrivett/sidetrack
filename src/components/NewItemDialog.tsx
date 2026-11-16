@@ -23,10 +23,10 @@ import {
   addItemAction,
   createProjectAction,
   suggestForNewItemAction,
-  suggestNewListIconsAction,
 } from "@/app/actions";
+import type { LabelEmoji } from "@/core/labels";
 import type { AssigneeView } from "@/core/members";
-import type { Category, Item } from "@/core/schema";
+import type { Item } from "@/core/schema";
 import { toggleAssignee } from "@/lib/assignees";
 import { formatItemRef } from "@/lib/itemRef";
 import type { Repeat } from "@/lib/repeat";
@@ -51,6 +51,7 @@ import { useCopy } from "@/components/ui/use-copy";
 import { AssigneeOptions } from "./AssigneeOptions";
 import { CreatableCombobox } from "./CreatableCombobox";
 import { DueDatePicker } from "./DueDatePicker";
+import { LabelsField } from "./Labels";
 import type { ProjectView } from "./Kanban";
 import { RepeatPicker } from "./RepeatPicker";
 import { runAction } from "./run-action";
@@ -126,7 +127,6 @@ export function NewItemDialog({
   onOpenChange,
   onOpenItem,
   projects,
-  categoriesByProject,
   assigneesByProject,
   viewerId,
   initialProjectId,
@@ -136,7 +136,6 @@ export function NewItemDialog({
   /** Opens an added item, from its toast. */
   onOpenItem: (item: Item) => void;
   projects: ProjectView[];
-  categoriesByProject: Record<string, Category[]>;
   assigneesByProject: Record<string, AssigneeView[]>;
   viewerId: string;
   initialProjectId: string | null;
@@ -157,7 +156,9 @@ export function NewItemDialog({
   } | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [category, setCategory] = useState("");
+  const [labels, setLabels] = useState<string[]>([]);
+  // The emoji for labels new to the list, held until the item creates them.
+  const [labelEmoji, setLabelEmoji] = useState<Record<string, LabelEmoji>>({});
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [assignOpen, setAssignOpen] = useState(false);
   const [due, setDue] = useState<Due | null>(null);
@@ -199,7 +200,8 @@ export function NewItemDialog({
       setSuggested(null);
       setTitle("");
       setDescription("");
-      setCategory("");
+      setLabels([]);
+      setLabelEmoji({});
       setAssigneeIds([]);
       setAssignOpen(false);
       setDue(null);
@@ -231,10 +233,6 @@ export function NewItemDialog({
     !hasChecklist && !chosenParent && suggestion?.parent?.id !== duplicate?.id
       ? (suggestion?.parent ?? null)
       : null;
-  const categoryOptions = (categoriesByProject[projectId] ?? []).map((c) => ({
-    value: c.name,
-    label: c.name,
-  }));
   // Only the list's owner and members can be assigned, so switching lists
   // drops anyone who isn't on the new one (and brings them back on return).
   const listAssignees = assigneesByProject[projectId] ?? [];
@@ -252,18 +250,15 @@ export function NewItemDialog({
     onOpenPicker: openPicker,
     onAssignToMe: canAssignSelf ? toggleMe : undefined,
   });
-  // A new category typed for this item shows as chosen, like the others.
-  if (category.trim() && !categoryOptions.some((o) => o.value === category.trim())) {
-    categoryOptions.push({ value: category.trim(), label: category.trim() });
-  }
 
-  // Create a list from the List field, with an AI icon as in New list.
+  // Create a list from the List field. Nobody chose its icon, so it gets
+  // Jev's, as New list would give it.
   function createList(name: string) {
     start(async () => {
       await runAction(
-        suggestNewListIconsAction({ name, summary: "", homepageUrl: null })
-          .then(([icon]) => createProjectAction({ name, icon: icon ?? null }))
-          .then((created) => setPickedProjectId(created.id)),
+        createProjectAction({ name, iconChosen: false }).then((created) =>
+          setPickedProjectId(created.id),
+        ),
         "create the list",
       );
     });
@@ -304,7 +299,8 @@ export function NewItemDialog({
     const t = title.trim();
     if (!t || !projectId || pending) return;
     const d = description.trim() || null;
-    const c = category.trim() || null;
+    const ls = labels;
+    const emoji = labelEmoji;
     const who = assigneeIds;
     const du = due;
     const r = repeat;
@@ -319,7 +315,8 @@ export function NewItemDialog({
           projectId,
           title: t,
           description: d,
-          category: c,
+          labels: ls,
+          labelEmoji: emoji,
           parentId: p,
           assigneeIds: assigned.map((a) => a.userId),
           dueDate: du?.dueDate ?? null,
@@ -346,7 +343,7 @@ export function NewItemDialog({
       // A failed add keeps the form as it was, to try again.
       if (!added || session.current !== startedIn) return;
       // Stay open for the next item: clear what's per-item, keep the list
-      // and category, and put the cursor back in the title. You can type
+      // and labels, and put the cursor back in the title. You can type
       // the next item while this one saves (submitting waits; the button
       // shows "Adding…"), so only clear fields that still hold what was
       // submitted — never text typed for the next item.
@@ -450,16 +447,26 @@ export function NewItemDialog({
               />
             </Field>
 
-            <Field label="Category">
-              <CreatableCombobox
-                options={categoryOptions}
-                value={category.trim()}
-                onChange={setCategory}
-                // A new category is created with the item that uses it.
-                onCreate={setCategory}
-                placeholder="Category (optional)"
-                ariaLabel="Category"
-                clearable
+            <Field label="Labels">
+              {/* A new label is created with the item that uses it. */}
+              <LabelsField
+                projectId={projectId}
+                value={labels}
+                onChange={(names, added) => {
+                  setLabels(names);
+                  const emoji = added?.emoji;
+                  if (added && emoji) {
+                    setLabelEmoji((cur) => ({ ...cur, [added.name]: emoji }));
+                  }
+                }}
+                draftEmoji={labelEmoji}
+                // The label is renamed on the server; keep this item's name for it in step.
+                onRenamed={(from, to) =>
+                  setLabels((cur) => cur.map((n) => (n === from ? to : n)))
+                }
+                onDraftEmoji={(name, emoji) =>
+                  setLabelEmoji((cur) => ({ ...cur, [name]: { emoji, chosen: true } }))
+                }
                 disabled={pending}
               />
             </Field>

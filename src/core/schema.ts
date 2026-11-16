@@ -41,7 +41,9 @@ export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 export const AUDIT_ENTITIES = [
   "project",
   "item",
+  // Older audit rows; labels replaced categories (see labels below).
   "category",
+  "label",
   "api_key",
   "member",
   "space",
@@ -123,6 +125,11 @@ export const projects = sqliteTable(
     // absolute http(s) image URL. Null falls back to the homepage favicon
     // when a homepageUrl is set, else a generic glyph. See lib/projectIcon.ts.
     icon: text("icon"),
+    // Whether someone chose the icon, including choosing none. A chosen icon
+    // always stays. Otherwise it's Jev's suggestion for the list's name,
+    // summary and homepage, shown faded while editing and replaced as they
+    // change.
+    iconChosen: integer("icon_chosen", { mode: "boolean" }).notNull().default(false),
     // Short human-friendly ID prefix (e.g. "SID"). Derived display data, never
     // an identity anchor — the nanoid PK stays the FK/audit target. Uniqueness
     // is scoped to the owner so `SID-42` is unambiguous within a user's board.
@@ -205,7 +212,13 @@ export const items = sqliteTable(
       .references(() => projects.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     description: text("description"),
-    category: text("category"),
+    // The item's labels, by name, as a JSON array with no duplicates; [] =
+    // none. Each names a row in `labels` for the same project, which holds
+    // its emoji; renaming a label rewrites it here (see core/labels.ts).
+    labels: text("labels", { mode: "json" })
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'`),
     // The users this item is assigned to (the project owner and/or accepted
     // members), as a JSON array of user ids with no duplicates; [] =
     // unassigned, the default. Joint items ("both of us") hold several. A JSON
@@ -401,16 +414,21 @@ export const agentWebhooks = sqliteTable("agent_webhooks", {
   createdAt: integer("created_at").notNull(),
 });
 
-export const categories = sqliteTable(
-  "categories",
+// A list's labels. Items carry them by name (items.labels). The emoji is
+// optional and works like projects.icon: emojiChosen says whether someone
+// chose it (or chose none), and otherwise it's Jev's suggestion for the name.
+export const labels = sqliteTable(
+  "labels",
   {
     id: text("id").primaryKey(),
     projectId: text("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    emoji: text("emoji"),
+    emojiChosen: integer("emoji_chosen", { mode: "boolean" }).notNull().default(false),
   },
-  (t) => [uniqueIndex("categories_project_name").on(t.projectId, t.name)],
+  (t) => [uniqueIndex("labels_project_name").on(t.projectId, t.name)],
 );
 
 export const meta = sqliteTable("meta", {
@@ -468,8 +486,8 @@ export type ProjectPosition = typeof projectPositions.$inferSelect;
 export type NewProjectPosition = typeof projectPositions.$inferInsert;
 export type Item = typeof items.$inferSelect;
 export type NewItem = typeof items.$inferInsert;
-export type Category = typeof categories.$inferSelect;
-export type NewCategory = typeof categories.$inferInsert;
+export type Label = typeof labels.$inferSelect;
+export type NewLabel = typeof labels.$inferInsert;
 export type AuditEntry = typeof auditLog.$inferSelect;
 export type NewAuditEntry = typeof auditLog.$inferInsert;
 export type ItemPrLink = typeof itemPrLinks.$inferSelect;
