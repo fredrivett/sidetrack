@@ -45,6 +45,31 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Space colours (SpaceColor.tsx): one soft, even tone per hue, so no
+     Space shouts over another. The tint is a Space's tray; the swatch, a step
+     stronger, is its dot in the picker. Lightness and strength per mode are
+     set beside the theme below. */
+  --color-space-rose: oklch(var(--space-tint) calc(0.03 * var(--space-chroma)) 12);
+  --color-space-rose-swatch: oklch(var(--space-swatch) calc(0.06 * var(--space-chroma)) 12);
+  --color-space-clay: oklch(var(--space-tint) calc(0.032 * var(--space-chroma)) 45);
+  --color-space-clay-swatch: oklch(var(--space-swatch) calc(0.064 * var(--space-chroma)) 45);
+  --color-space-sand: oklch(var(--space-tint) calc(0.032 * var(--space-chroma)) 80);
+  --color-space-sand-swatch: oklch(var(--space-swatch) calc(0.064 * var(--space-chroma)) 80);
+  --color-space-olive: oklch(var(--space-tint) calc(0.03 * var(--space-chroma)) 110);
+  --color-space-olive-swatch: oklch(var(--space-swatch) calc(0.06 * var(--space-chroma)) 110);
+  --color-space-sage: oklch(var(--space-tint) calc(0.028 * var(--space-chroma)) 150);
+  --color-space-sage-swatch: oklch(var(--space-swatch) calc(0.056 * var(--space-chroma)) 150);
+  --color-space-lagoon: oklch(var(--space-tint) calc(0.026 * var(--space-chroma)) 195);
+  --color-space-lagoon-swatch: oklch(var(--space-swatch) calc(0.052 * var(--space-chroma)) 195);
+  --color-space-slate: oklch(var(--space-tint) calc(0.026 * var(--space-chroma)) 245);
+  --color-space-slate-swatch: oklch(var(--space-swatch) calc(0.052 * var(--space-chroma)) 245);
+  --color-space-dusk: oklch(var(--space-tint) calc(0.03 * var(--space-chroma)) 280);
+  --color-space-dusk-swatch: oklch(var(--space-swatch) calc(0.06 * var(--space-chroma)) 280);
+  --color-space-plum: oklch(var(--space-tint) calc(0.03 * var(--space-chroma)) 325);
+  --color-space-plum-swatch: oklch(var(--space-swatch) calc(0.06 * var(--space-chroma)) 325);
+  --color-space-stone: oklch(var(--space-tint) calc(0.01 * var(--space-chroma)) 70);
+  --color-space-stone-swatch: oklch(var(--space-swatch) calc(0.02 * var(--space-chroma)) 70);
 }
 
 html,
@@ -96,6 +121,9 @@ body {
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  --space-tint: 0.945;
+  --space-swatch: 0.86;
+  --space-chroma: 1;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -131,6 +159,9 @@ body {
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  --space-tint: 0.185;
+  --space-swatch: 0.42;
+  --space-chroma: 0.9;
   }
 }
 

@@ -68,6 +68,7 @@ import {
   COMMENT_MAX,
   type Item,
   PROJECT_STATUSES,
+  SPACE_COLORS,
   SPACE_ROLES,
 } from "@/core/schema";
 import {
@@ -79,7 +80,10 @@ import {
   listPendingSpaceInvites,
   listSpaceMembers,
   listSpaces,
+  listTrays,
+  PERSONAL_TRAY,
   removeSpaceMember,
+  reorderSpace,
   setProjectSpace,
   setSpaceMemberRole,
   updateSpace,
@@ -278,10 +282,11 @@ function withRefs(prefix: string, list: Item[]) {
 }
 
 // Notify an invitee by email (best-effort; notifyInvite never throws). The
-// link is the app root (BETTER_AUTH_URL); with no transport set, the email
+// link is the app root (McpContext.baseUrl); with no transport set, the email
 // layer logs it server-side.
 async function sendInviteNotification(
   db: Db,
+  url: string,
   inviterId: string,
   name: string,
   toEmail: string | null,
@@ -292,7 +297,7 @@ async function sendInviteNotification(
     to: toEmail,
     inviterName: getUserName(db, inviterId) ?? "Someone",
     projectName: name,
-    url: getEnv().BETTER_AUTH_URL?.replace(/\/$/, "") ?? "",
+    url,
     kind,
   });
 }
@@ -1446,7 +1451,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       const project = getProject(db, userId, list_id);
       if (!project) return notFound("list", list_id);
       const member = inviteMember(db, userId, list_id, person, SOURCE);
-      await sendInviteNotification(db, userId, project.name, member.email);
+      await sendInviteNotification(db, ctx.baseUrl, userId, project.name, member.email);
       return json(member);
     },
   );
@@ -1552,8 +1557,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "List Spaces",
       description:
-        "List the Spaces the user has joined, oldest first. A Space is a group of people who share every list in it. " +
-        "Each has id, name, icon and the user's role: admin (manages its people and the Space itself) or member. " +
+        "List the Spaces the user has joined, in the order their board shows them. A Space is a group of people who share every list in it. " +
+        "Each has id, name, icon, color (null is grey) and the user's role: admin (manages its people and the Space itself) or member. " +
         "A list's spaceId (list_lists) says which Space it's in. Pending Space invites are in list_pending_invites.",
       inputSchema: {},
     },
@@ -1569,13 +1574,17 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       title: "Create Space",
       description:
         "Create a Space, such as \"Household\". The user becomes its only admin. " +
-        "icon is optional: an emoji or an http(s) image URL. " +
+        "icon is optional: an emoji or an http(s) image URL. color is optional and tints the Space's lists on the board; leave it out for grey. " +
         "Then invite people with invite_space_member, and put lists in it with update_list's space_id or create_list's space_id.",
-      inputSchema: { name: z.string().min(1), icon: z.string().optional() },
+      inputSchema: {
+        name: z.string().min(1),
+        icon: z.string().optional(),
+        color: z.enum(SPACE_COLORS).optional(),
+      },
     },
-    async ({ name, icon }) => {
+    async ({ name, icon, color }) => {
       const { db } = getDb();
-      return json(createSpace(db, userId, { name, icon }, SOURCE));
+      return json(createSpace(db, userId, { name, icon, color }, SOURCE));
     },
   );
 
@@ -1584,18 +1593,39 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Update Space",
       description:
-        "Rename a Space or change its icon (admins only). icon is an emoji or an http(s) image URL; pass null to clear it.",
+        "Rename a Space or change its icon or colour (admins only). icon is an emoji or an http(s) image URL; " +
+        "color tints the Space's lists on the board. Pass null to clear either (no colour is grey).",
       inputSchema: {
         space_id: z.string(),
         name: z.string().optional(),
         icon: z.string().nullable().optional(),
+        color: z.enum(SPACE_COLORS).nullable().optional(),
       },
     },
-    async ({ space_id, name, icon }) => {
+    async ({ space_id, name, icon, color }) => {
       const { db } = getDb();
       if (!isJoined(db, space_id)) return notFound("space", space_id);
-      updateSpace(db, userId, space_id, { name, icon }, SOURCE);
+      updateSpace(db, userId, space_id, { name, icon, color }, SOURCE);
       return json(listSpaces(db, userId).find((s) => s.id === space_id));
+    },
+  );
+
+  server.registerTool(
+    "reorder_space",
+    {
+      title: "Reorder Space",
+      description:
+        "Move a Space on the user's board, among the Spaces they've joined; only their own board changes. " +
+        "Their lists in no Space sit among them as a Personal group: pass space_id \"personal\" to move it, or use it as an anchor. " +
+        "position is one of: start | end | after:<space_id> | before:<space_id>. " +
+        "Returns the board's groups in their new order, as space ids and \"personal\".",
+      inputSchema: { space_id: z.string(), position: ListPosRef },
+    },
+    async ({ space_id, position }) => {
+      const { db } = getDb();
+      if (space_id !== PERSONAL_TRAY && !isJoined(db, space_id)) return notFound("space", space_id);
+      reorderSpace(db, userId, space_id, position, SOURCE);
+      return json(listTrays(db, userId));
     },
   );
 
@@ -1650,7 +1680,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       const space = listSpaces(db, userId).find((s) => s.id === space_id);
       if (!space) return notFound("space", space_id);
       const member = inviteSpaceMember(db, userId, space_id, person, SOURCE);
-      await sendInviteNotification(db, userId, space.name, member.email, "space");
+      await sendInviteNotification(db, ctx.baseUrl, userId, space.name, member.email, "space");
       return json(member);
     },
   );

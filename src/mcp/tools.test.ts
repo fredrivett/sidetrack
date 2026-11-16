@@ -10,6 +10,7 @@ import {
   createSpace,
   inviteSpaceMember,
   listPendingSpaceInvites,
+  listTrays,
   setSpaceMemberRole,
 } from "@/core/spaces";
 import { createTestDb, createTestUser } from "@/core/test-helpers";
@@ -118,6 +119,27 @@ describe("tool output", () => {
     const once = await call("complete_item", { id: "HOM-2" });
     expect(once.data).toMatchObject({ repeat: null });
     expect(once.data).not.toHaveProperty("comesBack");
+  });
+});
+
+describe("emails", () => {
+  it("link invites to the app's address the request came in on", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    createTestUser(db, { username: "bob" });
+    const list = createProject(db, fred, { name: "Home" }, "web");
+    const space = createSpace(db, fred, { name: "Household" }, "web");
+    // With no email transport set, the email layer logs each link instead.
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const call = await connectAs(fred);
+      expect((await call("invite_member", { list_id: list.id, person: "bob" })).error).toBeNull();
+      expect((await call("invite_space_member", { space_id: space.id, person: "bob" })).error).toBeNull();
+      const invites = log.mock.calls.map(([line]) => String(line)).filter((l) => l.includes("invite for"));
+      expect(invites).toHaveLength(2);
+      for (const line of invites) expect(line).toMatch(/: http:\/\/localhost:3000$/);
+    } finally {
+      log.mockRestore();
+    }
   });
 });
 
@@ -342,6 +364,28 @@ describe("error results", () => {
     expect(out.data).toEqual({ id: list.id, note: expect.stringMatching(/no longer has access/) });
     expect(getProject(db, fred, list.id)?.spaceId).toBeNull();
     expect(getProject(db, bob, list.id)).toBeUndefined();
+  });
+
+  it("moves a Space or Personal on the caller's board, and refuses a move it can't make", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const eve = createTestUser(db, { username: "eve" });
+    const home = createSpace(db, fred, { name: "Household" }, "web");
+    const work = createSpace(db, fred, { name: "Work" }, "web");
+    const hers = createSpace(db, eve, { name: "Eve's" }, "web");
+    const call = await connectAs(fred);
+
+    const moved = await call("reorder_space", { space_id: "personal", position: `after:${work.id}` });
+    expect(moved.data).toEqual([home.id, work.id, "personal"]);
+    const anchored = await call("reorder_space", { space_id: home.id, position: "after:personal" });
+    expect(anchored.data).toEqual([work.id, "personal", home.id]);
+
+    // Not a Space they've joined, nor an anchor off their board: nothing moves.
+    expect((await call("reorder_space", { space_id: hers.id, position: "start" })).error).toBe(
+      `space not found: ${hers.id}`,
+    );
+    const offBoard = await call("reorder_space", { space_id: home.id, position: `after:${hers.id}` });
+    expect(offBoard.error).toMatch(/anchor not found/);
+    expect(listTrays(db, fred)).toEqual([work.id, "personal", home.id]);
   });
 
   it("returns not found for a list the caller can't see", async () => {

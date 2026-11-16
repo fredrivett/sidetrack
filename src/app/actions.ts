@@ -79,7 +79,7 @@ import {
   reorderProject as reorderProjectCore,
   updateProject as updateProjectCore,
 } from "@/core/projects";
-import type { AuditSource, ProjectStatus } from "@/core/schema";
+import type { AuditSource, ProjectStatus, SpaceColor } from "@/core/schema";
 import {
   acceptSpaceInvite as acceptSpaceInviteCore,
   createSpace as createSpaceCore,
@@ -90,6 +90,7 @@ import {
   listSpaces as listSpacesCore,
   listSuggestedSpaceMembers as listSuggestedSpaceMembersCore,
   removeSpaceMember as removeSpaceMemberCore,
+  reorderSpace as reorderSpaceCore,
   setProjectSpace as setProjectSpaceCore,
   setSpaceMemberRole as setSpaceMemberRoleCore,
   updateSpace as updateSpaceCore,
@@ -155,6 +156,7 @@ export async function updateProjectAction(
     repository?: string | null;
     icon?: string | null;
     iconChosen?: boolean;
+    doneClearedAt?: number | null;
   },
 ) {
   const userId = await requireUserId();
@@ -168,6 +170,20 @@ export async function updateProjectAction(
   );
   refresh();
   return p;
+}
+
+/**
+ * Move the list's done items into Done now rather than when the day turns
+ * over. Stamped with the server's clock, which also stamps completedAt.
+ * Returns the previous value, for undo through updateProjectAction.
+ */
+export async function clearDoneItemsAction(id: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const previous = getProjectCore(db, userId, id)?.doneClearedAt ?? null;
+  updateProjectCore(db, userId, id, { doneClearedAt: Date.now() }, SOURCE);
+  refresh();
+  return previous;
 }
 
 /** Move a list into a Space, to another, or out of its Space (null). */
@@ -332,21 +348,45 @@ export async function removeMemberAction(projectId: string, targetUserId: string
   refresh();
 }
 
-export async function createSpaceAction(input: { name: string; icon?: string | null }) {
+export async function createSpaceAction(input: {
+  name: string;
+  icon?: string | null;
+  color?: SpaceColor | null;
+}) {
   const userId = await requireUserId();
   const { db } = getDb();
-  const space = createSpaceCore(db, userId, { name: input.name, icon: input.icon }, SOURCE);
+  const space = createSpaceCore(
+    db,
+    userId,
+    { name: input.name, icon: input.icon, color: input.color },
+    SOURCE,
+  );
   refresh();
   return space;
 }
 
 export async function updateSpaceAction(
   spaceId: string,
-  patch: { name?: string; icon?: string | null },
+  patch: { name?: string; icon?: string | null; color?: SpaceColor | null },
 ) {
   const userId = await requireUserId();
   const { db } = getDb();
-  updateSpaceCore(db, userId, spaceId, { name: patch.name, icon: patch.icon }, SOURCE);
+  updateSpaceCore(
+    db,
+    userId,
+    spaceId,
+    { name: patch.name, icon: patch.icon, color: patch.color },
+    SOURCE,
+  );
+  refresh();
+}
+
+/** Move a tray (a Space, or "personal") on the caller's board: start | end |
+ * after:<id> | before:<id>. */
+export async function reorderSpaceAction(trayId: string, ref: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  reorderSpaceCore(db, userId, trayId, ref, SOURCE);
   refresh();
 }
 

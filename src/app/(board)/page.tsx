@@ -14,7 +14,7 @@ import { listItems, reopenDueRepeats } from "@/core/items";
 import { listAssignees, listPendingInvites } from "@/core/members";
 import { listAllPrLinks } from "@/core/prLinks";
 import { listProjects } from "@/core/projects";
-import { listPendingSpaceInvites, listSpaces } from "@/core/spaces";
+import { listPendingSpaceInvites, listSpaces, listTrays } from "@/core/spaces";
 import { COLLAPSED_TRAYS_COOKIE, parseCollapsedTrays } from "@/components/SpaceTray";
 import { getOverdueCollapsed, getProfile, getTimeZone } from "@/core/users";
 import { weekStartBound } from "@/lib/time";
@@ -96,6 +96,7 @@ export default async function Home({
         prLinksByItem={prLinksByItem}
         pendingInvites={pendingInvites}
         spaces={listSpaces(db, userId)}
+        trayOrder={listTrays(db, userId)}
         pendingSpaceInvites={listPendingSpaceInvites(db, userId)}
         initialListId={typeof p === "string" ? p : null}
         initialCollapsedTrays={parseCollapsedTrays(

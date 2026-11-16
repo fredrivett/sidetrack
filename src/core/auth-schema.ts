@@ -37,6 +37,11 @@ export const users = sqliteTable("users", {
   overdueCollapsed: integer("overdue_collapsed", { mode: "boolean" })
     .notNull()
     .default(false),
+  // Where the Personal tray (their lists in no Space) sits among their Spaces
+  // on the board, as a fractional index beside space_members.position. null,
+  // showing it first, until their trays are placed (see placeTrays in
+  // spaces.ts).
+  personalTrayPosition: text("personal_tray_position"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
