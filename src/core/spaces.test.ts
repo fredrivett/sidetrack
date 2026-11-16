@@ -102,6 +102,40 @@ describe("spaces", () => {
     ).toBe(true);
   });
 
+  it("takes a colour from the palette, audits each change, and refuses any other", () => {
+    const garden = createSpace(db, fred, { name: "Garden", color: "sage" }, "web").id;
+    const colorOf = () => listSpaces(db, fred).find((s) => s.id === garden)?.color;
+    const details = () =>
+      listAudit(db, fred)
+        .filter((e) => e.entityType === "space" && e.entityId === garden)
+        .map((e) => e.detail);
+    expect(colorOf()).toBe("sage");
+
+    updateSpace(db, fred, garden, { color: "slate" }, "web");
+    updateSpace(db, fred, garden, { color: "slate" }, "web"); // no change, no row
+    updateSpace(db, fred, garden, { color: null }, "web");
+    expect(colorOf()).toBeNull();
+    expect(details().sort()).toEqual([
+      'created space "Garden" (sage)',
+      'space "Garden": colour cleared',
+      'space "Garden": colour set to slate',
+    ]);
+
+    // Agents pass strings, so the core checks the palette itself.
+    expect(() =>
+      updateSpace(db, fred, garden, { color: "chartreuse" as "slate" }, "web"),
+    ).toThrow(/unknown space colour/);
+    expect(() =>
+      createSpace(db, fred, { name: "Shed", color: "chartreuse" as "slate" }, "web"),
+    ).toThrow(/unknown space colour/);
+    updateSpace(db, fred, garden, { color: "slate" }, "web");
+    expect(() =>
+      updateSpace(db, fred, garden, { color: "" as "slate" }, "web"),
+    ).toThrow(/unknown space colour/);
+    expect(colorOf()).toBe("slate");
+    expect(listSpaces(db, fred).map((s) => s.name)).not.toContain("Shed");
+  });
+
   it("shares every list in it once an invite is accepted, and only then", () => {
     const groceries = createProject(db, fred, { name: "Groceries" }, "web");
     const outside = createProject(db, fred, { name: "Outside" }, "web");

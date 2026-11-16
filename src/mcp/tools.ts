@@ -68,6 +68,7 @@ import {
   COMMENT_MAX,
   type Item,
   PROJECT_STATUSES,
+  SPACE_COLORS,
   SPACE_ROLES,
 } from "@/core/schema";
 import {
@@ -1557,7 +1558,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       title: "List Spaces",
       description:
         "List the Spaces the user has joined, in the order their board shows them. A Space is a group of people who share every list in it. " +
-        "Each has id, name, icon and the user's role: admin (manages its people and the Space itself) or member. " +
+        "Each has id, name, icon, color (null is grey) and the user's role: admin (manages its people and the Space itself) or member. " +
         "A list's spaceId (list_lists) says which Space it's in. Pending Space invites are in list_pending_invites.",
       inputSchema: {},
     },
@@ -1573,13 +1574,17 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       title: "Create Space",
       description:
         "Create a Space, such as \"Household\". The user becomes its only admin. " +
-        "icon is optional: an emoji or an http(s) image URL. " +
+        "icon is optional: an emoji or an http(s) image URL. color is optional and tints the Space's lists on the board; leave it out for grey. " +
         "Then invite people with invite_space_member, and put lists in it with update_list's space_id or create_list's space_id.",
-      inputSchema: { name: z.string().min(1), icon: z.string().optional() },
+      inputSchema: {
+        name: z.string().min(1),
+        icon: z.string().optional(),
+        color: z.enum(SPACE_COLORS).optional(),
+      },
     },
-    async ({ name, icon }) => {
+    async ({ name, icon, color }) => {
       const { db } = getDb();
-      return json(createSpace(db, userId, { name, icon }, SOURCE));
+      return json(createSpace(db, userId, { name, icon, color }, SOURCE));
     },
   );
 
@@ -1588,17 +1593,19 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Update Space",
       description:
-        "Rename a Space or change its icon (admins only). icon is an emoji or an http(s) image URL; pass null to clear it.",
+        "Rename a Space or change its icon or colour (admins only). icon is an emoji or an http(s) image URL; " +
+        "color tints the Space's lists on the board. Pass null to clear either (no colour is grey).",
       inputSchema: {
         space_id: z.string(),
         name: z.string().optional(),
         icon: z.string().nullable().optional(),
+        color: z.enum(SPACE_COLORS).nullable().optional(),
       },
     },
-    async ({ space_id, name, icon }) => {
+    async ({ space_id, name, icon, color }) => {
       const { db } = getDb();
       if (!isJoined(db, space_id)) return notFound("space", space_id);
-      updateSpace(db, userId, space_id, { name, icon }, SOURCE);
+      updateSpace(db, userId, space_id, { name, icon, color }, SOURCE);
       return json(listSpaces(db, userId).find((s) => s.id === space_id));
     },
   );

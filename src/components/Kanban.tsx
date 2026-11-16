@@ -286,8 +286,10 @@ export function Kanban({
   // starts open, so a link to a list shows it.
   const trays = trayOrder.flatMap((id) =>
     id === "personal"
-      ? [{ id, name: "Personal", icon: null }]
-      : spaces.filter((s) => s.id === id).map((s) => ({ id, name: s.name, icon: s.icon })),
+      ? [{ id, name: "Personal", icon: null, color: null }]
+      : spaces
+          .filter((s) => s.id === id)
+          .map((s) => ({ id, name: s.name, icon: s.icon, color: s.color })),
   );
   const trayOf = (p: ProjectView) =>
     spaces.find((s) => s.id === p.spaceId)?.id ?? "personal";
@@ -577,6 +579,7 @@ export function Kanban({
                     key={tray.id}
                     name={tray.name}
                     icon={tray.icon}
+                    color={tray.color}
                     lists={lists}
                     collapsed={collapsedTrays.has(tray.id)}
                     saving={saving}

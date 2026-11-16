@@ -68,6 +68,22 @@ export type MembershipStatus = (typeof MEMBERSHIP_STATUSES)[number];
 export const SPACE_ROLES = ["admin", "member"] as const;
 export type SpaceRole = (typeof SPACE_ROLES)[number];
 
+// A Space's colour, which tints its tray on the board. Each name is a
+// --color-space-* token in globals.css, all in the same soft tone. null = grey.
+export const SPACE_COLORS = [
+  "rose",
+  "clay",
+  "sand",
+  "olive",
+  "sage",
+  "lagoon",
+  "slate",
+  "dusk",
+  "plum",
+  "stone",
+] as const;
+export type SpaceColor = (typeof SPACE_COLORS)[number];
+
 // A group of people who share every list in it (a household, a team). A list
 // is in one Space or none (projects.spaceId). createdBy is only a record: the
 // creator's access and admin role come from their space_members row, like
@@ -78,6 +94,7 @@ export const spaces = sqliteTable("spaces", {
   name: text("name").notNull(),
   // Emoji or http(s) image URL, as projects.icon; null = generic glyph.
   icon: text("icon"),
+  color: text("color").$type<SpaceColor>(),
   createdAt: integer("created_at")
     .notNull()
     .default(sql`(unixepoch() * 1000)`),

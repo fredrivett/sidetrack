@@ -17,7 +17,9 @@ import {
 import {
   type MembershipStatus,
   projects,
+  SPACE_COLORS,
   SPACE_ROLES,
+  type SpaceColor,
   type SpaceRole,
   spaceMembers,
   spaces,
@@ -35,6 +37,7 @@ export interface SpaceView {
   id: string;
   name: string;
   icon: string | null;
+  color: SpaceColor | null;
   createdBy: string;
   createdAt: number;
   role: SpaceRole;
@@ -111,6 +114,15 @@ function listIdsInSpace(db: Db, spaceId: string): string[] {
     .map((r) => r.id);
 }
 
+function assertColor(color: string | null | undefined): SpaceColor | null {
+  // Only null (or leaving it out) clears; "" and other junk are refused.
+  if (color === null || color === undefined) return null;
+  if (!(SPACE_COLORS as readonly string[]).includes(color)) {
+    throw new Error(`unknown space colour: ${color}`);
+  }
+  return color as SpaceColor;
+}
+
 function assertName(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) throw new Error("space name cannot be empty");
@@ -121,15 +133,16 @@ function assertName(name: string): string {
 export function createSpace(
   db: Db,
   userId: string,
-  input: { name: string; icon?: string | null },
+  input: { name: string; icon?: string | null; color?: SpaceColor | null },
   source: AuditOrigin,
 ): SpaceView {
   const name = assertName(input.name);
   const icon = input.icon ? normalizeProjectIcon(input.icon) : null;
+  const color = assertColor(input.color);
   const id = nanoid(12);
   const now = Date.now();
   db.transaction((tx) => {
-    tx.insert(spaces).values({ id, createdBy: userId, name, icon, createdAt: now }).run();
+    tx.insert(spaces).values({ id, createdBy: userId, name, icon, color, createdAt: now }).run();
     tx.insert(spaceMembers)
       .values({
         id: nanoid(12),
@@ -147,22 +160,22 @@ export function createSpace(
       action: "create",
       entityType: "space",
       entityId: id,
-      detail: `created space "${name}"`,
+      detail: `created space "${name}"${color ? ` (${color})` : ""}`,
     });
   });
-  return { id, name, icon, createdBy: userId, createdAt: now, role: "admin" };
+  return { id, name, icon, color, createdBy: userId, createdAt: now, role: "admin" };
 }
 
-/** Rename a Space or change its icon (null clears it). Admin-only. */
+/** Rename a Space or change its icon or colour (null clears either). Admin-only. */
 export function updateSpace(
   db: Db,
   userId: string,
   spaceId: string,
-  input: { name?: string; icon?: string | null },
+  input: { name?: string; icon?: string | null; color?: SpaceColor | null },
   source: AuditOrigin,
 ): void {
   const { space } = requireAdmin(db, userId, spaceId, "edit the space");
-  const set: { name?: string; icon?: string | null } = {};
+  const set: { name?: string; icon?: string | null; color?: SpaceColor | null } = {};
   const changes: string[] = [];
   if (input.name !== undefined) {
     const name = assertName(input.name);
@@ -176,6 +189,13 @@ export function updateSpace(
     if (icon !== space.icon) {
       set.icon = icon;
       changes.push(icon ? `icon set to ${icon}` : "icon cleared");
+    }
+  }
+  if (input.color !== undefined) {
+    const color = assertColor(input.color);
+    if (color !== space.color) {
+      set.color = color;
+      changes.push(color ? `colour set to ${color}` : "colour cleared");
     }
   }
   if (!changes.length) return;
