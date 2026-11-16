@@ -303,7 +303,7 @@ export const items = sqliteTable(
 );
 
 // The refs an item had in lists it has since moved out of, so `OLD-12` keeps
-// resolving to it (MCP, PR titles, search) after it becomes `NEW-4`. Keyed
+// resolving to it (resolveItemRef: MCP, PR titles) after it becomes `NEW-4`. Keyed
 // like items' own refs, by list and number; that list's counter never reuses
 // the number, so an alias can't clash with an item still there. Goes with
 // either the old list or the item.

@@ -200,6 +200,22 @@ describe("moveItem", () => {
     ]);
   });
 
+  it("creates one label for spellings of it that differ only in case", () => {
+    const { db, fred, eng, ops } = seed();
+    const item = addItem(db, fred, { projectId: eng.id, title: "Fix login", labels: ["Bug"] }, "web");
+    const sub = addItem(db, fred, { projectId: eng.id, title: "Repro", parentId: item.id, labels: ["bug"] }, "web");
+    expect(previewMoveItem(db, fred, item.id, ops.id).missingLabels).toEqual(["Bug"]);
+    moveItem(
+      db,
+      fred,
+      item.id,
+      { projectId: ops.id, token: tokenFor(db, fred, item.id, ops.id), missingLabels: "create" },
+      "web",
+    );
+    expect(listLabels(db, fred, ops.id).map((l) => l.name)).toEqual(["Bug"]);
+    expect(getItem(db, fred, sub.id)?.labels).toEqual(["Bug"]);
+  });
+
   it("takes people who can't see the list off the items", () => {
     const { db, fred, eng, ops } = seed();
     const amy = createTestUser(db, { username: "amy", name: "Amy" });

@@ -1122,7 +1122,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       description:
         "Move an item, with its sub-items, to the top of another list (a sub-item moved on its own leaves its checklist). " +
         "Moving changes the item's ref: each item that moves gets the next number in the new list, or its old one if it was there before, " +
-        "and its old ref keeps working everywhere. " +
+        "and its old ref keeps working for anyone who can see the list it's in now. " +
         "Call it first without token: that only previews the move and changes nothing. It returns refs (each item's ref now and the one it gets), " +
         "matchedLabels (labels the list already has, which the items take on), missingLabels (labels it doesn't have), " +
         "unassigned (people who can't see the list, so they come off the items) and a token. " +

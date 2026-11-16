@@ -217,8 +217,11 @@ export function moveItem(
       const itemLabels = [
         ...new Set(
           it.labels.flatMap((name) => {
-            const there = p.targetLabels.get(name.toLowerCase());
-            return there ? [there] : create ? [name] : [];
+            const key = name.toLowerCase();
+            const there = p.targetLabels.get(key);
+            if (there) return [there];
+            // Spellings of one missing label become the one created.
+            return create ? p.missingLabels.filter((m) => m.toLowerCase() === key) : [];
           }),
         ),
       ];
