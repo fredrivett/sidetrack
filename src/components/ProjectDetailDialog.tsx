@@ -18,7 +18,7 @@ import {
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
 import { EditableText } from "./EditableText";
-import { ProjectIconPicker } from "./ProjectIconPicker";
+import { ProjectIconPicker, useListIcon } from "./ProjectIconPicker";
 import { StatusBadge } from "./StatusBadge";
 import { runAction } from "./run-action";
 import { useListSave, useRemoveList } from "./use-list-saves";
@@ -56,6 +56,7 @@ export function ProjectDetailDialog({
   // list off the board at once.
   const { saving, save } = useListSave();
   const removeList = useRemoveList();
+  const listIcon = useListIcon(project);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   function change(next: boolean) {
@@ -124,7 +125,7 @@ export function ProjectDetailDialog({
       <ResponsiveDialogContent>
         <div className="flex shrink-0 flex-col gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
           <div className="flex items-center gap-2">
-            <ProjectIconPicker project={project} size={22} />
+            <ProjectIconPicker project={project} listIcon={listIcon} size={22} />
             <StatusBadge projectId={project.id} status={project.status} />
             <ResponsiveDialogCloseButton className="ml-auto" />
           </div>
@@ -133,10 +134,11 @@ export function ProjectDetailDialog({
               value={project.name}
               onSave={(next) =>
                 runAction(
-                  updateProjectAction(project.id, { name: next }),
+                  updateProjectAction(project.id, listIcon.rename(next)),
                   `rename “${project.name}”`,
                 )
               }
+              onDraftChange={listIcon.onDraftChange}
               required
               className="block w-full break-words text-base font-semibold"
               inputClassName="w-full text-base font-semibold"

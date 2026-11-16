@@ -8,8 +8,14 @@ import {
   startWork,
 } from "@/core/agentSessions";
 import { type AuditOrigin, listAudit } from "@/core/audit";
-import { addCategory, listCategories } from "@/core/categories";
+import {
+  autoNewListIcon,
+  withAutoLabelEmoji,
+  withAutoLabelRename,
+  withAutoListIcon,
+} from "@/core/autoEmoji";
 import { addComment, listComments } from "@/core/comments";
+import { addLabel, getLabel, listLabels, updateLabel } from "@/core/labels";
 import { getDb } from "@/core/db";
 import { getTimeZone } from "@/core/users";
 import { nestItems } from "@/lib/itemTree";
@@ -501,24 +507,34 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       title: "Create list",
       description:
         "Create a new list, such as \"Home\", \"Buy\" or \"Launch Library\". Appends at the right of the board. " +
-        "status defaults to active. summary, homepage_url, and icon are optional and work as in update_list. " +
+        "status defaults to active. summary, homepage_url, and icon are optional and work as in update_list; " +
+        "without an icon, the list gets an emoji suggested for its name (or shows its homepage's favicon), as on the web; " +
+        "icon: null creates it with no icon, as the user's choice. " +
         "space_id (from list_spaces) creates it in a Space the user has joined, shared with everyone in it; leave it out for a list of their own.",
       inputSchema: {
         name: z.string().min(1),
         status: Status.optional(),
         summary: z.string().optional(),
         homepage_url: z.string().optional(),
-        icon: z.string().optional(),
+        icon: z.string().nullable().optional(),
         space_id: z.string().min(1).optional(),
       },
     },
-    async ({ homepage_url, space_id, ...input }) => {
+    async ({ homepage_url, space_id, icon, ...input }) => {
       const { db } = getDb();
+      const chosen = icon !== undefined;
+      const homepageUrl = homepage_url;
       return json(
         createProject(
           db,
           userId,
-          { ...input, homepageUrl: homepage_url, spaceId: space_id },
+          {
+            ...input,
+            homepageUrl,
+            icon: chosen ? icon : await autoNewListIcon({ ...input, homepageUrl }),
+            iconChosen: chosen,
+            spaceId: space_id,
+          },
           SOURCE,
         ),
       );
@@ -536,7 +552,9 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "prefix is the short item-ID prefix (2–5 letters, e.g. \"ENG\" → items like ENG-42); " +
         "it is uppercased, and an auto-suffix is applied if it collides with another list. " +
         "homepage_url is the list's public landing URL — a bare host gains an https:// scheme; pass null to clear it. " +
-        "icon is the list icon: an emoji (e.g. \"🚀\") or an http(s) image URL; pass null to clear it (falls back to the homepage favicon). " +
+        "icon is the list icon: an emoji (e.g. \"🚀\") or an http(s) image URL; pass null for no icon (it falls back to the homepage favicon). " +
+        "Setting icon, null included, is the user's choice and stays; until someone sets one, the icon follows an emoji suggested for the list's name, summary and homepage, " +
+        "updated when you change them (iconChosen says which). " +
         "space_id moves the list into a Space the user has joined (from list_spaces), or out of its Space with null; only the list's owner can, " +
         "except that an admin of its Space can take it out, which returns it to its owner. The other fields are saved before the move.",
       inputSchema: {
@@ -557,9 +575,12 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         db,
         userId,
         id,
-        homepage_url === undefined
-          ? patch
-          : { ...patch, homepageUrl: homepage_url },
+        await withAutoListIcon(
+          db,
+          userId,
+          id,
+          homepage_url === undefined ? patch : { ...patch, homepageUrl: homepage_url },
+        ),
         SOURCE,
       );
       if (space_id === undefined) return json(updated);
@@ -612,7 +633,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Get item",
       description:
-        "Fetch a single item by reference — its title, description, category, assignees (assigneeIds, user ids; empty when unassigned) and completion state, " +
+        "Fetch a single item by reference — its title, description, labels (names; see list_labels for their emoji), assignees (assigneeIds, user ids; empty when unassigned) and completion state, " +
         "plus its sub-items (its checklist) as `children`, finished ones included. A sub-item has a parentId. " +
         "Use this to answer a question about one item without pulling its whole list. " +
         "A repeating item carries `repeat` ({ every, unit }); a finished one also carries `comesBack`, the day it reopens. " +
@@ -669,7 +690,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       title: "Add item",
       description:
         "Add a task to a list. description is optional free-text. " +
-        "category is free-text and is auto-created if new. " +
+        "labels is a list of label names, e.g. [\"bug\", \"urgent\"]; a name the list has no label for yet is added to it, with a suggested emoji. " +
+        "category (one name) is the older input for a single label, kept so older prompts work; don't pass both. " +
         "parent (a short ref or id) adds the task as a sub-item of that task, one step in its checklist: " +
         "e.g. \"Tidy up flat\" with sub-items Lounge, Kitchen and Bedroom. Sub-items are one level deep; " +
         "each is a full item with its own ref and assignees. Adding an open one to a finished parent reopens the parent; adding one with completed: true leaves it finished. " +
@@ -706,6 +728,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         list_id: z.string(),
         title: z.string().min(1),
         description: z.string().optional(),
+        labels: z.array(z.string().min(1)).optional(),
         category: z.string().optional(),
         parent: z.string().optional(),
         due_date: DueDate.nullable().optional(),
@@ -722,6 +745,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       list_id,
       title,
       description,
+      labels,
       category,
       parent,
       due_date,
@@ -744,6 +768,10 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           "Pass assignee_ids or the older assignee_id, not both — no change was made.",
         );
       }
+      if (labels !== undefined && category !== undefined) {
+        return errorText("Pass labels or the older category, not both — no change was made.");
+      }
+      const labelNames = category !== undefined ? [category] : labels;
       const assigneeIds = (assignee_id ? [assignee_id] : assignee_ids)?.map((a) =>
         a === "me" ? userId : a,
       );
@@ -765,6 +793,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       // The list's open items before the add, to check the new one against.
       const apiKey = getEnv().TYPESAFE_API_KEY;
       const before = apiKey ? listItems(db, userId, list_id) : [];
+      const labelEmoji = await withAutoLabelEmoji(db, userId, list_id, labelNames);
       const created = addItem(
         db,
         userId,
@@ -772,7 +801,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           projectId: list_id,
           title,
           description,
-          category,
+          labels: labelNames,
+          labelEmoji,
           parentId,
           dueDate: due_date,
           dueFrom: due_from,
@@ -813,7 +843,9 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Update item",
       description:
-        "Patch title/description/category/assignees/due_date/repeat on an item. Pass description or category as null to clear it. " +
+        "Patch title/description/labels/assignees/due_date/repeat on an item. Pass description as null to clear it. " +
+        "labels is every label the item has, replacing the ones it had; [] takes them all off. A new name is added to the list, with a suggested emoji. " +
+        "category (one name, or null for none) is the older single-label input, kept so older prompts work; don't pass both. " +
         "assignee_ids is everyone the item is assigned to, replacing who it had; several people make a joint item " +
         "(e.g. \"Discuss Christmas travel\" for both of them). Each entry is a user id of the list owner (the list's userId) " +
         "or an accepted member (from list_members), or \"me\" for the user you act for. [] unassigns everyone. " +
@@ -842,6 +874,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         id: z.string(),
         title: z.string().optional(),
         description: z.string().nullable().optional(),
+        labels: z.array(z.string().min(1)).optional(),
         category: z.string().nullable().optional(),
         assignee_ids: z.array(z.string().min(1)).optional(),
         assignee_id: z.string().nullable().optional(),
@@ -860,6 +893,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       remove_assignee_ids,
       due_date,
       due_from,
+      labels,
+      category,
       ...patch
     }) => {
       const { db } = getDb();
@@ -887,11 +922,26 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           `${both.join(", ")} is in both add_assignee_ids and remove_assignee_ids — no change was made.`,
         );
       }
+      if (labels !== undefined && category !== undefined) {
+        return errorText("Pass labels or the older category, not both — no change was made.");
+      }
+      const labelNames =
+        category === undefined ? labels : category === null ? [] : [category];
+      const labelEmoji = await withAutoLabelEmoji(db, userId, item.projectId, labelNames);
       const updated = updateItem(
         db,
         userId,
         item.id,
-        { ...patch, assigneeIds, addAssigneeIds, removeAssigneeIds, dueDate: due_date, dueFrom: due_from },
+        {
+          ...patch,
+          labels: labelNames,
+          labelEmoji,
+          assigneeIds,
+          addAssigneeIds,
+          removeAssigneeIds,
+          dueDate: due_date,
+          dueFrom: due_from,
+        },
         SOURCE,
       );
       const refPrefix = projectRefPrefixes(db, userId)[updated.projectId];
@@ -1156,15 +1206,18 @@ export function registerTools(server: McpServer, ctx: McpContext) {
   );
 
   server.registerTool(
-    "list_categories",
+    "list_labels",
     {
-      title: "List categories",
-      description: "List all known categories for a list.",
+      title: "List labels",
+      description:
+        "List a list's labels: each has an id, a name (what items carry in `labels`) and an optional emoji. " +
+        "Show a label as its emoji then its name, e.g. \"🐛 bug\". emojiChosen is true when someone chose the emoji (or chose none); " +
+        "otherwise it's suggested for the name and follows renames.",
       inputSchema: { list_id: z.string() },
     },
     async ({ list_id }) => {
       const { db } = getDb();
-      return json(listCategories(db, userId, list_id));
+      return json(listLabels(db, userId, list_id));
     },
   );
 
@@ -1262,17 +1315,55 @@ export function registerTools(server: McpServer, ctx: McpContext) {
   );
 
   server.registerTool(
-    "add_category",
+    "add_label",
     {
-      title: "Add category",
+      title: "Add label",
       description:
-        "Idempotently add a category to a list. Items can also be created with a new category — they will auto-insert.",
-      inputSchema: { list_id: z.string(), name: z.string().min(1) },
+        "Idempotently add a label to a list: an existing one with the name is returned as it is. " +
+        "Items can also be given a new label by name in add_item or update_item, which adds it. " +
+        "emoji is one emoji, or null for none, and is the user's choice; leave it out to get one suggested for the name.",
+      inputSchema: {
+        list_id: z.string(),
+        name: z.string().min(1),
+        emoji: z.string().nullable().optional(),
+      },
     },
-    async ({ list_id, name }) => {
+    async ({ list_id, name, emoji }) => {
       const { db } = getDb();
       if (!getProject(db, userId, list_id)) return notFound("list", list_id);
-      return json(addCategory(db, userId, list_id, name, SOURCE));
+      if (emoji !== undefined) {
+        return json(addLabel(db, userId, list_id, { name, emoji }, SOURCE));
+      }
+      const auto = await withAutoLabelEmoji(db, userId, list_id, [name]);
+      const suggested = auto[name.trim()]?.emoji ?? null;
+      return json(
+        addLabel(db, userId, list_id, { name, emoji: suggested, emojiChosen: false }, SOURCE),
+      );
+    },
+  );
+
+  server.registerTool(
+    "update_label",
+    {
+      title: "Update label",
+      description:
+        "Rename a label or change its emoji. A rename carries over to every item with the label. " +
+        "emoji is one emoji, or null for none, and is the user's choice, which stays; " +
+        "a label whose emoji nobody chose gets a new suggestion when renamed. id is the label's id from list_labels.",
+      inputSchema: {
+        id: z.string(),
+        name: z.string().min(1).optional(),
+        emoji: z.string().nullable().optional(),
+      },
+    },
+    async ({ id, ...patch }) => {
+      const { db } = getDb();
+      if (!getLabel(db, userId, id)) return notFound("label", id);
+      try {
+        return json(updateLabel(db, userId, id, await withAutoLabelRename(db, userId, id, patch), SOURCE));
+      } catch (e) {
+        return errorText(`${(e as Error).message} — no change was made.`);
+      }
     },
   );
 

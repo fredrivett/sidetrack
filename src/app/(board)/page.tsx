@@ -4,7 +4,7 @@ import { Kanban } from "@/components/Kanban";
 import { LiveUpdates } from "@/components/LiveUpdates";
 import { isListAdmin } from "@/core/access";
 import { listAllAgentSessions, listStartableAgents } from "@/core/agentSessions";
-import { listCategories } from "@/core/categories";
+import { listLabels } from "@/core/labels";
 import { getDb } from "@/core/db";
 import { projectRefPrefixes } from "@/core/itemRef";
 import { listItems, reopenDueRepeats } from "@/core/items";
@@ -52,8 +52,8 @@ export default async function Home({
       listItems(db, userId, p.id, { includeCompleted: true, completedSince }),
     ]),
   );
-  const categoriesByProject = Object.fromEntries(
-    projects.map((p) => [p.id, listCategories(db, userId, p.id)]),
+  const labelsByProject = Object.fromEntries(
+    projects.map((p) => [p.id, listLabels(db, userId, p.id)]),
   );
   // Who each project's items can be assigned to: its owner + accepted members.
   const assigneesByProject = Object.fromEntries(
@@ -91,7 +91,7 @@ export default async function Home({
         projects={projects}
         itemsByProject={itemsByProject}
         completedSince={completedSince}
-        categoriesByProject={categoriesByProject}
+        labelsByProject={labelsByProject}
         assigneesByProject={assigneesByProject}
         prLinksByItem={prLinksByItem}
         pendingInvites={pendingInvites}

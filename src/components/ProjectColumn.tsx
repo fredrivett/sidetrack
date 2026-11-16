@@ -15,7 +15,7 @@ import { EditableText } from "./EditableText";
 import { ItemDetailDialog } from "./ItemDetailDialog";
 import { DraggableItemList } from "./ItemList";
 import { ProjectDetailDialog } from "./ProjectDetailDialog";
-import { ProjectIconPicker } from "./ProjectIconPicker";
+import { ProjectIconPicker, useListIcon } from "./ProjectIconPicker";
 import { ProjectMenu } from "./ProjectMenu";
 import { StatusBadge } from "./StatusBadge";
 import { SummaryBlock } from "./SummaryBlock";
@@ -102,6 +102,7 @@ export function ProjectColumn({
   // The list's held saves (status, order, prefix, icon…) dim the whole column
   // until they land, whichever control started them.
   const listSave = useNewListSave();
+  const listIcon = useListIcon(project);
 
   return (
     <ListSaveContext value={listSave}>
@@ -112,7 +113,7 @@ export function ProjectColumn({
       header={
         <>
           {/* Icon, title row and ⋯ menu are all 32px tall so they line up. */}
-          <ProjectIconPicker project={project} size={24} />
+          <ProjectIconPicker project={project} listIcon={listIcon} size={24} />
           <div className="min-w-0 flex-1 space-y-1">
             {/* -ml-[7px] cancels the title's border + padding so its text sits
                 where it would without the hover box, close to the icon. */}
@@ -123,10 +124,11 @@ export function ProjectColumn({
                 value={project.name}
                 onSave={(next) =>
                   runAction(
-                    updateProjectAction(project.id, { name: next }),
+                    updateProjectAction(project.id, listIcon.rename(next)),
                     `rename “${project.name}”`,
                   )
                 }
+                onDraftChange={listIcon.onDraftChange}
                 required
                 className="h-8 min-w-0 cursor-text truncate rounded-md border border-transparent px-1.5 text-base font-semibold transition-colors hover:bg-muted"
                 inputClassName="field-sizing-content h-8 min-w-0 px-1.5 py-0 text-base font-semibold"

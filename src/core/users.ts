@@ -121,7 +121,7 @@ export function setUsername(
  * Save the timezone the user's browser reports, so agents work out "today"
  * the way the user's screen does. Not audited, deliberately: it's the device
  * reporting where it is, not something the user did, and logging every sync
- * would be noise (like ensureCategory). Saves the zone's canonical name and
+ * would be noise (like ensureLabels). Saves the zone's canonical name and
  * rejects anything that isn't an IANA zone the runtime knows.
  */
 export function setTimeZone(db: Db, userId: string, timeZone: string): void {

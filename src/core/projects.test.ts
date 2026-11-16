@@ -286,8 +286,12 @@ describe("projects", () => {
     expect(() =>
       updateProject(db, u, p.id, { repository: "gitlab.com/a/b" }, "web"),
     ).toThrow(/invalid repository/);
+    updateProject(db, u, p.id, { repository: "fredrivett/abode" }, "web");
+    expect(listAudit(db, u)[0].detail).toBe(
+      "Sidetrack: repository fredrivett/sidetrack→fredrivett/abode",
+    );
     expect(updateProject(db, u, p.id, { repository: null }, "web").repository).toBeNull();
-    expect(listAudit(db, u)[0].detail).toBe("Sidetrack: cleared repository");
+    expect(listAudit(db, u)[0].detail).toBe("Sidetrack: cleared repository fredrivett/abode");
   });
 
   it("sets an emoji icon, normalizes an image-URL icon, then clears it", () => {
@@ -318,6 +322,34 @@ describe("projects", () => {
     expect(
       listAudit(db, u).find((e) => e.detail.includes("cleared icon")),
     ).toBeTruthy();
+  });
+
+  it("follows a suggested icon until someone chooses one, even none", () => {
+    const { db } = createTestDb();
+    const u = createTestUser(db);
+    const p = createProject(db, u, { name: "Gym", icon: "🏋️", iconChosen: false }, "web");
+    expect(p).toMatchObject({ icon: "🏋️", iconChosen: false });
+
+    // A newer suggestion replaces one nobody chose.
+    const renamed = updateProject(
+      db,
+      u,
+      p.id,
+      { name: "Running", icon: "🏃", iconChosen: false },
+      "web",
+    );
+    expect(renamed).toMatchObject({ icon: "🏃", iconChosen: false });
+
+    // Choosing none is a choice: it clears the icon and no suggestion brings it back.
+    const none = updateProject(db, u, p.id, { icon: null }, "web");
+    expect(none).toMatchObject({ icon: null, iconChosen: true });
+    const later = updateProject(db, u, p.id, { name: "Runs", icon: "🏃", iconChosen: false }, "web");
+    expect(later).toMatchObject({ name: "Runs", icon: null, iconChosen: true });
+
+    // Choosing the suggestion already showing is recorded too.
+    const q = createProject(db, u, { name: "Books", icon: "📚", iconChosen: false }, "web");
+    expect(updateProject(db, u, q.id, { icon: "📚" }, "web").iconChosen).toBe(true);
+    expect(listAudit(db, u).some((e) => e.detail === "Books: chose icon")).toBe(true);
   });
 
   it("rejects an invalid icon and leaves the project unchanged", () => {
