@@ -1,8 +1,6 @@
 "use client";
 
-import { updateProjectAction } from "@/app/actions";
-import { PROJECT_STATUSES, type ProjectStatus } from "@/core/schema";
-import { runAction } from "./run-action";
+import type { ProjectStatus } from "@/core/schema";
 import { useListSave } from "./use-list-saves";
 
 const COLORS: Record<ProjectStatus, string> = {
@@ -15,47 +13,20 @@ const STATUS_LABEL: Record<ProjectStatus, string> = {
   archived: "Archived",
 };
 
-export function StatusBadge({
-  projectId,
-  status,
-}: {
-  projectId: string;
-  status: ProjectStatus;
-}) {
-  // Held: the badge dims, with its column, until the change lands. The badge
+/**
+ * A list's status. Archiving and restoring go through the list's ⋯ menu,
+ * so this only shows it.
+ */
+export function StatusBadge({ status }: { status: ProjectStatus }) {
+  // The badge dims, with its column, while a change to the list saves; it
   // dims too because in the list's details dialog the column is hidden.
-  const { saving, save } = useListSave();
+  const { saving } = useListSave();
   return (
-    <label
+    <span
       aria-busy={saving || undefined}
-      className={`relative inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${COLORS[status]} ${saving ? "opacity-60" : ""}`}
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${COLORS[status]} ${saving ? "opacity-60" : ""}`}
     >
-      <span>{STATUS_LABEL[status]}</span>
-      {/* Archiving goes through the list menu, which offers Undo, so only
-          an archived list's badge can change it: back to active. */}
-      {status === "archived" && (
-        <select
-          aria-label="Change status"
-          value={status}
-          onChange={(e) => {
-            // aria-disabled rather than disabled while saving, so the select
-            // keeps focus; a change made meanwhile is ignored.
-            if (saving) return;
-            const next = e.target.value as ProjectStatus;
-            save(() =>
-              runAction(updateProjectAction(projectId, { status: next }), "change the list's status"),
-            );
-          }}
-          aria-disabled={saving || undefined}
-          className="absolute inset-0 cursor-pointer opacity-0 aria-disabled:cursor-default"
-        >
-          {PROJECT_STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {STATUS_LABEL[s]}
-            </option>
-          ))}
-        </select>
-      )}
-    </label>
+      {STATUS_LABEL[status]}
+    </span>
   );
 }

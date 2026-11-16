@@ -160,10 +160,7 @@ export function ProjectColumn({
             {(project.status !== "active" || (!project.isOwner && !inSpace)) && (
               <div className="flex items-center gap-1.5">
                 {project.status !== "active" && (
-                  <StatusBadge
-                    projectId={project.id}
-                    status={project.status}
-                  />
+                  <StatusBadge status={project.status} />
                 )}
                 {!project.isOwner && !inSpace && (
                   <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sky-700 dark:bg-sky-950 dark:text-sky-400">
