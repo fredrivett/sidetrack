@@ -1,4 +1,4 @@
-import { and, eq, like, sql } from "drizzle-orm";
+import { and, count, eq, like, sql } from "drizzle-orm";
 import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -7,7 +7,7 @@ import { username } from "better-auth/plugins";
 import { users as authUsers, verifications } from "@/core/auth-schema";
 import { getDb } from "@/core/db";
 import { auditLog, meta, projects } from "@/core/schema";
-import { sendPasswordResetEmail } from "@/lib/email";
+import { notifySignup, sendPasswordResetEmail } from "@/lib/email";
 import { SIGNUP_LOCK_KEY } from "./signup";
 import { getEnv } from "@/lib/env";
 import { normalizeWebUrl } from "@/lib/url";
@@ -42,7 +42,7 @@ const ME_ADOPTION_KEY = "me_data_adopted";
 
 function userCount(): number {
   try {
-    return db.select({ id: authUsers.id }).from(authUsers).all().length;
+    return db.select({ n: count() }).from(authUsers).get()?.n ?? 0;
   } catch {
     // Migrations may not have run yet on the very first boot.
     return 0;
@@ -201,6 +201,13 @@ export const auth = betterAuth({
           // count > 1 and skip adoption entirely). Exactly one signup wins
           // the claim and adopts, in either signup mode.
           if (claimSentinel(ME_ADOPTION_KEY)) adoptMeRows(user.id);
+          // Not awaited: the notice must never slow or fail the signup.
+          void notifySignup({
+            name: user.name,
+            email: user.email,
+            username: typeof user.username === "string" ? user.username : null,
+            userNumber: userCount(),
+          });
         },
       },
       update: {

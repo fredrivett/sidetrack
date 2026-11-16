@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   deliverInviteEmail,
   deliverPasswordResetEmail,
+  deliverSignupNotificationEmail,
   redactSmtpUrl,
   type OutboundEmail,
 } from "./email";
@@ -219,6 +220,23 @@ describe("deliverInviteEmail", () => {
         sendSmtp: smtp.fn,
       }),
     ).rejects.toThrow(/Resend rejected the invite email.*422/);
+  });
+});
+
+describe("deliverSignupNotificationEmail", () => {
+  it("emails the operator, not the new user, naming who signed up", async () => {
+    const { fn } = fetchStub({});
+    const smtp = smtpStub();
+    await deliverSignupNotificationEmail(
+      { to: "fred@example.com", name: "Ada", email: "ada@example.com", username: "ada", userNumber: 42 },
+      { env: { ...noEnv, SMTP_URL: "smtp://localhost:1025" }, fetchFn: fn, log: () => {}, sendSmtp: smtp.fn },
+    );
+    expect(smtp.calls).toHaveLength(1);
+    expect(smtp.calls[0].message.to).toBe("fred@example.com");
+    expect(smtp.calls[0].message.subject).toBe("Sidetrack signup #42: Ada");
+    expect(smtp.calls[0].message.text).toContain("ada@example.com");
+    expect(smtp.calls[0].message.text).toContain("@ada");
+    expect(smtp.calls[0].message.text).toContain("User #42");
   });
 });
 
