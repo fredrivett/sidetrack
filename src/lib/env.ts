@@ -165,6 +165,18 @@ function schemaFor(mode: EnvMode) {
           message: SMTP_URL_MESSAGE,
         });
       }
+      // A typo would only surface when someone signs up, and notifySignup
+      // swallows send failures, so reject it at boot instead.
+      if (
+        env.SIGNUP_NOTIFY_EMAIL &&
+        !z.email().safeParse(env.SIGNUP_NOTIFY_EMAIL).success
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["SIGNUP_NOTIFY_EMAIL"],
+          message: "SIGNUP_NOTIFY_EMAIL must be an email address, e.g. you@example.com.",
+        });
+      }
     })
     .transform((env) => ({
       BETTER_AUTH_SECRET: env.BETTER_AUTH_SECRET,

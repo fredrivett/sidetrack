@@ -1,4 +1,4 @@
-import { and, eq, like, sql } from "drizzle-orm";
+import { and, count, eq, like, sql } from "drizzle-orm";
 import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -42,7 +42,7 @@ const ME_ADOPTION_KEY = "me_data_adopted";
 
 function userCount(): number {
   try {
-    return db.select({ id: authUsers.id }).from(authUsers).all().length;
+    return db.select({ n: count() }).from(authUsers).get()?.n ?? 0;
   } catch {
     // Migrations may not have run yet on the very first boot.
     return 0;

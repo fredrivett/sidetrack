@@ -70,7 +70,7 @@ logs` / check your process output and pass the link to the user):
 | --- | --- | --- |
 | `RESEND_API_KEY` | unset | [Resend](https://resend.com) API key. Set it to deliver password reset emails |
 | `EMAIL_FROM` | unset | From address for outbound email, e.g. `Sidetrack <no-reply@your-domain.com>`. Required when `RESEND_API_KEY` is set; the domain must be verified in Resend |
-| `SIGNUP_NOTIFY_EMAIL` | unset | Address to email whenever someone new signs up, e.g. the operator's own. Unset sends nothing |
+| `SIGNUP_NOTIFY_EMAIL` | unset | Address to email whenever someone new signs up, e.g. the operator's own. Best-effort: sent through the SMTP/Resend transport above (with neither, the signup is only logged), and a failed send never blocks the signup. Unset sends nothing |
 | `SMTP_URL` | unset (auto in dev) | Send over SMTP instead of Resend, e.g. `smtp://localhost:1025`. Takes precedence over `RESEND_API_KEY`. In development it defaults to a local mail catcher — see [Development](#development) |
 
 **Optional** — AI list-icon suggestions. With it set, the list icon picker

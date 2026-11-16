@@ -142,6 +142,16 @@ describe("parseServerEnv", () => {
     ).toThrow(/smtp\(s\):\/\/ URL/);
   });
 
+  it("accepts an email SIGNUP_NOTIFY_EMAIL and rejects anything else", () => {
+    const dev = { nodeEnv: "development", nextPhase: undefined };
+    expect(
+      parseServerEnv({ SIGNUP_NOTIFY_EMAIL: "fred@example.com" }, dev).SIGNUP_NOTIFY_EMAIL,
+    ).toBe("fred@example.com");
+    expect(() =>
+      parseServerEnv({ SIGNUP_NOTIFY_EMAIL: "fred@example" }, dev),
+    ).toThrow(/SIGNUP_NOTIFY_EMAIL must be an email address/);
+  });
+
   it("treats a whitespace-only SMTP_URL as unset", () => {
     // Use test mode so the development default (below) doesn't fill it back in.
     const env = parseServerEnv(
