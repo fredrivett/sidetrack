@@ -281,6 +281,13 @@
       "when": 1794790435485,
       "tag": "0039_space_color",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1794814729338,
+      "tag": "0040_board_filters",
+      "breakpoints": true
     }
   ]
 }

@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { SpaceView } from "@/core/spaces";
+import { NO_FILTERS } from "@/lib/filters";
 import { Kanban, type ProjectView } from "./Kanban";
 
 // The server actions pull in server-only modules (next/cache, the DB).
@@ -64,6 +65,7 @@ const board = (projects: ProjectView[], spaces: SpaceView[]) => (
     pendingSpaceInvites={[]}
     initialCollapsedTrays={[]}
     initialListId={null}
+    filters={NO_FILTERS}
   />
 );
 

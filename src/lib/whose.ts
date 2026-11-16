@@ -1,7 +1,7 @@
 /**
- * The "whose items" filter shared by the views across lists (Today, No date,
- * Done) and the MCP tools for Today and No date: everything, the viewer's,
- * someone else's, or nobody's.
+ * The "whose items" filter of the MCP tools for Today and No date:
+ * everything, the viewer's, someone else's, or nobody's. (The web board
+ * filters by person in its header instead, see filters.ts.)
  */
 export const WHOSE_FILTERS = ["all", "mine", "theirs", "unassigned"] as const;
 export type WhoseFilter = (typeof WHOSE_FILTERS)[number];

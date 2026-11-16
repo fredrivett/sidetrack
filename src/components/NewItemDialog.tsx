@@ -130,6 +130,7 @@ export function NewItemDialog({
   assigneesByProject,
   viewerId,
   initialProjectId,
+  shownOnBoard,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -139,6 +140,11 @@ export function NewItemDialog({
   assigneesByProject: Record<string, AssigneeView[]>;
   viewerId: string;
   initialProjectId: string | null;
+  /**
+   * Whether an added item, with this many new sub-items, shows on the board
+   * under the viewer's filters, for its toast.
+   */
+  shownOnBoard: (item: Item, subItems: number) => boolean;
 }) {
   // The list the user chose, or the one the dialog was opened from; "" until
   // then, while Jev's suggestion (if any) stands in.
@@ -302,6 +308,7 @@ export function NewItemDialog({
     const ls = labels;
     const emoji = labelEmoji;
     const who = assigneeIds;
+    const ids = assigned.map((a) => a.userId);
     const du = due;
     const r = repeat;
     const p = chosenParent?.id ?? null;
@@ -318,14 +325,15 @@ export function NewItemDialog({
           labels: ls,
           labelEmoji: emoji,
           parentId: p,
-          assigneeIds: assigned.map((a) => a.userId),
+          assigneeIds: ids,
           dueDate: du?.dueDate ?? null,
           dueFrom: du?.dueFrom ?? null,
           repeat: r,
           subItems: subs,
         }).then((item) => {
+          const shown = shownOnBoard(item, subs.length);
           // Confirms each add in a run, even one that lands after the dialog
-          // closed.
+          // closed, and says when the viewer's filters keep it off the board.
           toast.success(
             <AddedToast
               title={t}
@@ -335,7 +343,7 @@ export function NewItemDialog({
                 onOpenItem(item);
               }}
             />,
-            { id: item.id },
+            { id: item.id, description: shown ? undefined : "Hidden by your filters" },
           );
         }),
         `add “${t}”`,

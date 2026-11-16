@@ -12,29 +12,35 @@ import {
   useTransition,
 } from "react";
 import type { AssigneeView, PendingInviteView } from "@/core/members";
-import { listDoneBeforeAction, reorderSpaceAction, setTimeZoneAction } from "@/app/actions";
+import {
+  listDoneBeforeAction,
+  reorderSpaceAction,
+  setBoardFiltersAction,
+  setTimeZoneAction,
+} from "@/app/actions";
 import type { Item, ItemPrLink, Label, Project } from "@/core/schema";
 import type { PendingSpaceInviteView, SpaceView } from "@/core/spaces";
+import { type ItemFilters, matchesFilters } from "@/lib/filters";
 import { isEditableTarget, matchesShortcut } from "@/lib/keyboard";
 import { Button } from "@/components/ui/button";
 import { AddProjectButton } from "./AddProjectButton";
-import { ArchivedListsMenu } from "./ArchivedListsMenu";
 import { AuditDialog } from "./AuditDialog";
 import { BoardHeader, BoardMain, BoardRail } from "./BoardLayout";
 import { CommandPalette } from "./CommandPalette";
 import { AgendaView } from "./AgendaView";
 import { DoneView } from "./DoneView";
+import { FilterMenu } from "./FilterMenu";
 import { InvitesBanner } from "./InvitesBanner";
 import { ItemDetailDialog } from "./ItemDetailDialog";
 import { NewItemDialog } from "./NewItemDialog";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { ProjectColumn } from "./ProjectColumn";
 import { PullToSearch } from "./PullToSearch";
-import { ShareDialog } from "./ShareDialog";
 import { runAction } from "./run-action";
+import { ShareDialog } from "./ShareDialog";
 import { SpaceMenu } from "./SpaceMenu";
 import { saveCollapsedTrays, SpaceTray } from "./SpaceTray";
-import { useDayStart } from "./use-day-start";
+import { useDayStart, useToday } from "./use-day-start";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
 import { LabelsContext } from "./Labels";
 import { RemoveListContext, useOptimisticLists } from "./use-list-saves";
@@ -44,7 +50,7 @@ import {
   ItemChangesContext,
   useOptimisticItems,
 } from "./use-optimistic-items";
-import type { AvatarUser } from "./UserAvatar";
+import { assigneeName, type AvatarUser } from "./UserAvatar";
 import { UserMenu } from "./UserMenu";
 
 /**
@@ -83,6 +89,7 @@ export function Kanban({
   pendingSpaceInvites,
   initialCollapsedTrays,
   initialListId,
+  filters: savedFilters,
 }: {
   viewerId: string;
   /** The viewer's own display fields, for the avatar on the Account button. */
@@ -115,6 +122,8 @@ export function Kanban({
   initialCollapsedTrays: string[];
   /** From `?p=`, the list the board opens centred on. */
   initialListId: string | null;
+  /** The viewer's own filters, as they last set them. */
+  filters: ItemFilters;
 }) {
   const railRef = useRef<HTMLDivElement>(null);
 
@@ -215,6 +224,14 @@ export function Kanban({
   const [itemsByProject, itemChanges] = useOptimisticItems(allItemsByProject, applyToOlder);
   const [projects, removeList] = useOptimisticLists(serverProjects);
   const [view, setView] = useState<BoardView>(initialView);
+  // The page shows the filters as soon as they're picked; saving them is so
+  // the next visit, on any device, opens the same way. A save that fails
+  // says so, and leaves them as picked on this page.
+  const [filters, setFilters] = useState(savedFilters);
+  function changeFilters(next: ItemFilters) {
+    setFilters(next);
+    void runAction(setBoardFiltersAction(next), "save your filters");
+  }
   function switchView(next: BoardView) {
     setView(next);
     const url = new URL(window.location.href);
@@ -270,7 +287,7 @@ export function Kanban({
   }>({ open: false, projectId: null, projectName: "" });
 
   // Active lists keep the viewer's order; paused lists follow, collapsed at the
-  // end; archived lists leave the board for the Archived menu. Each group
+  // end; archived lists leave the board for the Account menu's Archived lists. Each group
   // keeps its own neighbours and ends for the Move items, so a move never crosses
   // into another group (where the position change wouldn't show).
   const active = projects.filter((p) => p.status === "active");
@@ -316,6 +333,28 @@ export function Kanban({
       window.history.replaceState(null, "", url.toString());
     }
   }
+  // Everyone on the board's lists, to filter by. Someone filtered by who has
+  // since left every list no longer narrows anything.
+  const people = [
+    ...new Map(
+      onBoard.flatMap((p) => assigneesByProject[p.id] ?? []).map((a) => [a.userId, a]),
+    ).values(),
+  ].sort((a, b) => assigneeName(a).localeCompare(assigneeName(b)));
+  // Every label on the board's lists; the same name in two lists is one
+  // choice. A label since removed everywhere no longer narrows either.
+  const labelChoices = [
+    ...new Map(
+      onBoard
+        .flatMap((p) => labelsByProject[p.id] ?? [])
+        .reverse()
+        .map((l) => [l.name, { name: l.name, emoji: l.emoji }]),
+    ).values(),
+  ].sort((a, b) => a.name.localeCompare(b.name));
+  const shownFilters = {
+    ...filters,
+    assignees: filters.assignees.filter((id) => people.some((p) => p.userId === id)),
+    labels: filters.labels.filter((name) => labelChoices.some((l) => l.name === name)),
+  };
 
   // Moving a tray holds it, dimmed, until the board comes back in the new
   // order, as moving a list holds its column.
@@ -335,6 +374,20 @@ export function Kanban({
   // Items opened from the palette get their own dialog here, since the item
   // may sit in a list the current view doesn't show.
   const boardItems = onBoard.flatMap((p) => itemsByProject[p.id] ?? []);
+
+  // Whether an item just added shows under the viewer's filters, as its list
+  // decides (shownInGroups): it matches, taking the date and labels it lacks
+  // from its parent, or one of its new sub-items does. Those are bare titles,
+  // so they go by their parent's date and labels and have nobody on them.
+  const today = useToday();
+  const shownOnBoard = (item: Item, subItems: number) => {
+    const parent = boardItems.find((i) => i.id === item.parentId);
+    const bare = { assigneeIds: [], labels: [], dueDate: null, dueFrom: null };
+    return (
+      matchesFilters(item, parent, shownFilters, today) ||
+      (subItems > 0 && matchesFilters(bare, item, shownFilters, today))
+    );
+  };
   const paletteDetail = useItemDetailDialog(boardItems);
   const paletteProject = onBoard.find(
     (p) => p.id === paletteDetail.item?.projectId,
@@ -407,6 +460,7 @@ export function Kanban({
         onAddItem={openNewItem}
         onShare={openShare}
         spaces={spaces}
+        filters={shownFilters}
       />
     )));
 
@@ -517,7 +571,13 @@ export function Kanban({
           <span className="hidden whitespace-nowrap text-xs text-neutral-400 md:inline">
             {onBoard.length} list{onBoard.length === 1 ? "" : "s"}
           </span>
-          <ArchivedListsMenu lists={archived} />
+          <FilterMenu
+            filters={shownFilters}
+            onChange={changeFilters}
+            people={people}
+            labels={labelChoices}
+            viewerId={viewerId}
+          />
           {/* Icon and label on desktop, just the icon on phones. */}
           <Button
             variant="outline"
@@ -528,7 +588,7 @@ export function Kanban({
             <History />
             <span className="hidden sm:inline">Activity</span>
           </Button>
-          <UserMenu user={viewer} />
+          <UserMenu user={viewer} archived={archived} />
         </BoardHeader>
         <InvitesBanner invites={pendingInvites} spaceInvites={pendingSpaceInvites} />
         {view === "agenda" ? (
@@ -539,6 +599,7 @@ export function Kanban({
             assigneesByProject={assigneesByProject}
             prLinksByItem={prLinksByItem}
             viewerId={viewerId}
+            filters={shownFilters}
           />
         ) : view === "done" ? (
           <DoneView
@@ -547,6 +608,7 @@ export function Kanban({
             assigneesByProject={assigneesByProject}
             prLinksByItem={prLinksByItem}
             viewerId={viewerId}
+            filters={shownFilters}
             since={older?.since ?? completedSince}
             more={older?.more ?? true}
             loading={loadingDone}
@@ -561,7 +623,7 @@ export function Kanban({
                 {onBoard.length === 0 && (
                   <div className="m-auto text-sm text-neutral-500">
                     {archived.length > 0
-                      ? "Every list is archived — restore one from Archived, or tap + Add list."
+                      ? "Every list is archived — restore one from your account menu, or tap + Add list."
                       : "No lists yet — tap + Add list to start."}
                   </div>
                 )}
@@ -641,6 +703,7 @@ export function Kanban({
           assigneesByProject={assigneesByProject}
           viewerId={viewerId}
           initialProjectId={newItem.projectId}
+          shownOnBoard={shownOnBoard}
         />
 
         <NewProjectDialog

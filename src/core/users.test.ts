@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestDb, createTestUser } from "./test-helpers";
+import { NO_FILTERS } from "../lib/filters";
 import {
   getOverdueCollapsed,
+  getBoardFilters,
   getProfile,
   getTimeZone,
   getUploadedAvatar,
   setAvatarUrl,
   setOverdueCollapsed,
+  setBoardFilters,
   setTimeZone,
   setUploadedAvatar,
   setUsername,
@@ -46,6 +49,21 @@ describe("Agenda's Overdue fold", () => {
     setOverdueCollapsed(db, me, false);
     expect(getOverdueCollapsed(db, me)).toBe(false);
     expect(listAudit(db, me, {})).toHaveLength(0);
+  });
+});
+
+describe("board filters", () => {
+  it("are none until saved, then round-trip, and refuse invalid ones", () => {
+    const { db } = createTestDb();
+    const userId = createTestUser(db);
+    expect(getBoardFilters(db, userId)).toEqual(NO_FILTERS);
+    const mine = { ...NO_FILTERS, assignees: [userId], labels: ["work"], doneThisWeek: false };
+    setBoardFilters(db, userId, mine);
+    expect(getBoardFilters(db, userId)).toEqual(mine);
+    expect(() =>
+      setBoardFilters(db, userId, { ...mine, dueRange: { from: "2026-11-20", to: "2026-11-01" } }),
+    ).toThrow();
+    expect(getBoardFilters(db, userId)).toEqual(mine);
   });
 });
 

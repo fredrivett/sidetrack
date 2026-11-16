@@ -5,6 +5,7 @@ import { type AuditOrigin, recordAudit } from "./audit";
 import { announceChange } from "./changes";
 import type { Db } from "./db";
 import { uploadedAvatarPath } from "../lib/avatar";
+import { type ItemFilters, itemFiltersSchema, parseItemFilters } from "../lib/filters";
 import { normalizeWebUrl } from "../lib/url";
 import { isReservedUsername, validateUsername } from "../lib/username";
 
@@ -136,6 +137,29 @@ export function setTimeZone(db: Db, userId: string, timeZone: string): void {
   // audit-exempt: the device reporting its zone, not a user action
   // (see above).
   db.update(users).set({ timeZone: canonical }).where(eq(users.id, userId)).run();
+}
+
+/** The filters the user last set on their board, or none. */
+export function getBoardFilters(db: Db, userId: string): ItemFilters {
+  const row = db
+    .select({ boardFilters: users.boardFilters })
+    .from(users)
+    .where(eq(users.id, userId))
+    .get();
+  return parseItemFilters(row?.boardFilters ?? null);
+}
+
+/**
+ * Save the filters the user set on their board, so every device opens with
+ * them. Not audited, deliberately: they change how the board looks to this
+ * user alone, not anything on it, like collapsing a checklist. Nobody else
+ * sees them, so no change is announced either.
+ */
+export function setBoardFilters(db: Db, userId: string, filters: ItemFilters): void {
+  const parsed = itemFiltersSchema.parse(filters);
+  // audit-exempt: a personal view setting, not a change to anything shared
+  // (see above).
+  db.update(users).set({ boardFilters: parsed }).where(eq(users.id, userId)).run();
 }
 
 /** Largest uploaded avatar accepted. The browser shrinks images to 256px first, so real uploads are far below this. */

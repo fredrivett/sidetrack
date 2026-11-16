@@ -42,6 +42,9 @@ export const users = sqliteTable("users", {
   // showing it first, until their trays are placed (see placeTrays in
   // spaces.ts).
   personalTrayPosition: text("personal_tray_position"),
+  // The filters they last set in the board's header (ItemFilters, as JSON),
+  // kept per person so they follow them to every device. null = none.
+  boardFilters: text("board_filters", { mode: "json" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
