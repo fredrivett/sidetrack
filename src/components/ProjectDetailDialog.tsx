@@ -1,11 +1,12 @@
 "use client";
 
-import { ExternalLink, Trash2 } from "lucide-react";
+import { ExternalLink, GitBranch, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { updateProjectAction } from "@/app/actions";
 import type { Project } from "@/core/schema";
 import { validatePrefix } from "@/lib/itemRef";
+import { normalizeRepository } from "@/lib/repository";
 import { normalizeHomepageUrl } from "@/lib/url";
 import { dayLabel } from "@/lib/time";
 import { Button } from "@/components/ui/button";
@@ -41,10 +42,13 @@ function Field({
 
 export function ProjectDetailDialog({
   project,
+  isAdmin,
   open,
   onOpenChange,
 }: {
   project: Project;
+  /** The viewer is the list's admin (owner, or its Space's admin). */
+  isAdmin: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -85,6 +89,23 @@ export function ProjectDetailDialog({
       runAction(
         updateProjectAction(project.id, { homepageUrl: next.trim() ? next : null }),
         "save the homepage",
+      ),
+    );
+  }
+
+  // Same as the homepage: a typo gets its own message, and the save holds
+  // because the server decides the stored "owner/repo".
+  async function saveRepository(next: string) {
+    try {
+      normalizeRepository(next);
+    } catch {
+      toast.error("That doesn't look like a GitHub repository, such as owner/repo.");
+      return;
+    }
+    await save(() =>
+      runAction(
+        updateProjectAction(project.id, { repository: next.trim() ? next : null }),
+        "save the repository",
       ),
     );
   }
@@ -180,6 +201,39 @@ export function ProjectDetailDialog({
               )}
             </div>
           </Field>
+
+          {(isAdmin || project.repository) && (
+            <Field label="Repository">
+              <div className="flex items-center gap-2">
+                {isAdmin ? (
+                  <EditableText
+                    value={project.repository ?? ""}
+                    onSave={saveRepository}
+                    hold
+                    placeholder="Add GitHub repository…"
+                    className="block min-w-0 flex-1 truncate font-mono text-sm text-neutral-600 dark:text-neutral-300"
+                    inputClassName="w-full text-sm font-mono"
+                  />
+                ) : (
+                  <span className="block min-w-0 flex-1 truncate font-mono text-sm text-neutral-600 dark:text-neutral-300">
+                    {project.repository}
+                  </span>
+                )}
+                {project.repository && (
+                  <a
+                    href={`https://github.com/${project.repository}`}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    title="Open on GitHub"
+                    className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-950/40"
+                  >
+                    <GitBranch className="size-3.5" />
+                    Open
+                  </a>
+                )}
+              </div>
+            </Field>
+          )}
         </div>
 
         <div className="flex shrink-0 items-center justify-between border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
