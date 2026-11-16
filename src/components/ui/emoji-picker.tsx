@@ -5,11 +5,26 @@ import {
   type EmojiPickerListEmojiProps,
   type EmojiPickerListRowProps,
   EmojiPicker as EmojiPickerPrimitive,
+  type SkinTone,
+  useSkinTone,
 } from "frimousse";
 import { LoaderIcon, SearchIcon } from "lucide-react";
+import { useEffect } from "react";
 import type * as React from "react";
 
 import { cn } from "@/lib/utils";
+
+// frimousse keeps the skin tone only while the picker is open; remember it
+// on this device so it's still set the next time any picker opens.
+const SKIN_TONE_KEY = "sidetrack:emoji-skin-tone";
+
+function savedSkinTone(): SkinTone {
+  try {
+    return (localStorage.getItem(SKIN_TONE_KEY) as SkinTone | null) ?? "none";
+  } catch {
+    return "none";
+  }
+}
 
 function EmojiPicker({
   className,
@@ -22,8 +37,62 @@ function EmojiPicker({
         className,
       )}
       data-slot="emoji-picker"
+      skinTone={savedSkinTone()}
       {...props}
     />
+  );
+}
+
+// The swatch for each tone: the default yellow, then the five emoji
+// modifiers' colours, light to dark.
+const SKIN_TONES: { tone: SkinTone; label: string; color: string }[] = [
+  { tone: "none", label: "Default", color: "#ffc83d" },
+  { tone: "light", label: "Light", color: "#f7dece" },
+  { tone: "medium-light", label: "Medium-light", color: "#e0bb95" },
+  { tone: "medium", label: "Medium", color: "#bf8f68" },
+  { tone: "medium-dark", label: "Medium-dark", color: "#9b643d" },
+  { tone: "dark", label: "Dark", color: "#594539" },
+];
+
+/**
+ * A footer of skin tone swatches. The tone applies to every emoji that has
+ * them, in every picker on this device; saved icons keep theirs.
+ */
+function EmojiPickerSkinTones({
+  className,
+  ...props
+}: React.ComponentProps<"div">) {
+  const [skinTone, setSkinTone] = useSkinTone();
+  useEffect(() => {
+    try {
+      localStorage.setItem(SKIN_TONE_KEY, skinTone);
+    } catch {
+      // Storage unavailable (e.g. private mode): the tone just isn't kept.
+    }
+  }, [skinTone]);
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Skin tone"
+      className={cn("flex h-10 shrink-0 items-center gap-1.5 border-t px-3", className)}
+      data-slot="emoji-picker-skin-tones"
+      {...props}
+    >
+      <span className="mr-auto text-xs text-muted-foreground">Skin tone</span>
+      {SKIN_TONES.map(({ tone, label, color }) => (
+        <button
+          key={tone}
+          type="button"
+          role="radio"
+          aria-checked={skinTone === tone}
+          aria-label={label}
+          title={label}
+          onClick={() => setSkinTone(tone)}
+          className="size-4 rounded-full outline-offset-2 ring-offset-2 ring-offset-popover aria-checked:ring-[1.5px] aria-checked:ring-foreground"
+          style={{ backgroundColor: color }}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -124,4 +193,9 @@ function EmojiPickerContent({
   );
 }
 
-export { EmojiPicker, EmojiPickerSearch, EmojiPickerContent };
+export {
+  EmojiPicker,
+  EmojiPickerSearch,
+  EmojiPickerContent,
+  EmojiPickerSkinTones,
+};

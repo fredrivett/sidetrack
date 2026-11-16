@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, SmilePlus, Sparkles, X } from "lucide-react";
+import { Check, SmilePlus, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { suggestListIconsAction, updateProjectAction } from "@/app/actions";
@@ -12,6 +12,7 @@ import {
   EmojiPicker,
   EmojiPickerContent,
   EmojiPickerSearch,
+  EmojiPickerSkinTones,
 } from "@/components/ui/emoji-picker";
 import { Input } from "@/components/ui/input";
 import {
@@ -126,6 +127,7 @@ export function IconPicker({
 }) {
   const [open, setOpen] = useState(false);
   const [imageUrl, setImageUrl] = useState("");
+  const [query, setQuery] = useState("");
   // No icon + a homepage means the favicon is what's showing — so the favicon
   // row reads as the active selection.
   const faviconActive = !icon && Boolean(homepageUrl);
@@ -158,7 +160,10 @@ export function IconPicker({
       onOpenChange={(next, details) => {
         if (next && disabled) return details.cancel();
         setOpen(next);
-        if (next) onOpen?.();
+        if (next) {
+          setQuery("");
+          onOpen?.();
+        }
       }}
     >
       <PopoverTrigger
@@ -196,39 +201,15 @@ export function IconPicker({
         )}
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[288px] p-0">
-        {suggestions.length > 0 && (
-          <div className="flex items-center gap-1 border-b px-2 py-1.5">
-            <Sparkles
-              aria-hidden
-              className="size-3.5 shrink-0 text-muted-foreground"
-            />
-            <span className="mr-1 text-xs text-muted-foreground">
-              Suggested
-            </span>
-            {suggestions.map((emoji) => (
-              <button
-                key={emoji}
-                type="button"
-                aria-label={`Use ${emoji}`}
-                onClick={() => select(emoji)}
-                className={cn(
-                  "inline-flex size-8 items-center justify-center rounded-md text-lg hover:bg-muted",
-                  icon === emoji && "bg-muted",
-                )}
-              >
-                {emoji}
-              </button>
-            ))}
-          </div>
-        )}
         <EmojiPicker
-          className="h-[268px] w-full"
+          className="h-[340px] w-full"
           onEmojiSelect={({ emoji }) => select(emoji)}
         >
           <div className="flex items-center gap-1 border-b px-2 py-1.5">
             <EmojiPickerSearch
               placeholder="Search emoji…"
               className="h-7 border-0 px-1"
+              onChange={(e) => setQuery(e.target.value)}
             />
             {/* Also offered with nothing showing yet, so "none" can be
                 chosen before a suggestion fills in. */}
@@ -243,7 +224,34 @@ export function IconPicker({
               </button>
             )}
           </div>
+          {/* Styled as the grid's first category; it sits above the grid
+              rather than in it because frimousse virtualizes the grid's
+              rows. Searching hides it, like any category without a match. */}
+          {suggestions.length > 0 && !query.trim() && (
+            <div className="shrink-0">
+              <div className="px-3 pt-3.5 pb-2 text-xs leading-none text-muted-foreground">
+                Suggested
+              </div>
+              <div className="flex flex-wrap px-1">
+                {suggestions.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    aria-label={`Use ${emoji}`}
+                    onClick={() => select(emoji)}
+                    className={cn(
+                      "flex size-7 items-center justify-center rounded-sm text-base hover:bg-accent",
+                      icon === emoji && "bg-accent",
+                    )}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <EmojiPickerContent />
+          <EmojiPickerSkinTones />
         </EmojiPicker>
 
         {!emojiOnly && (
