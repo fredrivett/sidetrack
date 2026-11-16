@@ -37,6 +37,9 @@ export const users = sqliteTable("users", {
   overdueCollapsed: integer("overdue_collapsed", { mode: "boolean" })
     .notNull()
     .default(false),
+  // The filters they last set in the board's header (ItemFilters, as JSON),
+  // kept per person so they follow them to every device. null = none.
+  boardFilters: text("board_filters", { mode: "json" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });

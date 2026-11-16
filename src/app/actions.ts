@@ -90,6 +90,7 @@ import {
 import {
   AVATAR_MAX_BYTES,
   setOverdueCollapsed as setOverdueCollapsedCore,
+  setBoardFilters as setBoardFiltersCore,
   setTimeZone as setTimeZoneCore,
   setAvatarUrl as setAvatarUrlCore,
   setUploadedAvatar as setUploadedAvatarCore,
@@ -99,6 +100,7 @@ import { getCurrentSession, requireUserId } from "@/auth/session";
 import { notifyInvite } from "@/lib/email";
 import { suggestEmoji, suggestLabelEmoji } from "@/lib/emojiSuggest";
 import { getEnv } from "@/lib/env";
+import type { ItemFilters } from "@/lib/filters";
 import { checkDraftItem, suggestList } from "@/lib/itemSuggest";
 import { formatItemRef } from "@/lib/itemRef";
 import type { Repeat } from "@/lib/repeat";
@@ -617,6 +619,13 @@ export async function setTimeZoneAction(timeZone: string) {
   const userId = await requireUserId();
   const { db } = getDb();
   setTimeZoneCore(db, userId, timeZone);
+}
+
+// No refresh: the board already shows the filters, and nothing else changed.
+export async function setBoardFiltersAction(filters: ItemFilters) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  setBoardFiltersCore(db, userId, filters);
 }
 
 /** Upload an avatar image (already shrunk by the browser) for the signed-in user. */

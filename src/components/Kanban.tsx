@@ -4,9 +4,14 @@ import { History } from "lucide-react";
 import { unstable_rethrow, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { AssigneeView, PendingInviteView } from "@/core/members";
-import { listDoneBeforeAction, setTimeZoneAction } from "@/app/actions";
+import {
+  listDoneBeforeAction,
+  setBoardFiltersAction,
+  setTimeZoneAction,
+} from "@/app/actions";
 import type { Item, ItemPrLink, Label, Project } from "@/core/schema";
 import type { PendingSpaceInviteView, SpaceView } from "@/core/spaces";
+import type { ItemFilters } from "@/lib/filters";
 import { isEditableTarget, matchesShortcut } from "@/lib/keyboard";
 import { Button } from "@/components/ui/button";
 import { AddProjectButton } from "./AddProjectButton";
@@ -15,12 +20,14 @@ import { BoardHeader, BoardMain, BoardRail } from "./BoardLayout";
 import { CommandPalette } from "./CommandPalette";
 import { AgendaView } from "./AgendaView";
 import { DoneView } from "./DoneView";
+import { FilterMenu } from "./FilterMenu";
 import { InvitesBanner } from "./InvitesBanner";
 import { ItemDetailDialog } from "./ItemDetailDialog";
 import { NewItemDialog } from "./NewItemDialog";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { ProjectColumn } from "./ProjectColumn";
 import { PullToSearch } from "./PullToSearch";
+import { runAction } from "./run-action";
 import { ShareDialog } from "./ShareDialog";
 import { saveCollapsedTrays, SpaceTray } from "./SpaceTray";
 import { useDayStart } from "./use-day-start";
@@ -33,7 +40,7 @@ import {
   ItemChangesContext,
   useOptimisticItems,
 } from "./use-optimistic-items";
-import type { AvatarUser } from "./UserAvatar";
+import { assigneeName, type AvatarUser } from "./UserAvatar";
 import { UserMenu } from "./UserMenu";
 
 /**
@@ -71,6 +78,7 @@ export function Kanban({
   pendingSpaceInvites,
   initialCollapsedTrays,
   initialListId,
+  filters: savedFilters,
 }: {
   viewerId: string;
   /** The viewer's own display fields, for the avatar on the Account button. */
@@ -101,6 +109,8 @@ export function Kanban({
   initialCollapsedTrays: string[];
   /** From `?p=`, the list the board opens centred on. */
   initialListId: string | null;
+  /** The viewer's own filters, as they last set them. */
+  filters: ItemFilters;
 }) {
   const railRef = useRef<HTMLDivElement>(null);
 
@@ -201,6 +211,14 @@ export function Kanban({
   const [itemsByProject, itemChanges] = useOptimisticItems(allItemsByProject, applyToOlder);
   const [projects, removeList] = useOptimisticLists(serverProjects);
   const [view, setView] = useState<BoardView>(initialView);
+  // The page shows the filters as soon as they're picked; saving them is so
+  // the next visit, on any device, opens the same way. A save that fails
+  // says so, and leaves them as picked on this page.
+  const [filters, setFilters] = useState(savedFilters);
+  function changeFilters(next: ItemFilters) {
+    setFilters(next);
+    void runAction(setBoardFiltersAction(next), "save your filters");
+  }
   function switchView(next: BoardView) {
     setView(next);
     const url = new URL(window.location.href);
@@ -298,6 +316,28 @@ export function Kanban({
       window.history.replaceState(null, "", url.toString());
     }
   }
+  // Everyone on the board's lists, to filter by. Someone filtered by who has
+  // since left every list no longer narrows anything.
+  const people = [
+    ...new Map(
+      onBoard.flatMap((p) => assigneesByProject[p.id] ?? []).map((a) => [a.userId, a]),
+    ).values(),
+  ].sort((a, b) => assigneeName(a).localeCompare(assigneeName(b)));
+  // Every label on the board's lists; the same name in two lists is one
+  // choice. A label since removed everywhere no longer narrows either.
+  const labelChoices = [
+    ...new Map(
+      onBoard
+        .flatMap((p) => labelsByProject[p.id] ?? [])
+        .reverse()
+        .map((l) => [l.name, { name: l.name, emoji: l.emoji }]),
+    ).values(),
+  ].sort((a, b) => a.name.localeCompare(b.name));
+  const shownFilters = {
+    ...filters,
+    assignees: filters.assignees.filter((id) => people.some((p) => p.userId === id)),
+    labels: filters.labels.filter((name) => labelChoices.some((l) => l.name === name)),
+  };
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   // Items opened from the palette get their own dialog here, since the item
@@ -375,6 +415,7 @@ export function Kanban({
         onAddItem={openNewItem}
         onShare={openShare}
         spaces={spaces}
+        filters={shownFilters}
       />
     )));
 
@@ -485,6 +526,13 @@ export function Kanban({
           <span className="hidden whitespace-nowrap text-xs text-neutral-400 md:inline">
             {onBoard.length} list{onBoard.length === 1 ? "" : "s"}
           </span>
+          <FilterMenu
+            filters={shownFilters}
+            onChange={changeFilters}
+            people={people}
+            labels={labelChoices}
+            viewerId={viewerId}
+          />
           {/* Icon and label on desktop, just the icon on phones. */}
           <Button
             variant="outline"
@@ -506,6 +554,7 @@ export function Kanban({
             assigneesByProject={assigneesByProject}
             prLinksByItem={prLinksByItem}
             viewerId={viewerId}
+            filters={shownFilters}
           />
         ) : view === "done" ? (
           <DoneView
@@ -514,6 +563,7 @@ export function Kanban({
             assigneesByProject={assigneesByProject}
             prLinksByItem={prLinksByItem}
             viewerId={viewerId}
+            filters={shownFilters}
             since={older?.since ?? completedSince}
             more={older?.more ?? true}
             loading={loadingDone}
@@ -593,6 +643,7 @@ export function Kanban({
           assigneesByProject={assigneesByProject}
           viewerId={viewerId}
           initialProjectId={newItem.projectId}
+          filters={shownFilters}
         />
 
         <NewProjectDialog

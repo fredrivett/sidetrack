@@ -29,6 +29,7 @@ import type { AssigneeView } from "@/core/members";
 import type { Item } from "@/core/schema";
 import { toggleAssignee } from "@/lib/assignees";
 import { formatItemRef } from "@/lib/itemRef";
+import { type ItemFilters, matchesFilters } from "@/lib/filters";
 import type { Repeat } from "@/lib/repeat";
 import type { Due } from "@/lib/time";
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,7 @@ import { LabelsField } from "./Labels";
 import type { ProjectView } from "./Kanban";
 import { RepeatPicker } from "./RepeatPicker";
 import { runAction } from "./run-action";
+import { useToday } from "./use-day-start";
 import { useAssignShortcuts } from "./useAssignShortcuts";
 import { AvatarStack, assigneeNames } from "./UserAvatar";
 
@@ -130,6 +132,7 @@ export function NewItemDialog({
   assigneesByProject,
   viewerId,
   initialProjectId,
+  filters,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -139,6 +142,8 @@ export function NewItemDialog({
   assigneesByProject: Record<string, AssigneeView[]>;
   viewerId: string;
   initialProjectId: string | null;
+  /** The viewer's filters, to say when an item added won't show on the board. */
+  filters: ItemFilters;
 }) {
   // The list the user chose, or the one the dialog was opened from; "" until
   // then, while Jev's suggestion (if any) stands in.
@@ -170,6 +175,7 @@ export function NewItemDialog({
   // Whether anything was added in this session: the dialog stays open after
   // each add so you can enter a run of items, so Cancel becomes Done.
   const [addedAny, setAddedAny] = useState(false);
+  const today = useToday();
   const [pending, start] = useTransition();
   const titleRef = useRef<HTMLInputElement>(null);
   const subRef = useRef<HTMLInputElement>(null);
@@ -302,6 +308,7 @@ export function NewItemDialog({
     const ls = labels;
     const emoji = labelEmoji;
     const who = assigneeIds;
+    const ids = assigned.map((a) => a.userId);
     const du = due;
     const r = repeat;
     const p = chosenParent?.id ?? null;
@@ -318,14 +325,21 @@ export function NewItemDialog({
           labels: ls,
           labelEmoji: emoji,
           parentId: p,
-          assigneeIds: assigned.map((a) => a.userId),
+          assigneeIds: ids,
           dueDate: du?.dueDate ?? null,
           dueFrom: du?.dueFrom ?? null,
           repeat: r,
           subItems: subs,
         }).then((item) => {
+          // A sub-item takes the date and labels it leaves out from its
+          // parent, which isn't to hand, so those filters don't count for it.
+          const shown = matchesFilters(item, undefined, {
+            ...filters,
+            ...(p && !item.dueDate && { due: [], dueRange: null }),
+            ...(p && item.labels.length === 0 && { labels: [], unlabelled: false }),
+          }, today);
           // Confirms each add in a run, even one that lands after the dialog
-          // closed.
+          // closed, and says when the viewer's filters keep it off the board.
           toast.success(
             <AddedToast
               title={t}
@@ -335,7 +349,7 @@ export function NewItemDialog({
                 onOpenItem(item);
               }}
             />,
-            { id: item.id },
+            { id: item.id, description: shown ? undefined : "Hidden by your filters" },
           );
         }),
         `add “${t}”`,

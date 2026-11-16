@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { setItemsCollapsedAction, setOverdueCollapsedAction } from "@/app/actions";
 import type { Item } from "@/core/schema";
+import { type ItemFilters, NO_FILTERS } from "@/lib/filters";
 import { AgendaView } from "./AgendaView";
 import type { ProjectView } from "./Kanban";
 
@@ -61,7 +62,12 @@ const item = (title: string, dueDate: string | null, more: Partial<Item> = {}): 
 });
 const doneOn = (day: number) => ({ completedAt: new Date(2026, 10, day, 9).getTime() });
 
-function renderAgenda(items: Item[], projects = [home], overdueCollapsed = false) {
+function renderAgenda(
+  items: Item[],
+  projects = [home],
+  overdueCollapsed = false,
+  filters: Partial<ItemFilters> = {},
+) {
   const itemsByProject: Record<string, Item[]> = {};
   for (const i of items) (itemsByProject[i.projectId] ??= []).push(i);
   render(
@@ -72,6 +78,7 @@ function renderAgenda(items: Item[], projects = [home], overdueCollapsed = false
       prLinksByItem={{}}
       viewerId="me"
       overdueCollapsed={overdueCollapsed}
+      filters={{ ...NO_FILTERS, ...filters }}
     />,
   );
 }
@@ -123,27 +130,33 @@ describe("AgendaView", () => {
     expect(screen.queryByText("Old idea")).toBeNull();
   });
 
-  it("counts open items per filter and narrows every section", () => {
-    renderAgenda([
+  it("narrows every section to the header's filters", () => {
+    const mixed = () => [
       item("today, mine", "2026-11-14", { assigneeIds: ["me"] }),
       item("late, theirs", "2026-11-10", { assigneeIds: ["them"] }),
-      // A joint item that includes the viewer counts as Mine, not Theirs.
       item("next week, ours", "2026-11-18", { assigneeIds: ["them", "me"] }),
       item("today, done", "2026-11-14", doneOn(14)),
-      item("no date", null),
-    ]);
-
-    const filters = within(screen.getByRole("group", { name: "Whose items" }));
-    expect(filters.getByRole("button", { name: /All/ }).textContent).toBe("All4");
-    expect(filters.getByRole("button", { name: /Mine/ }).textContent).toBe("Mine2");
-    expect(filters.getByRole("button", { name: /Theirs/ }).textContent).toBe("Theirs1");
-    expect(filters.getByRole("button", { name: /Unassigned/ }).textContent).toBe("Unassigned1");
-
-    fireEvent.click(filters.getByRole("button", { name: /Mine/ }));
+      item("no date", null, { labels: ["errand"] }),
+    ];
+    renderAgenda(mixed(), [home], false, { assignees: ["me"] });
     expect(screen.getByText("today, mine")).toBeTruthy();
+    // A joint item shows for either of its people.
     expect(screen.getByText("next week, ours")).toBeTruthy();
     expect(screen.queryByText("late, theirs")).toBeNull();
     expect(screen.queryByRole("heading", { level: 2, name: /No date/ })).toBeNull();
+    cleanup();
+
+    renderAgenda(mixed(), [home], false, { labels: ["errand"] });
+    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+    expect(screen.getByText("no date")).toBeTruthy();
+    cleanup();
+
+    // Done today off, and only what's late.
+    renderAgenda(mixed(), [home], false, { doneToday: false, due: ["overdue", "today"] });
+    expect(screen.getByText("today, mine")).toBeTruthy();
+    expect(screen.getByText("late, theirs")).toBeTruthy();
+    expect(screen.queryByText("today, done")).toBeNull();
+    expect(screen.queryByText("next week, ours")).toBeNull();
   });
 
   it("groups undated items by list and keeps a filtered sub-item with its parent named", () => {
@@ -151,16 +164,14 @@ describe("AgendaView", () => {
     const tidy = item("Tidy flat", null);
     const kitchen = item("Kitchen", null, { parentId: tidy.id, assigneeIds: ["me"] });
     const plan = item("Phone plan", "2026-11-18");
-    renderAgenda(
-      [
-        tidy,
-        kitchen,
-        plan,
-        item("Fred's SIM", null, { parentId: plan.id }),
-        item("Slippers", null, { projectId: "p2" }),
-      ],
-      [home, buy],
-    );
+    const items = [
+      tidy,
+      kitchen,
+      plan,
+      item("Fred's SIM", null, { parentId: plan.id }),
+      item("Slippers", null, { projectId: "p2" }),
+    ];
+    renderAgenda(items, [home, buy]);
 
     const noDate = within(section(/^No date/));
     expect(noDate.getByRole("heading", { level: 3, name: /Home/ })).toBeTruthy();
@@ -171,7 +182,8 @@ describe("AgendaView", () => {
     expect(within(section(/^Next week/)).getByText("Phone plan")).toBeTruthy();
     expect(screen.queryByText("Fred's SIM")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /Mine/ }));
+    cleanup();
+    renderAgenda(items, [home, buy], false, { assignees: ["me"] });
     expect(screen.queryByRole("heading", { level: 3, name: /Buy/ })).toBeNull();
     // Its parent is filtered out, so only the sub-item's row shows, naming it.
     expect(screen.getAllByRole("checkbox")).toHaveLength(1);
@@ -225,13 +237,14 @@ describe("AgendaView", () => {
     expect(rows?.hasAttribute("inert")).toBe(false);
   });
 
-  it("says when there's nothing to do, and when a filter hides everything", () => {
+  it("says when there's nothing to do, and when the filters hide everything", () => {
     renderAgenda([item("done", "2026-11-14", doneOn(13))]);
     expect(screen.getByText("Nothing to do.")).toBeTruthy();
     cleanup();
 
-    renderAgenda([item("mine", "2026-11-20", { assigneeIds: ["me"] })]);
-    fireEvent.click(screen.getByRole("button", { name: /Theirs/ }));
-    expect(screen.getByText("Nothing here for this filter.")).toBeTruthy();
+    renderAgenda([item("mine", "2026-11-20", { assigneeIds: ["me"] })], [home], false, {
+      unassigned: true,
+    });
+    expect(screen.getByText("Nothing here for your filters.")).toBeTruthy();
   });
 });

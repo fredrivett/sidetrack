@@ -12,7 +12,7 @@ import { listAllPrLinks } from "@/core/prLinks";
 import { listProjects } from "@/core/projects";
 import { listPendingSpaceInvites, listSpaces } from "@/core/spaces";
 import { COLLAPSED_TRAYS_COOKIE, parseCollapsedTrays } from "@/components/SpaceTray";
-import { getOverdueCollapsed, getProfile, getTimeZone } from "@/core/users";
+import { getBoardFilters, getOverdueCollapsed, getProfile, getTimeZone } from "@/core/users";
 import { weekStartBound } from "@/lib/time";
 import type { ItemPrLink } from "@/core/schema";
 import { requireUserId } from "@/auth/session";
@@ -92,6 +92,7 @@ export default async function Home({
         initialCollapsedTrays={parseCollapsedTrays(
           (await cookies()).get(COLLAPSED_TRAYS_COOKIE)?.value,
         )}
+        filters={getBoardFilters(db, userId)}
       />
       <LiveUpdates />
     </AgentSessionsProvider>
