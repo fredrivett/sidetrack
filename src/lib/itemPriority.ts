@@ -11,6 +11,8 @@ export interface PriorityTask {
   description: string | null;
   /** YYYY-MM-DD, or null when undated. */
   dueDate: string | null;
+  /** The first day of a span ("this week") ending on dueDate, else null. */
+  dueFrom: string | null;
   /** Titles of its open sub-items, the steps left. */
   steps: string[];
 }
@@ -19,8 +21,8 @@ const scoreId = (id: string) => `priority:${id}`;
 
 /**
  * Each task's priority, from 0 to 1 (likelier to be a top priority is
- * higher), by id. Best effort: a failed request yields null, so the caller
- * can say the sort didn't happen. `fetchImpl` is injectable for tests.
+ * higher), by id. Best effort: a failed request, or one that leaves a task
+ * unanswered, yields null, so the caller can say the sort didn't happen. `fetchImpl` is injectable for tests.
  */
 export async function rankByPriority(
   list: { name: string; summary: string },
@@ -33,6 +35,7 @@ export async function rankByPriority(
   const describe = (t: PriorityTask) => ({
     title: t.title,
     ...(t.description && { description: t.description }),
+    ...(t.dueFrom && { due_from: t.dueFrom }),
     ...(t.dueDate && { due: t.dueDate }),
     ...(t.steps.length > 0 && { steps_left: t.steps }),
   });
@@ -56,5 +59,11 @@ export async function rankByPriority(
     fetchImpl,
   );
   if (!answers) return null;
-  return new Map(tasks.map((t) => [t.id, answers[scoreId(t.id)]?.true ?? 0]));
+  const scores = new Map<string, number>();
+  for (const t of tasks) {
+    const p = answers[scoreId(t.id)]?.true;
+    if (p === undefined) return null;
+    scores.set(t.id, p);
+  }
+  return scores;
 }

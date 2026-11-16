@@ -240,6 +240,17 @@ describe("positions", () => {
     expect(titles(db, fred, list.id)).toEqual(["C", "New", "B", "A"]);
   });
 
+  it("refuses a priority sort with AI off and leaves the order alone", async () => {
+    const { fred, list, add } = homeList();
+    add("B");
+    add("A");
+    const call = await connectAs(fred);
+
+    const { error } = await call("sort_items", { list_id: list.id, by: "priority" });
+    expect(error).toMatch(/Couldn't rank the items by priority.*no change was made/);
+    expect(titles(db, fred, list.id)).toEqual(["B", "A"]);
+  });
+
   it("refuses an anchor in another list and adds nothing", async () => {
     const { fred, list, add } = homeList();
     add("A");

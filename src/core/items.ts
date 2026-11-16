@@ -932,8 +932,10 @@ const sameOrder = (a: Item[], b: Item[]) => a.every((item, i) => item.id === b[i
  * as before afterwards. Returns the ids in their order before the sort, for
  * setItemOrder to undo it, or null when they were already in that order and
  * nothing changed. Sorting by priority takes `priority`, each open item's
- * score from itemPriorities (autoPriority.ts): highest first, then the
- * items without one, such as done items.
+ * score from itemPriorities (autoPriority.ts): highest first, then done
+ * items. Jev answers before this reads the list, so an item added meanwhile
+ * has no score and goes after the scored ones, and one finished meanwhile
+ * goes with the done items.
  */
 export function sortItems(
   db: Db,
@@ -947,7 +949,7 @@ export function sortItems(
   if (by === "priority" && !priority) throw new Error("a priority sort needs each item's score");
   const name = projectNameOrThrow(db, userId, projectId);
   const current = getAllSiblings(db, userId, projectId, null);
-  const score = (it: Item) => priority?.get(it.id) ?? -1;
+  const score = (it: Item) => (it.completedAt === null ? (priority?.get(it.id) ?? 0) : -1);
   const sorted = current.toSorted(
     by === "priority" ? (a, b) => score(b) - score(a) : COMPARE[by],
   );

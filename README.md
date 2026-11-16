@@ -73,10 +73,13 @@ logs` / check your process output and pass the link to the user):
 | `SIGNUP_NOTIFY_EMAIL` | unset | Address to email whenever someone new signs up, e.g. the operator's own. Best-effort: sent through the SMTP/Resend transport above (with neither, the signup is only logged), and a failed send never blocks the signup. Unset sends nothing |
 | `SMTP_URL` | unset (auto in dev) | Send over SMTP instead of Resend, e.g. `smtp://localhost:1025`. Takes precedence over `RESEND_API_KEY`. In development it defaults to a local mail catcher — see [Development](#development) |
 
-**Optional** — AI list-icon suggestions. With it set, the list icon picker
-offers emoji picked by [TypeSafe's Jev](https://docs.typesafe.ai) from the
-list's name, summary, homepage domain (not the full URL), and open item
-titles, which are sent to TypeSafe:
+**Optional** — AI list-icon suggestions and priority sorting. With it set,
+the list icon picker offers emoji picked by
+[TypeSafe's Jev](https://docs.typesafe.ai) from the list's name, summary,
+homepage domain (not the full URL), and open item titles, and a list's
+**Sort items by → Priority** orders its open items as Jev ranks them. That
+sort also sends each open item's description, due date and open sub-item
+titles. All of this is sent to TypeSafe:
 
 | Variable | Default | Description |
 | --- | --- | --- |
