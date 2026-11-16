@@ -619,6 +619,8 @@ export async function moveItemAction(
   projectId: string,
   token: string,
   labelChoice?: MissingLabelChoice,
+  /** Where among the list's top-level items: top (default), end, after:<id> or before:<id>. */
+  position?: string,
 ) {
   const userId = await requireUserId();
   const { db } = getDb();
@@ -629,7 +631,7 @@ export async function moveItemAction(
     db,
     userId,
     id,
-    { projectId, token, missingLabels: labelChoice },
+    { projectId, token, missingLabels: labelChoice, position },
     SOURCE,
   );
   refresh();

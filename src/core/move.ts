@@ -3,7 +3,7 @@ import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { formatItemRef } from "../lib/itemRef";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
-import { resolvePosition } from "./fracidx";
+import { parseRef, resolvePosition } from "./fracidx";
 import { projectRefPrefixes } from "./itemRef";
 import { assigneeLabel, getItem, listSubItems } from "./items";
 import { ensureLabels, type LabelEmoji } from "./labels";
@@ -158,8 +158,10 @@ function describe(userId: string, p: Planned): MovePlan {
 }
 
 /**
- * Move an item, with its sub-items, to the top of another list the user can
- * see; a sub-item moves out of its checklist on its own. Each gets the next
+ * Move an item, with its sub-items, to another list the user can see: at
+ * `position` among its top-level items (top | end | after:<id> |
+ * before:<id>, top by default). A sub-item moves out of its checklist on its
+ * own. Each gets the next
  * ref there (or its old one, moving back), and its old ref keeps resolving to
  * it (item_ref_aliases). Labels the list has are matched by name; the rest
  * are created there or dropped, as `missingLabels` says: one choice for all,
@@ -173,7 +175,12 @@ export function moveItem(
   db: Db,
   userId: string,
   id: string,
-  input: { projectId: string; token: string; missingLabels?: MissingLabelChoice },
+  input: {
+    projectId: string;
+    token: string;
+    missingLabels?: MissingLabelChoice;
+    position?: string;
+  },
   source: AuditOrigin,
 ): MovePlan & { item: Item } {
   const p = plan(db, userId, id, input.projectId);
@@ -222,7 +229,7 @@ export function moveItem(
       .where(and(eq(items.projectId, p.target.id), isNull(items.parentId)))
       .orderBy(asc(items.position), asc(items.id))
       .all(),
-    "first",
+    parseRef(input.position ?? "top"),
   );
 
   db.transaction((tx) => {

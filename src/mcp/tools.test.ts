@@ -486,6 +486,30 @@ describe("move_item", () => {
     );
   });
 
+  it("puts the item where position says among the list's top-level items, by ref", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const eng = createProject(db, fred, { name: "Engineering" }, "web");
+    const ops = createProject(db, fred, { name: "Ops" }, "web");
+    addItem(db, fred, { projectId: ops.id, title: "Rotate keys", subItems: ["Find them"] }, "web");
+    addItem(db, fred, { projectId: ops.id, title: "Patch hosts" }, "web");
+    const item = addItem(db, fred, { projectId: eng.id, title: "Fix login" }, "web");
+    const call = await connectAs(fred);
+
+    // An anchor that isn't a top-level item there fails on the preview.
+    for (const position of ["after:OPS-2", "after:ENG-1"]) {
+      const bad = await call("move_item", { id: "ENG-1", list_id: ops.id, position });
+      expect(bad.error).toMatch(/no change was made/);
+    }
+    const { data } = await call("move_item", { id: "ENG-1", list_id: ops.id, position: "after:OPS-1" });
+    await call("move_item", { id: "ENG-1", list_id: ops.id, position: "after:OPS-1", token: data.token });
+    expect(
+      listItems(db, fred, ops.id)
+        .filter((i) => !i.parentId)
+        .map((i) => i.title),
+    ).toEqual(["Rotate keys", "Fix login", "Patch hosts"]);
+    expect(getItem(db, fred, item.id)?.projectId).toBe(ops.id);
+  });
+
   it("returns not found for a list the caller can't see", async () => {
     const fred = createTestUser(db, { username: "fred" });
     const bob = createTestUser(db, { username: "bob" });

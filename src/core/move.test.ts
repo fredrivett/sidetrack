@@ -134,6 +134,30 @@ describe("moveItem", () => {
     expect(getItem(db, fred, item.id)).toMatchObject({ projectId: ops.id, labels: ["Bug"] });
   });
 
+  it("puts the item where it's asked to among the list's top-level items", () => {
+    const { db, fred, eng, ops, first } = seed();
+    const at = (title: string, position: string) => {
+      const item = addItem(db, fred, { projectId: eng.id, title }, "web");
+      moveItem(db, fred, item.id, { projectId: ops.id, token: tokenFor(db, fred, item.id, ops.id), position }, "web");
+    };
+    at("After rotate", `after:${first.id}`);
+    at("Last", "end");
+    at("Before rotate", `before:${first.id}`);
+    expect(listItems(db, fred, ops.id).map((i) => i.title)).toEqual([
+      "Before rotate",
+      "Rotate keys",
+      "After rotate",
+      "Patch hosts",
+      "Last",
+    ]);
+    // An anchor that isn't a top-level item there moves nothing.
+    const stray = addItem(db, fred, { projectId: eng.id, title: "Stray" }, "web");
+    expect(() =>
+      moveItem(db, fred, stray.id, { projectId: ops.id, token: tokenFor(db, fred, stray.id, ops.id), position: `after:${stray.id}` }, "web"),
+    ).toThrow(/anchor not found/);
+    expect(getItem(db, fred, stray.id)?.projectId).toBe(eng.id);
+  });
+
   it("moves a sub-item on its own out of its checklist", () => {
     const { db, fred, eng, ops } = seed();
     const parent = addItem(db, fred, { projectId: eng.id, title: "Fix login", subItems: ["Repro"] }, "web");
