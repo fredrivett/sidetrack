@@ -107,7 +107,9 @@ export function SpaceTray({
       </header>
       {/* The lists' track animates between its full width (1fr) and none
           (0fr), clipping the columns from the right as they fade, so they
-          slide away whole rather than squashing. */}
+          slide away whole rather than squashing. overflow-clip, not hidden:
+          hidden makes this a scroll container, which the columns would snap
+          to instead of the board, so swiping wouldn't step between lists. */}
       <div
         className={`grid min-h-0 flex-1 transition-[grid-template-columns] ${ease} ${
           collapsed ? "grid-cols-[0fr]" : "grid-cols-[1fr]"
@@ -115,7 +117,7 @@ export function SpaceTray({
       >
         <div
           inert={collapsed}
-          className={`flex min-w-0 gap-3 overflow-hidden pt-1.5 transition-opacity ${ease} ${
+          className={`flex min-w-0 gap-3 overflow-clip pt-1.5 transition-opacity ${ease} ${
             collapsed ? "opacity-0 [&>*]:snap-align-none" : "opacity-100"
           }`}
         >
