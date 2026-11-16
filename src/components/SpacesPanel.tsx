@@ -2,7 +2,7 @@
 
 import { Boxes, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import {
   createSpaceAction,
   deleteSpaceAction,
@@ -39,6 +39,21 @@ export function SpacesPanel({ spaces, viewerId }: { spaces: SpaceView[]; viewerI
   const [icon, setIcon] = useState<string | null>(null);
   const [color, setColor] = useState<SpaceColor | null>(null);
   const [pending, start] = useTransition();
+
+  // The board's Edit space links to a card by #space-<id>. Each card grows as
+  // its people load, so the jump waits for them all, once per visit, else the
+  // cards above it would push it out of view.
+  const [loaded, setLoaded] = useState<ReadonlySet<string>>(new Set());
+  const jumped = useRef(false);
+  const onLoaded = useCallback(
+    (id: string) => setLoaded((prev) => (prev.has(id) ? prev : new Set(prev).add(id))),
+    [],
+  );
+  useEffect(() => {
+    if (jumped.current || !spaces.every((s) => loaded.has(s.id))) return;
+    jumped.current = true;
+    if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView();
+  }, [spaces, loaded]);
 
   function create(e: React.FormEvent) {
     e.preventDefault();
@@ -98,13 +113,24 @@ export function SpacesPanel({ spaces, viewerId }: { spaces: SpaceView[]; viewerI
           No spaces yet. Create one, then move lists into it from a list&rsquo;s ⋯ menu.
         </p>
       ) : (
-        spaces.map((s) => <SpaceCard key={s.id} space={s} viewerId={viewerId} />)
+        spaces.map((s) => (
+          <SpaceCard key={s.id} space={s} viewerId={viewerId} onLoaded={onLoaded} />
+        ))
       )}
     </div>
   );
 }
 
-function SpaceCard({ space, viewerId }: { space: SpaceView; viewerId: string }) {
+function SpaceCard({
+  space,
+  viewerId,
+  onLoaded,
+}: {
+  space: SpaceView;
+  viewerId: string;
+  /** Called once its people first load, or fail to. */
+  onLoaded: (id: string) => void;
+}) {
   const router = useRouter();
   const isAdmin = space.role === "admin";
   const [members, setMembers] = useState<SpaceMemberView[]>([]);
@@ -126,8 +152,8 @@ function SpaceCard({ space, viewerId }: { space: SpaceView; viewerId: string }) 
   );
 
   useEffect(() => {
-    void runAction(load(), `load the people in ${space.name}`);
-  }, [load, space.name]);
+    void runAction(load(), `load the people in ${space.name}`).then(() => onLoaded(space.id));
+  }, [load, space.name, space.id, onLoaded]);
 
   // A change to the Space holds the card until it lands, then reloads its
   // people and the page (the board and this list of Spaces).
@@ -147,8 +173,10 @@ function SpaceCard({ space, viewerId }: { space: SpaceView; viewerId: string }) 
 
   return (
     <section
+      // The board's Edit space links here, by #space-<id>.
+      id={`space-${space.id}`}
       aria-busy={saving}
-      className={`space-y-3 rounded-lg border p-3 transition-opacity ${spaceTint(space.color)} ${saving ? "pointer-events-none opacity-60" : ""}`}
+      className={`scroll-mt-6 space-y-3 rounded-lg border p-3 transition-opacity ${spaceTint(space.color)} ${saving ? "pointer-events-none opacity-60" : ""}`}
     >
       <header className="flex items-center gap-2">
         {isAdmin ? (
