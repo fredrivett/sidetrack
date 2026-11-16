@@ -426,7 +426,7 @@ export function ItemRow({
             />
           </ContextMenuSubContent>
         </ContextMenuSub>
-        {/* The dialog's quick dates, for planning from the No date view
+        {/* The dialog's quick dates, for planning from the Agenda
             without opening each item; any other day is in the dialog. */}
         {today && (
           <ContextMenuSub>

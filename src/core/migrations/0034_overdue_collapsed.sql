@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `overdue_collapsed` integer DEFAULT false NOT NULL;
