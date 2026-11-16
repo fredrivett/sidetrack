@@ -39,9 +39,20 @@ export function MentionTextarea({
   const caretAfter = useRef<number | null>(null);
   const listId = useId();
   const disabled = Boolean(props["aria-disabled"]);
+  // The text as this box last left it. When the owner sets another, such as
+  // clearing it after a send, the `@…` being typed is gone with it.
+  const [seen, setSeen] = useState(value);
+  if (value !== seen) {
+    setSeen(value);
+    setMention(null);
+    setDismissed(null);
+  }
 
+  // None while it saves, so its keys go back to the box.
   const suggestions =
-    mention && mention.start !== dismissed ? suggestPeople(people, mention.query) : [];
+    mention && mention.start !== dismissed && !disabled
+      ? suggestPeople(people, mention.query)
+      : [];
   const open = suggestions.length > 0;
   const highlighted = Math.min(active, suggestions.length - 1);
 
@@ -59,17 +70,33 @@ export function MentionTextarea({
     setMention(next);
   }
 
-  function pick(person: AssigneeView) {
+  /** Puts in the person's `@username` for the whole handle the caret is in,
+   * so picking with the caret mid-handle leaves no tail behind. False when
+   * there's no room for it. */
+  function pick(person: AssigneeView): boolean {
     const el = box.current;
-    if (disabled || !mention || !el) return;
-    const text = `@${person.displayUsername ?? person.username} `;
-    const next = value.slice(0, mention.start) + text + value.slice(el.selectionStart);
+    if (disabled || !mention || !el) return false;
+    let end = el.selectionStart;
+    while (end < value.length && /[a-zA-Z0-9_.]/.test(value[end])) end++;
+    const rest = value.slice(end);
+    // One space after it, reusing one that's already there.
+    const spaced = /^\s/.test(rest);
+    const text = `@${person.displayUsername ?? person.username}${spaced ? "" : " "}`;
+    const next = value.slice(0, mention.start) + text + rest;
     // Like typing past maxLength: no room, no change. Counted as the server
     // counts, in characters.
-    if (maxLength !== undefined && [...next].length > maxLength) return;
-    caretAfter.current = mention.start + text.length;
-    onValueChange(next);
+    if (maxLength !== undefined && [...next].length > maxLength) return false;
+    const caret = mention.start + text.length + (spaced ? 1 : 0);
+    // The same text (the whole name was there) won't re-render to move the
+    // caret, so move it now.
+    if (next === value) el.setSelectionRange(caret, caret);
+    else {
+      caretAfter.current = caret;
+      setSeen(next);
+      onValueChange(next);
+    }
     setMention(null);
+    return true;
   }
 
   return (
@@ -86,6 +113,7 @@ export function MentionTextarea({
         maxLength={maxLength}
         onChange={(e) => {
           if (disabled) return;
+          setSeen(e.target.value);
           onValueChange(e.target.value);
           track(e.target);
         }}
@@ -102,9 +130,9 @@ export function MentionTextarea({
               setActive((highlighted + step + suggestions.length) % suggestions.length);
               return;
             }
-            if (e.key === "Enter" || e.key === "Tab") {
+            // With no room for the name, the key does what it would anyway.
+            if ((e.key === "Enter" || e.key === "Tab") && pick(suggestions[highlighted])) {
               e.preventDefault();
-              pick(suggestions[highlighted]);
               return;
             }
             if (e.key === "Escape") {
