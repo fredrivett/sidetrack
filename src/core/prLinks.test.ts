@@ -1,15 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { listAudit } from "./audit";
 import { addItem, deleteItem } from "./items";
+import { acceptInvite, inviteMember } from "./members";
 import {
   canonicalizePrUrl,
   linkItemToPr,
   listItemsForPr,
   listLinkedRepos,
   listPrLinksForItem,
+  suggestedRepositories,
   unlinkItemFromPr,
 } from "./prLinks";
-import { createProject } from "./projects";
+import { createProject, updateProject } from "./projects";
 import { createTestDb, createTestUser } from "./test-helpers";
 
 function seedItem() {
@@ -160,5 +162,39 @@ describe("listLinkedRepos", () => {
 
     expect(listLinkedRepos(db, userId)).toEqual(["acme/web", "zed/app"]);
     expect(listLinkedRepos(db, createTestUser(db))).toEqual([]);
+  });
+});
+
+describe("suggestedRepositories", () => {
+  it("suggests the repo with the most distinct PRs, for lists without a repository", () => {
+    const { db, userId, projectId, itemId } = seedItem();
+    const add = (pid: string) => addItem(db, userId, { projectId: pid, title: "t" }, "web").id;
+    // One busy PR linked from three items counts once, so two PRs win.
+    for (const id of [itemId, add(projectId), add(projectId)]) {
+      linkItemToPr(db, userId, id, "https://github.com/acme/busy/pull/1", "web");
+    }
+    linkItemToPr(db, userId, add(projectId), "https://github.com/acme/web/pull/2", "web");
+    linkItemToPr(db, userId, add(projectId), "https://github.com/acme/web/pull/3", "web");
+
+    const set = createProject(db, userId, { name: "Set" }, "web");
+    updateProject(db, userId, set.id, { repository: "acme/set" }, "web");
+    linkItemToPr(db, userId, add(set.id), "https://github.com/acme/web/pull/4", "web");
+    createProject(db, userId, { name: "No PRs" }, "web");
+
+    // Equal counts, linked in reverse order: the alphabetically first wins.
+    const tie = createProject(db, userId, { name: "Tie" }, "web");
+    linkItemToPr(db, userId, add(tie.id), "https://github.com/zed/app/pull/5", "web");
+    linkItemToPr(db, userId, add(tie.id), "https://github.com/acme/app/pull/6", "web");
+
+    expect(suggestedRepositories(db, userId)).toEqual({
+      [projectId]: "acme/web",
+      [tie.id]: "acme/app",
+    });
+    // A member of the list sees the same suggestion; a stranger sees none.
+    const bob = createTestUser(db, { username: "bob" });
+    inviteMember(db, userId, projectId, "bob", "web");
+    acceptInvite(db, bob, projectId, "web");
+    expect(suggestedRepositories(db, bob)).toEqual({ [projectId]: "acme/web" });
+    expect(suggestedRepositories(db, createTestUser(db))).toEqual({});
   });
 });

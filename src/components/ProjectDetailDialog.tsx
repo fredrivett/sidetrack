@@ -1,10 +1,9 @@
 "use client";
 
-import { ExternalLink, GitBranch, Trash2 } from "lucide-react";
+import { ExternalLink, GitBranch, Sparkles, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { updateProjectAction } from "@/app/actions";
-import type { Project } from "@/core/schema";
 import { validatePrefix } from "@/lib/itemRef";
 import { normalizeRepository } from "@/lib/repository";
 import { normalizeHomepageUrl } from "@/lib/url";
@@ -18,6 +17,7 @@ import {
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
 import { EditableText } from "./EditableText";
+import type { ProjectView } from "./Kanban";
 import { ProjectIconPicker, useListIcon } from "./ProjectIconPicker";
 import { StatusBadge } from "./StatusBadge";
 import { runAction } from "./run-action";
@@ -46,7 +46,7 @@ export function ProjectDetailDialog({
   open,
   onOpenChange,
 }: {
-  project: Project;
+  project: ProjectView;
   /** The viewer is the list's admin (owner, or its Space's admin). */
   isAdmin: boolean;
   open: boolean;
@@ -58,6 +58,7 @@ export function ProjectDetailDialog({
   const removeList = useRemoveList();
   const listIcon = useListIcon(project);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const suggested = project.suggestedRepository;
 
   function change(next: boolean) {
     if (!next) setConfirmingDelete(false);
@@ -234,6 +235,24 @@ export function ProjectDetailDialog({
                   </a>
                 )}
               </div>
+              {/* Only offered, never filled in: the repository decides what an
+                  assigned agent checks out, so the admin confirms it. */}
+              {isAdmin && !project.repository && suggested && (
+                <button
+                  type="button"
+                  aria-disabled={saving}
+                  onClick={() => {
+                    if (!saving) void saveRepository(suggested);
+                  }}
+                  title="Suggested from this list's linked pull requests"
+                  className="inline-flex max-w-full items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 dark:text-blue-300 dark:hover:bg-blue-950/40"
+                >
+                  <Sparkles className="size-3.5 shrink-0" />
+                  <span className="truncate">
+                    Use <span className="font-mono">{suggested}</span>
+                  </span>
+                </button>
+              )}
             </Field>
           )}
         </div>

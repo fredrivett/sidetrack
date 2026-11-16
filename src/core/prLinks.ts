@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { hasProjectAccess } from "./access";
 import { type AuditOrigin, recordAudit } from "./audit";
@@ -109,6 +109,36 @@ export function listLinkedRepos(db: Db, userId: string): string[] {
     ),
   );
   return [...repos].sort();
+}
+
+/**
+ * For each list the user can open that has no repository yet, the repository
+ * most of its items' linked PRs are in (counting each PR once), as a
+ * suggestion for its admin. Ties go to the alphabetically first. Lists with
+ * no linked PRs are left out.
+ */
+export function suggestedRepositories(db: Db, userId: string): Record<string, string> {
+  const rows = db
+    .selectDistinct({ projectId: items.projectId, prUrl: itemPrLinks.prUrl })
+    .from(itemPrLinks)
+    .innerJoin(items, eq(items.id, itemPrLinks.itemId))
+    .innerJoin(projects, eq(projects.id, items.projectId))
+    .where(and(isNull(projects.repository), hasProjectAccess(userId)))
+    .all();
+  const counts = new Map<string, Map<string, number>>();
+  for (const { projectId, prUrl } of rows) {
+    const repo = new URL(prUrl).pathname.split("/").slice(1, 3).join("/");
+    const byRepo = counts.get(projectId) ?? new Map<string, number>();
+    byRepo.set(repo, (byRepo.get(repo) ?? 0) + 1);
+    counts.set(projectId, byRepo);
+  }
+  const suggestions: Record<string, string> = {};
+  for (const [projectId, byRepo] of counts) {
+    suggestions[projectId] = [...byRepo].sort(
+      ([a, n], [b, m]) => m - n || a.localeCompare(b),
+    )[0][0];
+  }
+  return suggestions;
 }
 
 /**
