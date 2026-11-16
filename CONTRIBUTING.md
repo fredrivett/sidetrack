@@ -44,13 +44,13 @@ follow, such as recording every change in the audit log and how the UI shows
 saves. Directories have their own `AGENTS.md` for their conventions. It's
 written for coding agents, but it's the best map of the code for people too.
 
-After changing the schema in `src/core/schema.ts`, run `pnpm db:generate` and
-commit the migration it writes; it's applied on the next startup. CI fails
+After changing the schema in `src/core/schema.ts` or `src/core/auth-schema.ts`,
+run `pnpm db:generate` and commit the migration it writes; it's applied on the next startup. CI fails
 when a schema change has no migration.
 
 Before opening a pull request, run `pnpm lint`, `pnpm exec tsc --noEmit` and
-`pnpm test`. CI runs these, a production build, and a check that the demo
-seed still works.
+`pnpm test`. CI runs these, a production build, a check that the demo seed
+still works, and a semgrep security scan.
 
 | Command | Description |
 | --- | --- |

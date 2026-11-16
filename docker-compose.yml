@@ -33,7 +33,9 @@ services:
       SMTP_URL: ${SMTP_URL:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       EMAIL_FROM: ${EMAIL_FROM:-}
-      # Optional. Emails this address whenever someone new signs up.
+      # Optional. Emails this address whenever someone new signs up, through
+      # the SMTP or Resend settings above (with neither, the signup is only
+      # logged). Best-effort: a failed send never blocks the signup.
       SIGNUP_NOTIFY_EMAIL: ${SIGNUP_NOTIFY_EMAIL:-}
       # Optional. Enables AI list-icon suggestions. Unset = off.
       TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}

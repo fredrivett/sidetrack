@@ -48,14 +48,15 @@ first build takes a few minutes.
    the URL you'll open Sidetrack at:
 
    ```bash
-   cat > .env <<EOF
+   [ -f .env ] || cat > .env <<EOF
    BETTER_AUTH_SECRET=$(openssl rand -hex 32)
    BETTER_AUTH_URL=http://localhost:3000
    NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=$(openssl rand -base64 32)
    EOF
    ```
 
-   `BETTER_AUTH_URL` must be the exact address in your browser's address bar,
+   This leaves an existing `.env` alone, since new secrets would sign everyone
+   out. `BETTER_AUTH_URL` must be the exact address in your browser's address bar,
    or sign-in fails. To reach Sidetrack from another device, use that address
    instead, such as `http://192.168.1.20:3000` or
    `https://sidetrack.example.com`. Keep `.env` safe: anyone with the secret
@@ -126,13 +127,15 @@ disk as the data, so also copy them somewhere else now and then:
 docker cp sidetrack:/data/backups ./sidetrack-backups
 ```
 
-To restore one, stop Sidetrack, copy the backup over the database, and start
-it again:
+To restore one, stop Sidetrack, list the backups, and copy the one you want
+over the database, replacing `sidetrack-YYYY-MM-DD.db` with its name. Then
+start Sidetrack again:
 
 ```bash
 docker compose stop sidetrack
+docker compose run --rm --no-deps --entrypoint ls sidetrack /data/backups
 docker compose run --rm --no-deps --entrypoint sh sidetrack -c \
-  'cp /data/backups/sidetrack-2026-01-31.db /data/sidetrack.db && rm -f /data/sidetrack.db-wal /data/sidetrack.db-shm'
+  'cp /data/backups/sidetrack-YYYY-MM-DD.db /data/sidetrack.db && rm -f /data/sidetrack.db-wal /data/sidetrack.db-shm'
 docker compose up -d
 ```
 
@@ -142,24 +145,29 @@ Without email configured, a password-reset link is printed to the server log
 instead of being sent. When someone forgets their password, have them request
 a reset, then find the link with `docker compose logs sidetrack` and pass it
 on. To send it by email, set `SMTP_URL` (any SMTP server, such as your email
-provider's) or `RESEND_API_KEY`, plus `EMAIL_FROM`; see
+provider's), or set `RESEND_API_KEY` plus `EMAIL_FROM`; see
 [Configuration](#configuration).
 
 ### Without Docker
 
 Sidetrack runs anywhere with [Node.js](https://nodejs.org) 22 and
-[pnpm](https://pnpm.io) (`corepack enable` provides it). Build it, and copy the
-static files next to the standalone server:
+[pnpm](https://pnpm.io) (`corepack enable` provides it). In the cloned
+repository, create a Server Actions key for the build (see
+[Updating](#updating)) unless you have one, then build it and copy the static
+files next to the standalone server:
 
 ```bash
+grep -qs NEXT_SERVER_ACTIONS_ENCRYPTION_KEY .env.local ||
+  echo "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env.local
 pnpm install --frozen-lockfile
 pnpm build
 cp -r public .next/standalone/ && cp -r .next/static .next/standalone/.next/
 ```
 
-Put your settings in a file such as `sidetrack.env`. The server doesn't read
-`.env` files itself, and it runs from inside `.next/standalone`, which the next
-build replaces, so give the data absolute paths outside it:
+The build reads `.env.local`, but the server doesn't read `.env` files itself,
+and it runs from inside `.next/standalone`, which the next build replaces. So
+put its settings in a file such as `sidetrack.env`, with the data at absolute
+paths outside the build:
 
 ```bash
 BETTER_AUTH_SECRET=...
@@ -169,6 +177,13 @@ BACKUP_DIR=/var/lib/sidetrack/backups
 PORT=3000
 ```
 
+Create the data directory, owned by the user that will run Sidetrack:
+
+```bash
+sudo mkdir -p /var/lib/sidetrack
+sudo chown "$USER" /var/lib/sidetrack   # or your service account
+```
+
 Then start it, and keep it running with your service manager of choice
 (systemd, pm2, …):
 
@@ -176,9 +191,8 @@ Then start it, and keep it running with your service manager of choice
 NODE_ENV=production node --env-file=sidetrack.env .next/standalone/server.js
 ```
 
-To update, `git pull`, repeat the build steps, and restart it. Keep
-`NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` set, and the same, in the environment of
-`pnpm build` (see [Updating](#updating)).
+To update, `git pull`, repeat the build steps, and restart it. The key in
+`.env.local` stays the same, so open tabs keep working.
 
 ## Configuration
 
@@ -347,4 +361,6 @@ In short:
 See [`LICENSE`](./LICENSE) for the full terms. Versions released before the
 switch to the AGPL remain under the
 [FSL-1.1-ALv2](https://github.com/fredrivett/sidetrack/blob/d5d4a56c6285cd916b8a54692aa6d52c8ebd5efb/LICENSE.md)
-they shipped with.
+they shipped with, and each converts to the
+[Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0) two
+years after its release.
