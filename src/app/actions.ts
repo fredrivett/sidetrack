@@ -18,9 +18,18 @@ import {
   removeGithubWebhookSecret as removeGithubWebhookSecretCore,
 } from "@/core/github";
 import {
-  addCategory as addCategoryCore,
-  listCategories as listCategoriesCore,
-} from "@/core/categories";
+  type LabelEmoji,
+  addLabel as addLabelCore,
+  listLabels as listLabelsCore,
+  updateLabel as updateLabelCore,
+} from "@/core/labels";
+import {
+  autoNewListIcon,
+  listIconContext,
+  withAutoLabelEmoji,
+  withAutoLabelRename,
+  withAutoListIcon,
+} from "@/core/autoEmoji";
 import {
   addComment as addCommentCore,
   deleteComment as deleteCommentCore,
@@ -33,6 +42,7 @@ import {
   addItem as addItemCore,
   completeItem as completeItemCore,
   deleteItem as deleteItemCore,
+  getItem as getItemCore,
   type ItemSort,
   listDoneBefore as listDoneBeforeCore,
   reorderItem as reorderItemCore,
@@ -87,7 +97,7 @@ import {
 } from "@/core/users";
 import { getCurrentSession, requireUserId } from "@/auth/session";
 import { notifyInvite } from "@/lib/email";
-import { suggestEmoji } from "@/lib/emojiSuggest";
+import { suggestEmoji, suggestLabelEmoji } from "@/lib/emojiSuggest";
 import { getEnv } from "@/lib/env";
 import { checkDraftItem, suggestList } from "@/lib/itemSuggest";
 import { formatItemRef } from "@/lib/itemRef";
@@ -104,16 +114,22 @@ export async function createProjectAction(input: {
   summary?: string;
   homepageUrl?: string | null;
   icon?: string | null;
+  iconChosen?: boolean;
   spaceId?: string | null;
 }) {
   const userId = await requireUserId();
   const { db } = getDb();
   // Pick the fields, so a crafted call can't pass others (e.g. status).
-  const { name, summary, homepageUrl, icon, spaceId } = input;
+  const { name, summary, homepageUrl, iconChosen, spaceId } = input;
+  let icon = input.icon;
+  // Jev hadn't answered when the form was sent: ask now.
+  if (iconChosen === false && !icon) {
+    icon = await autoNewListIcon({ name, summary, homepageUrl });
+  }
   const p = createProjectCore(
     db,
     userId,
-    { name, summary, homepageUrl, icon, spaceId },
+    { name, summary, homepageUrl, icon, iconChosen, spaceId },
     SOURCE,
   );
   refresh();
@@ -130,11 +146,18 @@ export async function updateProjectAction(
     homepageUrl?: string | null;
     repository?: string | null;
     icon?: string | null;
+    iconChosen?: boolean;
   },
 ) {
   const userId = await requireUserId();
   const { db } = getDb();
-  const p = updateProjectCore(db, userId, id, patch, SOURCE);
+  const p = updateProjectCore(
+    db,
+    userId,
+    id,
+    await withAutoListIcon(db, userId, id, patch),
+    SOURCE,
+  );
   refresh();
   return p;
 }
@@ -147,37 +170,36 @@ export async function setProjectSpaceAction(projectId: string, spaceId: string |
   refresh();
 }
 
-// Read-only: suggestions are only applied when the user picks one, through
-// updateProjectAction, so nothing is audited here. [] when AI is off.
-export async function suggestProjectIconsAction(id: string) {
-  const userId = await requireUserId();
-  const apiKey = getEnv().TYPESAFE_API_KEY;
-  if (!apiKey) return [];
-  const { db } = getDb();
-  const found = getProjectWithItemsCore(db, userId, id);
-  if (!found) return [];
-  return suggestEmoji(
-    {
-      name: found.project.name,
-      summary: found.project.summary,
-      itemTitles: found.items.slice(0, 20).map((it) => it.title),
-      homepageUrl: found.project.homepageUrl,
-    },
-    apiKey,
-  );
-}
-
-// The same for a list still being written in the New list dialog, from what's
-// typed so far. Read-only; [] when AI is off.
-export async function suggestNewListIconsAction(input: {
+// Read-only icon suggestions for a list as it's being written: a saved one
+// (`id`, whose items Jev also reads) or one in the New list dialog. Nothing
+// is applied here. [] when AI is off.
+export async function suggestListIconsAction(input: {
+  id?: string;
   name: string;
   summary: string;
   homepageUrl: string | null;
 }) {
-  await requireUserId();
+  const userId = await requireUserId();
   const apiKey = getEnv().TYPESAFE_API_KEY;
   if (!apiKey || !input.name.trim()) return [];
-  return suggestEmoji({ ...input, itemTitles: [] }, apiKey);
+  const { id, ...patch } = input;
+  const context = id
+    ? listIconContext(getDb().db, userId, id, patch)?.context
+    : { ...patch, itemTitles: [] };
+  return context ? suggestEmoji(context, apiKey) : [];
+}
+
+// Emoji for a label, from its name (typed so far) and its list's, when one
+// is chosen yet. Read-only; [] when AI is off.
+export async function suggestLabelEmojiAction(projectId: string, name: string) {
+  const userId = await requireUserId();
+  const apiKey = getEnv().TYPESAFE_API_KEY;
+  if (!apiKey || !name.trim()) return [];
+  const { db } = getDb();
+  // No list chosen yet is fine (New item); a list they can't see isn't.
+  const project = projectId ? getProjectCore(db, userId, projectId) : undefined;
+  if (projectId && !project) return [];
+  return suggestLabelEmoji({ name: name.trim(), listName: project?.name ?? "" }, apiKey);
 }
 
 // Read-only suggestions for an item being written in the New item dialog:
@@ -418,7 +440,8 @@ export async function addItemAction(input: {
   projectId: string;
   title: string;
   description?: string | null;
-  category?: string | null;
+  labels?: string[];
+  labelEmoji?: Record<string, LabelEmoji>;
   positionRef?: string;
   parentId?: string | null;
   dueDate?: string | null;
@@ -429,7 +452,14 @@ export async function addItemAction(input: {
 }) {
   const userId = await requireUserId();
   const { db } = getDb();
-  const it = addItemCore(db, userId, input, SOURCE);
+  const labelEmoji = await withAutoLabelEmoji(
+    db,
+    userId,
+    input.projectId,
+    input.labels,
+    input.labelEmoji,
+  );
+  const it = addItemCore(db, userId, { ...input, labelEmoji }, SOURCE);
   refresh();
   return it;
 }
@@ -439,7 +469,8 @@ export async function updateItemAction(
   patch: {
     title?: string;
     description?: string | null;
-    category?: string | null;
+    labels?: string[];
+    labelEmoji?: Record<string, LabelEmoji>;
     assigneeIds?: string[];
     addAssigneeIds?: string[];
     removeAssigneeIds?: string[];
@@ -450,7 +481,11 @@ export async function updateItemAction(
 ) {
   const userId = await requireUserId();
   const { db } = getDb();
-  const it = updateItemCore(db, userId, id, patch, SOURCE);
+  const projectId = patch.labels && getItemCore(db, userId, id)?.projectId;
+  const labelEmoji = projectId
+    ? await withAutoLabelEmoji(db, userId, projectId, patch.labels, patch.labelEmoji)
+    : patch.labelEmoji;
+  const it = updateItemCore(db, userId, id, { ...patch, labelEmoji }, SOURCE);
   refresh();
   return it;
 }
@@ -622,18 +657,38 @@ export async function setAvatarUrlAction(url: string | null) {
   refresh();
 }
 
-export async function addCategoryAction(projectId: string, name: string) {
+export async function addLabelAction(
+  projectId: string,
+  input: { name: string; emoji?: string | null; emojiChosen?: boolean },
+) {
   const userId = await requireUserId();
   const { db } = getDb();
-  const c = addCategoryCore(db, userId, projectId, name, SOURCE);
+  const l = addLabelCore(db, userId, projectId, input, SOURCE);
   refresh();
-  return c;
+  return l;
 }
 
-export async function listCategoriesAction(projectId: string) {
+export async function updateLabelAction(
+  id: string,
+  patch: { name?: string; emoji?: string | null; emojiChosen?: boolean },
+) {
   const userId = await requireUserId();
   const { db } = getDb();
-  return listCategoriesCore(db, userId, projectId);
+  const l = updateLabelCore(
+    db,
+    userId,
+    id,
+    await withAutoLabelRename(db, userId, id, patch),
+    SOURCE,
+  );
+  refresh();
+  return l;
+}
+
+export async function listLabelsAction(projectId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  return listLabelsCore(db, userId, projectId);
 }
 
 export async function listAuditAction(opts: {

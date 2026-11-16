@@ -132,7 +132,7 @@ export function revokeApiKey(
  * distributed fixed-length string; mismatches all fail at the indexed lookup.
  *
  * Intentionally NOT audited: this fires on every MCP request and would
- * drown the meaningful events. Same carve-out as ensureCategory.
+ * drown the meaningful events. Same carve-out as ensureLabels.
  */
 export function verifyApiKey(
   db: Db,

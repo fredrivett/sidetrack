@@ -31,7 +31,7 @@ const base: Item = {
   projectId: "p1",
   title: "",
   description: null,
-  category: null,
+  labels: [],
   assigneeIds: [],
   parentId: null,
   collapsed: false,

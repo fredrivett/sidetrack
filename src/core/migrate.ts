@@ -14,7 +14,7 @@ export function runMigrations() {
   // inside one transaction, and table-rebuild migrations (the standard SQLite
   // "12-step" recreate, e.g. 0004) DROP and recreate parent tables. With FKs
   // on, `DROP TABLE projects` performs an implicit DELETE that fires
-  // `ON DELETE CASCADE` and wipes items/categories. `PRAGMA foreign_keys` is
+  // `ON DELETE CASCADE` and wipes items/labels. `PRAGMA foreign_keys` is
   // a no-op *inside* a transaction, so it must be toggled here — before
   // drizzle opens its own BEGIN — not in the migration SQL itself.
   sqlite.pragma("foreign_keys = OFF");

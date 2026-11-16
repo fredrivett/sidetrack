@@ -15,6 +15,7 @@ export function EditableText({
   className = "",
   inputClassName = "",
   renderValue,
+  onDraftChange,
 }: {
   value: string;
   /** Saves the new text. Wrap the action in runAction, so a failure toasts
@@ -35,6 +36,9 @@ export function EditableText({
   // Custom rendering for the non-editing display of a non-empty value (e.g. a
   // badge). The empty state still falls back to the muted placeholder text.
   renderValue?: (value: string) => React.ReactNode;
+  /** The text as it's typed, then null once the edit is over (after the
+   * save lands, for a change), e.g. so an emoji follows a title being typed. */
+  onDraftChange?: (draft: string | null) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -43,10 +47,14 @@ export function EditableText({
   const [shown, showSaving] = useOptimistic(value);
   const [saving, startSaving] = useTransition();
   const ref = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+  // Counts edits, so a save that lands after the next edit has started
+  // doesn't end that edit's draft.
+  const edits = useRef(0);
 
   // Draft only matters while editing; the non-editing branch renders `shown`
   // directly. Seed draft at the moment editing starts, not via an effect.
   function startEditing() {
+    edits.current += 1;
     setDraft(shown);
     setEditing(true);
   }
@@ -64,21 +72,31 @@ export function EditableText({
     // A required field can't be blanked — discard the edit and revert.
     if (required && !trimmed) {
       setDraft(shown);
+      onDraftChange?.(null);
       return;
     }
     if (trimmed !== shown.trim()) {
+      const edit = edits.current;
       startSaving(async () => {
         if (!hold) showSaving(trimmed);
         await onSave(trimmed);
+        if (edits.current === edit) onDraftChange?.(null);
       });
     } else {
       setDraft(shown);
+      onDraftChange?.(null);
     }
   }
 
   function cancel() {
     setEditing(false);
     setDraft(shown);
+    onDraftChange?.(null);
+  }
+
+  function type(next: string) {
+    setDraft(next);
+    onDraftChange?.(next);
   }
 
   if (!editing) {
@@ -100,7 +118,7 @@ export function EditableText({
       <textarea
         ref={ref as React.RefObject<HTMLTextAreaElement>}
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(e) => type(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === "Escape") cancel();
@@ -122,7 +140,7 @@ export function EditableText({
       ref={ref as React.RefObject<HTMLInputElement>}
       type="text"
       value={draft}
-      onChange={(e) => setDraft(e.target.value)}
+      onChange={(e) => type(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === "Escape") cancel();

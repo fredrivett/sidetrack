@@ -355,6 +355,9 @@ export function createProject(
     summary?: string;
     homepageUrl?: string | null;
     icon?: string | null;
+    /** False when `icon` is Jev's suggestion rather than someone's choice;
+     * defaults to whether an icon was passed. */
+    iconChosen?: boolean;
     /** A Space the creator has joined, to share the new list with. */
     spaceId?: string | null;
   },
@@ -375,6 +378,7 @@ export function createProject(
     ? normalizeHomepageUrl(input.homepageUrl)
     : null;
   const icon = input.icon ? normalizeProjectIcon(input.icon) : null;
+  const iconChosen = input.iconChosen ?? input.icon !== undefined;
   db.transaction((tx) => {
     tx.insert(projects)
       .values({
@@ -387,6 +391,7 @@ export function createProject(
         summaryUpdatedAt: summary ? now : null,
         homepageUrl,
         icon,
+        iconChosen,
         spaceId: space?.id ?? null,
         createdAt: now,
       })
@@ -419,6 +424,10 @@ export function updateProject(
     homepageUrl?: string | null;
     repository?: string | null;
     icon?: string | null;
+    /** False when `icon` is Jev's suggestion for the list as it now reads:
+     * it never replaces an icon someone chose, including their choice of
+     * none. Otherwise (the default) `icon` is someone's choice. */
+    iconChosen?: boolean;
   },
   source: AuditOrigin,
 ): Project {
@@ -501,7 +510,8 @@ export function updateProject(
       );
     }
   }
-  if (patch.icon !== undefined) {
+  const chosen = patch.iconChosen !== false;
+  if (patch.icon !== undefined && (chosen || !existing.iconChosen)) {
     const normalized =
       patch.icon === null ? null : normalizeProjectIcon(patch.icon);
     if (normalized !== existing.icon) {
@@ -513,6 +523,11 @@ export function updateProject(
             ? "changed icon"
             : "set icon",
       );
+    }
+    if (chosen !== existing.iconChosen) {
+      next.iconChosen = chosen;
+      // Choosing the icon it already had (Jev's) is still a choice.
+      if (normalized === existing.icon) changes.push(normalized ? "chose icon" : "chose no icon");
     }
   }
   if (Object.keys(next).length === 0) return existing;
