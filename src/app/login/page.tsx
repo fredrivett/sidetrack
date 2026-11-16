@@ -8,7 +8,7 @@ import { isSignUpOpen } from "@/auth/signup";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "Sign in" };
+export const metadata: Metadata = { title: "Sign in", robots: { index: false } };
 
 export default async function LoginPage({
   searchParams,
