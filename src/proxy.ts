@@ -18,7 +18,9 @@ export function proxy(request: NextRequest) {
 
   // Password reset pages must work signed-out: /forgot-password requests the
   // email, /reset-password is where the emailed link lands (with ?token=).
+  // The landing page is public too (signed-out visitors see it at /, below).
   if (
+    pathname === "/welcome" ||
     pathname === "/login" ||
     pathname.startsWith("/login/") ||
     pathname === "/forgot-password" ||
@@ -46,8 +48,13 @@ export function proxy(request: NextRequest) {
   // just bounces unauthenticated traffic to /login so we don't render any
   // app shell first.
   if (!getSessionCookie(request)) {
+    // Signed out, / is the landing page rather than the board, at the same
+    // URL. A stale cookie still reaches the board, which sends it to /login.
+    if (pathname === "/") {
+      return NextResponse.rewrite(new URL("/welcome", request.url));
+    }
     const loginUrl = new URL("/login", request.url);
-    if (pathname !== "/") loginUrl.searchParams.set("next", pathname);
+    loginUrl.searchParams.set("next", pathname);
     return NextResponse.redirect(loginUrl);
   }
 
