@@ -1,5 +1,7 @@
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import type { AssigneeView } from "@/core/members";
+import { type MdNode, replaceMentions } from "@/lib/mentions";
 
 const codeClassName =
   "rounded bg-neutral-100 px-1 py-0.5 font-mono text-[0.85em] text-neutral-800 dark:bg-neutral-800 dark:text-neutral-100";
@@ -61,12 +63,47 @@ const components: Components = {
   ),
 };
 
+/** Someone an `@username` can mention. */
+export type MentionPerson = Pick<AssigneeView, "username" | "displayUsername" | "name">;
+
+const mentionClassName =
+  "rounded bg-blue-50 px-0.5 font-medium text-blue-700 dark:bg-blue-950/60 dark:text-blue-300";
+
+// Turns each `@username` of someone in `people` into a highlighted span named
+// as they write it, found as the server finds whom to notify.
+function remarkMentions(people: MentionPerson[]) {
+  const byHandle = new Map(people.flatMap((p) => (p.username ? [[p.username, p]] : [])));
+  return () => (tree: MdNode) =>
+    replaceMentions(
+      tree,
+      (handle) => byHandle.get(handle.toLowerCase()),
+      (person) => ({
+        type: "mention",
+        data: {
+          hName: "span",
+          hProperties: { className: mentionClassName, title: person.name ?? "" },
+        },
+        children: [{ type: "text", value: `@${person.displayUsername ?? person.username}` }],
+      }),
+    );
+}
+
 // Renders a markdown string with GitHub-flavored extensions (tables, task
 // lists, strikethrough, autolinks). Block-level margins collapse at the edges
-// so it sits flush inside a field.
-export function Markdown({ children }: { children: string }) {
+// so it sits flush inside a field. `mentions` highlights `@username` for each
+// of those people, as in comments.
+export function Markdown({
+  children,
+  mentions,
+}: {
+  children: string;
+  mentions?: MentionPerson[];
+}) {
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+    <ReactMarkdown
+      remarkPlugins={mentions?.length ? [remarkGfm, remarkMentions(mentions)] : [remarkGfm]}
+      components={components}
+    >
       {children}
     </ReactMarkdown>
   );
