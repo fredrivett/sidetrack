@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { moveItemAction, previewMoveItemAction } from "@/app/actions";
 import type { MovePlan } from "@/core/move";
 import type { Item } from "@/core/schema";
@@ -40,6 +40,9 @@ beforeAll(() => {
 });
 
 afterEach(cleanup);
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 const item = { id: "i1", projectId: "p1", title: "Fix login" } as Item;
 const plan = (over: Partial<MovePlan> = {}): MovePlan => ({

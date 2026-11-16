@@ -1,6 +1,12 @@
 "use client";
 
-import { ArrowRight, Check, ChevronDown, FolderInput, TriangleAlert } from "lucide-react";
+import {
+  ArrowRight,
+  Check,
+  ChevronDown,
+  FolderInput,
+  TriangleAlert,
+} from "lucide-react";
 import {
   createContext,
   useContext,
@@ -120,7 +126,9 @@ export function MoveToListPicker({
   onPick: (projectId: string) => void;
 }) {
   const move = useMoveItem();
-  const current = move?.groups.flatMap((g) => g.lists).find((l) => l.id === item.projectId);
+  const current = move?.groups
+    .flatMap((g) => g.lists)
+    .find((l) => l.id === item.projectId);
   if (!move || !current) return null;
   const labelled = move.groups.length > 1;
   return (
@@ -136,10 +144,15 @@ export function MoveToListPicker({
           size={16}
         />
         <span className="min-w-0 truncate">{current.name}</span>
-        <span className="ml-auto shrink-0 text-xs text-neutral-500">Move to…</span>
+        <span className="ml-auto shrink-0 text-xs text-neutral-500">
+          Move to…
+        </span>
         <ChevronDown className="size-4 shrink-0 opacity-50" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="max-h-80 w-64 overflow-y-auto">
+      <DropdownMenuContent
+        align="start"
+        className="max-h-80 w-64 overflow-y-auto"
+      >
         {move.groups.map((g) => (
           <DropdownMenuGroup key={g.id}>
             {labelled && <DropdownMenuLabel>{g.name}</DropdownMenuLabel>}
@@ -268,7 +281,12 @@ function MoveSheet({
 
   const [top, ...subs] = plan?.refs ?? [];
   return (
-    <>
+    // Held: the whole sheet dims while the move saves (closing it is
+    // ignored meanwhile, see MoveItemDialog).
+    <div
+      aria-busy={pending}
+      className={`flex min-h-0 flex-1 flex-col transition-opacity ${pending ? "opacity-60" : ""}`}
+    >
       <div className="flex shrink-0 items-center gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
         <ResponsiveDialogTitle className="min-w-0 truncate">
           Move to {plan?.to.name ?? "another list"}
@@ -279,10 +297,7 @@ function MoveSheet({
         <ResponsiveDialogCloseButton className="ml-auto" />
       </div>
 
-      <div
-        aria-busy={pending}
-        className={`min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 text-sm transition-opacity ${pending ? "opacity-60" : ""}`}
-      >
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 text-sm">
         {!plan ? (
           <p className="text-muted-foreground">
             {failed ? (
@@ -444,6 +459,6 @@ function MoveSheet({
           )}
         </Button>
       </div>
-    </>
+    </div>
   );
 }

@@ -700,7 +700,8 @@ export function ItemDetailDialog({
             </DropdownMenu>
           </Field>
 
-          {move && (
+          {/* Not for an item in an archived list, which isn't a move target. */}
+          {move?.groups.some((g) => g.lists.some((l) => l.id === item.projectId)) && (
             <Field label="List">
               <MoveToListPicker
                 item={item}
@@ -708,7 +709,7 @@ export function ItemDetailDialog({
                 onPick={(projectId) => {
                   // The item leaves this list, so the sheet takes over.
                   change(false);
-                  move.open(item, projectId);
+                  move?.open(item, projectId);
                 }}
               />
             </Field>
