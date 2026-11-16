@@ -238,20 +238,28 @@ export function ProjectDetailDialog({
               {/* Only offered, never filled in: the repository decides what an
                   assigned agent checks out, so the admin confirms it. */}
               {isAdmin && !project.repository && suggested && (
-                <button
-                  type="button"
-                  aria-disabled={saving}
-                  onClick={() => {
-                    if (!saving) void saveRepository(suggested);
-                  }}
-                  title="Suggested from this list's linked pull requests"
-                  className="inline-flex max-w-full items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 dark:text-blue-300 dark:hover:bg-blue-950/40"
-                >
-                  <Sparkles className="size-3.5 shrink-0" />
-                  <span className="truncate">
-                    Use <span className="font-mono">{suggested}</span>
+                <div className="mt-1.5 flex min-w-0 items-center gap-2">
+                  <span
+                    className="inline-flex shrink-0 items-center gap-1 text-xs text-neutral-400"
+                    title="Suggested from this list's linked pull requests"
+                  >
+                    <Sparkles className="size-3" />
+                    Suggested
                   </span>
-                </button>
+                  <button
+                    type="button"
+                    aria-disabled={saving}
+                    aria-label={`Use ${suggested}`}
+                    onClick={() => {
+                      if (!saving) void saveRepository(suggested);
+                    }}
+                    title={`Use ${suggested}`}
+                    className="inline-flex min-w-0 items-center gap-1 rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-xs text-neutral-600 hover:bg-neutral-200 aria-disabled:pointer-events-none aria-disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                  >
+                    <GitBranch className="size-3 shrink-0" />
+                    <span className="truncate">{suggested}</span>
+                  </button>
+                </div>
               )}
             </Field>
           )}
