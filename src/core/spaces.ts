@@ -6,11 +6,12 @@ import { parseProjectRef, resolvePosition } from "./fracidx";
 import { users } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
+import { accessLost, type ChangeEvent, type MemberExit } from "./events";
 import {
-  accessLossDetail,
   type CollaboratorView,
   findUserByHandle,
   handleFor,
+  personAt,
   revokeListAccess,
   suggestCollaborators,
 } from "./members";
@@ -157,10 +158,7 @@ export function createSpace(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "create",
-      entityType: "space",
-      entityId: id,
-      detail: `created space "${name}"${color ? ` (${color})` : ""}`,
+      event: { type: "space.created", spaceId: id, name, color },
     });
   });
   return { id, name, icon, color, createdBy: userId, createdAt: now, role: "admin" };
@@ -176,38 +174,35 @@ export function updateSpace(
 ): void {
   const { space } = requireAdmin(db, userId, spaceId, "edit the space");
   const set: { name?: string; icon?: string | null; color?: SpaceColor | null } = {};
-  const changes: string[] = [];
+  const changes: Extract<ChangeEvent, { type: "space.updated" }>["changes"] = {};
   if (input.name !== undefined) {
     const name = assertName(input.name);
     if (name !== space.name) {
       set.name = name;
-      changes.push(`renamed to "${name}"`);
+      changes.name = { from: space.name, to: name };
     }
   }
   if (input.icon !== undefined) {
     const icon = input.icon ? normalizeProjectIcon(input.icon) : null;
     if (icon !== space.icon) {
       set.icon = icon;
-      changes.push(icon ? `icon set to ${icon}` : "icon cleared");
+      changes.icon = icon;
     }
   }
   if (input.color !== undefined) {
     const color = assertColor(input.color);
     if (color !== space.color) {
       set.color = color;
-      changes.push(color ? `colour set to ${color}` : "colour cleared");
+      changes.color = color;
     }
   }
-  if (!changes.length) return;
+  if (!Object.keys(changes).length) return;
   db.transaction((tx) => {
     tx.update(spaces).set(set).where(eq(spaces.id, spaceId)).run();
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "update",
-      entityType: "space",
-      entityId: spaceId,
-      detail: `space "${space.name}": ${changes.join(", ")}`,
+      event: { type: "space.updated", spaceId, name: space.name, changes },
     });
   });
 }
@@ -245,10 +240,7 @@ export function deleteSpace(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "delete",
-      entityType: "space",
-      entityId: spaceId,
-      detail: [`deleted space "${space.name}"`, ...accessLossDetail(lost)].join(", "),
+      event: { type: "space.deleted", spaceId, name: space.name, lost: accessLost(lost) },
     });
   });
 }
@@ -284,10 +276,12 @@ export function inviteSpaceMember(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "create",
-      entityType: "space_member",
-      entityId: id,
-      detail: `invited ${handleFor(target, target.id)} to space "${space.name}"`,
+      event: {
+        type: "space.member.invited",
+        space: { spaceId, name: space.name },
+        membershipId: id,
+        member: personAt(target),
+      },
     });
   });
   return {
@@ -329,10 +323,11 @@ export function acceptSpaceInvite(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "update",
-      entityType: "space_member",
-      entityId: membership.id,
-      detail: `accepted invite to space "${spaceName(db, spaceId)}"`,
+      event: {
+        type: "space.member.joined",
+        space: { spaceId, name: spaceName(db, spaceId) },
+        membershipId: membership.id,
+      },
     });
   });
 }
@@ -351,10 +346,11 @@ export function declineSpaceInvite(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "delete",
-      entityType: "space_member",
-      entityId: membership.id,
-      detail: `declined invite to space "${spaceName(db, spaceId)}"`,
+      event: {
+        type: "space.member.declined",
+        space: { spaceId, name: spaceName(db, spaceId) },
+        membershipId: membership.id,
+      },
     });
   });
 }
@@ -379,12 +375,11 @@ export function removeSpaceMember(
   const membership = membershipOf(db, targetUserId, spaceId);
   if (!membership) return;
   const target = db.select().from(users).where(eq(users.id, targetUserId)).get();
-  const who = handleFor(target, targetUserId);
-  const detail = leaving
-    ? `left space "${space.name}"`
+  const how: MemberExit = leaving
+    ? "left"
     : membership.status === "pending"
-      ? `revoked space invite for ${who} to "${space.name}"`
-      : `removed ${who} from space "${space.name}"`;
+      ? "revoked"
+      : "removed";
   const listIds = listIdsInSpace(db, spaceId);
   db.transaction((tx) => {
     tx.delete(spaceMembers).where(eq(spaceMembers.id, membership.id)).run();
@@ -405,10 +400,14 @@ export function removeSpaceMember(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "delete",
-      entityType: "space_member",
-      entityId: membership.id,
-      detail: [detail, ...accessLossDetail(lost)].join(", "),
+      event: {
+        type: "space.member.removed",
+        space: { spaceId, name: space.name },
+        membershipId: membership.id,
+        member: personAt(target ?? { id: targetUserId, username: null }),
+        how,
+        lost: accessLost(lost),
+      },
     });
   });
 }
@@ -444,10 +443,13 @@ export function setSpaceMemberRole(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "update",
-      entityType: "space_member",
-      entityId: membership.id,
-      detail: `made ${handleFor(target, targetUserId)} ${role === "admin" ? "an admin" : "a member"} of space "${space.name}"`,
+      event: {
+        type: "space.member.role",
+        space: { spaceId, name: space.name },
+        membershipId: membership.id,
+        member: personAt(target ?? { id: targetUserId, username: null }),
+        role,
+      },
     });
   });
 }
@@ -498,11 +500,6 @@ export function setProjectSpace(
         .all()
         .map((r) => r.userId)
     : [];
-  const detail = !from
-    ? `moved "${project.name}" into space "${to?.name}"`
-    : !to
-      ? `took "${project.name}" out of space "${from.name}"`
-      : `moved "${project.name}" from space "${from.name}" to "${to.name}"`;
   db.transaction((tx) => {
     tx.update(projects).set({ spaceId }).where(eq(projects.id, projectId)).run();
     const lost = { unassigned: 0, ended: 0 };
@@ -514,11 +511,14 @@ export function setProjectSpace(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "update",
-      entityType: "project",
-      entityId: projectId,
-      projectId,
-      detail: [detail, ...accessLossDetail(lost)].join(", "),
+      event: {
+        type: "list.space.changed",
+        projectId,
+        listName: project.name,
+        from: from ? { spaceId: from.id, name: from.name } : null,
+        to: to ? { spaceId: to.id, name: to.name } : null,
+        lost: accessLost(lost),
+      },
     });
   });
 }
@@ -606,11 +606,7 @@ export function reorderSpace(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "reorder",
-      // Personal is logged as a Space-level event too, with its tray id.
-      entityType: "space",
-      entityId: trayId,
-      detail: trayId === PERSONAL_TRAY ? "reordered Personal" : `reordered space "${name}"`,
+      event: { type: "space.reordered", spaceId: trayId, name },
     });
   });
 }

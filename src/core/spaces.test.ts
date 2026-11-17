@@ -203,7 +203,8 @@ describe("spaces", () => {
       listAudit(db, alice)
         .filter((e) => e.entityType === "space_member" && e.action === "update")
         .map((e) => e.detail),
-    ).toContain('made @fred a member of space "Home"');
+      // By the name it has now: she's still in it.
+    ).toContain('made @fred a member of space "Flat"');
   });
 
   it("cleans up after someone is removed, unless they still have access another way", () => {

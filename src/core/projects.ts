@@ -9,6 +9,7 @@ import { normalizeHomepageUrl } from "../lib/url";
 import { hasProjectAccess, isListAdmin } from "./access";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
+import type { ListChanges } from "./events";
 import { parseProjectRef, resolvePosition } from "./fracidx";
 import { listItems } from "./items";
 import {
@@ -400,13 +401,12 @@ export function createProject(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "create",
-      entityType: "project",
-      entityId: id,
-      projectId: id,
-      detail: space
-        ? `created list "${name}" in space "${space.name}"`
-        : `created list "${name}"`,
+      event: {
+        type: "list.created",
+        projectId: id,
+        listName: name,
+        space: space ? { spaceId: space.id, name: space.name } : null,
+      },
     });
   });
   return getProjectOrThrow(db, userId, id);
@@ -440,12 +440,12 @@ export function updateProject(
   const isOwner = existing.userId === userId;
 
   const next: Partial<Project> = {};
-  const changes: string[] = [];
+  const changes: ListChanges = {};
   if (patch.name !== undefined) {
     const name = assertName(patch.name);
     if (name !== existing.name) {
       next.name = name;
-      changes.push(`renamed to "${name}"`);
+      changes.name = { from: existing.name, to: name };
     }
   }
   if (patch.prefix !== undefined) {
@@ -463,18 +463,18 @@ export function updateProject(
       // or touches the nanoid PK — it's a pure display change.
       const unique = ensureUniquePrefix(db, userId, normalized, id);
       next.prefix = unique;
-      changes.push(`prefix ${existing.prefix}→${unique}`);
+      changes.prefix = { from: existing.prefix, to: unique };
     }
   }
   if (patch.status !== undefined && patch.status !== existing.status) {
     assertStatus(patch.status);
     next.status = patch.status;
-    changes.push(`status ${existing.status}→${patch.status}`);
+    changes.status = { from: existing.status, to: patch.status };
   }
   if (patch.summary !== undefined && patch.summary !== existing.summary) {
     next.summary = patch.summary;
     next.summaryUpdatedAt = Date.now();
-    changes.push("edited summary");
+    changes.summary = "edited";
   }
   if (patch.homepageUrl !== undefined) {
     const normalized =
@@ -483,13 +483,7 @@ export function updateProject(
         : normalizeHomepageUrl(patch.homepageUrl);
     if (normalized !== existing.homepageUrl) {
       next.homepageUrl = normalized;
-      changes.push(
-        normalized === null
-          ? "cleared homepage"
-          : existing.homepageUrl
-            ? "edited homepage"
-            : "set homepage",
-      );
+      changes.homepage = normalized === null ? "cleared" : existing.homepageUrl ? "edited" : "set";
     }
   }
   if (patch.repository !== undefined) {
@@ -502,13 +496,7 @@ export function updateProject(
         throw new Error("only the list's admin can change its repository");
       }
       next.repository = normalized;
-      changes.push(
-        normalized === null
-          ? `cleared repository ${existing.repository}`
-          : existing.repository
-            ? `repository ${existing.repository}→${normalized}`
-            : `set repository to ${normalized}`,
-      );
+      changes.repository = { from: existing.repository, to: normalized };
     }
   }
   const chosen = patch.iconChosen !== false;
@@ -517,18 +505,12 @@ export function updateProject(
       patch.icon === null ? null : normalizeProjectIcon(patch.icon);
     if (normalized !== existing.icon) {
       next.icon = normalized;
-      changes.push(
-        normalized === null
-          ? "cleared icon"
-          : existing.icon
-            ? "changed icon"
-            : "set icon",
-      );
+      changes.icon = normalized === null ? "cleared" : existing.icon ? "changed" : "set";
     }
     if (chosen !== existing.iconChosen) {
       next.iconChosen = chosen;
       // Choosing the icon it already had (Jev's) is still a choice.
-      if (normalized === existing.icon) changes.push(normalized ? "chose icon" : "chose no icon");
+      if (normalized === existing.icon) changes.icon = normalized ? "chose" : "chose-none";
     }
   }
   if (
@@ -546,12 +528,10 @@ export function updateProject(
     }
     next.doneClearedAt = patch.doneClearedAt;
     // A later time clears; an earlier one is an undo bringing them back.
-    changes.push(
-      patch.doneClearedAt !== null &&
-        patch.doneClearedAt > (existing.doneClearedAt ?? 0)
-        ? "moved done items to Done"
-        : "moved done items back to the list",
-    );
+    changes.done =
+      patch.doneClearedAt !== null && patch.doneClearedAt > (existing.doneClearedAt ?? 0)
+        ? "cleared"
+        : "restored";
   }
   if (Object.keys(next).length === 0) return existing;
 
@@ -563,11 +543,7 @@ export function updateProject(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "update",
-      entityType: "project",
-      entityId: id,
-      projectId: id,
-      detail: `${existing.name}: ${changes.join(", ")}`,
+      event: { type: "list.updated", projectId: id, listName: existing.name, changes },
     });
   });
   return getProjectOrThrow(db, userId, id);
@@ -603,11 +579,7 @@ export function reorderProject(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "reorder",
-      entityType: "project",
-      entityId: id,
-      projectId: id,
-      detail: `reordered list "${existing.name}"`,
+      event: { type: "list.reordered", projectId: id, listName: existing.name },
     });
   });
   return getProjectOrThrow(db, userId, id);
@@ -632,11 +604,7 @@ export function deleteProject(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "delete",
-      entityType: "project",
-      entityId: id,
-      projectId: id,
-      detail: `deleted list "${existing.name}"`,
+      event: { type: "list.deleted", projectId: id, listName: existing.name },
     });
   });
 }
