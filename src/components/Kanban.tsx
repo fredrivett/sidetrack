@@ -23,6 +23,7 @@ import type { NotificationView } from "@/core/notifications";
 import type { PendingSpaceInviteView, SpaceView } from "@/core/spaces";
 import { type ItemFilters, matchesFilters } from "@/lib/filters";
 import { isEditableTarget, matchesShortcut } from "@/lib/keyboard";
+import { LOCALE_COOKIE } from "@/lib/time";
 import { Button } from "@/components/ui/button";
 import { AddProjectButton } from "./AddProjectButton";
 import { AuditDialog } from "./AuditDialog";
@@ -267,6 +268,9 @@ export function Kanban({
   // across a flight rechecks when it comes back into view.
   useEffect(() => {
     function sync() {
+      // The server writes due labels in this locale on the next load.
+      const locale = Intl.DateTimeFormat().resolvedOptions().locale;
+      document.cookie = `${LOCALE_COOKIE}=${encodeURIComponent(locale)}; path=/; max-age=31536000; samesite=lax`;
       const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       if (browserZone && browserZone !== timeZone) {
         // Reload once it's saved: repeating items reopen by the viewer's day.

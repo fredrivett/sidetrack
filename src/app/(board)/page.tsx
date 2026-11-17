@@ -20,11 +20,17 @@ import { listPendingSpaceInvites, listSpaces, listTrays } from "@/core/spaces";
 import { COLLAPSED_TRAYS_COOKIE, parseCollapsedTrays } from "@/components/SpaceTray";
 import { getBoardFilters, getOverdueCollapsed, getProfile, getTimeZone } from "@/core/users";
 import { getEnv } from "@/lib/env";
-import { weekStartBound } from "@/lib/time";
+import { cookieLocale, dayOf, LOCALE_COOKIE, weekStartBound } from "@/lib/time";
+import { ServerTodayProvider } from "@/components/use-day-start";
 import type { ItemPrLink } from "@/core/schema";
 import { requireUserId } from "@/auth/session";
 
 export const dynamic = "force-dynamic";
+
+/** The viewer's day in their saved timezone, as their browser will have it. */
+function todayIn(timeZone: string) {
+  return dayOf(Date.now(), timeZone);
+}
 
 export default async function Home({
   searchParams,
@@ -58,6 +64,8 @@ export default async function Home({
   // start (ProjectColumn); this cut is early enough for any timezone.
   const timeZone = getTimeZone(db, userId);
   const completedSince = weekStartBound(timeZone ?? undefined);
+  const serverToday = timeZone ? todayIn(timeZone) : null;
+  const cookieStore = await cookies();
   const itemsByProject = Object.fromEntries(
     projects.map((p) => [
       p.id,
@@ -77,47 +85,54 @@ export default async function Home({
   }
 
   return (
-    // Agents' work sessions reach every row and detail dialog in every view.
-    <AgentSessionsProvider
-      sessions={listAllAgentSessions(db, userId)}
-      viewerId={userId}
-      startable={listStartableAgents(db, userId)}
-      startableIn={listStartableLists(db, userId)}
+    // The viewer's day in their saved timezone, and their browser's locale,
+    // so due labels render on the server as the browser will write them.
+    <ServerTodayProvider
+      today={serverToday}
+      locale={cookieLocale(cookieStore.get(LOCALE_COOKIE)?.value)}
     >
-      <Kanban
+      {/* Agents' work sessions reach every row and detail dialog in every view. */}
+      <AgentSessionsProvider
+        sessions={listAllAgentSessions(db, userId)}
         viewerId={userId}
-        viewer={getProfile(db, userId)}
-        timeZone={timeZone}
-        overdueCollapsed={getOverdueCollapsed(db, userId)}
-        initialView={
-          view === "agenda" || view === "done" || view === "archived"
-            ? view
-            : // Links from before Today and No date became Agenda.
-              view === "today" || view === "no-date"
-              ? "agenda"
-              : "board"
-        }
-        projects={projects}
-        itemsByProject={itemsByProject}
-        completedSince={completedSince}
-        labelsByProject={labelsByProject}
-        assigneesByProject={assigneesByProject}
-        prLinksByItem={prLinksByItem}
-        pendingInvites={pendingInvites}
-        spaces={listSpaces(db, userId)}
-        trayOrder={listTrays(db, userId)}
-        pendingSpaceInvites={listPendingSpaceInvites(db, userId)}
-        initialListId={typeof p === "string" ? p : null}
-        initialItemId={typeof item === "string" ? item : null}
-        notifications={listNotifications(db, userId)}
-        followedItemIds={listFollowedItemIds(db, userId)}
-        initialCollapsedTrays={parseCollapsedTrays(
-          (await cookies()).get(COLLAPSED_TRAYS_COOKIE)?.value,
-        )}
-        filters={getBoardFilters(db, userId)}
-        aiEnabled={Boolean(getEnv().TYPESAFE_API_KEY)}
-      />
-      <LiveUpdates />
-    </AgentSessionsProvider>
+        startable={listStartableAgents(db, userId)}
+        startableIn={listStartableLists(db, userId)}
+      >
+        <Kanban
+          viewerId={userId}
+          viewer={getProfile(db, userId)}
+          timeZone={timeZone}
+          overdueCollapsed={getOverdueCollapsed(db, userId)}
+          initialView={
+            view === "agenda" || view === "done" || view === "archived"
+              ? view
+              : // Links from before Today and No date became Agenda.
+                view === "today" || view === "no-date"
+                ? "agenda"
+                : "board"
+          }
+          projects={projects}
+          itemsByProject={itemsByProject}
+          completedSince={completedSince}
+          labelsByProject={labelsByProject}
+          assigneesByProject={assigneesByProject}
+          prLinksByItem={prLinksByItem}
+          pendingInvites={pendingInvites}
+          spaces={listSpaces(db, userId)}
+          trayOrder={listTrays(db, userId)}
+          pendingSpaceInvites={listPendingSpaceInvites(db, userId)}
+          initialListId={typeof p === "string" ? p : null}
+          initialItemId={typeof item === "string" ? item : null}
+          notifications={listNotifications(db, userId)}
+          followedItemIds={listFollowedItemIds(db, userId)}
+          initialCollapsedTrays={parseCollapsedTrays(
+            cookieStore.get(COLLAPSED_TRAYS_COOKIE)?.value,
+          )}
+          filters={getBoardFilters(db, userId)}
+          aiEnabled={Boolean(getEnv().TYPESAFE_API_KEY)}
+        />
+        <LiveUpdates />
+      </AgentSessionsProvider>
+    </ServerTodayProvider>
   );
 }

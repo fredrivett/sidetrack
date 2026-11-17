@@ -44,7 +44,7 @@ export function RepeatBadge({
       className="inline-flex items-center gap-1 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400"
     >
       <RepeatIcon className="size-3" />
-      {back ? `Back ${back}` : repeatLabel(repeat)}
+      {back ? `Next: ${back}` : repeatLabel(repeat)}
     </span>
   );
 }

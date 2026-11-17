@@ -265,13 +265,19 @@ export function localDate(day: string): Date {
 }
 
 /**
- * The days of a span in the runtime's locale: "16–22 Nov", or "30 Nov – 6 Dec"
- * (with the year when it isn't this year's). `long` spells it out for the
- * date picker: "Monday 16 – Sunday 22 November".
+ * The days of a span in `locale` (the runtime's own when left out): "16–22
+ * Nov", or "30 Nov – 6 Dec" (with the year when it isn't this year's). `long`
+ * spells it out for the date picker: "Monday 16 – Sunday 22 November".
  */
-export function spanDates(from: string, to: string, today: string, long = false): string {
+export function spanDates(
+  from: string,
+  to: string,
+  today: string,
+  long = false,
+  locale?: string,
+): string {
   const thisYear = from.slice(0, 4) === today.slice(0, 4) && to.slice(0, 4) === today.slice(0, 4);
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(locale, {
     weekday: long ? "long" : undefined,
     day: "numeric",
     month: long ? "long" : "short",
@@ -281,12 +287,27 @@ export function spanDates(from: string, to: string, today: string, long = false)
 }
 
 /**
- * Short label for when something's due, relative to `today`. A day is
- * "Today", "Tomorrow", "Yesterday", a weekday within the coming week ("Sat"),
- * else "21 Nov" (with the year when it isn't this year's). A span `from` that
- * day is "This week", "Next weekend", "Last week" and so on, else its dates.
+ * Cookie holding the browser's locale, so the server writes due labels the
+ * way the browser will ("21 Nov", not "Nov 21") and they don't change as the
+ * page loads.
  */
-export function dueLabel(due: string, today: string, from?: string | null): string {
+export const LOCALE_COOKIE = "sidetrack-locale";
+
+/** The locale in LOCALE_COOKIE, or null when it's missing or not one. */
+export function cookieLocale(value: string | undefined): string | null {
+  try {
+    return value ? (Intl.DateTimeFormat.supportedLocalesOf(value)[0] ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * dueLabel's labels that read the same in every locale ("Today", "This
+ * weekend"), or null when it would show a date. The server can render these
+ * without knowing the browser's locale.
+ */
+export function dueWord(due: string, today: string, from?: string | null): string | null {
   if (from) {
     for (const [weeks, word] of [[0, "This"], [1, "Next"], [-1, "Last"]] as const) {
       for (const part of ["week", "weekend"] as const) {
@@ -295,17 +316,36 @@ export function dueLabel(due: string, today: string, from?: string | null): stri
         }
       }
     }
-    return spanDates(from, due, today);
+    return null;
   }
   if (due === today) return "Today";
   if (due === addDays(today, 1)) return "Tomorrow";
   if (due === addDays(today, -1)) return "Yesterday";
+  return null;
+}
+
+/**
+ * Short label for when something's due, relative to `today`. A day is
+ * "Today", "Tomorrow", "Yesterday", a weekday within the coming week ("Sat"),
+ * else "21 Nov" (with the year when it isn't this year's). A span `from` that
+ * day is "This week", "Next weekend", "Last week" and so on, else its dates.
+ * Dates are in `locale`, the runtime's own when left out.
+ */
+export function dueLabel(
+  due: string,
+  today: string,
+  from?: string | null,
+  locale?: string,
+): string {
+  const word = dueWord(due, today, from);
+  if (word) return word;
+  if (from) return spanDates(from, due, today, false, locale);
   const [y, m, d] = due.split("-").map(Number);
   const date = new Date(Date.UTC(y, m - 1, d));
   if (due > today && due < addDays(today, 7)) {
-    return date.toLocaleDateString(undefined, { weekday: "short", timeZone: "UTC" });
+    return date.toLocaleDateString(locale, { weekday: "short", timeZone: "UTC" });
   }
-  return date.toLocaleDateString(undefined, {
+  return date.toLocaleDateString(locale, {
     day: "numeric",
     month: "short",
     year: due.slice(0, 4) === today.slice(0, 4) ? undefined : "numeric",
