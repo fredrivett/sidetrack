@@ -2,7 +2,7 @@ import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getEnv } from "../lib/env";
 import { getPostHog } from "../lib/posthog";
-import { sendPush } from "../lib/push";
+import { type PushMessage, sendPush } from "../lib/push";
 import { hasProjectAccess } from "./access";
 import { users } from "./auth-schema";
 import { onChanges } from "./changes";
@@ -11,6 +11,7 @@ import { SYSTEM_ACTOR } from "./audit";
 import { dueText, type Part, plainText } from "./describe";
 import { autoFollow, followersOf } from "./follows";
 import type { ChangeEvent, ItemAt } from "./events";
+import { isLooking } from "./presence";
 import { forgetPushSubscriptions, pushTargets } from "./push";
 import {
   auditLog,
@@ -317,7 +318,9 @@ export function writeNotifications(
         userId,
         reason,
         auditId: change.auditId,
-        groupKey: r.groupKey,
+        // Activity is told list by list ("Sam made 4 changes in Groceries"),
+        // the rest item by item.
+        groupKey: tier === "ambient" && projectId ? `list:${projectId}` : r.groupKey,
         createdAt: change.ts,
         // Activity is pushed only to those who asked for all of it; the rest
         // see it in the inbox. Marked sent, so the sender passes it by.
@@ -466,6 +469,8 @@ function inSpace(db: Db, userId: string, spaceId: string): boolean {
 
 type Row = {
   id: string;
+  userId: string;
+  groupKey: string;
   reason: NotificationReason;
   createdAt: number;
   readAt: number | null;
@@ -479,6 +484,8 @@ function selectRows(db: Db) {
   return db
     .select({
       id: notifications.id,
+      userId: notifications.userId,
+      groupKey: notifications.groupKey,
       reason: notifications.reason,
       createdAt: notifications.createdAt,
       readAt: notifications.readAt,
@@ -791,66 +798,171 @@ export function markNotificationsRead(db: Db, userId: string, ids?: string[]): v
     .run();
 }
 
+// A group (one person, one item or list) is pushed once it has been quiet
+// this long, so a burst of changes is one push: briefly for something aimed
+// at them, longer for the rest. However busy, it waits no longer than
+// MAX_WAIT_MS from its first change.
+const QUIET_DIRECT_MS = 30_000;
+const QUIET_MS = 2 * 60_000;
+const MAX_WAIT_MS = 5 * 60_000;
 // Older than this when its turn comes (say the server stopped before sending
 // it), a push is news nobody needs any more: it stays in the inbox only.
 const PUSH_FRESH_MS = 10 * 60_000;
 
 /**
- * Push every notification not sent yet, worded as it's sent. Each is
- * claimed (sentAt set) before any await, so runs that overlap never send
- * one twice; one whose push fails stays claimed and in the inbox. Off
- * without VAPID keys.
+ * Push what's due: each person's unsent notifications about one item (or,
+ * for activity, one list) once that group has been quiet a while, as one
+ * push, worded as it's sent. A change undone within the group, such as a
+ * tick then an untick, cancels out. Someone looking at their board gets no
+ * push: the group goes to their inbox, seen. Each row is claimed (sentAt
+ * set) before any await, so runs that overlap never send one twice; one
+ * whose push fails stays claimed and in the inbox. Pushes nothing without
+ * VAPID keys. Returns when the next waiting group is due, or null.
  */
-export async function deliverNotifications(db: Db): Promise<void> {
-  const now = Date.now();
-  let due = db
-    .select({ id: notifications.id, userId: notifications.userId, groupKey: notifications.groupKey })
+export async function deliverNotifications(db: Db, now = Date.now()): Promise<number | null> {
+  const unsent = db
+    .select({
+      id: notifications.id,
+      userId: notifications.userId,
+      groupKey: notifications.groupKey,
+      reason: notifications.reason,
+      createdAt: notifications.createdAt,
+    })
     .from(notifications)
     .where(isNull(notifications.sentAt))
     .all();
-  if (due.length === 0) return;
+  const groups = new Map<string, typeof unsent>();
+  for (const n of unsent) {
+    const key = `${n.userId} ${n.groupKey}`;
+    groups.set(key, [...(groups.get(key) ?? []), n]);
+  }
+  let next: number | null = null;
+  const dueIds: string[] = [];
+  for (const group of groups.values()) {
+    const times = group.map((n) => n.createdAt);
+    const quiet = group.some((n) => tierOf(n.reason) === "direct") ? QUIET_DIRECT_MS : QUIET_MS;
+    const at = Math.min(Math.max(...times) + quiet, Math.min(...times) + MAX_WAIT_MS);
+    if (at <= now) dueIds.push(...group.map((n) => n.id));
+    else next = Math.min(next ?? at, at);
+  }
+  if (dueIds.length === 0) return next;
   // Only rows still unsent, so another run that read the same ones sends
   // only what it claimed.
   // audit-exempt: delivery bookkeeping on derived rows.
-  const claimed = new Set(
-    db.update(notifications)
-      .set({ sentAt: now })
-      .where(and(inArray(notifications.id, due.map((n) => n.id)), isNull(notifications.sentAt)))
-      .returning({ id: notifications.id })
-      .all()
-      .map((r) => r.id),
-  );
+  const claimed = db
+    .update(notifications)
+    .set({ sentAt: now })
+    .where(and(inArray(notifications.id, dueIds), isNull(notifications.sentAt)))
+    .returning({ id: notifications.id })
+    .all()
+    .map((r) => r.id);
+  if (claimed.length === 0) return next;
+  const rows = selectRows(db).where(inArray(notifications.id, claimed)).all();
+  const byGroup = new Map<string, Row[]>();
+  for (const r of rows.sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1))) {
+    const key = `${r.userId} ${r.groupKey}`;
+    byGroup.set(key, [...(byGroup.get(key) ?? []), r]);
+  }
   const vapid = getEnv().VAPID;
-  if (!vapid) return;
-  due = due.filter((n) => claimed.has(n.id));
-  const tags = new Map(due.map((n) => [n.id, n.groupKey]));
-  const sends = [...new Set(due.map((n) => n.userId))].flatMap((userId) => {
-    const rows = selectRows(db)
-      .where(
-        and(
-          eq(notifications.userId, userId),
-          inArray(notifications.id, due.filter((n) => n.userId === userId).map((n) => n.id)),
-        ),
-      )
-      .all();
-    return describe(db, userId, rows)
-      .filter((n) => n.createdAt > now - PUSH_FRESH_MS)
-      .map(async (n) => {
-        const { gone } = await sendPush(
-          pushTargets(db, userId, vapid.publicKey),
-          {
-            title: n.title,
-            body: plainText(n.parts) + (n.snippet ? `: ${n.snippet}` : ""),
-            url: n.url,
-            // A newer push about the same thing replaces this one.
-            tag: tags.get(n.id),
-          },
-          vapid,
-        );
-        forgetPushSubscriptions(db, gone);
-      });
-  });
-  await Promise.all(sends);
+  const seen: string[] = [];
+  const pushes: Array<{ userId: string; message: PushMessage }> = [];
+  for (const group of byGroup.values()) {
+    const userId = group[0].userId;
+    // On screen: the board shows it already.
+    if (isLooking(userId)) {
+      seen.push(...group.map((r) => r.id));
+      continue;
+    }
+    const { kept, undone } = cancelUndone(group);
+    seen.push(...undone);
+    const views = describe(db, userId, kept);
+    if (views.length === 0 || views[views.length - 1].createdAt <= now - PUSH_FRESH_MS) continue;
+    pushes.push({ userId, message: { ...summarise(views), tag: group[0].groupKey } });
+  }
+  if (seen.length) {
+    // audit-exempt: read state on derived rows, seen by nobody else.
+    db.update(notifications)
+      .set({ readAt: now })
+      .where(and(inArray(notifications.id, seen), isNull(notifications.readAt)))
+      .run();
+  }
+  if (!vapid) return next;
+  await Promise.all(
+    pushes.map(async ({ userId, message }) => {
+      // The app's badge: what's unseen, once this is.
+      const badge = listNotifications(db, userId).filter((n) => n.readAt === null).length;
+      const { gone } = await sendPush(
+        pushTargets(db, userId, vapid.publicKey),
+        { ...message, badge },
+        vapid,
+      );
+      forgetPushSubscriptions(db, gone);
+    }),
+  );
+  return next;
+}
+
+/**
+ * `group` without the changes undone within it: an item ticked then
+ * unticked (or the reverse), or someone assigned then taken off it (or the
+ * reverse). Returns what's left, and the ids of the pairs that cancelled.
+ */
+function cancelUndone(group: Row[]): { kept: Row[]; undone: string[] } {
+  const kept: Row[] = [];
+  const undone: string[] = [];
+  // What a row did, and what would undo it.
+  const move = (r: Row): { did: string; undoes: string } | null => {
+    const e = r.event;
+    if (!e) return null;
+    if (e.type === "item.completed" && !e.with) return { did: `done ${e.itemId}`, undoes: `open ${e.itemId}` };
+    if (e.type === "item.reopened" && !e.with && !e.forSubItem && !e.repeat) {
+      return { did: `open ${e.itemId}`, undoes: `done ${e.itemId}` };
+    }
+    if (e.type === "item.updated" && r.reason === "assigned") return { did: `on ${e.itemId}`, undoes: `off ${e.itemId}` };
+    if (e.type === "item.updated" && r.reason === "unassigned") return { did: `off ${e.itemId}`, undoes: `on ${e.itemId}` };
+    return null;
+  };
+  for (const r of group) {
+    const m = move(r);
+    const at = m ? kept.findLastIndex((k) => move(k)?.did === m.undoes) : -1;
+    if (at === -1) {
+      kept.push(r);
+    } else {
+      undone.push(kept[at].id, r.id);
+      kept.splice(at, 1);
+    }
+  }
+  return { kept, undone };
+}
+
+/** One push for a group's notifications: its sentence, or a summary of several. */
+function summarise(views: NotificationView[]): Omit<PushMessage, "tag"> {
+  const last = views[views.length - 1];
+  if (views.length === 1) {
+    return {
+      title: last.title,
+      body: plainText(last.parts) + (last.snippet ? `: ${last.snippet}` : ""),
+      url: last.url,
+    };
+  }
+  // Who: the person each sentence starts with, in order of first change.
+  const names = [
+    ...new Set(views.map((v) => (v.parts[0]?.em === "person" ? v.parts[0].text : "Sidetrack"))),
+  ];
+  const who =
+    names.length === 1
+      ? names[0]
+      : names.length === 2
+        ? `${names[0]} and ${names[1]}`
+        : `${names[0]} and ${names.length - 1} others`;
+  // An item's group names the item; a list's, the list.
+  const item = last.parts.find((p) => p.em === "item");
+  const sameItem = views.every((v) => v.url === last.url);
+  const body =
+    sameItem && item
+      ? `${who} made ${views.length} changes to "${item.text}"`
+      : `${who} made ${views.length} changes in "${last.title}"`;
+  return { title: last.title, body, url: sameItem ? last.url : last.url.replace(/&item=[^&]*/, "") };
 }
 
 declare global {
@@ -858,15 +970,22 @@ declare global {
 }
 
 /**
- * Push new notifications after each committed batch of changes. recordAudit
- * announces every audited change, and a notification is only ever written
- * with one, so this hears about each. Started once per process, at boot.
+ * Push notifications as they come due: after each committed batch of
+ * changes (recordAudit announces every audited change, and a notification
+ * is only ever written with one), and when a group waiting to go quiet is
+ * due. Started once per process, at boot.
  */
 export function startNotificationDelivery(db: Db): void {
   if (globalThis.__sidetrackNotificationDelivery) return;
   globalThis.__sidetrackNotificationDelivery = true;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const deliver = () =>
-    deliverNotifications(db).catch((error) => getPostHog()?.captureException(error));
+    deliverNotifications(db)
+      .then((next) => {
+        clearTimeout(timer);
+        if (next !== null) timer = setTimeout(deliver, Math.max(next - Date.now(), 1_000));
+      })
+      .catch((error) => getPostHog()?.captureException(error));
   onChanges(deliver);
   // Whatever was committed but not sent before the last stop.
   void deliver();

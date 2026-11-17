@@ -21,6 +21,8 @@ export interface PushMessage {
   url: string;
   /** Notifications with the same tag replace each other instead of stacking. */
   tag?: string;
+  /** The app icon's badge: the recipient's unseen notifications. */
+  badge?: number;
 }
 
 export interface PushTarget {

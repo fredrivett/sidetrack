@@ -1,6 +1,7 @@
 import { getCurrentSession } from "@/auth/session";
 import { watchChanges } from "@/core/changes";
 import { getDb } from "@/core/db";
+import { markLooking } from "@/core/presence";
 
 const HEARTBEAT_MS = 25_000;
 const MAX_STREAM_MS = 10 * 60_000;
@@ -19,6 +20,9 @@ export async function GET(request: Request) {
     start(controller) {
       const send = (chunk: string) => controller.enqueue(encoder.encode(chunk));
       const unwatch = watchChanges(getDb().db, session.user.id, () => send("data: change\n\n"));
+      // The board holds this open only while it's on screen, so while it's
+      // open, notifications go to the inbox without a push.
+      const away = markLooking(session.user.id);
       // A comment now and then, so proxies don't close the stream when idle.
       const heartbeat = setInterval(() => send(": ping\n\n"), HEARTBEAT_MS);
       // A proxy can hold the stream open after the browser has gone, so it
@@ -32,6 +36,7 @@ export async function GET(request: Request) {
         clearInterval(heartbeat);
         clearTimeout(expiry);
         unwatch();
+        away();
       };
       request.signal.addEventListener("abort", () => stop());
       // The browser may have gone during the session lookup, before the

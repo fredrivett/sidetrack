@@ -13,6 +13,7 @@ import {
   setNotificationLevel,
 } from "./notifications";
 import { createProject, updateProject } from "./projects";
+import { markLooking } from "./presence";
 import { savePushSubscription } from "./push";
 import {
   acceptSpaceInvite,
@@ -59,6 +60,18 @@ const unread = (db: ReturnType<typeof seed>["db"], userId: string, ambient = fal
       ? [plainText(n.parts) + (n.snippet ? `: ${n.snippet}` : "")]
       : [],
   );
+
+/** A phone for `userId` to push to. */
+function subscribe(db: ReturnType<typeof seed>["db"], userId: string) {
+  const keys = {
+    p256dh: Buffer.alloc(65, 4).toString("base64url"),
+    auth: Buffer.alloc(16, 1).toString("base64url"),
+  };
+  savePushSubscription(db, userId, { endpoint: `https://web.push.apple.com/${userId}`, keys, deviceLabel: "iPhone" }, VAPID.publicKey);
+}
+
+/** When every group written so far is due to push. */
+const due = () => Date.now() + 5 * 60_000;
 
 beforeEach(() => sendPush.mockClear());
 
@@ -331,11 +344,11 @@ describe("notifications", () => {
       auth: Buffer.alloc(16, 1).toString("base64url"),
     };
     savePushSubscription(db, alice, { endpoint: "https://web.push.apple.com/a", keys, deviceLabel: "iPhone" }, VAPID.publicKey);
-    await deliverNotifications(db);
+    await deliverNotifications(db, due());
     sendPush.mockClear();
     const item = addItem(db, fred, { projectId: listId, title: "Fix tap" }, "web");
     updateProject(db, fred, listId, { name: "Flat" }, "web");
-    await deliverNotifications(db);
+    await deliverNotifications(db, due());
     expect(unread(db, alice, true)).toEqual(['Fred renamed "Home" to "Flat"', 'Fred added "Fix tap" to "Flat"']);
     expect(unread(db, alice)).toEqual([]);
     expect(sendPush).not.toHaveBeenCalled();
@@ -344,7 +357,7 @@ describe("notifications", () => {
     updateItem(db, fred, item.id, { title: "Fix the tap" }, "web");
     // Not a follower, so a rename of the item isn't hers to hear.
     addItem(db, fred, { projectId: listId, title: "Paint" }, "web");
-    await deliverNotifications(db);
+    await deliverNotifications(db, due());
     expect(sendPush).toHaveBeenCalledTimes(1);
     expect(sendPush).toHaveBeenCalledWith(
       expect.anything(),
@@ -394,12 +407,12 @@ describe("notifications", () => {
     };
     const endpoint = "https://web.push.apple.com/alice-phone";
     savePushSubscription(db, alice, { endpoint, keys, deviceLabel: "iPhone" }, VAPID.publicKey);
-    await deliverNotifications(db); // the seed's invite
+    await deliverNotifications(db, due()); // the seed's invite
     sendPush.mockClear();
 
     const item = addItem(db, fred, { projectId: listId, title: "Fix tap", assigneeIds: [alice] }, "web");
-    await Promise.all([deliverNotifications(db), deliverNotifications(db)]);
-    await deliverNotifications(db);
+    await Promise.all([deliverNotifications(db, due()), deliverNotifications(db, due())]);
+    await deliverNotifications(db, due());
     expect(sendPush).toHaveBeenCalledTimes(1);
     expect(sendPush).toHaveBeenCalledWith(
       [{ endpoint, keys }],
@@ -408,19 +421,91 @@ describe("notifications", () => {
         body: 'Fred added "Fix tap" for you',
         url: `/?p=${listId}&item=${item.id}`,
         tag: `item:${item.id}`,
+        badge: 1,
       },
       VAPID,
     );
   });
 
+  it("waits for a burst of changes to an item to go quiet, then pushes them as one", async () => {
+    const { db, fred, alice, listId } = seed();
+    subscribe(db, alice);
+    await deliverNotifications(db, due());
+    sendPush.mockClear();
+    const item = addItem(db, fred, { projectId: listId, title: "Fix tap" }, "web");
+    setFollowing(db, alice, item.id, true);
+    const start = Date.now();
+    updateItem(db, fred, item.id, { dueDate: "2026-12-01" }, "web");
+    addComment(db, fred, item.id, "On it", "web");
+    completeItem(db, fred, item.id, "web");
+    // Still busy: nothing yet, and it says when to look again.
+    const next = await deliverNotifications(db, start + 60_000);
+    expect(sendPush).not.toHaveBeenCalled();
+    expect(next).toBeGreaterThanOrEqual(start + 2 * 60_000);
+    await deliverNotifications(db, next ?? due());
+    expect(sendPush).toHaveBeenCalledTimes(1);
+    expect(sendPush.mock.calls[0]).toContainEqual(
+      expect.objectContaining({ body: 'Fred made 3 changes to "Fix tap"', tag: `item:${item.id}` }),
+    );
+    // Something aimed at her waits only briefly.
+    sendPush.mockClear();
+    updateItem(db, fred, item.id, { assigneeIds: [alice] }, "web");
+    await deliverNotifications(db, Date.now() + 31_000);
+    expect(sendPush.mock.calls[0]).toContainEqual(
+      expect.objectContaining({ body: 'Fred assigned you "Fix tap"' }),
+    );
+  });
+
+  it("sends nothing for a change undone before it went out", async () => {
+    const { db, fred, alice, listId } = seed();
+    subscribe(db, alice);
+    const item = addItem(db, fred, { projectId: listId, title: "Fix tap" }, "web");
+    setFollowing(db, alice, item.id, true);
+    await deliverNotifications(db, due());
+    markNotificationsRead(db, alice);
+    sendPush.mockClear();
+    completeItem(db, fred, item.id, "web");
+    uncompleteItem(db, fred, item.id, "web");
+    updateItem(db, fred, item.id, { assigneeIds: [alice] }, "web");
+    updateItem(db, fred, item.id, { assigneeIds: [] }, "web");
+    await deliverNotifications(db, due());
+    expect(sendPush).not.toHaveBeenCalled();
+    expect(unread(db, alice)).toEqual([]);
+    // Undone only as a pair: ticked twice over, it's still news.
+    completeItem(db, fred, item.id, "web");
+    uncompleteItem(db, fred, item.id, "web");
+    completeItem(db, fred, item.id, "web");
+    await deliverNotifications(db, due());
+    expect(sendPush.mock.calls[0]).toContainEqual(
+      expect.objectContaining({ body: 'Fred completed "Fix tap"' }),
+    );
+  });
+
+  it("doesn't push to someone looking at their board, and marks it seen", async () => {
+    const { db, fred, alice, listId } = seed();
+    subscribe(db, alice);
+    await deliverNotifications(db, due());
+    sendPush.mockClear();
+    const away = markLooking(alice);
+    addItem(db, fred, { projectId: listId, title: "Fix tap", assigneeIds: [alice] }, "web");
+    await deliverNotifications(db, due());
+    expect(sendPush).not.toHaveBeenCalled();
+    expect(unread(db, alice)).toEqual([]);
+    expect(listNotifications(db, alice)[0].parts.map((p) => p.text).join("")).toBe('Fred added Fix tap for you');
+    away();
+    addItem(db, fred, { projectId: listId, title: "Paint", assigneeIds: [alice] }, "web");
+    await deliverNotifications(db, due());
+    expect(sendPush).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps a notification too old to push in the inbox only", async () => {
     const { db, fred, alice, listId } = seed();
-    await deliverNotifications(db);
+    await deliverNotifications(db, due());
     sendPush.mockClear();
     const now = vi.spyOn(Date, "now").mockReturnValue(Date.now() - 11 * 60_000);
     addItem(db, fred, { projectId: listId, title: "Old news", assigneeIds: [alice] }, "web");
     now.mockRestore();
-    await deliverNotifications(db);
+    await deliverNotifications(db, due());
     expect(sendPush).not.toHaveBeenCalled();
     expect(unread(db, alice)).toContain('Fred added "Old news" for you');
   });
