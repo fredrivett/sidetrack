@@ -547,7 +547,10 @@ export type NotificationLevel = (typeof NOTIFICATION_LEVELS)[number];
 // "space:<id>" or "list:<id>". The most specific one set wins; with none,
 // "default". Due reminders have a scope of their own, "reminders", where
 // "all" pushes them (with none set, too), "default" keeps them to the inbox
-// and "mine" turns them off. Per person and seen by nobody else, so not
+// and "mine" turns them off. What isn't a person's doing (other people's
+// agents, GitHub, Sidetrack itself) has one too, "agents": "all" hears it
+// like people's, "default" (also with none set) keeps it to the inbox and
+// "mine" keeps only what's aimed at them. Per person and seen by nobody else, so not
 // audited, like following an item.
 export const notificationSettings = sqliteTable(
   "notification_settings",

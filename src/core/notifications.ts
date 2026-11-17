@@ -16,6 +16,7 @@ import { remindDue } from "./reminders";
 import { forgetPushSubscriptions, pushTargets } from "./push";
 import {
   auditLog,
+  type AuditSource,
   comments,
   items,
   NOTIFICATION_LEVELS,
@@ -275,14 +276,24 @@ function rule(
 /**
  * Write a notification for each person `event` concerns, in the change's
  * transaction (recordAudit calls this). Nobody hears about their own
- * change, except from their agent: an agent acting with their API key is
- * someone working for them. Only people who can open the list hear about
+ * change, except from their agent, and then only what's for them (it
+ * finished, or assigned or mentioned them): an agent acting with their API
+ * key is working for them, so the rest is their own doing. What other
+ * people's agents, GitHub and Sidetrack itself do is heard at the level set
+ * for "agents" (agentLevel). Only people who can open the list hear about
  * something in it.
  */
 // audit-exempt: derived from the audit row written in this transaction.
 export function writeNotifications(
   db: Db,
-  change: { auditId: string; ts: number; actor: string; agent: string | null; event: ChangeEvent },
+  change: {
+    auditId: string;
+    ts: number;
+    actor: string;
+    source: AuditSource;
+    agent: string | null;
+    event: ChangeEvent;
+  },
 ): void {
   const r = rule(db, change.event, change.actor);
   if (!r) return;
@@ -295,8 +306,8 @@ export function writeNotifications(
   }
   const { projectId, spaceId } = r;
   const to = [...best].filter(
-    ([u]) =>
-      (change.agent || u !== change.actor) &&
+    ([u, reason]) =>
+      (u !== change.actor || (change.agent !== null && tierOf(reason) === "direct")) &&
       (!projectId ||
         db
           .select({ id: projects.id })
@@ -317,6 +328,9 @@ export function writeNotifications(
     const level = levelFor(db, userId, projectId ?? null, space);
     const tier = tierOf(reason);
     if (level === "mine" && tier !== "direct") return [];
+    // Not a person: heard as they chose for agents. What's for them always is.
+    const bot = change.source !== "web" && tier !== "direct" ? agentLevel(db, userId) : "all";
+    if (bot === "mine") return [];
     return [
       {
         id: nanoid(12),
@@ -329,7 +343,8 @@ export function writeNotifications(
         createdAt: change.ts,
         // Activity is pushed only to those who asked for all of it; the rest
         // see it in the inbox. Marked sent, so the sender passes it by.
-        sentAt: tier === "ambient" && level !== "all" ? change.ts : null,
+        // So is the rest of what agents do, for those who keep it there.
+        sentAt: (tier === "ambient" && level !== "all") || bot === "default" ? change.ts : null,
       },
     ];
   });
@@ -381,6 +396,21 @@ function levelFor(
   return scopes.map((scope) => set.get(scope)).find(Boolean) ?? "default";
 }
 
+/**
+ * How `userId` hears what isn't a person's doing (other people's agents,
+ * GitHub, Sidetrack itself): "all" like people, "default" (also with
+ * nothing set) in the inbox only, "mine" only what's for them.
+ */
+function agentLevel(db: Db, userId: string): NotificationLevel {
+  return (
+    db
+      .select({ level: notificationSettings.level })
+      .from(notificationSettings)
+      .where(and(eq(notificationSettings.userId, userId), eq(notificationSettings.scope, "agents")))
+      .get()?.level ?? "default"
+  );
+}
+
 /** The levels `userId` has set, by scope ("all", "space:<id>", "list:<id>"). */
 export function listNotificationLevels(db: Db, userId: string): Record<string, NotificationLevel> {
   return Object.fromEntries(
@@ -408,6 +438,7 @@ export function setNotificationLevel(
   const reachable =
     scope === "all" ||
     scope === "reminders" ||
+    scope === "agents" ||
     (kind === "list" &&
       id &&
       db

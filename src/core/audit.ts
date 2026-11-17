@@ -92,7 +92,14 @@ export function recordAudit(db: Db, input: EventInput): void {
     })
     .run();
   // Who it concerns hears about it (notifications.ts), in this transaction.
-  writeNotifications(db, { auditId: id, ts, actor: input.actor, agent: agent?.name ?? null, event });
+  writeNotifications(db, {
+    auditId: id,
+    ts,
+    actor: input.actor,
+    source: origin.source,
+    agent: agent?.name ?? null,
+    event,
+  });
   // Every audited change reaches open pages once it commits (see changes.ts).
   announceChange({ actor: input.actor, projectId: columns.projectId });
 }
