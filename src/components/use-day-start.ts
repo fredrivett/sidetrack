@@ -1,6 +1,12 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import {
+  createContext,
+  createElement,
+  useContext,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { dayOf, nextDayStart, startOfDay } from "@/lib/time";
 
 // One timer and one visibility listener for every component on the page
@@ -64,4 +70,32 @@ export function useDayStart(): number {
 export function useToday(): string | null {
   const start = useDayStart();
   return Number.isFinite(start) ? dayOf(start) : null;
+}
+
+type Guess = { today: string | null; locale: string | null };
+
+const ServerGuess = createContext<Guess>({ today: null, locale: null });
+
+/** Gives the server's guess at the viewer's day and locale to useLabelDay. */
+export function ServerTodayProvider({
+  today,
+  locale,
+  children,
+}: Guess & { children: ReactNode }) {
+  return createElement(ServerGuess.Provider, { value: { today, locale } }, children);
+}
+
+/**
+ * The day and locale to write due labels in. Once the browser knows its day,
+ * that day and its own locale (undefined). Before then (server render and
+ * hydration), the server's guess: the day in the timezone the viewer last
+ * saved and the locale their browser last saved (LOCALE_COOKIE), each null
+ * when it hasn't saved one. Both render the same on the server and in the
+ * browser, so labels don't change as the page loads. The guessed day can be
+ * a day out after the viewer travels, until the browser corrects it.
+ */
+export function useLabelDay(): { today: string | null; locale: string | null | undefined } {
+  const today = useToday();
+  const guess = useContext(ServerGuess);
+  return today ? { today, locale: undefined } : guess;
 }
