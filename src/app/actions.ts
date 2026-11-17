@@ -85,6 +85,13 @@ import {
   reorderProject as reorderProjectCore,
   updateProject as updateProjectCore,
 } from "@/core/projects";
+import {
+  type PushSubscriptionInput,
+  forgetPushSubscriptions as forgetPushSubscriptionsCore,
+  pushTargets as pushTargetsCore,
+  removePushSubscription as removePushSubscriptionCore,
+  savePushSubscription as savePushSubscriptionCore,
+} from "@/core/push";
 import type { AuditSource, ProjectStatus, SpaceColor } from "@/core/schema";
 import {
   acceptSpaceInvite as acceptSpaceInviteCore,
@@ -118,6 +125,7 @@ import { getEnv } from "@/lib/env";
 import type { ItemFilters } from "@/lib/filters";
 import { checkDraftItem, suggestList } from "@/lib/itemSuggest";
 import { formatItemRef } from "@/lib/itemRef";
+import { sendPush } from "@/lib/push";
 import type { Repeat } from "@/lib/repeat";
 
 const SOURCE: AuditSource = "web";
@@ -857,6 +865,47 @@ export async function removeAgentWebhookAction(keyId: string) {
   const { db } = getDb();
   removeAgentWebhookCore(db, userId, keyId, SOURCE);
   revalidatePath("/settings/keys");
+}
+
+export async function savePushSubscriptionAction(input: PushSubscriptionInput) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  // Pick the fields, so a crafted call can't pass others.
+  const { endpoint, keys, deviceLabel } = input;
+  savePushSubscriptionCore(db, userId, {
+    endpoint,
+    keys: { p256dh: keys?.p256dh, auth: keys?.auth },
+    deviceLabel,
+  });
+  revalidatePath("/settings/notifications");
+}
+
+export async function removePushSubscriptionAction(endpoint: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  removePushSubscriptionCore(db, userId, endpoint);
+  revalidatePath("/settings/notifications");
+}
+
+/** Send a notification to each of the user's devices, to check push works. */
+export async function sendTestPushAction() {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const vapid = getEnv().VAPID;
+  if (!vapid) throw new Error("push notifications aren't set up on this server");
+  const { sent, gone } = await sendPush(
+    pushTargetsCore(db, userId),
+    {
+      title: "Sidetrack",
+      body: "Notifications are on for this device.",
+      url: "/settings/notifications",
+      tag: "test",
+    },
+    vapid,
+  );
+  forgetPushSubscriptionsCore(db, gone);
+  if (gone.length) revalidatePath("/settings/notifications");
+  return { sent };
 }
 
 /**

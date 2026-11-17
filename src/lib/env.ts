@@ -65,6 +65,9 @@ export interface ServerEnv {
   SIGNUP_NOTIFY_EMAIL: string | undefined;
   // TypeSafe Jev key for AI list-icon suggestions. Unset turns them off.
   TYPESAFE_API_KEY: string | undefined;
+  // Web Push (VAPID) keys and contact, for push notifications. Unset turns
+  // push off. The subject defaults to BETTER_AUTH_URL.
+  VAPID: { publicKey: string; privateKey: string; subject: string } | undefined;
 }
 
 // Production-required vars are enforced only when actually running in
@@ -117,8 +120,33 @@ function schemaFor(mode: EnvMode) {
       EMAIL_FROM: optionalTrimmed,
       SIGNUP_NOTIFY_EMAIL: optionalTrimmed,
       TYPESAFE_API_KEY: optionalTrimmed,
+      VAPID_PUBLIC_KEY: optionalTrimmed,
+      VAPID_PRIVATE_KEY: optionalTrimmed,
+      VAPID_SUBJECT: optionalTrimmed,
     })
     .superRefine((env, ctx) => {
+      // Half a key pair would only fail when the first push is sent.
+      if (!env.VAPID_PUBLIC_KEY !== !env.VAPID_PRIVATE_KEY) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["VAPID_PRIVATE_KEY"],
+          message:
+            "VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY go together: set both (generate " +
+            "them with `npx web-push generate-vapid-keys`) or neither.",
+        });
+      }
+      // Push services reject a push with no contact, and Apple rejects one
+      // that isn't a mailto: or https: URL.
+      const subject = env.VAPID_SUBJECT ?? env.BETTER_AUTH_URL;
+      if (env.VAPID_PUBLIC_KEY && !(subject && /^(mailto:|https:\/\/)/.test(subject))) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["VAPID_SUBJECT"],
+          message:
+            "Push needs a contact: set VAPID_SUBJECT to a mailto: or https:// URL " +
+            "(it defaults to BETTER_AUTH_URL when that's https).",
+        });
+      }
       if (enforce) {
         if (
           !env.BETTER_AUTH_SECRET ||
@@ -195,6 +223,15 @@ function schemaFor(mode: EnvMode) {
       EMAIL_FROM: env.EMAIL_FROM,
       SIGNUP_NOTIFY_EMAIL: env.SIGNUP_NOTIFY_EMAIL,
       TYPESAFE_API_KEY: env.TYPESAFE_API_KEY,
+      VAPID:
+        // superRefine checked that a key pair comes with a subject.
+        env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY
+          ? {
+              publicKey: env.VAPID_PUBLIC_KEY,
+              privateKey: env.VAPID_PRIVATE_KEY,
+              subject: env.VAPID_SUBJECT ?? env.BETTER_AUTH_URL ?? "",
+            }
+          : undefined,
     }));
 }
 

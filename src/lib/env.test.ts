@@ -152,6 +152,19 @@ describe("parseServerEnv", () => {
     ).toThrow(/SIGNUP_NOTIFY_EMAIL must be an email address/);
   });
 
+  it("turns push on only with a whole key pair and a contact Apple accepts", () => {
+    const dev = { nodeEnv: "development", nextPhase: undefined };
+    const keys = { VAPID_PUBLIC_KEY: "pub", VAPID_PRIVATE_KEY: "priv" };
+    expect(parseServerEnv({}, dev).VAPID).toBeUndefined();
+    // The contact falls back to the app's https URL.
+    expect(parseServerEnv({ ...keys, BETTER_AUTH_URL: "https://sidetrack.it" }, dev).VAPID)
+      .toEqual({ publicKey: "pub", privateKey: "priv", subject: "https://sidetrack.it" });
+    expect(() => parseServerEnv({ VAPID_PUBLIC_KEY: "pub" }, dev)).toThrow(/go together/);
+    expect(() =>
+      parseServerEnv({ ...keys, BETTER_AUTH_URL: "http://localhost:3000" }, dev),
+    ).toThrow(/VAPID_SUBJECT/);
+  });
+
   it("treats a whitespace-only SMTP_URL as unset", () => {
     // Use test mode so the development default (below) doesn't fill it back in.
     const env = parseServerEnv(
