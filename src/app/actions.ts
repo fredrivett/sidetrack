@@ -86,6 +86,7 @@ import {
   updateProject as updateProjectCore,
 } from "@/core/projects";
 import { markNotificationsRead as markNotificationsReadCore } from "@/core/notifications";
+import { setFollowing as setFollowingCore } from "@/core/follows";
 import {
   type PushSubscriptionInput,
   forgetPushSubscriptions as forgetPushSubscriptionsCore,
@@ -866,6 +867,14 @@ export async function removeAgentWebhookAction(keyId: string) {
   const { db } = getDb();
   removeAgentWebhookCore(db, userId, keyId, SOURCE);
   revalidatePath("/settings/keys");
+}
+
+/** Follow or unfollow an item, to hear its activity. */
+export async function setFollowingAction(itemId: string, following: boolean) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  setFollowingCore(db, userId, itemId, following);
+  refresh();
 }
 
 /** Mark the viewer's notifications `ids` seen, or all of them. */

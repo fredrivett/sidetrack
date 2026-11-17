@@ -78,6 +78,8 @@ export type ChangeEvent =
       labels: string[];
       assignees: PersonAt[];
       repeat: Repeat | null;
+      /** Added as one of its parent's lines, in the same go as the parent. */
+      withParent?: true;
     } & ItemAt)
   | ({ type: "item.updated"; projectId: string; changes: ItemChanges } & ItemAt)
   | ({
@@ -88,6 +90,8 @@ export type ChangeEvent =
        * the parent), or its parent (it's a sub-item ticked with it).
        */
       with?: ItemAt & { as: "last-sub-item" | "parent" };
+      /** Logged as already done when it was added. */
+      added?: true;
     } & ItemAt)
   | ({
       type: "item.reopened";

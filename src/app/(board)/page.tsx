@@ -12,6 +12,7 @@ import { getDb } from "@/core/db";
 import { projectRefPrefixes } from "@/core/itemRef";
 import { listItems, reopenDueRepeats } from "@/core/items";
 import { listNotifications } from "@/core/notifications";
+import { listFollowedItemIds } from "@/core/follows";
 import { listAssignees, listPendingInvites } from "@/core/members";
 import { listAllPrLinks, suggestedRepositories } from "@/core/prLinks";
 import { listProjects } from "@/core/projects";
@@ -109,6 +110,7 @@ export default async function Home({
         initialListId={typeof p === "string" ? p : null}
         initialItemId={typeof item === "string" ? item : null}
         notifications={listNotifications(db, userId)}
+        followedItemIds={listFollowedItemIds(db, userId)}
         initialCollapsedTrays={parseCollapsedTrays(
           (await cookies()).get(COLLAPSED_TRAYS_COOKIE)?.value,
         )}

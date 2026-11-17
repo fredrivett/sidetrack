@@ -347,6 +347,8 @@ export function addItem(
     subItems?: string[];
   },
   source: AuditOrigin,
+  /** Internal: a line added with its parent, by the parent's addItem. */
+  withParent = false,
 ): Item {
   const due = assertDue(input.dueDate, input.dueFrom);
   const repeat = assertRepeat(input.repeat ?? null);
@@ -423,6 +425,7 @@ export function addItem(
         labels: itemLabels,
         assignees: assigneeIds.map((a) => personAt(tx as unknown as Db, a)),
         repeat,
+        ...(withParent ? { withParent: true as const } : {}),
       },
     });
     // Created done: log the completion as its own row, as completeItem does,
@@ -431,7 +434,7 @@ export function addItem(
       recordAudit(tx as unknown as Db, {
         actor: userId,
         source,
-        event: { type: "item.completed", itemId: id, title, projectId: input.projectId },
+        event: { type: "item.completed", itemId: id, title, projectId: input.projectId, added: true },
       });
     }
     // A done sub-item doesn't contradict a finished parent; only an open one does.
@@ -446,6 +449,7 @@ export function addItem(
         userId,
         { projectId: input.projectId, title: subTitle, parentId: id, completed: input.completed },
         source,
+        true,
       );
     }
   });

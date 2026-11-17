@@ -513,10 +513,21 @@ export const pushSubscriptions = sqliteTable(
   (t) => [index("push_subscriptions_user").on(t.userId)],
 );
 
-// Why a change concerns its recipient (core/notifications.ts). Only changes
-// aimed at them for now: being assigned, mentioned or invited, and their
-// agent finishing work.
-export const NOTIFICATION_REASONS = ["assigned", "mentioned", "invited", "agent-finished"] as const;
+// Why a change concerns its recipient (core/notifications.ts), strongest
+// first: a change that concerns someone for two reasons tells them once,
+// for the first.
+export const NOTIFICATION_REASONS = [
+  // Direct: aimed at the recipient.
+  "assigned",
+  "mentioned",
+  "invited",
+  "agent-finished",
+  // Involved: something they're part of moved.
+  "unassigned",
+  "following",
+  "joined",
+  "role",
+] as const;
 export type NotificationReason = (typeof NOTIFICATION_REASONS)[number];
 
 // A user's inbox: one row per person a change concerns, written by
@@ -547,6 +558,24 @@ export const notifications = sqliteTable(
     // Only pending rows are ever looked up by it.
     index("notifications_unsent").on(t.sentAt).where(sql`${t.sentAt} is null`),
   ],
+);
+
+// Who follows an item, to hear its activity (core/follows.ts). People
+// follow automatically when they create it, are assigned, comment or are
+// mentioned; `following` false is someone's choice to unfollow, which those
+// don't undo. Following a parent covers its sub-items. Per person, and seen
+// by nobody else, so not audited, like a list's position.
+export const itemFollows = sqliteTable(
+  "item_follows",
+  {
+    itemId: text("item_id")
+      .notNull()
+      .references(() => items.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    following: integer("following", { mode: "boolean" }).notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.itemId, t.userId] }), index("item_follows_user").on(t.userId)],
 );
 
 export const meta = sqliteTable("meta", {

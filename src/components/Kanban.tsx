@@ -36,6 +36,7 @@ import { ItemDetailDialog } from "./ItemDetailDialog";
 import { BoardDrag } from "./BoardDrag";
 import { NewItemDialog } from "./NewItemDialog";
 import { NotificationsInbox } from "./NotificationsInbox";
+import { FollowsProvider } from "./follows";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { ProjectColumn } from "./ProjectColumn";
 import { PullToSearch } from "./PullToSearch";
@@ -100,6 +101,7 @@ export function Kanban({
   initialListId,
   initialItemId,
   notifications,
+  followedItemIds,
   filters: savedFilters,
   aiEnabled,
 }: {
@@ -137,6 +139,8 @@ export function Kanban({
   /** From `?item=`, an item to open on load, as tapping a notification does. */
   initialItemId: string | null;
   notifications: NotificationView[];
+  /** The items the viewer follows, sub-items of followed parents included. */
+  followedItemIds: string[];
   /** The viewer's own filters, as they last set them. */
   filters: ItemFilters;
   /** Whether Jev (TYPESAFE_API_KEY) is set up, for AI-only actions. */
@@ -576,6 +580,7 @@ export function Kanban({
   }, [projects, view]);
 
   return (
+    <FollowsProvider followedItemIds={followedItemIds}>
     <ItemChangesContext value={itemChanges}>
     <LabelsContext value={labelsByProject}>
     <RemoveListContext value={removeList}>
@@ -839,5 +844,6 @@ export function Kanban({
     </RemoveListContext>
     </LabelsContext>
     </ItemChangesContext>
+    </FollowsProvider>
   );
 }
