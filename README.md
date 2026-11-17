@@ -20,7 +20,7 @@ report back as they go.
 - 👥 **Sharing.** Share a list with someone, or keep lists in a Space for a
   household or small team
 - 🔀 **GitHub.** Pull requests that name an item link to it, and complete it
-  when they merge
+  when they merge ([setup](docs/github.md))
 - 📜 **Audit log.** Every change is recorded with who made it: you, a
   collaborator, an agent or GitHub
 - 📱 **Installable** as an iOS app (PWA)
@@ -64,39 +64,6 @@ Agents can read and search your lists, add, edit, complete and move items,
 mark the item they're working on and report progress, link pull requests, and
 manage sharing. A key acts as the person who created it. Its changes show in
 the audit log under the key's name, and you revoke it from the same page.
-
-## Follow pull requests from GitHub
-
-A GitHub webhook links pull requests to items and completes them on merge.
-
-**Set it up:**
-
-1. Under **GitHub** in the menu under your avatar, set up a webhook to get a
-   payload URL and secret.
-2. In the repository on GitHub, go to Settings → Webhooks and add them, with
-   content type `application/json`.
-3. Choose **Let me select individual events**, tick **Pull requests**, and
-   untick **Pushes**.
-
-GitHub must be able to reach your instance, so it needs a public address. One
-webhook works for any number of repositories.
-
-**Then:**
-
-- **Name items in the PR title** in square brackets, such as
-  `Fix login [SDT-1]` or `[SDT-1, SDT-2]`, to link them. Refs resolve against
-  your lists and the shared lists you've joined. If a ref matches items in
-  more than one list, add the list owner's username, such as `[alice/SDT-1]`.
-  A ref that matches no item, or several, is skipped.
-- **Editing a ref out of the title** unlinks that item, unless an agent linked
-  it with `link_item_to_pr`.
-- **When the PR merges,** every linked item is completed, however it was
-  linked.
-- **When the PR closes without merging,** agents working on its items are
-  taken off them, unless an item has another open PR. The items stay open.
-
-Every delivery is checked against the webhook's secret, and its changes show
-in the audit log as `github`.
 
 ## Contributing
 
