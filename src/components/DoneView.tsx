@@ -128,7 +128,7 @@ export function DoneView({
           {known && failed ? (
             <>
               {"Couldn't load older items. "}
-              <Button variant="link" size="sm" className="h-auto p-0" onClick={onRetry}>
+              <Button variant="link" size="sm" className="relative h-auto p-0 touch:h-auto touch:p-0 touch:after:absolute touch:after:-inset-x-2 touch:after:-inset-y-3" onClick={onRetry}>
                 Try again
               </Button>
             </>

@@ -342,11 +342,11 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
               nav={
                 // The board's view switch, showing the Board; the preview
                 // has no Agenda or Done to switch to.
-                <div className="flex rounded-md border border-neutral-200 p-0.5 text-xs font-medium dark:border-neutral-800">
+                <div className="flex h-7 rounded-md border border-neutral-200 p-0.5 text-[13px] font-medium max-[360px]:text-xs touch:h-9 touch:text-sm touch:max-[360px]:text-xs dark:border-neutral-800">
                   {["Board", "Agenda", "Done"].map((label, i) => (
                     <span
                       key={label}
-                      className={`whitespace-nowrap rounded px-1.5 py-0.5 max-[360px]:px-1 sm:px-2 ${
+                      className={`flex items-center whitespace-nowrap rounded px-2 max-[360px]:px-1.5 sm:px-2.5 ${
                         i === 0
                           ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
                           : "text-neutral-600 dark:text-neutral-300"
@@ -369,7 +369,7 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
                 <History />
                 <span className="hidden sm:inline">Activity</span>
               </span>
-              <UserAvatar user={FRED} size={28} />
+              <UserAvatar user={FRED} size={28} className="touch:size-9! touch:text-lg!" />
             </BoardHeader>
             <BoardRail>
               {trays.map((tray) => (

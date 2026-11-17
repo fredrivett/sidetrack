@@ -16,6 +16,9 @@
   }
 }
 
+/* Touch screens (a phone or tablet without a mouse): controls grow to
+   finger-sized targets there, keeping the denser sizes for a pointer. */
+@custom-variant touch (@media (hover: none) and (pointer: coarse));
 
 @theme inline {
   --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;

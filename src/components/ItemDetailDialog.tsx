@@ -208,7 +208,7 @@ function ItemActivity({ item }: { item: Item }) {
         type="button"
         onClick={() => setExpanded((e) => !e)}
         aria-expanded={expanded}
-        className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-neutral-400 transition hover:text-neutral-600 dark:hover:text-neutral-300"
+        className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-neutral-400 transition touch:-my-2 touch:py-2 touch:pr-4 hover:text-neutral-600 dark:hover:text-neutral-300"
       >
         <ChevronRight
           className={`size-3.5 transition-transform ${expanded ? "rotate-90" : ""}`}
@@ -391,7 +391,7 @@ function Checklist({
                     ? `${child.title}: assigned to ${assigneeNames(assigned)}. Change assignees`
                     : `Assign ${child.title}`
                 }
-                className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full text-neutral-300 transition hover:bg-neutral-100 hover:text-neutral-600 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+                className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full touch:h-8 touch:min-w-8 text-neutral-300 transition hover:bg-neutral-100 hover:text-neutral-600 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
               >
                 {assigned.length ? (
                   <AvatarStack users={assigned} size={18} ringClassName="ring-popover" />
@@ -588,7 +588,7 @@ export function ItemDetailDialog({
               type="button"
               onClick={() => void copy()}
               title="Copy ID"
-              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[11px] tracking-wide text-neutral-500 transition hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[11px] tracking-wide touch:py-1.5 touch:text-xs text-neutral-500 transition hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
             >
               {copied ? (
                 <Check className="size-3 opacity-70" />
