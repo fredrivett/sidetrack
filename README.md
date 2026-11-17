@@ -251,6 +251,17 @@ titles. All of this is sent to TypeSafe:
 | --- | --- | --- |
 | `TYPESAFE_API_KEY` | unset | TypeSafe API key. Unset turns suggestions off |
 
+**Optional** — push notifications (Settings → Notifications), including on
+iPhone and iPad once Sidetrack is added to the Home Screen. Generate a key
+pair once with `npx web-push generate-vapid-keys` and keep it: changing it
+turns push off on every device until it's turned on again:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `VAPID_PUBLIC_KEY` | unset | Public key. Set it and the private key together, or neither; unset turns push off |
+| `VAPID_PRIVATE_KEY` | unset | Private key |
+| `VAPID_SUBJECT` | `BETTER_AUTH_URL` | Contact for the push services, a `mailto:` or `https://` URL |
+
 **Optional** — analytics and error tracking with your own
 [PostHog](https://posthog.com) project. Entirely opt-in: with no keys set,
 nothing is sent anywhere, including to the Sidetrack project.

@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, Boxes, Check, CircleUserRound, KeyRound, Loader2, LogOut, Moon, Sun, SunMoon, UserRound } from "lucide-react";
+import { Archive, Bell, Boxes, Check, CircleUserRound, KeyRound, Loader2, LogOut, Moon, Sun, SunMoon, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
@@ -87,6 +87,14 @@ export function UserMenu({
             <Link href="/settings/profile">
               <UserRound />
               Profile
+            </Link>
+          }
+        />
+        <DropdownMenuItem
+          render={
+            <Link href="/settings/notifications">
+              <Bell />
+              Notifications
             </Link>
           }
         />

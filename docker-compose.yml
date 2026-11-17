@@ -39,6 +39,11 @@ services:
       SIGNUP_NOTIFY_EMAIL: ${SIGNUP_NOTIFY_EMAIL:-}
       # Optional. Enables AI list-icon suggestions. Unset = off.
       TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+      # Optional. Web Push keys for push notifications, from
+      # `npx web-push generate-vapid-keys`: both or neither. Unset = off.
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
       # Optional. Set your own PostHog key to enable server-side error tracking.
       # Unset = disabled, nothing is sent anywhere.
       POSTHOG_KEY: ${POSTHOG_KEY:-}

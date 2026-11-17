@@ -65,6 +65,9 @@ export interface ServerEnv {
   SIGNUP_NOTIFY_EMAIL: string | undefined;
   // TypeSafe Jev key for AI list-icon suggestions. Unset turns them off.
   TYPESAFE_API_KEY: string | undefined;
+  // Web Push (VAPID) keys and contact, for push notifications. Unset turns
+  // push off. The subject defaults to BETTER_AUTH_URL.
+  VAPID: { publicKey: string; privateKey: string; subject: string } | undefined;
 }
 
 // Production-required vars are enforced only when actually running in
@@ -78,6 +81,18 @@ function isHttpUrl(value: string): boolean {
   try {
     const url = new URL(value);
     return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+// A contact push services accept: an https URL with a host, or a mailto: with an address.
+function isPushContact(value: string | undefined): boolean {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    if (url.protocol === "https:") return url.hostname !== "";
+    return url.protocol === "mailto:" && /^[^@\s]+@[^@\s]+$/.test(url.pathname);
   } catch {
     return false;
   }
@@ -117,8 +132,47 @@ function schemaFor(mode: EnvMode) {
       EMAIL_FROM: optionalTrimmed,
       SIGNUP_NOTIFY_EMAIL: optionalTrimmed,
       TYPESAFE_API_KEY: optionalTrimmed,
+      VAPID_PUBLIC_KEY: optionalTrimmed,
+      VAPID_PRIVATE_KEY: optionalTrimmed,
+      VAPID_SUBJECT: optionalTrimmed,
     })
     .superRefine((env, ctx) => {
+      // Half a key pair would only fail when the first push is sent.
+      if (!env.VAPID_PUBLIC_KEY !== !env.VAPID_PRIVATE_KEY) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["VAPID_PRIVATE_KEY"],
+          message:
+            "VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY go together: set both (generate " +
+            "them with `npx web-push generate-vapid-keys`) or neither.",
+        });
+      }
+      // A mistyped key would only fail when a push is sent: the public key
+      // is a P-256 point (65 bytes), the private key 32 bytes, base64url.
+      const b64u = (value: string | undefined, bytes: number) =>
+        !value ||
+        (/^[A-Za-z0-9_-]+$/.test(value) && Buffer.from(value, "base64url").length === bytes);
+      if (!b64u(env.VAPID_PUBLIC_KEY, 65) || !b64u(env.VAPID_PRIVATE_KEY, 32)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["VAPID_PUBLIC_KEY"],
+          message:
+            "VAPID_PUBLIC_KEY or VAPID_PRIVATE_KEY isn't a Web Push key; copy both from " +
+            "`npx web-push generate-vapid-keys` whole.",
+        });
+      }
+      // Push services reject a push with no contact, and Apple rejects one
+      // that isn't a mailto: or https: URL.
+      const subject = env.VAPID_SUBJECT ?? env.BETTER_AUTH_URL;
+      if (env.VAPID_PUBLIC_KEY && !isPushContact(subject)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["VAPID_SUBJECT"],
+          message:
+            "Push needs a contact: set VAPID_SUBJECT to a mailto: or https:// URL " +
+            "(it defaults to BETTER_AUTH_URL when that's https).",
+        });
+      }
       if (enforce) {
         if (
           !env.BETTER_AUTH_SECRET ||
@@ -195,6 +249,15 @@ function schemaFor(mode: EnvMode) {
       EMAIL_FROM: env.EMAIL_FROM,
       SIGNUP_NOTIFY_EMAIL: env.SIGNUP_NOTIFY_EMAIL,
       TYPESAFE_API_KEY: env.TYPESAFE_API_KEY,
+      VAPID:
+        // superRefine checked that a key pair comes with a subject.
+        env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY
+          ? {
+              publicKey: env.VAPID_PUBLIC_KEY,
+              privateKey: env.VAPID_PRIVATE_KEY,
+              subject: env.VAPID_SUBJECT ?? env.BETTER_AUTH_URL ?? "",
+            }
+          : undefined,
     }));
 }
 

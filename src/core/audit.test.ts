@@ -266,6 +266,7 @@ const TABLE_AUDIT: Record<string, "audited" | `exempt: ${string}`> = {
   audit_log: "exempt: the log itself",
   meta: "exempt: app bookkeeping (sign-up lock, last backup time)",
   sessions: "exempt: Better Auth sign-in state",
+  push_subscriptions: "exempt: where to deliver push on one device, like a session",
   // Password changes and resets, by a trigger (migration 0021).
   accounts: "audited",
   verifications: "exempt: Better Auth one-time tokens (password reset)",

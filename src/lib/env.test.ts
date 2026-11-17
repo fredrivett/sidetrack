@@ -152,6 +152,32 @@ describe("parseServerEnv", () => {
     ).toThrow(/SIGNUP_NOTIFY_EMAIL must be an email address/);
   });
 
+  it("turns push on only with a whole, well-formed key pair and a contact Apple accepts", () => {
+    const dev = { nodeEnv: "development", nextPhase: undefined };
+    const pub = Buffer.alloc(65, 4).toString("base64url");
+    const priv = Buffer.alloc(32, 7).toString("base64url");
+    const keys = { VAPID_PUBLIC_KEY: pub, VAPID_PRIVATE_KEY: priv };
+    expect(parseServerEnv({}, dev).VAPID).toBeUndefined();
+    // The contact falls back to the app's https URL; VAPID_SUBJECT overrides it.
+    expect(parseServerEnv({ ...keys, BETTER_AUTH_URL: "https://sidetrack.it" }, dev).VAPID)
+      .toEqual({ publicKey: pub, privateKey: priv, subject: "https://sidetrack.it" });
+    expect(
+      parseServerEnv(
+        { ...keys, BETTER_AUTH_URL: "http://localhost:3000", VAPID_SUBJECT: "mailto:fred@example.com" },
+        dev,
+      ).VAPID?.subject,
+    ).toBe("mailto:fred@example.com");
+    expect(() => parseServerEnv({ VAPID_PUBLIC_KEY: pub }, dev)).toThrow(/go together/);
+    expect(() => parseServerEnv({ VAPID_PRIVATE_KEY: priv }, dev)).toThrow(/go together/);
+    // A truncated key, and contacts that look right but aren't.
+    expect(() =>
+      parseServerEnv({ ...keys, VAPID_PUBLIC_KEY: pub.slice(0, -4), VAPID_SUBJECT: "https://sidetrack.it" }, dev),
+    ).toThrow(/isn't a Web Push key/);
+    for (const subject of ["http://localhost:3000", "https://", "mailto:"]) {
+      expect(() => parseServerEnv({ ...keys, VAPID_SUBJECT: subject }, dev)).toThrow(/VAPID_SUBJECT/);
+    }
+  });
+
   it("treats a whitespace-only SMTP_URL as unset", () => {
     // Use test mode so the development default (below) doesn't fill it back in.
     const env = parseServerEnv(
