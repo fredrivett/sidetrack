@@ -265,8 +265,8 @@ export type AccountEvent =
   | { type: "api_key.webhook.set"; keyId: string; name: string; replaced: boolean }
   | { type: "api_key.webhook.removed"; keyId: string; name: string }
   /** `first`: the secret that set the webhook up. */
-  | { type: "github.secret.added"; webhookId: string; secret: string; first: boolean }
-  | { type: "github.secret.removed"; webhookId: string; secret: string }
+  | { type: "github.secret.added"; webhookId: string; secretId: string; name: string; first: boolean }
+  | { type: "github.secret.removed"; webhookId: string; secretId: string; name: string }
   | { type: "github.webhook.removed"; webhookId: string }
   | { type: "profile.username"; userId: string; from: string; to: string }
   /** `image` null: cleared. */

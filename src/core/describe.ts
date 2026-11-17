@@ -416,7 +416,13 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
     case "agent.requested":
       return [t("asked "), agent(event.agent), t(" to work on "), item(event)];
     case "agent.ended":
-      return [t("ended "), agent(event.agent), t("'s work on "), item(event), t(`: ${event.reason}`)];
+      return [
+        t("ended "),
+        agent(event.agent),
+        t("'s work on "),
+        item(event),
+        ...(event.reason ? [t(`: ${event.reason}`)] : []),
+      ];
     case "agent.stopped":
       return [
         t("stopped "),
@@ -440,10 +446,10 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
       return [t("stopped API key "), key(event.name), t(" starting work when assigned")];
     case "github.secret.added":
       return event.first
-        ? [t("set up the GitHub webhook with secret "), key(event.secret)]
-        : [t("added secret "), key(event.secret), t(" to the GitHub webhook")];
+        ? [t("set up the GitHub webhook with secret "), key(event.name)]
+        : [t("added secret "), key(event.name), t(" to the GitHub webhook")];
     case "github.secret.removed":
-      return [t("removed secret "), key(event.secret), t(" from the GitHub webhook")];
+      return [t("removed secret "), key(event.name), t(" from the GitHub webhook")];
     case "github.webhook.removed":
       return [t("removed the GitHub webhook")];
     case "profile.username":

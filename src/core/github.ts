@@ -90,7 +90,13 @@ export function addGithubWebhookSecret(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      event: { type: "github.secret.added", webhookId: id, secret: trimmed, first: !existing },
+      event: {
+        type: "github.secret.added",
+        webhookId: id,
+        secretId,
+        name: trimmed,
+        first: !existing,
+      },
     });
   });
   const webhook = getGithubWebhook(db, userId);
@@ -116,7 +122,12 @@ export function removeGithubWebhookSecret(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      event: { type: "github.secret.removed", webhookId: webhook.id, secret: secret.name },
+      event: {
+        type: "github.secret.removed",
+        webhookId: webhook.id,
+        secretId: secret.id,
+        name: secret.name,
+      },
     });
   });
   return true;
