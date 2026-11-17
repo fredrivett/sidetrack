@@ -25,6 +25,8 @@ import { type ItemFilters, matchesFilters } from "@/lib/filters";
 import { isEditableTarget, matchesShortcut } from "@/lib/keyboard";
 import { LOCALE_COOKIE } from "@/lib/time";
 import { Button } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AddProjectButton } from "./AddProjectButton";
 import { AuditDialog } from "./AuditDialog";
 import { BoardHeader, BoardMain, BoardRail } from "./BoardLayout";
@@ -38,6 +40,7 @@ import { BoardDrag } from "./BoardDrag";
 import { NewItemDialog } from "./NewItemDialog";
 import { NotificationsInbox } from "./NotificationsInbox";
 import { FollowsProvider } from "./follows";
+import { ShortcutsDialog } from "./ShortcutsDialog";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { ProjectColumn } from "./ProjectColumn";
 import { PullToSearch } from "./PullToSearch";
@@ -254,13 +257,13 @@ export function Kanban({
     setFilters(next);
     void runAction(setBoardFiltersAction(next), "save your filters");
   }
-  function switchView(next: BoardView) {
+  const switchView = useCallback((next: BoardView) => {
     setView(next);
     const url = new URL(window.location.href);
     if (next === "board") url.searchParams.delete("view");
     else url.searchParams.set("view", next);
     window.history.replaceState(null, "", url.toString());
-  }
+  }, []);
 
   const router = useRouter();
   // Agents work out "today" in the viewer's timezone (list_today), so save
@@ -412,6 +415,9 @@ export function Kanban({
   }
 
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [inboxOpen, setInboxOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   // Items opened from the palette get their own dialog here, since the item
   // may sit in a list the current view doesn't show.
   const boardItems = shown.flatMap((p) => itemsByProject[p.id] ?? []);
@@ -512,8 +518,12 @@ export function Kanban({
 
   // Global shortcuts: ⌘K / Ctrl+K toggles the command palette, even from a
   // field. Then Linear-style bare keys: / → palette, C → new item, ⇧C → new
-  // list. Those are skipped while typing in a field, and when a command
-  // modifier is held so we don't shadow ⌘C / Ctrl+C copy.
+  // list, F → Filter, N → notifications, 1–3 → the header's views, ? → the
+  // list of shortcuts (ShortcutsDialog, which lists any new one too). Those
+  // are skipped while typing in a field, and when a command modifier is held
+  // so we don't shadow ⌘C / Ctrl+C copy. F, N, the views and ? also wait
+  // while a dialog is open (an item's, the palette), which they'd act behind.
+  // A and I are taken: they assign the hovered item (useAssignShortcuts).
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (matchesShortcut(e, { key: "k", mod: true, shift: false, alt: false })) {
@@ -533,11 +543,31 @@ export function Kanban({
       } else if (matchesShortcut(e, { key: "c", shift: false })) {
         e.preventDefault();
         openNewItem();
+        return;
+      }
+      if (document.querySelector('[role="dialog"]')) return;
+      // ? is Shift+/ on most layouts, so it comes before the Shift check.
+      if (matchesShortcut(e, { key: "?" })) {
+        e.preventDefault();
+        setShortcutsOpen(true);
+        return;
+      }
+      if (e.shiftKey) return;
+      const nextView = BOARD_VIEWS[Number(e.key) - 1]?.[0];
+      if (matchesShortcut(e, { key: "f" })) {
+        e.preventDefault();
+        setFilterOpen((o) => !o);
+      } else if (matchesShortcut(e, { key: "n" })) {
+        e.preventDefault();
+        setInboxOpen((o) => !o);
+      } else if (nextView) {
+        e.preventDefault();
+        switchView(nextView);
       }
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [openNewItem]);
+  }, [openNewItem, switchView]);
 
   // On first paint, and on coming back from Agenda or Done (which unmount
   // the rail):
@@ -600,25 +630,36 @@ export function Kanban({
               // padding to make its tap target the full 36px.
               className="flex h-7 rounded-md border border-neutral-200 p-0.5 text-[13px] font-medium max-[360px]:text-xs touch:h-9 touch:text-sm touch:max-[360px]:text-xs dark:border-neutral-800"
             >
-              {BOARD_VIEWS.map(([v, label]) => (
-                <button
-                  key={v}
-                  type="button"
-                  aria-pressed={view === v}
-                  onClick={() => switchView(v)}
-                  className={`relative whitespace-nowrap rounded px-2 transition max-[360px]:px-1.5 sm:px-2.5 touch:after:absolute touch:after:inset-x-0 touch:after:-inset-y-[3px] ${
-                    view === v
-                      ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
-                      : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
-                  }`}
-                >
-                  {label}
-                </button>
+              {BOARD_VIEWS.map(([v, label], i) => (
+                <Tooltip key={v}>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        type="button"
+                        aria-pressed={view === v}
+                        aria-keyshortcuts={String(i + 1)}
+                        onClick={() => switchView(v)}
+                        className={`relative whitespace-nowrap rounded px-2 transition max-[360px]:px-1.5 sm:px-2.5 touch:after:absolute touch:after:inset-x-0 touch:after:-inset-y-[3px] ${
+                          view === v
+                            ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
+                            : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    }
+                  />
+                  <TooltipContent side="bottom">
+                    Go to {label} <Kbd>{i + 1}</Kbd>
+                  </TooltipContent>
+                </Tooltip>
               ))}
             </div>
           }
         >
           <FilterMenu
+            open={filterOpen}
+            onOpenChange={setFilterOpen}
             filters={shownFilters}
             onChange={changeFilters}
             people={people}
@@ -636,6 +677,8 @@ export function Kanban({
             <span className="hidden sm:inline">Activity</span>
           </Button>
           <NotificationsInbox
+            open={inboxOpen}
+            onOpenChange={setInboxOpen}
             notifications={notifications}
             onOpenNotification={(n) => {
               const target = new URL(n.url, window.location.href);
@@ -799,6 +842,7 @@ export function Kanban({
 
         <PullToSearch onOpen={() => setPaletteOpen(true)} />
 
+        <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
         <CommandPalette
           open={paletteOpen}
           onOpenChange={setPaletteOpen}
@@ -808,6 +852,7 @@ export function Kanban({
           onNewList={() => setNewList({ open: true, spaceId: "" })}
           onSwitchView={switchView}
           onShowActivity={() => setAudit({ open: true })}
+          onShowShortcuts={() => setShortcutsOpen(true)}
           onOpenList={openList}
           onOpenItem={paletteDetail.openDetail}
           onSearch={setSearch}

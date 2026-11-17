@@ -22,6 +22,7 @@ import {
 import { localDate, localDay, spanDates } from "@/lib/time";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
+import { Kbd } from "@/components/ui/kbd";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -51,12 +52,17 @@ const toggled = <T,>(list: T[], value: T, on: boolean) =>
  * `people` and `labels` are everyone and every label on the board's lists.
  */
 export function FilterMenu({
+  open,
+  onOpenChange,
   filters,
   onChange,
   people,
   labels,
   viewerId,
 }: {
+  /** Set by the board, whose F shortcut opens the menu; the button shows the key. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   filters: ItemFilters;
   onChange: (filters: ItemFilters) => void;
   people: AssigneeView[];
@@ -79,7 +85,7 @@ export function FilterMenu({
 
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu open={open} onOpenChange={onOpenChange}>
         <DropdownMenuTrigger
           render={
             // Just the icon on phones, where the header is full, with the
@@ -89,6 +95,7 @@ export function FilterMenu({
               variant="outline"
               size="sm"
               aria-label={count > 0 ? `Filter (${count} on)` : "Filter"}
+              aria-keyshortcuts={onOpenChange && "F"}
               className="relative"
             >
               <ListFilter />
@@ -98,6 +105,7 @@ export function FilterMenu({
                   {count}
                 </span>
               )}
+              {onOpenChange && <Kbd className="max-sm:hidden">F</Kbd>}
             </Button>
           }
         />

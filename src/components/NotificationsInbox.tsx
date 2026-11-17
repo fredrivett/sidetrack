@@ -4,7 +4,9 @@ import { Bell, CheckCheck } from "lucide-react";
 import { useState } from "react";
 import { markNotificationsReadAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { NotificationView } from "@/core/notifications";
 import { formatRelative } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -19,14 +21,18 @@ import { AgentAvatar, UserAvatar } from "./UserAvatar";
  * save fails.
  */
 export function NotificationsInbox({
+  open,
+  onOpenChange: setOpen,
   notifications,
   onOpenNotification,
 }: {
+  /** Controlled by the board, so its N shortcut can open the inbox. */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   notifications: NotificationView[];
   /** Show what a notification is about: its item, or the board for an invite. */
   onOpenNotification: (notification: NotificationView) => void;
 }) {
-  const [open, setOpen] = useState(false);
   // Marked seen since this page loaded, before the server says so.
   const [seen, setSeen] = useState<ReadonlySet<string>>(new Set());
   const unread = notifications.filter((n) => n.readAt === null && !seen.has(n.id));
@@ -46,26 +52,37 @@ export function NotificationsInbox({
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        render={
-          <Button
-            variant="outline"
-            size="sm"
-            aria-label={unread.length ? `Notifications, ${unread.length} unread` : "Notifications"}
-            className="relative"
-          >
-            <Bell />
-            {unread.length > 0 && (
-              <span
-                aria-hidden
-                className="absolute -top-1.5 -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] leading-none font-semibold text-white tabular-nums ring-2 ring-background"
-              >
-                {unread.length > 9 ? "9+" : unread.length}
-              </span>
-            )}
-          </Button>
-        }
-      />
+      {/* Hover names the bell and its N shortcut; not while the inbox is open. */}
+      <Tooltip disabled={open}>
+        <TooltipTrigger
+          render={
+            <PopoverTrigger
+              render={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-label={unread.length ? `Notifications, ${unread.length} unread` : "Notifications"}
+                  aria-keyshortcuts="N"
+                  className="relative"
+                >
+                  <Bell />
+                  {unread.length > 0 && (
+                    <span
+                      aria-hidden
+                      className="absolute -top-1.5 -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] leading-none font-semibold text-white tabular-nums ring-2 ring-background"
+                    >
+                      {unread.length > 9 ? "9+" : unread.length}
+                    </span>
+                  )}
+                </Button>
+              }
+            />
+          }
+        />
+        <TooltipContent side="bottom">
+          Notifications <Kbd>N</Kbd>
+        </TooltipContent>
+      </Tooltip>
       <PopoverContent align="end" className="w-[22rem] max-w-[calc(100vw-1rem)] p-0">
         <div className="flex items-baseline justify-between border-b border-border px-4 py-2.5">
           <h2 className="text-sm font-semibold">Notifications</h2>
