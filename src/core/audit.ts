@@ -4,7 +4,7 @@ import { hasProjectAccess } from "./access";
 import { users } from "./auth-schema";
 import { announceChange } from "./changes";
 import type { Db } from "./db";
-import { describeEvent, namesFrom, type Part, plainText } from "./describe";
+import { describeEvent, namesFor, type Part, plainText } from "./describe";
 import { auditColumns, type ChangeEvent } from "./events";
 import {
   type AuditAction,
@@ -205,7 +205,10 @@ export function listAudit(
     .limit(limit)
     .all();
 
-  const names = namesFrom(db);
+  const names = namesFor(
+    db,
+    rows.flatMap((r) => (r.entry.event ? [r.entry.event] : [])),
+  );
   return rows.map((r) => {
     const parts = r.entry.event ? describeEvent(r.entry.event, names) : null;
     return {

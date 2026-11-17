@@ -17,6 +17,12 @@ export interface ItemAt {
   title: string;
 }
 
+/** A person as they were labelled when the change happened, for once they're gone. */
+export interface PersonAt {
+  userId: string;
+  name: string;
+}
+
 export interface DueAt {
   dueDate: string | null;
   dueFrom: string | null;
@@ -27,7 +33,7 @@ export interface ItemChanges {
   title?: { from: string; to: string };
   description?: "edited" | "cleared";
   labels?: { added: string[]; removed: string[] };
-  assignees?: { added: string[]; removed: string[] };
+  assignees?: { added: PersonAt[]; removed: PersonAt[] };
   due?: DueAt;
   repeat?: Repeat | null;
 }
@@ -40,7 +46,7 @@ export type ChangeEvent =
       parent: ItemAt | null;
       due: DueAt;
       labels: string[];
-      assignees: string[];
+      assignees: PersonAt[];
       repeat: Repeat | null;
     } & ItemAt)
   | ({ type: "item.updated"; projectId: string; changes: ItemChanges } & ItemAt)

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createApiKey, revokeApiKey, verifyApiKey } from "./api-keys";
 import { listAudit, recordAudit } from "./audit";
 import { addItem, completeItem, deleteItem, setItemParent, updateItem } from "./items";
+import { acceptInvite, inviteMember } from "./members";
 import { createProject } from "./projects";
 import * as authSchema from "./auth-schema";
 import * as appSchema from "./schema";
@@ -302,6 +303,28 @@ describe("change events", () => {
       'completed "Fix tap"',
       'deleted "Fix the tap"',
     ]);
+  });
+
+  it("names a deleted assignee as they were, and a moved item as it was here", () => {
+    const { db } = createTestDb();
+    const fred = createTestUser(db, { username: "fred" });
+    const alice = createTestUser(db, { username: "alice" });
+    const home = createProject(db, fred, { name: "Home" }, "web");
+    const other = createProject(db, fred, { name: "Work" }, "web");
+    inviteMember(db, fred, home.id, "alice", "web");
+    acceptInvite(db, alice, home.id, "web");
+    const item = addItem(db, fred, { projectId: home.id, title: "Fix tap" }, "web");
+    updateItem(db, fred, item.id, { assigneeIds: [alice] }, "web");
+    db.delete(authSchema.users).where(eq(authSchema.users.id, alice)).run();
+    // Moved, then renamed for the new list's readers; Home's history keeps
+    // the name Home knew.
+    db.update(appSchema.items).set({ projectId: other.id }).where(eq(appSchema.items.id, item.id)).run();
+    db.update(appSchema.items).set({ title: "Secret" }).where(eq(appSchema.items.id, item.id)).run();
+    const history = listAudit(db, fred, { projectId: home.id })
+      .filter((e) => e.entityId === item.id)
+      .map((e) => e.detail)
+      .sort();
+    expect(history).toEqual(['Fix tap: assigned @alice', 'added task "Fix tap"']);
   });
 });
 

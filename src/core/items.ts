@@ -6,7 +6,7 @@ import { type AuditOrigin, recordAudit, SYSTEM_ACTOR } from "./audit";
 import { ensureLabels, type LabelEmoji, normalizeLabelNames } from "./labels";
 import { announceChange } from "./changes";
 import type { Db } from "./db";
-import type { ChangeEvent, ItemChanges } from "./events";
+import type { ChangeEvent, ItemChanges, PersonAt } from "./events";
 import { getTimeZone } from "./users";
 import {
   MAX_REPEAT_EVERY,
@@ -318,6 +318,10 @@ export function assigneeLabel(db: Db, id: string): string {
   return u?.username ? `@${u.username}` : (u?.name ?? u?.email ?? id);
 }
 
+function personAt(db: Db, userId: string): PersonAt {
+  return { userId, name: assigneeLabel(db, userId) };
+}
+
 export function addItem(
   db: Db,
   userId: string,
@@ -417,7 +421,7 @@ export function addItem(
         parent: parent ? { itemId: parent.id, title: parent.title } : null,
         due,
         labels: itemLabels,
-        assignees: assigneeIds,
+        assignees: assigneeIds.map((a) => personAt(tx as unknown as Db, a)),
         repeat,
       },
     });
@@ -550,7 +554,10 @@ export function updateItem(
     const removed = existing.assigneeIds.filter((a) => !ids.includes(a));
     if (added.length || removed.length) {
       next.assigneeIds = ids;
-      changes.assignees = { added, removed };
+      changes.assignees = {
+        added: added.map((a) => personAt(db, a)),
+        removed: removed.map((a) => personAt(db, a)),
+      };
     }
   }
   if (patch.dueDate !== undefined || patch.dueFrom !== undefined) {

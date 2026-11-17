@@ -1,9 +1,9 @@
-import { eq } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { ITEM_SORTS } from "../lib/itemSorts";
 import { repeatLabel } from "../lib/repeat";
 import { users } from "./auth-schema";
 import type { Db } from "./db";
-import type { ChangeEvent, DueAt } from "./events";
+import type { ChangeEvent, DueAt, ItemAt, PersonAt } from "./events";
 import { items, projects } from "./schema";
 
 // Turns change events (core/events.ts) into sentences. Activity, an item's
@@ -22,46 +22,73 @@ export interface Part {
   quote?: boolean;
 }
 
-/** Current names, looked up once each per page of rows. */
+/**
+ * Current names for the things a page of events mentions. An item reads by
+ * its current title only while it's still in the list the event happened
+ * in: once moved, its new title is for the new list's readers, who may not
+ * be this one. Anything gone, or moved, reads as the event stored it.
+ */
 export interface Names {
-  item(id: string, fallback: string): string;
-  person(id: string): string;
+  item(it: ItemAt, projectId: string): string;
+  person(p: PersonAt): string;
   list(id: string, fallback: string): string;
 }
 
-export function namesFrom(db: Db): Names {
-  const itemNames = new Map<string, string | null>();
-  const people = new Map<string, string>();
-  const lists = new Map<string, string | null>();
+/** Every id an event refers to, by the key that names it. */
+function collect(value: unknown, into: { items: Set<string>; people: Set<string>; lists: Set<string> }) {
+  if (Array.isArray(value)) {
+    for (const v of value) collect(v, into);
+  } else if (value && typeof value === "object") {
+    for (const [k, v] of Object.entries(value)) {
+      if (typeof v === "string") {
+        if (k === "itemId") into.items.add(v);
+        else if (k === "userId") into.people.add(v);
+        else if (k === "projectId") into.lists.add(v);
+      } else {
+        collect(v, into);
+      }
+    }
+  }
+}
+
+/** Current names for `events`, read in one query per kind of thing. */
+export function namesFor(db: Db, events: ChangeEvent[]): Names {
+  const ids = { items: new Set<string>(), people: new Set<string>(), lists: new Set<string>() };
+  collect(events, ids);
+  const itemRows = ids.items.size
+    ? db
+        .select({ id: items.id, title: items.title, projectId: items.projectId })
+        .from(items)
+        .where(inArray(items.id, [...ids.items]))
+        .all()
+    : [];
+  const userRows = ids.people.size
+    ? db
+        .select({ id: users.id, username: users.username, name: users.name, email: users.email })
+        .from(users)
+        .where(inArray(users.id, [...ids.people]))
+        .all()
+    : [];
+  const listRows = ids.lists.size
+    ? db
+        .select({ id: projects.id, name: projects.name })
+        .from(projects)
+        .where(inArray(projects.id, [...ids.lists]))
+        .all()
+    : [];
+  const itemById = new Map(itemRows.map((r) => [r.id, r]));
+  // `@username`, then name, then email.
+  const people = new Map(
+    userRows.map((u) => [u.id, u.username ? `@${u.username}` : (u.name ?? u.email)]),
+  );
+  const lists = new Map(listRows.map((r) => [r.id, r.name]));
   return {
-    item(id, fallback) {
-      if (!itemNames.has(id)) {
-        const row = db.select({ title: items.title }).from(items).where(eq(items.id, id)).get();
-        itemNames.set(id, row?.title ?? null);
-      }
-      return itemNames.get(id) ?? fallback;
+    item(it, projectId) {
+      const row = itemById.get(it.itemId);
+      return row && row.projectId === projectId ? row.title : it.title;
     },
-    // `@username`, then name, email, then the raw id (a deleted user).
-    person(id) {
-      let label = people.get(id);
-      if (label === undefined) {
-        const u = db
-          .select({ username: users.username, name: users.name, email: users.email })
-          .from(users)
-          .where(eq(users.id, id))
-          .get();
-        label = u?.username ? `@${u.username}` : (u?.name ?? u?.email ?? id);
-        people.set(id, label);
-      }
-      return label;
-    },
-    list(id, fallback) {
-      if (!lists.has(id)) {
-        const row = db.select({ name: projects.name }).from(projects).where(eq(projects.id, id)).get();
-        lists.set(id, row?.name ?? null);
-      }
-      return lists.get(id) ?? fallback;
-    },
+    person: (p) => people.get(p.userId) ?? p.name,
+    list: (id, fallback) => lists.get(id) ?? fallback,
   };
 }
 
@@ -76,17 +103,17 @@ export function dueText(due: DueAt): string {
 
 const t = (text: string): Part => ({ text });
 
-/** Several people, \", \"-separated, each standing out. */
-function people(names: Names, ids: string[]): Part[] {
-  return ids.flatMap((id, i) => [
+/** Several people, comma-separated, each standing out. */
+function people(names: Names, list: PersonAt[]): Part[] {
+  return list.flatMap((p, i) => [
     ...(i ? [t(", ")] : []),
-    { text: names.person(id), em: "person" as const },
+    { text: names.person(p), em: "person" as const },
   ]);
 }
 
 export function describeEvent(event: ChangeEvent, names: Names): Part[] {
-  const item = (it: { itemId: string; title: string }): Part => ({
-    text: names.item(it.itemId, it.title),
+  const item = (it: ItemAt): Part => ({
+    text: names.item(it, event.projectId),
     em: "item",
     quote: true,
   });
@@ -106,7 +133,7 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
       // A rename keeps the name it had, so the row says what it was.
       const subject: Part = c.title
         ? { text: c.title.from, em: "item" }
-        : { text: names.item(event.itemId, event.title), em: "item" };
+        : { text: names.item(event, event.projectId), em: "item" };
       const changes: Part[][] = [];
       if (c.title) changes.push([t(`renamed to "${c.title.to}"`)]);
       if (c.description) {
