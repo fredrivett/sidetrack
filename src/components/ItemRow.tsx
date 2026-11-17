@@ -232,10 +232,11 @@ export function ItemRow({
         onPointerEnter={() => setHovered(true)}
         onPointerLeave={() => setHovered(false)}
         onClick={openDetail}
-        className={`group relative flex items-start gap-2 rounded-lg border border-neutral-200 bg-white p-2 outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 ${
-          drag
-            ? "cursor-grab touch-manipulation active:cursor-grabbing"
-            : "cursor-pointer"
+        // Pointer everywhere, like the title button and controls inside it:
+        // a click opens the item, and the lifted card shows grabbing once a
+        // drag starts.
+        className={`group relative flex cursor-pointer items-start gap-2 rounded-lg border border-neutral-200 bg-white p-2 outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 ${
+          drag ? "touch-manipulation" : ""
         } ${
           // While dragged, the row stays behind as the empty slot it would
           // drop into: same size, its content hidden.

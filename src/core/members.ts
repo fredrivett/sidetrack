@@ -4,6 +4,7 @@ import { hasProjectAccess } from "./access";
 import { users } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
+import { type AccessLost, accessLost, type MemberExit, type PersonAt } from "./events";
 import { getProject, nextProjectPosition } from "./projects";
 import {
   agentSessions,
@@ -87,7 +88,7 @@ export function getUserName(db: Db, id: string): string | null {
   return user?.name ?? user?.email ?? null;
 }
 
-/** Display handle for an audit detail: `@username`, falling back to the id. */
+/** Display handle for a message: `@username`, falling back to the id. */
 export function handleFor(user: { username: string | null } | undefined, id: string) {
   return user?.username ? `@${user.username}` : id;
 }
@@ -143,11 +144,13 @@ export function inviteMember(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "create",
-      entityType: "member",
-      entityId: id,
-      projectId,
-      detail: `invited ${handleFor(target, target.id)} to "${project.name}"`,
+      event: {
+        type: "member.invited",
+        projectId,
+        listName: project.name,
+        membershipId: id,
+        member: personAt(target),
+      },
     });
   });
 
@@ -233,11 +236,12 @@ export function acceptInvite(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "update",
-      entityType: "member",
-      entityId: membership.id,
-      projectId,
-      detail: `accepted invite to "${projectName(db, projectId)}"`,
+      event: {
+        type: "member.joined",
+        projectId,
+        listName: projectName(db, projectId),
+        membershipId: membership.id,
+      },
     });
   });
 }
@@ -260,11 +264,12 @@ export function declineInvite(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "delete",
-      entityType: "member",
-      entityId: membership.id,
-      projectId,
-      detail: `declined invite to "${projectName(db, projectId)}"`,
+      event: {
+        type: "member.declined",
+        projectId,
+        listName: projectName(db, projectId),
+        membershipId: membership.id,
+      },
     });
   });
 }
@@ -303,32 +308,29 @@ export function removeMember(
   if (!membership) return;
 
   const target = getUserById(db, targetUserId);
-  const detail = leaving
-    ? `left "${projectName(db, projectId)}"`
+  const how: MemberExit = leaving
+    ? "left"
     : membership.status === "pending"
-      ? `revoked invite for ${handleFor(target, targetUserId)}`
-      : `removed ${handleFor(target, targetUserId)}`;
+      ? "revoked"
+      : "removed";
 
   db.transaction((tx) => {
     tx.delete(projectMembers)
       .where(eq(projectMembers.id, membership.id))
       .run();
-    const { unassigned, ended } = revokeListAccess(
-      tx as unknown as Db,
-      targetUserId,
-      projectId,
-    );
+    const lost = revokeListAccess(tx as unknown as Db, targetUserId, projectId);
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "delete",
-      entityType: "member",
-      entityId: membership.id,
-      projectId,
-      detail: [
-        detail,
-        ...accessLossDetail({ unassigned, ended }),
-      ].join(", "),
+      event: {
+        type: "member.removed",
+        projectId,
+        listName: projectName(db, projectId),
+        membershipId: membership.id,
+        member: personAt(target ?? { id: targetUserId, username: null }),
+        how,
+        lost: accessLost(lost),
+      },
     });
   });
 }
@@ -348,7 +350,7 @@ export function revokeListAccess(
   db: Db,
   userId: string,
   projectId: string,
-): { unassigned: number; ended: number } {
+): AccessLost {
   const stillHasAccess = db
     .select({ id: projects.id })
     .from(projects)
@@ -398,12 +400,9 @@ export function revokeListAccess(
   return { unassigned: held.length, ended };
 }
 
-/** The audit-detail phrases for what revokeListAccess cleaned up. */
-export function accessLossDetail(c: { unassigned: number; ended: number }): string[] {
-  return [
-    c.unassigned && `unassigned from ${c.unassigned} item${c.unassigned === 1 ? "" : "s"}`,
-    c.ended && `ended ${c.ended} agent session${c.ended === 1 ? "" : "s"}`,
-  ].filter((p): p is string => Boolean(p));
+/** A user as an event names them: `@username`, falling back to the id. */
+export function personAt(user: { id: string; username: string | null }): PersonAt {
+  return { userId: user.id, name: handleFor(user, user.id) };
 }
 
 /**

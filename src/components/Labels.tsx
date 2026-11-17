@@ -53,7 +53,7 @@ export function LabelBadge({
 }
 
 const CHIP =
-  "inline-flex h-7 max-w-full items-center rounded-md border border-input pr-0.5 pl-1.5 text-sm";
+  "inline-flex h-7 max-w-full items-center rounded-md border border-input pr-0.5 pl-1.5 text-sm touch:h-9 touch:pl-2";
 
 function RemoveButton({
   name,
@@ -71,7 +71,7 @@ function RemoveButton({
       aria-label={`Remove label ${name}`}
       aria-disabled={disabled || undefined}
       onClick={() => !disabled && onRemove()}
-      className="inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground aria-disabled:pointer-events-none aria-disabled:opacity-50"
+      className="inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground touch:size-8 hover:bg-muted hover:text-foreground aria-disabled:pointer-events-none aria-disabled:opacity-50"
     >
       <X className="size-3" />
     </button>
@@ -122,8 +122,8 @@ export function SavedLabelChip({
         label={`emoji for label ${label.name}`}
         size={16}
         // Less than the picker's usual padding, so the emoji sits close to
-        // the name.
-        className="p-0.5"
+        // the name; more on touch, for a finger-sized target.
+        className="p-0.5 touch:p-2"
         disabled={saving || disabled}
         suggestions={emoji.suggestions}
         onOpen={emoji.onOpen}
@@ -143,7 +143,7 @@ export function SavedLabelChip({
         onDraftChange={emoji.onDraftChange}
         required
         hold
-        className="min-w-0 truncate rounded pr-1 pl-0.5 hover:bg-muted"
+        className="min-w-0 truncate rounded pr-1 pl-0.5 hover:bg-muted touch:py-1.5"
         inputClassName="field-sizing-content h-6 min-w-12 pr-1 pl-0.5 py-0 text-sm"
       />
       <RemoveButton name={label.name} onRemove={onRemove} disabled={saving || disabled} />
@@ -179,8 +179,8 @@ export function DraftLabelChip({
         label={`emoji for label ${name}`}
         size={16}
         // Less than the picker's usual padding, so the emoji sits close to
-        // the name.
-        className="p-0.5"
+        // the name; more on touch, for a finger-sized target.
+        className="p-0.5 touch:p-2"
         disabled={disabled || !onEmoji}
         suggestions={[]}
         onSelect={(next) => onEmoji?.(next)}

@@ -48,7 +48,7 @@ export function SpaceMenu({
       <DropdownMenuTrigger
         aria-label={`${name} options`}
         aria-disabled={saving || undefined}
-        className="flex size-7 shrink-0 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-300/50 hover:text-neutral-700 aria-disabled:opacity-50 dark:hover:bg-neutral-700/50 dark:hover:text-neutral-300"
+        className="relative flex size-7 shrink-0 items-center touch:after:absolute touch:after:-inset-1.5 justify-center rounded-lg text-neutral-500 hover:bg-neutral-300/50 hover:text-neutral-700 aria-disabled:opacity-50 dark:hover:bg-neutral-700/50 dark:hover:text-neutral-300"
       >
         ⋯
       </DropdownMenuTrigger>

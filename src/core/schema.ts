@@ -10,6 +10,7 @@ import {
 } from "drizzle-orm/sqlite-core";
 import type { RepeatUnit } from "../lib/repeat";
 import { apiKeys } from "./auth-schema";
+import type { ChangeEvent } from "./events";
 
 // A list's lifecycle (a "project" in code; "list" to people and agents).
 // active lists are on the board; archived lists leave it, and every other
@@ -486,6 +487,32 @@ export const labels = sqliteTable(
   (t) => [uniqueIndex("labels_project_name").on(t.projectId, t.name)],
 );
 
+// A device a user turned push notifications on for: the browser's Web Push
+// subscription, which is where and how to send it a notification
+// (lib/push.ts). One row per endpoint, which is unique to the browser
+// install, so turning it on again on the same device replaces the row.
+// Delivery state, like sessions, so it isn't audited. No foreign key on
+// user_id, matching projects.user_id.
+export const pushSubscriptions = sqliteTable(
+  "push_subscriptions",
+  {
+    endpoint: text("endpoint").primaryKey(),
+    userId: text("user_id").notNull(),
+    // The subscription's keys (base64url), which encrypt what's sent to it.
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    // The server's VAPID public key the browser subscribed with. A
+    // subscription only takes pushes signed with its own key, so one made
+    // before the keys changed is dead until the device turns push on again.
+    vapidKey: text("vapid_key").notNull(),
+    // What the device said it was when it subscribed ("iPhone"), to tell
+    // devices apart in Settings.
+    deviceLabel: text("device_label").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [index("push_subscriptions_user").on(t.userId)],
+);
+
 export const meta = sqliteTable("meta", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
@@ -512,7 +539,13 @@ export const auditLog = sqliteTable(
     // moved out; for a comment's row, the item it's on. No FK, like
     // project_id: the parent may be deleted too.
     parentId: text("parent_id"),
+    // What happened, as free text. Only rows from before change events, and
+    // modules not yet moved to them, write it; an event row leaves it empty
+    // and is read back through core/describe.ts.
     detail: text("detail").notNull().default(""),
+    // What happened, as data (core/events.ts): ids, plus whatever a rename
+    // or delete could make unreadable. Null on free-text rows.
+    event: text("event", { mode: "json" }).$type<ChangeEvent>(),
     // The API key an agent (MCP) call came through, and that key's name at the
     // time ("Claude desktop"). Null for web and other non-agent changes. The
     // name is a snapshot, not a join: revoking a key deletes its row, and the

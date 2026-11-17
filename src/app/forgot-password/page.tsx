@@ -9,9 +9,11 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Forgot password", robots: { index: false } };
 
 export default function ForgotPasswordPage() {
-  // With no Resend key the reset link only appears in the server console, so
-  // the form's confirmation copy points self-hosted operators there.
-  const emailEnabled = Boolean(getEnv().RESEND_API_KEY);
+  // With neither SMTP nor Resend the reset link only appears in the server
+  // console, so the form's confirmation copy points self-hosted operators
+  // there. Matches the transports deliverEmail tries (src/lib/email.ts).
+  const env = getEnv();
+  const emailEnabled = Boolean(env.SMTP_URL || env.RESEND_API_KEY);
 
   return (
     <AuthShell>

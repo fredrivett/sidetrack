@@ -225,6 +225,19 @@ With it set:
   It also sends each open item's description, due date and open sub-item
   titles.
 
+### Push notifications
+
+For notifications in Settings → Notifications, including on iPhone and iPad once
+Sidetrack is added to the Home Screen. Generate a key pair once with
+`npx web-push generate-vapid-keys`, and keep it: changing it turns push off on
+every device until each turns it on again.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `VAPID_PUBLIC_KEY` | unset | Public key. Set it and the private key together, or neither. Unset turns push off |
+| `VAPID_PRIVATE_KEY` | unset | Private key |
+| `VAPID_SUBJECT` | `BETTER_AUTH_URL` | Contact for the push services: a `mailto:` or `https://` URL |
+
 ### Analytics and error tracking
 
 Opt-in, with your own [PostHog](https://posthog.com) project. With no keys

@@ -572,7 +572,10 @@ export function Kanban({
             <div
               role="group"
               aria-label="View"
-              className="flex rounded-md border border-neutral-200 p-0.5 text-xs font-medium dark:border-neutral-800"
+              // As tall as the header's buttons beside it: 28px, 36px on touch,
+              // where each segment's after: box reaches over the border and
+              // padding to make its tap target the full 36px.
+              className="flex h-7 rounded-md border border-neutral-200 p-0.5 text-[13px] font-medium max-[360px]:text-xs touch:h-9 touch:text-sm touch:max-[360px]:text-xs dark:border-neutral-800"
             >
               {BOARD_VIEWS.map(([v, label]) => (
                 <button
@@ -580,7 +583,7 @@ export function Kanban({
                   type="button"
                   aria-pressed={view === v}
                   onClick={() => switchView(v)}
-                  className={`whitespace-nowrap rounded px-1.5 py-0.5 transition max-[360px]:px-1 sm:px-2 ${
+                  className={`relative whitespace-nowrap rounded px-2 transition max-[360px]:px-1.5 sm:px-2.5 touch:after:absolute touch:after:inset-x-0 touch:after:-inset-y-[3px] ${
                     view === v
                       ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
                       : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
