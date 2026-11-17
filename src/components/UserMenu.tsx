@@ -1,24 +1,27 @@
 "use client";
 
-import { Archive, Bell, Boxes, Check, CircleUserRound, KeyRound, Loader2, LogOut, Moon, Sun, SunMoon, UserRound } from "lucide-react";
+import { Archive, Bell, Boxes, Check, CircleUserRound, History, KeyRound, Loader2, LogOut, Moon, Sun, SunMoon, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useTransition, type ComponentType } from "react";
 import { useCopy } from "@/components/ui/use-copy";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { GitHubMark } from "@/components/GitHubMark";
-import { UserAvatar, type AvatarUser } from "@/components/UserAvatar";
+import { assigneeName, UserAvatar, type AvatarUser } from "@/components/UserAvatar";
 import { signOut } from "@/auth/client";
 import { RELEASE } from "@/lib/release";
 import { parseTheme, setTheme, THEMES, type Theme } from "@/lib/theme";
@@ -30,20 +33,32 @@ const THEME_OPTIONS: Record<Theme, { label: string; Icon: typeof Sun }> = {
   dark: { label: "Dark", Icon: Moon },
 };
 
+/** The settings pages, in the menu's Settings group. */
+const SETTINGS_LINKS: [href: string, label: string, Icon: ComponentType<{ className?: string }>][] = [
+  ["/settings/profile", "Profile", UserRound],
+  ["/settings/notifications", "Notifications", Bell],
+  ["/settings/spaces", "Spaces", Boxes],
+  ["/settings/keys", "API keys", KeyRound],
+  ["/settings/github", "GitHub", GitHubMark],
+];
+
 /**
- * The avatar's menu: settings, theme, the Archived lists view, sign out and
- * the build.
+ * The avatar's menu: who's signed in, settings and theme, Activity and
+ * Archived lists, sign out and the build.
  */
 export function UserMenu({
   user,
   archivedCount,
   onShowArchived,
+  onShowActivity,
 }: {
   user: AvatarUser | null;
   /** How many lists are archived, for the Archived lists item. */
   archivedCount: number;
   /** Opens the Archived lists view. */
   onShowArchived: () => void;
+  /** Opens Activity for the whole board. */
+  onShowActivity: () => void;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -82,74 +97,76 @@ export function UserMenu({
           </button>
         }
       />
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem
-          render={
-            <Link href="/settings/profile">
-              <UserRound />
-              Profile
-            </Link>
-          }
-        />
-        <DropdownMenuItem
-          render={
-            <Link href="/settings/notifications">
-              <Bell />
-              Notifications
-            </Link>
-          }
-        />
-        <DropdownMenuItem
-          render={
-            <Link href="/settings/spaces">
-              <Boxes />
-              Spaces
-            </Link>
-          }
-        />
-        <DropdownMenuItem
-          render={
-            <Link href="/settings/keys">
-              <KeyRound />
-              API keys
-            </Link>
-          }
-        />
-        <DropdownMenuItem
-          render={
-            <Link href="/settings/github">
-              <GitHubMark />
-              GitHub
-            </Link>
-          }
-        />
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            <ThemeIcon />
-            Theme
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            <DropdownMenuRadioGroup
-              value={theme}
-              onValueChange={(next: string) => setTheme(parseTheme(next))}
-            >
-              {THEMES.map((value) => {
-                const { label, Icon } = THEME_OPTIONS[value];
-                return (
-                  <DropdownMenuRadioItem key={value} value={value}>
-                    <Icon />
-                    {label}
-                  </DropdownMenuRadioItem>
-                );
-              })}
-            </DropdownMenuRadioGroup>
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
+      {/* Roomier than the primitive's default: wider, with more padding
+          either side of each row, and separators still reaching the edges. */}
+      <DropdownMenuContent
+        align="end"
+        className="min-w-64 p-1.5 [&_[role^=menuitem]]:px-2.5 [&_[role=separator]]:-mx-1.5"
+      >
+        {user && (
+          <>
+            <div className="flex items-center gap-2.5 px-2.5 py-2">
+              <UserAvatar user={user} size={32} />
+              <div className="min-w-0 text-sm">
+                <div className="truncate font-medium">{user.name ?? assigneeName(user)}</div>
+                {user.email && (
+                  <div className="truncate text-xs text-muted-foreground">{user.email}</div>
+                )}
+              </div>
+            </div>
+            <DropdownMenuSeparator />
+          </>
+        )}
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="px-2.5">Settings</DropdownMenuLabel>
+          {SETTINGS_LINKS.map(([href, label, Icon]) => (
+            <DropdownMenuItem
+              key={href}
+              render={
+                <Link href={href}>
+                  <Icon />
+                  {label}
+                </Link>
+              }
+            />
+          ))}
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <ThemeIcon />
+              Theme
+              <DropdownMenuShortcut className="tracking-normal">
+                {THEME_OPTIONS[theme].label}
+              </DropdownMenuShortcut>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              <DropdownMenuRadioGroup
+                value={theme}
+                onValueChange={(next: string) => setTheme(parseTheme(next))}
+              >
+                {THEMES.map((value) => {
+                  const { label, Icon } = THEME_OPTIONS[value];
+                  return (
+                    <DropdownMenuRadioItem key={value} value={value}>
+                      <Icon />
+                      {label}
+                    </DropdownMenuRadioItem>
+                  );
+                })}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={onShowArchived}>
-          <Archive />
-          Archived lists{archivedCount > 0 ? ` (${archivedCount})` : ""}
-        </DropdownMenuItem>
+        <DropdownMenuGroup>
+          <DropdownMenuItem onClick={onShowActivity}>
+            <History />
+            Activity
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onShowArchived}>
+            <Archive />
+            Archived lists{archivedCount > 0 ? ` (${archivedCount})` : ""}
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
         <DropdownMenuSeparator />
         {/* Stays open so "Signing out…" shows until the redirect to /login. */}
         <DropdownMenuItem closeOnClick={false} onClick={onSignOut} disabled={pending}>
