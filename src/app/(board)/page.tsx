@@ -20,7 +20,7 @@ import { listPendingSpaceInvites, listSpaces, listTrays } from "@/core/spaces";
 import { COLLAPSED_TRAYS_COOKIE, parseCollapsedTrays } from "@/components/SpaceTray";
 import { getBoardFilters, getOverdueCollapsed, getProfile, getTimeZone } from "@/core/users";
 import { getEnv } from "@/lib/env";
-import { cookieLocale, dayOf, LOCALE_COOKIE, weekStartBound } from "@/lib/time";
+import { cookieLocale, dayOf, LOCALE_COOKIE, startOfDayIn, weekStartBound } from "@/lib/time";
 import { ServerTodayProvider } from "@/components/use-day-start";
 import type { ItemPrLink } from "@/core/schema";
 import { requireUserId } from "@/auth/session";
@@ -85,10 +85,12 @@ export default async function Home({
   }
 
   return (
-    // The viewer's day in their saved timezone, and their browser's locale,
-    // so due labels render on the server as the browser will write them.
+    // The viewer's day (and when it began) in their saved timezone, and their
+    // browser's locale, so due labels and each list's split of today's done
+    // items render on the server as the browser will have them.
     <ServerTodayProvider
       today={serverToday}
+      dayStart={timeZone ? startOfDayIn(timeZone) : null}
       locale={cookieLocale(cookieStore.get(LOCALE_COOKIE)?.value)}
     >
       {/* Agents' work sessions reach every row and detail dialog in every view. */}

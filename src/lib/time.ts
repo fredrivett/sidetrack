@@ -147,6 +147,42 @@ export function dayOf(ts: number, timeZone?: string): string {
   return Number(part("hour")) < DAY_START_HOUR ? addDays(day, -1) : day;
 }
 
+/** How far `timeZone`'s wall clock is ahead of UTC at `ts`, in ms. */
+function zoneOffset(ts: number, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
+    hourCycle: "h23",
+  }).formatToParts(new Date(ts));
+  const part = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+  const wall = Date.UTC(
+    part("year"),
+    part("month") - 1,
+    part("day"),
+    part("hour"),
+    part("minute"),
+    part("second"),
+  );
+  return wall - (ts - (ts % 1000));
+}
+
+/**
+ * startOfDay in a named IANA zone rather than the runtime's own: DAY_START_HOUR
+ * on the day `now` falls in there. The server uses it to guess the viewer's day.
+ */
+export function startOfDayIn(timeZone: string, now = Date.now()): number {
+  const wall = Date.parse(`${dayOf(now, timeZone)}T${String(DAY_START_HOUR).padStart(2, "0")}:00:00Z`);
+  // The offset at the first guess can be the other side of a DST change;
+  // the offset at the guess itself is the one at the turnover.
+  const guess = wall - zoneOffset(wall, timeZone);
+  return wall - zoneOffset(guess, timeZone);
+}
+
 /**
  * When an item is due: on `dueDate`, or, with `dueFrom`, any day of the span
  * from `dueFrom` to `dueDate` ("this week"). Overdue once `dueDate` passes.
