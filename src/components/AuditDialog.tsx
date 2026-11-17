@@ -118,10 +118,25 @@ export function AuditEntryRow({
         {e.source}
       </span>
       <div className="min-w-0 flex-1">
-        <p className="break-words text-sm">
-          <span className="font-medium">{verb}</span>{" "}
-          <span className="text-neutral-600 dark:text-neutral-300">{rest}</span>
-        </p>
+        {e.parts ? (
+          // Who and what stand out; the words between them don't.
+          <p className="break-words text-sm text-neutral-600 dark:text-neutral-300">
+            {e.parts.map((part, i) =>
+              part.em ? (
+                <span key={i} className="font-medium text-foreground">
+                  {part.text}
+                </span>
+              ) : (
+                part.text
+              ),
+            )}
+          </p>
+        ) : (
+          <p className="break-words text-sm">
+            <span className="font-medium">{verb}</span>{" "}
+            <span className="text-neutral-600 dark:text-neutral-300">{rest}</span>
+          </p>
+        )}
         <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-neutral-400">
           {(users.length > 0 || agents.length > 0) && (
             <AvatarStack users={users} agents={agents} size={16} ringClassName="ring-popover" />

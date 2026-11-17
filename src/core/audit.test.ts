@@ -3,7 +3,8 @@ import { SQLiteTable } from "drizzle-orm/sqlite-core";
 import { describe, expect, it } from "vitest";
 import { createApiKey, revokeApiKey, verifyApiKey } from "./api-keys";
 import { listAudit, recordAudit } from "./audit";
-import { addItem, deleteItem, setItemParent, updateItem } from "./items";
+import { addItem, completeItem, deleteItem, setItemParent, updateItem } from "./items";
+import { acceptInvite, inviteMember } from "./members";
 import { createProject } from "./projects";
 import * as authSchema from "./auth-schema";
 import * as appSchema from "./schema";
@@ -271,6 +272,61 @@ const TABLE_AUDIT: Record<string, "audited" | `exempt: ${string}`> = {
   accounts: "audited",
   verifications: "exempt: Better Auth one-time tokens (password reset)",
 };
+
+describe("change events", () => {
+  it("shows an item by its current name, and by the one it had once it's gone", () => {
+    const { db } = createTestDb();
+    const fred = createTestUser(db, { username: "fred" });
+    const list = createProject(db, fred, { name: "Home" }, "web");
+    const item = addItem(db, fred, { projectId: list.id, title: "Fix tap" }, "web");
+    completeItem(db, fred, item.id, "web");
+    updateItem(db, fred, item.id, { title: "Fix the tap" }, "web");
+    // Rows written in the same millisecond have no set order.
+    const history = () =>
+      listAudit(db, fred, { projectId: list.id })
+        .filter((e) => e.entityId === item.id)
+        .map((e) => e.detail)
+        .sort();
+    expect(history()).toEqual([
+      'Fix tap: renamed to "Fix the tap"',
+      'added task "Fix the tap"',
+      'completed "Fix the tap"',
+    ]);
+    // A rename keeps the name it had, so its row still says what changed.
+    const rename = listAudit(db, fred, { projectId: list.id }).find((e) => e.action === "update");
+    expect(rename?.parts?.filter((p) => p.em).map((p) => p.text)).toEqual(["Fix tap"]);
+    deleteItem(db, fred, item.id, "web");
+    // Gone, so each row reads with the name it had then.
+    expect(history()).toEqual([
+      'Fix tap: renamed to "Fix the tap"',
+      'added task "Fix tap"',
+      'completed "Fix tap"',
+      'deleted "Fix the tap"',
+    ]);
+  });
+
+  it("names a deleted assignee as they were, and a moved item as it was here", () => {
+    const { db } = createTestDb();
+    const fred = createTestUser(db, { username: "fred" });
+    const alice = createTestUser(db, { username: "alice" });
+    const home = createProject(db, fred, { name: "Home" }, "web");
+    const other = createProject(db, fred, { name: "Work" }, "web");
+    inviteMember(db, fred, home.id, "alice", "web");
+    acceptInvite(db, alice, home.id, "web");
+    const item = addItem(db, fred, { projectId: home.id, title: "Fix tap" }, "web");
+    updateItem(db, fred, item.id, { assigneeIds: [alice] }, "web");
+    db.delete(authSchema.users).where(eq(authSchema.users.id, alice)).run();
+    // Moved, then renamed for the new list's readers; Home's history keeps
+    // the name Home knew.
+    db.update(appSchema.items).set({ projectId: other.id }).where(eq(appSchema.items.id, item.id)).run();
+    db.update(appSchema.items).set({ title: "Secret" }).where(eq(appSchema.items.id, item.id)).run();
+    const history = listAudit(db, fred, { projectId: home.id })
+      .filter((e) => e.entityId === item.id)
+      .map((e) => e.detail)
+      .sort();
+    expect(history).toEqual(['Fix tap: assigned @alice', 'added task "Fix tap"']);
+  });
+});
 
 describe("audit coverage", () => {
   it("classifies every table as audited or exempt", () => {
