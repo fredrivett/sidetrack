@@ -10,7 +10,7 @@ import { requestPasswordReset } from "@/auth/client";
 export function ForgotPasswordForm({
   emailEnabled,
 }: {
-  // Whether the server can actually send email (Resend configured). Without
+  // Whether the server can actually send email (SMTP or Resend). Without
   // it the reset link is logged to the server console, so point self-hosted
   // operators there instead of at an inbox that will stay empty.
   emailEnabled: boolean;
