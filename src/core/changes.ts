@@ -51,6 +51,14 @@ export function announceChange(change: Change): void {
   });
 }
 
+/** Call listener with each batch of committed changes. Returns the unsubscribe function. */
+export function onChanges(listener: Listener): () => void {
+  bus.listeners.add(listener);
+  return () => {
+    bus.listeners.delete(listener);
+  };
+}
+
 /**
  * Call onChange after each batch of changes that affects what userId sees:
  * their own changes, changes to a list they can see or are invited to, and
@@ -73,10 +81,7 @@ export function watchChanges(db: Db, userId: string, onChange: () => void): () =
     before = after;
     if (affected) onChange();
   };
-  bus.listeners.add(listener);
-  return () => {
-    bus.listeners.delete(listener);
-  };
+  return onChanges(listener);
 }
 
 /** The lists whose changes userId sees, and the people they share them or a

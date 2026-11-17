@@ -124,11 +124,15 @@ export type ChangeEvent =
     }
   // Comments
   | {
-      type: "comment.created" | "comment.edited" | "comment.deleted";
+      type: "comment.created" | "comment.edited";
       projectId: string;
       commentId: string;
       item: ItemAt;
+      /** Who it @mentions: everyone on a new comment, and only those it
+       * didn't mention before on an edit. Left out when none. */
+      mentioned?: PersonAt[];
     }
+  | { type: "comment.deleted"; projectId: string; commentId: string; item: ItemAt }
   // Lists
   | { type: "list.created"; projectId: string; listName: string; space: SpaceAt | null }
   | { type: "list.updated"; projectId: string; listName: string; changes: ListChanges }

@@ -13,6 +13,10 @@ export async function register() {
   const { scheduleBackups } = await import("./core/backup");
   runMigrations();
   scheduleBackups();
+  // Pushes each notification once the change that wrote it commits.
+  const { getDb } = await import("./core/db");
+  const { startNotificationDelivery } = await import("./core/notifications");
+  startNotificationDelivery(getDb().db);
 }
 
 // Server-side error tracking. No-op unless POSTHOG_KEY is set (see lib/posthog).

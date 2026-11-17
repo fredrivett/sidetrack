@@ -85,6 +85,7 @@ import {
   reorderProject as reorderProjectCore,
   updateProject as updateProjectCore,
 } from "@/core/projects";
+import { markNotificationsRead as markNotificationsReadCore } from "@/core/notifications";
 import {
   type PushSubscriptionInput,
   forgetPushSubscriptions as forgetPushSubscriptionsCore,
@@ -865,6 +866,14 @@ export async function removeAgentWebhookAction(keyId: string) {
   const { db } = getDb();
   removeAgentWebhookCore(db, userId, keyId, SOURCE);
   revalidatePath("/settings/keys");
+}
+
+/** Mark the viewer's notifications `ids` seen, or all of them. */
+export async function markNotificationsReadAction(ids?: string[]) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  markNotificationsReadCore(db, userId, ids);
+  refresh();
 }
 
 /** The server's VAPID keys; push actions refuse to run without them. */

@@ -17,9 +17,11 @@ import type { Item } from "@/core/schema";
  * an effect — to stay clear of the no-ref-in-render / no-setState-in-effect
  * lint rules.
  */
-export function useItemDetailDialog(items: Item[]) {
-  const [openItemId, setOpenItemId] = useState<string | null>(null);
-  const [closingItem, setClosingItem] = useState<Item | null>(null);
+export function useItemDetailDialog(items: Item[], initialItemId: string | null = null) {
+  const [openItemId, setOpenItemId] = useState(initialItemId);
+  const [closingItem, setClosingItem] = useState<Item | null>(
+    () => items.find((i) => i.id === initialItemId) ?? null,
+  );
   const openItem = openItemId
     ? (items.find((i) => i.id === openItemId) ?? null)
     : null;

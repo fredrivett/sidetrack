@@ -11,6 +11,7 @@ import { listLabels } from "@/core/labels";
 import { getDb } from "@/core/db";
 import { projectRefPrefixes } from "@/core/itemRef";
 import { listItems, reopenDueRepeats } from "@/core/items";
+import { listNotifications } from "@/core/notifications";
 import { listAssignees, listPendingInvites } from "@/core/members";
 import { listAllPrLinks, suggestedRepositories } from "@/core/prLinks";
 import { listProjects } from "@/core/projects";
@@ -27,9 +28,13 @@ export const dynamic = "force-dynamic";
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string | string[]; p?: string | string[] }>;
+  searchParams: Promise<{
+    view?: string | string[];
+    p?: string | string[];
+    item?: string | string[];
+  }>;
 }) {
-  const { view, p } = await searchParams;
+  const { view, p, item } = await searchParams;
   const userId = await requireUserId();
   const { db } = getDb();
   // Repeating items whose next due day has come reopen as the page loads.
@@ -102,6 +107,8 @@ export default async function Home({
         trayOrder={listTrays(db, userId)}
         pendingSpaceInvites={listPendingSpaceInvites(db, userId)}
         initialListId={typeof p === "string" ? p : null}
+        initialItemId={typeof item === "string" ? item : null}
+        notifications={listNotifications(db, userId)}
         initialCollapsedTrays={parseCollapsedTrays(
           (await cookies()).get(COLLAPSED_TRAYS_COOKIE)?.value,
         )}

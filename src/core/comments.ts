@@ -7,7 +7,8 @@ import type { Db } from "./db";
 import { formatItemRef } from "../lib/itemRef";
 import { mentionedPeople } from "../lib/mentions";
 import { getItem } from "./items";
-import { listAssignees } from "./members";
+import type { PersonAt } from "./events";
+import { listAssignees, personAt } from "./members";
 import { getProject } from "./projects";
 import { type Comment, COMMENT_MAX, comments, type Item, items, projects } from "./schema";
 
@@ -128,6 +129,23 @@ export interface MentionNotice {
   body: string;
 }
 
+/** The people `body` @mentions on the list who `before`, the text it
+ * replaced, didn't, as an event names them. Undefined when there are none. */
+function newlyMentioned(
+  db: Db,
+  userId: string,
+  projectId: string,
+  body: string,
+  before?: string,
+): PersonAt[] | undefined {
+  const people = listAssignees(db, userId, projectId);
+  const already = new Set(before === undefined ? [] : mentionedPeople(before, people));
+  const added = mentionedPeople(body, people).filter((p) => !already.has(p));
+  return added.length
+    ? added.map((p) => personAt({ id: p.userId, username: p.username }))
+    : undefined;
+}
+
 /**
  * The people a comment @mentions who can open its item, to notify. `before`,
  * the text an edit replaced, leaves out who it already mentioned. The author
@@ -207,6 +225,7 @@ export function addComment(
         projectId: item.projectId,
         commentId: id,
         item: { itemId: item.id, title: item.title },
+        mentioned: newlyMentioned(tx as unknown as Db, userId, item.projectId, body),
       },
     });
   });
@@ -239,6 +258,7 @@ export function updateComment(
           projectId: item.projectId,
           commentId: id,
           item: { itemId: item.id, title: item.title },
+          mentioned: newlyMentioned(tx as unknown as Db, userId, item.projectId, body, comment.body),
         },
       });
     });

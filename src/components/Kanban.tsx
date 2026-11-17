@@ -19,6 +19,7 @@ import {
   setTimeZoneAction,
 } from "@/app/actions";
 import type { Item, ItemPrLink, Label, Project } from "@/core/schema";
+import type { NotificationView } from "@/core/notifications";
 import type { PendingSpaceInviteView, SpaceView } from "@/core/spaces";
 import { type ItemFilters, matchesFilters } from "@/lib/filters";
 import { isEditableTarget, matchesShortcut } from "@/lib/keyboard";
@@ -34,6 +35,7 @@ import { InvitesBanner } from "./InvitesBanner";
 import { ItemDetailDialog } from "./ItemDetailDialog";
 import { BoardDrag } from "./BoardDrag";
 import { NewItemDialog } from "./NewItemDialog";
+import { NotificationsInbox } from "./NotificationsInbox";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { ProjectColumn } from "./ProjectColumn";
 import { PullToSearch } from "./PullToSearch";
@@ -96,6 +98,8 @@ export function Kanban({
   pendingSpaceInvites,
   initialCollapsedTrays,
   initialListId,
+  initialItemId,
+  notifications,
   filters: savedFilters,
   aiEnabled,
 }: {
@@ -130,6 +134,9 @@ export function Kanban({
   initialCollapsedTrays: string[];
   /** From `?p=`, the list the board opens centred on. */
   initialListId: string | null;
+  /** From `?item=`, an item to open on load, as tapping a notification does. */
+  initialItemId: string | null;
+  notifications: NotificationView[];
   /** The viewer's own filters, as they last set them. */
   filters: ItemFilters;
   /** Whether Jev (TYPESAFE_API_KEY) is set up, for AI-only actions. */
@@ -414,7 +421,14 @@ export function Kanban({
       (subItems > 0 && matchesFilters(bare, item, shownFilters, today))
     );
   };
-  const paletteDetail = useItemDetailDialog(boardItems);
+  const paletteDetail = useItemDetailDialog(boardItems, initialItemId);
+  // ?item= opens the item once; a reload shouldn't open it again.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("item")) return;
+    url.searchParams.delete("item");
+    window.history.replaceState(null, "", url.toString());
+  }, []);
   const paletteProject = shown.find(
     (p) => p.id === paletteDetail.item?.projectId,
   );
@@ -612,6 +626,17 @@ export function Kanban({
             <History />
             <span className="hidden sm:inline">Activity</span>
           </Button>
+          <NotificationsInbox
+            notifications={notifications}
+            onOpenNotification={(n) => {
+              const target = new URL(n.url, window.location.href);
+              const itemId = target.searchParams.get("item");
+              const item = itemId && boardItems.find((i) => i.id === itemId);
+              if (!item) return;
+              openList(item.projectId);
+              paletteDetail.openDetail(item);
+            }}
+          />
           <UserMenu
             user={viewer}
             archivedCount={archived.length}
