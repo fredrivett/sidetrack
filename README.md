@@ -2,12 +2,18 @@
 
 # Sidetrack
 
-A calm board for everything you're building on the side, with an
-[MCP](https://modelcontextprotocol.io) server built in so your AI agents can
-keep it up to date. Open source and self-hostable.
+There's always something to do, and too much to keep track of. Some of it
+solo, some shared, some you're hacking on with an agent.
 
-- 🤖 **Agent first.** Agents read and update your lists, mark what they're
-  working on, and link their pull requests
+Sidetrack gives each one a simple list, side by side, so you can see it all at
+a glance.
+
+Assign tasks to people, or agents, who automatically pick up the work and
+report back as they go.
+
+- 🤖 **Agent first.** Agents read and update your lists over
+  [MCP](https://modelcontextprotocol.io), mark what they're working on, and
+  link their pull requests
 - 📁 **Lists, items and sub-items**, with emoji labels, due dates, repeats and
   drag to reorder
 - 🗓️ **Board, Agenda and Done** views that update live
