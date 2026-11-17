@@ -67,16 +67,17 @@ export function UserMenu({
       <DropdownMenuTrigger
         render={
           // The avatar is the button: the user's image once set (Profile),
-          // else their initial. 28px matches the header's size="sm" buttons.
+          // else their initial. 28px (36px on touch) matches the header's
+          // size="sm" buttons.
           <button
             type="button"
             aria-label="Account"
             className="shrink-0 rounded-full outline-none transition-opacity hover:opacity-80 focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             {user ? (
-              <UserAvatar user={user} size={28} />
+              <UserAvatar user={user} size={28} className="touch:size-9! touch:text-lg!" />
             ) : (
-              <CircleUserRound className="size-7 text-muted-foreground" />
+              <CircleUserRound className="size-7 text-muted-foreground touch:size-9" />
             )}
           </button>
         }

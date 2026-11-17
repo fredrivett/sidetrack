@@ -53,7 +53,7 @@ export function LabelBadge({
 }
 
 const CHIP =
-  "inline-flex h-7 max-w-full items-center rounded-md border border-input pr-0.5 pl-1.5 text-sm";
+  "inline-flex h-7 max-w-full items-center rounded-md border border-input pr-0.5 pl-1.5 text-sm touch:h-9 touch:pl-2";
 
 function RemoveButton({
   name,
@@ -71,7 +71,7 @@ function RemoveButton({
       aria-label={`Remove label ${name}`}
       aria-disabled={disabled || undefined}
       onClick={() => !disabled && onRemove()}
-      className="inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground aria-disabled:pointer-events-none aria-disabled:opacity-50"
+      className="inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground touch:size-8 hover:bg-muted hover:text-foreground aria-disabled:pointer-events-none aria-disabled:opacity-50"
     >
       <X className="size-3" />
     </button>

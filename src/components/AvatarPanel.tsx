@@ -179,8 +179,6 @@ export function AvatarPanel({ user }: { user: AvatarUser }) {
         />
         <Button
           type="button"
-          size="sm"
-          className="h-8"
           onClick={() =>
             preview
               ? saveUrl(preview, "Avatar updated")
