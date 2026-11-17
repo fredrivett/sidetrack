@@ -169,7 +169,7 @@ export function RepeatPicker({
       {repeat && (
         <p className="text-xs text-neutral-400">
           {back
-            ? `Comes back ${back === "Today" || back === "Tomorrow" ? back.toLowerCase() : `on ${back}`}.`
+            ? `Next: ${back}.`
             : "Counts from when it's done: finish it late and the next one moves too."}
         </p>
       )}

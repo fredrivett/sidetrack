@@ -145,7 +145,7 @@ function forAgent(value: unknown, timeZone: string): unknown {
     let obj = value as Record<string, unknown>;
     // An item's repeat rule goes out as one `repeat` field, the shape
     // add_item and update_item take: { every, unit }, or null. A finished
-    // repeating item also says the day it comes back (the web's "Back Tue").
+    // repeating item also says the day it comes back (the web's "Next: Tue").
     if ("repeatUnit" in obj && "repeatEvery" in obj) {
       const { repeatEvery, repeatUnit, ...rest } = obj;
       const repeat = repeatOf({
