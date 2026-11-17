@@ -14,6 +14,7 @@ import {
 } from "./notifications";
 import { createProject, deleteProject, updateProject } from "./projects";
 import { markLooking } from "./presence";
+import { remindDue } from "./reminders";
 import { savePushSubscription } from "./push";
 import {
   acceptSpaceInvite,
@@ -220,25 +221,70 @@ describe("notifications", () => {
     expect(unread(db, alice)).toEqual(['Fred completed "Socks"']);
   });
 
-  it("tells only the assignees when a repeating item comes round again", () => {
+  it("reminds assignees of what's due each morning, once, and the morning after if it's still open", async () => {
     const { db, fred, alice, listId } = seed();
-    // Fred created it, so he follows it; it's Alice's to do.
+    subscribe(db, alice);
+    await deliverNotifications(db, due());
+    sendPush.mockClear();
+    // Alice hasn't saved a time zone, so her mornings are UTC's.
+    const at = (day: number, hour: number) => Date.UTC(2026, 10, day, hour);
     const bins = addItem(
       db,
       fred,
-      { projectId: listId, title: "Bins", assigneeIds: [alice], repeat: { every: 1, unit: "day" } },
+      { projectId: listId, title: "Bins", assigneeIds: [alice], dueDate: "2026-11-20", repeat: { every: 1, unit: "day" } },
       "web",
     );
+    const rent = addItem(db, fred, { projectId: listId, title: "Rent", assigneeIds: [alice], dueDate: "2026-11-20" }, "web");
+    // Fred's (he hears of it), unassigned, and done: none of hers.
+    addItem(db, fred, { projectId: listId, title: "Gas", assigneeIds: [fred], dueDate: "2026-11-20" }, "web");
+    addItem(db, fred, { projectId: listId, title: "Water", dueDate: "2026-11-20" }, "web");
+    addItem(db, fred, { projectId: listId, title: "Paid", assigneeIds: [alice], dueDate: "2026-11-20", completed: true }, "web");
+    markNotificationsRead(db, alice);
+    const reminders = () =>
+      listNotifications(db, alice)
+        .filter((n) => n.reason === "due-today" || n.reason === "overdue")
+        .map((n) => plainText(n.parts));
+    // Not before 8am, then once however often it runs.
+    expect(remindDue(db, at(20, 7))).toBe(0);
+    expect(remindDue(db, at(20, 8))).toBe(3);
+    expect(remindDue(db, at(20, 12))).toBe(0);
+    expect(reminders().sort()).toEqual(['"Bins" is due today', '"Rent" is due today']);
+    // One push for the morning's lot.
+    await deliverNotifications(db, at(20, 8) + 60_000);
+    // Fred has no devices, so only Alice's lot reaches a phone.
+    const calls = sendPush.mock.calls as unknown as Array<[unknown[], unknown]>;
+    const hers = calls.filter(([targets]) => targets.length > 0);
+    expect(hers).toHaveLength(1);
+    expect(hers[0][1]).toMatchObject({
+      title: "Due",
+      url: "/?view=agenda",
+      body: expect.stringMatching(/^"(Bins|Rent)" and "(Bins|Rent)" are due today$/),
+    });
+    // Next morning, once more for what's still open; then no more.
+    completeItem(db, alice, rent.id, "web");
+    expect(remindDue(db, at(21, 9))).toBe(2);
+    expect(reminders()[0]).toBe('"Bins" is overdue');
+    expect(remindDue(db, at(22, 9))).toBe(0);
+    // Coming round again by its repeat rule is told by its reminder, not as news.
     completeItem(db, alice, bins.id, "web");
     markNotificationsRead(db, alice);
-    markNotificationsRead(db, fred);
     reopenDueRepeats(db, fred, { timeZone: "UTC", now: Date.now() + 2 * 86_400_000 });
-    expect(unread(db, alice)).toEqual(['"Bins" is due again']);
-    expect(unread(db, fred)).toEqual([]);
-    // Reopened by hand, it's news to its followers again.
-    completeItem(db, alice, bins.id, "web");
-    uncompleteItem(db, alice, bins.id, "web");
-    expect(unread(db, fred)).toEqual(['Alice reopened "Bins"', 'Alice completed "Bins"']);
+    expect(unread(db, alice)).toEqual([]);
+  });
+
+  it("keeps due reminders to the inbox, or off, as chosen", async () => {
+    const { db, fred, alice, listId } = seed();
+    subscribe(db, alice);
+    addItem(db, fred, { projectId: listId, title: "Bins", assigneeIds: [alice], dueDate: "2026-11-20" }, "web");
+    await deliverNotifications(db, due());
+    sendPush.mockClear();
+    setNotificationLevel(db, alice, "reminders", "default");
+    remindDue(db, Date.UTC(2026, 10, 20, 9));
+    await deliverNotifications(db, Date.UTC(2026, 10, 20, 10));
+    expect(sendPush).not.toHaveBeenCalled();
+    expect(unread(db, alice)).toContain('"Bins" is due today');
+    setNotificationLevel(db, alice, "reminders", "mine");
+    expect(remindDue(db, Date.UTC(2026, 10, 21, 9))).toBe(0);
   });
 
   it("tells one action once, not once per sub-item it carries", () => {

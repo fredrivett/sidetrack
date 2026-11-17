@@ -12,6 +12,7 @@ import { dueText, type Part, plainText } from "./describe";
 import { autoFollow, followersOf } from "./follows";
 import type { ChangeEvent, ItemAt } from "./events";
 import { isLooking } from "./presence";
+import { remindDue } from "./reminders";
 import { forgetPushSubscriptions, pushTargets } from "./push";
 import {
   auditLog,
@@ -160,15 +161,10 @@ function rule(
     case "item.reopened": {
       // Likewise a parent reopened for a sub-item, or a sub-item with its parent.
       if (event.forSubItem || event.with) return null;
-      if (!event.repeat) return onItem(event.itemId, event.projectId, followers(event.itemId));
-      // Come round again by its repeat rule: only whoever it's for needs telling.
-      const assignees =
-        db
-          .select({ assigneeIds: items.assigneeIds })
-          .from(items)
-          .where(eq(items.id, event.itemId))
-          .get()?.assigneeIds ?? [];
-      return onItem(event.itemId, event.projectId, as("assigned", assignees));
+      // Come round again by its repeat rule, it's news only when it's due,
+      // which a due reminder says (reminders.ts).
+      if (event.repeat) return null;
+      return onItem(event.itemId, event.projectId, followers(event.itemId));
     }
     case "item.moved":
       // Once, on the side it arrived in; sub-items go with their parent.
@@ -346,6 +342,8 @@ export function tierOf(reason: NotificationReason): "direct" | "involved" | "amb
     case "mentioned":
     case "invited":
     case "agent-finished":
+    case "due-today":
+    case "overdue":
       return "direct";
     case "activity":
       return "ambient";
@@ -407,6 +405,7 @@ export function setNotificationLevel(
   const [kind, id] = scope.split(":");
   const reachable =
     scope === "all" ||
+    scope === "reminders" ||
     (kind === "list" &&
       id &&
       db
@@ -459,9 +458,11 @@ type Row = {
   reason: NotificationReason;
   createdAt: number;
   readAt: number | null;
+  /** A due reminder's item; it has no change, so no event or actor. */
+  itemId: string | null;
   event: ChangeEvent | null;
   agentName: string | null;
-  actorId: string;
+  actorId: string | null;
   actor: NotificationView["actor"];
 };
 
@@ -474,6 +475,7 @@ function selectRows(db: Db) {
       reason: notifications.reason,
       createdAt: notifications.createdAt,
       readAt: notifications.readAt,
+      itemId: notifications.itemId,
       event: auditLog.event,
       agentName: auditLog.agentName,
       actorId: auditLog.actor,
@@ -486,7 +488,8 @@ function selectRows(db: Db) {
       },
     })
     .from(notifications)
-    .innerJoin(auditLog, eq(auditLog.id, notifications.auditId))
+    // Left: a due reminder has no audit row.
+    .leftJoin(auditLog, eq(auditLog.id, notifications.auditId))
     // Left: a deleted actor's notifications still show, without a face.
     .leftJoin(users, eq(users.id, auditLog.actor));
 }
@@ -523,7 +526,12 @@ function excerpt(text: string): string {
  */
 function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
   const events = rows.flatMap((r) => (r.event ? [r.event] : []));
-  const itemIds = [...new Set(events.flatMap((e) => itemOf(e)?.itemId ?? []))];
+  const itemIds = [
+    ...new Set([
+      ...events.flatMap((e) => itemOf(e)?.itemId ?? []),
+      ...rows.flatMap((r) => r.itemId ?? []),
+    ]),
+  ];
   const open = new Map(
     (itemIds.length
       ? db
@@ -595,6 +603,28 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
   );
 
   return rows.flatMap((r): NotificationView[] => {
+    // A due reminder: the item as it is now, while they can open it.
+    if (r.reason === "due-today" || r.reason === "overdue") {
+      const now = r.itemId ? open.get(r.itemId) : undefined;
+      if (!now) return [];
+      return [
+        {
+          id: r.id,
+          reason: r.reason,
+          createdAt: r.createdAt,
+          readAt: r.readAt,
+          actor: null,
+          agentName: null,
+          title: now.list,
+          url: `/?p=${encodeURIComponent(now.projectId)}&item=${encodeURIComponent(now.id)}`,
+          parts: [
+            { text: now.title, em: "item", quote: true },
+            { text: r.reason === "due-today" ? " is due today" : " is overdue" },
+          ],
+          snippet: null,
+        },
+      ];
+    }
     const event = r.event;
     if (!event) return [];
     const a = r.actor;
@@ -810,6 +840,8 @@ const MAX_WAIT_MS = 5 * 60_000;
 // Older than this when its turn comes (say the server stopped before sending
 // it), a push is news nobody needs any more: it stays in the inbox only.
 const PUSH_FRESH_MS = 10 * 60_000;
+// How often to look for due reminders to write: within this of 8am.
+const REMIND_EVERY_MS = 15 * 60_000;
 
 /**
  * Push what's due: each person's unsent notifications about one item (or,
@@ -947,6 +979,22 @@ function summarise(views: NotificationView[]): Omit<PushMessage, "tag"> {
       url: last.url,
     };
   }
+  // A morning's due reminders: what's due, by name, and the Agenda.
+  if (views.every((v) => v.reason === "due-today" || v.reason === "overdue")) {
+    const titles = views.map((v) => `"${v.parts[0].text}"`);
+    const named =
+      titles.length === 2
+        ? `${titles[0]} and ${titles[1]}`
+        : titles.length === 3
+          ? `${titles[0]}, ${titles[1]} and ${titles[2]}`
+          : `${titles[0]}, ${titles[1]} and ${titles.length - 2} more`;
+    const when = views.every((v) => v.reason === "due-today")
+      ? "are due today"
+      : views.every((v) => v.reason === "overdue")
+        ? "are overdue"
+        : "are due or overdue";
+    return { title: "Due", body: `${named} ${when}`, url: "/?view=agenda" };
+  }
   // Who: the person each sentence starts with, in order of first change.
   const names = [
     ...new Set(views.map((v) => (v.parts[0]?.em === "person" ? v.parts[0].text : "Sidetrack"))),
@@ -989,6 +1037,16 @@ export function startNotificationDelivery(db: Db): void {
       })
       .catch((error) => getPostHog()?.captureException(error));
   onChanges(deliver);
+  // Due reminders, written as each person's morning comes, then sent.
+  const remind = () => {
+    try {
+      if (remindDue(db) > 0) void deliver();
+    } catch (error) {
+      getPostHog()?.captureException(error);
+    }
+  };
+  setInterval(remind, REMIND_EVERY_MS).unref();
+  remind();
   // Whatever was committed but not sent before the last stop.
   void deliver();
 }

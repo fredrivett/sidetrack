@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, CheckCheck } from "lucide-react";
+import { Bell, CalendarClock, CheckCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { markNotificationsReadAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
@@ -136,6 +136,10 @@ export function NotificationsInbox({
                     <AgentAvatar agent={{ id: n.id, name: n.agentName }} size={28} className="mt-0.5" />
                   ) : n.actor ? (
                     <UserAvatar user={n.actor} size={28} className="mt-0.5" />
+                  ) : n.reason === "due-today" || n.reason === "overdue" ? (
+                    <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                      <CalendarClock className="size-4" />
+                    </span>
                   ) : (
                     <span className="mt-0.5 size-7 shrink-0 rounded-full bg-muted" />
                   )}

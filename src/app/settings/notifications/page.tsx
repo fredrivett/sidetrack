@@ -40,7 +40,11 @@ export default async function NotificationsPage() {
           vapidPublicKey={vapidPublicKey}
           devices={vapidPublicKey ? listPushDevices(db, userId, vapidPublicKey) : []}
         />
-        <NotificationLevelsPanel level={levels.all ?? "default"} overrides={overrides} />
+        <NotificationLevelsPanel
+          level={levels.all ?? "default"}
+          reminders={levels.reminders ?? "all"}
+          overrides={overrides}
+        />
       </div>
     </main>
   );
