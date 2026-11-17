@@ -223,12 +223,15 @@ function domainOf(url: string | null | undefined): string | undefined {
 /**
  * Ask Jev for icon suggestions, most likely first. Best effort: a failed
  * request (network, rate limit, bad key) yields [] so the picker just shows no
- * suggestions. `fetchImpl` is injectable for tests.
+ * suggestions. Without `alternatives` only the picks come back, so a caller
+ * that wants just the top one doesn't pay for the fit questions (Jev bills
+ * every question). `fetchImpl` is injectable for tests.
  */
 export function suggestEmoji(
   context: IconContext,
   apiKey: string,
   fetchImpl: typeof fetch = fetch,
+  alternatives = true,
 ): Promise<string[]> {
   return ask(
     {
@@ -238,7 +241,7 @@ export function suggestEmoji(
       website: domainOf(context.homepageUrl),
     },
     "Which emoji best represents this to-do list as its icon?",
-    "Would `emoji` be a fitting icon for this to-do list?",
+    alternatives ? "Would `emoji` be a fitting icon for this to-do list?" : null,
     apiKey,
     fetchImpl,
   );
@@ -249,11 +252,14 @@ export function suggestLabelEmoji(
   context: { name: string; listName: string },
   apiKey: string,
   fetchImpl: typeof fetch = fetch,
+  alternatives = true,
 ): Promise<string[]> {
   return ask(
     { label: context.name, list_name: context.listName },
     "Which emoji best represents this label, used to tag tasks on the to-do list?",
-    "Would `emoji` be a fitting icon for this label, used to tag tasks on the to-do list?",
+    alternatives
+      ? "Would `emoji` be a fitting icon for this label, used to tag tasks on the to-do list?"
+      : null,
     apiKey,
     fetchImpl,
   );
@@ -262,12 +268,12 @@ export function suggestLabelEmoji(
 async function ask(
   state: unknown,
   instructions: string,
-  /** The same as a yes/no question about one `emoji`. */
-  fitQuestion: string,
+  /** The same as a yes/no question about one `emoji`; null asks none. */
+  fitQuestion: string | null,
   apiKey: string,
   fetchImpl: typeof fetch,
 ): Promise<string[]> {
-  const emoji = Object.keys(EMOJI_OPTIONS);
+  const emoji = fitQuestion ? Object.keys(EMOJI_OPTIONS) : [];
   const answers = await askJev(
     state,
     {
@@ -320,7 +326,7 @@ export async function autoListIcon(
 ): Promise<string | null | undefined> {
   if (context.homepageUrl) return null;
   if (!apiKey || !context.name.trim()) return undefined;
-  return (await suggestEmoji(context, apiKey, fetchImpl))[0];
+  return (await suggestEmoji(context, apiKey, fetchImpl, false))[0];
 }
 
 // At most this many labels are asked about at once (one request each), so a
@@ -340,7 +346,7 @@ export async function autoLabelEmoji(
   if (!apiKey) return {};
   const picks = await Promise.all(
     names.slice(0, MAX_AUTO_LABELS).map(async (name) => {
-      const [top] = await suggestLabelEmoji({ name, listName }, apiKey, fetchImpl);
+      const [top] = await suggestLabelEmoji({ name, listName }, apiKey, fetchImpl, false);
       return [name, top] as const;
     }),
   );

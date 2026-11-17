@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { suggestEmoji } from "./emojiSuggest";
+import { autoListIcon, suggestEmoji } from "./emojiSuggest";
 
 const CONTEXT = { name: "Marathon training", summary: "", itemTitles: ["Long run"] };
 
@@ -48,5 +48,19 @@ describe("suggestEmoji", () => {
       throw new TypeError("fetch failed");
     };
     expect(await suggestEmoji(CONTEXT, "key", offline)).toEqual([]);
+  });
+});
+
+describe("autoListIcon", () => {
+  it("asks only for Jev's pick, since it keeps just the top one", async () => {
+    let asked: string[] = [];
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      asked = Object.keys(JSON.parse(String(init?.body)).questions);
+      return new Response(
+        JSON.stringify({ answers: { icon: { probabilities: { "💪": 0.2, "🏃": 0.8 } } } }),
+      );
+    };
+    expect(await autoListIcon(CONTEXT, "key", fetchImpl)).toBe("🏃");
+    expect(asked).toEqual(["icon"]);
   });
 });
