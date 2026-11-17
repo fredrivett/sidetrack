@@ -6,6 +6,13 @@ import { listAudit, recordAudit } from "./audit";
 import { addItem, completeItem, deleteItem, setItemParent, updateItem } from "./items";
 import { acceptInvite, inviteMember } from "./members";
 import { createProject } from "./projects";
+import {
+  acceptSpaceInvite,
+  createSpace,
+  inviteSpaceMember,
+  removeSpaceMember,
+  updateSpace,
+} from "./spaces";
 import * as authSchema from "./auth-schema";
 import * as appSchema from "./schema";
 import { createTestDb, createTestUser } from "./test-helpers";
@@ -325,6 +332,33 @@ describe("change events", () => {
       .map((e) => e.detail)
       .sort();
     expect(history).toEqual(['Fix tap: assigned @alice', 'added task "Fix tap"']);
+  });
+});
+
+describe("space events", () => {
+  it("shows a space by its current name to people in it, and as it was to people who left", () => {
+    const { db } = createTestDb();
+    const fred = createTestUser(db, { username: "fred" });
+    const alice = createTestUser(db, { username: "alice" });
+    const home = createSpace(db, fred, { name: "Home" }, "web").id;
+    inviteSpaceMember(db, fred, home, "alice", "web");
+    acceptSpaceInvite(db, alice, home, "web");
+    removeSpaceMember(db, alice, home, alice, "web");
+    updateSpace(db, fred, home, { name: "Secret" }, "web");
+    const spaceRows = (user: string) =>
+      listAudit(db, user)
+        .filter((e) => e.entityType.startsWith("space"))
+        .map((e) => e.detail)
+        .sort();
+    expect(spaceRows(alice)).toEqual([
+      'accepted invite to space "Home"',
+      'left space "Home"',
+    ]);
+    expect(spaceRows(fred)).toEqual([
+      'created space "Secret"',
+      'invited @alice to space "Secret"',
+      'space "Home": renamed to "Secret"',
+    ]);
   });
 });
 

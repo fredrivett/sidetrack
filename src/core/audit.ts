@@ -208,6 +208,7 @@ export function listAudit(
   const names = namesFor(
     db,
     rows.flatMap((r) => (r.entry.event ? [r.entry.event] : [])),
+    userId,
   );
   return rows.map((r) => {
     const parts = r.entry.event ? describeEvent(r.entry.event, names) : null;

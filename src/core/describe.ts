@@ -1,10 +1,10 @@
-import { inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { ITEM_SORTS } from "../lib/itemSorts";
 import { repeatLabel } from "../lib/repeat";
 import { users } from "./auth-schema";
 import type { Db } from "./db";
-import type { ChangeEvent, DueAt, ItemAt, PersonAt } from "./events";
-import { items, projects } from "./schema";
+import type { AccessLost, ChangeEvent, DueAt, ItemAt, ListChanges, PersonAt, SpaceAt } from "./events";
+import { items, projects, spaceMembers, spaces } from "./schema";
 
 // Turns change events (core/events.ts) into sentences. Activity, an item's
 // history and MCP's list_audit all read events through here, so they say
@@ -26,16 +26,20 @@ export interface Part {
  * Current names for the things a page of events mentions. An item reads by
  * its current title only while it's still in the list the event happened
  * in: once moved, its new title is for the new list's readers, who may not
- * be this one. Anything gone, or moved, reads as the event stored it.
+ * be this one. A Space reads by its current name only for someone in it.
+ * Anything gone, moved, or out of reach reads as the event stored it.
  */
 export interface Names {
   item(it: ItemAt, projectId: string): string;
   person(p: PersonAt): string;
   list(id: string, fallback: string): string;
+  space(s: SpaceAt): string;
 }
 
 /** Every id an event refers to, by the key that names it. */
-function collect(value: unknown, into: { items: Set<string>; people: Set<string>; lists: Set<string> }) {
+type Ids = { items: Set<string>; people: Set<string>; lists: Set<string>; spaces: Set<string> };
+
+function collect(value: unknown, into: Ids) {
   if (Array.isArray(value)) {
     for (const v of value) collect(v, into);
   } else if (value && typeof value === "object") {
@@ -44,6 +48,7 @@ function collect(value: unknown, into: { items: Set<string>; people: Set<string>
         if (k === "itemId") into.items.add(v);
         else if (k === "userId") into.people.add(v);
         else if (k === "projectId") into.lists.add(v);
+        else if (k === "spaceId") into.spaces.add(v);
       } else {
         collect(v, into);
       }
@@ -51,9 +56,10 @@ function collect(value: unknown, into: { items: Set<string>; people: Set<string>
   }
 }
 
-/** Current names for `events`, read in one query per kind of thing. */
-export function namesFor(db: Db, events: ChangeEvent[]): Names {
-  const ids = { items: new Set<string>(), people: new Set<string>(), lists: new Set<string>() };
+/** Current names for `events`, as `viewer` may see them, read in one query
+ * per kind of thing. */
+export function namesFor(db: Db, events: ChangeEvent[], viewer: string): Names {
+  const ids: Ids = { items: new Set(), people: new Set(), lists: new Set(), spaces: new Set() };
   collect(events, ids);
   const itemRows = ids.items.size
     ? db
@@ -76,12 +82,27 @@ export function namesFor(db: Db, events: ChangeEvent[]): Names {
         .where(inArray(projects.id, [...ids.lists]))
         .all()
     : [];
+  const spaceRows = ids.spaces.size
+    ? db
+        .select({ id: spaces.id, name: spaces.name })
+        .from(spaces)
+        .innerJoin(spaceMembers, eq(spaceMembers.spaceId, spaces.id))
+        .where(
+          and(
+            inArray(spaces.id, [...ids.spaces]),
+            eq(spaceMembers.userId, viewer),
+            eq(spaceMembers.status, "accepted"),
+          ),
+        )
+        .all()
+    : [];
   const itemById = new Map(itemRows.map((r) => [r.id, r]));
   // `@username`, then name, then email.
   const people = new Map(
     userRows.map((u) => [u.id, u.username ? `@${u.username}` : (u.name ?? u.email)]),
   );
   const lists = new Map(listRows.map((r) => [r.id, r.name]));
+  const spaceNames = new Map(spaceRows.map((r) => [r.id, r.name]));
   return {
     item(it, projectId) {
       const row = itemById.get(it.itemId);
@@ -89,6 +110,7 @@ export function namesFor(db: Db, events: ChangeEvent[]): Names {
     },
     person: (p) => people.get(p.userId) ?? p.name,
     list: (id, fallback) => lists.get(id) ?? fallback,
+    space: (sp) => spaceNames.get(sp.spaceId) ?? sp.name,
   };
 }
 
@@ -111,12 +133,57 @@ function people(names: Names, list: PersonAt[]): Part[] {
   ]);
 }
 
+/** What losing access cleaned up, as trailing clauses. */
+function lostText(lost: AccessLost | undefined): Part[] {
+  if (!lost) return [];
+  const n = (count: number, what: string) => `${count} ${what}${count === 1 ? "" : "s"}`;
+  return [
+    ...(lost.unassigned ? [t(`, unassigned from ${n(lost.unassigned, "item")}`)] : []),
+    ...(lost.ended ? [t(`, ended ${n(lost.ended, "agent session")}`)] : []),
+  ];
+}
+
+/** A list's changes, in the order updateProject makes them. */
+function listChanges(c: ListChanges): string[] {
+  const icon = {
+    set: "set icon",
+    changed: "changed icon",
+    cleared: "cleared icon",
+    chose: "chose icon",
+    "chose-none": "chose no icon",
+  } as const;
+  const r = c.repository;
+  return [
+    c.name && `renamed to "${c.name.to}"`,
+    c.prefix && `prefix ${c.prefix.from}→${c.prefix.to}`,
+    c.status && `status ${c.status.from}→${c.status.to}`,
+    c.summary && "edited summary",
+    c.homepage && `${c.homepage} homepage`,
+    r &&
+      (r.to === null
+        ? `cleared repository ${r.from}`
+        : r.from
+          ? `repository ${r.from}→${r.to}`
+          : `set repository to ${r.to}`),
+    c.icon && icon[c.icon],
+    c.done && (c.done === "cleared" ? "moved done items to Done" : "moved done items back to the list"),
+  ].filter((p): p is string => Boolean(p));
+}
+
 export function describeEvent(event: ChangeEvent, names: Names): Part[] {
+  const projectId = "projectId" in event ? event.projectId : "";
   const item = (it: ItemAt): Part => ({
-    text: names.item(it, event.projectId),
+    text: names.item(it, projectId),
     em: "item",
     quote: true,
   });
+  const person = (p: PersonAt): Part => ({ text: names.person(p), em: "person" });
+  const list = (name: string): Part => ({
+    text: names.list(projectId, name),
+    em: "place",
+    quote: true,
+  });
+  const space = (sp: SpaceAt): Part => ({ text: names.space(sp), em: "place", quote: true });
   switch (event.type) {
     case "item.created": {
       const parts: Part[] = event.parent
@@ -133,7 +200,7 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
       // A rename keeps the name it had, so the row says what it was.
       const subject: Part = c.title
         ? { text: c.title.from, em: "item" }
-        : { text: names.item(event, event.projectId), em: "item" };
+        : { text: names.item(event, projectId), em: "item" };
       const changes: Part[][] = [];
       if (c.title) changes.push([t(`renamed to "${c.title.to}"`)]);
       if (c.description) {
@@ -187,14 +254,125 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
           : item({ itemId: event.parent.itemId, title: event.parent.title }),
       ];
     case "list.items.sorted": {
-      const list: Part = {
-        text: names.list(event.projectId, event.listName),
-        em: "place",
-        quote: true,
-      };
       return event.by
-        ? [t("sorted "), list, t(` by ${ITEM_SORTS[event.by]}`)]
-        : [t("reordered the items in "), list];
+        ? [t("sorted "), list(event.listName), t(` by ${ITEM_SORTS[event.by]}`)]
+        : [t("reordered the items in "), list(event.listName)];
     }
+    case "comment.created":
+      return [t("commented on "), item(event.item)];
+    case "comment.edited":
+      return [t("edited a comment on "), item(event.item)];
+    case "comment.deleted":
+      return [t("deleted a comment on "), item(event.item)];
+    case "list.created":
+      return event.space
+        ? [t("created list "), list(event.listName), t(" in space "), space(event.space)]
+        : [t("created list "), list(event.listName)];
+    case "list.updated": {
+      const c = event.changes;
+      // A rename keeps the name it had, so the row says what it was.
+      const subject: Part = {
+        text: c.name ? c.name.from : names.list(projectId, event.listName),
+        em: "place",
+      };
+      return [subject, t(`: ${listChanges(c).join(", ")}`)];
+    }
+    case "list.reordered":
+      return [t("reordered list "), list(event.listName)];
+    case "list.deleted":
+      return [t("deleted list "), list(event.listName)];
+    case "list.space.changed": {
+      const { from, to } = event;
+      const moved: Part[] =
+        from && to
+          ? [t("moved "), list(event.listName), t(" from space "), space(from), t(" to "), space(to)]
+          : from
+            ? [t("took "), list(event.listName), t(" out of space "), space(from)]
+            : [t("moved "), list(event.listName), t(" into space "), ...(to ? [space(to)] : [])];
+      return [...moved, ...lostText(event.lost)];
+    }
+    case "member.invited":
+      return [t("invited "), person(event.member), t(" to "), list(event.listName)];
+    case "member.joined":
+      return [t("accepted invite to "), list(event.listName)];
+    case "member.declined":
+      return [t("declined invite to "), list(event.listName)];
+    case "member.removed": {
+      const what: Part[] =
+        event.how === "left"
+          ? [t("left "), list(event.listName)]
+          : event.how === "revoked"
+            ? [t("revoked invite for "), person(event.member)]
+            : [t("removed "), person(event.member)];
+      return [...what, ...lostText(event.lost)];
+    }
+    case "label.created":
+      return [
+        t("added label "),
+        { text: event.emoji ? `${event.emoji} ${event.name}` : event.name, em: "place", quote: true },
+      ];
+    case "label.updated": {
+      const { name, emoji } = event.changes;
+      const changes = [
+        name && `renamed to "${name.to}"`,
+        emoji &&
+          (emoji.kept
+            ? emoji.to ? `chose ${emoji.to}` : "chose no emoji"
+            : emoji.to ? `emoji ${emoji.to}` : "emoji removed"),
+      ].filter((p): p is string => Boolean(p));
+      return [
+        t("label "),
+        { text: event.name, em: "place", quote: true },
+        t(`: ${changes.join(", ")}`),
+      ];
+    }
+    case "space.created":
+      return [
+        t("created space "),
+        space(event),
+        ...(event.color ? [t(` (${event.color})`)] : []),
+      ];
+    case "space.updated": {
+      const c = event.changes;
+      const changes = [
+        c.name && `renamed to "${c.name.to}"`,
+        c.icon !== undefined && (c.icon ? `icon set to ${c.icon}` : "icon cleared"),
+        c.color !== undefined && (c.color ? `colour set to ${c.color}` : "colour cleared"),
+      ].filter((p): p is string => Boolean(p));
+      // A rename keeps the name it had, so the row says what it was.
+      const subject: Part = c.name
+        ? { text: c.name.from, em: "place", quote: true }
+        : space(event);
+      return [t("space "), subject, t(`: ${changes.join(", ")}`)];
+    }
+    case "space.deleted":
+      return [t("deleted space "), space(event), ...lostText(event.lost)];
+    case "space.reordered":
+      // Personal is the viewer's own tray, not a Space.
+      return event.spaceId === "personal"
+        ? [t("reordered "), { text: "Personal", em: "place" }]
+        : [t("reordered space "), space(event)];
+    case "space.member.invited":
+      return [t("invited "), person(event.member), t(" to space "), space(event.space)];
+    case "space.member.joined":
+      return [t("accepted invite to space "), space(event.space)];
+    case "space.member.declined":
+      return [t("declined invite to space "), space(event.space)];
+    case "space.member.removed": {
+      const what: Part[] =
+        event.how === "left"
+          ? [t("left space "), space(event.space)]
+          : event.how === "revoked"
+            ? [t("revoked space invite for "), person(event.member), t(" to "), space(event.space)]
+            : [t("removed "), person(event.member), t(" from space "), space(event.space)];
+      return [...what, ...lostText(event.lost)];
+    }
+    case "space.member.role":
+      return [
+        t("made "),
+        person(event.member),
+        t(event.role === "admin" ? " an admin of space " : " a member of space "),
+        space(event.space),
+      ];
   }
 }

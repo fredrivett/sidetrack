@@ -202,12 +202,12 @@ export function addComment(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "create",
-      entityType: "comment",
-      entityId: id,
-      projectId: item.projectId,
-      parentId: item.id,
-      detail: `commented on "${item.title}"`,
+      event: {
+        type: "comment.created",
+        projectId: item.projectId,
+        commentId: id,
+        item: { itemId: item.id, title: item.title },
+      },
     });
   });
   const created = getComment(db, userId, id);
@@ -234,12 +234,12 @@ export function updateComment(
       recordAudit(tx as unknown as Db, {
         actor: userId,
         source,
-        action: "update",
-        entityType: "comment",
-        entityId: id,
-        projectId: item.projectId,
-        parentId: item.id,
-        detail: `edited a comment on "${item.title}"`,
+        event: {
+          type: "comment.edited",
+          projectId: item.projectId,
+          commentId: id,
+          item: { itemId: item.id, title: item.title },
+        },
       });
     });
   }
@@ -261,12 +261,12 @@ export function deleteComment(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "delete",
-      entityType: "comment",
-      entityId: id,
-      projectId: item.projectId,
-      parentId: item.id,
-      detail: `deleted a comment on "${item.title}"`,
+      event: {
+        type: "comment.deleted",
+        projectId: item.projectId,
+        commentId: id,
+        item: { itemId: item.id, title: item.title },
+      },
     });
   });
 }

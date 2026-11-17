@@ -4,6 +4,7 @@ import { isEmoji } from "@/lib/projectIcon";
 import { hasProjectAccess } from "./access";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
+import type { ChangeEvent } from "./events";
 import { type Label, items, labels, projects } from "./schema";
 
 export function listLabels(
@@ -100,10 +101,6 @@ export function ensureLabels(
   }
 }
 
-function labelDetail(emoji: string | null, name: string) {
-  return emoji ? `${emoji} ${name}` : name;
-}
-
 /**
  * Add a label to a list, idempotently. `emoji` is someone's choice unless
  * `emojiChosen` is false (Jev's suggestion for the name); null is no emoji.
@@ -143,11 +140,7 @@ export function addLabel(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "create",
-      entityType: "label",
-      entityId: label.id,
-      projectId,
-      detail: `added label "${labelDetail(label.emoji, name)}"`,
+      event: { type: "label.created", projectId, labelId: label.id, name, emoji: label.emoji },
     });
   });
   return label;
@@ -179,7 +172,7 @@ export function updateLabel(
   if (!existing) throw new Error(`label not found: ${id}`);
 
   const next: Partial<Label> = {};
-  const changes: string[] = [];
+  const changes: Extract<ChangeEvent, { type: "label.updated" }>["changes"] = {};
   if (patch.name !== undefined) {
     const name = patch.name.trim();
     if (!name) throw new Error("label name required");
@@ -191,7 +184,7 @@ export function updateLabel(
         .get();
       if (clash) throw new Error(`there's already a label called "${name}"`);
       next.name = name;
-      changes.push(`renamed to "${name}"`);
+      changes.name = { from: existing.name, to: name };
     }
   }
   const chosen = patch.emojiChosen !== false;
@@ -199,12 +192,12 @@ export function updateLabel(
     const emoji = normalizeEmoji(patch.emoji);
     if (emoji !== existing.emoji) {
       next.emoji = emoji;
-      changes.push(emoji ? `emoji ${emoji}` : "emoji removed");
+      changes.emoji = { to: emoji };
     }
     if (chosen !== existing.emojiChosen) {
       next.emojiChosen = chosen;
       // Choosing the emoji it already had (Jev's) is still a choice.
-      if (emoji === existing.emoji) changes.push(emoji ? `chose ${emoji}` : "chose no emoji");
+      if (emoji === existing.emoji) changes.emoji = { to: emoji, kept: true };
     }
   }
   if (Object.keys(next).length === 0) return existing;
@@ -233,11 +226,13 @@ export function updateLabel(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "update",
-      entityType: "label",
-      entityId: id,
-      projectId: existing.projectId,
-      detail: `label "${existing.name}": ${changes.join(", ")}`,
+      event: {
+        type: "label.updated",
+        projectId: existing.projectId,
+        labelId: id,
+        name: existing.name,
+        changes,
+      },
     });
   });
   return { ...existing, ...next };
