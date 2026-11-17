@@ -194,8 +194,8 @@ export function NotificationsPanel({
       <div className="space-y-1">
         <h2 className="text-sm font-medium">Push notifications</h2>
         <p className="text-sm text-muted-foreground">
-          Turn on notifications for this device. For now Sidetrack sends only a test;
-          notifications about activity on your lists are coming.
+          Turn on notifications for this device to hear about activity on your lists, as
+          you choose below.
         </p>
       </div>
 

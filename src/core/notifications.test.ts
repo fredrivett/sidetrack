@@ -6,7 +6,12 @@ import { addItem, completeItem, listItems, reopenDueRepeats, uncompleteItem, upd
 import { moveItem, previewMoveItem } from "./move";
 import { setFollowing } from "./follows";
 import { acceptInvite, inviteMember, removeMember } from "./members";
-import { deliverNotifications, listNotifications, markNotificationsRead } from "./notifications";
+import {
+  deliverNotifications,
+  listNotifications,
+  markNotificationsRead,
+  setNotificationLevel,
+} from "./notifications";
 import { createProject, updateProject } from "./projects";
 import { savePushSubscription } from "./push";
 import {
@@ -44,10 +49,15 @@ function seed() {
   return { db, fred, alice, listId: list.id };
 }
 
-/** What's unread in the user's inbox, as a push would say it. */
-const unread = (db: ReturnType<typeof seed>["db"], userId: string) =>
+/**
+ * What's unread in the user's inbox, as a push would say it: what's aimed
+ * at them or what they follow, or with `ambient`, only list and Space activity.
+ */
+const unread = (db: ReturnType<typeof seed>["db"], userId: string, ambient = false) =>
   listNotifications(db, userId).flatMap((n) =>
-    n.readAt === null ? [plainText(n.parts) + (n.snippet ? `: ${n.snippet}` : "")] : [],
+    n.readAt === null && (n.reason === "activity") === ambient
+      ? [plainText(n.parts) + (n.snippet ? `: ${n.snippet}` : "")]
+      : [],
   );
 
 beforeEach(() => sendPush.mockClear());
@@ -312,6 +322,68 @@ describe("notifications", () => {
       ["Family", 'Fred invited you to "Family"'],
       ["Garden", 'Fred invited you to "Garden"'],
     ]);
+  });
+
+  it("shows everyone on a list its activity, and pushes it only to those who asked for all of it", async () => {
+    const { db, fred, alice, listId } = seed();
+    const keys = {
+      p256dh: Buffer.alloc(65, 4).toString("base64url"),
+      auth: Buffer.alloc(16, 1).toString("base64url"),
+    };
+    savePushSubscription(db, alice, { endpoint: "https://web.push.apple.com/a", keys, deviceLabel: "iPhone" }, VAPID.publicKey);
+    await deliverNotifications(db);
+    sendPush.mockClear();
+    const item = addItem(db, fred, { projectId: listId, title: "Fix tap" }, "web");
+    updateProject(db, fred, listId, { name: "Flat" }, "web");
+    await deliverNotifications(db);
+    expect(unread(db, alice, true)).toEqual(['Fred renamed "Home" to "Flat"', 'Fred added "Fix tap" to "Flat"']);
+    expect(unread(db, alice)).toEqual([]);
+    expect(sendPush).not.toHaveBeenCalled();
+
+    setNotificationLevel(db, alice, `list:${listId}`, "all");
+    updateItem(db, fred, item.id, { title: "Fix the tap" }, "web");
+    // Not a follower, so a rename of the item isn't hers to hear.
+    addItem(db, fred, { projectId: listId, title: "Paint" }, "web");
+    await deliverNotifications(db);
+    expect(sendPush).toHaveBeenCalledTimes(1);
+    expect(sendPush).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ title: "Flat", body: 'Fred added "Paint" to "Flat"' }),
+      expect.anything(),
+    );
+  });
+
+  it("uses the most specific level set: the list's, then its Space's, then everything's", () => {
+    const { db, fred, alice } = seed();
+    const space = createSpace(db, fred, { name: "Family" }, "web");
+    inviteSpaceMember(db, fred, space.id, "alice", "web");
+    acceptSpaceInvite(db, alice, space.id, "web");
+    const garden = createProject(db, fred, { name: "Garden", spaceId: space.id }, "web");
+    expect(unread(db, alice, true)).toContain('Fred added "Garden" to "Family"');
+    markNotificationsRead(db, alice);
+
+    setNotificationLevel(db, alice, "all", "all");
+    setNotificationLevel(db, alice, `space:${space.id}`, "mine");
+    const weeds = addItem(db, fred, { projectId: garden.id, title: "Weeds" }, "web");
+    setFollowing(db, alice, weeds.id, true);
+    completeItem(db, fred, weeds.id, "web");
+    // Only for her in Family: no activity, nothing she follows.
+    expect(listNotifications(db, alice).filter((n) => !n.readAt)).toEqual([]);
+    // What's aimed at her still reaches her.
+    addItem(db, fred, { projectId: garden.id, title: "Mow", assigneeIds: [alice] }, "web");
+    expect(unread(db, alice)).toEqual(['Fred added "Mow" for you']);
+    // Garden's own level beats Family's.
+    setNotificationLevel(db, alice, `list:${garden.id}`, "default");
+    uncompleteItem(db, fred, weeds.id, "web");
+    expect(unread(db, alice)[0]).toBe('Fred reopened "Weeds"');
+    // Back to Family's.
+    setNotificationLevel(db, alice, `list:${garden.id}`, null);
+    completeItem(db, fred, weeds.id, "web");
+    expect(unread(db, alice)[0]).toBe('Fred reopened "Weeds"');
+    // Only for scopes she's in.
+    const bob = createTestUser(db, { username: "bob", name: "Bob" });
+    expect(() => setNotificationLevel(db, bob, `list:${garden.id}`, "all")).toThrow();
+    expect(() => setNotificationLevel(db, bob, `space:${space.id}`, "all")).toThrow();
   });
 
   it("pushes each notification once, to the recipient's devices on the current key", async () => {

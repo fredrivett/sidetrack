@@ -18,7 +18,7 @@ import {
   setBoardFiltersAction,
   setTimeZoneAction,
 } from "@/app/actions";
-import type { Item, ItemPrLink, Label, Project } from "@/core/schema";
+import type { Item, ItemPrLink, Label, NotificationLevel, Project } from "@/core/schema";
 import type { NotificationView } from "@/core/notifications";
 import type { PendingSpaceInviteView, SpaceView } from "@/core/spaces";
 import { type ItemFilters, matchesFilters } from "@/lib/filters";
@@ -41,6 +41,7 @@ import { NewItemDialog } from "./NewItemDialog";
 import { NotificationsInbox } from "./NotificationsInbox";
 import { FollowsProvider } from "./follows";
 import { ShortcutsDialog } from "./ShortcutsDialog";
+import { NotificationLevelsProvider, saveLevel } from "./notification-levels";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { ProjectColumn } from "./ProjectColumn";
 import { PullToSearch } from "./PullToSearch";
@@ -106,6 +107,7 @@ export function Kanban({
   initialItemId,
   notifications,
   followedItemIds,
+  notificationLevels,
   filters: savedFilters,
   aiEnabled,
 }: {
@@ -145,6 +147,8 @@ export function Kanban({
   notifications: NotificationView[];
   /** The items the viewer follows, sub-items of followed parents included. */
   followedItemIds: string[];
+  /** The notification levels the viewer has set, by scope. */
+  notificationLevels: Record<string, NotificationLevel>;
   /** The viewer's own filters, as they last set them. */
   filters: ItemFilters;
   /** Whether Jev (TYPESAFE_API_KEY) is set up, for AI-only actions. */
@@ -413,6 +417,13 @@ export function Kanban({
       await runAction(reorderSpaceAction(tray.id, ref), `move “${tray.name}”`);
     });
   }
+  // Setting a Space's notifications holds its tray the same way.
+  function setTrayNotifications(tray: { id: string; name: string }, level: NotificationLevel | null) {
+    startTrayMove(async () => {
+      markTrayMoving(tray.id);
+      await saveLevel(`space:${tray.id}`, level, tray.name);
+    });
+  }
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -615,6 +626,7 @@ export function Kanban({
 
   return (
     <FollowsProvider followedItemIds={followedItemIds}>
+    <NotificationLevelsProvider levels={notificationLevels}>
     <ItemChangesContext value={itemChanges}>
     <LabelsContext value={labelsByProject}>
     <RemoveListContext value={removeList}>
@@ -781,6 +793,11 @@ export function Kanban({
                         lastId={trays[trays.length - 1].id}
                         saving={saving}
                         onMove={(ref) => moveTray(tray, ref)}
+                        onSetNotifications={
+                          tray.id === "personal"
+                            ? undefined
+                            : { spaceId: tray.id, set: (level) => setTrayNotifications(tray, level) }
+                        }
                       />
                     }
                     onToggle={() => setTrayCollapsed(tray.id, !collapsedTrays.has(tray.id))}
@@ -893,6 +910,7 @@ export function Kanban({
     </RemoveListContext>
     </LabelsContext>
     </ItemChangesContext>
+    </NotificationLevelsProvider>
     </FollowsProvider>
   );
 }

@@ -68,6 +68,7 @@ const board = (projects: ProjectView[], spaces: SpaceView[]) => (
     initialItemId={null}
     notifications={[]}
     followedItemIds={[]}
+    notificationLevels={{}}
     filters={NO_FILTERS}
     aiEnabled={false}
   />
