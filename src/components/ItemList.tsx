@@ -404,6 +404,9 @@ export function DraggableItemList({
     // The pointer's y during a drag, from its own listener: dnd-kit's rects
     // for the dragged row are off once it's shown in another list.
     pointerY: null as number | null,
+    // A row of this list is being dragged: from its start until it's
+    // dropped or cancelled.
+    dragging: false,
   });
   useLayoutEffect(() => {
     live.current.projection = projection;
@@ -534,6 +537,7 @@ export function DraggableItemList({
     setOffsetX(0);
     setAway(false);
     live.current.away = false;
+    live.current.dragging = false;
   }
 
   function onDragEnd({ active, over }: DragEndEvent) {
@@ -582,9 +586,14 @@ export function DraggableItemList({
 
   // Only drags of this list's own rows, wherever they're shown.
   const mine = (active: Active) => active.data.current?.home === projectId;
+  // dnd-kit can report one last move after the drop, as on iOS when the
+  // board scrolls under the finger: following it would take the row away
+  // again and leave the board unsnapped.
+  const following = (active: Active) => mine(active) && live.current.dragging;
   useDndMonitor({
     onDragStart({ active, activatorEvent }) {
       if (!mine(active)) return;
+      live.current.dragging = true;
       live.current.pointerY = getEventCoordinates(activatorEvent)?.y ?? null;
       const id = String(active.id);
       setActiveId(id);
@@ -605,10 +614,10 @@ export function DraggableItemList({
       if (!(activatorEvent instanceof KeyboardEvent)) navigator.vibrate?.(10);
     },
     onDragMove({ active, over, delta }: DragMoveEvent) {
-      if (mine(active)) follow(active, over, delta.x);
+      if (following(active)) follow(active, over, delta.x);
     },
     onDragOver({ active, over, delta }) {
-      if (!mine(active)) return;
+      if (!following(active)) return;
       setOverId(over ? String(over.id) : null);
       follow(active, over, delta.x);
     },
