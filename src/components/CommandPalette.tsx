@@ -9,6 +9,7 @@ import {
   Circle,
   Columns3,
   History,
+  Keyboard,
   KeyRound,
   ListPlus,
   Plus,
@@ -48,6 +49,7 @@ export function CommandPalette({
   onNewList,
   onSwitchView,
   onShowActivity,
+  onShowShortcuts,
   onOpenList,
   onOpenItem,
   onSearch,
@@ -61,6 +63,7 @@ export function CommandPalette({
   onNewList: () => void;
   onSwitchView: (view: BoardView) => void;
   onShowActivity: () => void;
+  onShowShortcuts: () => void;
   onOpenList: (projectId: string) => void;
   onOpenItem: (item: Item) => void;
   /**
@@ -91,11 +94,12 @@ export function CommandPalette({
   }[] = [
     { label: "New item", icon: <Plus />, shortcut: "C", action: onNewItem },
     { label: "New list", icon: <ListPlus />, shortcut: "⇧C", action: onNewList },
-    { label: "Go to Board", icon: <Columns3 />, action: () => onSwitchView("board") },
-    { label: "Go to Agenda", icon: <CalendarDays />, action: () => onSwitchView("agenda") },
-    { label: "Go to Done", icon: <CircleCheck />, action: () => onSwitchView("done") },
+    { label: "Go to Board", icon: <Columns3 />, shortcut: "1", action: () => onSwitchView("board") },
+    { label: "Go to Agenda", icon: <CalendarDays />, shortcut: "2", action: () => onSwitchView("agenda") },
+    { label: "Go to Done", icon: <CircleCheck />, shortcut: "3", action: () => onSwitchView("done") },
     { label: "Go to Archived", icon: <Archive />, action: () => onSwitchView("archived") },
     { label: "Show activity", icon: <History />, action: onShowActivity },
+    { label: "Keyboard shortcuts", icon: <Keyboard />, shortcut: "?", action: onShowShortcuts },
     { label: "Profile settings", icon: <UserRound />, action: () => router.push("/settings/profile") },
     { label: "Notifications", icon: <Bell />, action: () => router.push("/settings/notifications") },
     { label: "Spaces", icon: <Boxes />, action: () => router.push("/settings/spaces") },
