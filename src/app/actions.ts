@@ -85,7 +85,10 @@ import {
   reorderProject as reorderProjectCore,
   updateProject as updateProjectCore,
 } from "@/core/projects";
-import { markNotificationsRead as markNotificationsReadCore } from "@/core/notifications";
+import {
+  markNotificationsRead as markNotificationsReadCore,
+  setNotificationLevel as setNotificationLevelCore,
+} from "@/core/notifications";
 import { setFollowing as setFollowingCore } from "@/core/follows";
 import {
   type PushSubscriptionInput,
@@ -94,7 +97,7 @@ import {
   removePushSubscription as removePushSubscriptionCore,
   savePushSubscription as savePushSubscriptionCore,
 } from "@/core/push";
-import type { AuditSource, ProjectStatus, SpaceColor } from "@/core/schema";
+import type { AuditSource, NotificationLevel, ProjectStatus, SpaceColor } from "@/core/schema";
 import {
   acceptSpaceInvite as acceptSpaceInviteCore,
   createSpace as createSpaceCore,
@@ -874,6 +877,17 @@ export async function setFollowingAction(itemId: string, following: boolean) {
   const userId = await requireUserId();
   const { db } = getDb();
   setFollowingCore(db, userId, itemId, following);
+  refresh();
+}
+
+/**
+ * Set how much the viewer hears about a scope ("all", "space:<id>" or
+ * "list:<id>"); null goes back to what it inherits.
+ */
+export async function setNotificationLevelAction(scope: string, level: NotificationLevel | null) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  setNotificationLevelCore(db, userId, String(scope), level);
   refresh();
 }
 

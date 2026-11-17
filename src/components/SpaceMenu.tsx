@@ -9,7 +9,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import type { NotificationLevel } from "@/core/schema";
 import { MoveMenuItems } from "./MoveMenuItems";
+import { NotificationsSubmenu } from "./notification-levels";
 
 /**
  * A tray's ⋯ menu (a Space's, or Personal's): for a Space's admin, a link to
@@ -26,6 +28,7 @@ export function SpaceMenu({
   lastId,
   saving,
   onMove,
+  onSetNotifications,
 }: {
   /** The Space to edit, or null when there's none the viewer may edit:
    * Personal, or a Space they're only a member of. */
@@ -38,6 +41,8 @@ export function SpaceMenu({
   saving: boolean;
   /** Moves the Space: start | end | after:<id> | before:<id>. */
   onMove: (ref: string) => void;
+  /** Sets the viewer's notifications for the Space, by id; absent for Personal. */
+  onSetNotifications?: { spaceId: string; set: (level: NotificationLevel | null) => void };
 }) {
   return (
     <DropdownMenu
@@ -73,6 +78,16 @@ export function SpaceMenu({
           lastId={lastId}
           onMove={onMove}
         />
+        {onSetNotifications && (
+          <>
+            <DropdownMenuSeparator />
+            <NotificationsSubmenu
+              scope={`space:${onSetNotifications.spaceId}`}
+              parent={null}
+              onChoose={onSetNotifications.set}
+            />
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

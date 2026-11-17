@@ -337,6 +337,13 @@
       "when": 1794926035841,
       "tag": "0047_item_follows",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "6",
+      "when": 1794932065773,
+      "tag": "0048_notification_settings",
+      "breakpoints": true
     }
   ]
 }

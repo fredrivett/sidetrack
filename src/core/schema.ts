@@ -527,8 +527,31 @@ export const NOTIFICATION_REASONS = [
   "following",
   "joined",
   "role",
+  // Ambient: other activity on a list or Space they're in.
+  "activity",
 ] as const;
 export type NotificationReason = (typeof NOTIFICATION_REASONS)[number];
+
+// How much someone hears about a list or Space: "all" pushes everything,
+// "default" pushes what's aimed at them or what they follow (the rest goes to
+// the inbox only), and "mine" keeps only what's aimed at them.
+export const NOTIFICATION_LEVELS = ["all", "default", "mine"] as const;
+export type NotificationLevel = (typeof NOTIFICATION_LEVELS)[number];
+
+// Someone's notification level for a scope: "all" for everything,
+// "space:<id>" or "list:<id>". The most specific one set wins; with none,
+// "default". Per person and seen by nobody else, so not audited, like
+// following an item.
+export const notificationSettings = sqliteTable(
+  "notification_settings",
+  {
+    userId: text("user_id").notNull(),
+    scope: text("scope").notNull(),
+    level: text("level").$type<NotificationLevel>().notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.scope] })],
+);
 
 // A user's inbox: one row per person a change concerns, written by
 // recordAudit in the change's transaction, so a change that rolls back

@@ -16,9 +16,13 @@ import {
   auditLog,
   comments,
   items,
+  NOTIFICATION_LEVELS,
   NOTIFICATION_REASONS,
+  type NotificationLevel,
   type NotificationReason,
+  notificationSettings,
   notifications,
+  projectMembers,
   projects,
   spaceMembers,
   spaces,
@@ -121,6 +125,8 @@ function rule(
         // A sub-item added later is news to its parent's followers; lines
         // added with the parent come with its own notification.
         ...(event.parent && !event.withParent && !done ? followers(event.itemId) : []),
+        // A new item is news to everyone on the list.
+        ...(event.parent || done ? [] : as("activity", membersOf(db, event.projectId))),
       ]);
     }
     case "item.updated": {
@@ -131,6 +137,10 @@ function rule(
         ...as("assigned", added),
         ...as("unassigned", c.assignees?.removed.map((a) => a.userId) ?? []),
         ...(c.due ? followers(event.itemId) : []),
+        // Reworded: worth knowing, not worth a buzz unless they asked.
+        ...(c.title || c.description
+          ? followersOf(db, event.itemId).map((userId) => ({ userId, reason: "activity" as const }))
+          : []),
       ]);
     }
     case "item.completed": {
@@ -167,6 +177,12 @@ function rule(
         : null;
     case "agent.requested":
       return onItem(event.itemId, event.projectId, followers(event.itemId));
+    case "item.pr.linked":
+      return onItem(
+        event.itemId,
+        event.projectId,
+        as("activity", followersOf(db, event.itemId)),
+      );
     case "comment.created": {
       const mentioned = event.mentioned?.map((p) => p.userId) ?? [];
       autoFollow(db, event.item.itemId, [actor, ...mentioned]);
@@ -189,11 +205,29 @@ function rule(
         .where(eq(projects.id, event.projectId))
         .get()?.userId;
       return {
-        to: as("joined", owner ? [owner] : []),
+        // Its owner let them in; to everyone else on it, it's activity.
+        to: [...as("joined", owner ? [owner] : []), ...as("activity", membersOf(db, event.projectId))],
         groupKey: `list:${event.projectId}`,
         projectId: event.projectId,
       };
     }
+    case "list.updated":
+      return event.changes.name
+        ? {
+            to: as("activity", membersOf(db, event.projectId)),
+            groupKey: `list:${event.projectId}`,
+            projectId: event.projectId,
+          }
+        : null;
+    case "list.created":
+      // A list added to a Space is news to the Space.
+      return event.space
+        ? {
+            to: as("activity", membersOf(db, event.projectId)),
+            groupKey: `list:${event.projectId}`,
+            projectId: event.projectId,
+          }
+        : null;
     case "space.member.invited":
       return {
         to: as("invited", [event.member.userId]),
@@ -265,18 +299,152 @@ export function writeNotifications(
           .get()) &&
       (!spaceId || inSpace(db, u, spaceId)),
   );
-  if (to.length === 0) return;
-  db.insert(notifications)
-    .values(
-      to.map(([userId, reason]) => ({
+  // Each at the level they chose for where it happened.
+  const space =
+    spaceId ??
+    (projectId
+      ? db.select({ spaceId: projects.spaceId }).from(projects).where(eq(projects.id, projectId)).get()
+          ?.spaceId
+      : null) ??
+    null;
+  const rows = to.flatMap(([userId, reason]) => {
+    const level = levelFor(db, userId, projectId ?? null, space);
+    const tier = tierOf(reason);
+    if (level === "mine" && tier !== "direct") return [];
+    return [
+      {
         id: nanoid(12),
         userId,
         reason,
         auditId: change.auditId,
         groupKey: r.groupKey,
         createdAt: change.ts,
-      })),
-    )
+        // Activity is pushed only to those who asked for all of it; the rest
+        // see it in the inbox. Marked sent, so the sender passes it by.
+        sentAt: tier === "ambient" && level !== "all" ? change.ts : null,
+      },
+    ];
+  });
+  if (rows.length === 0) return;
+  db.insert(notifications).values(rows).run();
+}
+
+/** How directly a reason concerns its recipient. */
+export function tierOf(reason: NotificationReason): "direct" | "involved" | "ambient" {
+  switch (reason) {
+    case "assigned":
+    case "mentioned":
+    case "invited":
+    case "agent-finished":
+      return "direct";
+    case "activity":
+      return "ambient";
+    default:
+      return "involved";
+  }
+}
+
+/** Everyone who can open the list: its owner, its members and its Space's. */
+function membersOf(db: Db, projectId: string): string[] {
+  const list = db
+    .select({ userId: projects.userId, spaceId: projects.spaceId })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .get();
+  if (!list) return [];
+  const members = db
+    .select({ userId: projectMembers.userId })
+    .from(projectMembers)
+    .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.status, "accepted")))
+    .all();
+  const inSpace = list.spaceId
+    ? db
+        .select({ userId: spaceMembers.userId })
+        .from(spaceMembers)
+        .where(and(eq(spaceMembers.spaceId, list.spaceId), eq(spaceMembers.status, "accepted")))
+        .all()
+    : [];
+  return [...new Set([list.userId, ...members.map((m) => m.userId), ...inSpace.map((m) => m.userId)])];
+}
+
+/**
+ * `userId`'s level for a list (or a Space, with no list): the list's own,
+ * else its Space's, else theirs for everything, else "default".
+ */
+function levelFor(
+  db: Db,
+  userId: string,
+  projectId: string | null,
+  spaceId: string | null,
+): NotificationLevel {
+  const scopes = [
+    ...(projectId ? [`list:${projectId}`] : []),
+    ...(spaceId ? [`space:${spaceId}`] : []),
+    "all",
+  ];
+  const set = new Map(
+    db
+      .select({ scope: notificationSettings.scope, level: notificationSettings.level })
+      .from(notificationSettings)
+      .where(and(eq(notificationSettings.userId, userId), inArray(notificationSettings.scope, scopes)))
+      .all()
+      .map((r) => [r.scope, r.level]),
+  );
+  return scopes.map((scope) => set.get(scope)).find(Boolean) ?? "default";
+}
+
+/** The levels `userId` has set, by scope ("all", "space:<id>", "list:<id>"). */
+export function listNotificationLevels(db: Db, userId: string): Record<string, NotificationLevel> {
+  return Object.fromEntries(
+    db
+      .select({ scope: notificationSettings.scope, level: notificationSettings.level })
+      .from(notificationSettings)
+      .where(eq(notificationSettings.userId, userId))
+      .all()
+      .map((r) => [r.scope, r.level]),
+  );
+}
+
+/**
+ * Set how much `userId` hears about a scope: "all" (everything), or a Space
+ * or list they're in. null goes back to what it inherits. Not audited,
+ * like following: it's this person's, and changes nothing anyone else sees.
+ */
+export function setNotificationLevel(
+  db: Db,
+  userId: string,
+  scope: string,
+  level: NotificationLevel | null,
+): void {
+  const [kind, id] = scope.split(":");
+  const reachable =
+    scope === "all" ||
+    (kind === "list" &&
+      id &&
+      db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(and(eq(projects.id, id), hasProjectAccess(userId)))
+        .get()) ||
+    (kind === "space" && id && inSpace(db, userId, id));
+  if (!reachable) throw new Error(`not found: ${scope}`);
+  if (level !== null && !(NOTIFICATION_LEVELS as readonly string[]).includes(level)) {
+    throw new Error(`unknown notification level: ${level}`);
+  }
+  const where = and(eq(notificationSettings.userId, userId), eq(notificationSettings.scope, scope));
+  if (level === null) {
+    // audit-exempt: a personal preference, seen by nobody else.
+    db.delete(notificationSettings).where(where).run();
+    return;
+  }
+  const updatedAt = Date.now();
+  // audit-exempt: a personal preference, seen by nobody else.
+  db.insert(notificationSettings)
+    .values({ userId, scope, level, updatedAt })
+    .onConflictDoUpdate({
+      target: [notificationSettings.userId, notificationSettings.scope],
+      set: { level, updatedAt },
+    })
     .run();
 }
 
@@ -341,6 +509,7 @@ function itemOf(event: ChangeEvent): ItemAt | null {
     case "item.moved":
     case "agent.requested":
     case "agent.finished":
+    case "item.pr.linked":
       return event;
     case "comment.created":
     case "comment.edited":
@@ -389,17 +558,24 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
   );
 
   const listIds = [
-    ...new Set(events.flatMap((e) => (e.type === "member.joined" ? [e.projectId] : []))),
+    ...new Set(
+      events.flatMap((e) =>
+        e.type === "member.joined" || e.type === "list.updated" || e.type === "list.created"
+          ? [e.projectId]
+          : [],
+      ),
+    ),
   ];
   const lists = new Map(
     (listIds.length
       ? db
-          .select({ id: projects.id, name: projects.name })
+          .select({ id: projects.id, name: projects.name, space: spaces.name })
           .from(projects)
+          .leftJoin(spaces, eq(spaces.id, projects.spaceId))
           .where(and(inArray(projects.id, listIds), hasProjectAccess(userId)))
           .all()
       : []
-    ).map((p) => [p.id, p.name]),
+    ).map((p) => [p.id, p]),
   );
   const spaceIds = [
     ...new Set(
@@ -460,10 +636,13 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
         case "item.created":
           return r.reason === "assigned"
             ? say([who, t(" added "), item, t(" for you")])
-            : say([who, t(" added "), item, t(" to "), { text: event.parent?.title ?? "", em: "item", quote: true }]);
+            : event.parent
+              ? say([who, t(" added "), item, t(" to "), { text: event.parent.title, em: "item", quote: true }])
+              : say([who, t(" added "), item, t(" to "), { text: now.list, em: "place", quote: true }]);
         case "item.updated":
           if (r.reason === "assigned") return say([who, t(" assigned you "), item]);
           if (r.reason === "unassigned") return say([who, t(" took you off "), item]);
+          if (r.reason === "activity") return say([who, t(" edited "), item]);
           return event.changes.due?.dueDate
             ? say([who, t(" set "), item, t(` due ${dueText(event.changes.due)}`)])
             : say([who, t(" cleared the due date on "), item]);
@@ -477,6 +656,8 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           return say([who, t(" moved "), item, t(" to "), { text: now.list, em: "place", quote: true }]);
         case "agent.requested":
           return say([who, t(" asked "), { text: event.agent, em: "person" }, t(" to work on "), item]);
+        case "item.pr.linked":
+          return say([who, t(" linked a pull request to "), item]);
         case "comment.created":
         case "comment.edited": {
           const body = bodies.get(event.commentId);
@@ -515,15 +696,25 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
     }
     // Joins and roles: only while the reader is still in the list or Space,
     // by its current name.
-    if (event.type === "member.joined") {
-      const name = lists.get(event.projectId);
-      if (!name) return [];
+    if (event.type === "member.joined" || event.type === "list.updated" || event.type === "list.created") {
+      const list = lists.get(event.projectId);
+      if (!list) return [];
+      const name = list.name;
+      const place: Part = { text: name, em: "place", quote: true };
+      const parts: Part[] =
+        event.type === "list.updated"
+          ? [who, t(" renamed "), { text: event.changes.name?.from ?? "", em: "place", quote: true }, t(" to "), place]
+          : event.type === "list.created"
+            ? list.space
+              ? [who, t(" added "), place, t(" to "), { text: list.space, em: "place", quote: true }]
+              : [who, t(" added "), place]
+            : [who, t(" joined "), place];
       return [
         {
           ...base,
           title: name,
           url: `/?p=${encodeURIComponent(event.projectId)}`,
-          parts: [who, t(" joined "), { text: name, em: "place", quote: true }],
+          parts,
           snippet: null,
         },
       ];

@@ -48,6 +48,7 @@ import type { ProjectStatus } from "@/core/schema";
 import type { SpaceView } from "@/core/spaces";
 import { validatePrefix } from "@/lib/itemRef";
 import { MoveMenuItems } from "./MoveMenuItems";
+import { NotificationsSubmenu, saveLevel } from "./notification-levels";
 import { ARMED_MENU_ITEM, useTapToConfirm } from "./use-tap-to-confirm";
 import { runAction } from "./run-action";
 import { useListSave, useRemoveList } from "./use-list-saves";
@@ -290,6 +291,11 @@ export function ProjectMenu({
           <History />
           Activity
         </DropdownMenuItem>
+        <NotificationsSubmenu
+          scope={`list:${projectId}`}
+          parent={space ? { scope: `space:${space.id}`, name: space.name } : null}
+          onChoose={(level) => save(() => saveLevel(`list:${projectId}`, level, name))}
+        />
         <DropdownMenuSeparator />
         {status === "archived" ? (
           <DropdownMenuItem onClick={restore}>
