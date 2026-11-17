@@ -10,6 +10,7 @@ import {
 } from "drizzle-orm/sqlite-core";
 import type { RepeatUnit } from "../lib/repeat";
 import { apiKeys } from "./auth-schema";
+import type { ChangeEvent } from "./events";
 
 // A list's lifecycle (a "project" in code; "list" to people and agents).
 // active lists are on the board; archived lists leave it, and every other
@@ -538,7 +539,13 @@ export const auditLog = sqliteTable(
     // moved out; for a comment's row, the item it's on. No FK, like
     // project_id: the parent may be deleted too.
     parentId: text("parent_id"),
+    // What happened, as free text. Only rows from before change events, and
+    // modules not yet moved to them, write it; an event row leaves it empty
+    // and is read back through core/describe.ts.
     detail: text("detail").notNull().default(""),
+    // What happened, as data (core/events.ts): ids, plus whatever a rename
+    // or delete could make unreadable. Null on free-text rows.
+    event: text("event", { mode: "json" }).$type<ChangeEvent>(),
     // The API key an agent (MCP) call came through, and that key's name at the
     // time ("Claude desktop"). Null for web and other non-agent changes. The
     // name is a snapshot, not a join: revoking a key deletes its row, and the

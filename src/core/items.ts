@@ -6,16 +6,17 @@ import { type AuditOrigin, recordAudit, SYSTEM_ACTOR } from "./audit";
 import { ensureLabels, type LabelEmoji, normalizeLabelNames } from "./labels";
 import { announceChange } from "./changes";
 import type { Db } from "./db";
+import type { ChangeEvent, ItemChanges } from "./events";
 import { getTimeZone } from "./users";
 import {
   MAX_REPEAT_EVERY,
   nextDue,
   type Repeat,
   REPEAT_UNITS,
-  repeatLabel,
   repeatOf,
 } from "../lib/repeat";
 import { dayOf, isDay, sameDue } from "../lib/time";
+import { ITEM_SORTS, type ItemSort } from "../lib/itemSorts";
 import { parseRef, resolvePosition } from "./fracidx";
 import { agentSessions, type Item, items, projects } from "./schema";
 
@@ -221,10 +222,6 @@ function assertDue(
   return { dueDate: to, dueFrom: from === to ? null : from };
 }
 
-function dueText(due: { dueDate: string | null; dueFrom: string | null }): string {
-  return due.dueFrom ? `${due.dueFrom} to ${due.dueDate}` : (due.dueDate ?? "");
-}
-
 // A repeat rule is a whole number of days, weeks or months; null clears it.
 function assertRepeat(repeat: Repeat | null): Repeat | null {
   if (!repeat) return null;
@@ -296,11 +293,13 @@ function reopenParentIfDone(
   recordAudit(tx, {
     actor: userId,
     source,
-    action: "uncomplete",
-    entityType: "item",
-    entityId: parent.id,
-    projectId: parent.projectId,
-    detail: `reopened "${parent.title}" for an open sub-item`,
+    event: {
+      type: "item.reopened",
+      itemId: parent.id,
+      title: parent.title,
+      projectId: parent.projectId,
+      forSubItem: true,
+    },
   });
 }
 
@@ -410,20 +409,17 @@ export function addItem(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "create",
-      entityType: "item",
-      entityId: id,
-      projectId: input.projectId,
-      detail:
-        (parent
-          ? `added "${title}" to "${parent.title}"`
-          : `added task "${title}"`) +
-        (due.dueDate ? `, due ${dueText(due)}` : "") +
-        (itemLabels.length ? `, labelled ${itemLabels.join(", ")}` : "") +
-        (assigneeIds.length
-          ? `, assigned to ${assigneeIds.map((a) => assigneeLabel(tx as unknown as Db, a)).join(", ")}`
-          : "") +
-        (repeat ? `, repeats ${repeatLabel(repeat).toLowerCase()}` : ""),
+      event: {
+        type: "item.created",
+        itemId: id,
+        title,
+        projectId: input.projectId,
+        parent: parent ? { itemId: parent.id, title: parent.title } : null,
+        due,
+        labels: itemLabels,
+        assignees: assigneeIds,
+        repeat,
+      },
     });
     // Created done: log the completion as its own row, as completeItem does,
     // so the item's history reads the same as adding it then ticking it.
@@ -431,11 +427,7 @@ export function addItem(
       recordAudit(tx as unknown as Db, {
         actor: userId,
         source,
-        action: "complete",
-        entityType: "item",
-        entityId: id,
-        projectId: input.projectId,
-        detail: `completed "${title}"`,
+        event: { type: "item.completed", itemId: id, title, projectId: input.projectId },
       });
     }
     // A done sub-item doesn't contradict a finished parent; only an open one does.
@@ -508,19 +500,19 @@ export function updateItem(
   if (!existing) throw new Error(`item not found: ${id}`);
 
   const next: Partial<Item> = {};
-  const changes: string[] = [];
+  const changes: ItemChanges = {};
   if (patch.title !== undefined) {
     const title = assertTitle(patch.title);
     if (title !== existing.title) {
       next.title = title;
-      changes.push(`renamed to "${title}"`);
+      changes.title = { from: existing.title, to: title };
     }
   }
   if (patch.description !== undefined) {
     const d = patch.description?.trim() || null;
     if (d !== existing.description) {
       next.description = d;
-      changes.push(d ? "edited description" : "description cleared");
+      changes.description = d ? "edited" : "cleared";
     }
   }
   if (patch.labels !== undefined) {
@@ -530,8 +522,7 @@ export function updateItem(
     const removed = existing.labels.filter((l) => !names.includes(l));
     if (added.length || removed.length) {
       next.labels = names;
-      if (added.length) changes.push(`labelled ${added.join(", ")}`);
-      if (removed.length) changes.push(`unlabelled ${removed.join(", ")}`);
+      changes.labels = { added, removed };
     }
   }
   if (
@@ -559,10 +550,7 @@ export function updateItem(
     const removed = existing.assigneeIds.filter((a) => !ids.includes(a));
     if (added.length || removed.length) {
       next.assigneeIds = ids;
-      const names = (list: string[]) =>
-        list.map((a) => assigneeLabel(db, a)).join(", ");
-      if (added.length) changes.push(`assigned ${names(added)}`);
-      if (removed.length) changes.push(`unassigned ${names(removed)}`);
+      changes.assignees = { added, removed };
     }
   }
   if (patch.dueDate !== undefined || patch.dueFrom !== undefined) {
@@ -573,7 +561,7 @@ export function updateItem(
     );
     if (d.dueDate !== existing.dueDate || d.dueFrom !== existing.dueFrom) {
       Object.assign(next, d);
-      changes.push(d.dueDate ? `due ${dueText(d)}` : "due date cleared");
+      changes.due = d;
     }
   }
   if (patch.repeat !== undefined) {
@@ -582,7 +570,7 @@ export function updateItem(
     if (r?.every !== was?.every || r?.unit !== was?.unit) {
       next.repeatEvery = r?.every ?? null;
       next.repeatUnit = r?.unit ?? null;
-      changes.push(r ? `repeats ${repeatLabel(r).toLowerCase()}` : "no longer repeats");
+      changes.repeat = r;
     }
   }
   if (Object.keys(next).length === 0) return existing;
@@ -595,11 +583,13 @@ export function updateItem(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "update",
-      entityType: "item",
-      entityId: id,
-      projectId: existing.projectId,
-      detail: `${existing.title}: ${changes.join(", ")}`,
+      event: {
+        type: "item.updated",
+        itemId: id,
+        title: existing.title,
+        projectId: existing.projectId,
+        changes,
+      },
     });
   });
 
@@ -646,16 +636,21 @@ export function completeItem(
       recordAudit(tx as unknown as Db, {
         actor: userId,
         source,
-        action: "complete",
-        entityType: "item",
-        entityId: it.id,
-        projectId: existing.projectId,
-        detail:
-          it === existing
-            ? `completed "${it.title}"`
-            : it === parent
-              ? `completed "${it.title}" with its last sub-item, "${existing.title}"`
-              : `completed "${it.title}" with "${existing.title}"`,
+        event: {
+          type: "item.completed",
+          itemId: it.id,
+          title: it.title,
+          projectId: existing.projectId,
+          ...(it === existing
+            ? {}
+            : {
+                with: {
+                  itemId: existing.id,
+                  title: existing.title,
+                  as: it === parent ? ("last-sub-item" as const) : ("parent" as const),
+                },
+              }),
+        },
       });
     }
   });
@@ -685,11 +680,12 @@ export function uncompleteItem(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "uncomplete",
-      entityType: "item",
-      entityId: id,
-      projectId: existing.projectId,
-      detail: `reopened "${existing.title}"`,
+      event: {
+        type: "item.reopened",
+        itemId: id,
+        title: existing.title,
+        projectId: existing.projectId,
+      },
     });
   });
   return getItemOrThrow(db, userId, id);
@@ -757,11 +753,14 @@ export function reopenDueRepeats(
       recordAudit(tx as unknown as Db, {
         actor: SYSTEM_ACTOR,
         source: "system",
-        action: "uncomplete",
-        entityType: "item",
-        entityId: it.id,
-        projectId: it.projectId,
-        detail: `reopened "${it.title}" (repeats ${repeatLabel(rule).toLowerCase()}), due ${dueText(next)}`,
+        event: {
+          type: "item.reopened",
+          itemId: it.id,
+          title: it.title,
+          projectId: it.projectId,
+          repeat: rule,
+          due: next,
+        },
       });
       // The checklist comes round with it. A sub-item that repeats waited
       // for this (see above), so it's due when its parent is.
@@ -777,13 +776,14 @@ export function reopenDueRepeats(
         recordAudit(tx as unknown as Db, {
           actor: SYSTEM_ACTOR,
           source: "system",
-          action: "uncomplete",
-          entityType: "item",
-          entityId: child.id,
-          projectId: it.projectId,
-          detail:
-            `reopened "${child.title}" with "${it.title}"` +
-            (sameDue(childDue, child) ? "" : `, due ${dueText(childDue)}`),
+          event: {
+            type: "item.reopened",
+            itemId: child.id,
+            title: child.title,
+            projectId: it.projectId,
+            with: { itemId: it.id, title: it.title },
+            ...(sameDue(childDue, child) ? {} : { due: childDue }),
+          },
         });
       }
       if (parent) {
@@ -816,11 +816,12 @@ export function reorderItem(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "reorder",
-      entityType: "item",
-      entityId: id,
-      projectId: existing.projectId,
-      detail: `reordered "${existing.title}"`,
+      event: {
+        type: "item.reordered",
+        itemId: id,
+        title: existing.title,
+        projectId: existing.projectId,
+      },
     });
   });
   return getItemOrThrow(db, userId, id);
@@ -855,14 +856,7 @@ export function setItemsCollapsed(
   for (const projectId of lists) announceChange({ actor: userId, projectId });
 }
 
-/** Ways to sort a list's items once, each in its one useful direction. */
-export const ITEM_SORTS = {
-  due: "due date",
-  created: "date created",
-  title: "name",
-  priority: "priority",
-} as const;
-export type ItemSort = keyof typeof ITEM_SORTS;
+export { ITEM_SORTS, type ItemSort } from "../lib/itemSorts";
 
 const byTitle = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
@@ -893,7 +887,8 @@ function applyItemOrder(
   userId: string,
   projectId: string,
   order: Item[],
-  detail: string,
+  listName: string,
+  by: ItemSort | null,
   source: AuditOrigin,
 ) {
   db.transaction((tx) => {
@@ -906,11 +901,7 @@ function applyItemOrder(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "reorder",
-      entityType: "project",
-      entityId: projectId,
-      projectId,
-      detail,
+      event: { type: "list.items.sorted", projectId, listName, by },
     });
   });
 }
@@ -954,7 +945,7 @@ export function sortItems(
     by === "priority" ? (a, b) => score(b) - score(a) : COMPARE[by],
   );
   if (sameOrder(sorted, current)) return null;
-  applyItemOrder(db, userId, projectId, sorted, `sorted "${name}" by ${ITEM_SORTS[by]}`, source);
+  applyItemOrder(db, userId, projectId, sorted, name, by, source);
   return current.map((i) => i.id);
 }
 
@@ -977,7 +968,7 @@ export function setItemOrder(
     (a, b) => (rank.get(a.id) ?? ids.length) - (rank.get(b.id) ?? ids.length),
   );
   if (sameOrder(ordered, current)) return;
-  applyItemOrder(db, userId, projectId, ordered, `reordered the items in "${name}"`, source);
+  applyItemOrder(db, userId, projectId, ordered, name, null, source);
 }
 
 export function deleteItem(
@@ -997,16 +988,14 @@ export function deleteItem(
       recordAudit(tx as unknown as Db, {
         actor: userId,
         source,
-        action: "delete",
-        entityType: "item",
-        entityId: it.id,
-        projectId: existing.projectId,
-        // Gone by now, so it can't be read back from the row.
-        parentId: it.parentId,
-        detail:
-          it === existing
-            ? `deleted "${it.title}"`
-            : `deleted "${it.title}" with "${existing.title}"`,
+        event: {
+          type: "item.deleted",
+          itemId: it.id,
+          title: it.title,
+          projectId: existing.projectId,
+          parentId: it.parentId,
+          ...(it === existing ? {} : { with: { itemId: existing.id, title: existing.title } }),
+        },
       });
     }
   });
@@ -1034,7 +1023,7 @@ export function setItemParent(
 
   let parent: Item | null = null;
   let position: string;
-  let detail: string;
+  let event: ChangeEvent;
   if (parentId) {
     if (parentId === id) throw new Error("an item can't be its own sub-item");
     parent = getItem(db, userId, parentId) ?? null;
@@ -1047,7 +1036,13 @@ export function setItemParent(
       getAllSiblings(db, userId, existing.projectId, parent.id),
       parseRef(positionRef),
     );
-    detail = `made "${existing.title}" a sub-item of "${parent.title}"`;
+    event = {
+      type: "item.nested",
+      itemId: id,
+      title: existing.title,
+      projectId: existing.projectId,
+      parent: { itemId: parent.id, title: parent.title },
+    };
   } else {
     const oldParent = existing.parentId
       ? getItem(db, userId, existing.parentId)
@@ -1060,7 +1055,14 @@ export function setItemParent(
           ? { after: oldParent.id }
           : "last",
     );
-    detail = `moved "${existing.title}" out of "${oldParent?.title ?? "its parent"}"`;
+    event = {
+      type: "item.unnested",
+      itemId: id,
+      title: existing.title,
+      projectId: existing.projectId,
+      // It was nested, or the early return above would have left it.
+      parent: { itemId: existing.parentId ?? "", title: oldParent?.title ?? null },
+    };
   }
 
   db.transaction((tx) => {
@@ -1071,13 +1073,7 @@ export function setItemParent(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "update",
-      entityType: "item",
-      entityId: id,
-      projectId: existing.projectId,
-      // Moving out belongs to the parent it left.
-      parentId: parent?.id ?? existing.parentId,
-      detail,
+      event,
     });
     if (parent && existing.completedAt === null) {
       reopenParentIfDone(tx as unknown as Db, userId, parent, source);

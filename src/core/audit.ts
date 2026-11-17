@@ -4,6 +4,8 @@ import { hasProjectAccess } from "./access";
 import { users } from "./auth-schema";
 import { announceChange } from "./changes";
 import type { Db } from "./db";
+import { describeEvent, namesFrom, type Part, plainText } from "./describe";
+import { auditColumns, type ChangeEvent } from "./events";
 import {
   type AuditAction,
   type AuditEntity,
@@ -16,6 +18,10 @@ import {
 
 /** An audit row plus the resolved display name of its actor. */
 export interface AuditEntryWithActor extends AuditEntry {
+  /** What happened, for an event row, with who and what marked; null for a
+   * free-text row, whose `detail` says it. An event row's `detail` is this
+   * as plain text. */
+  parts: Part[] | null;
   /** Actor's name (falls back to email, then null for a deleted user);
    * "Sidetrack" for a system change. */
   actorName: string | null;
@@ -38,10 +44,20 @@ export type AuditOrigin =
  */
 export const SYSTEM_ACTOR = "system";
 
+/** Who made a change, where from, and what it did (core/events.ts). */
+export interface EventInput {
+  /** User id of whoever performed the action, or SYSTEM_ACTOR. */
+  actor: string;
+  source: AuditOrigin;
+  event: ChangeEvent;
+}
+
+/** A change described in free text: modules not yet moved to events. */
 export interface AuditInput {
   /** User id of whoever performed the action, or SYSTEM_ACTOR. */
   actor: string;
   source: AuditOrigin;
+  event?: undefined;
   action: AuditAction;
   entityType: AuditEntity;
   entityId: string;
@@ -57,7 +73,19 @@ export interface AuditInput {
  * Append one audit row. Call inside the same transaction as the mutation it
  * describes so the log can never drift from the data.
  */
-export function recordAudit(db: Db, input: AuditInput): void {
+export function recordAudit(db: Db, input: AuditInput | EventInput): void {
+  if (input.event) {
+    const { event } = input;
+    writeRow(db, { actor: input.actor, source: input.source, ...auditColumns(event), event });
+  } else {
+    writeRow(db, input);
+  }
+}
+
+function writeRow(
+  db: Db,
+  input: Omit<AuditInput, "event"> & { event?: ChangeEvent },
+): void {
   const origin =
     typeof input.source === "string" ? { source: input.source } : input.source;
   const agent = "agent" in origin ? origin.agent : null;
@@ -87,6 +115,7 @@ export function recordAudit(db: Db, input: AuditInput): void {
       projectId: input.projectId ?? null,
       parentId,
       detail: input.detail ?? "",
+      event: input.event ?? null,
     })
     .run();
   // Every audited change reaches open pages once it commits (see changes.ts).
@@ -176,10 +205,16 @@ export function listAudit(
     .limit(limit)
     .all();
 
-  return rows.map((r) => ({
+  const names = namesFrom(db);
+  return rows.map((r) => {
+    const parts = r.entry.event ? describeEvent(r.entry.event, names) : null;
+    return {
     ...r.entry,
+    parts,
+    detail: parts ? plainText(parts) : r.entry.detail,
     actorName:
       r.entry.actor === SYSTEM_ACTOR ? "Sidetrack" : (r.name ?? r.email ?? null),
     actorImage: r.image,
-  }));
+    };
+  });
 }
