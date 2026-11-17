@@ -3,6 +3,18 @@
 // probability for each, and `noul` (yes/no) questions with the probability of
 // yes. Callers decide what's confident enough to show.
 // Framework-agnostic: a plain fetch, no DB access.
+//
+// Shaping a call. Jev bills input as the state once plus every question in
+// full (choice criteria included), and output grows with each question too.
+// Each response reports `usage`, so measure a change against the live API.
+// - Ask everything about one state in one request, not one request per
+//   question: `checkDraftItem` asks duplicate and parent together.
+// - Ask only what the caller uses. Questions dominate the bill: the emoji
+//   fit questions are ~70% of a suggestion request, so `autoListIcon`, which
+//   keeps only the top pick, skips them.
+// - Put shared context in the state, not in each question. Check that a
+//   leaner question keeps the answers before you trim it, though: dropping
+//   each emoji's meaning from its fit question changed which emoji fit.
 
 const ENDPOINT = "https://api.typesafe.ai/v1/systemone";
 
