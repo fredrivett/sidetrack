@@ -689,7 +689,8 @@ export function DraggableItemList({
         <div
           // The column's own background, so rows under a parent's checklist
           // don't show through the gaps between its rows.
-          className="cursor-grabbing rounded-lg bg-white shadow-xl transition-[margin,width,scale,box-shadow] duration-200 ease-out in-[.dnd-dropping]:scale-100! in-[.dnd-dropping]:shadow-none motion-safe:scale-[1.03] motion-safe:animate-[lift_150ms_ease-out] dark:bg-neutral-900"
+          // Grabbing over everything in it, overriding the row's pointer.
+          className="cursor-grabbing rounded-lg **:cursor-grabbing! bg-white shadow-xl transition-[margin,width,scale,box-shadow] duration-200 ease-out in-[.dnd-dropping]:scale-100! in-[.dnd-dropping]:shadow-none motion-safe:scale-[1.03] motion-safe:animate-[lift_150ms_ease-out] dark:bg-neutral-900"
           style={{
             marginLeft: shift,
             width: `calc(100% - ${shift}px)`,
