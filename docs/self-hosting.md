@@ -3,7 +3,8 @@
 Sidetrack runs as one container with a SQLite database. There's no separate
 database, cache or queue.
 
-**You need** Docker with Docker Compose, and a machine with a persistent disk:
+**You need** Docker with Docker Compose, `curl` and `openssl` (both come with
+macOS and most Linux distributions), and a machine with a persistent disk:
 
 - a VPS or home server (amd64 or arm64, such as a Raspberry Pi 4 or 5 on a
   64-bit OS)

@@ -21,15 +21,21 @@ webhook works for any number of repositories.
 
 - **Name items in the PR title** in square brackets, such as
   `Fix login [SDT-1]` or `[SDT-1, SDT-2]`, to link them. Refs resolve against
-  your lists and the shared lists you've joined. If a ref matches items in
-  more than one list, add the list owner's username, such as `[alice/SDT-1]`.
-  A ref that matches no item, or several, is skipped.
-- **Editing a ref out of the title** unlinks that item, unless an agent linked
-  it with `link_item_to_pr`.
+  your lists and the shared lists you've joined.
+- **Add the owner's username** when more than one of those lists uses the
+  same prefix, such as `[alice/SDT-1]`. A bare ref is ambiguous then, even if
+  only one of the lists has that number.
+- **A ref that matches no item, or several, is skipped.** If it linked an item
+  before and is still in the title, that link stays.
+- **Editing a ref out of the title** unlinks that item, unless the item was
+  linked to the PR some other way first, such as by an agent with
+  `link_item_to_pr` or in Sidetrack itself.
 - **When the PR merges,** every linked item is completed, however it was
   linked.
 - **When the PR closes without merging,** agents working on its items are
-  taken off them, unless an item has another open PR. The items stay open.
+  taken off them. An item keeps its agent if it has another linked PR that
+  isn't known to be merged or closed. The items stay open.
 
-Every delivery is checked against the webhook's secret, and its changes show
-in the audit log as `github`.
+Every delivery is checked against the webhook's secret. The changes it makes
+to items show in the audit log as `github`. Updates to a PR's state, which
+show as its badge on the board, aren't logged.
