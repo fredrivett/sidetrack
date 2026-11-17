@@ -21,11 +21,12 @@ on:
     - cron: "17 4 * * 1"
   workflow_dispatch:
 
-# Release tags and the weekly rebuild both move :latest and the version
-# tags, so they share one queue: an older run can't finish last and win.
-# Merges to main queue separately, so they never displace a pending release.
+# GitHub keeps only one pending run per group, so each tag gets its own
+# group and no release is ever dropped. Merges, the weekly rebuild and
+# manual runs queue separately. :latest stays correct across overlapping
+# runs because the publish job re-checks the newest tag just before moving it.
 concurrency:
-  group: ${{ github.workflow }}-${{ (github.ref_type == 'tag' || github.event_name == 'schedule') && 'release' || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -163,6 +164,21 @@ jobs:
           merge-multiple: true
           path: /tmp/digests
 
+      # Decided now, not when the run started: a newer release tagged
+      # meanwhile keeps :latest, so a slow older run can't move it back.
+      - id: latest
+        if: needs.resolve.outputs.latest == 'true'
+        run: |
+          newest=$(git ls-remote --tags --refs "https://github.com/$GITHUB_REPOSITORY" 'v*' |
+            sed 's#.*refs/tags/##' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)
+          if [ "$newest" = "$VERSION" ]; then
+            echo "move=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "$newest is newer than $VERSION; leaving :latest alone."
+          fi
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+
       - id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
@@ -173,7 +189,7 @@ jobs:
             type=sha,prefix=sha-,format=short,enable=${{ github.event_name != 'schedule' }}
             type=semver,pattern={{version}},value=${{ needs.resolve.outputs.version }},enable=${{ needs.resolve.outputs.version != '' }}
             type=semver,pattern={{major}}.{{minor}},value=${{ needs.resolve.outputs.version }},enable=${{ needs.resolve.outputs.version != '' }}
-            type=raw,value=latest,enable=${{ needs.resolve.outputs.latest == 'true' }}
+            type=raw,value=latest,enable=${{ steps.latest.outputs.move == 'true' }}
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
