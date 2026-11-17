@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { finishWork, startWork } from "./agentSessions";
 import { addComment, updateComment } from "./comments";
 import { plainText } from "./describe";
-import { addItem, completeItem, uncompleteItem, updateItem } from "./items";
+import { addItem, completeItem, listItems, uncompleteItem, updateItem } from "./items";
+import { moveItem, previewMoveItem } from "./move";
 import { setFollowing } from "./follows";
 import { acceptInvite, inviteMember, removeMember } from "./members";
 import { deliverNotifications, listNotifications, markNotificationsRead } from "./notifications";
@@ -193,6 +194,40 @@ describe("notifications", () => {
     markNotificationsRead(db, alice);
     completeItem(db, fred, sub.id, "web");
     expect(unread(db, alice)).toEqual(['Fred completed "Socks"']);
+  });
+
+  it("tells one action once, not once per sub-item it carries", () => {
+    const { db, fred, alice, listId } = seed();
+    // Added with its lines: the assignment, not a line each.
+    const trip = addItem(
+      db,
+      fred,
+      { projectId: listId, title: "Trip", assigneeIds: [alice], subItems: ["Socks", "Hat"] },
+      "web",
+    );
+    expect(unread(db, alice)).toEqual(['Fred added "Trip" for you']);
+    // Logged as already done, with its lines: nothing at all.
+    addItem(
+      db,
+      fred,
+      { projectId: listId, title: "Logged", assigneeIds: [alice], completed: true, subItems: ["a"] },
+      "web",
+    );
+    expect(unread(db, alice)).toHaveLength(1);
+    markNotificationsRead(db, alice);
+    // Moved with its lines: the move, once.
+    const ops = createProject(db, fred, { name: "Ops" }, "web");
+    inviteMember(db, fred, ops.id, "alice", "web");
+    acceptInvite(db, alice, ops.id, "web");
+    markNotificationsRead(db, alice);
+    moveItem(db, fred, trip.id, { projectId: ops.id, token: previewMoveItem(db, fred, trip.id, ops.id).token }, "web");
+    expect(unread(db, alice)).toEqual(['Fred moved "Trip" to "Ops"']);
+    markNotificationsRead(db, alice);
+    // Ticking the last open line completes the parent: told as the parent.
+    const [socks, hat] = listItems(db, fred, ops.id).filter((i) => i.parentId === trip.id);
+    completeItem(db, fred, socks.id, "web");
+    completeItem(db, fred, hat.id, "web");
+    expect(unread(db, alice)).toEqual(['Fred completed "Trip"', 'Fred completed "Socks"']);
   });
 
   it("tells a list's owner and a Space's admins who joined, and someone their new role", () => {

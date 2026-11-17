@@ -67,6 +67,30 @@ const PAGES_MAX = 10;
 
 type Recipient = { userId: string; reason: NotificationReason };
 
+/**
+ * The parent `itemId` is the last open sub-item of, now it's done: the parent
+ * completeItem is about to complete with it.
+ */
+function finishedParent(db: Db, itemId: string): string | null {
+  const parentId = db
+    .select({ parentId: items.parentId })
+    .from(items)
+    .where(eq(items.id, itemId))
+    .get()?.parentId;
+  if (!parentId) return null;
+  const parentOpen = db
+    .select({ id: items.id })
+    .from(items)
+    .where(and(eq(items.id, parentId), isNull(items.completedAt)))
+    .get();
+  const siblingOpen = db
+    .select({ id: items.id })
+    .from(items)
+    .where(and(eq(items.parentId, parentId), isNull(items.completedAt)))
+    .get();
+  return parentOpen && !siblingOpen ? parentId : null;
+}
+
 /** Who `event` concerns and why, before the checks every rule shares. */
 function rule(
   db: Db,
@@ -94,8 +118,9 @@ function rule(
         .get()?.completedAt;
       return onItem(event.itemId, event.projectId, [
         ...(done ? [] : as("assigned", assignees)),
-        // A sub-item added is news to its parent's followers.
-        ...(event.parent ? followers(event.itemId) : []),
+        // A sub-item added later is news to its parent's followers; lines
+        // added with the parent come with its own notification.
+        ...(event.parent && !event.withParent && !done ? followers(event.itemId) : []),
       ]);
     }
     case "item.updated": {
@@ -108,19 +133,28 @@ function rule(
         ...(c.due ? followers(event.itemId) : []),
       ]);
     }
-    case "item.completed":
-      // Sub-items ticked with their parent are told as the parent.
-      return event.with?.as === "parent"
-        ? null
-        : onItem(event.itemId, event.projectId, followers(event.itemId));
+    case "item.completed": {
+      // Sub-items ticked with their parent are told as the parent, and an
+      // item logged as already done asks nothing of anyone.
+      if (event.with?.as === "parent" || event.added) return null;
+      // Ticking a parent's last open sub-item completes the parent next:
+      // its followers hear that, not this too.
+      const parent = finishedParent(db, event.itemId);
+      const told = new Set(parent ? followersOf(db, parent) : []);
+      return onItem(
+        event.itemId,
+        event.projectId,
+        followers(event.itemId).filter((r) => !told.has(r.userId)),
+      );
+    }
     case "item.reopened":
       // Likewise a parent reopened for a sub-item, or a sub-item with its parent.
       return event.forSubItem || event.with
         ? null
         : onItem(event.itemId, event.projectId, followers(event.itemId));
     case "item.moved":
-      // Once, on the side it arrived in.
-      return event.side === "in"
+      // Once, on the side it arrived in; sub-items go with their parent.
+      return event.side === "in" && !event.with
         ? onItem(event.itemId, event.projectId, followers(event.itemId))
         : null;
     case "agent.requested":
