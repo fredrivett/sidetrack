@@ -707,6 +707,8 @@ export function Kanban({
             open={inboxOpen}
             onOpenChange={setInboxOpen}
             notifications={notifications}
+            // An archived list isn't on the board: it's in Archived.
+            onOpenList={(id) => (id in trayByList ? openList(id) : switchView("archived"))}
             onOpenNotification={(n) => {
               const target = new URL(n.url, window.location.href);
               const itemId = target.searchParams.get("item");

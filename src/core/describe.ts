@@ -20,6 +20,8 @@ export interface Part {
   text: string;
   em?: "person" | "item" | "place";
   quote?: boolean;
+  /** A list the reader can open, to show with its icon and link to. */
+  list?: { id: string; icon: string | null; homepageUrl: string | null };
 }
 
 /**
