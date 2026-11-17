@@ -123,7 +123,7 @@ export function SavedLabelChip({
         size={16}
         // Less than the picker's usual padding, so the emoji sits close to
         // the name.
-        className="p-0.5 touch:p-1.5"
+        className="p-0.5 touch:p-2"
         disabled={saving || disabled}
         suggestions={emoji.suggestions}
         onOpen={emoji.onOpen}
@@ -180,7 +180,7 @@ export function DraftLabelChip({
         size={16}
         // Less than the picker's usual padding, so the emoji sits close to
         // the name.
-        className="p-0.5 touch:p-1.5"
+        className="p-0.5 touch:p-2"
         disabled={disabled || !onEmoji}
         suggestions={[]}
         onSelect={(next) => onEmoji?.(next)}
