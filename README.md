@@ -34,14 +34,14 @@ durable disk.
 ### Quick start (Docker)
 
 You need [Docker](https://docs.docker.com/get-docker/) with Docker Compose.
-There's no prebuilt image yet, so Compose builds one from the source; the
-first build takes a few minutes.
+Sidetrack is published as an image for amd64 and arm64 (such as a Raspberry Pi
+4 or 5 on a 64-bit OS), so there's nothing to build.
 
-1. Get the code:
+1. Make a folder for Sidetrack and download its Compose file:
 
    ```bash
-   git clone https://github.com/fredrivett/sidetrack.git
-   cd sidetrack
+   mkdir sidetrack && cd sidetrack
+   curl -fsSLO https://raw.githubusercontent.com/fredrivett/sidetrack/main/docker-compose.yml
    ```
 
 2. Create a `.env` file next to `docker-compose.yml`, with a fresh secret and
@@ -53,22 +53,20 @@ first build takes a few minutes.
      echo "BETTER_AUTH_SECRET=$(openssl rand -hex 32)" >> .env
    grep -q '^BETTER_AUTH_URL=' .env ||
      echo "BETTER_AUTH_URL=http://localhost:3000" >> .env
-   grep -q '^NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=' .env ||
-     echo "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env
    ```
 
    Each line adds a setting only if `.env` doesn't have it yet, so it's safe to
-   re-run, and it fills in anything an older `.env` lacks. It never replaces a
-   secret, which would sign everyone out. `BETTER_AUTH_URL` must be the exact
-   address in your browser's address bar, or sign-in fails. To reach
-   Sidetrack from another device, use that address instead, such as
-   `http://192.168.1.20:3000` or `https://sidetrack.example.com`. Keep `.env`
-   safe: anyone with the secret can forge a session.
+   re-run. It never replaces the secret, which would sign everyone out.
+   `BETTER_AUTH_URL` must be the exact address in your browser's address bar,
+   or sign-in fails. To reach Sidetrack from another device, use that address
+   instead, such as `http://192.168.1.20:3000` or
+   `https://sidetrack.example.com`. Keep `.env` safe: anyone with the secret
+   can forge a session.
 
-3. Build and start it:
+3. Start it:
 
    ```bash
-   docker compose up -d --build
+   docker compose up -d
    ```
 
 4. Open [http://localhost:3000](http://localhost:3000) and sign up. The
@@ -79,7 +77,7 @@ first build takes a few minutes.
    then be shared with them from each list's **Share** menu item.
 
 Migrations run automatically on startup, and your data lives in the
-`sidetrack-data` Docker volume, which survives rebuilds and restarts. If the
+`sidetrack-data` Docker volume, which survives updates and restarts. If the
 container doesn't come up, `docker compose logs sidetrack` says why: a missing
 or invalid setting stops startup with a message naming it.
 
@@ -110,15 +108,47 @@ so the plain-HTTP port is only reachable from the machine itself.
 ### Updating
 
 ```bash
-git pull
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
 Database migrations run on startup. To be able to go back, copy out the latest
-backup first (see [Backups](#backups)). Keep
-`NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` the same across updates: Server Action
-IDs are derived from it, so with a new key every build, a tab left open through
-an update fails its next save and reloads.
+backup first (see [Backups](#backups)). Check the
+[release notes](https://github.com/fredrivett/sidetrack/releases) for anything
+an update asks you to do, such as a new setting.
+
+`docker-compose.yml` follows the `latest` release. To choose another version,
+set `SIDETRACK_TAG` in `.env`:
+
+| `SIDETRACK_TAG` | What you get |
+| --- | --- |
+| `latest` (default) | Each new release |
+| `0.1` | Fixes to the 0.1 release, but not 0.2 |
+| `0.1.0` | Exactly that release |
+| `main` | Every change as it's merged, before it's released |
+
+Released images are rebuilt weekly on a fresh base image to pick up security
+fixes, under the same version tags.
+
+### Building from source
+
+To run your own changes, or to bake your own PostHog key into the browser
+bundle, build the image from a clone of the repository instead. Add a Server
+Actions key to `.env` once; Server Action IDs are derived from it, so with a
+new key every build, a tab left open through an update fails its next save:
+
+```bash
+git clone https://github.com/fredrivett/sidetrack.git
+cd sidetrack
+# Create .env as in the quick start, then:
+grep -q '^NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=' .env ||
+  echo "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env
+docker compose up -d --build
+```
+
+The first build takes a few minutes. To update, `git pull` and run
+`docker compose up -d --build` again. Don't run `docker compose pull` on a
+source build: it replaces your image with the published one.
 
 ### Backups
 
@@ -156,8 +186,8 @@ provider's), or set `RESEND_API_KEY` plus `EMAIL_FROM`; see
 Sidetrack runs anywhere with [Node.js](https://nodejs.org) 22 and
 [pnpm](https://pnpm.io) (`corepack enable` provides it). In the cloned
 repository, create a Server Actions key for the build (see
-[Updating](#updating)) unless you have one, then build it and copy the static
-files next to the standalone server:
+[Building from source](#building-from-source)) unless you have one, then
+build it and copy the static files next to the standalone server:
 
 ```bash
 grep -qs NEXT_SERVER_ACTIONS_ENCRYPTION_KEY .env.local ||
@@ -200,10 +230,12 @@ To update, `git pull`, repeat the build steps, and restart it. The key in
 ## Configuration
 
 Sidetrack is configured with environment variables. With Docker Compose, put
-them in `.env` and apply a change with `docker compose up -d` (build-time
-variables, marked below, need `docker compose up -d --build`). Without Docker,
-see [Without Docker](#without-docker); for `pnpm dev`, use `.env.local`. A missing or malformed required setting stops the
-server at startup with a message saying what to fix.
+them in `.env` and apply a change with `docker compose up -d`. Settings
+marked **build-time** only apply when you
+[build from source](#building-from-source); the published image is built
+without them. Without Docker, see [Without Docker](#without-docker); for
+`pnpm dev`, use `.env.local`. A missing or malformed required setting stops
+the server at startup with a message saying what to fix.
 
 **Required** in production (the only settings most instances need):
 
@@ -212,7 +244,7 @@ server at startup with a message saying what to fix.
 | `BETTER_AUTH_SECRET` | Signs session cookies. Generate with `openssl rand -hex 32`, and keep it: changing it signs everyone out |
 | `BETTER_AUTH_URL` | The URL you open Sidetrack at, such as `https://sidetrack.example.com`. It must match the browser's address bar exactly (scheme, host and port), and is used for links in emails and the GitHub webhook URL |
 
-**Recommended:**
+**Recommended** when you build from source (the published image has its own):
 
 | Variable | Description |
 | --- | --- |
@@ -271,7 +303,7 @@ nothing is sent anywhere, including to the Sidetrack project.
 | `POSTHOG_KEY` | unset | Project key for server-side error tracking |
 | `POSTHOG_HOST` | `https://us.i.posthog.com` | Ingestion host for the server (`https://eu.i.posthog.com` for EU Cloud) |
 | `NEXT_PUBLIC_POSTHOG_KEY` | unset | **Build-time.** Project key for pageviews, autocapture and browser errors |
-| `NEXT_PUBLIC_POSTHOG_HOST` | `https://us.i.posthog.com` | **Build-time.** Ingestion host for the browser. The Docker build doesn't pass it through, so Docker images always use the US host |
+| `NEXT_PUBLIC_POSTHOG_HOST` | `https://us.i.posthog.com` | **Build-time.** Ingestion host for the browser. The Docker build doesn't pass it through, so Docker builds always use the US host |
 
 `NEXT_PUBLIC_POSTHOG_KEY` is inlined into the browser bundle at build time,
 as all browser analytics are. **Don't bake it into an image you publish**, or

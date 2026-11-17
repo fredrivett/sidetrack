@@ -18,6 +18,19 @@ updates:
         dependency-type: production
         update-types: [minor, patch]
 
+  # The Dockerfile's node:22-alpine base, so the published image picks up a
+  # new Node 22 release. The weekly image rebuild covers Alpine's own fixes.
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      # Major Node upgrades are deliberate, alongside CI's node-version.
+      - dependency-name: node
+        update-types: [version-update:semver-major]
+
   # Keep the CI workflow's actions current.
   - package-ecosystem: github-actions
     directory: "/"

@@ -14,6 +14,12 @@ in `src/components/`.
 - Import core functions with the `as ...Core` alias pattern already in use,
   e.g. `import { addItem as addItemCore } from "@/core/items"`. Keeps the
   exported action name short and avoids shadowing.
+- Never write an inline Server Action: a `"use server"` function declared
+  inside a component that closes over its variables. Next encrypts those
+  captured values with `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`, and the
+  published Docker image's key is public (`.github/workflows/image.yml`),
+  so anyone could read or forge them. Pass values as arguments to an
+  action in `actions.ts` instead, and check them on the server.
 
 ## Pages
 

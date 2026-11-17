@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
-ARG NODE_VERSION=22-alpine
-
-FROM node:${NODE_VERSION} AS base
+# Pinned to an exact version so Dependabot can bump it; keep both FROM lines
+# in step.
+FROM node:22.23.5-alpine AS base
 RUN apk add --no-cache libc6-compat
 RUN corepack enable
 WORKDIR /app
@@ -65,7 +65,7 @@ RUN mkdir -p /native \
     && cp -RL node_modules/file-uri-to-path /native/
 
 # ---------- Runtime ----------
-FROM node:${NODE_VERSION} AS runner
+FROM node:22.23.5-alpine AS runner
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
