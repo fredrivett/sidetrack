@@ -6,6 +6,7 @@ import { announceChange } from "./changes";
 import type { Db } from "./db";
 import { describeEvent, namesFor, type Part, plainText } from "./describe";
 import { auditColumns, type ChangeEvent } from "./events";
+import { writeNotifications } from "./notifications";
 import {
   type AuditEntry,
   type AuditSource,
@@ -71,11 +72,13 @@ export function recordAudit(db: Db, input: EventInput): void {
           .from(items)
           .where(eq(items.id, columns.entityId))
           .get()?.parentId ?? null);
+  const id = nanoid(12);
+  const ts = Date.now();
   // audit-exempt: this is the audit row itself.
   db.insert(auditLog)
     .values({
-      id: nanoid(12),
-      ts: Date.now(),
+      id,
+      ts,
       actor: input.actor,
       source: origin.source,
       agentKeyId: agent?.keyId ?? null,
@@ -88,6 +91,8 @@ export function recordAudit(db: Db, input: EventInput): void {
       event,
     })
     .run();
+  // Who it concerns hears about it (notifications.ts), in this transaction.
+  writeNotifications(db, { auditId: id, ts, actor: input.actor, agent: agent?.name ?? null, event });
   // Every audited change reaches open pages once it commits (see changes.ts).
   announceChange({ actor: input.actor, projectId: columns.projectId });
 }

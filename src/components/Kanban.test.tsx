@@ -65,6 +65,8 @@ const board = (projects: ProjectView[], spaces: SpaceView[]) => (
     pendingSpaceInvites={[]}
     initialCollapsedTrays={[]}
     initialListId={null}
+    initialItemId={null}
+    notifications={[]}
     filters={NO_FILTERS}
     aiEnabled={false}
   />

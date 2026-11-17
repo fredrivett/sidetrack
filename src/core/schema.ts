@@ -513,6 +513,42 @@ export const pushSubscriptions = sqliteTable(
   (t) => [index("push_subscriptions_user").on(t.userId)],
 );
 
+// Why a change concerns its recipient (core/notifications.ts). Only changes
+// aimed at them for now: being assigned, mentioned or invited, and their
+// agent finishing work.
+export const NOTIFICATION_REASONS = ["assigned", "mentioned", "invited", "agent-finished"] as const;
+export type NotificationReason = (typeof NOTIFICATION_REASONS)[number];
+
+// A user's inbox: one row per person a change concerns, written by
+// recordAudit in the change's transaction, so a change that rolls back
+// notifies nobody. It holds who and why, not words: the inbox and the push
+// read the change's event and describe it when they show it, with current
+// names. Derived from the audit row, so not audited itself, and no foreign
+// keys, like audit_log.
+export const notifications = sqliteTable(
+  "notifications",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    reason: text("reason").$type<NotificationReason>().notNull(),
+    auditId: text("audit_id").notNull(),
+    // What it's about, to replace an older push about the same thing: an
+    // item, or a list or Space for an invite.
+    groupKey: text("group_key").notNull(),
+    createdAt: integer("created_at").notNull(),
+    readAt: integer("read_at"),
+    // When the sender claimed it (null: not yet). Set whether or not a push
+    // went out: without VAPID keys, when too old to push, or when the push
+    // failed. It's never retried.
+    sentAt: integer("sent_at"),
+  },
+  (t) => [
+    index("notifications_user_created").on(t.userId, t.createdAt),
+    // Only pending rows are ever looked up by it.
+    index("notifications_unsent").on(t.sentAt).where(sql`${t.sentAt} is null`),
+  ],
+);
+
 export const meta = sqliteTable("meta", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
