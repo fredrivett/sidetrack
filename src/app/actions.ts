@@ -51,6 +51,7 @@ import {
   completeItem as completeItemCore,
   deleteItem as deleteItemCore,
   getItem as getItemCore,
+  getItemWithSubItems as getItemWithSubItemsCore,
   type ItemSort,
   listDoneBefore as listDoneBeforeCore,
   reorderItem as reorderItemCore,
@@ -573,6 +574,13 @@ export async function listDoneBeforeAction(opts: {
   const { db } = getDb();
   const { before, limit, query } = opts;
   return listDoneBeforeCore(db, userId, { before, limit, query });
+}
+
+/** An item the viewer can open, with its sub-items, to show one not on their board. */
+export async function getItemWithSubItemsAction(id: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  return getItemWithSubItemsCore(db, userId, String(id));
 }
 
 export async function reorderItemAction(id: string, ref: string) {

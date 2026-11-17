@@ -1,6 +1,7 @@
 "use client";
 
 import { History } from "lucide-react";
+import { toast } from "sonner";
 import { unstable_rethrow, useRouter } from "next/navigation";
 import {
   useCallback,
@@ -13,6 +14,7 @@ import {
 } from "react";
 import type { AssigneeView, PendingInviteView } from "@/core/members";
 import {
+  getItemWithSubItemsAction,
   listDoneBeforeAction,
   reorderSpaceAction,
   setBoardFiltersAction,
@@ -105,6 +107,7 @@ export function Kanban({
   initialCollapsedTrays,
   initialListId,
   initialItemId,
+  initialItemExtra,
   notifications,
   followedItemIds,
   notificationLevels,
@@ -144,6 +147,8 @@ export function Kanban({
   initialListId: string | null;
   /** From `?item=`, an item to open on load, as tapping a notification does. */
   initialItemId: string | null;
+  /** ?item= when it isn't on the board (done before this week), with its sub-items. */
+  initialItemExtra: Item[];
   notifications: NotificationView[];
   /** The items the viewer follows, sub-items of followed parents included. */
   followedItemIds: string[];
@@ -446,7 +451,15 @@ export function Kanban({
       (subItems > 0 && matchesFilters(bare, item, shownFilters, today))
     );
   };
-  const paletteDetail = useItemDetailDialog(boardItems, initialItemId);
+  // Items a notification or ?item= opens can be anywhere the viewer can open:
+  // an archived list, or Done from before this week, which is fetched.
+  const [fetchedItems, setFetchedItems] = useState<Item[]>(initialItemExtra);
+  const loadedItems = projects.flatMap((p) => itemsByProject[p.id] ?? []);
+  const detailItems = [
+    ...loadedItems,
+    ...fetchedItems.filter((f) => !loadedItems.some((i) => i.id === f.id)),
+  ];
+  const paletteDetail = useItemDetailDialog(detailItems, initialItemId);
   // ?item= opens the item once; a reload shouldn't open it again.
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -454,7 +467,7 @@ export function Kanban({
     url.searchParams.delete("item");
     window.history.replaceState(null, "", url.toString());
   }, []);
-  const paletteProject = shown.find(
+  const paletteProject = projects.find(
     (p) => p.id === paletteDetail.item?.projectId,
   );
 
@@ -502,6 +515,8 @@ export function Kanban({
     },
     [projects, view],
   );
+
+
 
   // The columns of a tray, the whole board without Spaces, or the Archived
   // view; the ⋯ menu's moves stay within the group.
@@ -695,10 +710,28 @@ export function Kanban({
             onOpenNotification={(n) => {
               const target = new URL(n.url, window.location.href);
               const itemId = target.searchParams.get("item");
-              const item = itemId && boardItems.find((i) => i.id === itemId);
-              if (!item) return;
-              openList(item.projectId);
-              paletteDetail.openDetail(item);
+              if (!itemId) return;
+              // It can be anywhere the viewer can open: an archived list, or
+              // Done from before this week, which is fetched.
+              const item = detailItems.find((i) => i.id === itemId);
+              if (item) {
+                // Its list on the board (trayByList has the active ones); an
+                // archived list's item opens over the view.
+                if (item.projectId in trayByList) openList(item.projectId);
+                paletteDetail.openDetail(item);
+                return;
+              }
+              void runAction(
+                getItemWithSubItemsAction(itemId).then((found) => {
+                  if (found.length === 0) {
+                    toast("That item isn't there any more");
+                    return;
+                  }
+                  setFetchedItems((had) => [...had, ...found]);
+                  paletteDetail.openDetail(found[0]);
+                }),
+                "open that item",
+              );
             }}
           />
           <UserMenu
@@ -878,8 +911,8 @@ export function Kanban({
         {paletteDetail.item && paletteProject && (
           <ItemDetailDialog
             item={paletteDetail.item}
-            parent={boardItems.find((i) => i.id === paletteDetail.item?.parentId) ?? null}
-            checklist={boardItems.filter((i) => i.parentId === paletteDetail.item?.id)}
+            parent={detailItems.find((i) => i.id === paletteDetail.item?.parentId) ?? null}
+            checklist={detailItems.filter((i) => i.parentId === paletteDetail.item?.id)}
             // The same rule as the board's dialog (ProjectColumn), within the
             // item's own list.
             nestTargets={boardItems.filter(

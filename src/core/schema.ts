@@ -527,6 +527,8 @@ export const NOTIFICATION_REASONS = [
   "following",
   "joined",
   "role",
+  // A list or Space they're in was archived, restored or deleted.
+  "member",
   // Ambient: other activity on a list or Space they're in.
   "activity",
 ] as const;

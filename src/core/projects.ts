@@ -6,7 +6,7 @@ import { normalizeProjectIcon } from "../lib/projectIcon";
 import { addDays, dayOf, isOnNoDate, isOnToday } from "../lib/time";
 import { normalizeRepository } from "../lib/repository";
 import { normalizeHomepageUrl } from "../lib/url";
-import { hasProjectAccess, isListAdmin } from "./access";
+import { hasProjectAccess, isListAdmin, listMemberIds } from "./access";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
 import type { ListChanges } from "./events";
@@ -600,11 +600,13 @@ export function deleteProject(
     throw new Error("only the list owner can delete the list");
   }
   db.transaction((tx) => {
+    // Read before the delete takes their access with it.
+    const members = listMemberIds(tx as unknown as Db, id);
     tx.delete(projects).where(eq(projects.id, id)).run();
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      event: { type: "list.deleted", projectId: id, listName: existing.name },
+      event: { type: "list.deleted", projectId: id, listName: existing.name, members },
     });
   });
 }

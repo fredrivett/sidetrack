@@ -240,7 +240,13 @@ export function deleteSpace(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      event: { type: "space.deleted", spaceId, name: space.name, lost: accessLost(lost) },
+      event: {
+        type: "space.deleted",
+        spaceId,
+        name: space.name,
+        lost: accessLost(lost),
+        members: people,
+      },
     });
   });
 }

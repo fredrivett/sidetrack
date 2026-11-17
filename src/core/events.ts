@@ -140,7 +140,14 @@ export type ChangeEvent =
   // Lists
   | { type: "list.created"; projectId: string; listName: string; space: SpaceAt | null }
   | { type: "list.updated"; projectId: string; listName: string; changes: ListChanges }
-  | { type: "list.reordered" | "list.deleted"; projectId: string; listName: string }
+  | { type: "list.reordered"; projectId: string; listName: string }
+  | {
+      type: "list.deleted";
+      projectId: string;
+      listName: string;
+      /** Who could open it: told it's gone, though they no longer can. */
+      members?: string[];
+    }
   | {
       type: "list.space.changed";
       projectId: string;
@@ -203,7 +210,12 @@ export type ChangeEvent =
         color?: SpaceColor | null;
       };
     } & SpaceAt)
-  | ({ type: "space.deleted"; lost?: AccessLost } & SpaceAt)
+  | ({
+      type: "space.deleted";
+      lost?: AccessLost;
+      /** Its members: told it's gone, though they're no longer in it. */
+      members?: string[];
+    } & SpaceAt)
   /** A Space, or the viewer's Personal tray, moved on their board. */
   | ({ type: "space.reordered" } & SpaceAt)
   // People in a Space

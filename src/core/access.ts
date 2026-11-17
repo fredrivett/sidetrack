@@ -49,3 +49,26 @@ export function hasProjectAccess(userId: string) {
     sql`exists (select 1 from ${spaceMembers} where ${spaceMembers.spaceId} = ${projects.spaceId} and ${spaceMembers.userId} = ${userId} and ${spaceMembers.status} = 'accepted')`,
   );
 }
+
+/** Everyone who can open the list: its owner, its members and its Space's. */
+export function listMemberIds(db: Db, projectId: string): string[] {
+  const list = db
+    .select({ userId: projects.userId, spaceId: projects.spaceId })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .get();
+  if (!list) return [];
+  const members = db
+    .select({ userId: projectMembers.userId })
+    .from(projectMembers)
+    .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.status, "accepted")))
+    .all();
+  const inSpace = list.spaceId
+    ? db
+        .select({ userId: spaceMembers.userId })
+        .from(spaceMembers)
+        .where(and(eq(spaceMembers.spaceId, list.spaceId), eq(spaceMembers.status, "accepted")))
+        .all()
+    : [];
+  return [...new Set([list.userId, ...members.map((m) => m.userId), ...inSpace.map((m) => m.userId)])];
+}
