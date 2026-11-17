@@ -18,6 +18,7 @@ import {
 } from "@dnd-kit/core";
 import {
   SortableContext,
+  arrayMove,
   type SortingStrategy,
   sortableKeyboardCoordinates,
   useSortable,
@@ -100,14 +101,14 @@ function SubItem({ last, children }: { last: boolean; children: ReactNode }) {
 
 // On drop the card glides into its slot and settles back down (the
 // `dnd-dropping` class undoes its lift), while the slot's real row stays hidden
-// under it until it lands. Hidden by visibility, not dnd-kit's default opacity,
-// which the rows' fade would turn into a blink.
+// under it until it lands (`dnd-landing`). Only the row's card hides, so its
+// tree line stays put, and by visibility, not dnd-kit's default opacity, which
+// the rows' fade would turn into a blink.
 const dropAnimation: DropAnimation = {
   duration: 200,
   easing: "cubic-bezier(0.25, 1, 0.5, 1)",
   sideEffects: defaultDropAnimationSideEffects({
-    styles: { active: { visibility: "hidden" } },
-    className: { dragOverlay: "dnd-dropping" },
+    className: { active: "dnd-landing", dragOverlay: "dnd-dropping" },
   }),
 };
 
@@ -673,8 +674,7 @@ export function DraggableItemList({
 
   const active = activeId ? own.get(activeId) : undefined;
   // How far in the dragged card sits: the depth it would land at, or its own
-  // where it can't land; flush away from its list. (Each row's sortable node
-  // spans the full width.)
+  // where it can't land; flush away from its list.
   const shift = away ? 0 : (projection?.depth ?? (active?.parentId ? 1 : 0)) * INDENT;
   // The card moves only up and down in its list; sideways it snaps to the
   // depth it would land at, rather than sliding freely. Away from its list it
@@ -686,26 +686,30 @@ export function DraggableItemList({
   const overlay = board.source === projectId && (
     <DragOverlay modifiers={[lockX]} dropAnimation={dropAnimation}>
       {active && (
+        // Full width, like the row's sortable node, with the card indented
+        // inside: the drop glides this box onto that node, so an indented
+        // card lands indented instead of sliding out to the left.
         <div
-          // The column's own background, so rows under a parent's checklist
-          // don't show through the gaps between its rows.
-          // Grabbing over everything in it, overriding the row's pointer.
-          className="cursor-grabbing rounded-lg **:cursor-grabbing! bg-white shadow-xl transition-[margin,width,scale,box-shadow] duration-200 ease-out in-[.dnd-dropping]:scale-100! in-[.dnd-dropping]:shadow-none motion-safe:scale-[1.03] motion-safe:animate-[lift_150ms_ease-out] dark:bg-neutral-900"
-          style={{
-            marginLeft: shift,
-            width: `calc(100% - ${shift}px)`,
-          }}
+          className="transition-[padding] duration-200 ease-out"
+          style={{ paddingLeft: shift }}
         >
-          {active.parentId ? (
-            rowFor(row, active.item)
-          ) : (
-            <ItemGroupView
-              {...row}
-              group={{ ...active.item, children: ownChildren(active.item.id) }}
-              collapsed={collapsed.has(active.item.id)}
-              shown={shown}
-            />
-          )}
+          <div
+            // The column's own background, so rows under a parent's checklist
+            // don't show through the gaps between its rows.
+            // Grabbing over everything in it, overriding the row's pointer.
+            className="cursor-grabbing rounded-lg **:cursor-grabbing! bg-white shadow-xl transition-[scale,box-shadow] duration-200 ease-out in-[.dnd-dropping]:scale-100! in-[.dnd-dropping]:shadow-none motion-safe:scale-[1.03] motion-safe:animate-[lift_150ms_ease-out] dark:bg-neutral-900"
+          >
+            {active.parentId ? (
+              rowFor(row, active.item)
+            ) : (
+              <ItemGroupView
+                {...row}
+                group={{ ...active.item, children: ownChildren(active.item.id) }}
+                collapsed={collapsed.has(active.item.id)}
+                shown={shown}
+              />
+            )}
+          </div>
         </div>
       )}
     </DragOverlay>
@@ -760,6 +764,29 @@ export function DraggableItemList({
     prevTop = f.item;
   }
 
+  // Each sub-item's tree line, from the rows in the order they're shown:
+  // mid-drag, the dragged row's slot sits where it would land, under the
+  // parent it would land in, and the rows around it shift to make room. So
+  // the lines run through the slot, and are already right when it lands.
+  const activeAt = activeId && !away ? visible.findIndex((f) => f.item.id === activeId) : -1;
+  const overAt = overId ? visible.findIndex((f) => f.item.id === overId) : -1;
+  const shownRows = (
+    activeAt !== -1 && overAt !== -1 ? arrayMove(visible, activeAt, overAt) : visible
+  ).map((f) => ({
+    id: f.item.id,
+    parentId: f.item.id === activeId && projection ? projection.parentId : f.parentId,
+  }));
+  const treeLines = new Map(
+    shownRows.map((r, i) => [
+      r.id,
+      !r.parentId
+        ? undefined
+        : shownRows[i + 1]?.parentId === r.parentId
+          ? `${BRANCH} ${TRUNK}`
+          : BRANCH,
+    ]),
+  );
+
   // The overlay sits in the same place in every branch, so it stays mounted
   // (and keeps its drop animation) when the list empties mid-drag.
   return (
@@ -770,7 +797,7 @@ export function DraggableItemList({
           strategy={entering ? placed : verticalListSortingStrategy}
         >
           <div className="space-y-1.5">
-            {visible.map((f, i) => {
+            {visible.map((f) => {
               const { item } = f;
               const isActive = item.id === activeId;
               const isEntering = enteringIds.has(item.id);
@@ -815,29 +842,21 @@ export function DraggableItemList({
                 >
                   {(drag) => {
                     // The dragged row stays in the list as the drop placeholder,
-                    // indented to the depth it would land at, without tree lines.
+                    // indented to the depth it would land at.
                     const depth = isActive
                       ? (projection?.depth ?? (f.parentId ? 1 : 0))
                       : f.parentId
                         ? 1
                         : 0;
-                    const next = visible[i + 1];
-                    const last =
-                      !next ||
-                      next.parentId !== f.parentId ||
-                      (next.item.id === activeId &&
-                        visible[i + 2]?.parentId !== f.parentId);
-                    const lines =
-                      f.parentId && !isActive
-                        ? last
-                          ? BRANCH
-                          : `${BRANCH} ${TRUNK}`
-                        : undefined;
                     // The same elements at every depth, so a row that's nested or
                     // moved out keeps its DOM node, and keyboard focus with it.
                     return (
                       <div className={depth ? "ml-4 pl-5" : undefined}>
-                        <div className={lines}>{node(drag)}</div>
+                        <div
+                          className={`in-[.dnd-landing]:*:invisible ${treeLines.get(item.id) ?? ""}`}
+                        >
+                          {node(drag)}
+                        </div>
                       </div>
                     );
                   }}
