@@ -79,12 +79,18 @@ self.addEventListener("push", (event) => {
     message = { title: "Sidetrack", body: event.data?.text() ?? "", url: "/" };
   }
   event.waitUntil(
-    self.registration.showNotification(message.title, {
-      body: message.body,
-      tag: message.tag,
-      icon: "/icons/icon-192.png",
-      data: { url: message.url ?? "/" },
-    }),
+    Promise.all([
+      self.registration.showNotification(message.title, {
+        body: message.body,
+        tag: message.tag,
+        icon: "/icons/icon-192.png",
+        data: { url: message.url ?? "/" },
+      }),
+      // The Home Screen icon's count of unseen notifications.
+      typeof message.badge === "number" && "setAppBadge" in self.navigator
+        ? self.navigator.setAppBadge(message.badge).catch(() => {})
+        : undefined,
+    ]),
   );
 });
 

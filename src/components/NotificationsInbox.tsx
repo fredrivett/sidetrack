@@ -1,7 +1,7 @@
 "use client";
 
 import { Bell, CheckCheck } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { markNotificationsReadAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -37,6 +37,14 @@ export function NotificationsInbox({
   const [seen, setSeen] = useState<ReadonlySet<string>>(new Set());
   const unread = notifications.filter((n) => n.readAt === null && !seen.has(n.id));
   const isNew = (n: NotificationView) => unread.includes(n);
+
+  // The Home Screen icon's badge follows the count here, as pushes set it
+  // while the app is closed (public/sw.js).
+  const count = unread.length;
+  useEffect(() => {
+    if (!("setAppBadge" in navigator)) return;
+    (count ? navigator.setAppBadge(count) : navigator.clearAppBadge()).catch(() => {});
+  }, [count]);
 
   function markSeen(ids: string[], all: boolean) {
     if (ids.length === 0) return;
