@@ -1,6 +1,5 @@
 "use client";
 
-import { History } from "lucide-react";
 import { toast } from "sonner";
 import { unstable_rethrow, useRouter } from "next/navigation";
 import {
@@ -693,16 +692,6 @@ export function Kanban({
             labels={labelChoices}
             viewerId={viewerId}
           />
-          {/* Icon and label on desktop, just the icon on phones. */}
-          <Button
-            variant="outline"
-            size="sm"
-            aria-label="Activity"
-            onClick={() => setAudit({ open: true })}
-          >
-            <History />
-            <span className="hidden sm:inline">Activity</span>
-          </Button>
           <NotificationsInbox
             open={inboxOpen}
             onOpenChange={setInboxOpen}
@@ -740,6 +729,7 @@ export function Kanban({
             user={viewer}
             archivedCount={archived.length}
             onShowArchived={() => switchView("archived")}
+            onShowActivity={() => setAudit({ open: true })}
           />
         </BoardHeader>
         <InvitesBanner invites={pendingInvites} spaceInvites={pendingSpaceInvites} />
