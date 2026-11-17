@@ -522,6 +522,9 @@ export const NOTIFICATION_REASONS = [
   "mentioned",
   "invited",
   "agent-finished",
+  // Something of theirs is due today, or was due yesterday (core/reminders.ts).
+  "due-today",
+  "overdue",
   // Involved: something they're part of moved.
   "unassigned",
   "following",
@@ -542,8 +545,10 @@ export type NotificationLevel = (typeof NOTIFICATION_LEVELS)[number];
 
 // Someone's notification level for a scope: "all" for everything,
 // "space:<id>" or "list:<id>". The most specific one set wins; with none,
-// "default". Per person and seen by nobody else, so not audited, like
-// following an item.
+// "default". Due reminders have a scope of their own, "reminders", where
+// "all" pushes them (with none set, too), "default" keeps them to the inbox
+// and "mine" turns them off. Per person and seen by nobody else, so not
+// audited, like following an item.
 export const notificationSettings = sqliteTable(
   "notification_settings",
   {
@@ -567,7 +572,9 @@ export const notifications = sqliteTable(
     id: text("id").primaryKey(),
     userId: text("user_id").notNull(),
     reason: text("reason").$type<NotificationReason>().notNull(),
-    auditId: text("audit_id").notNull(),
+    // The change it's about; null for a due reminder, which is about itemId.
+    auditId: text("audit_id"),
+    itemId: text("item_id"),
     // What it's about, to replace an older push about the same thing: an
     // item, or a list or Space for an invite.
     groupKey: text("group_key").notNull(),

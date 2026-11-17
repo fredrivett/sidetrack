@@ -11,17 +11,28 @@ import { LEVELS, levelLabel } from "./notification-levels";
  * How much the viewer hears: their level for everything, and the Spaces and
  * lists they've set apart from it, set from those menus and reset here.
  */
+// Due reminders' own choices, stored as levels for the "reminders" scope.
+const REMINDERS: Array<{ level: NotificationLevel; label: string; hint: string }> = [
+  { level: "all", label: "Notify me", hint: "At 8am: what's due that day, and what's still open from yesterday." },
+  { level: "default", label: "Inbox only", hint: "The same, waiting in your inbox without a notification." },
+  { level: "mine", label: "Off", hint: "No due reminders." },
+];
+
 export function NotificationLevelsPanel({
   level,
+  reminders,
   overrides,
 }: {
   /** Their level for everything. */
   level: NotificationLevel;
+  /** How they hear due reminders. */
+  reminders: NotificationLevel;
   /** Spaces and lists with a level of their own. */
   overrides: Array<{ scope: string; name: string; kind: "Space" | "List"; level: NotificationLevel }>;
 }) {
   const router = useRouter();
   const name = useId();
+  const remindersName = useId();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -71,6 +82,28 @@ export function NotificationLevelsPanel({
             </span>
           </label>
         ))}
+      </div>
+
+      <div className="space-y-2">
+        <h3 className="text-sm font-medium">Due reminders</h3>
+        <div role="radiogroup" aria-label="Due reminders" className="space-y-2">
+          {REMINDERS.map((r) => (
+            <label key={r.level} className="flex cursor-pointer items-start gap-3 rounded-md">
+              <input
+                type="radio"
+                name={remindersName}
+                className="mt-1 shrink-0 accent-neutral-900 dark:accent-neutral-100"
+                checked={reminders === r.level}
+                onChange={() => reminders !== r.level && save("reminders", r.level)}
+                aria-disabled={pending || undefined}
+              />
+              <span className="space-y-0.5">
+                <span className="block text-sm">{r.label}</span>
+                <span className="block text-xs text-muted-foreground">{r.hint}</span>
+              </span>
+            </label>
+          ))}
+        </div>
       </div>
 
       {error && (
