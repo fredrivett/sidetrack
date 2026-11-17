@@ -186,8 +186,8 @@ provider's), or set `RESEND_API_KEY` plus `EMAIL_FROM`; see
 Sidetrack runs anywhere with [Node.js](https://nodejs.org) 22 and
 [pnpm](https://pnpm.io) (`corepack enable` provides it). In the cloned
 repository, create a Server Actions key for the build (see
-[Building from source](#building-from-source)) unless you have one, then build it and copy the static
-files next to the standalone server:
+[Building from source](#building-from-source)) unless you have one, then
+build it and copy the static files next to the standalone server:
 
 ```bash
 grep -qs NEXT_SERVER_ACTIONS_ENCRYPTION_KEY .env.local ||
