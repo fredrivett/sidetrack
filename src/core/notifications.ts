@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getEnv } from "../lib/env";
 import { getPostHog } from "../lib/posthog";
@@ -54,6 +54,11 @@ export interface NotificationView {
 }
 
 const INBOX_SIZE = 30;
+// Unseen ones all show, however old, up to this many, so the count and
+// Mark all seen always match what's listed.
+const UNSEEN_MAX = 200;
+// How far back to read for seen ones the reader can still open.
+const PAGES_MAX = 10;
 
 /** Who `event` concerns and why, before the checks every rule shares. */
 function rule(
@@ -315,14 +320,36 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
   });
 }
 
-/** The user's latest notifications, newest first. */
+/**
+ * The user's notifications, newest first: every unseen one, and their
+ * latest INBOX_SIZE they can still open. Ones they can't are dropped after
+ * reading, so it reads on, a page at a time, until the inbox is full.
+ */
 export function listNotifications(db: Db, userId: string): NotificationView[] {
-  const rows = selectRows(db)
-    .where(eq(notifications.userId, userId))
-    .orderBy(desc(notifications.createdAt), desc(notifications.id))
-    .limit(INBOX_SIZE)
-    .all();
-  return describe(db, userId, rows);
+  const order = [desc(notifications.createdAt), desc(notifications.id)];
+  const unseen = describe(
+    db,
+    userId,
+    selectRows(db)
+      .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)))
+      .orderBy(...order)
+      .limit(UNSEEN_MAX)
+      .all(),
+  );
+  const seen: NotificationView[] = [];
+  for (let page = 0; seen.length < INBOX_SIZE && page < PAGES_MAX; page++) {
+    const rows = selectRows(db)
+      .where(and(eq(notifications.userId, userId), isNotNull(notifications.readAt)))
+      .orderBy(...order)
+      .limit(INBOX_SIZE)
+      .offset(page * INBOX_SIZE)
+      .all();
+    seen.push(...describe(db, userId, rows));
+    if (rows.length < INBOX_SIZE) break;
+  }
+  return [...unseen, ...seen.slice(0, INBOX_SIZE)].sort(
+    (a, b) => b.createdAt - a.createdAt || (a.id < b.id ? 1 : -1),
+  );
 }
 
 /**
@@ -356,19 +383,26 @@ const PUSH_FRESH_MS = 10 * 60_000;
  */
 export async function deliverNotifications(db: Db): Promise<void> {
   const now = Date.now();
-  const due = db
+  let due = db
     .select({ id: notifications.id, userId: notifications.userId, groupKey: notifications.groupKey })
     .from(notifications)
     .where(isNull(notifications.sentAt))
     .all();
   if (due.length === 0) return;
+  // Only rows still unsent, so another run that read the same ones sends
+  // only what it claimed.
   // audit-exempt: delivery bookkeeping on derived rows.
-  db.update(notifications)
-    .set({ sentAt: now })
-    .where(inArray(notifications.id, due.map((n) => n.id)))
-    .run();
+  const claimed = new Set(
+    db.update(notifications)
+      .set({ sentAt: now })
+      .where(and(inArray(notifications.id, due.map((n) => n.id)), isNull(notifications.sentAt)))
+      .returning({ id: notifications.id })
+      .all()
+      .map((r) => r.id),
+  );
   const vapid = getEnv().VAPID;
   if (!vapid) return;
+  due = due.filter((n) => claimed.has(n.id));
   const tags = new Map(due.map((n) => [n.id, n.groupKey]));
   const sends = [...new Set(due.map((n) => n.userId))].flatMap((userId) => {
     const rows = selectRows(db)
@@ -411,7 +445,9 @@ declare global {
 export function startNotificationDelivery(db: Db): void {
   if (globalThis.__sidetrackNotificationDelivery) return;
   globalThis.__sidetrackNotificationDelivery = true;
-  onChanges(() => {
+  const deliver = () =>
     deliverNotifications(db).catch((error) => getPostHog()?.captureException(error));
-  });
+  onChanges(deliver);
+  // Whatever was committed but not sent before the last stop.
+  void deliver();
 }

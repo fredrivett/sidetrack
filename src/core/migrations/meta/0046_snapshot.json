@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "e73308e7-a0d1-44db-87e7-eff1ca42fa6e",
+  "id": "a34e4a44-ab6f-4f23-8b4f-7f8bf32715e2",
   "prevId": "944a4c22-5d9f-4b14-a198-c25ff03bfae6",
   "tables": {
     "agent_sessions": {
@@ -1027,7 +1027,8 @@
           "columns": [
             "sent_at"
           ],
-          "isUnique": false
+          "isUnique": false,
+          "where": "\"notifications\".\"sent_at\" is null"
         }
       },
       "foreignKeys": {},

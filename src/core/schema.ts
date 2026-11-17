@@ -537,12 +537,15 @@ export const notifications = sqliteTable(
     groupKey: text("group_key").notNull(),
     createdAt: integer("created_at").notNull(),
     readAt: integer("read_at"),
-    // When it was handed to push (null: not yet).
+    // When the sender claimed it (null: not yet). Set whether or not a push
+    // went out: without VAPID keys, when too old to push, or when the push
+    // failed. It's never retried.
     sentAt: integer("sent_at"),
   },
   (t) => [
     index("notifications_user_created").on(t.userId, t.createdAt),
-    index("notifications_unsent").on(t.sentAt),
+    // Only pending rows are ever looked up by it.
+    index("notifications_unsent").on(t.sentAt).where(sql`${t.sentAt} is null`),
   ],
 );
 

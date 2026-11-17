@@ -10,4 +10,4 @@ CREATE TABLE `notifications` (
 );
 --> statement-breakpoint
 CREATE INDEX `notifications_user_created` ON `notifications` (`user_id`,`created_at`);--> statement-breakpoint
-CREATE INDEX `notifications_unsent` ON `notifications` (`sent_at`);
+CREATE INDEX `notifications_unsent` ON `notifications` (`sent_at`) WHERE "notifications"."sent_at" is null;

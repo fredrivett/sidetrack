@@ -112,6 +112,29 @@ describe("notifications", () => {
     expect(unread(db, alice)).toEqual([]);
   });
 
+  it("lists every unseen one, and fills the inbox past ones the reader lost", () => {
+    const { db, fred, alice, listId } = seed();
+    const other = createProject(db, fred, { name: "Work" }, "web");
+    inviteMember(db, fred, other.id, "alice", "web");
+    acceptInvite(db, alice, other.id, "web");
+    for (let i = 0; i < 20; i++) {
+      addItem(db, fred, { projectId: listId, title: `Home ${i}`, assigneeIds: [alice] }, "web");
+    }
+    for (let i = 0; i < 80; i++) {
+      addItem(db, fred, { projectId: other.id, title: `Work ${i}`, assigneeIds: [alice] }, "web");
+    }
+    // All 100 are unseen, well past the inbox's usual 30, so the count
+    // reaches them all (and her invite to Work).
+    expect(unread(db, alice).filter((t) => t.includes(" added "))).toHaveLength(100);
+    markNotificationsRead(db, alice);
+    // Losing Work drops its 80; older ones from Home fill the inbox instead.
+    removeMember(db, fred, other.id, alice, "web");
+    const assigned = listNotifications(db, alice)
+      .filter((n) => n.reason === "assigned")
+      .map((n) => n.title);
+    expect(assigned).toEqual(Array(20).fill("Home"));
+  });
+
   it("writes nothing when the change rolls back", () => {
     const { db, fred, alice, listId } = seed();
     // One blank sub-item title rolls back the item with it.

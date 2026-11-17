@@ -18,10 +18,12 @@ import type { Item } from "@/core/schema";
  * lint rules.
  */
 export function useItemDetailDialog(items: Item[], initialItemId: string | null = null) {
-  const [openItemId, setOpenItemId] = useState(initialItemId);
+  // Only an item on the board: one hidden now (archived, say) mustn't pop
+  // open later when a view shows it.
   const [closingItem, setClosingItem] = useState<Item | null>(
     () => items.find((i) => i.id === initialItemId) ?? null,
   );
+  const [openItemId, setOpenItemId] = useState(closingItem?.id ?? null);
   const openItem = openItemId
     ? (items.find((i) => i.id === openItemId) ?? null)
     : null;
