@@ -43,6 +43,7 @@ export default async function NotificationsPage() {
         <NotificationLevelsPanel
           level={levels.all ?? "default"}
           reminders={levels.reminders ?? "all"}
+          agents={levels.agents ?? "default"}
           overrides={overrides}
         />
       </div>

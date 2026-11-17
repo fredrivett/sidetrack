@@ -1,9 +1,17 @@
 "use client";
 
 import { unstable_rethrow, useRouter } from "next/navigation";
-import { useId, useState, useTransition } from "react";
+import { ChevronDown } from "lucide-react";
+import { useState, useTransition } from "react";
 import { setNotificationLevelAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { NotificationLevel } from "@/core/schema";
 import { LEVELS, levelLabel } from "./notification-levels";
 
@@ -14,25 +22,34 @@ import { LEVELS, levelLabel } from "./notification-levels";
 // Due reminders' own choices, stored as levels for the "reminders" scope.
 const REMINDERS: Array<{ level: NotificationLevel; label: string; hint: string }> = [
   { level: "all", label: "Notify me", hint: "At 8am: what's due that day, and what's still open from yesterday." },
-  { level: "default", label: "Inbox only", hint: "The same, waiting in your inbox without a notification." },
+  { level: "default", label: "Inbox only", hint: "At 8am, in your inbox, without a notification." },
   { level: "mine", label: "Off", hint: "No due reminders." },
+];
+
+// What isn't a person's doing has its own choices, stored as levels for
+// the "agents" scope.
+const AGENTS: Array<{ level: NotificationLevel; label: string; hint: string }> = [
+  { level: "all", label: "Same as people", hint: "Notified like people's activity." },
+  { level: "default", label: "Inbox only", hint: "Waits in your inbox. What's for you still notifies." },
+  { level: "mine", label: "Only for me", hint: "Only when they assign or mention you." },
 ];
 
 export function NotificationLevelsPanel({
   level,
   reminders,
+  agents,
   overrides,
 }: {
   /** Their level for everything. */
   level: NotificationLevel;
   /** How they hear due reminders. */
   reminders: NotificationLevel;
+  /** How they hear what other people's agents, GitHub and Sidetrack do. */
+  agents: NotificationLevel;
   /** Spaces and lists with a level of their own. */
   overrides: Array<{ scope: string; name: string; kind: "Space" | "List"; level: NotificationLevel }>;
 }) {
   const router = useRouter();
-  const name = useId();
-  const remindersName = useId();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -52,59 +69,72 @@ export function NotificationLevelsPanel({
     });
   }
 
+  const rows: Array<{
+    scope: string;
+    title: string;
+    value: NotificationLevel;
+    options: typeof LEVELS;
+    about?: string;
+  }> = [
+    { scope: "all", title: "Activity on your lists", value: level, options: LEVELS },
+    {
+      scope: "agents",
+      title: "Activity by agents",
+      value: agents,
+      options: AGENTS,
+      about:
+        "Other people's agents, GitHub and Sidetrack itself. Your own agents notify you only when they finish or something's for you.",
+    },
+    { scope: "reminders", title: "Due reminders", value: reminders, options: REMINDERS },
+  ];
+
   return (
     <div
       className="space-y-4 rounded-lg border border-border p-4 aria-disabled:opacity-60"
       aria-disabled={pending || undefined}
     >
-      <div className="space-y-1">
-        <h2 className="text-sm font-medium">Activity on your lists</h2>
-        <p className="text-sm text-muted-foreground">
-          What others do on the lists and Spaces you share. Set a Space or list apart from
-          this in its ⋯ menu, under Notifications.
-        </p>
-      </div>
-
-      <div role="radiogroup" aria-label="Notifications for everything" className="space-y-2">
-        {LEVELS.map((l) => (
-          <label key={l.level} className="flex cursor-pointer items-start gap-3 rounded-md">
-            <input
-              type="radio"
-              name={name}
-              className="mt-1 shrink-0 accent-neutral-900 dark:accent-neutral-100"
-              checked={level === l.level}
-              onChange={() => level !== l.level && save("all", l.level)}
-              aria-disabled={pending || undefined}
-            />
-            <span className="space-y-0.5">
-              <span className="block text-sm">{l.label}</span>
-              <span className="block text-xs text-muted-foreground">{l.hint}</span>
-            </span>
-          </label>
-        ))}
-      </div>
-
-      <div className="space-y-2">
-        <h3 className="text-sm font-medium">Due reminders</h3>
-        <div role="radiogroup" aria-label="Due reminders" className="space-y-2">
-          {REMINDERS.map((r) => (
-            <label key={r.level} className="flex cursor-pointer items-start gap-3 rounded-md">
-              <input
-                type="radio"
-                name={remindersName}
-                className="mt-1 shrink-0 accent-neutral-900 dark:accent-neutral-100"
-                checked={reminders === r.level}
-                onChange={() => reminders !== r.level && save("reminders", r.level)}
+      <ul className="divide-y divide-border">
+        {rows.map((r) => (
+          <li key={r.scope} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+            <div className="min-w-0 flex-1 space-y-0.5">
+              <p className="text-sm font-medium">{r.title}</p>
+              <p className="text-xs text-muted-foreground">
+                {r.options.find((o) => o.level === r.value)?.hint}
+              </p>
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                aria-label={r.title}
                 aria-disabled={pending || undefined}
-              />
-              <span className="space-y-0.5">
-                <span className="block text-sm">{r.label}</span>
-                <span className="block text-xs text-muted-foreground">{r.hint}</span>
-              </span>
-            </label>
-          ))}
-        </div>
-      </div>
+                className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1.5 text-sm transition hover:bg-accent aria-disabled:pointer-events-none"
+              >
+                {r.options.find((o) => o.level === r.value)?.label}
+                <ChevronDown className="size-4 opacity-50" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-72">
+                {r.about && (
+                  <p className="px-1.5 pt-1 pb-2 text-xs text-muted-foreground">{r.about}</p>
+                )}
+                <DropdownMenuRadioGroup
+                  value={r.value}
+                  onValueChange={(next: string) =>
+                    next !== r.value && save(r.scope, next as NotificationLevel)
+                  }
+                >
+                  {r.options.map((o) => (
+                    <DropdownMenuRadioItem key={o.level} value={o.level} closeOnClick>
+                      <span className="space-y-0.5">
+                        <span className="block">{o.label}</span>
+                        <span className="block text-xs text-muted-foreground">{o.hint}</span>
+                      </span>
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </li>
+        ))}
+      </ul>
 
       {error && (
         <p role="alert" className="text-sm text-destructive">
@@ -138,6 +168,10 @@ export function NotificationLevelsPanel({
           </ul>
         </div>
       )}
+
+      <p className="text-xs text-muted-foreground">
+        Set a Space or list apart in its ⋯ menu, under Notifications.
+      </p>
     </div>
   );
 }

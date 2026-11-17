@@ -116,6 +116,10 @@ describe("notifications", () => {
     updateItem(db, fred, item.id, { assigneeIds: [fred] }, AMP);
     startWork(db, fred, item.id, {}, AMP);
     finishWork(db, fred, item.id, { note: "Merged #12" }, AMP);
+    // The rest is Fred's own doing, though he follows it.
+    addComment(db, fred, item.id, "Done, see #12", AMP);
+    completeItem(db, fred, item.id, AMP);
+    expect(unread(db, fred, true)).toEqual([]);
     expect(unread(db, fred).sort()).toEqual([
       'Amp assigned you "Ship it"',
       'Amp finished work on "Ship it": Merged #12',
@@ -168,6 +172,39 @@ describe("notifications", () => {
       .filter((n) => n.reason === "assigned")
       .map((n) => n.title);
     expect(assigned).toEqual(Array(20).fill("Home"));
+  });
+
+  it("keeps what other people's agents do to the inbox, or as chosen, but pushes what's for you", async () => {
+    const { db, fred, alice, listId } = seed();
+    subscribe(db, fred);
+    const item = addItem(db, fred, { projectId: listId, title: "Ship it" }, "web");
+    await deliverNotifications(db, due());
+    sendPush.mockClear();
+    // Fred follows what he created, but Alice's agent working on it waits.
+    addComment(db, alice, item.id, "On it", AMP);
+    completeItem(db, alice, item.id, AMP);
+    await deliverNotifications(db, due());
+    expect(sendPush).not.toHaveBeenCalled();
+    expect(unread(db, fred)).toEqual(['Amp completed "Ship it"', 'Amp commented on "Ship it": On it']);
+    // Assigning him is for him: it pushes.
+    const next = addItem(db, alice, { projectId: listId, title: "Review it" }, "web");
+    updateItem(db, alice, next.id, { assigneeIds: [fred] }, AMP);
+    await deliverNotifications(db, due());
+    expect(sendPush).toHaveBeenCalledTimes(1);
+    sendPush.mockClear();
+    // Like a person's, as chosen.
+    setNotificationLevel(db, fred, "agents", "all");
+    uncompleteItem(db, alice, item.id, AMP);
+    await deliverNotifications(db, due());
+    expect(sendPush).toHaveBeenCalledTimes(1);
+    // Or only what's for him.
+    markNotificationsRead(db, fred);
+    setNotificationLevel(db, fred, "agents", "mine");
+    completeItem(db, alice, item.id, AMP);
+    expect(unread(db, fred)).toEqual([]);
+    // People are heard as before.
+    uncompleteItem(db, alice, item.id, "web");
+    expect(unread(db, fred)).toEqual(['Alice reopened "Ship it"']);
   });
 
   it("tells an item's followers what moved, and creators, assignees and commenters follow", () => {
