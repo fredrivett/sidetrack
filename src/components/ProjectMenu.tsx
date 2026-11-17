@@ -240,9 +240,11 @@ export function ProjectMenu({
       <DropdownMenuTrigger
         aria-label="List options"
         aria-disabled={saving || undefined}
-        // The after: box widens the tap target to 40px on touch without
+        // The after: box grows the tap target to 32x40 on touch without
         // moving the ⋯, which lines up with the rows' avatars (ColumnCard).
-        className="relative rounded p-1 text-neutral-500 hover:bg-neutral-100 aria-disabled:opacity-50 touch:text-lg touch:leading-6 touch:after:absolute touch:after:-inset-x-2 touch:after:-inset-y-1 dark:hover:bg-neutral-800"
+        // It reaches right, into the column's padding, not left over the
+        // collapse-all button.
+        className="relative rounded p-1 text-neutral-500 hover:bg-neutral-100 aria-disabled:opacity-50 touch:text-lg touch:leading-6 touch:after:absolute touch:after:left-0 touch:after:-right-2 touch:after:-inset-y-1 dark:hover:bg-neutral-800"
       >
         ⋯
       </DropdownMenuTrigger>

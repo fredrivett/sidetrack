@@ -123,7 +123,7 @@ export function SavedLabelChip({
         size={16}
         // Less than the picker's usual padding, so the emoji sits close to
         // the name.
-        className="p-0.5"
+        className="p-0.5 touch:p-1.5"
         disabled={saving || disabled}
         suggestions={emoji.suggestions}
         onOpen={emoji.onOpen}
@@ -143,7 +143,7 @@ export function SavedLabelChip({
         onDraftChange={emoji.onDraftChange}
         required
         hold
-        className="min-w-0 truncate rounded pr-1 pl-0.5 hover:bg-muted"
+        className="min-w-0 truncate rounded pr-1 pl-0.5 hover:bg-muted touch:py-1.5"
         inputClassName="field-sizing-content h-6 min-w-12 pr-1 pl-0.5 py-0 text-sm"
       />
       <RemoveButton name={label.name} onRemove={onRemove} disabled={saving || disabled} />
@@ -180,7 +180,7 @@ export function DraftLabelChip({
         size={16}
         // Less than the picker's usual padding, so the emoji sits close to
         // the name.
-        className="p-0.5"
+        className="p-0.5 touch:p-1.5"
         disabled={disabled || !onEmoji}
         suggestions={[]}
         onSelect={(next) => onEmoji?.(next)}
