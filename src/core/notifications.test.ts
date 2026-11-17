@@ -2,12 +2,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { finishWork, startWork } from "./agentSessions";
 import { addComment, updateComment } from "./comments";
 import { plainText } from "./describe";
-import { addItem, updateItem } from "./items";
+import { addItem, completeItem, uncompleteItem, updateItem } from "./items";
+import { setFollowing } from "./follows";
 import { acceptInvite, inviteMember, removeMember } from "./members";
 import { deliverNotifications, listNotifications, markNotificationsRead } from "./notifications";
 import { createProject, updateProject } from "./projects";
 import { savePushSubscription } from "./push";
-import { createSpace, inviteSpaceMember, updateSpace } from "./spaces";
+import {
+  acceptSpaceInvite,
+  createSpace,
+  inviteSpaceMember,
+  setSpaceMemberRole,
+  updateSpace,
+} from "./spaces";
 import { createTestDb, createTestUser } from "./test-helpers";
 
 const sendPush = vi.hoisted(() => vi.fn(async () => ({ sent: 1, gone: [] as string[] })));
@@ -30,7 +37,9 @@ function seed() {
   const list = createProject(db, fred, { name: "Home" }, "web");
   inviteMember(db, fred, list.id, "alice", "web");
   acceptInvite(db, alice, list.id, "web");
+  // Alice's invite, and Fred hearing she joined.
   markNotificationsRead(db, alice);
+  markNotificationsRead(db, fred);
   return { db, fred, alice, listId: list.id };
 }
 
@@ -135,6 +144,68 @@ describe("notifications", () => {
     expect(assigned).toEqual(Array(20).fill("Home"));
   });
 
+  it("tells an item's followers what moved, and creators, assignees and commenters follow", () => {
+    const { db, fred, alice, listId } = seed();
+    const bob = createTestUser(db, { username: "bob", name: "Bob" });
+    inviteMember(db, fred, listId, "bob", "web");
+    acceptInvite(db, bob, listId, "web");
+    markNotificationsRead(db, fred);
+    markNotificationsRead(db, bob);
+    // Fred created it; Alice is assigned; Bob comments.
+    const item = addItem(db, fred, { projectId: listId, title: "Fix tap", assigneeIds: [alice] }, "web");
+    addComment(db, bob, item.id, "I can lend a wrench", "web");
+    markNotificationsRead(db, alice);
+    markNotificationsRead(db, fred);
+    completeItem(db, alice, item.id, "web");
+    expect(unread(db, fred)).toEqual(['Alice completed "Fix tap"']);
+    expect(unread(db, bob)).toEqual(['Alice completed "Fix tap"']);
+    expect(unread(db, alice)).toEqual([]);
+    // Unfollowing sticks, even through a later comment.
+    setFollowing(db, bob, item.id, false);
+    addComment(db, bob, item.id, "Still around", "web");
+    uncompleteItem(db, alice, item.id, "web");
+    expect(unread(db, bob)).toEqual(['Alice completed "Fix tap"']);
+    expect(unread(db, fred)).toEqual([
+      'Alice reopened "Fix tap"',
+      'Bob commented on "Fix tap": Still around',
+      'Alice completed "Fix tap"',
+    ]);
+  });
+
+  it("tells someone taken off an item, once, and not as a follower too", () => {
+    const { db, fred, alice, listId } = seed();
+    const item = addItem(db, fred, { projectId: listId, title: "Fix tap", assigneeIds: [alice] }, "web");
+    markNotificationsRead(db, alice);
+    updateItem(db, fred, item.id, { assigneeIds: [], dueDate: "2026-12-01" }, "web");
+    expect(unread(db, alice)).toEqual(['Fred took you off "Fix tap"']);
+    // Still following, so the next change reaches her.
+    updateItem(db, fred, item.id, { dueDate: null }, "web");
+    expect(unread(db, alice)[0]).toBe('Fred cleared the due date on "Fix tap"');
+  });
+
+  it("rolls a sub-item's activity up to its parent's followers", () => {
+    const { db, fred, alice, listId } = seed();
+    const parent = addItem(db, fred, { projectId: listId, title: "Pack" }, "web");
+    setFollowing(db, alice, parent.id, true);
+    const sub = addItem(db, fred, { projectId: listId, title: "Socks", parentId: parent.id }, "web");
+    // Another still open, so ticking Socks doesn't finish Pack too.
+    addItem(db, fred, { projectId: listId, title: "Hat", parentId: parent.id }, "web");
+    markNotificationsRead(db, alice);
+    completeItem(db, fred, sub.id, "web");
+    expect(unread(db, alice)).toEqual(['Fred completed "Socks"']);
+  });
+
+  it("tells a list's owner and a Space's admins who joined, and someone their new role", () => {
+    const { db, fred, alice } = seed();
+    expect(listNotifications(db, fred).map((n) => plainText(n.parts))).toEqual(['Alice joined "Home"']);
+    const space = createSpace(db, fred, { name: "Family" }, "web");
+    inviteSpaceMember(db, fred, space.id, "alice", "web");
+    acceptSpaceInvite(db, alice, space.id, "web");
+    setSpaceMemberRole(db, fred, space.id, alice, "admin", "web");
+    expect(unread(db, fred)).toEqual(['Alice joined "Family"']);
+    expect(unread(db, alice)).toEqual(['Fred made you an admin of "Family"', 'Fred invited you to "Family"']);
+  });
+
   it("writes nothing when the change rolls back", () => {
     const { db, fred, alice, listId } = seed();
     // One blank sub-item title rolls back the item with it.
@@ -163,8 +234,12 @@ describe("notifications", () => {
     acceptInvite(db, bob, listId, "web");
     markNotificationsRead(db, bob);
     updateComment(db, fred, comment.id, "@alice can you look? cc @bob", "web");
-    // Alice's one quotes the comment as it reads now.
-    expect(unread(db, alice)).toEqual(['Fred mentioned you on "Fix tap": @alice can you look? cc @bob']);
+    // Being mentioned made Alice a follower, so she heard the next comment
+    // too; her mention quotes the comment as it reads now.
+    expect(unread(db, alice)).toEqual([
+      'Fred commented on "Fix tap": @bob any idea?',
+      'Fred mentioned you on "Fix tap": @alice can you look? cc @bob',
+    ]);
     expect(unread(db, bob)).toEqual(['Fred mentioned you on "Fix tap": @alice can you look? cc @bob']);
   });
 

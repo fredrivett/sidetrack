@@ -7,16 +7,21 @@ import { hasProjectAccess } from "./access";
 import { users } from "./auth-schema";
 import { onChanges } from "./changes";
 import type { Db } from "./db";
-import { type Part, plainText } from "./describe";
+import { SYSTEM_ACTOR } from "./audit";
+import { dueText, type Part, plainText } from "./describe";
+import { autoFollow, followersOf } from "./follows";
 import type { ChangeEvent, ItemAt } from "./events";
 import { forgetPushSubscriptions, pushTargets } from "./push";
 import {
   auditLog,
   comments,
   items,
+  NOTIFICATION_REASONS,
   type NotificationReason,
   notifications,
   projects,
+  spaceMembers,
+  spaces,
 } from "./schema";
 
 // Notifications: what someone should hear about a change. The change's
@@ -60,63 +65,126 @@ const UNSEEN_MAX = 200;
 // How far back to read for seen ones the reader can still open.
 const PAGES_MAX = 10;
 
+type Recipient = { userId: string; reason: NotificationReason };
+
 /** Who `event` concerns and why, before the checks every rule shares. */
 function rule(
   db: Db,
   event: ChangeEvent,
   actor: string,
-): { to: string[]; reason: NotificationReason; groupKey: string; projectId?: string } | null {
+): { to: Recipient[]; groupKey: string; projectId?: string; spaceId?: string } | null {
+  const as = (reason: NotificationReason, userIds: string[]): Recipient[] =>
+    userIds.map((userId) => ({ userId, reason }));
+  const onItem = (itemId: string, projectId: string, to: Recipient[]) => ({
+    to,
+    groupKey: `item:${itemId}`,
+    projectId,
+  });
+  const followers = (itemId: string) => as("following", followersOf(db, itemId));
   switch (event.type) {
     case "item.created": {
+      const assignees = event.assignees.map((a) => a.userId);
+      // Its creator and assignees follow it.
+      autoFollow(db, event.itemId, [actor, ...assignees]);
       // Logged as already done, it asks nothing of anyone.
       const done = db
         .select({ completedAt: items.completedAt })
         .from(items)
         .where(eq(items.id, event.itemId))
         .get()?.completedAt;
-      if (done) return null;
+      return onItem(event.itemId, event.projectId, [
+        ...(done ? [] : as("assigned", assignees)),
+        // A sub-item added is news to its parent's followers.
+        ...(event.parent ? followers(event.itemId) : []),
+      ]);
+    }
+    case "item.updated": {
+      const c = event.changes;
+      const added = c.assignees?.added.map((a) => a.userId) ?? [];
+      autoFollow(db, event.itemId, added);
+      return onItem(event.itemId, event.projectId, [
+        ...as("assigned", added),
+        ...as("unassigned", c.assignees?.removed.map((a) => a.userId) ?? []),
+        ...(c.due ? followers(event.itemId) : []),
+      ]);
+    }
+    case "item.completed":
+      // Sub-items ticked with their parent are told as the parent.
+      return event.with?.as === "parent"
+        ? null
+        : onItem(event.itemId, event.projectId, followers(event.itemId));
+    case "item.reopened":
+      // Likewise a parent reopened for a sub-item, or a sub-item with its parent.
+      return event.forSubItem || event.with
+        ? null
+        : onItem(event.itemId, event.projectId, followers(event.itemId));
+    case "item.moved":
+      // Once, on the side it arrived in.
+      return event.side === "in"
+        ? onItem(event.itemId, event.projectId, followers(event.itemId))
+        : null;
+    case "agent.requested":
+      return onItem(event.itemId, event.projectId, followers(event.itemId));
+    case "comment.created": {
+      const mentioned = event.mentioned?.map((p) => p.userId) ?? [];
+      autoFollow(db, event.item.itemId, [actor, ...mentioned]);
+      return onItem(event.item.itemId, event.projectId, [
+        ...as("mentioned", mentioned),
+        ...followers(event.item.itemId),
+      ]);
+    }
+    case "comment.edited": {
+      const mentioned = event.mentioned?.map((p) => p.userId) ?? [];
+      autoFollow(db, event.item.itemId, mentioned);
+      return onItem(event.item.itemId, event.projectId, as("mentioned", mentioned));
+    }
+    case "member.invited":
+      return { to: as("invited", [event.member.userId]), groupKey: `list:${event.projectId}` };
+    case "member.joined": {
+      const owner = db
+        .select({ userId: projects.userId })
+        .from(projects)
+        .where(eq(projects.id, event.projectId))
+        .get()?.userId;
       return {
-        to: event.assignees.map((a) => a.userId),
-        reason: "assigned",
-        groupKey: `item:${event.itemId}`,
+        to: as("joined", owner ? [owner] : []),
+        groupKey: `list:${event.projectId}`,
         projectId: event.projectId,
       };
     }
-    case "item.updated":
-      return event.changes.assignees
-        ? {
-            to: event.changes.assignees.added.map((a) => a.userId),
-            reason: "assigned",
-            groupKey: `item:${event.itemId}`,
-            projectId: event.projectId,
-          }
-        : null;
-    case "comment.created":
-    case "comment.edited":
-      return event.mentioned
-        ? {
-            to: event.mentioned.map((p) => p.userId),
-            reason: "mentioned",
-            groupKey: `item:${event.item.itemId}`,
-            projectId: event.projectId,
-          }
-        : null;
-    case "member.invited":
-      return { to: [event.member.userId], reason: "invited", groupKey: `list:${event.projectId}` };
     case "space.member.invited":
       return {
-        to: [event.member.userId],
-        reason: "invited",
+        to: as("invited", [event.member.userId]),
         groupKey: `space:${event.space.spaceId}`,
+      };
+    case "space.member.joined": {
+      const admins = db
+        .select({ userId: spaceMembers.userId })
+        .from(spaceMembers)
+        .where(
+          and(
+            eq(spaceMembers.spaceId, event.space.spaceId),
+            eq(spaceMembers.status, "accepted"),
+            eq(spaceMembers.role, "admin"),
+          ),
+        )
+        .all()
+        .map((r) => r.userId);
+      return {
+        to: as("joined", admins),
+        groupKey: `space:${event.space.spaceId}`,
+        spaceId: event.space.spaceId,
+      };
+    }
+    case "space.member.role":
+      return {
+        to: as("role", [event.member.userId]),
+        groupKey: `space:${event.space.spaceId}`,
+        spaceId: event.space.spaceId,
       };
     case "agent.finished":
       // The agent's owner: it was working for them.
-      return {
-        to: [actor],
-        reason: "agent-finished",
-        groupKey: `item:${event.itemId}`,
-        projectId: event.projectId,
-      };
+      return onItem(event.itemId, event.projectId, as("agent-finished", [actor]));
     default:
       return null;
   }
@@ -136,30 +204,54 @@ export function writeNotifications(
 ): void {
   const r = rule(db, change.event, change.actor);
   if (!r) return;
-  let to = [...new Set(r.to)].filter((u) => change.agent || u !== change.actor);
-  if (r.projectId) {
-    const projectId = r.projectId;
-    to = to.filter((u) =>
-      db
-        .select({ id: projects.id })
-        .from(projects)
-        .where(and(eq(projects.id, projectId), hasProjectAccess(u)))
-        .get(),
-    );
+  // One each, for the strongest reason (NOTIFICATION_REASONS is in order).
+  const strength = (reason: NotificationReason) => NOTIFICATION_REASONS.indexOf(reason);
+  const best = new Map<string, NotificationReason>();
+  for (const { userId, reason } of r.to) {
+    const had = best.get(userId);
+    if (!had || strength(reason) < strength(had)) best.set(userId, reason);
   }
+  const { projectId, spaceId } = r;
+  const to = [...best].filter(
+    ([u]) =>
+      (change.agent || u !== change.actor) &&
+      (!projectId ||
+        db
+          .select({ id: projects.id })
+          .from(projects)
+          .where(and(eq(projects.id, projectId), hasProjectAccess(u)))
+          .get()) &&
+      (!spaceId || inSpace(db, u, spaceId)),
+  );
   if (to.length === 0) return;
   db.insert(notifications)
     .values(
-      to.map((userId) => ({
+      to.map(([userId, reason]) => ({
         id: nanoid(12),
         userId,
-        reason: r.reason,
+        reason,
         auditId: change.auditId,
         groupKey: r.groupKey,
         createdAt: change.ts,
       })),
     )
     .run();
+}
+
+function inSpace(db: Db, userId: string, spaceId: string): boolean {
+  return Boolean(
+    db
+      .select({ id: spaceMembers.id })
+      .from(spaceMembers)
+      .where(
+        and(
+          eq(spaceMembers.spaceId, spaceId),
+          eq(spaceMembers.userId, userId),
+          eq(spaceMembers.status, "accepted"),
+        ),
+      )
+      .get(),
+  );
 }
 
 type Row = {
@@ -169,6 +261,7 @@ type Row = {
   readAt: number | null;
   event: ChangeEvent | null;
   agentName: string | null;
+  actorId: string;
   actor: NotificationView["actor"];
 };
 
@@ -181,6 +274,7 @@ function selectRows(db: Db) {
       readAt: notifications.readAt,
       event: auditLog.event,
       agentName: auditLog.agentName,
+      actorId: auditLog.actor,
       actor: {
         userId: users.id,
         name: users.name,
@@ -200,6 +294,10 @@ function itemOf(event: ChangeEvent): ItemAt | null {
   switch (event.type) {
     case "item.created":
     case "item.updated":
+    case "item.completed":
+    case "item.reopened":
+    case "item.moved":
+    case "agent.requested":
     case "agent.finished":
       return event;
     case "comment.created":
@@ -248,6 +346,44 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
     ).map((c) => [c.id, c.body]),
   );
 
+  const listIds = [
+    ...new Set(events.flatMap((e) => (e.type === "member.joined" ? [e.projectId] : []))),
+  ];
+  const lists = new Map(
+    (listIds.length
+      ? db
+          .select({ id: projects.id, name: projects.name })
+          .from(projects)
+          .where(and(inArray(projects.id, listIds), hasProjectAccess(userId)))
+          .all()
+      : []
+    ).map((p) => [p.id, p.name]),
+  );
+  const spaceIds = [
+    ...new Set(
+      events.flatMap((e) =>
+        e.type === "space.member.joined" || e.type === "space.member.role" ? [e.space.spaceId] : [],
+      ),
+    ),
+  ];
+  const spaceNames = new Map(
+    (spaceIds.length
+      ? db
+          .select({ id: spaces.id, name: spaces.name })
+          .from(spaces)
+          .innerJoin(spaceMembers, eq(spaceMembers.spaceId, spaces.id))
+          .where(
+            and(
+              inArray(spaces.id, spaceIds),
+              eq(spaceMembers.userId, userId),
+              eq(spaceMembers.status, "accepted"),
+            ),
+          )
+          .all()
+      : []
+    ).map((sp) => [sp.id, sp.name]),
+  );
+
   return rows.flatMap((r): NotificationView[] => {
     const event = r.event;
     if (!event) return [];
@@ -255,7 +391,9 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
     const who: Part = {
       text:
         r.agentName ??
-        (a?.name || (a?.displayUsername ? `@${a.displayUsername}` : a?.email) || "Someone"),
+        (r.actorId === SYSTEM_ACTOR
+          ? "Sidetrack"
+          : a?.name || (a?.displayUsername ? `@${a.displayUsername}` : a?.email) || "Someone"),
       em: "person",
     };
     const t = (text: string): Part => ({ text });
@@ -273,22 +411,39 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
       if (!now) return [];
       const item: Part = { text: now.title, em: "item", quote: true };
       const at = { title: now.list, url: `/?p=${encodeURIComponent(now.projectId)}&item=${encodeURIComponent(now.id)}` };
+      const say = (parts: Part[], snippet: string | null = null): NotificationView[] => [
+        { ...base, ...at, parts, snippet },
+      ];
       switch (event.type) {
         case "item.created":
-          return [{ ...base, ...at, parts: [who, t(" added "), item, t(" for you")], snippet: null }];
+          return r.reason === "assigned"
+            ? say([who, t(" added "), item, t(" for you")])
+            : say([who, t(" added "), item, t(" to "), { text: event.parent?.title ?? "", em: "item", quote: true }]);
         case "item.updated":
-          return [{ ...base, ...at, parts: [who, t(" assigned you "), item], snippet: null }];
+          if (r.reason === "assigned") return say([who, t(" assigned you "), item]);
+          if (r.reason === "unassigned") return say([who, t(" took you off "), item]);
+          return event.changes.due?.dueDate
+            ? say([who, t(" set "), item, t(` due ${dueText(event.changes.due)}`)])
+            : say([who, t(" cleared the due date on "), item]);
+        case "item.completed":
+          return say([who, t(" completed "), item]);
+        case "item.reopened":
+          return event.repeat
+            ? say([item, t(" is due again")])
+            : say([who, t(" reopened "), item]);
+        case "item.moved":
+          return say([who, t(" moved "), item, t(" to "), { text: now.list, em: "place", quote: true }]);
+        case "agent.requested":
+          return say([who, t(" asked "), { text: event.agent, em: "person" }, t(" to work on "), item]);
         case "comment.created":
         case "comment.edited": {
           const body = bodies.get(event.commentId);
-          return [
-            {
-              ...base,
-              ...at,
-              parts: [who, t(" mentioned you on "), item],
-              snippet: body ? excerpt(body) : null,
-            },
-          ];
+          return say(
+            r.reason === "mentioned"
+              ? [who, t(" mentioned you on "), item]
+              : [who, t(" commented on "), item],
+            body ? excerpt(body) : null,
+          );
         }
         case "agent.finished":
           return [
@@ -312,6 +467,38 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           title: name,
           url: "/",
           parts: [who, t(" invited you to "), { text: name, em: "place", quote: true }],
+          snippet: null,
+        },
+      ];
+    }
+    // Joins and roles: only while the reader is still in the list or Space,
+    // by its current name.
+    if (event.type === "member.joined") {
+      const name = lists.get(event.projectId);
+      if (!name) return [];
+      return [
+        {
+          ...base,
+          title: name,
+          url: `/?p=${encodeURIComponent(event.projectId)}`,
+          parts: [who, t(" joined "), { text: name, em: "place", quote: true }],
+          snippet: null,
+        },
+      ];
+    }
+    if (event.type === "space.member.joined" || event.type === "space.member.role") {
+      const name = spaceNames.get(event.space.spaceId);
+      if (!name) return [];
+      const space: Part = { text: name, em: "place", quote: true };
+      return [
+        {
+          ...base,
+          title: name,
+          url: "/",
+          parts:
+            event.type === "space.member.role"
+              ? [who, t(event.role === "admin" ? " made you an admin of " : " made you a member of "), space]
+              : [who, t(" joined "), space],
           snippet: null,
         },
       ];

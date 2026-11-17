@@ -2,6 +2,8 @@
 
 import type { DraggableAttributes, DraggableSyntheticListeners } from "@dnd-kit/core";
 import {
+  Bell,
+  BellOff,
   CalendarDays,
   CalendarX,
   Check,
@@ -62,6 +64,7 @@ import { useAssignShortcuts } from "./useAssignShortcuts";
 import { useOptimisticAssignees } from "./use-optimistic-assignees";
 import { useItemChanges } from "./use-optimistic-items";
 import { useCopyItemRef } from "./useCopyItemRef";
+import { useFollows } from "./follows";
 import { agentLabel, AvatarStack, assigneeNames } from "./UserAvatar";
 import { useAgentAssignment, useItemAgentSessions } from "./agent-sessions";
 import { useItemSaves } from "./item-saves";
@@ -149,6 +152,8 @@ export function ItemRow({
   // ⌘./Ctrl+. copies the ref while the card is hovered (Linear's shortcut),
   // deferring to an open detail dialog so we don't copy the wrong ref. The
   // card shows no ref to update, so the shortcut confirms with a toast.
+  const follows = useFollows();
+  const following = follows?.isFollowing(item.id) ?? false;
   const { copied, copy } = useCopyItemRef(ref, {
     active: hovered,
     deferToDialog: true,
@@ -420,6 +425,12 @@ export function ItemRow({
               <Kbd>{modifierSymbol()}.</Kbd>
             </ContextMenuShortcut>
           </ContextMenuItem>
+          {follows && (
+            <ContextMenuItem onClick={() => follows.setFollowing(item, !following)}>
+              {following ? <BellOff /> : <Bell />}
+              {following ? "Unfollow" : "Follow"}
+            </ContextMenuItem>
+          )}
         </ContextMenuGroup>
         <ContextMenuSeparator />
         <ContextMenuSub>

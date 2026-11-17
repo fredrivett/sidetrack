@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  Bell,
+  BellOff,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -73,6 +75,7 @@ import { useAssignShortcuts } from "./useAssignShortcuts";
 import { useOptimisticAssignees } from "./use-optimistic-assignees";
 import { useItemChanges } from "./use-optimistic-items";
 import { useCopyItemRef } from "./useCopyItemRef";
+import { useFollows } from "./follows";
 import { AgentAvatar, AvatarStack, assigneeName, assigneeNames } from "./UserAvatar";
 import { useAgentAssignment, useItemAgentSessions } from "./agent-sessions";
 
@@ -525,6 +528,8 @@ export function ItemDetailDialog({
 
   // While the dialog is open, ⌘./Ctrl+. copies the ref (Linear's shortcut).
   const { copied, copy } = useCopyItemRef(ref, { active: open });
+  const follows = useFollows();
+  const following = follows?.isFollowing(item.id) ?? false;
 
   // Linear's assignment shortcuts while the dialog owns the screen: A opens the
   // picker, I adds or removes me. Stays armed while the picker is open so the I
@@ -598,6 +603,19 @@ export function ItemDetailDialog({
               {copied ? "Copied" : ref}
               <Kbd className="ml-0.5">{modifierSymbol()}.</Kbd>
             </button>
+            {follows && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-pressed={following}
+                onClick={() => follows.setFollowing(item, !following)}
+                className="ml-auto text-neutral-500"
+              >
+                {following ? <BellOff /> : <Bell />}
+                {following ? "Unfollow" : "Follow"}
+              </Button>
+            )}
             <Button
               type="button"
               variant="outline"
@@ -605,7 +623,7 @@ export function ItemDetailDialog({
               onClick={toggle}
               disabled={pending}
               aria-pressed={completed}
-              className={`ml-auto ${
+              className={`${follows ? "" : "ml-auto "}${
                 completed
                   ? "border-green-600/30 bg-green-50 text-green-700 hover:bg-green-100 dark:border-green-500/30 dark:bg-green-950/40 dark:text-green-400 dark:hover:bg-green-950/70"
                   : ""
