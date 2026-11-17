@@ -10,6 +10,9 @@ export const dynamic = "force-dynamic";
 export default async function NotificationsPage() {
   const userId = await requireUserId();
   const { db } = getDb();
+  // The public half, which the browser needs to subscribe. Read at runtime,
+  // not built in, like every other setting.
+  const vapidPublicKey = getEnv().VAPID?.publicKey ?? null;
 
   return (
     <main className="min-h-dvh px-4 py-6 sm:px-6">
@@ -24,10 +27,8 @@ export default async function NotificationsPage() {
           <h1 className="text-lg font-semibold tracking-tight">Notifications</h1>
         </header>
         <NotificationsPanel
-          // The public half, which the browser needs to subscribe. Read at
-          // runtime, not built in, like every other setting.
-          vapidPublicKey={getEnv().VAPID?.publicKey ?? null}
-          devices={listPushDevices(db, userId)}
+          vapidPublicKey={vapidPublicKey}
+          devices={vapidPublicKey ? listPushDevices(db, userId, vapidPublicKey) : []}
         />
       </div>
     </main>

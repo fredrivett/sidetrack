@@ -71,13 +71,30 @@ function keyBytes(base64url: string) {
   return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
 }
 
-async function readSupport(): Promise<Support> {
+/**
+ * This browser's push subscription, if it was made with the server's current
+ * key. One made with an older key can't receive anything signed with this
+ * one, so it's dropped, and turning push on makes a new one.
+ */
+async function currentSubscription(vapidPublicKey: string) {
+  const registration = await navigator.serviceWorker.ready;
+  const subscription = await registration.pushManager.getSubscription();
+  const key = subscription?.options.applicationServerKey;
+  const want = keyBytes(vapidPublicKey);
+  if (!subscription) return null;
+  if (key && new Uint8Array(key).every((b, i) => b === want[i]) && key.byteLength === want.length) {
+    return subscription;
+  }
+  await subscription.unsubscribe();
+  return null;
+}
+
+async function readSupport(vapidPublicKey: string): Promise<Support> {
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
     return isIos() && !isInstalled() ? { kind: "needs-install" } : { kind: "unsupported" };
   }
   if (Notification.permission === "denied") return { kind: "blocked" };
-  const registration = await navigator.serviceWorker.ready;
-  const subscription = await registration.pushManager.getSubscription();
+  const subscription = await currentSubscription(vapidPublicKey);
   return { kind: "ready", endpoint: subscription?.endpoint ?? null };
 }
 
@@ -95,8 +112,9 @@ export function NotificationsPanel({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    readSupport().then(setSupport, () => setSupport({ kind: "unsupported" }));
-  }, []);
+    if (!vapidPublicKey) return;
+    readSupport(vapidPublicKey).then(setSupport, () => setSupport({ kind: "unsupported" }));
+  }, [vapidPublicKey]);
 
   const thisEndpoint = support.kind === "ready" ? support.endpoint : null;
   // Subscribed in this browser and still saved on the server.
@@ -128,7 +146,7 @@ export function NotificationsPanel({
       }
       const registration = await navigator.serviceWorker.ready;
       const subscription =
-        (await registration.pushManager.getSubscription()) ??
+        (await currentSubscription(vapidPublicKey)) ??
         (await registration.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: keyBytes(vapidPublicKey),
@@ -159,8 +177,12 @@ export function NotificationsPanel({
   function sendTest() {
     run("send a test notification", async () => {
       const { sent } = await sendTestPushAction();
-      toast.success(sent === 1 ? "Sent to 1 device" : `Sent to ${sent} devices`);
       router.refresh();
+      if (sent === 0) {
+        setError("Couldn't reach any of your devices. Turn notifications off and on again here.");
+        return;
+      }
+      toast.success(sent === 1 ? "Sent to 1 device" : `Sent to ${sent} devices`);
     });
   }
 
@@ -172,8 +194,8 @@ export function NotificationsPanel({
       <div className="space-y-1">
         <h2 className="text-sm font-medium">Push notifications</h2>
         <p className="text-sm text-muted-foreground">
-          Get a notification on this device when someone else changes something on your
-          lists.
+          Turn on notifications for this device. For now Sidetrack sends only a test;
+          notifications about activity on your lists are coming.
         </p>
       </div>
 

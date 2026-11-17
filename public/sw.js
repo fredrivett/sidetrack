@@ -92,10 +92,13 @@ self.addEventListener("push", (event) => {
 // if there is one, else a new one.
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = new URL(event.notification.data?.url ?? "/", self.location.origin).href;
+  // Only ever a page of the app, whatever the push said.
+  const target = new URL(event.notification.data?.url ?? "/", self.location.origin);
+  const url = target.origin === self.location.origin ? target.href : `${self.location.origin}/`;
   event.waitUntil(
     (async () => {
-      const [open] = await self.clients.matchAll({ type: "window" });
+      // Uncontrolled too: a page open since before the worker installed.
+      const [open] = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       if (open) {
         await open.focus();
         if (open.url !== url) await open.navigate(url);

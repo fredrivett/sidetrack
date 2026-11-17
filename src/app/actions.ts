@@ -867,16 +867,25 @@ export async function removeAgentWebhookAction(keyId: string) {
   revalidatePath("/settings/keys");
 }
 
+/** The server's VAPID keys; push actions refuse to run without them. */
+function requireVapid() {
+  const vapid = getEnv().VAPID;
+  if (!vapid) throw new Error("push notifications aren't set up on this server");
+  return vapid;
+}
+
 export async function savePushSubscriptionAction(input: PushSubscriptionInput) {
   const userId = await requireUserId();
   const { db } = getDb();
+  const vapid = requireVapid();
   // Pick the fields, so a crafted call can't pass others.
   const { endpoint, keys, deviceLabel } = input;
-  savePushSubscriptionCore(db, userId, {
-    endpoint,
-    keys: { p256dh: keys?.p256dh, auth: keys?.auth },
-    deviceLabel,
-  });
+  savePushSubscriptionCore(
+    db,
+    userId,
+    { endpoint, keys: { p256dh: keys?.p256dh, auth: keys?.auth }, deviceLabel },
+    vapid.publicKey,
+  );
   revalidatePath("/settings/notifications");
 }
 
@@ -891,10 +900,9 @@ export async function removePushSubscriptionAction(endpoint: string) {
 export async function sendTestPushAction() {
   const userId = await requireUserId();
   const { db } = getDb();
-  const vapid = getEnv().VAPID;
-  if (!vapid) throw new Error("push notifications aren't set up on this server");
+  const vapid = requireVapid();
   const { sent, gone } = await sendPush(
-    pushTargetsCore(db, userId),
+    pushTargetsCore(db, userId, vapid.publicKey),
     {
       title: "Sidetrack",
       body: "Notifications are on for this device.",

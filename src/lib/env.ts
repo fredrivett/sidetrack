@@ -86,6 +86,18 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
+// A contact push services accept: an https URL with a host, or a mailto: with an address.
+function isPushContact(value: string | undefined): boolean {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    if (url.protocol === "https:") return url.hostname !== "";
+    return url.protocol === "mailto:" && /^[^@\s]+@[^@\s]+$/.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
 function isSmtpUrl(value: string): boolean {
   try {
     const url = new URL(value);
@@ -135,10 +147,24 @@ function schemaFor(mode: EnvMode) {
             "them with `npx web-push generate-vapid-keys`) or neither.",
         });
       }
+      // A mistyped key would only fail when a push is sent: the public key
+      // is a P-256 point (65 bytes), the private key 32 bytes, base64url.
+      const b64u = (value: string | undefined, bytes: number) =>
+        !value ||
+        (/^[A-Za-z0-9_-]+$/.test(value) && Buffer.from(value, "base64url").length === bytes);
+      if (!b64u(env.VAPID_PUBLIC_KEY, 65) || !b64u(env.VAPID_PRIVATE_KEY, 32)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["VAPID_PUBLIC_KEY"],
+          message:
+            "VAPID_PUBLIC_KEY or VAPID_PRIVATE_KEY isn't a Web Push key; copy both from " +
+            "`npx web-push generate-vapid-keys` whole.",
+        });
+      }
       // Push services reject a push with no contact, and Apple rejects one
       // that isn't a mailto: or https: URL.
       const subject = env.VAPID_SUBJECT ?? env.BETTER_AUTH_URL;
-      if (env.VAPID_PUBLIC_KEY && !(subject && /^(mailto:|https:\/\/)/.test(subject))) {
+      if (env.VAPID_PUBLIC_KEY && !isPushContact(subject)) {
         ctx.addIssue({
           code: "custom",
           path: ["VAPID_SUBJECT"],

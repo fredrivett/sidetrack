@@ -4,6 +4,15 @@ import { getPostHog } from "./posthog";
 // Sends Web Push notifications. public/sw.js shows each one and opens `url`
 // when it's tapped.
 
+/** Whether `value` is base64url (unpadded, as Web Push writes it) of exactly `bytes` bytes. */
+export function isBase64urlBytes(value: unknown, bytes: number): value is string {
+  return (
+    typeof value === "string" &&
+    /^[A-Za-z0-9_-]+$/.test(value) &&
+    Buffer.from(value, "base64url").length === bytes
+  );
+}
+
 /** What a notification says, and where tapping it goes. */
 export interface PushMessage {
   title: string;
@@ -46,6 +55,8 @@ export async function sendPush(
           vapidDetails: vapid,
           // Worth delivering for a day to a phone that's off; after that it's stale.
           TTL: 24 * 60 * 60,
+          // A push service that stalls mustn't hold up the rest, or whoever's waiting.
+          timeout: 10_000,
         });
         sent++;
       } catch (error) {

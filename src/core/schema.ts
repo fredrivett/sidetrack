@@ -500,6 +500,10 @@ export const pushSubscriptions = sqliteTable(
     // The subscription's keys (base64url), which encrypt what's sent to it.
     p256dh: text("p256dh").notNull(),
     auth: text("auth").notNull(),
+    // The server's VAPID public key the browser subscribed with. A
+    // subscription only takes pushes signed with its own key, so one made
+    // before the keys changed is dead until the device turns push on again.
+    vapidKey: text("vapid_key").notNull(),
     // What the device said it was when it subscribed ("iPhone"), to tell
     // devices apart in Settings.
     deviceLabel: text("device_label").notNull(),
