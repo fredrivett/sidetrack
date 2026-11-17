@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { finishWork, startWork } from "./agentSessions";
 import { addComment, updateComment } from "./comments";
 import { plainText } from "./describe";
-import { addItem, completeItem, listItems, uncompleteItem, updateItem } from "./items";
+import { addItem, completeItem, listItems, reopenDueRepeats, uncompleteItem, updateItem } from "./items";
 import { moveItem, previewMoveItem } from "./move";
 import { setFollowing } from "./follows";
 import { acceptInvite, inviteMember, removeMember } from "./members";
@@ -194,6 +194,27 @@ describe("notifications", () => {
     markNotificationsRead(db, alice);
     completeItem(db, fred, sub.id, "web");
     expect(unread(db, alice)).toEqual(['Fred completed "Socks"']);
+  });
+
+  it("tells only the assignees when a repeating item comes round again", () => {
+    const { db, fred, alice, listId } = seed();
+    // Fred created it, so he follows it; it's Alice's to do.
+    const bins = addItem(
+      db,
+      fred,
+      { projectId: listId, title: "Bins", assigneeIds: [alice], repeat: { every: 1, unit: "day" } },
+      "web",
+    );
+    completeItem(db, alice, bins.id, "web");
+    markNotificationsRead(db, alice);
+    markNotificationsRead(db, fred);
+    reopenDueRepeats(db, fred, { timeZone: "UTC", now: Date.now() + 2 * 86_400_000 });
+    expect(unread(db, alice)).toEqual(['"Bins" is due again']);
+    expect(unread(db, fred)).toEqual([]);
+    // Reopened by hand, it's news to its followers again.
+    completeItem(db, alice, bins.id, "web");
+    uncompleteItem(db, alice, bins.id, "web");
+    expect(unread(db, fred)).toEqual(['Alice reopened "Bins"', 'Alice completed "Bins"']);
   });
 
   it("tells one action once, not once per sub-item it carries", () => {

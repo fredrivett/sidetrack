@@ -147,11 +147,19 @@ function rule(
         followers(event.itemId).filter((r) => !told.has(r.userId)),
       );
     }
-    case "item.reopened":
+    case "item.reopened": {
       // Likewise a parent reopened for a sub-item, or a sub-item with its parent.
-      return event.forSubItem || event.with
-        ? null
-        : onItem(event.itemId, event.projectId, followers(event.itemId));
+      if (event.forSubItem || event.with) return null;
+      if (!event.repeat) return onItem(event.itemId, event.projectId, followers(event.itemId));
+      // Come round again by its repeat rule: only whoever it's for needs telling.
+      const assignees =
+        db
+          .select({ assigneeIds: items.assigneeIds })
+          .from(items)
+          .where(eq(items.id, event.itemId))
+          .get()?.assigneeIds ?? [];
+      return onItem(event.itemId, event.projectId, as("assigned", assignees));
+    }
     case "item.moved":
       // Once, on the side it arrived in; sub-items go with their parent.
       return event.side === "in" && !event.with
