@@ -1,5 +1,10 @@
 services:
   sidetrack:
+    # The published image. SIDETRACK_TAG picks a release (`latest`, or a
+    # version such as `0.1` or `0.1.0`), or `main` for every merged change.
+    image: ghcr.io/fredrivett/sidetrack:${SIDETRACK_TAG:-latest}
+    # Only used to build from source instead: `docker compose up -d --build`
+    # in a clone of the repository.
     build:
       context: .
       args:
@@ -11,7 +16,6 @@ services:
         # inlined into the client bundle, so it must be present at build time.
         # Unset = no browser analytics.
         NEXT_PUBLIC_POSTHOG_KEY: ${NEXT_PUBLIC_POSTHOG_KEY:-}
-    image: sidetrack:latest
     container_name: sidetrack
     restart: unless-stopped
     ports:

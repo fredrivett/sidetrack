@@ -1,0 +1,177 @@
+name: Image
+
+# Publishes the self-hosting image to ghcr.io/fredrivett/sidetrack:
+# - every push to main → :main and :sha-<commit>
+# - a v1.2.3 tag → :1.2.3, :1.2 and :latest (and :sha-<commit>)
+# - weekly → the latest release rebuilt on a fresh base image, under its
+#   same version tags, to pick up Alpine and Node security fixes
+#
+# Built for amd64 and arm64 on native runners (better-sqlite3 compiles from
+# source, which is very slow under emulation), then joined into one tag.
+#
+# This image is public, so it must never contain the hosted deploy's
+# secrets: no NEXT_PUBLIC_POSTHOG_KEY (every instance would report into our
+# PostHog project) and no PostHog source-map credentials.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/fredrivett/sidetrack
+
+jobs:
+  resolve:
+    name: resolve what to build
+    # Forks don't publish.
+    if: github.repository == 'fredrivett/sidetrack'
+    runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.ref.outputs.ref }}
+      version: ${{ steps.ref.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - id: ref
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = schedule ]; then
+            # The newest release tag; nothing to rebuild before the first one.
+            tag=$(git tag --list 'v*.*.*' --sort=-v:refname | head -n1)
+            if [ -z "$tag" ]; then
+              echo "No release tag yet; skipping the rebuild."
+              exit 0
+            fi
+            echo "ref=$tag" >> "$GITHUB_OUTPUT"
+            echo "version=$tag" >> "$GITHUB_OUTPUT"
+          elif [ "$GITHUB_REF_TYPE" = tag ]; then
+            echo "ref=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+            echo "version=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: build (${{ matrix.arch }})
+    needs: resolve
+    if: needs.resolve.outputs.ref != ''
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.resolve.outputs.ref }}
+
+      - id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # Server Action IDs are derived from this key, so every image build
+      # uses the same one: a tab left open through an update can still save.
+      # Anyone can read it out of a public image, so it is derived from a
+      # constant rather than kept secret. That's safe only while no Server
+      # Action is an inline closure (see AGENTS.md). The hosted deploy has
+      # its own, private key.
+      - id: key
+        run: echo "key=$(printf '%s' 'sidetrack public image server actions key v1' | openssl dgst -sha256 -binary | base64)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          # The weekly rebuild exists to pick up a newer base image.
+          pull: true
+          build-args: |
+            SOURCE_COMMIT=${{ steps.commit.outputs.sha }}
+            NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=${{ steps.key.outputs.key }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/fredrivett/sidetrack
+            org.opencontainers.image.revision=${{ steps.commit.outputs.sha }}
+            org.opencontainers.image.licenses=AGPL-3.0-only
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,scope=${{ matrix.arch }},mode=max
+
+      - run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          retention-days: 1
+
+  publish:
+    name: publish tags
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: digest-*
+          merge-multiple: true
+          path: /tmp/digests
+
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          flavor: latest=false
+          tags: |
+            type=raw,value=main,enable=${{ needs.resolve.outputs.version == '' }}
+            type=sha,prefix=sha-,format=short,enable=${{ github.event_name != 'schedule' }}
+            type=semver,pattern={{version}},value=${{ needs.resolve.outputs.version }},enable=${{ needs.resolve.outputs.version != '' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.resolve.outputs.version }},enable=${{ needs.resolve.outputs.version != '' }}
+            type=raw,value=latest,enable=${{ needs.resolve.outputs.version != '' }}
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$METADATA") \
+            $(printf "$IMAGE@sha256:%s " *)
+        env:
+          METADATA: ${{ steps.meta.outputs.json }}
+
+      - run: docker buildx imagetools inspect "$IMAGE:${{ steps.meta.outputs.version }}"
