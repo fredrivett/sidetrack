@@ -12,12 +12,13 @@ import {
   markNotificationsRead,
   setNotificationLevel,
 } from "./notifications";
-import { createProject, updateProject } from "./projects";
+import { createProject, deleteProject, updateProject } from "./projects";
 import { markLooking } from "./presence";
 import { savePushSubscription } from "./push";
 import {
   acceptSpaceInvite,
   createSpace,
+  deleteSpace,
   inviteSpaceMember,
   setSpaceMemberRole,
   updateSpace,
@@ -397,6 +398,25 @@ describe("notifications", () => {
     const bob = createTestUser(db, { username: "bob", name: "Bob" });
     expect(() => setNotificationLevel(db, bob, `list:${garden.id}`, "all")).toThrow();
     expect(() => setNotificationLevel(db, bob, `space:${space.id}`, "all")).toThrow();
+  });
+
+  it("tells a list's or Space's members when it's archived, restored or deleted", () => {
+    const { db, fred, alice, listId } = seed();
+    updateProject(db, fred, listId, { status: "archived" }, "web");
+    expect(listNotifications(db, alice)[0]).toMatchObject({ url: "/?view=archived", reason: "member" });
+    updateProject(db, fred, listId, { status: "active", name: "Flat" }, "web");
+    // One notification each, for the stronger reason.
+    expect(unread(db, alice)).toEqual(['Fred restored "Flat"', 'Fred archived "Flat"']);
+    expect(unread(db, alice, true)).toEqual([]);
+    const space = createSpace(db, fred, { name: "Family" }, "web");
+    inviteSpaceMember(db, fred, space.id, "alice", "web");
+    acceptSpaceInvite(db, alice, space.id, "web");
+    markNotificationsRead(db, alice);
+    // Gone, and she can't open either any more: by the names they had.
+    deleteSpace(db, fred, space.id, "web");
+    deleteProject(db, fred, listId, "web");
+    expect(unread(db, alice)).toEqual(['Fred deleted "Flat"', 'Fred deleted "Family"']);
+    expect(unread(db, fred)).toEqual([]);
   });
 
   it("pushes each notification once, to the recipient's devices on the current key", async () => {

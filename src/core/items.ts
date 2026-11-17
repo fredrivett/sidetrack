@@ -457,6 +457,15 @@ export function addItem(
   return getItemOrThrow(db, userId, id);
 }
 
+/**
+ * An item `userId` can open and its sub-items, for showing one that isn't on
+ * their board (finished before this week, say); empty if they can't open it.
+ */
+export function getItemWithSubItems(db: Db, userId: string, id: string): Item[] {
+  const item = getItem(db, userId, id);
+  return item ? [item, ...childrenOf(db, item.id)] : [];
+}
+
 export function getItem(db: Db, userId: string, id: string): Item | undefined {
   return db
     .select({ items })

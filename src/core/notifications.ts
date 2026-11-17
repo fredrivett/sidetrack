@@ -3,7 +3,7 @@ import { nanoid } from "nanoid";
 import { getEnv } from "../lib/env";
 import { getPostHog } from "../lib/posthog";
 import { type PushMessage, sendPush } from "../lib/push";
-import { hasProjectAccess } from "./access";
+import { hasProjectAccess, listMemberIds } from "./access";
 import { users } from "./auth-schema";
 import { onChanges } from "./changes";
 import type { Db } from "./db";
@@ -23,7 +23,6 @@ import {
   type NotificationReason,
   notificationSettings,
   notifications,
-  projectMembers,
   projects,
   spaceMembers,
   spaces,
@@ -127,7 +126,7 @@ function rule(
         // added with the parent come with its own notification.
         ...(event.parent && !event.withParent && !done ? followers(event.itemId) : []),
         // A new item is news to everyone on the list.
-        ...(event.parent || done ? [] : as("activity", membersOf(db, event.projectId))),
+        ...(event.parent || done ? [] : as("activity", listMemberIds(db, event.projectId))),
       ]);
     }
     case "item.updated": {
@@ -207,24 +206,32 @@ function rule(
         .get()?.userId;
       return {
         // Its owner let them in; to everyone else on it, it's activity.
-        to: [...as("joined", owner ? [owner] : []), ...as("activity", membersOf(db, event.projectId))],
+        to: [...as("joined", owner ? [owner] : []), ...as("activity", listMemberIds(db, event.projectId))],
         groupKey: `list:${event.projectId}`,
         projectId: event.projectId,
       };
     }
-    case "list.updated":
-      return event.changes.name
-        ? {
-            to: as("activity", membersOf(db, event.projectId)),
-            groupKey: `list:${event.projectId}`,
-            projectId: event.projectId,
-          }
-        : null;
+    case "list.updated": {
+      const { name, status } = event.changes;
+      if (!name && !status) return null;
+      const members = listMemberIds(db, event.projectId);
+      return {
+        // Archived or restored is news to everyone on it; a rename, activity.
+        to: [...as("member", status ? members : []), ...as("activity", name ? members : [])],
+        groupKey: `list:${event.projectId}`,
+        projectId: event.projectId,
+      };
+    }
+    case "list.deleted":
+      // Told though they can't open it any more: that's the news.
+      return { to: as("member", event.members ?? []), groupKey: `list:${event.projectId}` };
+    case "space.deleted":
+      return { to: as("member", event.members ?? []), groupKey: `space:${event.spaceId}` };
     case "list.created":
       // A list added to a Space is news to the Space.
       return event.space
         ? {
-            to: as("activity", membersOf(db, event.projectId)),
+            to: as("activity", listMemberIds(db, event.projectId)),
             groupKey: `list:${event.projectId}`,
             projectId: event.projectId,
           }
@@ -347,28 +354,6 @@ export function tierOf(reason: NotificationReason): "direct" | "involved" | "amb
   }
 }
 
-/** Everyone who can open the list: its owner, its members and its Space's. */
-function membersOf(db: Db, projectId: string): string[] {
-  const list = db
-    .select({ userId: projects.userId, spaceId: projects.spaceId })
-    .from(projects)
-    .where(eq(projects.id, projectId))
-    .get();
-  if (!list) return [];
-  const members = db
-    .select({ userId: projectMembers.userId })
-    .from(projectMembers)
-    .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.status, "accepted")))
-    .all();
-  const inSpace = list.spaceId
-    ? db
-        .select({ userId: spaceMembers.userId })
-        .from(spaceMembers)
-        .where(and(eq(spaceMembers.spaceId, list.spaceId), eq(spaceMembers.status, "accepted")))
-        .all()
-    : [];
-  return [...new Set([list.userId, ...members.map((m) => m.userId), ...inSpace.map((m) => m.userId)])];
-}
 
 /**
  * `userId`'s level for a list (or a Space, with no list): the list's own,
@@ -701,6 +686,19 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
         },
       ];
     }
+    // Deleted: by the name it had, since it's gone; they were in it when it went.
+    if (event.type === "list.deleted" || event.type === "space.deleted") {
+      const name = event.type === "list.deleted" ? event.listName : event.name;
+      return [
+        {
+          ...base,
+          title: name,
+          url: "/",
+          parts: [who, t(" deleted "), { text: name, em: "place", quote: true }],
+          snippet: null,
+        },
+      ];
+    }
     // Joins and roles: only while the reader is still in the list or Space,
     // by its current name.
     if (event.type === "member.joined" || event.type === "list.updated" || event.type === "list.created") {
@@ -708,8 +706,11 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
       if (!list) return [];
       const name = list.name;
       const place: Part = { text: name, em: "place", quote: true };
+      const status = event.type === "list.updated" && r.reason === "member" ? event.changes.status : null;
       const parts: Part[] =
-        event.type === "list.updated"
+        status
+          ? [who, t(status.to === "archived" ? " archived " : " restored "), place]
+          : event.type === "list.updated"
           ? [who, t(" renamed "), { text: event.changes.name?.from ?? "", em: "place", quote: true }, t(" to "), place]
           : event.type === "list.created"
             ? list.space
@@ -720,7 +721,8 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
         {
           ...base,
           title: name,
-          url: `/?p=${encodeURIComponent(event.projectId)}`,
+          // An archived list shows in the Archived view, not on the board.
+          url: status?.to === "archived" ? "/?view=archived" : `/?p=${encodeURIComponent(event.projectId)}`,
           parts,
           snippet: null,
         },

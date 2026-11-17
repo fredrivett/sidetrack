@@ -10,7 +10,7 @@ import {
 import { listLabels } from "@/core/labels";
 import { getDb } from "@/core/db";
 import { projectRefPrefixes } from "@/core/itemRef";
-import { listItems, reopenDueRepeats } from "@/core/items";
+import { getItemWithSubItems, listItems, reopenDueRepeats } from "@/core/items";
 import { listNotificationLevels, listNotifications } from "@/core/notifications";
 import { listFollowedItemIds } from "@/core/follows";
 import { listAssignees, listPendingInvites } from "@/core/members";
@@ -126,6 +126,13 @@ export default async function Home({
           pendingSpaceInvites={listPendingSpaceInvites(db, userId)}
           initialListId={typeof p === "string" ? p : null}
           initialItemId={typeof item === "string" ? item : null}
+        // A push can link to an item not loaded with the board.
+        initialItemExtra={
+          typeof item === "string" &&
+          !Object.values(itemsByProject).some((list) => list.some((i) => i.id === item))
+            ? getItemWithSubItems(db, userId, item)
+            : []
+        }
           notifications={listNotifications(db, userId)}
           followedItemIds={listFollowedItemIds(db, userId)}
           notificationLevels={listNotificationLevels(db, userId)}
