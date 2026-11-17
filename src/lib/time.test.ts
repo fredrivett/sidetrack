@@ -12,6 +12,7 @@ import {
   startOfDay,
   startOfDayIn,
   startOfWeek,
+  startOfWeekIn,
   weekStartBound,
 } from "./time";
 
@@ -75,6 +76,18 @@ describe("startOfWeek", () => {
     expect(startOfWeek(at(16, 3, 59))).toBe(at(9, 4));
     expect(startOfWeek(at(16, 4))).toBe(at(16, 4));
     expect(startOfWeek(at(11, 12))).toBe(at(9, 4));
+  });
+
+  it("finds the week's start in a named zone, whatever the runtime's", () => {
+    // 01:00 UTC Monday 16 Nov is still Sunday in London (week began 4am on
+    // the 9th) but Monday 10:00 in Tokyo, whose week began 19:00 UTC Sunday.
+    const now = Date.UTC(2026, 10, 16, 1);
+    expect(startOfWeekIn("Europe/London", now)).toBe(Date.UTC(2026, 10, 9, 4));
+    expect(startOfWeekIn("Asia/Tokyo", now)).toBe(Date.UTC(2026, 10, 15, 19));
+    // A week that began in BST, before the clocks went back on Sunday 25 Oct.
+    expect(startOfWeekIn("Europe/London", Date.UTC(2026, 9, 25, 12))).toBe(
+      Date.UTC(2026, 9, 19, 3),
+    );
   });
 
   it("bounds the week from the zone's own day, early enough for UTC+14", () => {
