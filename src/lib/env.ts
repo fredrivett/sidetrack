@@ -277,7 +277,7 @@ export function parseServerEnv(
     );
     throw new Error(
       `Invalid environment configuration:\n${lines.join("\n")}\n\n` +
-        "See the README's Configuration section.",
+        "See the Configuration section of docs/self-hosting.md.",
     );
   }
   return result.data;
