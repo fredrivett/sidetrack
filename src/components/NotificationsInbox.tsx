@@ -11,6 +11,7 @@ import type { NotificationView } from "@/core/notifications";
 import { formatRelative } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { runAction } from "./run-action";
+import { ProjectIcon } from "./ProjectIcon";
 import { AgentAvatar, UserAvatar } from "./UserAvatar";
 
 /**
@@ -25,6 +26,7 @@ export function NotificationsInbox({
   onOpenChange: setOpen,
   notifications,
   onOpenNotification,
+  onOpenList,
 }: {
   /** Controlled by the board, so its N shortcut can open the inbox. */
   open: boolean;
@@ -32,6 +34,8 @@ export function NotificationsInbox({
   notifications: NotificationView[];
   /** Show what a notification is about: its item, or the board for an invite. */
   onOpenNotification: (notification: NotificationView) => void;
+  /** Show a list a notification names. */
+  onOpenList: (listId: string) => void;
 }) {
   // Marked seen since this page loaded, before the server says so.
   const [seen, setSeen] = useState<ReadonlySet<string>>(new Set());
@@ -56,6 +60,12 @@ export function NotificationsInbox({
       if (ok) return;
       setSeen((s) => new Set([...s].filter((id) => !ids.includes(id))));
     });
+  }
+
+  function openList(n: NotificationView, listId: string) {
+    setOpen(false);
+    if (isNew(n)) markSeen([n.id], false);
+    onOpenList(listId);
   }
 
   return (
@@ -119,71 +129,143 @@ export function NotificationsInbox({
         ) : (
           <ul className="max-h-[min(40rem,calc(var(--available-height)-3rem))] divide-y divide-border/60 overflow-y-auto">
             {notifications.map((n) => (
-              <li key={n.id}>
+              <li
+                key={n.id}
+                // The row's button covers it, under the list chips, which are
+                // buttons of their own; the row shows its hover and focus.
+                className={cn(
+                  "relative flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted has-[>button:focus-visible]:bg-muted",
+                  isNew(n) && "bg-blue-50/60 dark:bg-blue-950/20",
+                )}
+              >
                 <button
                   type="button"
+                  aria-labelledby={`notification-${n.id}`}
                   onClick={() => {
                     setOpen(false);
                     if (isNew(n)) markSeen([n.id], false);
                     onOpenNotification(n);
                   }}
-                  className={cn(
-                    "flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none",
-                    isNew(n) && "bg-blue-50/60 dark:bg-blue-950/20",
-                  )}
-                >
-                  {n.agentName ? (
-                    <AgentAvatar agent={{ id: n.id, name: n.agentName }} size={28} className="mt-0.5" />
-                  ) : n.actor ? (
-                    <UserAvatar user={n.actor} size={28} className="mt-0.5" />
-                  ) : n.reason === "due-today" || n.reason === "overdue" ? (
-                    <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                      <CalendarClock className="size-4" />
-                    </span>
-                  ) : (
-                    <span className="mt-0.5 size-7 shrink-0 rounded-full bg-muted" />
-                  )}
-                  <span className="min-w-0 flex-1 space-y-1">
-                    <span
-                      className={cn(
-                        "block text-sm leading-snug break-words",
-                        !isNew(n) && "text-foreground/75",
-                      )}
-                    >
-                      {isNew(n) && <span className="sr-only">New: </span>}
-                      {/* Who and what stand out; the words between them don't. */}
-                      {n.parts.map((part, i) =>
-                        part.em ? (
-                          <strong key={i} className="font-semibold">
-                            {part.text}
-                          </strong>
-                        ) : (
-                          part.text
-                        ),
-                      )}
-                    </span>
-                    {n.snippet && (
-                      <span className="line-clamp-2 border-l-2 border-border pl-2 text-xs text-muted-foreground">
-                        {n.snippet}
-                      </span>
-                    )}
-                    <span className="block text-xs text-muted-foreground">
-                      {n.title} · {formatRelative(n.createdAt)}
-                    </span>
+                  className="absolute inset-0 focus-visible:outline-none"
+                />
+                {n.agentName ? (
+                  <AgentAvatar agent={{ id: n.id, name: n.agentName }} size={28} className="mt-0.5" />
+                ) : n.actor ? (
+                  <UserAvatar user={n.actor} size={28} className="mt-0.5" />
+                ) : n.reason === "due-today" || n.reason === "overdue" ? (
+                  <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                    <CalendarClock className="size-4" />
                   </span>
+                ) : (
+                  <span className="mt-0.5 size-7 shrink-0 rounded-full bg-muted" />
+                )}
+                <span className="min-w-0 flex-1 space-y-1">
                   <span
-                    aria-hidden
+                    id={`notification-${n.id}`}
                     className={cn(
-                      "mt-2 size-2 shrink-0 rounded-full",
-                      isNew(n) ? "bg-blue-500" : "bg-transparent",
+                      "block text-sm leading-snug break-words",
+                      !isNew(n) && "text-foreground/75",
                     )}
-                  />
-                </button>
+                  >
+                    {isNew(n) && <span className="sr-only">New: </span>}
+                    {/* Who and what stand out; the words between them don't.
+                        A list shows as itself, icon and all, and opens. */}
+                    {n.parts.map((part, i) => {
+                      const list = part.list;
+                      return list ? (
+                        <ListChip key={i} list={list} name={part.text} onOpen={() => openList(n, list.id)} />
+                      ) : part.em ? (
+                        <strong key={i} className="font-semibold">
+                          {part.text}
+                        </strong>
+                      ) : (
+                        part.text
+                      );
+                    })}
+                  </span>
+                  {n.snippet && (
+                    <span className="line-clamp-2 border-l-2 border-border pl-2 text-xs text-muted-foreground">
+                      {n.snippet}
+                    </span>
+                  )}
+                  <span className="flex items-center text-xs text-muted-foreground">
+                    {/* Where, unless the sentence already shows the list. */}
+                    {n.parts.some((part) => part.list && part.list.id === n.list?.id) ? null : (
+                      <>
+                        {n.list ? (
+                          <ListChip
+                            small
+                            list={n.list}
+                            name={n.title}
+                            onOpen={() => n.list && openList(n, n.list.id)}
+                          />
+                        ) : (
+                          <span className="truncate">{n.title}</span>
+                        )}
+                        <span
+                          aria-hidden
+                          // A chip's outline sits outside it, so it takes a little more room.
+                          className={cn("mr-1.5 text-[10px] leading-none", n.list ? "ml-2" : "ml-1.5")}
+                        >
+                          •
+                        </span>
+                      </>
+                    )}
+                    <span className="shrink-0">{formatRelative(n.createdAt)}</span>
+                  </span>
+                </span>
+                <span
+                  aria-hidden
+                  className={cn(
+                    "mt-2 size-2 shrink-0 rounded-full",
+                    isNew(n) ? "bg-blue-500" : "bg-transparent",
+                  )}
+                />
               </li>
             ))}
           </ul>
         )}
       </PopoverContent>
     </Popover>
+  );
+}
+
+/**
+ * A list a notification names: its icon (none rather than a letter) and
+ * name, opening the list. Above the row's own button, which covers the row.
+ * Smaller in the line under the sentence.
+ */
+function ListChip({
+  list,
+  name,
+  small,
+  onOpen,
+}: {
+  list: NonNullable<NotificationView["list"]>;
+  name: string;
+  small?: boolean;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cn(
+        "relative z-10 inline-flex max-w-full items-center rounded-md bg-muted align-middle leading-none ring-1 ring-border/70 hover:bg-accent",
+        small
+          ? "gap-0.5 px-1 py-px text-[11px] text-muted-foreground hover:text-foreground"
+          : "-top-px gap-1 px-1.5 py-0.5 text-[13px] font-medium text-foreground",
+      )}
+    >
+      <ProjectIcon
+        icon={list.icon}
+        homepageUrl={list.homepageUrl}
+        name={name}
+        size={small ? 11 : 13}
+        // A letter in a chip reads as part of the name.
+        letter={false}
+      />
+      <span className="truncate">{name}</span>
+    </button>
   );
 }

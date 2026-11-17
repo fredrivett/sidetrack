@@ -45,6 +45,8 @@ export interface NotificationView {
   parts: Part[];
   /** What it quotes: a comment as it reads now, or an agent's closing note. */
   snippet: string | null;
+  /** The list it happened in, when the reader can open it, to show and link to. */
+  list?: Part["list"];
   /** Where it happened: the list, or the Space for a Space invite. */
   title: string;
   /** Where tapping it goes, a path in the app. */
@@ -494,6 +496,15 @@ function selectRows(db: Db) {
     .leftJoin(users, eq(users.id, auditLog.actor));
 }
 
+/** A list the reader can open, by name, with its icon, to link to. */
+function listPart(
+  id: string,
+  name: string,
+  look: { icon: string | null; homepageUrl: string | null },
+): Part {
+  return { text: name, em: "place", quote: true, list: { id, icon: look.icon, homepageUrl: look.homepageUrl } };
+}
+
 /** The item a notification is about, if any. */
 function itemOf(event: ChangeEvent): ItemAt | null {
   switch (event.type) {
@@ -535,7 +546,14 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
   const open = new Map(
     (itemIds.length
       ? db
-          .select({ id: items.id, title: items.title, projectId: items.projectId, list: projects.name })
+          .select({
+            id: items.id,
+            title: items.title,
+            projectId: items.projectId,
+            list: projects.name,
+            icon: projects.icon,
+            homepageUrl: projects.homepageUrl,
+          })
           .from(items)
           .innerJoin(projects, eq(projects.id, items.projectId))
           .where(and(inArray(items.id, itemIds), hasProjectAccess(userId)))
@@ -569,7 +587,13 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
   const lists = new Map(
     (listIds.length
       ? db
-          .select({ id: projects.id, name: projects.name, space: spaces.name })
+          .select({
+            id: projects.id,
+            name: projects.name,
+            icon: projects.icon,
+            homepageUrl: projects.homepageUrl,
+            space: spaces.name,
+          })
           .from(projects)
           .leftJoin(spaces, eq(spaces.id, projects.spaceId))
           .where(and(inArray(projects.id, listIds), hasProjectAccess(userId)))
@@ -616,6 +640,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           actor: null,
           agentName: null,
           title: now.list,
+          list: listPart(now.projectId, now.list, now).list,
           url: `/?p=${encodeURIComponent(now.projectId)}&item=${encodeURIComponent(now.id)}`,
           parts: [
             { text: now.title, em: "item", quote: true },
@@ -650,7 +675,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
       const now = open.get(about.itemId);
       if (!now) return [];
       const item: Part = { text: now.title, em: "item", quote: true };
-      const at = { title: now.list, url: `/?p=${encodeURIComponent(now.projectId)}&item=${encodeURIComponent(now.id)}` };
+      const at = { title: now.list, list: listPart(now.projectId, now.list, now).list, url: `/?p=${encodeURIComponent(now.projectId)}&item=${encodeURIComponent(now.id)}` };
       const say = (parts: Part[], snippet: string | null = null): NotificationView[] => [
         { ...base, ...at, parts, snippet },
       ];
@@ -660,7 +685,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
             ? say([who, t(" added "), item, t(" for you")])
             : event.parent
               ? say([who, t(" added "), item, t(" to "), { text: event.parent.title, em: "item", quote: true }])
-              : say([who, t(" added "), item, t(" to "), { text: now.list, em: "place", quote: true }]);
+              : say([who, t(" added "), item, t(" to "), listPart(now.projectId, now.list, now)]);
         case "item.updated":
           if (r.reason === "assigned") return say([who, t(" assigned you "), item]);
           if (r.reason === "unassigned") return say([who, t(" took you off "), item]);
@@ -675,7 +700,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
             ? say([item, t(" is due again")])
             : say([who, t(" reopened "), item]);
         case "item.moved":
-          return say([who, t(" moved "), item, t(" to "), { text: now.list, em: "place", quote: true }]);
+          return say([who, t(" moved "), item, t(" to "), listPart(now.projectId, now.list, now)]);
         case "agent.requested":
           return say([who, t(" asked "), { text: event.agent, em: "person" }, t(" to work on "), item]);
         case "item.pr.linked":
@@ -735,7 +760,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
       const list = lists.get(event.projectId);
       if (!list) return [];
       const name = list.name;
-      const place: Part = { text: name, em: "place", quote: true };
+      const place = listPart(event.projectId, name, list);
       const status = event.type === "list.updated" && r.reason === "member" ? event.changes.status : null;
       const parts: Part[] =
         status
@@ -751,6 +776,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
         {
           ...base,
           title: name,
+          list: place.list,
           // An archived list shows in the Archived view, not on the board.
           url: status?.to === "archived" ? "/?view=archived" : `/?p=${encodeURIComponent(event.projectId)}`,
           parts,

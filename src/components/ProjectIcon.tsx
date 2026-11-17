@@ -109,14 +109,18 @@ export function ProjectIcon({
   name,
   size = 20,
   className,
+  letter = true,
 }: {
   icon: string | null;
   homepageUrl: string | null;
   name: string;
   size?: number;
   className?: string;
+  /** Show the name's first letter when there's no icon; false shows nothing. */
+  letter?: boolean;
 }) {
   const resolved = resolveProjectIcon(icon, homepageUrl);
+  const fallback = letter ? <LetterIcon name={name} size={size} className={className} /> : null;
 
   if (resolved.kind === "emoji") {
     return (
@@ -137,10 +141,10 @@ export function ProjectIcon({
         srcs={resolved.srcs}
         size={size}
         className={className}
-        fallback={<LetterIcon name={name} size={size} className={className} />}
+        fallback={fallback}
       />
     );
   }
 
-  return <LetterIcon name={name} size={size} className={className} />;
+  return fallback;
 }
