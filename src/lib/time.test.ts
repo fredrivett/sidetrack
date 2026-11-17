@@ -10,6 +10,7 @@ import {
   quickDues,
   nextDayStart,
   startOfDay,
+  startOfDayIn,
   startOfWeek,
   weekStartBound,
 } from "./time";
@@ -31,6 +32,34 @@ describe("startOfDay", () => {
 
   it("crosses month boundaries", () => {
     expect(startOfDay(new Date(2026, 11, 1, 2).getTime())).toBe(at(30, 4));
+  });
+
+  it("finds the 4am turnover in a named zone, whatever the runtime's", () => {
+    // Before 4am there it's still the day before.
+    expect(startOfDayIn("Europe/London", Date.UTC(2026, 10, 17, 3, 59))).toBe(
+      Date.UTC(2026, 10, 16, 4),
+    );
+    expect(startOfDayIn("Europe/London", Date.UTC(2026, 10, 17, 16))).toBe(
+      Date.UTC(2026, 10, 17, 4),
+    );
+    // Half-hour offset, and a day ahead of UTC.
+    expect(startOfDayIn("Asia/Kolkata", Date.UTC(2026, 10, 17, 0))).toBe(
+      Date.UTC(2026, 10, 16, 22, 30),
+    );
+    expect(startOfDayIn("America/New_York", Date.UTC(2026, 10, 17, 3))).toBe(
+      Date.UTC(2026, 10, 16, 9),
+    );
+    // DST: British Summer Time began at 1am on 29 March and ended at 2am on
+    // 25 October 2026, both before the 4am turnover.
+    expect(startOfDayIn("Europe/London", Date.UTC(2026, 2, 29, 12))).toBe(
+      Date.UTC(2026, 2, 29, 3),
+    );
+    expect(startOfDayIn("Europe/London", Date.UTC(2026, 9, 24, 12))).toBe(
+      Date.UTC(2026, 9, 24, 3),
+    );
+    expect(startOfDayIn("Europe/London", Date.UTC(2026, 9, 25, 12))).toBe(
+      Date.UTC(2026, 9, 25, 4),
+    );
   });
 
   it("gives the next turnover", () => {

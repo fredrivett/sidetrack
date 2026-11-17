@@ -72,17 +72,34 @@ export function useToday(): string | null {
   return Number.isFinite(start) ? dayOf(start) : null;
 }
 
-type Guess = { today: string | null; locale: string | null };
+type Guess = { today: string | null; dayStart: number | null; locale: string | null };
 
-const ServerGuess = createContext<Guess>({ today: null, locale: null });
+const ServerGuess = createContext<Guess>({ today: null, dayStart: null, locale: null });
 
-/** Gives the server's guess at the viewer's day and locale to useLabelDay. */
+/**
+ * Gives the server's guess at the viewer's day, its start, and their locale
+ * to useLabelDay and useListDayStart.
+ */
 export function ServerTodayProvider({
   today,
+  dayStart,
   locale,
   children,
 }: Guess & { children: ReactNode }) {
-  return createElement(ServerGuess.Provider, { value: { today, locale } }, children);
+  return createElement(ServerGuess.Provider, { value: { today, dayStart, locale } }, children);
+}
+
+/**
+ * Where a list splits today's finished items (kept in the list) from earlier
+ * ones (in Done). Like useLabelDay, the server's guess (the day start in the
+ * timezone the viewer last saved) stands in until the browser knows its own,
+ * so an item finished today doesn't render in Done and then jump into the
+ * list on hydration. Infinity when there's no guess either (see useDayStart).
+ */
+export function useListDayStart(): number {
+  const dayStart = useDayStart();
+  const guess = useContext(ServerGuess).dayStart;
+  return Number.isFinite(dayStart) ? dayStart : (guess ?? Infinity);
 }
 
 /**
