@@ -215,7 +215,64 @@ export type ChangeEvent =
       membershipId: string;
       member: PersonAt;
       role: SpaceRole;
-    };
+    }
+  // Pull requests
+  | ({ type: "item.pr.linked" | "item.pr.unlinked"; projectId: string; prUrl: string } & ItemAt)
+  | ItemMove
+  | AgentWork
+  | AccountEvent;
+
+/** One row of an item's move, written in each list's history: `out` in the
+ * list it left, `in` in the one it joined. */
+export type ItemMove = {
+  type: "item.moved";
+  /** The list whose history this row is in. */
+  projectId: string;
+  side: "out" | "in";
+  /** The item it moved with, when it went as a sub-item of it. */
+  with?: ItemAt;
+  /** Its parent here, for the row's parentId: null on `in` for the item moved. */
+  parentId: string | null;
+  /** The other list, by the name it had: its readers may not be this one's. */
+  other: { projectId: string; name: string };
+  refs: { from: string; to: string };
+  /** The item moved, not its sub-items: what came with it. */
+  subItems?: number;
+  droppedLabels?: string[];
+  unassigned?: PersonAt[];
+} & ItemAt;
+
+/** An agent's work on an item. */
+export type AgentWork =
+  | ({ type: "agent.started"; projectId: string; assigned?: PersonAt } & ItemAt)
+  | ({ type: "agent.resumed"; projectId: string } & ItemAt)
+  | ({ type: "agent.reported"; projectId: string; note: string } & ItemAt)
+  | ({ type: "agent.finished"; projectId: string; note: string | null } & ItemAt)
+  /** Its owner asked it to start, by assigning it in Sidetrack. */
+  | ({ type: "agent.requested"; projectId: string; agent: string } & ItemAt)
+  /** Stopped by its owner, or ended for a reason outside the agents. */
+  | ({
+      type: "agent.stopped" | "agent.ended";
+      projectId: string;
+      agent: string;
+      reason: string | null;
+    } & ItemAt);
+
+/** Account-level changes: no list, so only their actor reads them. */
+export type AccountEvent =
+  | { type: "api_key.created" | "api_key.revoked"; keyId: string; name: string; prefix: string }
+  /** `replaced`: a new URL or secret for a key that already had one. */
+  | { type: "api_key.webhook.set"; keyId: string; name: string; replaced: boolean }
+  | { type: "api_key.webhook.removed"; keyId: string; name: string }
+  /** `first`: the secret that set the webhook up. */
+  | { type: "github.secret.added"; webhookId: string; secret: string; first: boolean }
+  | { type: "github.secret.removed"; webhookId: string; secret: string }
+  | { type: "github.webhook.removed"; webhookId: string }
+  | { type: "profile.username"; userId: string; from: string; to: string }
+  /** `image` null: cleared. */
+  | { type: "profile.avatar"; userId: string; image: string | null; uploaded?: true }
+  /** Written by the audit_password_update trigger (migration 0045), not core. */
+  | { type: "profile.password"; userId: string; viaReset: boolean };
 
 /** `lost`, or undefined when it cleaned up nothing, to keep it off the event. */
 export function accessLost(lost: AccessLost): AccessLost | undefined {
@@ -320,6 +377,51 @@ export function auditColumns(event: ChangeEvent): {
     case "space.member.declined":
     case "space.member.removed":
       return spaceMember("delete", event.membershipId);
+    case "item.pr.linked":
+    case "item.pr.unlinked":
+      return {
+        action: event.type === "item.pr.linked" ? "link" : "unlink",
+        entityType: "item",
+        entityId: event.itemId,
+        projectId: event.projectId,
+      };
+    case "item.moved":
+      return {
+        action: "update",
+        entityType: "item",
+        entityId: event.itemId,
+        projectId: event.projectId,
+        parentId: event.parentId,
+      };
+    case "agent.started":
+    case "agent.resumed":
+    case "agent.requested":
+      return { action: "start", entityType: "item", entityId: event.itemId, projectId: event.projectId };
+    case "agent.reported":
+      return { action: "report", entityType: "item", entityId: event.itemId, projectId: event.projectId };
+    case "agent.finished":
+    case "agent.stopped":
+    case "agent.ended":
+      return { action: "finish", entityType: "item", entityId: event.itemId, projectId: event.projectId };
+    case "api_key.created":
+      return account("create", "api_key", event.keyId);
+    case "api_key.revoked":
+      return account("delete", "api_key", event.keyId);
+    case "api_key.webhook.set":
+      return account(event.replaced ? "update" : "create", "api_key", event.keyId);
+    case "api_key.webhook.removed":
+      return account("update", "api_key", event.keyId);
+    case "github.secret.added":
+      return account(event.first ? "create" : "update", "webhook", event.webhookId);
+    case "github.secret.removed":
+      return account("update", "webhook", event.webhookId);
+    case "github.webhook.removed":
+      return account("delete", "webhook", event.webhookId);
+    case "profile.username":
+    case "profile.password":
+      return account("update", "profile", event.userId);
+    case "profile.avatar":
+      return account(event.image ? "update" : "delete", "profile", event.userId);
   }
 }
 
@@ -334,6 +436,10 @@ function member(action: AuditAction, membershipId: string, projectId: string) {
 // Spaces belong to no list, so their rows have none.
 function space(action: AuditAction, spaceId: string) {
   return { action, entityType: "space" as const, entityId: spaceId, projectId: null };
+}
+
+function account(action: AuditAction, entityType: AuditEntity, entityId: string) {
+  return { action, entityType, entityId, projectId: null };
 }
 
 function spaceMember(action: AuditAction, membershipId: string) {

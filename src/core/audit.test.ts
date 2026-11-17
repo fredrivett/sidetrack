@@ -30,11 +30,7 @@ function recordOnProject(
   recordAudit(db, {
     actor,
     source: "web",
-    action: "update",
-    entityType: "item",
-    entityId: "x",
-    projectId,
-    detail: "foreign actor touched this project",
+    event: { type: "item.reordered", projectId, itemId: "x", title: "foreign actor's item" },
   });
 }
 
@@ -154,10 +150,7 @@ describe("audit", () => {
     recordAudit(db, {
       actor: alice,
       source: "web",
-      action: "create",
-      entityType: "api_key",
-      entityId: "k1",
-      detail: "minted API key",
+      event: { type: "api_key.created", keyId: "k1", name: "Laptop", prefix: "st_ab" },
     });
     const rows = listAudit(db, alice);
     expect(rows.some((e) => e.entityType === "api_key")).toBe(true);
@@ -295,9 +288,9 @@ describe("change events", () => {
         .map((e) => e.detail)
         .sort();
     expect(history()).toEqual([
-      'Fix tap: renamed to "Fix the tap"',
       'added task "Fix the tap"',
       'completed "Fix the tap"',
+      'updated Fix tap: renamed to "Fix the tap"',
     ]);
     // A rename keeps the name it had, so its row still says what changed.
     const rename = listAudit(db, fred, { projectId: list.id }).find((e) => e.action === "update");
@@ -305,10 +298,10 @@ describe("change events", () => {
     deleteItem(db, fred, item.id, "web");
     // Gone, so each row reads with the name it had then.
     expect(history()).toEqual([
-      'Fix tap: renamed to "Fix the tap"',
       'added task "Fix tap"',
       'completed "Fix tap"',
       'deleted "Fix the tap"',
+      'updated Fix tap: renamed to "Fix the tap"',
     ]);
   });
 
@@ -331,7 +324,7 @@ describe("change events", () => {
       .filter((e) => e.entityId === item.id)
       .map((e) => e.detail)
       .sort();
-    expect(history).toEqual(['Fix tap: assigned @alice', 'added task "Fix tap"']);
+    expect(history).toEqual(['added task "Fix tap"', 'updated Fix tap: assigned @alice']);
   });
 });
 
@@ -357,7 +350,7 @@ describe("space events", () => {
     expect(spaceRows(fred)).toEqual([
       'created space "Secret"',
       'invited @alice to space "Secret"',
-      'space "Home": renamed to "Secret"',
+      'updated space "Home": renamed to "Secret"',
     ]);
   });
 });
@@ -400,7 +393,7 @@ describe("password audit", () => {
     // Writes that leave the password alone aren't logged.
     db.update(authSchema.accounts).set({ scope: "x" }).where(eq(authSchema.accounts.id, "a1")).run();
     setPassword("a1", "hash-1");
-    expect(passwordLog(userId)).toEqual([["update", "password", userId, userId, "web"]]);
+    expect(passwordLog(userId)).toEqual([["update", "changed password", userId, userId, "web"]]);
 
     // Mid-reset, the user's unexpired token is present; another user's isn't theirs.
     const token = (id: string, value: string, expiresAt: Date) => ({
@@ -436,9 +429,9 @@ describe("password audit", () => {
     expect(links()).toEqual(["other-kind"]);
     expect(passwordLog(userId)).toHaveLength(3);
     expect(passwordLog(userId).map((r) => r[1])).toEqual(
-      expect.arrayContaining(["password", "password via a reset link"]),
+      expect.arrayContaining(["changed password", "reset password with an emailed link"]),
     );
-    expect(passwordLog(userId).filter((r) => r[1] === "password via a reset link")).toHaveLength(1);
-    expect(passwordLog(other)).toEqual([["update", "password", other, other, "web"]]);
+    expect(passwordLog(userId).filter((r) => r[1] === "reset password with an emailed link")).toHaveLength(1);
+    expect(passwordLog(other)).toEqual([["update", "changed password", other, other, "web"]]);
   });
 });

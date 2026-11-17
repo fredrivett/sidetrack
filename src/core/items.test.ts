@@ -175,7 +175,7 @@ describe("items", () => {
     const updates = listAudit(db, userId).filter(
       (e) => e.entityId === item.id && e.action === "update",
     );
-    expect(updates.map((e) => e.detail)).toEqual(["t: labelled c, unlabelled a"]);
+    expect(updates.map((e) => e.detail)).toEqual(["updated t: labelled c, unlabelled a"]);
   });
 
   it("completes then uncompletes, logging both actions", () => {
@@ -387,7 +387,7 @@ describe("item assignment", () => {
     const row = listAudit(db, owner).find(
       (e) => e.entityId === item.id && e.action === "update",
     );
-    expect(row?.detail).toBe("do it: assigned @owner, @alice");
+    expect(row?.detail).toBe("updated do it: assigned @owner, @alice");
   });
 
   it("assigns several people on create, and rejects anyone without access before creating", () => {
@@ -425,7 +425,7 @@ describe("item assignment", () => {
     updateItem(db, owner, item.id, { assigneeIds: [alice] }, "web");
     expect(ids(db, owner, item.id)).toEqual([alice]);
     expect(details(db, owner, item.id)).toContain(
-      "do it: assigned @alice, unassigned @owner",
+      "updated do it: assigned @alice, unassigned @owner",
     );
   });
 
@@ -434,7 +434,7 @@ describe("item assignment", () => {
     updateItem(db, owner, item.id, { assigneeIds: [owner, alice] }, "web");
     const cleared = updateItem(db, owner, item.id, { assigneeIds: [] }, "web");
     expect(cleared.assigneeIds).toEqual([]);
-    expect(details(db, owner, item.id)).toContain("do it: unassigned @owner, @alice");
+    expect(details(db, owner, item.id)).toContain("updated do it: unassigned @owner, @alice");
   });
 
   it("drops duplicate ids", () => {
@@ -450,11 +450,11 @@ describe("item assignment", () => {
     updateItem(db, alice, item.id, { addAssigneeIds: [alice] }, "web");
     updateItem(db, owner, item.id, { addAssigneeIds: [owner] }, "web");
     expect(ids(db, owner, item.id)).toEqual([alice, owner]);
-    expect(details(db, owner, item.id)).toContain("do it: assigned @owner");
+    expect(details(db, owner, item.id)).toContain("updated do it: assigned @owner");
 
     updateItem(db, owner, item.id, { removeAssigneeIds: [owner] }, "web");
     expect(ids(db, owner, item.id)).toEqual([alice]);
-    expect(details(db, owner, item.id)).toContain("do it: unassigned @owner");
+    expect(details(db, owner, item.id)).toContain("updated do it: unassigned @owner");
   });
 
   it("rejects the whole change when anyone in it lacks list access", () => {
@@ -975,8 +975,8 @@ describe("due dates and Today", () => {
     updateItem(db, userId, it1.id, { dueDate: null }, "web");
     expect(getItem(db, userId, it1.id)?.dueDate).toBeNull();
     expect(updates().map((e) => e.detail)).toEqual([
-      "bins: due date cleared",
-      "bins: due 2026-11-20",
+      "updated bins: due date cleared",
+      "updated bins: due 2026-11-20",
     ]);
   });
 
@@ -999,8 +999,8 @@ describe("due dates and Today", () => {
     updateItem(db, userId, it1.id, { dueFrom: "2026-11-21", dueDate: "2026-11-21" }, "web");
     expect(getItem(db, userId, it1.id)).toMatchObject({ dueFrom: null, dueDate: "2026-11-21" });
     expect(audit()).toEqual([
-      "bins: due 2026-11-21",
-      "bins: due 2026-11-22",
+      "updated bins: due 2026-11-21",
+      "updated bins: due 2026-11-22",
       'added task "bins", due 2026-11-16 to 2026-11-22',
     ]);
 
@@ -1019,7 +1019,7 @@ describe("due dates and Today", () => {
     expect(getItem(db, userId, it1.id)).toMatchObject({ dueFrom: "2026-11-16", dueDate: "2026-11-21" });
     updateItem(db, userId, it1.id, { dueFrom: null }, "web");
     expect(getItem(db, userId, it1.id)).toMatchObject({ dueFrom: null, dueDate: "2026-11-21" });
-    expect(audit().slice(0, 2)).toEqual(["bins: due 2026-11-21", "bins: due 2026-11-16 to 2026-11-21"]);
+    expect(audit().slice(0, 2)).toEqual(["updated bins: due 2026-11-21", "updated bins: due 2026-11-16 to 2026-11-21"]);
     const undated = addItem(db, userId, { projectId, title: "undated" }, "web");
     expect(() => updateItem(db, userId, undated.id, { dueFrom: "2026-11-16" }, "web")).toThrow(/due/);
   });
@@ -1152,7 +1152,7 @@ describe("repeating items", () => {
 
     const changed = updateItem(db, userId, it.id, { repeat: { every: 2, unit: "week" } }, "web");
     expect([changed.repeatEvery, changed.repeatUnit]).toEqual([2, "week"]);
-    expect(listAudit(db, userId)[0].detail).toBe("Water plants: repeats every 2 weeks");
+    expect(listAudit(db, userId)[0].detail).toBe("updated Water plants: repeats every 2 weeks");
 
     const before = listAudit(db, userId).length;
     updateItem(db, userId, it.id, { repeat: { every: 2, unit: "week" } }, "web");
@@ -1160,7 +1160,7 @@ describe("repeating items", () => {
 
     const cleared = updateItem(db, userId, it.id, { repeat: null }, "web");
     expect([cleared.repeatEvery, cleared.repeatUnit]).toEqual([null, null]);
-    expect(listAudit(db, userId)[0].detail).toBe("Water plants: no longer repeats");
+    expect(listAudit(db, userId)[0].detail).toBe("updated Water plants: no longer repeats");
   });
 
   it("rejects a bad rule", () => {

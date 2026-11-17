@@ -7,8 +7,6 @@ import type { Db } from "./db";
 import { describeEvent, namesFor, type Part, plainText } from "./describe";
 import { auditColumns, type ChangeEvent } from "./events";
 import {
-  type AuditAction,
-  type AuditEntity,
   type AuditEntry,
   type AuditSource,
   auditLog,
@@ -52,40 +50,13 @@ export interface EventInput {
   event: ChangeEvent;
 }
 
-/** A change described in free text: modules not yet moved to events. */
-export interface AuditInput {
-  /** User id of whoever performed the action, or SYSTEM_ACTOR. */
-  actor: string;
-  source: AuditOrigin;
-  event?: undefined;
-  action: AuditAction;
-  entityType: AuditEntity;
-  entityId: string;
-  projectId?: string | null;
-  /** For an item, the item it was a sub-item of when this happened. Read
-   * from the item when omitted; pass it when the row no longer says, such
-   * as once it's deleted or moved out. */
-  parentId?: string | null;
-  detail?: string;
-}
-
 /**
  * Append one audit row. Call inside the same transaction as the mutation it
  * describes so the log can never drift from the data.
  */
-export function recordAudit(db: Db, input: AuditInput | EventInput): void {
-  if (input.event) {
-    const { event } = input;
-    writeRow(db, { actor: input.actor, source: input.source, ...auditColumns(event), event });
-  } else {
-    writeRow(db, input);
-  }
-}
-
-function writeRow(
-  db: Db,
-  input: Omit<AuditInput, "event"> & { event?: ChangeEvent },
-): void {
+export function recordAudit(db: Db, input: EventInput): void {
+  const { event } = input;
+  const columns = auditColumns(event);
   const origin =
     typeof input.source === "string" ? { source: input.source } : input.source;
   const agent = "agent" in origin ? origin.agent : null;
@@ -93,12 +64,12 @@ function writeRow(
   // view), so note the parent on the row: the log has no other way to know
   // it once the sub-item is deleted or moved.
   const parentId =
-    input.parentId !== undefined || input.entityType !== "item"
-      ? (input.parentId ?? null)
+    columns.parentId !== undefined || columns.entityType !== "item"
+      ? (columns.parentId ?? null)
       : (db
           .select({ parentId: items.parentId })
           .from(items)
-          .where(eq(items.id, input.entityId))
+          .where(eq(items.id, columns.entityId))
           .get()?.parentId ?? null);
   // audit-exempt: this is the audit row itself.
   db.insert(auditLog)
@@ -109,17 +80,16 @@ function writeRow(
       source: origin.source,
       agentKeyId: agent?.keyId ?? null,
       agentName: agent?.name ?? null,
-      action: input.action,
-      entityType: input.entityType,
-      entityId: input.entityId,
-      projectId: input.projectId ?? null,
+      action: columns.action,
+      entityType: columns.entityType,
+      entityId: columns.entityId,
+      projectId: columns.projectId,
       parentId,
-      detail: input.detail ?? "",
-      event: input.event ?? null,
+      event,
     })
     .run();
   // Every audited change reaches open pages once it commits (see changes.ts).
-  announceChange({ actor: input.actor, projectId: input.projectId ?? null });
+  announceChange({ actor: input.actor, projectId: columns.projectId });
 }
 
 export function listAudit(

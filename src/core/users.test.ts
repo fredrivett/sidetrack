@@ -122,7 +122,7 @@ describe("avatar", () => {
     expect(again).not.toBe(image);
     expect(getUploadedAvatar(db, userId)?.contentType).toBe("image/webp");
     expect(profileLog(db, userId)).toEqual(
-      Array(3).fill(["update", "avatar to an uploaded image", userId, "web"]),
+      Array(3).fill(["update", "uploaded an avatar", userId, "web"]),
     );
   });
 
@@ -180,9 +180,9 @@ describe("avatar", () => {
     expect(log).toHaveLength(3);
     expect(log).toEqual(
       expect.arrayContaining([
-        ["update", "avatar to an uploaded image", userId, "web"],
-        ["update", "avatar to https://example.com/me.png", userId, "web"],
-        ["delete", "avatar", userId, "web"],
+        ["update", "uploaded an avatar", userId, "web"],
+        ["update", "changed avatar to https://example.com/me.png", userId, "web"],
+        ["delete", "removed avatar", userId, "web"],
       ]),
     );
   });
@@ -207,8 +207,8 @@ describe("username", () => {
     expect(log).toHaveLength(2);
     expect(log).toEqual(
       expect.arrayContaining([
-        ["update", "username from @fred to @Fred", userId, userId, null, "web"],
-        ["update", "username from @Fred to @FredR", userId, userId, null, "web"],
+        ["update", "changed username from @fred to @Fred", userId, userId, null, "web"],
+        ["update", "changed username from @Fred to @FredR", userId, userId, null, "web"],
       ]),
     );
   });

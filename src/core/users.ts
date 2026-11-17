@@ -102,10 +102,12 @@ export function setUsername(
         recordAudit(tx as unknown as Db, {
           actor: userId,
           source,
-          action: "update",
-          entityType: "profile",
-          entityId: userId,
-          detail: `username from @${current.displayUsername} to @${raw}`,
+          event: {
+            type: "profile.username",
+            userId,
+            from: current.displayUsername,
+            to: raw,
+          },
         });
       },
       { behavior: "immediate" },
@@ -237,10 +239,7 @@ export function setAvatarUrl(
       recordAudit(tx as unknown as Db, {
         actor: userId,
         source,
-        action: image ? "update" : "delete",
-        entityType: "profile",
-        entityId: userId,
-        detail: image ? `avatar to ${image}` : "avatar",
+        event: { type: "profile.avatar", userId, image },
       });
     },
     { behavior: "immediate" },
@@ -281,10 +280,7 @@ export function setUploadedAvatar(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "update",
-      entityType: "profile",
-      entityId: userId,
-      detail: "avatar to an uploaded image",
+      event: { type: "profile.avatar", userId, image, uploaded: true },
     });
   });
   return image;

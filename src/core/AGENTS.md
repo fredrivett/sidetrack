@@ -12,6 +12,11 @@ must be callable from both Server Actions (`src/app`) and MCP tools (`src/mcp`).
   `db.transaction((tx) => { ... })`. Pass `tx as unknown as Db` to helpers —
   drizzle's tx type isn't assignable to our `Db` alias but the runtime is the
   same. Existing files all do this; copy the pattern.
+- **Audit rows are change events.** `recordAudit` takes a typed event
+  (`events.ts`), which says what changed as data, never as text: add its
+  type there, its row columns in `auditColumns`, and its sentence in
+  `describe.ts`. Store ids, plus the names a rename or delete would lose;
+  never a secret.
 - **Positions are fractional-index strings.** Never compute one by hand. Use
   `resolvePosition` from `fracidx.ts` (items and lists alike), and order by
   `(position, id)` so ties stay stable. An item's position orders it among its

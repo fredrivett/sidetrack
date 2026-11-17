@@ -276,41 +276,47 @@ export function moveItem(
         .where(eq(items.id, it.id))
         .run();
 
-      const { from, to } = p.refs[i];
+      // What came with it, on the item moved's rows only.
       const notes = isTop
-        ? [
-            p.moving.length > 1 ? `with ${p.moving.length - 1} sub-items` : "",
-            dropped.length ? `dropped labels ${dropped.join(", ")}` : "",
-            p.unassigned.length
-              ? `unassigned ${p.unassigned.map((u) => u.name).join(", ")}`
-              : "",
-          ]
-            .filter(Boolean)
-            .map((n) => `, ${n}`)
-            .join("")
-        : "";
-      const what = isTop ? `"${it.title}"` : `"${it.title}" with "${p.item.title}"`;
+        ? {
+            ...(p.moving.length > 1 ? { subItems: p.moving.length - 1 } : {}),
+            ...(dropped.length ? { droppedLabels: dropped } : {}),
+            ...(p.unassigned.length
+              ? { unassigned: p.unassigned.map((u) => ({ userId: u.userId, name: u.name })) }
+              : {}),
+          }
+        : {};
+      const moved = {
+        type: "item.moved" as const,
+        itemId: it.id,
+        title: it.title,
+        refs: { from: p.refs[i].from, to: p.refs[i].to },
+        ...(isTop ? {} : { with: { itemId: p.item.id, title: p.item.title } }),
+        ...notes,
+      };
       // One row in each list's history; a sub-item's rows also show in
       // its parent's.
       recordAudit(t, {
         actor: userId,
         source,
-        action: "update",
-        entityType: "item",
-        entityId: it.id,
-        projectId: p.source.id,
-        parentId: isTop ? it.parentId : p.item.id,
-        detail: `moved ${what} (${from}) to "${p.target.name}" as ${to}${notes}`,
+        event: {
+          ...moved,
+          projectId: p.source.id,
+          side: "out",
+          parentId: isTop ? it.parentId : p.item.id,
+          other: { projectId: p.target.id, name: p.target.name },
+        },
       });
       recordAudit(t, {
         actor: userId,
         source,
-        action: "update",
-        entityType: "item",
-        entityId: it.id,
-        projectId: p.target.id,
-        parentId: isTop ? null : p.item.id,
-        detail: `moved ${what} in from "${p.source.name}" (${from} → ${to})${notes}`,
+        event: {
+          ...moved,
+          projectId: p.target.id,
+          side: "in",
+          parentId: isTop ? null : p.item.id,
+          other: { projectId: p.source.id, name: p.source.name },
+        },
       });
     });
   });
