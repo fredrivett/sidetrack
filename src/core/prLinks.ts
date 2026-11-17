@@ -178,11 +178,13 @@ export function linkItemToPr(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "link",
-      entityType: "item",
-      entityId: itemId,
-      projectId: item.projectId,
-      detail: `linked PR ${prUrl} to "${item.title}"`,
+      event: {
+        type: "item.pr.linked",
+        projectId: item.projectId,
+        itemId,
+        title: item.title,
+        prUrl,
+      },
     });
   });
 
@@ -223,11 +225,13 @@ export function unlinkItemFromPr(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "unlink",
-      entityType: "item",
-      entityId: itemId,
-      projectId: item.projectId,
-      detail: `unlinked PR ${prUrl} from "${item.title}"`,
+      event: {
+        type: "item.pr.unlinked",
+        projectId: item.projectId,
+        itemId,
+        title: item.title,
+        prUrl,
+      },
     });
   });
 }

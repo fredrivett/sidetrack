@@ -72,12 +72,7 @@ export function setAgentWebhook(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: existing ? "update" : "create",
-      entityType: "api_key",
-      entityId: keyId,
-      detail: existing
-        ? `changed where API key "${key.name}" starts work, with a new secret`
-        : `set API key "${key.name}" to start work when assigned`,
+      event: { type: "api_key.webhook.set", keyId, name: key.name, replaced: Boolean(existing) },
     });
   });
   return { secret };
@@ -103,10 +98,7 @@ export function removeAgentWebhook(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "update",
-      entityType: "api_key",
-      entityId: keyId,
-      detail: `stopped API key "${key.name}" starting work when assigned`,
+      event: { type: "api_key.webhook.removed", keyId, name: key.name },
     });
   });
   return true;

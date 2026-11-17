@@ -170,9 +170,9 @@ commit or fail together — never write one without the other.
   add an audited one in core before letting anyone change it.
 - Password changes and resets are the one exception to `recordAudit`: Better
   Auth writes `accounts.password` itself, so the `audit_password_update`
-  SQLite trigger (migration 0021, replaced by 0022) writes their audit row
+  SQLite trigger (migration 0021, replaced by 0022, then 0045) writes their audit row
   inside the same statement, and cancels the user's outstanding reset links.
-  Keep it in step if `audit_log` columns change.
+  Keep it in step if `audit_log` columns or the `profile.password` event change.
 
 # Review
 

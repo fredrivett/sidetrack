@@ -90,12 +90,13 @@ export function addGithubWebhookSecret(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: existing ? "update" : "create",
-      entityType: "webhook",
-      entityId: id,
-      detail: existing
-        ? `added secret "${trimmed}" to the GitHub webhook`
-        : `set up the GitHub webhook with secret "${trimmed}"`,
+      event: {
+        type: "github.secret.added",
+        webhookId: id,
+        secretId,
+        name: trimmed,
+        first: !existing,
+      },
     });
   });
   const webhook = getGithubWebhook(db, userId);
@@ -121,10 +122,12 @@ export function removeGithubWebhookSecret(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "update",
-      entityType: "webhook",
-      entityId: webhook.id,
-      detail: `removed secret "${secret.name}" from the GitHub webhook`,
+      event: {
+        type: "github.secret.removed",
+        webhookId: webhook.id,
+        secretId: secret.id,
+        name: secret.name,
+      },
     });
   });
   return true;
@@ -140,10 +143,7 @@ export function removeGithubWebhook(db: Db, userId: string, source: AuditOrigin)
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "delete",
-      entityType: "webhook",
-      entityId: existing.id,
-      detail: "removed the GitHub webhook",
+      event: { type: "github.webhook.removed", webhookId: existing.id },
     });
   });
   return true;

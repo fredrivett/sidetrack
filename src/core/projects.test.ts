@@ -33,7 +33,7 @@ describe("projects", () => {
     expect(getProject(db, u, p.id)?.status).toBe("archived");
     expect(listItems(db, u, p.id).map((i) => i.title)).toEqual(["Book trains"]);
     expect(listAudit(db, u)[0].detail).toBe(
-      'Christmas trip: status active→archived',
+      'updated Christmas trip: status active→archived',
     );
 
     expect(() =>
@@ -226,8 +226,8 @@ describe("projects", () => {
     // Undoing a list's first tidy puts back null.
     expect(updateProject(db, u, p.id, { doneClearedAt: null }, "web").doneClearedAt).toBeNull();
     expect(audits().map((a) => a.detail).reverse()).toEqual([
-      "Trip: moved done items to Done",
-      "Trip: moved done items back to the list",
+      "updated Trip: moved done items to Done",
+      "updated Trip: moved done items back to the list",
     ]);
   });
 
@@ -296,7 +296,7 @@ describe("projects", () => {
     );
     expect(set.repository).toBe("fredrivett/sidetrack");
     expect(listAudit(db, u)[0].detail).toBe(
-      "Sidetrack: set repository to fredrivett/sidetrack",
+      "updated Sidetrack: set repository to fredrivett/sidetrack",
     );
     // The same repository pasted differently changes nothing, so isn't logged.
     const logged = listAudit(db, u).length;
@@ -308,10 +308,10 @@ describe("projects", () => {
     ).toThrow(/invalid repository/);
     updateProject(db, u, p.id, { repository: "fredrivett/abode" }, "web");
     expect(listAudit(db, u)[0].detail).toBe(
-      "Sidetrack: repository fredrivett/sidetrack→fredrivett/abode",
+      "updated Sidetrack: repository fredrivett/sidetrack→fredrivett/abode",
     );
     expect(updateProject(db, u, p.id, { repository: null }, "web").repository).toBeNull();
-    expect(listAudit(db, u)[0].detail).toBe("Sidetrack: cleared repository fredrivett/abode");
+    expect(listAudit(db, u)[0].detail).toBe("updated Sidetrack: cleared repository fredrivett/abode");
   });
 
   it("sets an emoji icon, normalizes an image-URL icon, then clears it", () => {
@@ -369,7 +369,7 @@ describe("projects", () => {
     // Choosing the suggestion already showing is recorded too.
     const q = createProject(db, u, { name: "Books", icon: "📚", iconChosen: false }, "web");
     expect(updateProject(db, u, q.id, { icon: "📚" }, "web").iconChosen).toBe(true);
-    expect(listAudit(db, u).some((e) => e.detail === "Books: chose icon")).toBe(true);
+    expect(listAudit(db, u).some((e) => e.detail === "updated Books: chose icon")).toBe(true);
   });
 
   it("rejects an invalid icon and leaves the project unchanged", () => {

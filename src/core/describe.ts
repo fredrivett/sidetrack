@@ -184,6 +184,9 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
     quote: true,
   });
   const space = (sp: SpaceAt): Part => ({ text: names.space(sp), em: "place", quote: true });
+  // An agent, by its API key's name at the time.
+  const agent = (name: string): Part => ({ text: name, em: "person" });
+  const key = (name: string): Part => ({ text: name, em: "item", quote: true });
   switch (event.type) {
     case "item.created": {
       const parts: Part[] = event.parent
@@ -220,7 +223,12 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
           t(c.repeat ? `repeats ${repeatLabel(c.repeat).toLowerCase()}` : "no longer repeats"),
         ]);
       }
-      return [subject, t(": "), ...changes.flatMap((p, i) => (i ? [t(", "), ...p] : p))];
+      return [
+        t("updated "),
+        subject,
+        t(": "),
+        ...changes.flatMap((p, i) => (i ? [t(", "), ...p] : p)),
+      ];
     }
     case "item.completed":
       return !event.with
@@ -275,7 +283,7 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
         text: c.name ? c.name.from : names.list(projectId, event.listName),
         em: "place",
       };
-      return [subject, t(`: ${listChanges(c).join(", ")}`)];
+      return [t("updated "), subject, t(`: ${listChanges(c).join(", ")}`)];
     }
     case "list.reordered":
       return [t("reordered list "), list(event.listName)];
@@ -321,7 +329,7 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
             : emoji.to ? `emoji ${emoji.to}` : "emoji removed"),
       ].filter((p): p is string => Boolean(p));
       return [
-        t("label "),
+        t("updated label "),
         { text: event.name, em: "place", quote: true },
         t(`: ${changes.join(", ")}`),
       ];
@@ -343,7 +351,7 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
       const subject: Part = c.name
         ? { text: c.name.from, em: "place", quote: true }
         : space(event);
-      return [t("space "), subject, t(`: ${changes.join(", ")}`)];
+      return [t("updated space "), subject, t(`: ${changes.join(", ")}`)];
     }
     case "space.deleted":
       return [t("deleted space "), space(event), ...lostText(event.lost)];
@@ -374,5 +382,94 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
         t(event.role === "admin" ? " an admin of space " : " a member of space "),
         space(event.space),
       ];
+    case "item.pr.linked":
+      return [t("linked PR "), { text: event.prUrl, em: "item" }, t(" to "), item(event)];
+    case "item.pr.unlinked":
+      return [t("unlinked PR "), { text: event.prUrl, em: "item" }, t(" from "), item(event)];
+    case "item.moved": {
+      const what = event.with ? [item(event), t(" with "), item(event.with)] : [item(event)];
+      const other: Part = { text: event.other.name, em: "place", quote: true };
+      const { from, to } = event.refs;
+      const notes: Part[] = [
+        ...(event.subItems ? [t(`, with ${event.subItems} sub-items`)] : []),
+        ...(event.droppedLabels?.length
+          ? [t(`, dropped labels ${event.droppedLabels.join(", ")}`)]
+          : []),
+        ...(event.unassigned?.length ? [t(", unassigned "), ...people(names, event.unassigned)] : []),
+      ];
+      return event.side === "out"
+        ? [t("moved "), ...what, t(` (${from}) to `), other, t(` as ${to}`), ...notes]
+        : [t("moved "), ...what, t(" in from "), other, t(` (${from} → ${to})`), ...notes];
+    }
+    case "agent.started":
+      return [
+        t("started work on "),
+        item(event),
+        ...(event.assigned ? [t(", assigned to "), person(event.assigned)] : []),
+      ];
+    case "agent.resumed":
+      return [t("resumed work on "), item(event)];
+    case "agent.reported":
+      return [t("reported on "), item(event), t(`: ${event.note}`)];
+    case "agent.finished":
+      return [t("finished work on "), item(event), ...(event.note ? [t(`: ${event.note}`)] : [])];
+    case "agent.requested":
+      return [t("asked "), agent(event.agent), t(" to work on "), item(event)];
+    case "agent.ended":
+      return [
+        t("ended "),
+        agent(event.agent),
+        t("'s work on "),
+        item(event),
+        ...(event.reason ? [t(`: ${event.reason}`)] : []),
+      ];
+    case "agent.stopped":
+      return [
+        t("stopped "),
+        agent(event.agent),
+        t(" on "),
+        item(event),
+        ...(event.reason ? [t(`: ${event.reason}`)] : []),
+      ];
+    case "api_key.created":
+    case "api_key.revoked":
+      return [
+        t(event.type === "api_key.created" ? "minted API key " : "revoked API key "),
+        key(event.name),
+        t(` (${event.prefix}…)`),
+      ];
+    case "api_key.webhook.set":
+      return event.replaced
+        ? [t("changed where API key "), key(event.name), t(" starts work, with a new secret")]
+        : [t("set API key "), key(event.name), t(" to start work when assigned")];
+    case "api_key.webhook.removed":
+      return [t("stopped API key "), key(event.name), t(" starting work when assigned")];
+    case "github.secret.added":
+      return event.first
+        ? [t("set up the GitHub webhook with secret "), key(event.name)]
+        : [t("added secret "), key(event.name), t(" to the GitHub webhook")];
+    case "github.secret.removed":
+      return [t("removed secret "), key(event.name), t(" from the GitHub webhook")];
+    case "github.webhook.removed":
+      return [t("removed the GitHub webhook")];
+    case "profile.username":
+      return [
+        t("changed username from "),
+        { text: `@${event.from}`, em: "person" },
+        t(" to "),
+        { text: `@${event.to}`, em: "person" },
+      ];
+    case "profile.avatar":
+      return [
+        t(
+          !event.image
+            ? "removed avatar"
+            : event.uploaded
+              ? "uploaded an avatar"
+              : `changed avatar to ${event.image}`,
+        ),
+      ];
+    case "profile.password":
+      return [t(event.viaReset ? "reset password with an emailed link" : "changed password")];
   }
 }

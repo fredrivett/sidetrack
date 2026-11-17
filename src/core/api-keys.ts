@@ -52,10 +52,7 @@ export function createApiKey(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "create",
-      entityType: "api_key",
-      entityId: id,
-      detail: `minted API key "${trimmed}" (${prefix}…)`,
+      event: { type: "api_key.created", keyId: id, name: trimmed, prefix },
     });
   });
 
@@ -114,10 +111,7 @@ export function revokeApiKey(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "delete",
-      entityType: "api_key",
-      entityId: id,
-      detail: `revoked API key "${existing.name}" (${existing.prefix}…)`,
+      event: { type: "api_key.revoked", keyId: id, name: existing.name, prefix: existing.prefix },
     });
   });
   return true;

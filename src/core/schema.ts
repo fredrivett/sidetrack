@@ -539,9 +539,9 @@ export const auditLog = sqliteTable(
     // moved out; for a comment's row, the item it's on. No FK, like
     // project_id: the parent may be deleted too.
     parentId: text("parent_id"),
-    // What happened, as free text. Only rows from before change events, and
-    // modules not yet moved to them, write it; an event row leaves it empty
-    // and is read back through core/describe.ts.
+    // What happened, as free text, on rows from before change events.
+    // Nothing writes it now: an event row leaves it empty and is read back
+    // through core/describe.ts.
     detail: text("detail").notNull().default(""),
     // What happened, as data (core/events.ts): ids, plus whatever a rename
     // or delete could make unreadable. Null on free-text rows.

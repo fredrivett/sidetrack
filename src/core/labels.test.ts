@@ -53,7 +53,7 @@ describe("labels", () => {
     // Rows written in the same millisecond have no set order, so find it.
     expect(
       listAudit(db, userId).filter((e) => e.entityId === ui.id && e.action === "update"),
-    ).toMatchObject([{ entityType: "label", detail: 'label "ui": renamed to "frontend"' }]);
+    ).toMatchObject([{ entityType: "label", detail: 'updated label "ui": renamed to "frontend"' }]);
     // Renaming onto another label's name would merge them; refuse instead.
     expect(() => updateLabel(db, userId, ui.id, { name: "bug" }, "web")).toThrow(/already/);
   });

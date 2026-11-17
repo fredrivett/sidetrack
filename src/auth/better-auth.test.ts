@@ -58,14 +58,15 @@ async function signIn(name: string, password: string) {
   return new Headers({ cookie });
 }
 
+// What the trigger recorded for each change, in the words Activity shows.
 const passwordLog = (userId: string) =>
   (
     sqlite
       .prepare(
-        "select detail from audit_log where entity_type = 'profile' and actor = ? order by rowid",
+        "select json_extract(event, '$.viaReset') as viaReset from audit_log where entity_type = 'profile' and json_extract(event, '$.type') = 'profile.password' and actor = ? order by rowid",
       )
-      .all(userId) as { detail: string }[]
-  ).map((r) => r.detail);
+      .all(userId) as { viaReset: 0 | 1 }[]
+  ).map((r) => (r.viaReset ? "reset password with an emailed link" : "changed password"));
 
 const resetLinkHolders = () =>
   (
@@ -84,7 +85,7 @@ describe("password resets and changes", () => {
     const first = await requestReset("alice");
     const second = await requestReset("alice");
     await auth.api.resetPassword({ body: { token: first, newPassword: "reset-pass-2" } });
-    expect(passwordLog(alice)).toEqual(["password via a reset link"]);
+    expect(passwordLog(alice)).toEqual(["reset password with an emailed link"]);
     await expect(
       auth.api.resetPassword({ body: { token: second, newPassword: "hijack-pass-3" } }),
     ).rejects.toThrow();
@@ -97,7 +98,7 @@ describe("password resets and changes", () => {
       body: { currentPassword: "reset-pass-2", newPassword: "changed-pass-4" },
       headers,
     });
-    expect(passwordLog(alice)).toEqual(["password via a reset link", "password"]);
+    expect(passwordLog(alice)).toEqual(["reset password with an emailed link", "changed password"]);
     await expect(
       auth.api.resetPassword({ body: { token: pending, newPassword: "hijack-pass-5" } }),
     ).rejects.toThrow();
@@ -119,6 +120,6 @@ describe("password resets and changes", () => {
 
     // Bob's link, untouched throughout, still works.
     await auth.api.resetPassword({ body: { token: bobsLink, newPassword: "bob-pass-2" } });
-    expect(passwordLog(bob)).toEqual(["password via a reset link"]);
+    expect(passwordLog(bob)).toEqual(["reset password with an emailed link"]);
   });
 });

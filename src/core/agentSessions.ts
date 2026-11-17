@@ -146,11 +146,7 @@ export function startWork(
       recordAudit(t, {
         actor: userId,
         source,
-        action: "start",
-        entityType: "item",
-        entityId: itemId,
-        projectId: item.projectId,
-        detail: `resumed work on "${item.title}"`,
+        event: { type: "agent.resumed", projectId: item.projectId, itemId, title: item.title },
       });
       return;
     }
@@ -174,13 +170,13 @@ export function startWork(
     recordAudit(t, {
       actor: userId,
       source,
-      action: "start",
-      entityType: "item",
-      entityId: itemId,
-      projectId: item.projectId,
-      detail:
-        `started work on "${item.title}"` +
-        (assign ? `, assigned to ${assigneeLabel(t, userId)}` : ""),
+      event: {
+        type: "agent.started",
+        projectId: item.projectId,
+        itemId,
+        title: item.title,
+        ...(assign ? { assigned: { userId, name: assigneeLabel(t, userId) } } : {}),
+      },
     });
   });
 
@@ -215,11 +211,7 @@ export function reportWork(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "report",
-      entityType: "item",
-      entityId: itemId,
-      projectId: item.projectId,
-      detail: `reported on "${item.title}": ${note}`,
+      event: { type: "agent.reported", projectId: item.projectId, itemId, title: item.title, note },
     });
   });
   return { ...session, note, lastActiveAt: now };
@@ -248,11 +240,7 @@ export function finishWork(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "finish",
-      entityType: "item",
-      entityId: itemId,
-      projectId: item.projectId,
-      detail: `finished work on "${item.title}"${note ? `: ${note}` : ""}`,
+      event: { type: "agent.finished", projectId: item.projectId, itemId, title: item.title, note },
     });
   });
   return { ...session, ...patch };
@@ -284,11 +272,14 @@ export function endAgentSessions(
       recordAudit(tx as unknown as Db, {
         actor: userId,
         source,
-        action: "finish",
-        entityType: "item",
-        entityId: itemId,
-        projectId: item.projectId,
-        detail: `ended ${session.agentName}'s work on "${item.title}": ${reason}`,
+        event: {
+          type: "agent.ended",
+          projectId: item.projectId,
+          itemId,
+          title: item.title,
+          agent: session.agentName,
+          reason,
+        },
       });
     }
   });
@@ -412,11 +403,13 @@ export function requestWork(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "start",
-      entityType: "item",
-      entityId: itemId,
-      projectId: item.projectId,
-      detail: `asked ${key.name} to work on "${item.title}"`,
+      event: {
+        type: "agent.requested",
+        projectId: item.projectId,
+        itemId,
+        title: item.title,
+        agent: key.name,
+      },
     });
     return null;
   });
@@ -499,11 +492,14 @@ export function endAgentSession(
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
-      action: "finish",
-      entityType: "item",
-      entityId: item.id,
-      projectId: item.projectId,
-      detail: `stopped ${session.agentName} on "${item.title}"${reason ? `: ${reason}` : ""}`,
+      event: {
+        type: "agent.stopped",
+        projectId: item.projectId,
+        itemId: item.id,
+        title: item.title,
+        agent: session.agentName,
+        reason: reason ?? null,
+      },
     });
   });
   return true;

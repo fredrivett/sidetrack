@@ -117,8 +117,8 @@ describe("spaces", () => {
     expect(colorOf()).toBeNull();
     expect(details().sort()).toEqual([
       'created space "Garden" (sage)',
-      'space "Garden": colour cleared',
-      'space "Garden": colour set to slate',
+      'updated space "Garden": colour cleared',
+      'updated space "Garden": colour set to slate',
     ]);
 
     // Agents pass strings, so the core checks the palette itself.
