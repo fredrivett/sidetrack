@@ -46,8 +46,9 @@ Serverless platforms without a durable disk won't work, because of SQLite.
    - It's safe to re-run: each line only adds a setting `.env` doesn't have.
      It never replaces the secret, which would sign everyone out.
    - `BETTER_AUTH_URL` must match your browser's address bar exactly, or
-     sign-in fails. From another device, use that address instead, such as
-     `http://192.168.1.20:3000`.
+     sign-in fails. If Sidetrack runs on another machine, such as a VPS or
+     home server, change it in `.env` to that machine's address before you
+     start, such as `http://192.168.1.20:3000`.
    - Keep `.env` private: anyone with the secret can forge a session.
 
 3. **Start it:**
@@ -56,9 +57,9 @@ Serverless platforms without a durable disk won't work, because of SQLite.
    docker compose up -d
    ```
 
-4. **Open [http://localhost:3000](http://localhost:3000) and sign up.** The
-   first account claims the instance, and signup then locks. Create yours
-   before you expose the instance to the internet.
+4. **Open the URL in `BETTER_AUTH_URL` and sign up.** The first account
+   claims the instance, and signup then locks. Create yours before you expose
+   the instance to the internet.
 
 Your data lives in the `sidetrack-data` Docker volume, which survives updates
 and restarts. Migrations run on startup.
@@ -272,6 +273,8 @@ cd sidetrack
 # Create .env as in the quick start, then add a Server Actions key once:
 grep -q '^NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=' .env ||
   echo "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env
+# Optional: your own PostHog key for browser analytics
+# echo "NEXT_PUBLIC_POSTHOG_KEY=phc_…" >> .env
 docker compose up -d --build
 ```
 
@@ -290,7 +293,7 @@ You need [Node.js](https://nodejs.org) 22 and [pnpm](https://pnpm.io)
    [Build stability](#build-stability)); the build reads it from there.
 
    ```bash
-   grep -qs NEXT_SERVER_ACTIONS_ENCRYPTION_KEY .env.local ||
+   grep -qs '^NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=' .env.local ||
      echo "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env.local
    pnpm install --frozen-lockfile
    pnpm build
