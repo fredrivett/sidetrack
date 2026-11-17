@@ -8,7 +8,6 @@ import type { Item, ItemPrLink } from "@/core/schema";
 import type { SpaceView } from "@/core/spaces";
 import { filtersByDue, type ItemFilters, matchesFilters, shownInGroups } from "@/lib/filters";
 import { nestItems } from "@/lib/itemTree";
-import { startOfWeek } from "@/lib/time";
 import { ColumnCard } from "./BoardLayout";
 import { DoneSection } from "./DoneSection";
 import type { ProjectView } from "./Kanban";
@@ -21,7 +20,7 @@ import { ProjectMenu } from "./ProjectMenu";
 import { StatusBadge } from "./StatusBadge";
 import { SummaryBlock } from "./SummaryBlock";
 import { useCollapsedItems } from "./use-collapsed-items";
-import { useDayStart, useListDayStart, useToday } from "./use-day-start";
+import { useListBounds, useToday } from "./use-day-start";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
 import { runAction } from "./run-action";
 import { ListSaveContext, useNewListSave } from "./use-list-saves";
@@ -64,18 +63,15 @@ export function ProjectColumn({
   // Open items and items finished today share the list (today's crossed out,
   // in place); anything finished earlier this week goes to Done, newest
   // first, and older ones leave the board. Before the browser knows its day,
-  // the split uses the server's guess at it (useListDayStart), and Done shows
-  // every other finished item the server sent. The viewer's filters can send
-  // today's to Done straight away, and leave Done out.
-  const dayStart = useDayStart();
-  const listDayStart = useListDayStart();
+  // the split uses the server's guess at it (useListBounds). The viewer's
+  // filters can send today's to Done straight away, and leave Done out.
+  const { dayStart, weekStart } = useListBounds();
   // A list in one of the viewer's Spaces sits on that Space's tray, which
   // already says who shares it, so it drops the "Shared" badge.
   const inSpace = spaces.some((s) => s.id === project.spaceId);
   const today = useToday();
-  const weekStart = Number.isFinite(dayStart) ? startOfWeek(dayStart) : -Infinity;
   // "Tidy done items" in the list's menu moves today's early too.
-  const doneBefore = Math.max(listDayStart, project.doneClearedAt ?? -Infinity);
+  const doneBefore = Math.max(dayStart, project.doneClearedAt ?? -Infinity);
   const groups = nestItems(items);
   const active = groups.filter((i) => i.completedAt === null);
   const inList = groups.filter(

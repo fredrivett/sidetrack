@@ -171,16 +171,26 @@ function zoneOffset(ts: number, timeZone: string): number {
   return wall - (ts - (ts % 1000));
 }
 
+/** DAY_START_HOUR on calendar day `day` in `timeZone`. */
+function turnoverIn(day: string, timeZone: string): number {
+  const wall = Date.parse(`${day}T${String(DAY_START_HOUR).padStart(2, "0")}:00:00Z`);
+  // The offset at the first guess can be the other side of a DST change;
+  // the offset at the guess itself is the one at the turnover.
+  const guess = wall - zoneOffset(wall, timeZone);
+  return wall - zoneOffset(guess, timeZone);
+}
+
 /**
  * startOfDay in a named IANA zone rather than the runtime's own: DAY_START_HOUR
  * on the day `now` falls in there. The server uses it to guess the viewer's day.
  */
 export function startOfDayIn(timeZone: string, now = Date.now()): number {
-  const wall = Date.parse(`${dayOf(now, timeZone)}T${String(DAY_START_HOUR).padStart(2, "0")}:00:00Z`);
-  // The offset at the first guess can be the other side of a DST change;
-  // the offset at the guess itself is the one at the turnover.
-  const guess = wall - zoneOffset(wall, timeZone);
-  return wall - zoneOffset(guess, timeZone);
+  return turnoverIn(dayOf(now, timeZone), timeZone);
+}
+
+/** startOfWeek in a named IANA zone, like startOfDayIn: 4am on its Monday. */
+export function startOfWeekIn(timeZone: string, now = Date.now()): number {
+  return turnoverIn(mondayOf(dayOf(now, timeZone)), timeZone);
 }
 
 /**

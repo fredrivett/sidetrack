@@ -7,7 +7,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { dayOf, nextDayStart, startOfDay } from "@/lib/time";
+import { dayOf, nextDayStart, startOfDay, startOfWeek } from "@/lib/time";
 
 // One timer and one visibility listener for every component on the page
 // (each due badge reads the day), fanned out to subscribers.
@@ -72,34 +72,51 @@ export function useToday(): string | null {
   return Number.isFinite(start) ? dayOf(start) : null;
 }
 
-type Guess = { today: string | null; dayStart: number | null; locale: string | null };
+type Guess = {
+  today: string | null;
+  dayStart: number | null;
+  weekStart: number | null;
+  locale: string | null;
+};
 
-const ServerGuess = createContext<Guess>({ today: null, dayStart: null, locale: null });
+const ServerGuess = createContext<Guess>({
+  today: null,
+  dayStart: null,
+  weekStart: null,
+  locale: null,
+});
 
 /**
- * Gives the server's guess at the viewer's day, its start, and their locale
- * to useLabelDay and useListDayStart.
+ * Gives the server's guess at the viewer's day, when it and its week began,
+ * and their locale to useLabelDay and useListBounds.
  */
 export function ServerTodayProvider({
   today,
   dayStart,
+  weekStart,
   locale,
   children,
 }: Guess & { children: ReactNode }) {
-  return createElement(ServerGuess.Provider, { value: { today, dayStart, locale } }, children);
+  return createElement(
+    ServerGuess.Provider,
+    { value: { today, dayStart, weekStart, locale } },
+    children,
+  );
 }
 
 /**
- * Where a list splits today's finished items (kept in the list) from earlier
- * ones (in Done). Like useLabelDay, the server's guess (the day start in the
- * timezone the viewer last saved) stands in until the browser knows its own,
- * so an item finished today doesn't render in Done and then jump into the
- * list on hydration. Infinity when there's no guess either (see useDayStart).
+ * Where a list splits its finished items: from dayStart they stay in the
+ * list, from weekStart they go to Done, and earlier ones leave the board.
+ * Like useLabelDay, the server's guess (in the timezone the viewer last saved)
+ * stands in until the browser knows its own day, so rows don't move between
+ * the list and Done, or Done appear and vanish, on hydration. With no guess
+ * either, every finished item counts as earlier in the week (see useDayStart).
  */
-export function useListDayStart(): number {
+export function useListBounds(): { dayStart: number; weekStart: number } {
   const dayStart = useDayStart();
-  const guess = useContext(ServerGuess).dayStart;
-  return Number.isFinite(dayStart) ? dayStart : (guess ?? Infinity);
+  const guess = useContext(ServerGuess);
+  if (Number.isFinite(dayStart)) return { dayStart, weekStart: startOfWeek(dayStart) };
+  return { dayStart: guess.dayStart ?? Infinity, weekStart: guess.weekStart ?? -Infinity };
 }
 
 /**
