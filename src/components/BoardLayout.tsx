@@ -51,10 +51,13 @@ export function BoardRail({
   ref?: Ref<HTMLDivElement>;
   children: ReactNode;
 }) {
+  // On phones the sides are 4vw, the gap either side of a centred column, so
+  // the first and last columns centre like the rest; with p-3 they'd stop
+  // short, out of line with the Space tray's header, which assumes centred.
   return (
     <div
       ref={ref}
-      className="kanban-rail flex flex-1 snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-hidden p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+      className="kanban-rail flex flex-1 snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-hidden p-3 max-sm:px-[4vw] pb-[max(0.75rem,env(safe-area-inset-bottom))]"
     >
       {children}
     </div>

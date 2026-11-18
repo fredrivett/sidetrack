@@ -89,17 +89,18 @@ export function SpaceTray({
           tray is on screen. Each is kept clear of the other: the name stops
           at the header's padding, which the buttons' --tray-actions width
           fills, and the buttons stop at the name, where their wrapper
-          starts. Insets count from inside the board's p-3; on phones they
-          line up with a centred column, (100vw - column width) / 2. Past
-          that, they put the chevron over the lists' icons and checkboxes and
-          the ⋯ over the last list's ⋯ (see ColumnCard). */}
+          starts. Insets count from inside the board's padding, the same
+          offsets as the header's own padding plus the tray's p-2, so a
+          stuck name and buttons sit where they do unstuck: the chevron over
+          the lists' icons and checkboxes and the ⋯ over the last list's ⋯
+          (see ColumnCard). */}
       <header className="flex h-8 shrink-0 items-center gap-1 pl-4 pr-[calc(var(--tray-actions)+1.125rem)] [--tray-actions:3.75rem]">
         <button
           type="button"
           onClick={onToggle}
           aria-expanded={!collapsed}
           title={collapsed ? `Show ${name}` : `Collapse ${name}`}
-          className="sticky left-[calc(4vw+0.75rem)] flex h-7 min-w-0 items-center gap-1.5 rounded-lg px-1.5 text-sm font-semibold hover:bg-neutral-300/50 sm:left-6 dark:hover:bg-neutral-700/50"
+          className="sticky left-6 flex h-7 min-w-0 items-center gap-1.5 rounded-lg px-1.5 text-sm font-semibold hover:bg-neutral-300/50 dark:hover:bg-neutral-700/50"
         >
           <ChevronRight
             aria-hidden
@@ -112,7 +113,7 @@ export function SpaceTray({
           <span className="text-xs font-normal text-neutral-500">{lists.length}</span>
         </button>
         <div className="-mr-[var(--tray-actions)] flex min-w-0 flex-1 justify-end">
-          <div className="sticky right-[calc(4vw+0.875rem)] flex shrink-0 items-center gap-1 sm:right-[1.625rem]">
+          <div className="sticky right-[1.625rem] flex shrink-0 items-center gap-1">
             {onAddList && (
               <button
                 type="button"
