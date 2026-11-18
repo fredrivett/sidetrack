@@ -12,8 +12,10 @@ import type { Db } from "./db";
 import { listProjects } from "./projects";
 import { auditLog, type Item, items, projects } from "./schema";
 
-/** At most this many items in the look-back, however long the viewer was away. */
+/** At most this many items in each look-back list, however long the viewer was away. */
 export const LOOK_BACK_CAP = 10;
+/** The look-back reaches this far at most: the greeting says "since last time" beyond a week. */
+const LOOK_BACK_DAYS = 7;
 /** At most this many undated items in each of `undated` and `stale`. */
 export const CANDIDATE_CAP = 15;
 /** An undated item nobody has touched for this long is stale. */
@@ -61,10 +63,12 @@ export interface AgendaBrief {
   partOfDay: PartOfDay;
   /** When the viewer last read a greeting; null the first time. */
   since: number | null;
-  /** Since `since`, newest first, LOOK_BACK_CAP between them. */
+  /** Since `since` (a week at most), each newest first and LOOK_BACK_CAP long at most. */
   lookBack: {
     /** What the viewer finished (top-level, or a sub-item finished on its own). */
     finished: BriefItem[];
+    /** How many they finished, past the cap too. */
+    finishedCount: number;
     /** Open items whose last day passed since `since`. */
     slipped: BriefItem[];
   };
@@ -112,7 +116,10 @@ export function buildAgendaBrief(
   viewerId: string,
   opts: { now: number; timeZone: string; since: number | null },
 ): AgendaBrief {
-  const { now, timeZone, since } = opts;
+  const { now, timeZone } = opts;
+  // Older reads look back a week, so a long absence doesn't load months of history.
+  const since =
+    opts.since === null ? null : Math.max(opts.since, now - LOOK_BACK_DAYS * 86_400_000);
   const today = dayOf(now, timeZone);
   const weekday = WEEKDAYS[new Date(`${today}T12:00:00Z`).getUTCDay()];
 
@@ -204,16 +211,10 @@ export function buildAgendaBrief(
       .filter((i) => i.dueDate !== null && i.dueDate >= sinceDay && i.dueDate < today)
       .map((item) => ({ item, at: Date.parse(`${addDays(item.dueDate ?? today, 1)}T00:00:00Z`) }));
   }
-  const kept = new Set(
-    [...finished, ...slipped]
-      .sort((a, b) => b.at - a.at)
-      .slice(0, LOOK_BACK_CAP)
-      .map((e) => e.item.id),
-  );
   const newestFirst = (list: Array<{ item: Item; at: number }>) =>
     list
-      .filter((e) => kept.has(e.item.id))
       .sort((a, b) => b.at - a.at)
+      .slice(0, LOOK_BACK_CAP)
       .map((e) => brief(e.item));
 
   // Ahead: tomorrow to the Sunday of next week.
@@ -255,7 +256,11 @@ export function buildAgendaBrief(
     weekend: weekday === "Saturday" || weekday === "Sunday",
     partOfDay: partOfDay(now, timeZone),
     since,
-    lookBack: { finished: newestFirst(finished), slipped: newestFirst(slipped) },
+    lookBack: {
+      finished: newestFirst(finished),
+      finishedCount: finished.length,
+      slipped: newestFirst(slipped),
+    },
     dueToday: mine.filter((i) => sectionOf(i) === "Today").map(brief),
     overdue: open.filter((i) => sectionOf(i) === "Overdue").map(brief),
     ahead,
@@ -268,8 +273,8 @@ export function buildAgendaBrief(
 }
 
 /**
- * The latest audit row on each item or any of its sub-items, by item id: when
- * someone last changed it. Items with no rows are left out.
+ * The latest audit row on each item, its sub-items or its comments, by item
+ * id: when someone last changed or discussed it. Items with no rows are left out.
  */
 function lastTouched(db: Db, ids: string[]): Map<string, number> {
   const touched = new Map<string, number>();
@@ -277,12 +282,15 @@ function lastTouched(db: Db, ids: string[]): Map<string, number> {
   const keep = (id: string | null, ts: number | null) => {
     if (id && ts !== null && ts > (touched.get(id) ?? -Infinity)) touched.set(id, ts);
   };
-  const isItem = eq(auditLog.entityType, "item");
-  for (const column of [auditLog.entityId, auditLog.parentId]) {
+  // An item's own rows, then its sub-items' and comments' (which name it as parent).
+  for (const [column, entities] of [
+    [auditLog.entityId, ["item"]],
+    [auditLog.parentId, ["item", "comment"]],
+  ] as const) {
     for (const r of db
       .select({ id: column, ts: max(auditLog.ts) })
       .from(auditLog)
-      .where(and(isItem, inArray(column, ids)))
+      .where(and(inArray(auditLog.entityType, [...entities]), inArray(column, ids)))
       .groupBy(column)
       .all()) {
       keep(r.id, r.ts);

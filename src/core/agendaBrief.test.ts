@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildAgendaBrief } from "./agendaBrief";
 import { addItem, completeItem } from "./items";
 import { acceptInvite, inviteMember } from "./members";
-import { createProject } from "./projects";
+import { addComment } from "./comments";
+import { createProject, updateProject } from "./projects";
 import { createTestDb, createTestUser } from "./test-helpers";
 
 const tz = "Europe/London";
@@ -106,24 +107,61 @@ describe("buildAgendaBrief", () => {
     expect(titles(b.overdue)).toEqual(["Due Monday", "Due Tuesday", "Due last week"]);
 
     // No read yet: nothing to look back on.
-    expect(brief().lookBack).toEqual({ finished: [], slipped: [] });
+    expect(brief().lookBack).toEqual({ finished: [], finishedCount: 0, slipped: [] });
   });
 
-  it("caps the look-back at the ten newest, however long the viewer was away", () => {
+  it("caps each look-back list at ten, counts all that were finished, and lets neither crowd out the other", () => {
     const { db, fred, add, brief } = board();
-    for (let d = 1; d <= 12; d++) {
-      const day = `2026-11-${String(d).padStart(2, "0")}`;
-      const item = add(`Done on ${day}`);
-      vi.setSystemTime(at(day));
+    for (let h = 0; h < 12; h++) {
+      const item = add(`Done at ${h}`);
+      vi.setSystemTime(at("2026-11-17", h + 6));
       completeItem(db, fred, item.id, "web");
       vi.setSystemTime(NOW);
     }
-    add("Slipped yesterday", { dueDate: "2026-11-17" });
+    for (let d = 0; d < 12; d++) add(`Slipped ${d}`, { dueDate: "2026-11-17" });
+    const b = brief({ since: at("2026-11-16") });
+    expect(b.lookBack.finishedCount).toBe(12);
+    expect(b.lookBack.finished).toHaveLength(10);
+    expect(b.lookBack.finished[0].title).toBe("Done at 11");
+    expect(b.lookBack.slipped).toHaveLength(10);
+  });
+
+  it("looks back a week at most, however long ago the last read was", () => {
+    const { db, fred, add, brief } = board();
+    const old = add("Done three weeks ago");
+    const recent = add("Done on Monday");
+    vi.setSystemTime(at("2026-10-28"));
+    completeItem(db, fred, old.id, "web");
+    vi.setSystemTime(at("2026-11-16"));
+    completeItem(db, fred, recent.id, "web");
+    vi.setSystemTime(NOW);
+    add("Due a fortnight ago", { dueDate: "2026-11-04" });
     const b = brief({ since: at("2026-10-01") });
-    expect(titles(b.lookBack.slipped)).toEqual(["Slipped yesterday"]);
-    expect(b.lookBack.finished).toHaveLength(9);
-    expect(b.lookBack.finished[0].title).toBe("Done on 2026-11-12");
-    expect(b.lookBack.finished.at(-1)?.title).toBe("Done on 2026-11-04");
+    expect(b.since).toBe(NOW - 7 * 86_400_000);
+    expect(titles(b.lookBack.finished)).toEqual(["Done on Monday"]);
+    expect(b.lookBack.slipped).toEqual([]);
+  });
+
+  it("reads the day in the viewer's zone, not the server's", () => {
+    const { db, fred } = board();
+    // 4pm UTC on Wednesday is 5am Thursday in Auckland.
+    const b = buildAgendaBrief(db, fred, {
+      now: at("2026-11-18", 16),
+      timeZone: "Pacific/Auckland",
+      since: null,
+    });
+    expect(b).toMatchObject({ today: "2026-11-19", weekday: "Thursday", partOfDay: "morning" });
+  });
+
+  it("leaves out lists the viewer can't see and archived ones", () => {
+    const { db, fred, sam, add, brief } = board();
+    const samsOwn = createProject(db, sam, { name: "Sam's private" }, "web");
+    addItem(db, sam, { projectId: samsOwn.id, title: "Sam's secret", dueDate: "2026-11-18" }, "web");
+    const old = createProject(db, fred, { name: "Old" }, "web");
+    addItem(db, fred, { projectId: old.id, title: "Archived", dueDate: "2026-11-18" }, "web");
+    updateProject(db, fred, old.id, { status: "archived" }, "web");
+    add("Mine", { dueDate: "2026-11-18" });
+    expect(titles(brief().dueToday)).toEqual(["Mine"]);
   });
 
   it("counts single days ahead to the end of next week, and keeps spans apart", () => {
@@ -157,15 +195,17 @@ describe("buildAgendaBrief", () => {
   });
 
   it("finds stale undated items by their last change, and recent or deadline-ish ones to nudge", () => {
-    const { add, brief } = board();
+    const { db, fred, add, brief } = board();
     vi.setSystemTime(at("2026-10-01"));
     add("Old and untouched");
     const busy = add("Old but its checklist grew");
     add("Renew passport");
     add("Old and plain");
+    const discussed = add("Old but discussed");
     vi.setSystemTime(at("2026-11-16"));
     add("A step added this week", { parentId: busy.id });
     add("Added this week");
+    addComment(db, fred, discussed.id, "Still on it", "web");
     vi.setSystemTime(NOW);
 
     const b = brief();
