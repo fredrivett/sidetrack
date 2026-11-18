@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, CalendarClock, CheckCheck } from "lucide-react";
+import { Bell, CalendarClock, Check, CheckCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { markNotificationsReadAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,7 @@ import { AgentAvatar, UserAvatar } from "./UserAvatar";
 /**
  * The bell in the board's header: the viewer's latest notifications, with a
  * count while any is unseen. Opening it marks nothing: a notification is
- * seen once it's tapped, or with Mark all seen. Both are optimistic, like
+ * seen once it's tapped, with its dot, or with Mark all seen. All are optimistic, like
  * ticking an item: the dot goes at once, and comes back with a toast if the
  * save fails.
  */
@@ -133,9 +133,12 @@ export function NotificationsInbox({
                 key={n.id}
                 // The row's button covers it, under the list chips, which are
                 // buttons of their own; the row shows its hover and focus.
+                // Its background is opaque and named, for the dot's outline.
                 className={cn(
-                  "relative flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted has-[>button:focus-visible]:bg-muted",
-                  isNew(n) && "bg-blue-50/60 dark:bg-blue-950/20",
+                  "group/row relative flex w-full items-start gap-3 bg-(--row-bg) px-4 py-3 text-left transition-colors hover:[--row-bg:var(--color-muted)] has-[>button:focus-visible]:[--row-bg:var(--color-muted)]",
+                  isNew(n)
+                    ? "[--row-bg:color-mix(in_oklab,var(--color-blue-50)_60%,var(--color-popover))] dark:[--row-bg:color-mix(in_oklab,var(--color-blue-950)_20%,var(--color-popover))]"
+                    : "[--row-bg:var(--color-popover)]",
                 )}
               >
                 <button
@@ -214,13 +217,34 @@ export function NotificationsInbox({
                     <span className="shrink-0">{formatRelative(n.createdAt)}</span>
                   </span>
                 </span>
-                <span
-                  aria-hidden
-                  className={cn(
-                    "mt-2 size-2 shrink-0 rounded-full",
-                    isNew(n) ? "bg-blue-500" : "bg-transparent",
+                {/* The dot is the button. Hovering the row grows it a little,
+                    a hint; hovering or focusing it stretches it left into a
+                    pill that says what it does, over the text, never moving
+                    it; a ring of the row's background cuts it out of the text.
+                    Its button reaches past it, so the dot is easy to hit. */}
+                <span className="relative mt-2 size-2 shrink-0">
+                  {isNew(n) && (
+                    <button
+                      type="button"
+                      aria-label="Mark seen"
+                      onClick={() => markSeen([n.id], false)}
+                      className="group/seen absolute top-1/2 -right-2.5 z-10 flex w-max -translate-y-1/2 p-2.5 focus-visible:outline-none"
+                    >
+                      <span className="flex h-2 min-w-2 items-center justify-end rounded-full bg-blue-500 text-xs font-medium text-white transition-[height,min-width,padding,background-color,box-shadow] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] group-hover/seen:duration-350 group-focus-visible/seen:duration-350 group-hover/row:h-2.75 group-hover/row:min-w-2.75 ring-3 ring-(--row-bg) group-hover/seen:h-6! group-hover/seen:bg-blue-600 group-hover/seen:px-2.5 group-focus-visible/seen:h-6! group-focus-visible/seen:bg-blue-600 group-focus-visible/seen:px-2.5 group-focus-visible/seen:outline-2 group-focus-visible/seen:outline-offset-3 group-focus-visible/seen:outline-ring motion-reduce:transition-none">
+                        <span
+                          aria-hidden
+                          className="grid grid-cols-[0fr] transition-[grid-template-columns] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] group-hover/seen:grid-cols-[1fr] group-hover/seen:duration-350 group-focus-visible/seen:grid-cols-[1fr] group-focus-visible/seen:duration-350 motion-reduce:transition-none"
+                        >
+                          {/* The words fade in once there's room for them, and out first. */}
+                          <span className="flex items-center gap-1 overflow-hidden whitespace-nowrap opacity-0 transition-opacity duration-100 group-hover/seen:opacity-100 group-hover/seen:delay-100 group-hover/seen:duration-250 group-focus-visible/seen:opacity-100 group-focus-visible/seen:delay-100 group-focus-visible/seen:duration-250 motion-reduce:transition-none">
+                            Mark seen
+                            <Check className="size-3.5 shrink-0" strokeWidth={2.5} />
+                          </span>
+                        </span>
+                      </span>
+                    </button>
                   )}
-                />
+                </span>
               </li>
             ))}
           </ul>
