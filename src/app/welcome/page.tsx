@@ -11,6 +11,7 @@ import { isSignUpOpen } from "@/auth/signup";
 import { dayOf } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { appBaseUrl, SITE_DESCRIPTION } from "../site";
+import { HereNow } from "./HereNow";
 import { PreviewBoard } from "./PreviewBoard";
 
 // The landing page. src/proxy.ts shows it at / to signed-out visitors (the
@@ -217,6 +218,7 @@ export default async function Welcome() {
             <LogoMark className="h-[14.25px] w-[13.5px]" />
             Sidetrack is open source under AGPL-3.0.
           </span>
+          <HereNow />
           <a href={REPO} className="flex items-center gap-1.5 hover:text-foreground">
             <GitHubMark className="size-3.5" />
             fredrivett/sidetrack
