@@ -76,7 +76,9 @@ export function SpaceTray({
       // phone it snaps where it sat with its first column centred, so
       // collapsing doesn't shift it: 4vw in, or for an empty Space, its 18rem
       // Add list column plus 1rem of padding centred.
-      className={`relative flex h-full shrink-0 flex-col rounded-3xl p-2 [--column-width:calc(92vw-1rem)] ${spaceTint(color)} ${
+      // The bottom padding takes the home indicator's inset that the board's
+      // rail leaves to it (BoardLayout), less the rail's own 0.75rem.
+      className={`relative flex h-full shrink-0 flex-col rounded-3xl p-2 pb-[max(0.5rem,calc(env(safe-area-inset-bottom)-0.75rem))] [--column-width:calc(92vw-1rem)] ${spaceTint(color)} ${
         !collapsed
           ? ""
           : lists.length > 0
