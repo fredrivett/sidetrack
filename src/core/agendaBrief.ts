@@ -63,6 +63,8 @@ export interface AgendaBrief {
   partOfDay: PartOfDay;
   /** When the viewer last read a greeting; null the first time. */
   since: number | null;
+  /** The viewer's day `since` fell in. */
+  sinceDay: string | null;
   /** Since `since` (a week at most), each newest first and LOOK_BACK_CAP long at most. */
   lookBack: {
     /** What the viewer finished (top-level, or a sub-item finished on its own). */
@@ -256,6 +258,7 @@ export function buildAgendaBrief(
     weekend: weekday === "Saturday" || weekday === "Sunday",
     partOfDay: partOfDay(now, timeZone),
     since,
+    sinceDay: since === null ? null : dayOf(since, timeZone),
     lookBack: {
       finished: newestFirst(finished),
       finishedCount: finished.length,
