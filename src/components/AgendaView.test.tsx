@@ -78,7 +78,7 @@ function renderAgenda(
 ) {
   const itemsByProject: Record<string, Item[]> = {};
   for (const i of items) (itemsByProject[i.projectId] ??= []).push(i);
-  render(
+  return render(
     <AgendaView
       projects={projects}
       itemsByProject={itemsByProject}
@@ -280,6 +280,34 @@ describe("AgendaView", () => {
     vi.setSystemTime(Date.now() + 5000);
     cleanup();
     expect(vi.mocked(setAgendaReadAction)).toHaveBeenCalledTimes(1);
+    vi.setSystemTime(new Date(2026, 10, 14, 12));
+  });
+
+  it("stamps a read when the tab is hidden, but keeps showing the greeting it opened with", () => {
+    vi.mocked(setAgendaReadAction).mockClear();
+    const props = (text: string) => (
+      <AgendaView
+        projects={[home]}
+        itemsByProject={{}}
+        assigneesByProject={{}}
+        prLinksByItem={{}}
+        viewerId="me"
+        overdueCollapsed={false}
+        greeting={{ text, titles: {} }}
+        filters={NO_FILTERS}
+      />
+    );
+    const { rerender } = render(props("Good morning. Since Friday you've finished four."));
+    vi.setSystemTime(Date.now() + 5000);
+    Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+    Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+    expect(vi.mocked(setAgendaReadAction)).toHaveBeenCalledTimes(1);
+    // The board reloads with a greeting written after the stamp.
+    rerender(props("Good morning."));
+    expect(screen.getByText(/^Good morning/).textContent).toBe(
+      "Good morning. Since Friday you've finished four.",
+    );
     vi.setSystemTime(new Date(2026, 10, 14, 12));
   });
 

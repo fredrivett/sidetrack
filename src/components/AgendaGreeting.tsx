@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { setAgendaReadAction } from "@/app/actions";
 import type { Greeting } from "@/core/agendaGreeting";
 import type { Item } from "@/core/schema";
@@ -12,8 +12,9 @@ const READ_MS = 2000;
  * The few calm sentences at the top of the Agenda. Items it names are chips
  * that open them; an action phrase does what it says. Leaving it, by
  * switching view or tab, counts as having read it, so the next greeting
- * looks back from then: stamping on leaving rather than on showing keeps
- * this one's look-back in place while the board reloads around it.
+ * looks back from then. The greeting stays as first shown while the Agenda
+ * is open: the board reloads on every change, and a later one, written
+ * after a stamp, would drop the look-back from under the reader.
  */
 export function AgendaGreeting({
   greeting,
@@ -27,6 +28,7 @@ export function AgendaGreeting({
   onOpenItem: (item: Item) => void;
   onAction: (action: string) => void;
 }) {
+  const [shown] = useState(greeting);
   useEffect(() => {
     // When it came into view; a glance of under READ_MS isn't a read (and
     // nor is React's dev-only remount).
@@ -48,7 +50,7 @@ export function AgendaGreeting({
 
   return (
     <p className="px-1 pt-2 pb-1 text-[15px] leading-7 text-neutral-600 text-pretty dark:text-neutral-300">
-      {parseGreeting(greeting.text).map((part, i) => {
+      {parseGreeting(shown.text).map((part, i) => {
         if (part.kind === "text") return part.text;
         if (part.kind === "action") {
           return (
@@ -63,7 +65,7 @@ export function AgendaGreeting({
           );
         }
         const item = itemsById.get(part.id);
-        const title = item?.title ?? greeting.titles[part.id] ?? "";
+        const title = item?.title ?? shown.titles[part.id] ?? "";
         const chip =
           "rounded-md bg-neutral-100 px-1 py-px leading-normal text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100";
         // An item the page hasn't loaded, such as one finished days ago, is named but can't open.
