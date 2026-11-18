@@ -99,6 +99,7 @@ describe("buildAgendaBrief", () => {
     vi.setSystemTime(NOW);
 
     const b = brief({ since });
+    expect(b.sinceDay).toBe("2026-11-16");
     // Newest first; the step went with its parent.
     expect(titles(b.lookBack.finished)).toEqual(["Parent with a step", "Done since"]);
     // Monday's was due on the day of the read, so it slipped after it; last
