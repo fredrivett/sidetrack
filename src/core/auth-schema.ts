@@ -48,6 +48,11 @@ export const users = sqliteTable("users", {
   // The filters they last set in the board's header (ItemFilters, as JSON),
   // kept per person so they follow them to every device. null = none.
   boardFilters: text("board_filters", { mode: "json" }),
+  // Where the account falls in signup order: the instance's Nth user, kept
+  // for good so it never shifts. The `users_number` trigger (migration 0051)
+  // sets it in the same statement as the insert, so concurrent signups can't
+  // share one. null only for the instant between the insert and the trigger.
+  userNumber: integer("user_number").unique(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });

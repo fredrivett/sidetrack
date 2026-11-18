@@ -196,6 +196,7 @@ without them.
 | Variable | Default | Description |
 | --- | --- | --- |
 | `ALLOW_SIGNUP` | `false` | `true` keeps signup open after the first account |
+| `FOUNDING_SEATS` | `false` | `true` shows sidetrack.it's founding batches on the signup page: the first 100 accounts, numbered, in three named batches. Leave it off on your own instance |
 | `DB_PATH` | `./data/sidetrack.db` | SQLite database path. The Docker image sets it to the `/data` volume; leave it there |
 | `BACKUP_DIR` | `./data/backups` | Where daily backups go (the last 7 are kept). The Docker image sets it to the `/data` volume |
 | `SIDETRACK_SEED` | `false` | `true` lets `pnpm db:seed` fill a fresh database with demo data. Development only; never on a real instance |

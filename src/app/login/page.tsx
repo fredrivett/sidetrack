@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { AuthShell } from "@/components/AuthShell";
+import { FoundingTicket } from "@/components/FoundingTicket";
 import { LoginForm } from "@/components/LoginForm";
 import { sanitizeNext } from "@/lib/safe-next";
 import { getCurrentSession } from "@/auth/session";
 import { isSignUpOpen } from "@/auth/signup";
+import { getDb } from "@/core/db";
+import { nextUserNumber } from "@/core/users";
+import { getEnv } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
@@ -26,13 +29,16 @@ export default async function LoginPage({
   const allowSignUp = isSignUpOpen();
 
   return (
-    <AuthShell>
-      {/* ?mode=sign-up, as the landing page links, opens on signup. */}
-      <LoginForm
-        allowSignUp={allowSignUp}
-        initialMode={allowSignUp && mode === "sign-up" ? "sign-up" : "sign-in"}
-        next={safeNext}
-      />
-    </AuthShell>
+    // ?mode=sign-up, as the landing page links, opens on signup.
+    <LoginForm
+      allowSignUp={allowSignUp}
+      initialMode={allowSignUp && mode === "sign-up" ? "sign-up" : "sign-in"}
+      next={safeNext}
+      signUpAbove={
+        allowSignUp && getEnv().FOUNDING_SEATS ? (
+          <FoundingTicket next={nextUserNumber(getDb().db)} />
+        ) : undefined
+      }
+    />
   );
 }

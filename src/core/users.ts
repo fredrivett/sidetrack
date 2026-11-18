@@ -1,4 +1,4 @@
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, max, ne } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { avatars, users } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
@@ -18,6 +18,23 @@ export function getTimeZone(db: Db, userId: string): string | null {
       .where(eq(users.id, userId))
       .get()?.timeZone ?? null
   );
+}
+
+/** Where the user falls in signup order (users.user_number), or null if unknown. */
+export function getUserNumber(db: Db, userId: string): number | null {
+  return (
+    db
+      .select({ userNumber: users.userNumber })
+      .from(users)
+      .where(eq(users.id, userId))
+      .get()?.userNumber ?? null
+  );
+}
+
+/** The number the next account to sign up will take. */
+export function nextUserNumber(db: Db): number {
+  const row = db.select({ last: max(users.userNumber) }).from(users).get();
+  return (row?.last ?? 0) + 1;
 }
 
 /** Whether the user has folded away the Agenda's Overdue section. */
