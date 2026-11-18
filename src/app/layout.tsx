@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { LatestDeploy } from "@/components/LatestDeploy";
 import { PhysicalKeyboard } from "@/components/PhysicalKeyboard";
 import { ServiceWorker } from "@/components/ServiceWorker";
+import { SubmitShortcut } from "@/components/SubmitShortcut";
 import { Toaster } from "@/components/ui/sonner";
 import { getEnv } from "@/lib/env";
 import { PHYSICAL_KEYBOARD_STORAGE_KEY } from "@/lib/keyboard";
@@ -86,6 +87,7 @@ export default function RootLayout({
         <ServiceWorker />
         <LatestDeploy />
         <PhysicalKeyboard />
+        <SubmitShortcut />
       </body>
     </html>
   );
