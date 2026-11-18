@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://cubic.dev/schema/cubic-repository-config.schema.json
+# Cubic's review settings (https://docs.cubic.dev/configure/cubic-yaml). Read
+# from main only; anything set here overrides the dashboard.
+version: 1
+reviews:
+  ignore:
+    files:
+      # Generated, and nothing to review: drizzle-kit rewrites the whole schema
+      # as JSON on every migration (about half of all changed lines), and pnpm
+      # rewrites its lockfile. The .sql migrations and package.json are still reviewed.
+      - src/core/migrations/meta/**
+      - pnpm-lock.yaml
