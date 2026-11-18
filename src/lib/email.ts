@@ -32,6 +32,7 @@ export interface OutboundEmail {
   to: string;
   subject: string;
   text: string;
+  replyTo?: string;
 }
 
 export interface EmailDeps {
@@ -51,6 +52,7 @@ interface DeliverableEmail {
   to: string;
   subject: string;
   text: string;
+  replyTo?: string;
   logLine: string;
   errorLabel: string;
 }
@@ -65,7 +67,7 @@ async function deliverEmail(
   message: DeliverableEmail,
   { env, fetchFn, log, sendSmtp }: EmailDeps,
 ): Promise<void> {
-  const { to, subject, text } = message;
+  const { to, subject, text, replyTo } = message;
 
   if (env.SMTP_URL) {
     await sendSmtp(env.SMTP_URL, {
@@ -73,6 +75,7 @@ async function deliverEmail(
       to,
       subject,
       text,
+      ...(replyTo && { replyTo }),
     });
     return;
   }
@@ -93,6 +96,7 @@ async function deliverEmail(
       to: [to],
       subject,
       text,
+      ...(replyTo && { reply_to: replyTo }),
     }),
   });
 
@@ -278,6 +282,8 @@ export async function deliverSignupNotificationEmail(
         `${name} just signed up to Sidetrack.\n\nUser #${userNumber}` +
         `\nEmail: ${email}` +
         (username ? `\nUsername: @${username}` : ""),
+      // Replying to the notice writes to the new user, e.g. to welcome them.
+      replyTo: email,
       logLine: `[email] no SMTP_URL or RESEND_API_KEY set — new signup: ${email}`,
       errorLabel: "signup notification email",
     },
