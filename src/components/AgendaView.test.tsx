@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { setItemsCollapsedAction, setOverdueCollapsedAction } from "@/app/actions";
+import {
+  setAgendaReadAction,
+  setItemsCollapsedAction,
+  setOverdueCollapsedAction,
+} from "@/app/actions";
+import type { Greeting } from "@/core/agendaGreeting";
 import type { Item } from "@/core/schema";
 import { type ItemFilters, NO_FILTERS } from "@/lib/filters";
 import { AgendaView } from "./AgendaView";
@@ -17,6 +22,7 @@ vi.mock("@/app/actions", () => ({
   reorderItemAction: vi.fn(),
   setItemsCollapsedAction: vi.fn(),
   setOverdueCollapsedAction: vi.fn(),
+  setAgendaReadAction: vi.fn(),
   // The item dialog reads its comments when it opens, and its history when expanded.
   listCommentsAction: vi.fn(async () => []),
   listAuditAction: vi.fn(async () => []),
@@ -33,6 +39,7 @@ beforeAll(() => {
     addEventListener() {},
     removeEventListener() {},
   })) as unknown as typeof window.matchMedia;
+  Element.prototype.scrollIntoView = vi.fn();
 });
 afterAll(() => vi.useRealTimers());
 afterEach(cleanup);
@@ -67,10 +74,11 @@ function renderAgenda(
   projects = [home],
   overdueCollapsed = false,
   filters: Partial<ItemFilters> = {},
+  greeting: Greeting | null = null,
 ) {
   const itemsByProject: Record<string, Item[]> = {};
   for (const i of items) (itemsByProject[i.projectId] ??= []).push(i);
-  render(
+  return render(
     <AgendaView
       projects={projects}
       itemsByProject={itemsByProject}
@@ -78,6 +86,7 @@ function renderAgenda(
       prLinksByItem={{}}
       viewerId="me"
       overdueCollapsed={overdueCollapsed}
+      greeting={greeting}
       filters={{ ...NO_FILTERS, ...filters }}
     />,
   );
@@ -235,6 +244,71 @@ describe("AgendaView", () => {
     expect(vi.mocked(setOverdueCollapsedAction)).toHaveBeenLastCalledWith(false);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(rows?.hasAttribute("inert")).toBe(false);
+  });
+
+  it("greets with chips that open their items, and a triage phrase that opens Overdue", () => {
+    const late = item("Call the bank", "2026-11-10");
+    const bins = item("Bins", "2026-11-14");
+    vi.mocked(setOverdueCollapsedAction).mockReturnValue(new Promise(() => {}));
+    renderAgenda([late, bins], [home], true, {}, {
+      text: `Good afternoon. Since Friday you've finished {{item:gone}}. {{item:${late.id}}} is still waiting. No rush — want to {{action:triage|give it a new day}}?`,
+      titles: { gone: "Renew passport", [late.id]: "Call the bank" },
+    });
+    const greeting = screen.getByText(/^Good afternoon/);
+    expect(greeting.textContent).toBe(
+      "Good afternoon. Since Friday you've finished Renew passport. Call the bank is still waiting. No rush — want to give it a new day?",
+    );
+    // An item the page hasn't loaded is named, but isn't a button.
+    expect(within(greeting).queryByRole("button", { name: "Renew passport" })).toBeNull();
+
+    fireEvent.click(within(greeting).getByRole("button", { name: "give it a new day" }));
+    expect(vi.mocked(setOverdueCollapsedAction)).toHaveBeenLastCalledWith(false);
+    expect(screen.getByRole("button", { name: /^Overdue/ }).getAttribute("aria-expanded")).toBe("true");
+
+    fireEvent.click(within(greeting).getByRole("button", { name: "Call the bank" }));
+    expect(within(screen.getByRole("dialog")).getByText(`P1-${late.number}`)).toBeTruthy();
+  });
+
+  it("counts the greeting read when the viewer leaves it, not at a glance", () => {
+    const greeting = { text: "Good morning.", titles: {} };
+    vi.mocked(setAgendaReadAction).mockClear();
+    renderAgenda([], [home], false, {}, greeting);
+    cleanup();
+    expect(vi.mocked(setAgendaReadAction)).not.toHaveBeenCalled();
+
+    renderAgenda([], [home], false, {}, greeting);
+    vi.setSystemTime(Date.now() + 5000);
+    cleanup();
+    expect(vi.mocked(setAgendaReadAction)).toHaveBeenCalledTimes(1);
+    vi.setSystemTime(new Date(2026, 10, 14, 12));
+  });
+
+  it("stamps a read when the tab is hidden, but keeps showing the greeting it opened with", () => {
+    vi.mocked(setAgendaReadAction).mockClear();
+    const props = (text: string) => (
+      <AgendaView
+        projects={[home]}
+        itemsByProject={{}}
+        assigneesByProject={{}}
+        prLinksByItem={{}}
+        viewerId="me"
+        overdueCollapsed={false}
+        greeting={{ text, titles: {} }}
+        filters={NO_FILTERS}
+      />
+    );
+    const { rerender } = render(props("Good morning. Since Friday you've finished four."));
+    vi.setSystemTime(Date.now() + 5000);
+    Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+    Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+    expect(vi.mocked(setAgendaReadAction)).toHaveBeenCalledTimes(1);
+    // The board reloads with a greeting written after the stamp.
+    rerender(props("Good morning."));
+    expect(screen.getByText(/^Good morning/).textContent).toBe(
+      "Good morning. Since Friday you've finished four.",
+    );
+    vi.setSystemTime(new Date(2026, 10, 14, 12));
   });
 
   it("says when there's nothing to do, and when the filters hide everything", () => {

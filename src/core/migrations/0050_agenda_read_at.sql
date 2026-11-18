@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `agenda_read_at` integer;

@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AgendaBrief, BriefItem } from "./agendaBrief";
-import { templateGreeting } from "./agendaGreeting";
+import { greetingFor, templateGreeting } from "./agendaGreeting";
+import { addItem, completeItem } from "./items";
+import { createProject } from "./projects";
+import { createTestDb, createTestUser } from "./test-helpers";
+import { setAgendaReadAt } from "./users";
 
 const it_ = (id: string, more: Partial<BriefItem> = {}): BriefItem => ({
   id,
@@ -137,6 +141,38 @@ describe("templateGreeting", () => {
           }
         }
       }
+    }
+  });
+});
+
+describe("greetingFor", () => {
+  it("greets by first name, looks back to the saved read, and titles the items it names", () => {
+    // 9am on Wednesday 18 November 2026, UTC.
+    const now = Date.UTC(2026, 10, 18, 9);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(now - 86_400_000);
+    try {
+      const { db } = createTestDb();
+      const fred = createTestUser(db, { name: "Fred Rivett" });
+      const home = createProject(db, fred, { name: "Home" }, "web");
+      const done = addItem(db, fred, { projectId: home.id, title: "Renew passport" }, "web");
+      completeItem(db, fred, done.id, "web");
+      addItem(db, fred, { projectId: home.id, title: "Sort the loft" }, "web");
+      vi.setSystemTime(now);
+
+      // No read yet: nothing to look back on.
+      expect(greetingFor(db, fred, "UTC", now).text).not.toContain("finished");
+
+      setAgendaReadAt(db, fred, now - 2 * 86_400_000);
+      const g = greetingFor(db, fred, "UTC", now);
+      expect(g.text.startsWith(`Good morning, Fred. Since Monday you've finished {{item:${done.id}}}.`)).toBe(true);
+      // Every item it names, and only those: the new one is nudged too.
+      expect(g.text).toBe(
+        `Good morning, Fred. Since Monday you've finished {{item:${done.id}}}. Nothing due today. {{item:${Object.keys(g.titles).find((id) => id !== done.id)}}} might be worth a look, if you feel like picking something up.`,
+      );
+      expect(Object.values(g.titles).sort()).toEqual(["Renew passport", "Sort the loft"]);
+    } finally {
+      vi.useRealTimers();
     }
   });
 });

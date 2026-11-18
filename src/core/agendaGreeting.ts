@@ -7,8 +7,48 @@
 // as a chip that opens it: `{{item:<id>}}`. An action reads
 // `{{action:<name>|<words>}}`, the words being what the reader taps.
 
-import type { AgendaBrief, BriefItem } from "./agendaBrief";
 import { addDays } from "../lib/time";
+import { type AgendaBrief, type BriefItem, buildAgendaBrief } from "./agendaBrief";
+import type { Db } from "./db";
+import { getAgendaReadAt, getProfile } from "./users";
+
+/** A greeting to show: its text with tokens, and each named item's title. */
+export interface Greeting {
+  text: string;
+  /** By item id, for items the page may not have loaded. */
+  titles: Record<string, string>;
+}
+
+/**
+ * The viewer's greeting at `now` in `timeZone`, looking back to their last
+ * read. From the templates for now; Jev and the writer come later.
+ */
+export function greetingFor(
+  db: Db,
+  viewerId: string,
+  timeZone: string,
+  now = Date.now(),
+): Greeting {
+  const brief = buildAgendaBrief(db, viewerId, {
+    now,
+    timeZone,
+    since: getAgendaReadAt(db, viewerId),
+  });
+  const name = getProfile(db, viewerId)?.name;
+  const text = templateGreeting(brief, name?.trim().split(/\s+/)[0] || null);
+  const titles: Record<string, string> = {};
+  for (const i of [
+    ...brief.lookBack.finished,
+    ...brief.lookBack.slipped,
+    ...brief.dueToday,
+    ...brief.overdue,
+    ...brief.undated,
+    ...brief.stale,
+  ]) {
+    if (text.includes(`{{item:${i.id}}}`)) titles[i.id] = i.title;
+  }
+  return { text, titles };
+}
 
 /** What an action token does when tapped. */
 export type GreetingAction = "triage";
@@ -84,6 +124,12 @@ export function templateGreeting(brief: AgendaBrief, name: string | null): strin
 
   // Evening winds down: today's left, or nothing, and no looking ahead.
   if (brief.partOfDay === "evening") {
+    if (brief.dueToday.length === 0) {
+      return `${hello} ${pick(brief, "evening-quiet", [
+        "A quiet day. Enjoy the evening.",
+        "Nothing was due today. Enjoy the evening.",
+      ])}`;
+    }
     if (open.length === 0) {
       return `${hello} ${pick(brief, "evening-clear", [
         "That's everything for today. Enjoy the evening.",

@@ -5,6 +5,7 @@
 // later) only ever states what's here.
 
 import { and, eq, gte, inArray, isNull, max, or } from "drizzle-orm";
+import { formatItemRef } from "../lib/itemRef";
 import { nestItems } from "../lib/itemTree";
 import { addDays, agendaSection, dayOf, weekSpan } from "../lib/time";
 import { hasProjectAccess } from "./access";
@@ -170,7 +171,7 @@ export function buildAgendaBrief(
     const list = lists.get(i.projectId);
     return {
       id: i.id,
-      ref: `${list?.prefix ?? ""}-${i.number}`,
+      ref: formatItemRef(list?.prefix ?? "", i.number),
       title: i.title,
       list: list?.name ?? "",
       parent: parentOf(i)?.title ?? null,

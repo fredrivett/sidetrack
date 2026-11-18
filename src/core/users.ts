@@ -43,6 +43,27 @@ export function setOverdueCollapsed(db: Db, userId: string, collapsed: boolean):
   announceChange({ actor: userId, projectId: null });
 }
 
+/** When the user last left the Agenda having seen its greeting, or null. */
+export function getAgendaReadAt(db: Db, userId: string): number | null {
+  return (
+    db
+      .select({ agendaReadAt: users.agendaReadAt })
+      .from(users)
+      .where(eq(users.id, userId))
+      .get()?.agendaReadAt ?? null
+  );
+}
+
+/**
+ * Record that the user has read the Agenda's greeting at `at`, so the next
+ * one looks back from here. Not audited and not announced: it's what this
+ * person has seen, and other tabs keep the greeting they're showing.
+ */
+export function setAgendaReadAt(db: Db, userId: string, at: number): void {
+  // audit-exempt: read state, seen by nobody else.
+  db.update(users).set({ agendaReadAt: at }).where(eq(users.id, userId)).run();
+}
+
 /** The display fields for the user's own avatar and name, or null if unknown. */
 export function getProfile(db: Db, userId: string) {
   return (
