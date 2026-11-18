@@ -169,6 +169,8 @@ export function ProjectColumn({
               </div>
             )}
           </div>
+          {/* 32px between its centre and the ⋯'s, as between the Space
+              tray's + and ⋯, so in a tray's last list they line up. */}
           {parents.length > 0 && (
             <button
               type="button"
@@ -179,7 +181,7 @@ export function ProjectColumn({
                 // it comes back to the list.
                 setCollapsed(parents, !allCollapsed)
               }
-              className="-mr-1.5 flex h-8 items-center rounded px-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              className="flex h-8 items-center rounded px-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
             >
               {allCollapsed ? (
                 <ChevronsUpDown className="size-4" />
