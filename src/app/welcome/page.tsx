@@ -150,10 +150,18 @@ export default async function Welcome() {
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Link
               href={cta.href}
-              className={cn(buttonVariants({ size: "lg" }), "h-10 px-4 text-[0.95rem]")}
+              // The arrow's glyph sits inset in its box, so a smaller right
+              // padding than the left still looks even.
+              className={cn(
+                buttonVariants({ size: "lg" }),
+                "h-10 px-4 text-[0.95rem] has-data-[icon=inline-end]:pr-3",
+              )}
             >
               {cta.label}
-              <ArrowRight data-icon="inline-end" />
+              <ArrowRight
+                data-icon="inline-end"
+                className="transition-transform duration-200 ease-out motion-safe:group-hover/button:translate-x-0.5"
+              />
             </Link>
             <a
               href={REPO}
