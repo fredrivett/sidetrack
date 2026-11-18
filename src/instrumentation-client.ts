@@ -1,5 +1,6 @@
 import posthog from "posthog-js";
 import { RELEASE } from "./lib/release";
+import { maskReplayAttributes } from "./lib/replayPrivacy";
 
 // Client-side capture: pageviews, autocapture, and unhandled errors.
 //
@@ -13,6 +14,28 @@ if (key) {
   posthog.init(key, {
     api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com",
     defaults: "2026-01-30",
+    // People's lists are private, so nothing they wrote leaves the browser.
+    // Autocapture records which element was clicked, not its text or
+    // attributes (an item row's label is its title).
+    mask_all_text: true,
+    mask_all_element_attributes: true,
+    // Replays keep the layout and every click, with all text and input
+    // values masked and images (avatars) blocked. Attributes rrweb doesn't
+    // mask are masked in before_send, which needs the events uncompressed;
+    // the request batch is still gzipped. No network bodies or headers: a
+    // Server Action's body is what the user typed.
+    session_recording: {
+      maskAllInputs: true,
+      maskTextSelector: "*",
+      blockSelector: "img",
+      compress_events: false,
+      recordHeaders: false,
+      recordBody: false,
+    },
+    before_send: (event) => {
+      if (event?.event === "$snapshot") maskReplayAttributes(event.properties.$snapshot_data);
+      return event;
+    },
   });
   // Tag every event (errors included) with the deployed commit.
   if (RELEASE) posthog.register({ release: RELEASE });

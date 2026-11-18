@@ -3,6 +3,7 @@
 import { Archive, Bell, Boxes, Check, CircleUserRound, History, KeyRound, Loader2, LogOut, Moon, Sun, SunMoon, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import posthog from "posthog-js";
 import { useTransition, type ComponentType } from "react";
 import { useCopy } from "@/components/ui/use-copy";
 import {
@@ -66,6 +67,8 @@ export function UserMenu({
   function onSignOut() {
     startTransition(async () => {
       await signOut();
+      // The next person on this device starts as someone new in PostHog.
+      posthog.reset();
       router.push("/login");
       router.refresh();
     });

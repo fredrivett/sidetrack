@@ -216,7 +216,7 @@ links go to the server log ([Password resets](#password-resets)).
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `FEEDBACK_LIST_ID` | unset | The id of one of your lists (the `p=` in its URL). Shows **Send feedback** in everyone's account menu and files each one there as an item labelled Bug, Idea or Other and Feedback, with who sent it, their page and build, and PostHog replay links when PostHog is on. Senders don't join the list or see what others sent. Unset hides the form |
+| `FEEDBACK_LIST_ID` | unset | The id of one of your lists (the `p=` in its URL). Shows a **Send feedback** button in everyone's header and files each one there as an item labelled Bug, Idea or Other and Feedback, with who sent it, their page and build, and PostHog replay links when PostHog is on. Senders don't join the list or see what others sent. Unset hides the form |
 
 ### AI suggestions
 
@@ -254,7 +254,7 @@ set, nothing is sent anywhere, including to the Sidetrack project.
 | --- | --- | --- |
 | `POSTHOG_KEY` | unset | Project key for server-side error tracking |
 | `POSTHOG_HOST` | `https://us.i.posthog.com` | Server ingestion host (`https://eu.i.posthog.com` for EU Cloud) |
-| `NEXT_PUBLIC_POSTHOG_KEY` | unset | **Build-time.** Project key for pageviews, autocapture and browser errors |
+| `NEXT_PUBLIC_POSTHOG_KEY` | unset | **Build-time.** Project key for pageviews, autocapture, browser errors and session replay (on when the PostHog project turns it on). Signed-in people are identified by user id and username. Element text and attributes, and all text, inputs and images in replays, are masked |
 | `NEXT_PUBLIC_POSTHOG_HOST` | `https://us.i.posthog.com` | **Build-time.** Browser ingestion host. The Docker build doesn't pass it through, so Docker builds use the US host |
 
 `NEXT_PUBLIC_POSTHOG_KEY` is built into the browser bundle. **Don't build it

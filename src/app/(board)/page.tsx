@@ -25,6 +25,7 @@ import { cookieLocale, dayOf, LOCALE_COOKIE, startOfDayIn, startOfWeekIn, weekSt
 import { ServerTodayProvider } from "@/components/use-day-start";
 import type { ItemPrLink } from "@/core/schema";
 import { requireUserId } from "@/auth/session";
+import { PostHogIdentify } from "@/components/PostHogIdentify";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +65,7 @@ export default async function Home({
   // list's Done), so leave older ones out. The browser trims to its own week
   // start (ProjectColumn); this cut is early enough for any timezone.
   const timeZone = getTimeZone(db, userId);
+  const viewer = getProfile(db, userId);
   const completedSince = weekStartBound(timeZone ?? undefined);
   const serverToday = timeZone ? todayIn(timeZone) : null;
   const cookieStore = await cookies();
@@ -104,7 +106,7 @@ export default async function Home({
       >
         <Kanban
           viewerId={userId}
-          viewer={getProfile(db, userId)}
+          viewer={viewer}
           timeZone={timeZone}
           overdueCollapsed={getOverdueCollapsed(db, userId)}
           // Needs the viewer's day, so waits for their browser's timezone.
@@ -147,6 +149,7 @@ export default async function Home({
           feedbackEnabled={Boolean(getEnv().FEEDBACK_LIST_ID)}
         />
         <LiveUpdates />
+        <PostHogIdentify userId={userId} username={viewer?.displayUsername ?? null} />
       </AgentSessionsProvider>
     </ServerTodayProvider>
   );
