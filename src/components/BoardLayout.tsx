@@ -54,10 +54,13 @@ export function BoardRail({
   // On phones the sides are 4vw, the gap either side of a centred column, so
   // the first and last columns centre like the rest; with p-3 they'd stop
   // short, out of line with the Space tray's header, which assumes centred.
+  // The bottom clears the home indicator in an installed iOS app; Space trays
+  // (sections) clear it inside themselves instead, so their tint runs down
+  // under it rather than stopping short above a bare band.
   return (
     <div
       ref={ref}
-      className="kanban-rail flex flex-1 snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-hidden p-3 max-sm:px-[4vw] pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+      className="kanban-rail flex flex-1 snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-hidden p-3 max-sm:px-[4vw] pb-[max(0.75rem,env(safe-area-inset-bottom))] has-[>section]:pb-3"
     >
       {children}
     </div>
