@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronsDownUp, ChevronsUpDown } from "lucide-react";
+import { ChevronsDownUp, ChevronsUpDown, Plus } from "lucide-react";
 import { useState } from "react";
 import { updateProjectAction } from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
@@ -169,8 +169,6 @@ export function ProjectColumn({
               </div>
             )}
           </div>
-          {/* 32px between its centre and the ⋯'s, as between the Space
-              tray's + and ⋯, so in a tray's last list they line up. */}
           {parents.length > 0 && (
             <button
               type="button"
@@ -190,6 +188,17 @@ export function ProjectColumn({
               )}
             </button>
           )}
+          {/* 32px between its centre and the ⋯'s, as between the Space
+              tray's + and ⋯, so in a tray's last list they line up. */}
+          <button
+            type="button"
+            aria-label={`Add item to ${project.name}`}
+            title="Add item"
+            onClick={() => onAddItem(project.id)}
+            className="flex h-8 items-center rounded px-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+          >
+            <Plus className="size-4" />
+          </button>
           <ProjectMenu
             projectId={project.id}
             prevId={prevId}

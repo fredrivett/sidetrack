@@ -6,6 +6,7 @@ import {
   CircleDashed,
   Copy,
   CornerDownRight,
+  ListPlus,
   Plus,
   X,
 } from "lucide-react";
@@ -173,10 +174,12 @@ export function NewItemDialog({
   const [subDraft, setSubDraft] = useState("");
   // Remounts the repeat picker after each add, so a Custom draft goes too.
   const [added, setAdded] = useState(0);
-  // Whether anything was added in this session: the dialog stays open after
-  // each add so you can enter a run of items, so Cancel becomes Done.
+  // Whether anything was added in this session: Add & create more keeps the dialog
+  // open so you can enter a run of items, so Cancel becomes Done.
   const [addedAny, setAddedAny] = useState(false);
   const [pending, start] = useTransition();
+  // Which button the add in flight came from, for its "Adding…".
+  const [addingAnother, setAddingAnother] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
   const subRef = useRef<HTMLInputElement>(null);
   // Each new step lands above the step input and pushes it down, out of view
@@ -300,8 +303,11 @@ export function NewItemDialog({
     setSubDraft("");
   }
 
-  function submit(e: React.FormEvent) {
-    e.preventDefault();
+  /**
+   * Adds the item, then closes the dialog, or with `another` keeps it open
+   * for the next one. Enter and ⌘Enter add and close, as the main button.
+   */
+  function add(another: boolean) {
     const t = title.trim();
     if (!t || !projectId || pending) return;
     const d = description.trim() || null;
@@ -316,6 +322,7 @@ export function NewItemDialog({
     const subs = [...subItems, subDraft.trim()].filter(Boolean);
     const startedIn = session.current;
     const prefix = projects.find((pr) => pr.id === projectId)?.refPrefix;
+    setAddingAnother(another);
     start(async () => {
       const added = await runAction(
         addItemAction({
@@ -350,6 +357,10 @@ export function NewItemDialog({
       );
       // A failed add keeps the form as it was, to try again.
       if (!added || session.current !== startedIn) return;
+      if (!another) {
+        onOpenChange(false);
+        return;
+      }
       // Stay open for the next item: clear what's per-item, keep the list
       // and labels, and put the cursor back in the title. You can type
       // the next item while this one saves (submitting waits; the button
@@ -375,7 +386,13 @@ export function NewItemDialog({
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent initialFocus={titleRef}>
-        <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            add(false);
+          }}
+          className="flex min-h-0 flex-1 flex-col"
+        >
           <div className="flex shrink-0 items-center gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
             <ResponsiveDialogTitle>New item</ResponsiveDialogTitle>
             <ResponsiveDialogDescription className="sr-only">
@@ -595,9 +612,20 @@ export function NewItemDialog({
             >
               {addedAny ? "Done" : "Cancel"}
             </Button>
+            {/* type="button", so Enter in a field presses Add item, not this. */}
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => add(true)}
+              disabled={!title.trim() || !projectId || pending}
+            >
+              <ListPlus data-icon="inline-start" />
+              {pending && addingAnother ? "Adding…" : "Add & create more"}
+            </Button>
             <Button type="submit" size="sm" disabled={!title.trim() || !projectId || pending}>
               <Plus data-icon="inline-start" />
-              {pending ? "Adding…" : "Add item"}
+              {pending && !addingAnother ? "Adding…" : "Add item"}
             </Button>
           </div>
         </form>
