@@ -65,6 +65,8 @@ export interface ServerEnv {
   SIGNUP_NOTIFY_EMAIL: string | undefined;
   // TypeSafe Jev key for AI list-icon suggestions. Unset turns them off.
   TYPESAFE_API_KEY: string | undefined;
+  // The list "Send feedback" files items in. Unset hides the form.
+  FEEDBACK_LIST_ID: string | undefined;
   // Web Push (VAPID) keys and contact, for push notifications. Unset turns
   // push off. The subject defaults to BETTER_AUTH_URL.
   VAPID: { publicKey: string; privateKey: string; subject: string } | undefined;
@@ -132,6 +134,7 @@ function schemaFor(mode: EnvMode) {
       EMAIL_FROM: optionalTrimmed,
       SIGNUP_NOTIFY_EMAIL: optionalTrimmed,
       TYPESAFE_API_KEY: optionalTrimmed,
+      FEEDBACK_LIST_ID: optionalTrimmed,
       VAPID_PUBLIC_KEY: optionalTrimmed,
       VAPID_PRIVATE_KEY: optionalTrimmed,
       VAPID_SUBJECT: optionalTrimmed,
@@ -249,6 +252,7 @@ function schemaFor(mode: EnvMode) {
       EMAIL_FROM: env.EMAIL_FROM,
       SIGNUP_NOTIFY_EMAIL: env.SIGNUP_NOTIFY_EMAIL,
       TYPESAFE_API_KEY: env.TYPESAFE_API_KEY,
+      FEEDBACK_LIST_ID: env.FEEDBACK_LIST_ID,
       VAPID:
         // superRefine checked that a key pair comes with a subject.
         env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY

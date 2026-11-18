@@ -212,6 +212,12 @@ links go to the server log ([Password resets](#password-resets)).
 | `EMAIL_FROM` | `Sidetrack <no-reply@sidetrack.local>` with SMTP | From address, such as `Sidetrack <no-reply@example.com>`. Required with Resend, where its domain must be verified. Worth setting with SMTP too, as servers may reject the default |
 | `SIGNUP_NOTIFY_EMAIL` | unset | Your address, to be emailed when someone new signs up. Needs SMTP or Resend (otherwise it's only logged). A failed send never blocks the signup |
 
+### Feedback
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `FEEDBACK_LIST_ID` | unset | The id of one of your lists (the `p=` in its URL). Shows **Send feedback** in everyone's account menu and files each one there as an item labelled Bug, Idea or Other and Feedback, with who sent it, their page and build, and PostHog replay links when PostHog is on. Senders don't join the list or see what others sent. Unset hides the form |
+
 ### AI suggestions
 
 | Variable | Default | Description |

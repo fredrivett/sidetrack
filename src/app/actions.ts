@@ -46,6 +46,8 @@ import {
   updateComment as updateCommentCore,
 } from "@/core/comments";
 import { getDb } from "@/core/db";
+import { submitFeedback as submitFeedbackCore } from "@/core/feedback";
+import type { FeedbackKind } from "@/lib/feedback";
 import {
   addItem as addItemCore,
   completeItem as completeItemCore,
@@ -493,6 +495,24 @@ export async function leaveProjectAction(projectId: string) {
   const { db } = getDb();
   removeMemberCore(db, userId, projectId, userId, SOURCE);
   refresh();
+}
+
+/** Files feedback in the deployment's feedback list; returns its ref. */
+export async function sendFeedbackAction(input: {
+  kind: FeedbackKind;
+  message: string;
+  page?: string | null;
+  release?: string | null;
+  replayUrl?: string | null;
+  personUrl?: string | null;
+}): Promise<string> {
+  const userId = await requireUserId();
+  const listId = getEnv().FEEDBACK_LIST_ID;
+  if (!listId) throw new Error("feedback isn't set up here");
+  const { db } = getDb();
+  const { ref } = submitFeedbackCore(db, userId, { ...input, listId }, SOURCE);
+  refresh();
+  return ref;
 }
 
 export async function addItemAction(input: {

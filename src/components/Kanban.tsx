@@ -25,6 +25,7 @@ import type { PendingSpaceInviteView, SpaceView } from "@/core/spaces";
 import { type ItemFilters, matchesFilters } from "@/lib/filters";
 import { isEditableTarget, matchesShortcut } from "@/lib/keyboard";
 import { LOCALE_COOKIE } from "@/lib/time";
+import { CalendarDays, CircleCheck, MessageSquarePlus, SquareKanban } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -43,6 +44,7 @@ import { NotificationsInbox } from "./NotificationsInbox";
 import { FollowsProvider } from "./follows";
 import { ShortcutsDialog } from "./ShortcutsDialog";
 import { NotificationLevelsProvider, saveLevel } from "./notification-levels";
+import { FeedbackDialog } from "./FeedbackDialog";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { ProjectColumn } from "./ProjectColumn";
 import { PullToSearch } from "./PullToSearch";
@@ -77,9 +79,9 @@ export type ProjectView = Project & {
 
 /** The header's views; the board's is the default, and has no `?view=`. */
 const BOARD_VIEWS = [
-  ["board", "Board"],
-  ["agenda", "Agenda"],
-  ["done", "Done"],
+  ["board", "Board", SquareKanban],
+  ["agenda", "Agenda", CalendarDays],
+  ["done", "Done", CircleCheck],
 ] as const;
 /** The switch's views, plus Archived, which the account menu opens. */
 export type BoardView = (typeof BOARD_VIEWS)[number][0] | "archived";
@@ -112,6 +114,7 @@ export function Kanban({
   notificationLevels,
   filters: savedFilters,
   aiEnabled,
+  feedbackEnabled = false,
 }: {
   viewerId: string;
   /** The viewer's own display fields, for the avatar on the Account button. */
@@ -157,6 +160,8 @@ export function Kanban({
   filters: ItemFilters;
   /** Whether Jev (TYPESAFE_API_KEY) is set up, for AI-only actions. */
   aiEnabled: boolean;
+  /** Whether this deployment takes feedback (FEEDBACK_LIST_ID). */
+  feedbackEnabled?: boolean;
 }) {
   const railRef = useRef<HTMLDivElement>(null);
 
@@ -433,6 +438,7 @@ export function Kanban({
   const [filterOpen, setFilterOpen] = useState(false);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   // Items opened from the palette get their own dialog here, since the item
   // may sit in a list the current view doesn't show.
   const boardItems = shown.flatMap((p) => itemsByProject[p.id] ?? []);
@@ -656,7 +662,7 @@ export function Kanban({
               // padding to make its tap target the full 36px.
               className="flex h-7 rounded-md border border-neutral-200 p-0.5 text-[13px] font-medium max-[360px]:text-xs touch:h-9 touch:text-sm touch:max-[360px]:text-xs dark:border-neutral-800"
             >
-              {BOARD_VIEWS.map(([v, label], i) => (
+              {BOARD_VIEWS.map(([v, label, Icon], i) => (
                 <Tooltip key={v}>
                   <TooltipTrigger
                     render={
@@ -665,13 +671,16 @@ export function Kanban({
                         aria-pressed={view === v}
                         aria-keyshortcuts={String(i + 1)}
                         onClick={() => switchView(v)}
-                        className={`relative whitespace-nowrap rounded px-2 transition max-[360px]:px-1.5 sm:px-2.5 touch:after:absolute touch:after:inset-x-0 touch:after:-inset-y-[3px] ${
+                        // Icon and name; just the icon on phones, where the
+                        // header is full.
+                        className={`relative flex items-center gap-1.5 whitespace-nowrap rounded px-2 transition sm:px-2.5 touch:after:absolute touch:after:inset-x-0 touch:after:-inset-y-[3px] [&_svg]:size-3.5 touch:[&_svg]:size-4 ${
                           view === v
                             ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
                             : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
                         }`}
                       >
-                        {label}
+                        <Icon aria-hidden />
+                        <span className="max-sm:sr-only">{label}</span>
                       </button>
                     }
                   />
@@ -692,6 +701,23 @@ export function Kanban({
             labels={labelChoices}
             viewerId={viewerId}
           />
+          {feedbackEnabled && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label="Send feedback"
+                    onClick={() => setFeedbackOpen(true)}
+                  >
+                    <MessageSquarePlus />
+                  </Button>
+                }
+              />
+              <TooltipContent side="bottom">Send feedback</TooltipContent>
+            </Tooltip>
+          )}
           <NotificationsInbox
             open={inboxOpen}
             onOpenChange={setInboxOpen}
@@ -885,6 +911,7 @@ export function Kanban({
         <PullToSearch onOpen={() => setPaletteOpen(true)} />
 
         <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+        {feedbackEnabled && <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />}
         <CommandPalette
           open={paletteOpen}
           onOpenChange={setPaletteOpen}
