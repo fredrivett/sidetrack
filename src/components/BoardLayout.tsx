@@ -26,12 +26,7 @@ export function BoardHeader({
     // 320px; px-3 lines the logo up with the views below.
     <div className="flex items-center justify-between gap-2 max-[360px]:gap-1.5 border-b border-neutral-200 px-3 py-2 sm:gap-3 sm:px-4 dark:border-neutral-800">
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-        {/* Below 375px the logo gives way to the view switch too. */}
-        <h1
-          className={`flex items-center gap-2 text-sm font-semibold tracking-tight ${
-            nav ? "max-[375px]:sr-only" : ""
-          }`}
-        >
+        <h1 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
           <LogoMark />
           {/* The name gives way to the view switch on phones. */}
           <span className={nav ? "sr-only sm:not-sr-only" : undefined}>Sidetrack</span>
