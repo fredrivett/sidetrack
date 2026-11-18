@@ -237,6 +237,23 @@ describe("deliverSignupNotificationEmail", () => {
     expect(smtp.calls[0].message.text).toContain("ada@example.com");
     expect(smtp.calls[0].message.text).toContain("@ada");
     expect(smtp.calls[0].message.text).toContain("User #42");
+    expect(smtp.calls[0].message.replyTo).toBe("ada@example.com");
+  });
+
+  it("sets the new user as reply-to over Resend too", async () => {
+    const { fn, calls } = fetchStub({});
+    await deliverSignupNotificationEmail(
+      { to: "fred@example.com", name: "Ada", email: "ada@example.com", username: null, userNumber: 2 },
+      {
+        env: { ...noEnv, RESEND_API_KEY: "re_test", EMAIL_FROM: "Sidetrack <hi@example.com>" },
+        fetchFn: fn,
+        log: () => {},
+        sendSmtp: smtpStub().fn,
+      },
+    );
+    const body = JSON.parse(String(calls[0].init.body));
+    expect(body.to).toEqual(["fred@example.com"]);
+    expect(body.reply_to).toBe("ada@example.com");
   });
 });
 
