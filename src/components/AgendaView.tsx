@@ -3,11 +3,13 @@
 import { ChevronDown } from "lucide-react";
 import { useId, useOptimistic, useTransition } from "react";
 import { setOverdueCollapsedAction } from "@/app/actions";
+import type { Greeting } from "@/core/agendaGreeting";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { nestItems } from "@/lib/itemTree";
 import { AGENDA_SECTIONS, agendaSection, type AgendaSection } from "@/lib/time";
 import { type ItemFilters, matchesFilters } from "@/lib/filters";
+import { AgendaGreeting } from "./AgendaGreeting";
 import { ItemDetailDialog } from "./ItemDetailDialog";
 import { ItemGroupView } from "./ItemList";
 import { ItemRow } from "./ItemRow";
@@ -27,7 +29,8 @@ const openCount = (rows: Item[]) => rows.filter((i) => i.completedAt === null).l
  * list order; No date groups its items by list, an undated parent with its
  * undated sub-items under it. Overdue sits in a faint red card the viewer can
  * fold away, which stays folded on every device until they open it again.
- * The header's filters narrow it.
+ * The header's filters narrow it. A greeting above it all reads the board
+ * for the viewer (AgendaGreeting).
  */
 export function AgendaView({
   projects,
@@ -36,6 +39,7 @@ export function AgendaView({
   prLinksByItem,
   viewerId,
   overdueCollapsed: savedCollapsed,
+  greeting,
   filters,
 }: {
   /** Active lists in board order; archived lists stay out. */
@@ -46,6 +50,8 @@ export function AgendaView({
   viewerId: string;
   /** Whether the viewer keeps Overdue folded away, as saved on their account. */
   overdueCollapsed: boolean;
+  /** Null before the viewer's timezone is known. */
+  greeting: Greeting | null;
   filters: ItemFilters;
 }) {
   const today = useToday();
@@ -159,6 +165,23 @@ export function AgendaView({
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-xl space-y-4 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        {greeting && (
+          <AgendaGreeting
+            greeting={greeting}
+            itemsById={byId}
+            onOpenItem={detail.openDetail}
+            onAction={(action) => {
+              // Until there's a triage of its own: open Overdue and go to it.
+              if (action !== "triage") return;
+              if (overdueCollapsed) toggleOverdue();
+              document
+                .getElementById(overdueId)
+                ?.closest("section")
+                ?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+          />
+        )}
+
         {today && shown.length === 0 && (
           <p className="py-8 text-center text-sm text-neutral-400">
             {onAgenda.length === 0 ? "Nothing to do." : "Nothing here for your filters."}

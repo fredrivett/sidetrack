@@ -351,6 +351,13 @@
       "when": 1794943571047,
       "tag": "0049_due_reminders",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "6",
+      "when": 1794962309964,
+      "tag": "0050_agenda_read_at",
+      "breakpoints": true
     }
   ]
 }

@@ -37,6 +37,9 @@ export const users = sqliteTable("users", {
   overdueCollapsed: integer("overdue_collapsed", { mode: "boolean" })
     .notNull()
     .default(false),
+  // When the viewer last left the Agenda having seen its greeting (ms): the
+  // greeting looks back to here. null until the first time.
+  agendaReadAt: integer("agenda_read_at"),
   // Where the Personal tray (their lists in no Space) sits among their Spaces
   // on the board, as a fractional index beside space_members.position. null,
   // showing it first, until their trays are placed (see placeTrays in

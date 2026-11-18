@@ -117,6 +117,7 @@ import {
 import {
   AVATAR_MAX_BYTES,
   setOverdueCollapsed as setOverdueCollapsedCore,
+  setAgendaReadAt as setAgendaReadAtCore,
   setBoardFilters as setBoardFiltersCore,
   setTimeZone as setTimeZoneCore,
   setAvatarUrl as setAvatarUrlCore,
@@ -724,6 +725,16 @@ export async function setOverdueCollapsedAction(collapsed: boolean) {
   const { db } = getDb();
   setOverdueCollapsedCore(db, userId, collapsed);
   refresh();
+}
+
+/**
+ * The signed-in user has read the Agenda's greeting, so the next looks back
+ * from now. No refresh: the greeting they're looking at stays as it is.
+ */
+export async function setAgendaReadAction() {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  setAgendaReadAtCore(db, userId, Date.now());
 }
 
 /** Save the browser's timezone for agents' "today". No refresh: nothing shown changes. */
