@@ -3,10 +3,17 @@ import Link from "next/link";
 import { LogoMark } from "@/components/LogoMark";
 
 // The frame of the signed-out account pages (sign in, sign up, forgot and
-// reset password): the logo, linking home, above one card. No hooks, so
-// server pages and client forms can both use it.
+// reset password): the logo, linking home, above one card, with `above`
+// (the founding ticket at signup) between them. No hooks, so server pages
+// and client forms can both use it.
 
-export function AuthShell({ children }: { children: ReactNode }) {
+export function AuthShell({
+  above,
+  children,
+}: {
+  above?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <main className="relative isolate flex min-h-dvh flex-col items-center justify-center px-4 py-10 sm:px-6">
       <DotGrid />
@@ -17,6 +24,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
         <LogoMark className="h-[28.5px] w-[27px]" />
         Sidetrack
       </Link>
+      {above && <div className="mb-3 flex w-full justify-center">{above}</div>}
       <div className="w-full max-w-sm space-y-5 rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm sm:p-7 dark:border-neutral-800 dark:bg-neutral-900">
         {children}
       </div>

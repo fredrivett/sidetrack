@@ -53,6 +53,9 @@ export interface ServerEnv {
   BETTER_AUTH_SECRET: string | undefined;
   BETTER_AUTH_URL: string | undefined;
   ALLOW_SIGNUP: boolean;
+  // Offer the founding batches at signup (src/lib/founding.ts). sidetrack.it
+  // only: off, as on every self-hosted instance, signup looks as it always has.
+  FOUNDING_SEATS: boolean;
   DB_PATH: string;
   BACKUP_DIR: string;
   // Email delivery (password resets). With none set, links are logged to the
@@ -127,6 +130,7 @@ function schemaFor(mode: EnvMode) {
       BETTER_AUTH_SECRET: z.string().optional(),
       BETTER_AUTH_URL: z.string().optional(),
       ALLOW_SIGNUP: z.string().optional(),
+      FOUNDING_SEATS: z.string().optional(),
       DB_PATH: z.string().optional(),
       BACKUP_DIR: z.string().optional(),
       SMTP_URL: optionalTrimmed,
@@ -239,6 +243,7 @@ function schemaFor(mode: EnvMode) {
       BETTER_AUTH_SECRET: env.BETTER_AUTH_SECRET,
       BETTER_AUTH_URL: env.BETTER_AUTH_URL,
       ALLOW_SIGNUP: env.ALLOW_SIGNUP === "true",
+      FOUNDING_SEATS: env.FOUNDING_SEATS === "true",
       DB_PATH: env.DB_PATH ?? "./data/sidetrack.db",
       BACKUP_DIR: env.BACKUP_DIR ?? "./data/backups",
       // Development with no explicit mail config → the local Mailpit catcher.

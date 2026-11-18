@@ -4,7 +4,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2, LogIn, UserPlus } from "lucide-react";
-import { AuthTitle } from "@/components/AuthShell";
+import { AuthShell, AuthTitle } from "@/components/AuthShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LoadingEllipsis } from "@/components/ui/loading-ellipsis";
@@ -28,10 +28,13 @@ export function LoginForm({
   allowSignUp,
   initialMode,
   next,
+  signUpAbove,
 }: {
   allowSignUp: boolean;
   initialMode: Mode;
   next: string;
+  /** Shown above the card while signing up: the founding ticket. */
+  signUpAbove?: ReactNode;
 }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>(initialMode);
@@ -131,7 +134,7 @@ export function LoginForm({
   };
 
   return (
-    <>
+    <AuthShell above={mode === "sign-up" && signUpAbove}>
       <AuthTitle title={mode === "sign-up" ? "Create your account" : "Welcome back"}>
         {mode === "sign-up"
           ? "Get your side projects back on track."
@@ -269,7 +272,7 @@ export function LoginForm({
           </button>
         </p>
       )}
-    </>
+    </AuthShell>
   );
 }
 

@@ -7,6 +7,7 @@ import { username } from "better-auth/plugins";
 import { users as authUsers, verifications } from "@/core/auth-schema";
 import { getDb } from "@/core/db";
 import { auditLog, meta, projects } from "@/core/schema";
+import { getUserNumber } from "@/core/users";
 import { notifySignup, sendPasswordResetEmail } from "@/lib/email";
 import { SIGNUP_LOCK_KEY } from "./signup";
 import { getEnv } from "@/lib/env";
@@ -206,7 +207,8 @@ export const auth = betterAuth({
             name: user.name,
             email: user.email,
             username: typeof user.username === "string" ? user.username : null,
-            userNumber: userCount(),
+            // Set by the users_number trigger in the insert (migration 0051).
+            userNumber: getUserNumber(db, user.id) ?? userCount(),
           });
         },
       },

@@ -7,6 +7,8 @@ import {
   getProfile,
   getTimeZone,
   getUploadedAvatar,
+  getUserNumber,
+  nextUserNumber,
   setAvatarUrl,
   setOverdueCollapsed,
   setBoardFilters,
@@ -17,6 +19,21 @@ import {
 import { eq } from "drizzle-orm";
 import { listAudit } from "./audit";
 import { users } from "./auth-schema";
+
+describe("user numbers", () => {
+  it("number accounts in signup order and never reuse a number", () => {
+    const { db } = createTestDb();
+    expect(nextUserNumber(db)).toBe(1);
+    const first = createTestUser(db);
+    const second = createTestUser(db);
+    expect(getUserNumber(db, first)).toBe(1);
+    expect(getUserNumber(db, second)).toBe(2);
+    // A gap (a removed account) isn't filled: the next one still follows the highest.
+    db.delete(users).where(eq(users.id, first)).run();
+    expect(nextUserNumber(db)).toBe(3);
+    expect(getUserNumber(db, createTestUser(db))).toBe(3);
+  });
+});
 
 describe("user timezone", () => {
   it("is unknown until saved, then round-trips", () => {
