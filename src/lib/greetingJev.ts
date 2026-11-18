@@ -30,8 +30,8 @@ export const MOMENT_MEANING: Record<Moment, string> = {
   clear: "Today is done or empty: say so warmly and briefly.",
 };
 
-/** At most this many items are scored; more costs more and helps little. */
-export const MAX_CANDIDATES = 15;
+/** At most this many items from each moment's pool are scored or shown to Jev. */
+export const POOL_CAP = 5;
 /**
  * An optional moment needs this score to be said. Live scores bunch between
  * about 0.7 and 0.9, so this only drops the weak ones; ranking does the rest.
@@ -47,38 +47,59 @@ export const UNDATED_ITEM_THRESHOLD = 0.3;
  */
 const ALWAYS: Moment[] = ["triage", "wind-down"];
 
+const openToday = (brief: AgendaBrief) => brief.dueToday.filter((i) => i.completedAt === null);
+
+/**
+ * The day in the next week that stands out as busy: at least three open items
+ * and at least twice the median of the other days. Null when none does.
+ */
+export function heavyDay(brief: AgendaBrief): { day: string; open: number } | null {
+  const week = brief.ahead.slice(0, 7);
+  if (week.length === 0) return null;
+  const busiest = week.reduce((b, d) => (d.open > b.open ? d : b));
+  const rest = week.filter((d) => d !== busiest).map((d) => d.open).sort((a, b) => a - b);
+  const median = rest.length ? rest[Math.floor(rest.length / 2)] : 0;
+  return busiest.open >= 3 && busiest.open >= 2 * median ? busiest : null;
+}
+
 /** The moments that can apply to `brief`; the rest aren't asked about. */
 export function possibleMoments(brief: AgendaBrief): Moment[] {
-  const open = brief.dueToday.filter((i) => i.completedAt === null);
+  const open = openToday(brief);
   const evening = brief.partOfDay === "evening";
   const m: Moment[] = [];
   if (!evening && open.length > 0) m.push("plan");
   if (brief.overdue.length > 0) m.push("triage");
   if (!evening && brief.undated.length > 0) m.push("urgent");
-  if (!evening && brief.ahead.slice(0, 7).some((d) => d.open >= 3)) m.push("heavy");
+  if (!evening && heavyDay(brief)) m.push("heavy");
   if (!evening && brief.stale.length > 0 && brief.overdue.length === 0 && open.length <= 1) {
     m.push("tidy");
   }
-  if (evening) m.push("wind-down");
+  // An evening with something open winds down; one with nothing open is clear.
+  if (evening && open.length > 0) m.push("wind-down");
   if (open.length === 0) m.push("clear");
   return m;
 }
 
-/** The items worth scoring: today's, what slipped, then undated, without repeats. */
+/** Which items each moment may name, POOL_CAP at most. */
+function pool(brief: AgendaBrief, m: Moment): BriefItem[] {
+  const all =
+    m === "plan" || m === "wind-down"
+      ? openToday(brief)
+      : m === "triage"
+        ? brief.overdue
+        : m === "urgent"
+          ? brief.undated
+          : m === "tidy"
+            ? brief.stale
+            : [];
+  return all.slice(0, POOL_CAP);
+}
+
+/** The items worth scoring: those a possible moment could name. */
 export function candidates(brief: AgendaBrief): BriefItem[] {
-  const seen = new Set<string>();
-  const out: BriefItem[] = [];
-  for (const i of [
-    ...brief.overdue,
-    ...brief.dueToday.filter((d) => d.completedAt === null),
-    ...brief.undated,
-    ...brief.stale,
-  ]) {
-    if (seen.has(i.id) || out.length >= MAX_CANDIDATES) continue;
-    seen.add(i.id);
-    out.push(i);
-  }
-  return out;
+  const byId = new Map<string, BriefItem>();
+  for (const m of possibleMoments(brief)) for (const i of pool(brief, m)) byId.set(i.id, i);
+  return [...byId.values()];
 }
 
 const describe = (i: BriefItem) => ({
@@ -92,6 +113,8 @@ const describe = (i: BriefItem) => ({
   ...(i.stepsLeft > 0 && { steps_left: i.stepsLeft }),
 });
 
+const STATE_CAP = 15;
+
 /** The brief as Jev reads it: facts only, item text as data. */
 export function jevState(brief: AgendaBrief) {
   return {
@@ -100,11 +123,15 @@ export function jevState(brief: AgendaBrief) {
     weekend: brief.weekend,
     part_of_day: brief.partOfDay,
     finished_since_last_visit: brief.lookBack.finishedCount,
-    due_today: brief.dueToday.map((i) => ({ ...describe(i), done: i.completedAt !== null })),
-    slipped: brief.overdue.map(describe),
+    // Capped, so a long backlog doesn't grow the request without bound.
+    due_today: brief.dueToday
+      .slice(0, STATE_CAP)
+      .map((i) => ({ ...describe(i), done: i.completedAt !== null })),
+    slipped: brief.overdue.slice(0, STATE_CAP).map(describe),
+    slipped_count: brief.overdue.length,
     open_per_day_ahead: brief.ahead.slice(0, 7),
-    undated_recent_or_deadline: brief.undated.map(describe),
-    undated_untouched_for_weeks: brief.stale.map(describe),
+    undated_recent_or_deadline: brief.undated.slice(0, STATE_CAP).map(describe),
+    undated_untouched_for_weeks: brief.stale.slice(0, STATE_CAP).map(describe),
   };
 }
 
@@ -170,23 +197,8 @@ export interface GreetingPick {
   items: Partial<Record<Moment, BriefItem[]>>;
   /** No date items the reader can open as "N others", by score, highest first. */
   others: BriefItem[];
-}
-
-/** Which items each moment may name. */
-function pool(brief: AgendaBrief, m: Moment): BriefItem[] {
-  switch (m) {
-    case "plan":
-    case "wind-down":
-      return brief.dueToday.filter((i) => i.completedAt === null);
-    case "triage":
-      return brief.overdue;
-    case "urgent":
-      return brief.undated;
-    case "tidy":
-      return brief.stale;
-    default:
-      return [];
-  }
+  /** The busy day ahead, when "heavy" is picked. */
+  heavyDay: { day: string; open: number } | null;
 }
 
 /** The moments and items to say, from Jev's scores. */
@@ -199,15 +211,19 @@ export function pickGreeting(brief: AgendaBrief, scores: GreetingScores): Greeti
     .filter(([m, p]) => !ALWAYS.includes(m) && p >= MOMENT_THRESHOLD)
     .sort((a, b) => b[1] - a[1])
     .map(([m]) => m);
-  const moments = [...always, ...optional].slice(0, 2);
+  // A moment about items needs an item worth naming, or it isn't said and
+  // the next moment takes its place.
+  const moments: Moment[] = [];
   const items: GreetingPick["items"] = {};
   const named = new Set<string>();
-  for (const m of moments) {
+  for (const m of [...always, ...optional]) {
+    if (moments.length === 2) break;
     const undated = m === "urgent" || m === "tidy";
     const picks = byScore(pool(brief, m))
-      .filter((i) => !named.has(i.id))
       .filter((i) => !undated || score(i) >= UNDATED_ITEM_THRESHOLD)
       .slice(0, 2);
+    if (picks.length === 0 && m !== "heavy" && m !== "clear") continue;
+    moments.push(m);
     picks.forEach((i) => named.add(i.id));
     if (picks.length > 0) items[m] = picks;
   }
@@ -216,5 +232,5 @@ export function pickGreeting(brief: AgendaBrief, scores: GreetingScores): Greeti
   const others = moments.some((m) => m === "urgent" || m === "tidy")
     ? byScore([...undated.values()].filter((i) => !named.has(i.id)))
     : [];
-  return { moments, items, others };
+  return { moments, items, others, heavyDay: moments.includes("heavy") ? heavyDay(brief) : null };
 }

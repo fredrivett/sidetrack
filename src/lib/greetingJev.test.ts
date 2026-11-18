@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgendaBrief, BriefItem } from "../core/agendaBrief";
-import { pickGreeting, possibleMoments, scoreGreeting } from "./greetingJev";
+import { candidates, heavyDay, pickGreeting, possibleMoments, scoreGreeting } from "./greetingJev";
 
 const item = (id: string, more: Partial<BriefItem> = {}): BriefItem => ({
   id,
@@ -15,6 +15,8 @@ const item = (id: string, more: Partial<BriefItem> = {}): BriefItem => ({
   stepsLeft: 0,
   ...more,
 });
+
+const days = (open: number[]) => open.map((n, i) => ({ day: `2026-11-${19 + i}`, open: n }));
 
 const brief = (more: Partial<AgendaBrief> = {}): AgendaBrief => ({
   today: "2026-11-18",
@@ -52,10 +54,11 @@ function fakeJev(p: (id: string) => number | undefined) {
 describe("possibleMoments", () => {
   it("asks only about moments that can apply", () => {
     expect(possibleMoments(brief({ dueToday: [item("a")] }))).toEqual(["plan"]);
-    // Evening never plans or looks ahead; it winds down.
+    // Evening never plans or looks ahead; it winds down, or is clear with nothing open.
     expect(
       possibleMoments(brief({ partOfDay: "evening", dueToday: [item("a")], undated: [item("u")] })),
     ).toEqual(["wind-down"]);
+    expect(possibleMoments(brief({ partOfDay: "evening" }))).toEqual(["clear"]);
     // Tidying waits for a light day with nothing slipped.
     expect(possibleMoments(brief({ stale: [item("s")], overdue: [item("o")] }))).toEqual([
       "triage",
@@ -65,17 +68,41 @@ describe("possibleMoments", () => {
   });
 });
 
+describe("heavyDay", () => {
+  it("finds a day well above the rest, not just a busy week", () => {
+    expect(heavyDay(brief({ ahead: days([1, 0, 5, 1, 0, 0, 1]) }))).toEqual({ day: "2026-11-21", open: 5 });
+    expect(heavyDay(brief({ ahead: days([3, 4, 3, 4, 3, 3, 3]) }))).toBeNull();
+    expect(heavyDay(brief({ ahead: days([0, 2, 0, 0, 0, 0, 0]) }))).toBeNull();
+  });
+});
+
+describe("candidates", () => {
+  it("scores a few from each moment's pool, so a long backlog can't crowd the rest out", () => {
+    const b = brief({
+      overdue: Array.from({ length: 20 }, (_, i) => item(`o${i}`)),
+      undated: [item("u")],
+      stale: [item("s")],
+    });
+    const ids = candidates(b).map((i) => i.id);
+    expect(ids).toHaveLength(6);
+    expect(ids).toContain("u");
+    // Tidying can't apply with something slipped, so its pool isn't scored.
+    expect(ids).not.toContain("s");
+  });
+});
+
 describe("scoreGreeting", () => {
   it("asks one question per possible moment and candidate, and reads back each score", async () => {
     const b = brief({ overdue: [item("late")], undated: [item("renew")] });
-    const { asked, impl } = fakeJev((id) => (id === "moment:triage" ? 0.9 : 0.2));
+    const p: Record<string, number> = { "moment:triage": 0.9, "item:late": 0.7, "item:renew": 0.35 };
+    const { asked, impl } = fakeJev((id) => p[id] ?? 0.2);
     const scores = await scoreGreeting(b, "key", impl);
     expect(asked.sort()).toEqual(
       ["moment:triage", "moment:urgent", "moment:clear", "item:late", "item:renew"].sort(),
     );
     expect(scores).toEqual({
       moments: { triage: 0.9, urgent: 0.2, clear: 0.2 },
-      items: { late: 0.2, renew: 0.2 },
+      items: { late: 0.7, renew: 0.35 },
     });
   });
 
@@ -95,7 +122,7 @@ describe("pickGreeting", () => {
     });
     const pick = pickGreeting(b, {
       // As measured live: triage scored below planning.
-      moments: { plan: 0.87, triage: 0.4, urgent: 0.55, clear: 0.65 },
+      moments: { plan: 0.87, triage: 0.4, urgent: 0.55 },
       items: { a: 0.1, b: 0.8, c: 0.5, u1: 0.3, u2: 0.9, u3: 0.6, late: 0.99 },
     });
     expect(pick.moments).toEqual(["triage", "plan"]);
@@ -125,11 +152,22 @@ describe("pickGreeting", () => {
     expect(pick.items["wind-down"]?.map((i) => i.id)).toEqual(["a"]);
   });
 
+  it("skips a moment with nothing worth naming, letting the next one speak", () => {
+    const b = brief({ undated: [item("plants")], ahead: days([0, 0, 6, 0, 1, 0, 0]) });
+    const pick = pickGreeting(b, {
+      moments: { urgent: 0.85, heavy: 0.7, clear: 0.65 },
+      items: { plants: 0.25 },
+    });
+    expect(pick.moments).toEqual(["heavy", "clear"]);
+    expect(pick.heavyDay).toEqual({ day: "2026-11-21", open: 6 });
+    expect(pick.others).toEqual([]);
+  });
+
   it("is quiet when no moment is confident", () => {
     const pick = pickGreeting(brief({ dueToday: [item("a")] }), {
       moments: { plan: 0.55 },
       items: { a: 0.9 },
     });
-    expect(pick).toEqual({ moments: [], items: {}, others: [] });
+    expect(pick).toEqual({ moments: [], items: {}, others: [], heavyDay: null });
   });
 });
