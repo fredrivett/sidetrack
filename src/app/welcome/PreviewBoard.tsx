@@ -346,8 +346,9 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
                 // The board's view switch (Kanban), showing the Board; the
                 // preview has no Brief or Done to switch to, so its underline
                 // stays put: on the header's bottom border, 8px of padding
-                // and the 1px border below the 28px (36px on touch) tabs.
-                <div className="flex h-7 items-stretch text-[13px] font-medium max-[360px]:text-xs touch:h-9 touch:text-sm touch:max-[360px]:text-xs">
+                // and the 1px border below the tabs, which stretch to the
+                // header's height when its right side wraps to two rows.
+                <div className="flex min-h-7 items-stretch self-stretch text-[13px] font-medium max-[360px]:text-xs touch:min-h-9 touch:text-sm touch:max-[360px]:text-xs">
                   {(
                     [
                       ["Brief", Sunrise],
