@@ -40,6 +40,7 @@ const pick: GreetingPick = {
   items: { triage: [bank], plan: [sam] },
   others: [item("o1", "Sort the loft")],
   heavyDay: null,
+  considered: [],
 };
 const input = writerInput(brief, pick);
 
@@ -148,6 +149,7 @@ describe("checkWriterOutput", () => {
       items: {},
       others: [],
       heavyDay: null,
+      considered: [],
     });
     expect(checkWriterOutput("Nothing pressing today. Enjoy it.", quiet)).toBe(
       "Nothing pressing today. Enjoy it.",
@@ -167,23 +169,38 @@ describe("writeGreeting", () => {
         JSON.stringify({ stop_reason: "end_turn", content: [{ type: "text", text: "Just {{item:2}} today." }] }),
       );
     }) as unknown as typeof fetch;
-    expect(await writeGreeting(brief, pick, "sk-test", impl)).toBe("Just {{item:s1}} today.");
+    expect(await writeGreeting(brief, pick, "sk-test", impl)).toEqual({ text: "Just {{item:s1}} today." });
     expect((sent?.headers as Record<string, string>)["x-api-key"]).toBe("sk-test");
     expect(String(sent?.body)).not.toContain("sk-test");
   });
 
   it("gives up on an error, a rejected or cut-off reply, or a network failure", async () => {
-    expect(await writeGreeting(brief, pick, "k", reply({ error: {} }, 429))).toBeNull();
-    expect(
-      await writeGreeting(brief, pick, "k", reply({ stop_reason: "end_turn", content: [{ type: "text", text: "Visit https://x.y now." }] })),
-    ).toBeNull();
+    expect(await writeGreeting(brief, pick, "k", reply({ error: {} }, 429))).toEqual({
+      failed: "Claude didn't answer (HTTP 429)",
+    });
+    // Why it was turned down, never what it said: that may be a title's words.
+    const rejected = await writeGreeting(
+      brief,
+      pick,
+      "k",
+      reply({ stop_reason: "end_turn", content: [{ type: "text", text: "Visit https://x.y now." }] }),
+    );
+    expect(rejected).toEqual({
+      failed: "Claude's reply was turned down: it had a link, address, number, markup or an exclamation mark",
+    });
+    expect(JSON.stringify(rejected)).not.toContain("x.y");
     // Cut off at max_tokens, however tidy what came back.
     expect(
-      await writeGreeting(brief, pick, "k", reply({ stop_reason: "max_tokens", content: [{ type: "text", text: "Just {{item:2}} today." }] })),
-    ).toBeNull();
+      await writeGreeting(
+        brief,
+        pick,
+        "k",
+        reply({ stop_reason: "max_tokens", content: [{ type: "text", text: "Just {{item:2}} today." }] }),
+      ),
+    ).toEqual({ failed: "Claude's reply was cut short" });
     const boom = (async () => {
       throw new Error("offline");
     }) as unknown as typeof fetch;
-    expect(await writeGreeting(brief, pick, "k", boom)).toBeNull();
+    expect(await writeGreeting(brief, pick, "k", boom)).toEqual({ failed: "Claude didn't answer in time" });
   });
 });

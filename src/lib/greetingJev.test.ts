@@ -168,6 +168,12 @@ describe("pickGreeting", () => {
       moments: { plan: 0.55 },
       items: { a: 0.9 },
     });
-    expect(pick).toEqual({ moments: [], items: {}, others: [], heavyDay: null });
+    expect(pick).toEqual({
+      moments: [],
+      items: {},
+      others: [],
+      heavyDay: null,
+      considered: [{ moment: "plan", score: 0.55, said: false, why: "Scored under 0.6" }],
+    });
   });
 });

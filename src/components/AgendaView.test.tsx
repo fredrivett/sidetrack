@@ -310,6 +310,45 @@ describe("AgendaView", () => {
     expect(within(screen.getByRole("dialog")).getByText(`P1-${loft.number}`)).toBeTruthy();
   });
 
+  it("explains how the greeting was worked out", async () => {
+    const late = item("Call the bank", "2026-11-10");
+    vi.mocked(agendaGreetingAction).mockResolvedValueOnce({
+      hello: "Good morning, Fred.",
+      text: `{{item:${late.id}}} slipped.`,
+      titles: { [late.id]: "Call the bank" },
+      others: [],
+      written: false,
+      trace: {
+        day: "2026-11-14",
+        partOfDay: "morning",
+        at: Date.UTC(2026, 10, 14, 9),
+        why: "Claude's reply was turned down: it called something overdue or late",
+        looked: { dueToday: 0, doneToday: 0, slipped: 1, undated: 2, stale: 0, finishedSince: 0, sinceDay: null },
+        moments: [
+          { moment: "triage", meaning: "", score: 0.42, said: true, why: "Always said when it applies" },
+          { moment: "urgent", meaning: "", score: 0.55, said: false, why: "Scored under 0.6" },
+        ],
+        items: [{ id: late.id, title: "Call the bank", list: "Home", score: 0.8, named: true, other: false }],
+        model: null,
+      },
+    });
+    renderAgenda([late], [home], false, {}, true, vi.fn());
+    await screen.findByText(/slipped\./);
+    // The built-in greeting has no thumbs, but still explains itself.
+    expect(screen.queryByRole("button", { name: "Good greeting" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "What is this?" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText(/turned down: it called something overdue or late/)).toBeTruthy();
+    expect(within(dialog).getByText("1 slipped")).toBeTruthy();
+    const said = within(dialog).getByText("What slipped").closest("li");
+    expect(said?.hasAttribute("data-said")).toBe(true);
+    expect(said?.textContent).toContain("42%");
+    const left = within(dialog).getByText("Something time-sensitive").closest("li");
+    expect(left?.hasAttribute("data-said")).toBe(false);
+    expect(left?.textContent).toContain("left out: Scored under 0.6");
+    expect(within(dialog).getByText("Call the bank").closest("li")?.textContent).toContain("80%");
+  });
+
   it("keeps the opening line and drops the placeholder if the greeting can't load", async () => {
     vi.mocked(agendaGreetingAction).mockRejectedValueOnce(new Error("offline"));
     const { container } = renderAgenda([], [home], false, {}, true);

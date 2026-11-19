@@ -9,6 +9,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 import type { RepeatUnit } from "../lib/repeat";
+import type { StoredGreeting } from "./agendaGreeting";
 import { apiKeys, users } from "./auth-schema";
 import type { ChangeEvent } from "./events";
 
@@ -624,11 +625,8 @@ export const agendaGreetings = sqliteTable("agenda_greetings", {
   // The viewer's day and part of it ("2026-11-19:morning") it was written for.
   key: text("key").notNull(),
   // Null until a write succeeds for `key`.
-  greeting: text("greeting", { mode: "json" }).$type<{
-    text: string;
-    titles: Record<string, string>;
-    others: Array<{ id: string; title: string }>;
-  }>(),
+  // Claude's greeting, or a failed ask's trace with no text; null while asking.
+  greeting: text("greeting", { mode: "json" }).$type<StoredGreeting>(),
   askedAt: integer("asked_at").notNull(),
   // The UTC day the asks were counted on, and how many.
   askedDay: text("asked_day").notNull(),

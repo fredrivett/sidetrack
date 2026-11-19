@@ -199,6 +199,8 @@ export interface GreetingPick {
   others: BriefItem[];
   /** The busy day ahead, when "heavy" is picked. */
   heavyDay: { day: string; open: number } | null;
+  /** Every moment Jev was asked about, and why it was or wasn't said. */
+  considered: Array<{ moment: Moment; score: number; said: boolean; why: string }>;
 }
 
 /** The moments and items to say, from Jev's scores. */
@@ -216,21 +218,43 @@ export function pickGreeting(brief: AgendaBrief, scores: GreetingScores): Greeti
   const moments: Moment[] = [];
   const items: GreetingPick["items"] = {};
   const named = new Set<string>();
+  const why = new Map<Moment, string>();
   for (const m of [...always, ...optional]) {
-    if (moments.length === 2) break;
+    if (moments.length === 2) {
+      why.set(m, "Two things were already being said");
+      continue;
+    }
     const undated = m === "urgent" || m === "tidy";
     const picks = byScore(pool(brief, m))
       .filter((i) => !undated || score(i) >= UNDATED_ITEM_THRESHOLD)
       .slice(0, 2);
-    if (picks.length === 0 && m !== "heavy" && m !== "clear") continue;
+    if (picks.length === 0 && m !== "heavy" && m !== "clear") {
+      why.set(m, `No item scored ${UNDATED_ITEM_THRESHOLD} or more to name`);
+      continue;
+    }
     moments.push(m);
+    why.set(m, ALWAYS.includes(m) ? "Always said when it applies" : `Scored ${MOMENT_THRESHOLD} or more`);
     picks.forEach((i) => named.add(i.id));
     if (picks.length > 0) items[m] = picks;
   }
+  const considered = asked
+    .map((m) => ({
+      moment: m,
+      score: scores.moments[m] ?? 0,
+      said: moments.includes(m),
+      why: why.get(m) ?? `Scored under ${MOMENT_THRESHOLD}`,
+    }))
+    .sort((a, b) => Number(b.said) - Number(a.said) || b.score - a.score);
   // The undated items not named, so the reader can open the rest.
   const undated = new Map([...brief.undated, ...brief.stale].map((i) => [i.id, i]));
   const others = moments.some((m) => m === "urgent" || m === "tidy")
     ? byScore([...undated.values()].filter((i) => !named.has(i.id)))
     : [];
-  return { moments, items, others, heavyDay: moments.includes("heavy") ? heavyDay(brief) : null };
+  return {
+    moments,
+    items,
+    others,
+    heavyDay: moments.includes("heavy") ? heavyDay(brief) : null,
+    considered,
+  };
 }

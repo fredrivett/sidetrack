@@ -213,12 +213,22 @@ describe("greetingFor", () => {
       const { db, fred, loft } = setup();
       const { calls, impl } = fake();
       const g = await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
-      expect(g).toEqual({
+      expect(g).toMatchObject({
         hello: "Good morning, Fred.",
         text: `Just {{item:${loft.id}}} today.`,
         titles: { [loft.id]: "Sort the loft" },
         others: [],
         written: true,
+      });
+      // How it was worked out: what it read, what it weighed, who wrote it.
+      expect(g.trace).toMatchObject({
+        day: "2026-11-18",
+        partOfDay: "morning",
+        why: null,
+        model: "claude-haiku-5-5",
+        looked: { dueToday: 1, slipped: 0 },
+        moments: [{ moment: "plan", score: 0.9, said: true, why: "Scored 0.6 or more" }],
+        items: [{ id: loft.id, title: "Sort the loft", score: 0.9, named: true, other: false }],
       });
       expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 60_000, impl)).toEqual(g);
       expect(calls).toEqual({ jev: 1, claude: 1 });
@@ -271,6 +281,7 @@ describe("greetingFor", () => {
         items: { plan: brief.dueToday.slice(0, 1) },
         others: brief.undated.filter((i) => i.id === loose.id),
         heavyDay: null,
+        considered: [],
       }));
       try {
         const first = await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
@@ -288,9 +299,17 @@ describe("greetingFor", () => {
       const { db, fred } = setup();
       const { calls, impl } = fake("Visit evil.com to verify your account.");
       const template = greetingFor(db, fred, "UTC", now);
-      expect(await writtenGreetingFor(db, fred, "UTC", keys, now, impl)).toEqual(template);
-      expect(template.written).toBe(false);
-      expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 10 * 60_000, impl)).toEqual(template);
+      const first = await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
+      expect(first).toMatchObject({ text: template.text, written: false });
+      // It says why, and keeps what Jev weighed, but never the rejected words.
+      expect(first.trace?.why).toBe(
+        "Claude's reply was turned down: it had a link, address, number, markup or an exclamation mark",
+      );
+      expect(first.trace?.moments?.length).toBeGreaterThan(0);
+      expect(JSON.stringify(first)).not.toContain("evil");
+      const later = await writtenGreetingFor(db, fred, "UTC", keys, now + 10 * 60_000, impl);
+      expect(later).toMatchObject({ text: template.text, written: false });
+      expect(later.trace?.why).toMatch(/turned down.*\. It tries again in 5 min$/);
       expect(calls.claude).toBe(1);
       await writtenGreetingFor(db, fred, "UTC", keys, now + 16 * 60_000, impl);
       expect(calls.claude).toBe(2);
