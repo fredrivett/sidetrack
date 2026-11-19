@@ -30,6 +30,8 @@ import {
   CommandShortcut,
   useCommandState,
 } from "@/components/ui/command";
+import { Button } from "@/components/ui/button";
+import { DialogClose } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
 import type { BoardView, ProjectView } from "./Kanban";
 import { GitHubMark } from "./GitHubMark";
@@ -122,8 +124,17 @@ export function CommandPalette({
     >
       <Command style={{ "--visible-bottom": `${visibleBottom ?? 0}px` } as CSSProperties}>
         {/* Uncontrolled: cmdk keeps the search, and it unmounts with the
-            dialog, so every way of closing (Esc, ⌘K, a pick) clears it. */}
-        <CommandInput placeholder="Search commands, lists, items…" />
+            dialog, so every way of closing (Esc, ⌘K, Cancel, a pick) clears
+            it. Phones get Cancel because their keyboard has no Esc and the
+            list fills the screen above it, leaving no backdrop to tap. */}
+        <div className="flex items-start *:data-[slot=command-input-wrapper]:flex-1">
+          <CommandInput placeholder="Search commands, lists, items…" />
+          <DialogClose
+            render={<Button variant="ghost" size="sm" className="mt-1 h-8 touch:h-8 sm:hidden" />}
+          >
+            Cancel
+          </DialogClose>
+        </div>
         <ReportSearch onSearch={onSearch} />
         {/* On phones the list runs down to the bottom of what's visible, so
             it fits above the on-screen keyboard and grows back when it
