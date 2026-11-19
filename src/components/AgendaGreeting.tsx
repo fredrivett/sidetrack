@@ -54,6 +54,9 @@ function Tap({
   );
 }
 
+/** "45s", or "4m 05s" once the back-off reaches minutes. */
+const countdown = (s: number) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`);
+
 /** "Good morning, Fred." from the browser's clock, until the server's arrives. */
 function helloNow(firstName: string | null): string {
   const hour = new Date().getHours();
@@ -317,7 +320,7 @@ export function AgendaGreeting({
                       Out of date
                       {/* Seconds left out of the announcement: it'd read every tick. */}
                       {retryAt !== null && retryAt > clock && (
-                        <span aria-hidden> · rewriting in {Math.ceil((retryAt - clock) / 1000)}s</span>
+                        <span aria-hidden> · rewriting in {countdown(Math.ceil((retryAt - clock) / 1000))}</span>
                       )}
                     </>
                   )}

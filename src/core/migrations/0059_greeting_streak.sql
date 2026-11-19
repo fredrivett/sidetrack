@@ -1,0 +1,1 @@
+ALTER TABLE `agenda_greetings` ADD `streak` integer DEFAULT 0 NOT NULL;
