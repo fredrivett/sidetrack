@@ -1069,7 +1069,8 @@ export function Kanban({
                 i.completedAt === null &&
                 i.id !== paletteDetail.item?.id,
             )}
-            onOpenItem={paletteDetail.openDetail}
+            onOpenItem={paletteDetail.goTo}
+            history={paletteDetail.history}
             prefix={paletteProject.refPrefix}
             assignees={assigneesByProject[paletteProject.id] ?? []}
             viewerId={viewerId}

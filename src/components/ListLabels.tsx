@@ -4,7 +4,6 @@ import {
   Archive,
   ArchiveRestore,
   ChevronDown,
-  ChevronLeft,
   ChevronRight,
   Trash2,
 } from "lucide-react";
@@ -16,6 +15,7 @@ import { formatItemRef } from "@/lib/itemRef";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
+  ResponsiveDialogBackButton,
   ResponsiveDialogCloseButton,
   ResponsiveDialogDescription,
   ResponsiveDialogTitle,
@@ -202,17 +202,7 @@ export function LabelView({
     >
       <div className="flex shrink-0 flex-col gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
         <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            autoFocus
-            onClick={onBack}
-            aria-label={`Back to ${listName}`}
-            className="-ml-2 min-w-0 text-neutral-500"
-          >
-            <ChevronLeft />
-            <span className="truncate">{listName}</span>
-          </Button>
+          <ResponsiveDialogBackButton label={listName} onClick={onBack} />
           <ResponsiveDialogCloseButton className="ml-auto" />
         </div>
         <ResponsiveDialogTitle className="flex items-center gap-2">

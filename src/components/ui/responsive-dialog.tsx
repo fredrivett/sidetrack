@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { Drawer as DrawerPrimitive } from "@base-ui/react/drawer"
-import { XIcon } from "lucide-react"
+import { ChevronLeftIcon, XIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -175,14 +175,23 @@ function ResponsiveDialogViews({
   const running = React.useRef<Animation[]>([])
   // A copy of the view on its way out, taken as React removes it (the ref
   // cleanup runs while it's still laid out), to slide away beside the new one.
-  const leaving = React.useRef<{ node: HTMLElement; height: number } | null>(null)
+  // A copy doesn't keep scroll positions, so they're noted to put back.
+  const leaving = React.useRef<{
+    node: HTMLElement
+    height: number
+    scrolled: [number, number][]
+  } | null>(null)
   const viewRef = React.useCallback((el: HTMLDivElement | null) => {
     current.current = el
     if (!el) return
     return () => {
       const node = el.cloneNode(true) as HTMLElement
       node.querySelectorAll("[id]").forEach((n) => n.removeAttribute("id"))
-      leaving.current = { node, height: el.getBoundingClientRect().height }
+      const scrolled: [number, number][] = []
+      el.querySelectorAll("*").forEach((n, i) => {
+        if (n.scrollTop) scrolled.push([i, n.scrollTop])
+      })
+      leaving.current = { node, height: el.getBoundingClientRect().height, scrolled }
     }
   }, [])
 
@@ -212,10 +221,11 @@ function ResponsiveDialogViews({
     running.current = []
     if (matchMedia("(prefers-reduced-motion: reduce)").matches) return
 
-    // The new view keeps its own height while the dialog's edge eases to
-    // it, rather than being squeezed (and its body scrolling) on the way.
-    next.style.flex = "none"
+    // The new view keeps the height it settles at while the dialog's edge
+    // eases to it, rather than being squeezed (and its body scrolling) on
+    // the way, so a body it scrolled to where it was stays there.
     const to = el.offsetHeight
+    Object.assign(next.style, { flex: "none", height: `${to}px` })
     // A whole page width, so the two views stay edge to edge.
     const dx = direction === "forward" ? "100%" : "-100%"
     const animations = [
@@ -223,7 +233,7 @@ function ResponsiveDialogViews({
       next.animate([{ transform: `translateX(${dx})` }, { transform: "none" }], SWAP),
     ]
     if (out) {
-      const { node, height } = out
+      const { node, height, scrolled } = out
       node.dataset.leaving = ""
       node.inert = true
       node.setAttribute("aria-hidden", "true")
@@ -234,6 +244,8 @@ function ResponsiveDialogViews({
         pointerEvents: "none",
       })
       el.append(node)
+      const all = node.querySelectorAll("*")
+      for (const [i, top] of scrolled) all[i].scrollTop = top
       const away = direction === "forward" ? "-100%" : "100%"
       animations.push(
         node.animate([{ transform: "none" }, { transform: `translateX(${away})` }], {
@@ -247,13 +259,13 @@ function ResponsiveDialogViews({
       () => {
         if (running.current !== animations) return
         running.current = []
-        next.style.flex = ""
+        Object.assign(next.style, { flex: "", height: "" })
         out?.node.remove()
         settled.current = el.offsetHeight
       },
       // Cancelled by the next swap, which tidies up.
       () => {
-        next.style.flex = ""
+        Object.assign(next.style, { flex: "", height: "" })
       }
     )
   }, [view, direction])
@@ -282,11 +294,39 @@ function ResponsiveDialogCloseButton({ className }: { className?: string }) {
   )
 }
 
+/** "‹ Where it goes", first in a view's header row: back to the view this
+ * one was opened from (ResponsiveDialogViews). Focused as the view comes in,
+ * so the keyboard goes back as easily as it came. */
+function ResponsiveDialogBackButton({
+  label,
+  onClick,
+  className,
+}: {
+  label: string
+  onClick: () => void
+  className?: string
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      autoFocus
+      onClick={onClick}
+      aria-label={`Back to ${label}`}
+      className={cn("-ml-2 min-w-0 shrink text-neutral-500", className)}
+    >
+      <ChevronLeftIcon />
+      <span className="truncate">{label}</span>
+    </Button>
+  )
+}
+
 export {
   ResponsiveDialog,
   ResponsiveDialogContent,
   ResponsiveDialogTitle,
   ResponsiveDialogDescription,
   ResponsiveDialogCloseButton,
+  ResponsiveDialogBackButton,
   ResponsiveDialogViews,
 }

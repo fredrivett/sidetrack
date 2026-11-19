@@ -14,7 +14,7 @@ import { AGENDA_SECTIONS, agendaSection, type AgendaSection } from "@/lib/time";
 import { isYours, type ItemFilters, matchesFilters } from "@/lib/filters";
 import { AgendaGreeting } from "./AgendaGreeting";
 import type { FeedbackAbout } from "./FeedbackDialog";
-import { ItemDetailDialog } from "./ItemDetailDialog";
+import { ItemDetailDialog, ItemDetailView } from "./ItemDetailDialog";
 import { ItemGroupView } from "./ItemList";
 import { ItemRow } from "./ItemRow";
 import type { ProjectView } from "./Kanban";
@@ -184,6 +184,25 @@ export function AgendaView({
   ).filter(([, rows]) => rows.length > 0);
 
   const detailProject = detail.item ? projectOf.get(detail.item.projectId) : undefined;
+  // What the item's details show, wherever they open.
+  const detailProps = (item: Item) => ({
+    item,
+    parent: (item.parentId && byId.get(item.parentId)) || null,
+    checklist: all.filter((i) => i.parentId === item.id),
+    // The same rule as the board's dialog (ProjectColumn), within the
+    // item's own list.
+    nestTargets: all.filter(
+      (i) =>
+        i.projectId === item.projectId &&
+        i.parentId === null &&
+        i.completedAt === null &&
+        i.id !== item.id,
+    ),
+    prefix: projectOf.get(item.projectId)?.refPrefix ?? "",
+    assignees: assigneesByProject[item.projectId] ?? [],
+    viewerId,
+    prLinks: prLinksByItem[item.id] ?? [],
+  });
 
   const rowProps = (project: ProjectView | undefined) => ({
     prefix: project?.refPrefix ?? "",
@@ -286,6 +305,7 @@ export function AgendaView({
             onHoverItem={setLit}
             onFeedback={onFeedback}
             onOpenItem={detail.openDetail}
+            renderItem={(item, view) => <ItemDetailView {...detailProps(item)} {...view} />}
             onAction={(action) => {
               // Until there's a triage of its own: open Overdue and go to it.
               if (action !== "triage") return;
@@ -371,23 +391,9 @@ export function AgendaView({
 
       {detail.item && detailProject && (
         <ItemDetailDialog
-          item={detail.item}
-          parent={all.find((i) => i.id === detail.item?.parentId) ?? null}
-          checklist={all.filter((i) => i.parentId === detail.item?.id)}
-          // The same rule as the board's dialog (ProjectColumn), within the
-          // item's own list.
-          nestTargets={all.filter(
-            (i) =>
-              i.projectId === detail.item?.projectId &&
-              i.parentId === null &&
-              i.completedAt === null &&
-              i.id !== detail.item?.id,
-          )}
-          onOpenItem={detail.openDetail}
-          prefix={detailProject.refPrefix}
-          assignees={assigneesByProject[detail.item.projectId] ?? []}
-          viewerId={viewerId}
-          prLinks={prLinksByItem[detail.item.id] ?? []}
+          {...detailProps(detail.item)}
+          onOpenItem={detail.goTo}
+          history={detail.history}
           open={detail.open}
           onOpenChange={detail.onOpenChange}
         />
