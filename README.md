@@ -23,7 +23,8 @@ report back as they go.
   when they merge ([setup](docs/github.md))
 - 📜 **Audit log.** Every change is recorded with who made it: you, a
   collaborator, an agent or GitHub
-- 📱 **Installable** as an iOS app (PWA)
+- 📱 **Installable** as an app (PWA) on iPhone, iPad and Mac. On a Mac, open
+  it in Safari and choose File → Add to Dock, or install it from Chrome or Edge
 
 ## Get started
 
