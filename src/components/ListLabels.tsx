@@ -141,25 +141,45 @@ export function LabelView({
   /** The delete was refused, so its items may have changed: load them again. */
   onRefused: () => void;
 }) {
-  // Archiving and deleting hold the view, dimmed, until they land.
-  const [saving, start] = useTransition();
+  // Archiving and deleting hold the view, dimmed, until they land: the save,
+  // then the board's refresh showing it. Then it goes back to the list: on
+  // its own once an archived label is shown as archived, and by the dialog
+  // once a deleted one is gone.
+  const [pending, start] = useTransition();
+  const [landed, setLanded] = useState(false);
+  const saving = pending || landed;
   const [showDone, setShowDone] = useState(false);
   const tap = useTapToConfirm();
   const isArchived = label.archivedAt !== null;
+  useEffect(() => {
+    if (landed && isArchived) onBack();
+  }, [landed, isArchived, onBack]);
   const total = usage ? usage.active.length + usage.done.length : null;
 
   // Archiving asks for a second tap, like deleting; restoring doesn't. One
   // hook, so arming either disarms the other.
   const archive = () => {
-    const run = () =>
+    // Restoring stays on the label, which is back in use.
+    if (isArchived) {
       start(async () => {
         await runAction(
-          updateLabelAction(label.id, { archived: !isArchived }),
-          `${isArchived ? "restore" : "archive"} the label “${label.name}”`,
+          updateLabelAction(label.id, { archived: false }),
+          `restore the label “${label.name}”`,
         );
       });
-    if (isArchived) run();
-    else tap.confirm(run, "archive");
+      return;
+    }
+    tap.confirm(
+      () =>
+        start(async () => {
+          const ok = await runAction(
+            updateLabelAction(label.id, { archived: true }),
+            `archive the label “${label.name}”`,
+          );
+          if (ok) setLanded(true);
+        }),
+      "archive",
+    );
   };
   const del = () =>
     usage &&
@@ -169,7 +189,7 @@ export function LabelView({
           deleteLabelAction(label.id, usage.token),
           `delete the label “${label.name}”`,
         );
-        if (ok) onBack();
+        if (ok) setLanded(true);
         else onRefused();
       }),
       "delete",

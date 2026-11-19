@@ -76,8 +76,13 @@ export function ProjectDetailDialog({
     }
   }
   const labels = useListLabels(project.id);
-  // Gone once it's deleted, which goes back to the list's details.
+  // Gone once it's deleted, which goes back to the list's details, with
+  // nothing there to focus.
   const label = labels.find((l) => l.id === labelId);
+  if (labelId !== null && !label) {
+    setLabelId(null);
+    setBackFrom(null);
+  }
   const { usage, reload } = useLabelUsage(
     project.id,
     open,
