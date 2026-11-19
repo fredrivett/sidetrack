@@ -468,20 +468,7 @@ export function ItemRow({
                 className="w-52"
                 onClick={(e) => e.stopPropagation()}
               >
-                {quickDues(today).map(([label, due]) => (
-                  <DropdownMenuItem data-replay-safe key={label} onClick={() => setDue(due)}>
-                    {label}
-                    {sameDue(item, due) ? (
-                      <Check className="ml-auto" />
-                    ) : (
-                      due.dueFrom && (
-                        <span className="ml-auto text-xs text-muted-foreground">
-                          {spanDates(due.dueFrom, due.dueDate, today)}
-                        </span>
-                      )
-                    )}
-                  </DropdownMenuItem>
-                ))}
+                <QuickDueItems menu="dropdown" item={item} today={today} onPick={setDue} />
                 <DropdownMenuItem data-replay-safe onClick={onOpenDetail}>
                   Pick a date…
                 </DropdownMenuItem>
@@ -563,21 +550,7 @@ export function ItemRow({
               </ContextMenuShortcut>
             </ContextMenuSubTrigger>
             <ContextMenuSubContent className="w-52">
-              {quickDues(today).map(([label, due]) => (
-                <ContextMenuItem data-replay-safe key={label} onClick={() => setDue(due)}>
-                  {label}
-                  {sameDue(item, due) ? (
-                    <Check className="ml-auto" />
-                  ) : (
-                    // A span's dates; Today and Tomorrow say their day already.
-                    due.dueFrom && (
-                      <ContextMenuShortcut>
-                        {spanDates(due.dueFrom, due.dueDate, today)}
-                      </ContextMenuShortcut>
-                    )
-                  )}
-                </ContextMenuItem>
-              ))}
+              <QuickDueItems menu="context" item={item} today={today} onPick={setDue} />
               <ContextMenuItem data-replay-safe onClick={onOpenDetail}>Pick a date…</ContextMenuItem>
               {item.dueDate && (
                 <>
@@ -631,4 +604,41 @@ export function ItemRow({
       </ContextMenuContent>
     </ContextMenu>
   );
+}
+
+/**
+ * The quick dates in the row's D menu and right-click Due date, with each
+ * span's days. Its own component so a row only works them out when one of
+ * those menus opens, not on every render of every row.
+ */
+function QuickDueItems({
+  menu,
+  item,
+  today,
+  onPick,
+}: {
+  menu: "dropdown" | "context";
+  item: Item;
+  today: string;
+  onPick: (due: Due) => void;
+}) {
+  const MenuItem = menu === "dropdown" ? DropdownMenuItem : ContextMenuItem;
+  return quickDues(today).map(([label, due]) => (
+    <MenuItem data-replay-safe key={label} onClick={() => onPick(due)}>
+      {label}
+      {sameDue(item, due) ? (
+        <Check className="ml-auto" />
+      ) : (
+        // A span's dates; Today and Tomorrow say their day already.
+        due.dueFrom &&
+        (menu === "dropdown" ? (
+          <span className="ml-auto text-xs text-muted-foreground">
+            {spanDates(due.dueFrom, due.dueDate, today)}
+          </span>
+        ) : (
+          <ContextMenuShortcut>{spanDates(due.dueFrom, due.dueDate, today)}</ContextMenuShortcut>
+        ))
+      )}
+    </MenuItem>
+  ));
 }
