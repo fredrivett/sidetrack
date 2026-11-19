@@ -57,6 +57,33 @@ export function setNoDateCollapsed(db: Db, userId: string, collapsed: boolean): 
   announceChange({ actor: userId, projectId: null });
 }
 
+/** The lists the user has folded away in the Agenda's No date section. */
+export function getNoDateFoldedLists(db: Db, userId: string): string[] {
+  const saved = db
+    .select({ lists: users.noDateFoldedLists })
+    .from(users)
+    .where(eq(users.id, userId))
+    .get()?.lists;
+  return Array.isArray(saved) ? saved.filter((id): id is string => typeof id === "string") : [];
+}
+
+/** Ids are nanoids; this many folded is far more than anyone has lists. */
+const FOLDED_LISTS_MAX = 200;
+
+/** Fold away or show one list's card in the Agenda's No date section. */
+export function setNoDateListFolded(db: Db, userId: string, projectId: string, folded: boolean): void {
+  if (typeof projectId !== "string" || projectId.length === 0 || projectId.length > 64) {
+    throw new Error("Not a list");
+  }
+  if (typeof folded !== "boolean") throw new Error("Not a fold");
+  const rest = getNoDateFoldedLists(db, userId).filter((id) => id !== projectId);
+  const lists = (folded ? [...rest, projectId] : rest).slice(-FOLDED_LISTS_MAX);
+  // audit-exempt: view state, not a change to anything shown to others.
+  db.update(users).set({ noDateFoldedLists: lists }).where(eq(users.id, userId)).run();
+  // Unaudited, so announced here: the user's other tabs and devices fold too.
+  announceChange({ actor: userId, projectId: null });
+}
+
 /** Whether the user has folded away the Agenda's Overdue section. */
 export function getOverdueCollapsed(db: Db, userId: string): boolean {
   return (

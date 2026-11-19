@@ -56,6 +56,7 @@ const board = (projects: ProjectView[], spaces: SpaceView[]) => (
     initialView="board"
     overdueCollapsed={false}
     noDateCollapsed={false}
+    noDateFoldedLists={[]}
     projects={projects}
     itemsByProject={{ a: [], b: [] }}
     completedSince={0}

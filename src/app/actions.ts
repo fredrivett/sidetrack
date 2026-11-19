@@ -122,6 +122,7 @@ import {
   AVATAR_MAX_BYTES,
   setOverdueCollapsed as setOverdueCollapsedCore,
   setNoDateCollapsed as setNoDateCollapsedCore,
+  setNoDateListFolded as setNoDateListFoldedCore,
   setAgendaReadAt as setAgendaReadAtCore,
   setBoardFilters as setBoardFiltersCore,
   setGreetingPrefs as setGreetingPrefsCore,
@@ -752,6 +753,14 @@ export async function setNoDateCollapsedAction(collapsed: boolean) {
   const userId = await requireUserId();
   const { db } = getDb();
   setNoDateCollapsedCore(db, userId, collapsed);
+  refresh();
+}
+
+/** Fold away or show one list's card in the Agenda's No date section, for the signed-in user. */
+export async function setNoDateListFoldedAction(projectId: string, folded: boolean) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  setNoDateListFoldedCore(db, userId, projectId, folded);
   refresh();
 }
 

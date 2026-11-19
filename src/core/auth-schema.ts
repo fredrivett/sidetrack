@@ -41,6 +41,9 @@ export const users = sqliteTable("users", {
   noDateCollapsed: integer("no_date_collapsed", { mode: "boolean" })
     .notNull()
     .default(false),
+  // The lists whose cards in the Agenda's No date section are folded away,
+  // by id. null = none.
+  noDateFoldedLists: text("no_date_folded_lists", { mode: "json" }),
   // When the viewer last left the Agenda having seen its greeting (ms): the
   // greeting looks back to here. null until the first time.
   agendaReadAt: integer("agenda_read_at"),

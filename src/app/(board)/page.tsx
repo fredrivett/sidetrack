@@ -18,7 +18,7 @@ import { listAllPrLinks, suggestedRepositories } from "@/core/prLinks";
 import { listProjects } from "@/core/projects";
 import { listPendingSpaceInvites, listSpaces, listTrays } from "@/core/spaces";
 import { COLLAPSED_TRAYS_COOKIE, parseCollapsedTrays } from "@/components/SpaceTray";
-import { getBoardFilters, getNoDateCollapsed, getOverdueCollapsed, getProfile, getTimeZone } from "@/core/users";
+import { getBoardFilters, getNoDateCollapsed, getNoDateFoldedLists, getOverdueCollapsed, getProfile, getTimeZone } from "@/core/users";
 import { getEnv } from "@/lib/env";
 import { cookieLocale, dayOf, LOCALE_COOKIE, startOfDayIn, startOfWeekIn, weekStartBound } from "@/lib/time";
 import { ServerTodayProvider } from "@/components/use-day-start";
@@ -109,6 +109,7 @@ export default async function Home({
           timeZone={timeZone}
           overdueCollapsed={getOverdueCollapsed(db, userId)}
           noDateCollapsed={getNoDateCollapsed(db, userId)}
+          noDateFoldedLists={getNoDateFoldedLists(db, userId)}
           // From the path (/agenda, /board, …), which the proxy passes as ?view=.
           initialView={
             view === "board" || view === "done" || view === "archived" ? view : "agenda"
