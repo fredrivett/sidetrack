@@ -36,7 +36,9 @@ function startMessage(ref: string): string {
 		`Do the work following the repository's AGENTS.md, as far as that guidance takes you, ` +
 		`including opening and owning the pull request. If you're unsure about anything, such as what the ` +
 		`item asks, a product decision, or whether the change is safe, don't turn on auto-merge: leave the ` +
-		`pull request open and ask on the item with add_comment.`
+		`pull request open and ask on the item with add_comment. When the pull request merges and it's ` +
+		`clear the change fixes what the item asks, mark the item done with complete_item; if it seems ` +
+		`there's more to do, ask on the item with add_comment instead of completing it.`
 	)
 }
 
