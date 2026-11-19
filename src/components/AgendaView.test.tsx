@@ -5,6 +5,7 @@ import {
   setAgendaReadAction,
   setItemsCollapsedAction,
   setOverdueCollapsedAction,
+  setNoDateCollapsedAction,
   agendaGreetingAction,
 } from "@/app/actions";
 import type { Greeting } from "@/core/agendaGreeting";
@@ -24,6 +25,7 @@ vi.mock("@/app/actions", () => ({
   reorderItemAction: vi.fn(),
   setItemsCollapsedAction: vi.fn(),
   setOverdueCollapsedAction: vi.fn(),
+  setNoDateCollapsedAction: vi.fn(),
   setAgendaReadAction: vi.fn(),
   agendaGreetingAction: vi.fn(async () => null),
   // The item dialog reads its comments when it opens, and its history when expanded.
@@ -91,6 +93,7 @@ function renderAgenda(
       prLinksByItem={{}}
       viewerId="me"
       overdueCollapsed={overdueCollapsed}
+      noDateCollapsed={false}
       greet={greet}
       firstName="Fred"
       onFeedback={onFeedback}
@@ -281,6 +284,24 @@ describe("AgendaView", () => {
     expect(rows?.hasAttribute("inert")).toBe(false);
   });
 
+  it("folds No date away at once and saves it, keeping each list's card", () => {
+    renderAgenda([item("Tidy flat", null), item("Bins", "2026-11-14")]);
+    const toggle = screen.getByRole("button", { name: /^No date/ });
+    const rows = document.getElementById(toggle.getAttribute("aria-controls") ?? "");
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(within(rows as HTMLElement).getByRole("heading", { level: 3, name: /Home/ })).toBeTruthy();
+
+    // Still saving, so the folded state shown is the optimistic one.
+    vi.mocked(setNoDateCollapsedAction).mockReturnValue(new Promise(() => {}));
+    const overdueSaves = vi.mocked(setOverdueCollapsedAction).mock.calls.length;
+    fireEvent.click(toggle);
+    expect(vi.mocked(setNoDateCollapsedAction)).toHaveBeenLastCalledWith(true);
+    expect(vi.mocked(setOverdueCollapsedAction)).toHaveBeenCalledTimes(overdueSaves);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(rows?.hasAttribute("inert")).toBe(true);
+    expect(rows?.contains(screen.getByText("Bins"))).toBe(false);
+  });
+
   it("greets with chips that open their items, and a triage phrase that opens Overdue", async () => {
     const late = item("Call the bank", "2026-11-10");
     const bins = item("Bins", "2026-11-14");
@@ -432,6 +453,7 @@ describe("AgendaView", () => {
         prLinksByItem={{}}
         viewerId="me"
         overdueCollapsed={false}
+        noDateCollapsed={false}
         greet
         firstName="Fred"
         filters={NO_FILTERS}
