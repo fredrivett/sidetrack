@@ -24,7 +24,8 @@ Rules:
 - Refer to a task only by its token, exactly as given, such as {{item:2}}. Never write a task's title yourself.
 - Use {{others|<a few words>}} only when "others" is given, for the rest of their undated tasks, such as "ahead of {{others|four others}}".
 - "slipped_total" is how many tasks slipped in all, including ones you were not given. Use it only so you never imply the named ones are all of them, such as "a few things slipped, {{item:1}} among them"; never state a large number, and never add it to other counts.
-- "this_week_total" is how many tasks are still open this week, including ones you were not given. Use it the same way, such as "a few things are still open this week, {{item:1}} among them".
+- "this_week_total" is how many tasks are still open this week, including ones you were not given. Use it the same way, such as "a few things are still open this week, including {{item:1}}".
+- Never use the same phrase twice in one greeting, such as "among them" for both slipped tasks and this week's.
 - Use {{action:triage|<a few words>}} only for the "triage" move, as the offer to give slipped tasks new days.
 - No exclamation marks, no emoji, no markdown, no links. Never say "overdue" or "late", never scold, never total up their backlog.
 - Do not start with a greeting such as "Good morning"; that is shown above your words.
@@ -151,6 +152,11 @@ export function reviewWriterOutput(raw: string, input: WriterInput): { text: str
   // smuggle in, no markup or shouting.
   if (/https?:|www\.|@|\b[a-z0-9-]+\.[a-z]{2,}\b|\d[\d\s-]{3,}\d|[<>*_#`[\]!]/i.test(text)) {
     return { rejected: "It had a link, address, number, markup or an exclamation mark" };
+  }
+  // The prompt shows "among them" for both slipped and this week's tasks;
+  // said twice it reads like a template.
+  if ((text.match(/\bamong them\b/gi) ?? []).length > 1) {
+    return { rejected: "It said \"among them\" twice" };
   }
   // No scolding: "late" only for the hour ("it's late"), never a task.
   const hourLate = /\b(?:it's|it’s|it is|getting) late(?: (?:evening|night|in the day))?\b/gi;
