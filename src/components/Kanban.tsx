@@ -670,11 +670,18 @@ export function Kanban({
       setUnderline({ left: t.left - g.left, width: t.width, top: h.bottom - g.top - 2 });
     };
     place();
-    // Again once the fonts are in (the Brief's serif changes its width) and
-    // whenever the window resizes.
+    // Again once the fonts are in (the Brief's serif changes its width), and
+    // whenever the header or the tabs change size: the header wrapping or the
+    // window resizing. (No ResizeObserver in jsdom.)
     void document.fonts?.ready.then(place);
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
+    ro?.observe(header);
+    ro?.observe(group);
     window.addEventListener("resize", place);
-    return () => window.removeEventListener("resize", place);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", place);
+    };
   }, [view]);
 
   return (
@@ -709,7 +716,7 @@ export function Kanban({
                         className={`flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-neutral-300 sm:px-2.5 dark:focus-visible:ring-neutral-600 [&_svg]:size-3.5 touch:[&_svg]:size-4 ${
                           view === v
                             ? "text-neutral-900 dark:text-neutral-100"
-                            : "text-neutral-400 hover:text-neutral-700 dark:text-neutral-500 dark:hover:text-neutral-200"
+                            : "text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                         }`}
                       >
                         <Icon aria-hidden />
