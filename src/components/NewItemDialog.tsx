@@ -131,6 +131,7 @@ export function NewItemDialog({
   assigneesByProject,
   viewerId,
   initialProjectId,
+  initialDue = null,
   shownOnBoard,
 }: {
   open: boolean;
@@ -141,6 +142,8 @@ export function NewItemDialog({
   assigneesByProject: Record<string, AssigneeView[]>;
   viewerId: string;
   initialProjectId: string | null;
+  /** The due date it opens with, such as today from the Brief's "+". */
+  initialDue?: Due | null;
   /**
    * Whether an added item, with this many new sub-items, shows on the board
    * under the viewer's filters, for its toast.
@@ -213,7 +216,7 @@ export function NewItemDialog({
       setLabelEmoji({});
       setAssigneeIds([]);
       setAssignOpen(false);
-      setDue(null);
+      setDue(initialDue);
       setRepeat(null);
       setSubItems([]);
       setSubDraft("");
@@ -369,9 +372,9 @@ export function NewItemDialog({
       setTitle((cur) => (cur.trim() === t ? "" : cur));
       setDescription((cur) => ((cur.trim() || null) === d ? "" : cur));
       // Assignees, a due date, repeat and parent belong to the item just
-      // added, like its title.
+      // added, like its title; the date it opened with stays for the next.
       setAssigneeIds((cur) => (cur === who ? [] : cur));
-      setDue((cur) => (cur === du ? null : cur));
+      setDue((cur) => (cur === du ? initialDue : cur));
       setRepeat((cur) => (cur === r ? null : cur));
       setParent((cur) => (cur?.item.id === p ? null : cur));
       // Sub-items can't be edited while it saves, so they're all this item's.

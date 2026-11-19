@@ -49,6 +49,7 @@ export function AgendaView({
   greet,
   firstName,
   onFeedback,
+  onAddForToday,
   filters,
 }: {
   /** Active lists in board order; archived lists stay out. */
@@ -69,6 +70,8 @@ export function AgendaView({
   firstName: string | null;
   /** Opens the feedback form on the greeting; absent where there's no form. */
   onFeedback?: (about: FeedbackAbout) => void;
+  /** The greeting's "+" by the date: New item, due on the viewer's today. */
+  onAddForToday?: (day: string) => void;
   filters: ItemFilters;
 }) {
   const today = useToday();
@@ -304,6 +307,7 @@ export function AgendaView({
             itemsById={byId}
             onHoverItem={setLit}
             onFeedback={onFeedback}
+            onAddForToday={onAddForToday}
             onOpenItem={detail.openDetail}
             renderItem={(item, view) => <ItemDetailView {...detailProps(item)} {...view} />}
             onAction={(action) => {
