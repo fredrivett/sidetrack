@@ -84,7 +84,12 @@ export function submitFeedback(
 ): { itemId: string; ref: string } {
   if (!FEEDBACK_KINDS.includes(input.kind)) throw new Error(`unknown feedback kind: ${input.kind}`);
   const about = input.about ?? null;
-  if (about && (!Object.hasOwn(FEEDBACK_AREAS, about.area) || !["up", "down"].includes(about.rating))) {
+  if (
+    about &&
+    (!Object.hasOwn(FEEDBACK_AREAS, about.area) ||
+      !["up", "down"].includes(about.rating) ||
+      typeof about.context !== "string")
+  ) {
     throw new Error("unknown feedback area or rating");
   }
   const message = input.message.trim();
@@ -138,9 +143,7 @@ export function submitFeedback(
 
   const thumb = about ? (about.rating === "up" ? "👍" : "👎") : null;
   const area = about ? FEEDBACK_AREAS[about.area] : null;
-  const title = about
-    ? `${thumb} ${area}${message ? `: ${titleOf(message)}` : ""}`.slice(0, TITLE_MAX + 30)
-    : titleOf(message);
+  const title = about ? `${thumb} ${area}${message ? `: ${titleOf(message)}` : ""}` : titleOf(message);
   const labels = [KIND_LABELS[input.kind], FEEDBACK_LABEL, ...(area ? [area] : [])];
   const id = nanoid(12);
   // At the top of the list, newest first, as New item adds them.

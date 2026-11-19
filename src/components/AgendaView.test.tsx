@@ -261,6 +261,7 @@ describe("AgendaView", () => {
       hello: "Good afternoon, Fred.",
       text: `Since Friday you've finished {{item:gone}}. {{item:${late.id}}} is still waiting. No rush — want to {{action:triage|give it a new day}}? After that, {{others|one other}}.`,
       titles: { gone: "Renew passport", [late.id]: "Call the bank" },
+      written: true,
       others: [
         { id: loft.id, title: "Sort the loft" },
         { id: "unloaded", title: "Paint the shed" },
@@ -298,6 +299,10 @@ describe("AgendaView", () => {
     });
 
     // The chips are inline in the sentence, and still work from the keyboard.
+    // Space too, without scrolling the page.
+    const space = new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true });
+    within(greeting).getByRole("button", { name: "give it a new day" }).dispatchEvent(space);
+    expect(space.defaultPrevented).toBe(true);
     fireEvent.keyDown(within(greeting).getByRole("button", { name: "one other" }), { key: "Enter" });
     // Named, but not a button: the page hasn't loaded it.
     expect(within(screen.getByRole("dialog")).getByText("Paint the shed").closest("button")).toBeNull();
@@ -334,9 +339,12 @@ describe("AgendaView", () => {
       text: "Since Friday you've finished four.",
       titles: {},
       others: [],
+      written: false,
     });
     const { rerender } = renderAgenda([], [home], false, {}, true);
     await screen.findByText("Since Friday you've finished four.");
+    // The template's, so no thumbs: they rate Claude's.
+    expect(screen.queryByRole("button", { name: "Good greeting" })).toBeNull();
     vi.setSystemTime(Date.now() + 5000);
     Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
     document.dispatchEvent(new Event("visibilitychange"));

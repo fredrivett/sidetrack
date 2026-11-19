@@ -89,6 +89,7 @@ describe("submitFeedback", () => {
     expect(bad({ area: "Anything I like", rating: "up", context: "" })).toThrow(/area/);
     expect(bad({ area: "toString", rating: "up", context: "" })).toThrow(/area/);
     expect(bad({ area: "greeting", rating: "meh", context: "" })).toThrow(/rating/);
+    expect(bad({ area: "greeting", rating: "up", context: { x: 1 } })).toThrow(/rating/);
     // And a message still needed without one.
     expect(() => submitFeedback(db, jane, { listId: list.id, kind: "bug", message: " " }, "web")).toThrow(/empty/);
   });

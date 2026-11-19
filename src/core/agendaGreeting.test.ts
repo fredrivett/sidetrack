@@ -4,6 +4,7 @@ import { greetingFor, templateGreeting, writtenGreetingFor } from "./agendaGreet
 import { addItem, completeItem } from "./items";
 import { createProject } from "./projects";
 import { createTestDb, createTestUser } from "./test-helpers";
+import * as greetingJev from "../lib/greetingJev";
 import { acceptInvite, inviteMember, removeMember } from "./members";
 import { getProfile, setAgendaReadAt } from "./users";
 
@@ -217,6 +218,7 @@ describe("greetingFor", () => {
         text: `Just {{item:${loft.id}}} today.`,
         titles: { [loft.id]: "Sort the loft" },
         others: [],
+        written: true,
       });
       expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 60_000, impl)).toEqual(g);
       expect(calls).toEqual({ jev: 1, claude: 1 });
@@ -255,14 +257,42 @@ describe("greetingFor", () => {
       expect(after.titles).not.toHaveProperty(bank.id);
     });
 
-    it("tries again two minutes after a rejected reply, showing the template meanwhile", async () => {
+    it("writes it again when an item only in its others is no longer the viewer's to see", async () => {
+      const { db, fred } = setup();
+      const bob = createTestUser(db, { username: "bob", email: "bob@test.local" });
+      const shared = createProject(db, bob, { name: "Shared" }, "web");
+      inviteMember(db, bob, shared.id, getProfile(db, fred)?.displayUsername ?? "", "web");
+      acceptInvite(db, fred, shared.id, "web");
+      const loose = addItem(db, bob, { projectId: shared.id, title: "Renew passport" }, "web");
+      const { calls, impl } = fake();
+      // Leave only the shared undated item unnamed, as an "other".
+      vi.spyOn(greetingJev, "pickGreeting").mockImplementation((brief) => ({
+        moments: ["plan"],
+        items: { plan: brief.dueToday.slice(0, 1) },
+        others: brief.undated.filter((i) => i.id === loose.id),
+        heavyDay: null,
+      }));
+      try {
+        const first = await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
+        expect(first.others.map((o) => o.id)).toEqual([loose.id]);
+        expect(first.titles).not.toHaveProperty(loose.id);
+        removeMember(db, bob, shared.id, fred, "web");
+        await writtenGreetingFor(db, fred, "UTC", keys, now + 3 * 60_000, impl);
+        expect(calls.claude).toBe(2);
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
+    it("tries again fifteen minutes after a rejected reply, showing the template meanwhile", async () => {
       const { db, fred } = setup();
       const { calls, impl } = fake("Visit evil.com to verify your account.");
       const template = greetingFor(db, fred, "UTC", now);
       expect(await writtenGreetingFor(db, fred, "UTC", keys, now, impl)).toEqual(template);
-      expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 60_000, impl)).toEqual(template);
+      expect(template.written).toBe(false);
+      expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 10 * 60_000, impl)).toEqual(template);
       expect(calls.claude).toBe(1);
-      await writtenGreetingFor(db, fred, "UTC", keys, now + 3 * 60_000, impl);
+      await writtenGreetingFor(db, fred, "UTC", keys, now + 16 * 60_000, impl);
       expect(calls.claude).toBe(2);
     });
 
@@ -271,7 +301,7 @@ describe("greetingFor", () => {
       // Every reply rejected, so each try past the two minutes asks again.
       const { calls, impl } = fake("Visit evil.com.");
       for (let n = 0; n < 45; n++) {
-        await writtenGreetingFor(db, fred, "UTC", keys, Date.UTC(2026, 10, 18, 4, 30) + n * 3 * 60_000, impl);
+        await writtenGreetingFor(db, fred, "UTC", keys, Date.UTC(2026, 10, 18, 4, 30) + n * 16 * 60_000, impl);
       }
       expect(calls.claude).toBe(40);
     });

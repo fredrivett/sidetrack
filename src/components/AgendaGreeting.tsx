@@ -214,7 +214,8 @@ export function AgendaGreeting({
               );
             })}
           </p>
-            {onFeedback && (
+            {/* On Claude's greetings only, so a thumbs down is about Claude. */}
+            {onFeedback && greeting.written && (
               <div className="mt-2 flex animate-in gap-1 fade-in duration-500">
                 {(["up", "down"] as const).map((rating) => {
                   const Icon = rating === "up" ? ThumbsUp : ThumbsDown;

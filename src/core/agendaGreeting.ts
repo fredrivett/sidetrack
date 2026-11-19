@@ -26,6 +26,8 @@ export interface Greeting {
   titles: Record<string, string>;
   /** The undated items "{{others|…}}" opens, best first. */
   others: Array<{ id: string; title: string }>;
+  /** Whether Claude wrote it, rather than the templates. */
+  written: boolean;
 }
 
 /**
@@ -46,6 +48,8 @@ function stillVisible(db: Db, viewerId: string, greeting: { titles: Record<strin
 
 /** Claude writes one person's greeting at most this often… */
 const ASK_EVERY_MS = 2 * 60_000;
+/** …or this often after an ask for the same part of the day failed… */
+const RETRY_FAILED_MS = 15 * 60_000;
 /** …and this many times in a UTC day. */
 const ASKS_PER_DAY = 40;
 /** And for everyone on this server together, in a UTC day. */
@@ -82,7 +86,7 @@ function fromTemplate(brief: AgendaBrief, name: string | null): Greeting {
   const hello = helloFor(brief, name);
   // templateGreeting always opens with the hello.
   const text = templateGreeting(brief, name).slice(hello.length).trimStart();
-  return { hello, text, titles: titlesIn(text, brief), others: [] };
+  return { hello, text, titles: titlesIn(text, brief), others: [], written: false };
 }
 
 /**
@@ -124,14 +128,16 @@ export async function writtenGreetingFor(
   const key = `${brief.today}:${brief.partOfDay}`;
   const row = db.select().from(agendaGreetings).where(eq(agendaGreetings.userId, viewerId)).get();
   if (row?.key === key && row.greeting && stillVisible(db, viewerId, row.greeting)) {
-    return { hello: template.hello, ...row.greeting };
+    return { hello: template.hello, ...row.greeting, written: true };
   }
   // Counted by UTC day, not the viewer's: their timezone is theirs to
   // change, and a new one mustn't start a new count.
   const utcDay = dayOf(now, "UTC");
   const asks = row?.askedDay === utcDay ? row.asks : 0;
   if (everyone.day !== utcDay) Object.assign(everyone, { day: utcDay, asks: 0 });
-  if ((row && now - row.askedAt < ASK_EVERY_MS) || asks >= ASKS_PER_DAY) return template;
+  // A write that failed for this part of the day likely fails again soon.
+  const wait = row?.key === key && !row.greeting ? RETRY_FAILED_MS : ASK_EVERY_MS;
+  if ((row && now - row.askedAt < wait) || asks >= ASKS_PER_DAY) return template;
   if (everyone.asks >= ASKS_PER_DAY_ALL) return template;
   // Count the ask before awaiting it, so loads at the same moment ask once.
   everyone.asks += 1;
@@ -156,7 +162,7 @@ export async function writtenGreetingFor(
     .set({ greeting })
     .where(both(eq(agendaGreetings.userId, viewerId), eq(agendaGreetings.key, key)))
     .run();
-  return { hello: template.hello, ...greeting };
+  return { hello: template.hello, ...greeting, written: true };
 }
 
 /** What an action token does when tapped. */

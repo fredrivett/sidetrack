@@ -135,7 +135,7 @@ export function FeedbackDialog({
             )}
           >
             {about ? (
-              <blockquote className="line-clamp-4 border-l-2 border-neutral-200 pl-3 text-sm text-muted-foreground dark:border-neutral-700">
+              <blockquote className="max-h-32 overflow-y-auto border-l-2 border-neutral-200 pl-3 text-sm text-muted-foreground dark:border-neutral-700">
                 {about.context}
               </blockquote>
             ) : (
