@@ -310,6 +310,8 @@ export function localDate(day: string): Date {
   return new Date(y, m - 1, d);
 }
 
+const spanFormats = new Map<string, Intl.DateTimeFormat>();
+
 /**
  * The days of a span in `locale` (the runtime's own when left out): "16–22
  * Nov", or "30 Nov – 6 Dec" (with the year when it isn't this year's). `long`
@@ -323,13 +325,20 @@ export function spanDates(
   locale?: string,
 ): string {
   const thisYear = from.slice(0, 4) === today.slice(0, 4) && to.slice(0, 4) === today.slice(0, 4);
-  return new Intl.DateTimeFormat(locale, {
-    weekday: long ? "long" : undefined,
-    day: "numeric",
-    month: long ? "long" : "short",
-    year: thisYear ? undefined : "numeric",
-    timeZone: "UTC",
-  }).formatRange(new Date(`${from}T00:00:00Z`), new Date(`${to}T00:00:00Z`));
+  // Every item row lists these spans in its menus, so build each format once.
+  const key = `${locale ?? ""}|${long}|${thisYear}`;
+  let format = spanFormats.get(key);
+  if (!format) {
+    format = new Intl.DateTimeFormat(locale, {
+      weekday: long ? "long" : undefined,
+      day: "numeric",
+      month: long ? "long" : "short",
+      year: thisYear ? undefined : "numeric",
+      timeZone: "UTC",
+    });
+    spanFormats.set(key, format);
+  }
+  return format.formatRange(new Date(`${from}T00:00:00Z`), new Date(`${to}T00:00:00Z`));
 }
 
 /**
