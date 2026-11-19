@@ -67,7 +67,7 @@ export function submitFeedback(
     listId: string;
     kind: FeedbackKind;
     message: string;
-    /** The page they were on, as a path such as "/?p=abc". */
+    /** The page they were on, as a path such as "/board?p=abc". */
     page?: string | null;
     /** The commit their browser was running. */
     release?: string | null;

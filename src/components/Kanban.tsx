@@ -77,10 +77,10 @@ export type ProjectView = Project & {
   suggestedRepository?: string;
 };
 
-/** The header's views; the board's is the default, and has no `?view=`. */
+/** The header's views, each at its own path (/agenda, /board, /done); / opens the Agenda. */
 const BOARD_VIEWS = [
-  ["board", "Board", SquareKanban],
   ["agenda", "Agenda", CalendarDays],
+  ["board", "Board", SquareKanban],
   ["done", "Done", CircleCheck],
 ] as const;
 /** The switch's views, plus Archived, which the account menu opens. */
@@ -121,7 +121,7 @@ export function Kanban({
   viewer: AvatarUser | null;
   /** The timezone saved for the viewer, kept in step with their browser. */
   timeZone: string | null;
-  /** From `?view=`, so a reload or shared link opens on the same view. */
+  /** From the path (/agenda, /board, …), so a reload or shared link opens on the same view. */
   initialView: BoardView;
   /** Whether the viewer keeps the Agenda's Overdue section folded away. */
   overdueCollapsed: boolean;
@@ -273,8 +273,7 @@ export function Kanban({
   const switchView = useCallback((next: BoardView) => {
     setView(next);
     const url = new URL(window.location.href);
-    if (next === "board") url.searchParams.delete("view");
-    else url.searchParams.set("view", next);
+    url.pathname = `/${next}`;
     window.history.replaceState(null, "", url.toString());
   }, []);
 

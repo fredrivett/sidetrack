@@ -90,7 +90,7 @@ describe("notifications", () => {
     expect(unread(db, fred)).toEqual(['Alice assigned you "Fix the tap"']);
     expect(listNotifications(db, fred)[0]).toMatchObject({
       title: "Home",
-      url: `/?p=${listId}&item=${item.id}`,
+      url: `/board?p=${listId}&item=${item.id}`,
       reason: "assigned",
     });
   });
@@ -294,7 +294,7 @@ describe("notifications", () => {
     expect(hers).toHaveLength(1);
     expect(hers[0][1]).toMatchObject({
       title: "Due",
-      url: "/?view=agenda",
+      url: "/agenda",
       body: expect.stringMatching(/^"(Bins|Rent)" and "(Bins|Rent)" are due today$/),
     });
     // Next morning, once more for what's still open; then no more.
@@ -486,7 +486,7 @@ describe("notifications", () => {
   it("tells a list's or Space's members when it's archived, restored or deleted", () => {
     const { db, fred, alice, listId } = seed();
     updateProject(db, fred, listId, { status: "archived" }, "web");
-    expect(listNotifications(db, alice)[0]).toMatchObject({ url: "/?view=archived", reason: "member" });
+    expect(listNotifications(db, alice)[0]).toMatchObject({ url: "/archived", reason: "member" });
     updateProject(db, fred, listId, { status: "active", name: "Flat" }, "web");
     // One notification each, for the stronger reason.
     expect(unread(db, alice)).toEqual(['Fred restored "Flat"', 'Fred archived "Flat"']);
@@ -522,7 +522,7 @@ describe("notifications", () => {
       {
         title: "Home",
         body: 'Fred added "Fix tap" for you',
-        url: `/?p=${listId}&item=${item.id}`,
+        url: `/board?p=${listId}&item=${item.id}`,
         tag: `item:${item.id}`,
         badge: 1,
       },

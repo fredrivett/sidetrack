@@ -81,7 +81,7 @@ export default async function Welcome() {
   // Self-hosted instances usually lock signup after the first account, so
   // the call to action falls back to signing in.
   const cta = signedIn
-    ? { href: "/", label: "Open your board" }
+    ? { href: "/", label: "Open Sidetrack" }
     : isSignUpOpen()
       ? { href: "/login?mode=sign-up", label: "Get started" }
       : { href: "/login", label: "Sign in" };

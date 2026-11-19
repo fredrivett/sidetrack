@@ -68,8 +68,32 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  // Each view has its own path, served by the one board page (app/(board)) so
+  // switching views in the browser (Kanban's switchView) never remounts it.
+  if (VIEWS.includes(pathname.slice(1))) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/";
+    url.searchParams.set("view", pathname.slice(1));
+    return NextResponse.rewrite(url);
+  }
+  // / opens the Agenda; links from before views had paths (?view=, or ?p=
+  // for a list on the board) open the view they meant.
+  if (pathname === "/") {
+    const url = request.nextUrl.clone();
+    const view = url.searchParams.get("view") ?? "";
+    url.searchParams.delete("view");
+    url.pathname = VIEWS.includes(view)
+      ? `/${view}`
+      : url.searchParams.has("p") && view !== "today" && view !== "no-date"
+        ? "/board"
+        : "/agenda";
+    return NextResponse.redirect(url);
+  }
+
   return NextResponse.next();
 }
+
+const VIEWS = ["agenda", "board", "done", "archived"];
 
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
