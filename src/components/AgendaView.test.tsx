@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   setAgendaReadAction,
@@ -337,6 +337,50 @@ describe("AgendaView", () => {
     expect(within(screen.getByRole("dialog")).getByText("Paint the shed").closest("button")).toBeNull();
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Sort the loft" }));
     expect(within(screen.getByRole("dialog")).getByText(`P1-${loft.number}`)).toBeTruthy();
+  });
+
+  it("asks for the greeting again when an item it names changes, keeping it shown meanwhile", async () => {
+    const late = item("Call the bank", "2026-11-10");
+    const bins = item("Bins", "2026-11-14");
+    const first = {
+      hello: "Good morning, Fred.",
+      text: `{{item:${late.id}}} is still waiting.`,
+      titles: { [late.id]: "Call the bank" },
+      written: true,
+      others: [],
+    } satisfies Greeting;
+    let answer!: (g: Greeting) => void;
+    vi.mocked(agendaGreetingAction)
+      .mockResolvedValueOnce(first)
+      .mockReturnValueOnce(new Promise((r) => (answer = r)));
+    const board = (items: Item[]) => (
+      <AgendaView
+        projects={[home]}
+        itemsByProject={{ p1: items }}
+        assigneesByProject={{}}
+        prLinksByItem={{}}
+        viewerId="me"
+        overdueCollapsed={false}
+        greet
+        firstName="Fred"
+        filters={NO_FILTERS}
+      />
+    );
+    const { rerender } = render(board([late, bins]));
+    await screen.findByText(/is still waiting\.$/);
+    const calls = () => vi.mocked(agendaGreetingAction).mock.calls.length;
+    const before = calls();
+    // Something it doesn't name changing doesn't ask.
+    rerender(board([late, { ...bins, title: "Put the bins out" }]));
+    await new Promise((r) => setTimeout(r, 1800));
+    expect(calls()).toBe(before);
+    // Ticking off what it names does, after a moment, and the greeting stays
+    // until the new one comes.
+    rerender(board([{ ...late, completedAt: 1 }, { ...bins, title: "Put the bins out" }]));
+    await waitFor(() => expect(calls()).toBe(before + 1), { timeout: 3000 });
+    expect(screen.getByText(/is still waiting\.$/)).toBeTruthy();
+    await act(async () => answer({ ...first, text: "That's everything for today.", titles: {} }));
+    expect(screen.getByText("That's everything for today.")).toBeTruthy();
   });
 
   it("explains how the greeting was worked out", async () => {
