@@ -163,7 +163,8 @@ export function GreetingExplainDialog({
 
           <p className="text-xs text-neutral-500">
             Scores are Jev&rsquo;s sense of how worth saying each one is right now. Slipped items,
-            what&rsquo;s left this week and winding down are always said when they apply.
+            what&rsquo;s left this week and winding down are always said when they apply, as far as
+            your length leaves room.
           </p>
 
           <section className="space-y-1.5">

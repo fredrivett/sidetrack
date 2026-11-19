@@ -181,7 +181,9 @@ export function reviewWriterOutput(raw: string, input: WriterInput): { text: str
   // length allows, and no title of two words or more spelled out where its
   // chip should be.
   const prose = out.replace(TOKEN, "x");
-  if ((prose.match(/[.?](\s|$)/g) ?? []).length > input.maxSentences) {
+  // "e.g." and "9 a.m." don't end a sentence.
+  const stops = prose.replace(/\b(?:[a-z]\.){2,}/gi, "x").match(/[.?](\s|$)/g) ?? [];
+  if (stops.length > input.maxSentences) {
     return { rejected: "It was longer than the length you chose" };
   }
   for (const item of input.items.values()) {

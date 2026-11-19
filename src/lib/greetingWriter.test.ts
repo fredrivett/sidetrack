@@ -92,6 +92,7 @@ describe("writerInput, with the reader's settings", () => {
     expect(checkWriterOutput(two, input)).not.toBeNull();
     expect(checkWriterOutput(two, short)).toBeNull();
     expect(checkWriterOutput("{{item:1}} is still waiting.", short)).not.toBeNull();
+    expect(checkWriterOutput("{{item:1}} is still waiting, e.g. since 9 a.m. yesterday.", short)).not.toBeNull();
   });
 });
 

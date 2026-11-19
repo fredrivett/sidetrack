@@ -15,9 +15,9 @@ import {
 } from "@/lib/greetingPrefs";
 
 const LENGTH: Record<GreetingLength, { label: string; hint: string }> = {
-  short: { label: "Short", hint: "One sentence, about one thing." },
-  medium: { label: "Medium", hint: "Up to two sentences." },
-  long: { label: "Long", hint: "Up to three sentences, with what you got done." },
+  short: { label: "Short", hint: "Just the main thing." },
+  medium: { label: "Medium", hint: "A couple of things." },
+  long: { label: "Long", hint: "Everything worth saying, with what you got done." },
 };
 
 /**
@@ -39,7 +39,9 @@ export function GreetingPrefsPanel({ initial }: { initial: GreetingPrefs }) {
       try {
         const kept = await setGreetingPrefsAction(next);
         setSaved(kept);
-        setNote(kept.note);
+        // Only when the note was what changed: a draft typed before
+        // changing the length or sharing stays as typed.
+        if (next.note !== saved.note) setNote(kept.note);
         // What people choose shapes the defaults. Never the note itself.
         posthog.capture("greeting_prefs_saved", {
           length: kept.length,
@@ -71,6 +73,7 @@ export function GreetingPrefsPanel({ initial }: { initial: GreetingPrefs }) {
               type="button"
               role="radio"
               aria-checked={saved.length === l}
+              aria-disabled={pending || undefined}
               onClick={() => saved.length !== l && save({ ...saved, length: l })}
               className={`rounded-md border px-3 py-1.5 text-sm transition ${
                 saved.length === l
@@ -98,8 +101,8 @@ export function GreetingPrefsPanel({ initial }: { initial: GreetingPrefs }) {
         <Textarea
           id="greeting-note"
           value={note}
-          onChange={(e) => setNote(e.target.value)}
-          maxLength={NOTE_MAX}
+          // Capped by characters, as it's kept, so an emoji counts once.
+          onChange={(e) => setNote(Array.from(e.target.value).slice(0, NOTE_MAX).join(""))}
           placeholder="Keep it brief. Don't mention what slipped."
           aria-describedby="greeting-note-hint"
         />
@@ -111,7 +114,8 @@ export function GreetingPrefsPanel({ initial }: { initial: GreetingPrefs }) {
           <input
             type="checkbox"
             checked={saved.shareNote}
-            onChange={(e) => save({ ...saved, note: saved.note, shareNote: e.target.checked })}
+            aria-disabled={pending || undefined}
+            onChange={(e) => save({ ...saved, shareNote: e.target.checked })}
             className="mt-0.5 size-4 accent-neutral-900 dark:accent-neutral-100"
           />
           <span>
