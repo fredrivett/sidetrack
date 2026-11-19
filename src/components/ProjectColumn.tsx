@@ -159,9 +159,6 @@ export function ProjectColumn({
                 className="h-8 min-w-0 cursor-text truncate rounded-md border border-transparent px-1.5 text-base font-semibold transition-colors hover:bg-muted"
                 inputClassName="field-sizing-content h-8 min-w-0 px-1.5 py-0 text-base font-semibold"
               />
-              <span className="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-[10px] tracking-wide text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
-                {project.prefix}
-              </span>
             </div>
             {(project.status !== "active" || (!project.isOwner && !inSpace)) && (
               <div className="flex items-center gap-1.5">

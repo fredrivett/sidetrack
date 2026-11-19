@@ -15,9 +15,12 @@ import {
   ResponsiveDialogContent,
   ResponsiveDialogDescription,
   ResponsiveDialogTitle,
+  ResponsiveDialogViews,
 } from "@/components/ui/responsive-dialog";
 import { EditableText } from "./EditableText";
 import type { ProjectView } from "./Kanban";
+import { useListLabels } from "./Labels";
+import { LabelView, ListLabelsField, useLabelUsage } from "./ListLabels";
 import { ProjectIconPicker, useListIcon } from "./ProjectIconPicker";
 import { StatusBadge } from "./StatusBadge";
 import { runAction } from "./run-action";
@@ -59,6 +62,31 @@ export function ProjectDetailDialog({
   const listIcon = useListIcon(project);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const suggested = project.suggestedRepository;
+  // The label shown on its own, if any, and the one to focus coming back.
+  const [labelId, setLabelId] = useState<string | null>(null);
+  const [backFrom, setBackFrom] = useState<string | null>(null);
+  // Each opening starts on the list's details. Reset as it opens, not as it
+  // closes, so the view doesn't change under the closing animation.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setLabelId(null);
+      setBackFrom(null);
+    }
+  }
+  const labels = useListLabels(project.id);
+  // Gone once it's deleted, which goes back to the list's details.
+  const label = labels.find((l) => l.id === labelId);
+  const { usage, reload } = useLabelUsage(
+    project.id,
+    open,
+    JSON.stringify([labelId, labels.map((l) => [l.id, l.name, l.archivedAt])]),
+  );
+  function back() {
+    setBackFrom(labelId);
+    setLabelId(null);
+  }
 
   function change(next: boolean) {
     if (!next) setConfirmingDelete(false);
@@ -124,161 +152,188 @@ export function ProjectDetailDialog({
   return (
     <ResponsiveDialog open={open} onOpenChange={change}>
       <ResponsiveDialogContent>
-        <div className="flex shrink-0 flex-col gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-          <div className="flex items-center gap-2">
-            <ProjectIconPicker project={project} listIcon={listIcon} size={22} />
-            <StatusBadge status={project.status} />
-            <ResponsiveDialogCloseButton className="ml-auto" />
-          </div>
-          <ResponsiveDialogTitle>
-            <EditableText
-              value={project.name}
-              onSave={(next) =>
-                runAction(
-                  updateProjectAction(project.id, listIcon.rename(next)),
-                  `rename “${project.name}”`,
-                )
-              }
-              onDraftChange={listIcon.onDraftChange}
-              required
-              className="block w-full break-words text-base font-semibold"
-              inputClassName="w-full text-base font-semibold"
+        <ResponsiveDialogViews
+          view={label ? `label:${label.id}` : "list"}
+          direction={label ? "forward" : "back"}
+        >
+          {label ? (
+            <LabelView
+              label={label}
+              listName={project.name}
+              prefix={project.refPrefix}
+              usage={usage?.[label.id]}
+              onBack={back}
+              onRefused={reload}
             />
-          </ResponsiveDialogTitle>
-          <ResponsiveDialogDescription className="sr-only">
-            List details for {project.name}
-          </ResponsiveDialogDescription>
-        </div>
-
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4">
-          <Field label="Summary">
-            <EditableText
-              value={project.summary}
-              onSave={(next) =>
-                runAction(updateProjectAction(project.id, { summary: next }), "save the summary")
-              }
-              multiline
-              placeholder="Add a summary…"
-              className="block w-full whitespace-pre-wrap break-words text-sm text-neutral-600 dark:text-neutral-300"
-              inputClassName="w-full text-sm"
-            />
-          </Field>
-
-          <Field label="ID prefix">
-            <EditableText
-              value={project.prefix}
-              onSave={savePrefix}
-              required
-              hold
-              className="block w-full break-words text-sm"
-              inputClassName="w-full text-sm font-mono uppercase"
-              renderValue={(prefix) => (
-                <span className="inline-block rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-xs tracking-wide text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
-                  {prefix}
-                </span>
-              )}
-            />
-          </Field>
-
-          <Field label="Homepage">
-            <div className="flex items-center gap-2">
-              <EditableText
-                value={project.homepageUrl ?? ""}
-                onSave={saveHomepage}
-                hold
-                placeholder="Add homepage URL…"
-                className="block min-w-0 flex-1 truncate text-sm text-neutral-600 dark:text-neutral-300"
-                inputClassName="w-full text-sm"
-              />
-              {project.homepageUrl && (
-                <a
-                  href={project.homepageUrl}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  title="Open homepage"
-                  className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-950/40"
-                >
-                  <ExternalLink className="size-3.5" />
-                  Open
-                </a>
-              )}
-            </div>
-          </Field>
-
-          {(isAdmin || project.repository) && (
-            <Field label="Repository">
-              <div className="flex items-center gap-2">
-                {isAdmin ? (
+          ) : (
+            <>
+              <div className="flex shrink-0 flex-col gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+                <div className="flex items-center gap-2">
+                  <ProjectIconPicker project={project} listIcon={listIcon} size={22} />
+                  <StatusBadge status={project.status} />
+                  <ResponsiveDialogCloseButton className="ml-auto" />
+                </div>
+                <ResponsiveDialogTitle>
                   <EditableText
-                    value={project.repository ?? ""}
-                    onSave={saveRepository}
-                    hold
-                    placeholder="Add GitHub repository…"
-                    className="block min-w-0 flex-1 truncate font-mono text-sm text-neutral-600 dark:text-neutral-300"
-                    inputClassName="w-full text-sm font-mono"
+                    value={project.name}
+                    onSave={(next) =>
+                      runAction(
+                        updateProjectAction(project.id, listIcon.rename(next)),
+                        `rename “${project.name}”`,
+                      )
+                    }
+                    onDraftChange={listIcon.onDraftChange}
+                    required
+                    className="block w-full break-words text-base font-semibold"
+                    inputClassName="w-full text-base font-semibold"
                   />
-                ) : (
-                  <span className="block min-w-0 flex-1 truncate font-mono text-sm text-neutral-600 dark:text-neutral-300">
-                    {project.repository}
-                  </span>
-                )}
-                {project.repository && (
-                  <a
-                    href={`https://github.com/${project.repository}`}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    title="Open on GitHub"
-                    className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-950/40"
-                  >
-                    <GitBranch className="size-3.5" />
-                    Open
-                  </a>
+                </ResponsiveDialogTitle>
+                <ResponsiveDialogDescription className="sr-only">
+                  List details for {project.name}
+                </ResponsiveDialogDescription>
+              </div>
+
+              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4">
+                <Field label="Summary">
+                  <EditableText
+                    value={project.summary}
+                    onSave={(next) =>
+                      runAction(updateProjectAction(project.id, { summary: next }), "save the summary")
+                    }
+                    multiline
+                    placeholder="Add a summary…"
+                    className="block w-full whitespace-pre-wrap break-words text-sm text-neutral-600 dark:text-neutral-300"
+                    inputClassName="w-full text-sm"
+                  />
+                </Field>
+
+                <Field label="ID prefix">
+                  <EditableText
+                    value={project.prefix}
+                    onSave={savePrefix}
+                    required
+                    hold
+                    className="block w-full break-words text-sm"
+                    inputClassName="w-full text-sm font-mono uppercase"
+                    renderValue={(prefix) => (
+                      <span className="inline-block rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-xs tracking-wide text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
+                        {prefix}
+                      </span>
+                    )}
+                  />
+                </Field>
+
+                <Field label="Labels">
+                  <ListLabelsField
+                    labels={labels}
+                    usage={usage}
+                    onOpen={setLabelId}
+                    focusId={backFrom}
+                  />
+                </Field>
+
+                <Field label="Homepage">
+                  <div className="flex items-center gap-2">
+                    <EditableText
+                      value={project.homepageUrl ?? ""}
+                      onSave={saveHomepage}
+                      hold
+                      placeholder="Add homepage URL…"
+                      className="block min-w-0 flex-1 truncate text-sm text-neutral-600 dark:text-neutral-300"
+                      inputClassName="w-full text-sm"
+                    />
+                    {project.homepageUrl && (
+                      <a
+                        href={project.homepageUrl}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        title="Open homepage"
+                        className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-950/40"
+                      >
+                        <ExternalLink className="size-3.5" />
+                        Open
+                      </a>
+                    )}
+                  </div>
+                </Field>
+
+                {(isAdmin || project.repository) && (
+                  <Field label="Repository">
+                    <div className="flex items-center gap-2">
+                      {isAdmin ? (
+                        <EditableText
+                          value={project.repository ?? ""}
+                          onSave={saveRepository}
+                          hold
+                          placeholder="Add GitHub repository…"
+                          className="block min-w-0 flex-1 truncate font-mono text-sm text-neutral-600 dark:text-neutral-300"
+                          inputClassName="w-full text-sm font-mono"
+                        />
+                      ) : (
+                        <span className="block min-w-0 flex-1 truncate font-mono text-sm text-neutral-600 dark:text-neutral-300">
+                          {project.repository}
+                        </span>
+                      )}
+                      {project.repository && (
+                        <a
+                          href={`https://github.com/${project.repository}`}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          title="Open on GitHub"
+                          className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-950/40"
+                        >
+                          <GitBranch className="size-3.5" />
+                          Open
+                        </a>
+                      )}
+                    </div>
+                    {/* Only offered, never filled in: the repository decides what an
+                        assigned agent checks out, so the admin confirms it. */}
+                    {isAdmin && !project.repository && suggested && (
+                      <div className="mt-1.5 flex min-w-0 items-center gap-2">
+                        <span
+                          className="inline-flex shrink-0 items-center gap-1 text-xs text-neutral-400"
+                          title="Suggested from this list's linked pull requests"
+                        >
+                          <Sparkles className="size-3" />
+                          Suggested
+                        </span>
+                        <button
+                          type="button"
+                          aria-disabled={saving}
+                          aria-label={`Use ${suggested}`}
+                          onClick={() => {
+                            if (!saving) void saveRepository(suggested);
+                          }}
+                          title={`Use ${suggested}`}
+                          className="inline-flex min-w-0 items-center gap-1 rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-xs text-neutral-600 hover:bg-neutral-200 aria-disabled:pointer-events-none aria-disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                        >
+                          <GitBranch className="size-3 shrink-0" />
+                          <span className="truncate">{suggested}</span>
+                        </button>
+                      </div>
+                    )}
+                  </Field>
                 )}
               </div>
-              {/* Only offered, never filled in: the repository decides what an
-                  assigned agent checks out, so the admin confirms it. */}
-              {isAdmin && !project.repository && suggested && (
-                <div className="mt-1.5 flex min-w-0 items-center gap-2">
-                  <span
-                    className="inline-flex shrink-0 items-center gap-1 text-xs text-neutral-400"
-                    title="Suggested from this list's linked pull requests"
-                  >
-                    <Sparkles className="size-3" />
-                    Suggested
-                  </span>
-                  <button
-                    type="button"
-                    aria-disabled={saving}
-                    aria-label={`Use ${suggested}`}
-                    onClick={() => {
-                      if (!saving) void saveRepository(suggested);
-                    }}
-                    title={`Use ${suggested}`}
-                    className="inline-flex min-w-0 items-center gap-1 rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-xs text-neutral-600 hover:bg-neutral-200 aria-disabled:pointer-events-none aria-disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
-                  >
-                    <GitBranch className="size-3 shrink-0" />
-                    <span className="truncate">{suggested}</span>
-                  </button>
-                </div>
-              )}
-            </Field>
-          )}
-        </div>
 
-        <div className="flex shrink-0 items-center justify-between border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
-          <span className="text-xs text-neutral-400">
-            Created {dayLabel(project.createdAt)}
-          </span>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={del}
-            disabled={saving}
-          >
-            <Trash2 />
-            {confirmingDelete ? "Confirm delete?" : "Delete"}
-          </Button>
-        </div>
+              <div className="flex shrink-0 items-center justify-between border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
+                <span className="text-xs text-neutral-400">
+                  Created {dayLabel(project.createdAt)}
+                </span>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={del}
+                  disabled={saving}
+                >
+                  <Trash2 />
+                  {confirmingDelete ? "Confirm delete?" : "Delete"}
+                </Button>
+              </div>
+            </>
+          )}
+        </ResponsiveDialogViews>
       </ResponsiveDialogContent>
     </ResponsiveDialog>
   );
