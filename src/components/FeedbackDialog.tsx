@@ -14,7 +14,13 @@ import {
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { FEEDBACK_MAX, type FeedbackKind } from "@/lib/feedback";
+import {
+  FEEDBACK_AREAS,
+  FEEDBACK_MAX,
+  type FeedbackArea,
+  type FeedbackKind,
+  type FeedbackRating,
+} from "@/lib/feedback";
 import { RELEASE } from "@/lib/release";
 import { cn } from "@/lib/utils";
 import { runAction } from "./run-action";
@@ -41,14 +47,25 @@ function posthogLinks(): { replayUrl: string | null; personUrl: string | null } 
   return { replayUrl, personUrl: person.href };
 }
 
+/** A thumbs up or down on one part of the app, and what it showed them. */
+export interface FeedbackAbout {
+  area: FeedbackArea;
+  rating: FeedbackRating;
+  context: string;
+}
+
 /** Send feedback: what it's about and what they want to say, filed in the
- * deployment's feedback list with where they were. */
+ * deployment's feedback list with where they were. With `about`, it's a
+ * thumbs up or down on that part of the app, tagged with it, and saying why
+ * is optional. */
 export function FeedbackDialog({
   open,
   onOpenChange,
+  about = null,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  about?: FeedbackAbout | null;
 }) {
   const [kind, setKind] = useState<FeedbackKind>("bug");
   const [message, setMessage] = useState("");
@@ -67,15 +84,17 @@ export function FeedbackDialog({
 
   const trimmed = message.trim();
   const tooLong = [...trimmed].length > FEEDBACK_MAX;
+  const canSend = (trimmed || about) && !tooLong;
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!trimmed || tooLong || pending) return;
+    if (!canSend || pending) return;
     start(async () => {
       let ref = "";
       const sent = await runAction(
         sendFeedbackAction({
-          kind,
+          kind: about ? "other" : kind,
+          about,
           message: trimmed,
           page: location.pathname + location.search,
           release: RELEASE || null,
@@ -86,7 +105,7 @@ export function FeedbackDialog({
         "send your feedback",
       );
       if (!sent) return;
-      posthog.capture("feedback_submitted", { kind, ref });
+      posthog.capture("feedback_submitted", { kind, ref, area: about?.area, rating: about?.rating });
       toast.success("Thanks, your feedback was sent");
       onOpenChange(false);
     });
@@ -97,9 +116,13 @@ export function FeedbackDialog({
       <ResponsiveDialogContent initialFocus={messageRef}>
         <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
           <div className="flex shrink-0 items-center gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-            <ResponsiveDialogTitle><span data-replay-safe>Send feedback</span></ResponsiveDialogTitle>
+            <ResponsiveDialogTitle>
+              <span data-replay-safe>
+                {about ? `${about.rating === "up" ? "👍" : "👎"} ${FEEDBACK_AREAS[about.area]}` : "Send feedback"}
+              </span>
+            </ResponsiveDialogTitle>
             <ResponsiveDialogDescription className="sr-only">
-              Tell us about a bug or an idea.
+              {about ? "Say what worked or what didn't, if you like." : "Tell us about a bug or an idea."}
             </ResponsiveDialogDescription>
             <ResponsiveDialogCloseButton className="ml-auto" />
           </div>
@@ -111,6 +134,11 @@ export function FeedbackDialog({
               pending && "opacity-60",
             )}
           >
+            {about ? (
+              <blockquote className="line-clamp-4 border-l-2 border-neutral-200 pl-3 text-sm text-muted-foreground dark:border-neutral-700">
+                {about.context}
+              </blockquote>
+            ) : (
             <div role="radiogroup" aria-label="What's this about?" data-replay-safe className="flex gap-2">
               {KINDS.map(([value, emoji, label]) => (
                 <Button
@@ -129,6 +157,7 @@ export function FeedbackDialog({
                 </Button>
               ))}
             </div>
+            )}
             <Textarea
               ref={messageRef}
               id={`${id}-message`}
@@ -140,7 +169,11 @@ export function FeedbackDialog({
               aria-invalid={tooLong}
               className="min-h-32"
               placeholder={
-                kind === "bug"
+                about
+                  ? about.rating === "up"
+                    ? "What did it get right? (optional)"
+                    : "What was off? (optional)"
+                  : kind === "bug"
                   ? "What happened, and what did you expect?"
                   : kind === "idea"
                     ? "What would you like Sidetrack to do?"
@@ -164,7 +197,7 @@ export function FeedbackDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" size="sm" disabled={!trimmed || tooLong} aria-disabled={pending}>
+            <Button type="submit" size="sm" disabled={!canSend} aria-disabled={pending}>
               <Send data-icon="inline-start" />
               {pending ? "Sending…" : "Send"}
             </Button>

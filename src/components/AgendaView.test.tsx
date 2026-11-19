@@ -8,6 +8,7 @@ import {
   agendaGreetingAction,
 } from "@/app/actions";
 import type { Greeting } from "@/core/agendaGreeting";
+import type { FeedbackAbout } from "./FeedbackDialog";
 import type { Item } from "@/core/schema";
 import { type ItemFilters, NO_FILTERS } from "@/lib/filters";
 import { AgendaView } from "./AgendaView";
@@ -77,6 +78,7 @@ function renderAgenda(
   overdueCollapsed = false,
   filters: Partial<ItemFilters> = {},
   greet = false,
+  onFeedback?: (about: FeedbackAbout) => void,
 ) {
   const itemsByProject: Record<string, Item[]> = {};
   for (const i of items) (itemsByProject[i.projectId] ??= []).push(i);
@@ -90,6 +92,7 @@ function renderAgenda(
       overdueCollapsed={overdueCollapsed}
       greet={greet}
       firstName="Fred"
+      onFeedback={onFeedback}
       filters={{ ...NO_FILTERS, ...filters }}
     />,
   );
@@ -263,7 +266,8 @@ describe("AgendaView", () => {
         { id: "unloaded", title: "Paint the shed" },
       ],
     } satisfies Greeting);
-    renderAgenda([late, bins, loft], [home], true, {}, true);
+    const onFeedback = vi.fn();
+    renderAgenda([late, bins, loft], [home], true, {}, true, onFeedback);
     const greeting = await screen.findByText(/^Since Friday/);
     expect(screen.getByRole("heading", { level: 2, name: "Good afternoon, Fred." })).toBeTruthy();
     expect(greeting.textContent).toBe(
@@ -284,7 +288,17 @@ describe("AgendaView", () => {
     expect(vi.mocked(setOverdueCollapsedAction)).toHaveBeenLastCalledWith(false);
     expect(screen.getByRole("button", { name: /^Overdue/ }).getAttribute("aria-expanded")).toBe("true");
 
-    fireEvent.click(within(greeting).getByRole("button", { name: "one other" }));
+    // A thumbs down sends what the reader saw, chips as their titles.
+    fireEvent.click(screen.getByRole("button", { name: "Not quite right" }));
+    expect(onFeedback).toHaveBeenCalledWith({
+      area: "greeting",
+      rating: "down",
+      context:
+        "Good afternoon, Fred. Since Friday you've finished Renew passport. Call the bank is still waiting. No rush — want to give it a new day? After that, one other.",
+    });
+
+    // The chips are inline in the sentence, and still work from the keyboard.
+    fireEvent.keyDown(within(greeting).getByRole("button", { name: "one other" }), { key: "Enter" });
     // Named, but not a button: the page hasn't loaded it.
     expect(within(screen.getByRole("dialog")).getByText("Paint the shed").closest("button")).toBeNull();
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Sort the loft" }));

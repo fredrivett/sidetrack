@@ -47,7 +47,7 @@ import {
 } from "@/core/comments";
 import { getDb } from "@/core/db";
 import { submitFeedback as submitFeedbackCore } from "@/core/feedback";
-import type { FeedbackKind } from "@/lib/feedback";
+import type { FeedbackArea, FeedbackKind, FeedbackRating } from "@/lib/feedback";
 import {
   addItem as addItemCore,
   completeItem as completeItemCore,
@@ -508,6 +508,7 @@ export async function sendFeedbackAction(input: {
   release?: string | null;
   replayUrl?: string | null;
   personUrl?: string | null;
+  about?: { area: FeedbackArea; rating: FeedbackRating; context: string } | null;
 }): Promise<string> {
   const userId = await requireUserId();
   const listId = getEnv().FEEDBACK_LIST_ID;
