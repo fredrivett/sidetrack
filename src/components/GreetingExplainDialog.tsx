@@ -85,6 +85,24 @@ export function GreetingExplainDialog({
             a built-in greeting shows instead.
           </p>
 
+          {/* Near the top, so it's easy to find how to change it. */}
+          <section className="flex items-center gap-3 rounded-lg bg-neutral-100 px-3 py-2.5 dark:bg-neutral-800/60">
+            <p className="min-w-0 flex-1">
+              <span className="block font-medium text-neutral-900 dark:text-neutral-100">Your settings</span>
+              <span className="block text-xs text-neutral-500">
+                {trace.prefs
+                  ? `${LENGTH_NAME[trace.prefs.length]}${trace.prefs.note ? ", with your note" : ", no note"}`
+                  : "Length, and a note in your own words"}
+              </span>
+            </p>
+            <Link
+              href="/settings/greeting"
+              className="shrink-0 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium hover:bg-accent"
+            >
+              Change
+            </Link>
+          </section>
+
           <section className="space-y-1.5">
             <h3 className={h3}>This one</h3>
             <p>
@@ -167,21 +185,6 @@ export function GreetingExplainDialog({
             your length leaves room.
           </p>
 
-          <section className="space-y-1.5">
-            <h3 className={h3}>Your settings</h3>
-            {trace.prefs && (
-              <p>
-                {LENGTH_NAME[trace.prefs.length]}
-                {trace.prefs.note ? ", with your note" : ", no note"}.
-              </p>
-            )}
-            <Link
-              href="/settings/greeting"
-              className="inline-block text-sm text-neutral-900 underline underline-offset-2 dark:text-neutral-100"
-            >
-              Change how it greets you
-            </Link>
-          </section>
         </div>
       </ResponsiveDialogContent>
     </ResponsiveDialog>
