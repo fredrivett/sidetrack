@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { submitFeedback } from "./feedback";
+import { addFeedbackFollowUp, FOLLOW_UP_MS, feedbackFollowUps, submitFeedback } from "./feedback";
 import { getItem } from "./items";
 import { listLabels } from "./labels";
 import { createProject } from "./projects";
@@ -107,5 +107,96 @@ describe("submitFeedback", () => {
     expect(() => send(jane)).toThrow(/too much feedback/);
     expect(send(sam).ref).toBe(`${list.prefix}-6`);
     expect(db.select().from(items).where(eq(items.projectId, list.id)).all()).toHaveLength(6);
+  });
+});
+
+describe("feedback follow-ups", () => {
+  function setup() {
+    const { db } = createTestDb();
+    const owner = createTestUser(db);
+    const jane = createTestUser(db, { username: "jane" });
+    const list = createProject(db, owner, { name: "Feedback" }, "web");
+    const { itemId } = submitFeedback(
+      db,
+      jane,
+      { listId: list.id, kind: "bug", message: "drag and drop is broken", page: "/" },
+      "web",
+    );
+    return { db, owner, jane, list, itemId };
+  }
+
+  it("asks Claude about what was filed, without who sent it, once per item", async () => {
+    const { db, jane, list, itemId } = setup();
+    const bodies: string[] = [];
+    const impl = (async (_: string, init: RequestInit) => {
+      bodies.push(String(init.body));
+      const questions = [
+        { question: "What were you dragging?", answers: ["An item", "A list", "An item"] },
+        { question: "Where?", answers: ["Only one"] },
+        { question: "See https://evil.example", answers: ["Yes", "No"] },
+      ];
+      return new Response(
+        JSON.stringify({ stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify({ missing: "what they dragged", questions }) }] }),
+      );
+    }) as unknown as typeof fetch;
+
+    const asked = await feedbackFollowUps(db, jane, { listId: list.id, itemId }, "k", impl);
+    // Repeated answers merge; a question with one answer, or a link, is dropped.
+    expect(asked).toEqual([{ question: "What were you dragging?", answers: ["An item", "A list"] }]);
+    expect(bodies[0]).toContain("drag and drop is broken");
+    expect(bodies[0]).not.toContain("@jane");
+    expect(await feedbackFollowUps(db, jane, { listId: list.id, itemId }, "k", impl)).toEqual([]);
+    expect(bodies).toHaveLength(1);
+  });
+
+  it("asks nothing for someone else's feedback, or without a key", async () => {
+    const { db, owner, list, itemId } = setup();
+    const impl = (async () => {
+      throw new Error("should not be called");
+    }) as unknown as typeof fetch;
+    expect(await feedbackFollowUps(db, owner, { listId: list.id, itemId }, "k", impl)).toEqual([]);
+    expect(await feedbackFollowUps(db, owner, { listId: list.id, itemId }, undefined, impl)).toEqual([]);
+  });
+
+  it("adds the sender's answers above the footer, once, audited as theirs", () => {
+    const { db, owner, jane, list, itemId } = setup();
+    addFeedbackFollowUp(
+      db,
+      jane,
+      {
+        listId: list.id,
+        itemId,
+        answers: [
+          { question: "What were you dragging?", answer: "A sub-item" },
+          { question: "What happened?", answer: "  " },
+        ],
+        note: "On iPad",
+      },
+      "web",
+    );
+    expect(getItem(db, owner, itemId)?.description).toBe(
+      "drag and drop is broken\n\n**Follow-up**\n\n- What were you dragging? — A sub-item\n\nOn iPad" +
+        "\n\n---\nFrom @jane · on `/`",
+    );
+    const audit = db.select().from(auditLog).where(eq(auditLog.entityId, itemId)).all();
+    expect(audit.map((a) => [a.actor, a.action])).toEqual([
+      [jane, "create"],
+      [jane, "update"],
+    ]);
+    // Once only, so it can't be used to keep rewriting the item.
+    expect(() =>
+      addFeedbackFollowUp(db, jane, { listId: list.id, itemId, answers: [], note: "More" }, "web"),
+    ).toThrow(/already/);
+  });
+
+  it("refuses anyone else, an empty follow-up, and a late one", () => {
+    const { db, owner, jane, list, itemId } = setup();
+    const add = (userId: string, note: string, now?: number) => () =>
+      addFeedbackFollowUp(db, userId, { listId: list.id, itemId, answers: [], note }, "web", now);
+    expect(add(owner, "Hi")).toThrow(/can't be added/);
+    expect(add(jane, " ")).toThrow(/empty/);
+    const createdAt = getItem(db, owner, itemId)?.createdAt ?? 0;
+    expect(add(jane, "Late", createdAt + FOLLOW_UP_MS + 1000)).toThrow(/can't be added/);
+    expect(add(jane, "Just in time", createdAt + FOLLOW_UP_MS - 1000)).not.toThrow();
   });
 });

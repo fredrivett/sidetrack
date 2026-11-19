@@ -9,6 +9,7 @@ import {
   type FeedbackKind,
   type FeedbackRating,
 } from "../lib/feedback";
+import { ANSWER_MAX, askFollowUps, type FollowUp, MAX_QUESTIONS, QUESTION_MAX } from "../lib/feedbackFollowUps";
 import { formatItemRef } from "../lib/itemRef";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
@@ -38,6 +39,10 @@ const TITLE_MAX = 80;
 export const FEEDBACK_PER_HOUR = 5;
 
 const COMMIT_URL = "https://github.com/fredrivett/sidetrack/commit/";
+/** What comes before the footer saying who sent it, where and on what build. */
+const FOOTER = "\n\n---\n";
+/** How long after sending the sender can add answers to follow-up questions. */
+export const FOLLOW_UP_MS = 30 * 60_000;
 
 /** The first line, cut to a title's length on a word where it can be. */
 function titleOf(message: string): string {
@@ -185,4 +190,110 @@ export function submitFeedback(
     });
   });
   return { itemId: id, ref: formatItemRef(list.prefix, number) };
+}
+
+/** The text of a feedback item above its footer, and the footer itself. */
+function splitFooter(description: string): [body: string, footer: string] {
+  const cut = description.lastIndexOf(FOOTER);
+  return cut < 0 ? [description, ""] : [description.slice(0, cut), description.slice(cut)];
+}
+
+/** The feedback item `userId` sent to `listId` within FOLLOW_UP_MS, or null. */
+function recentOwnFeedback(db: Db, userId: string, listId: string, itemId: string, now: number) {
+  const item = db
+    .select()
+    .from(items)
+    .where(and(eq(items.id, itemId), eq(items.projectId, listId), eq(items.createdBy, userId)))
+    .get();
+  return item && item.createdAt > now - FOLLOW_UP_MS ? item : null;
+}
+
+/** Feedback items Claude has been asked about, so each is asked about once. */
+const asked = new Set<string>();
+
+/**
+ * Up to three questions Claude would ask about feedback `userId` just sent,
+ * with likely answers; [] when there's nothing to ask, AI isn't set up, it
+ * isn't their recent feedback or it was already asked about. Reads the item
+ * as filed, never text from the browser, and leaves out the footer naming
+ * who sent it.
+ */
+export async function feedbackFollowUps(
+  db: Db,
+  userId: string,
+  input: { listId: string; itemId: string },
+  apiKey: string | undefined,
+  fetchImpl?: typeof fetch,
+  now = Date.now(),
+): Promise<FollowUp[]> {
+  if (!apiKey) return [];
+  const item = recentOwnFeedback(db, userId, input.listId, input.itemId, now);
+  if (!item || asked.has(item.id)) return [];
+  asked.add(item.id);
+  const [text] = splitFooter(item.description ?? "");
+  return askFollowUps({ title: item.title, labels: item.labels, text }, apiKey, fetchImpl);
+}
+
+/** One line of the sender's text, or an error when it's too long. */
+function oneLine(raw: string, max: number): string {
+  const text = String(raw).replace(/\s+/g, " ").trim();
+  if ([...text].length > max) throw new Error(`follow-up answer is too long (max ${max} characters)`);
+  return text;
+}
+
+/**
+ * Adds the sender's answers to follow-up questions, and anything else they
+ * say, to feedback they sent within FOLLOW_UP_MS: a "Follow-up" section above
+ * its footer. Once per item, so it can't be used to keep editing it.
+ */
+export function addFeedbackFollowUp(
+  db: Db,
+  userId: string,
+  input: {
+    listId: string;
+    itemId: string;
+    answers: Array<{ question: string; answer: string }>;
+    note?: string;
+  },
+  source: AuditOrigin,
+  now = Date.now(),
+): void {
+  const item = recentOwnFeedback(db, userId, input.listId, input.itemId, now);
+  if (!item) throw new Error("that feedback can't be added to any more");
+  const added = db
+    .select({ n: count() })
+    .from(auditLog)
+    .where(and(eq(auditLog.entityId, item.id), eq(auditLog.actor, userId), eq(auditLog.action, "update")))
+    .get()?.n;
+  if (added) throw new Error("you've already added to that feedback");
+
+  const lines = input.answers.slice(0, MAX_QUESTIONS).flatMap(({ question, answer }) => {
+    const q = oneLine(question, QUESTION_MAX);
+    // Their own words, so longer than a tapped answer can be.
+    const a = oneLine(answer, ANSWER_MAX * 5);
+    return q && a ? [`- ${q} — ${a}`] : [];
+  });
+  const note = (input.note ?? "").trim();
+  if ([...note].length > FEEDBACK_MAX) {
+    throw new Error(`feedback is too long (max ${FEEDBACK_MAX} characters)`);
+  }
+  if (!lines.length && !note) throw new Error("follow-up is empty");
+
+  const [body, footer] = splitFooter(item.description ?? "");
+  const section = ["**Follow-up**", lines.join("\n"), note].filter(Boolean).join("\n\n");
+  const description = `${body}\n\n${section}${footer}`;
+  db.transaction((tx) => {
+    tx.update(items).set({ description }).where(eq(items.id, item.id)).run();
+    recordAudit(tx as unknown as Db, {
+      actor: userId,
+      source,
+      event: {
+        type: "item.updated",
+        itemId: item.id,
+        title: item.title,
+        projectId: item.projectId,
+        changes: { description: "edited" },
+      },
+    });
+  });
 }

@@ -48,7 +48,11 @@ import {
   updateComment as updateCommentCore,
 } from "@/core/comments";
 import { getDb } from "@/core/db";
-import { submitFeedback as submitFeedbackCore } from "@/core/feedback";
+import {
+  addFeedbackFollowUp as addFeedbackFollowUpCore,
+  feedbackFollowUps as feedbackFollowUpsCore,
+  submitFeedback as submitFeedbackCore,
+} from "@/core/feedback";
 import type { FeedbackArea, FeedbackKind, FeedbackRating } from "@/lib/feedback";
 import {
   addItem as addItemCore,
@@ -506,7 +510,7 @@ export async function leaveProjectAction(projectId: string) {
   refresh();
 }
 
-/** Files feedback in the deployment's feedback list; returns its ref. */
+/** Files feedback in the deployment's feedback list; returns its id and ref. */
 export async function sendFeedbackAction(input: {
   kind: FeedbackKind;
   message: string;
@@ -515,14 +519,41 @@ export async function sendFeedbackAction(input: {
   replayUrl?: string | null;
   personUrl?: string | null;
   about?: { area: FeedbackArea; rating: FeedbackRating; context: string } | null;
-}): Promise<string> {
+}): Promise<{ itemId: string; ref: string }> {
   const userId = await requireUserId();
   const listId = getEnv().FEEDBACK_LIST_ID;
   if (!listId) throw new Error("feedback isn't set up here");
   const { db } = getDb();
-  const { ref } = submitFeedbackCore(db, userId, { ...input, listId }, SOURCE);
+  const sent = submitFeedbackCore(db, userId, { ...input, listId }, SOURCE);
   refresh();
-  return ref;
+  return sent;
+}
+
+/**
+ * Claude's follow-up questions about feedback the user just sent, each with
+ * likely answers; [] when there's nothing to ask or AI isn't on here. Takes
+ * only the item's id: core reads what they sent, and asks once per item.
+ */
+export async function feedbackFollowUpsAction(itemId: string) {
+  const userId = await requireUserId();
+  const { FEEDBACK_LIST_ID, ANTHROPIC_API_KEY } = getEnv();
+  if (!FEEDBACK_LIST_ID) return [];
+  const { db } = getDb();
+  return feedbackFollowUpsCore(db, userId, { listId: FEEDBACK_LIST_ID, itemId }, ANTHROPIC_API_KEY);
+}
+
+/** Adds the user's answers to follow-up questions to feedback they just sent. */
+export async function addFeedbackFollowUpAction(input: {
+  itemId: string;
+  answers: Array<{ question: string; answer: string }>;
+  note?: string;
+}) {
+  const userId = await requireUserId();
+  const listId = getEnv().FEEDBACK_LIST_ID;
+  if (!listId) throw new Error("feedback isn't set up here");
+  const { db } = getDb();
+  addFeedbackFollowUpCore(db, userId, { ...input, listId }, SOURCE);
+  refresh();
 }
 
 export async function addItemAction(input: {

@@ -1,10 +1,11 @@
 "use client";
 
-import { useId, useRef, useState, useTransition } from "react";
-import { Send } from "lucide-react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
+import { CircleCheck, Send } from "lucide-react";
+import { unstable_rethrow } from "next/navigation";
 import posthog from "posthog-js";
 import { toast } from "sonner";
-import { sendFeedbackAction } from "@/app/actions";
+import { addFeedbackFollowUpAction, feedbackFollowUpsAction, sendFeedbackAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import {
   ResponsiveDialog,
@@ -13,6 +14,8 @@ import {
   ResponsiveDialogDescription,
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
+import { Input } from "@/components/ui/input";
+import { LoadingEllipsis } from "@/components/ui/loading-ellipsis";
 import { Textarea } from "@/components/ui/textarea";
 import {
   FEEDBACK_AREAS,
@@ -21,6 +24,7 @@ import {
   type FeedbackKind,
   type FeedbackRating,
 } from "@/lib/feedback";
+import type { FollowUp } from "@/lib/feedbackFollowUps";
 import { RELEASE } from "@/lib/release";
 import { cn } from "@/lib/utils";
 import { runAction } from "./run-action";
@@ -54,10 +58,19 @@ export interface FeedbackAbout {
   context: string;
 }
 
+/** Feedback that's been filed, and Claude's follow-up questions about it:
+ * null while it's still asking. */
+interface Sent {
+  itemId: string;
+  ref: string;
+  questions: FollowUp[] | null;
+}
+
 /** Send feedback: what it's about and what they want to say, filed in the
  * deployment's feedback list with where they were. With `about`, it's a
  * thumbs up or down on that part of the app, tagged with it, and saying why
- * is optional. */
+ * is optional. Once it's filed, the dialog may ask a few follow-up questions,
+ * whose answers are added to the same item; skipping them loses nothing. */
 export function FeedbackDialog({
   open,
   onOpenChange,
@@ -72,6 +85,13 @@ export function FeedbackDialog({
   const [pending, start] = useTransition();
   const messageRef = useRef<HTMLTextAreaElement>(null);
   const id = useId();
+  const [sent, setSent] = useState<Sent | null>(null);
+  // The item the dialog is asking about now, so a late answer for one it's
+  // closed on is dropped.
+  const asking = useRef<string | null>(null);
+  useEffect(() => {
+    if (!open) asking.current = null;
+  }, [open]);
 
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
@@ -79,6 +99,7 @@ export function FeedbackDialog({
     if (open) {
       setKind("bug");
       setMessage("");
+      setSent(null);
     }
   }
 
@@ -90,8 +111,8 @@ export function FeedbackDialog({
     e.preventDefault();
     if (!canSend || pending) return;
     start(async () => {
-      let ref = "";
-      const sent = await runAction(
+      let filed = { itemId: "", ref: "" };
+      const ok = await runAction(
         sendFeedbackAction({
           kind: about ? "other" : kind,
           about,
@@ -100,15 +121,39 @@ export function FeedbackDialog({
           release: RELEASE || null,
           ...posthogLinks(),
         }).then((r) => {
-          ref = r;
+          filed = r;
         }),
         "send your feedback",
       );
-      if (!sent) return;
-      posthog.capture("feedback_submitted", { kind, ref, area: about?.area, rating: about?.rating });
-      toast.success("Thanks, your feedback was sent");
-      onOpenChange(false);
+      if (!ok) return;
+      posthog.capture("feedback_submitted", { kind, ref: filed.ref, area: about?.area, rating: about?.rating });
+      // It's filed. Claude's questions are an optional extra (AI suggestions
+      // never hold), so a failure or nothing to ask just closes as before.
+      setSent({ ...filed, questions: null });
+      asking.current = filed.itemId;
+      const questions = await feedbackFollowUpsAction(filed.itemId).catch((e) => {
+        unstable_rethrow(e);
+        return [];
+      });
+      if (asking.current !== filed.itemId) return;
+      if (!questions.length) {
+        toast.success("Thanks, your feedback was sent");
+        onOpenChange(false);
+        return;
+      }
+      posthog.capture("feedback_follow_ups_shown", { ref: filed.ref, count: questions.length });
+      setSent({ ...filed, questions });
     });
+  }
+
+  if (sent) {
+    return (
+      <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+        <ResponsiveDialogContent>
+          <FollowUpForm sent={sent} onDone={() => onOpenChange(false)} />
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
+    );
   }
 
   return (
@@ -205,5 +250,142 @@ export function FeedbackDialog({
         </form>
       </ResponsiveDialogContent>
     </ResponsiveDialog>
+  );
+}
+
+/** The longest answer typed in, as core allows. */
+const TYPED_MAX = 200;
+
+/** Claude's questions about feedback that's filed as `sent.ref`, with
+ * answers to tap or type and room for anything else; Done skips them. */
+function FollowUpForm({ sent, onDone }: { sent: Sent; onDone: () => void }) {
+  const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [note, setNote] = useState("");
+  const [pending, start] = useTransition();
+  const id = useId();
+  const questions = sent.questions ?? [];
+  const loading = sent.questions === null;
+  const given = questions
+    .map((q, i) => ({ question: q.question, answer: (answers[i] ?? "").trim() }))
+    .filter((a) => a.answer);
+  const canAdd = !loading && (given.length > 0 || note.trim()) && [...note.trim()].length <= FEEDBACK_MAX;
+
+  function add(e: React.FormEvent) {
+    e.preventDefault();
+    if (!canAdd || pending) return;
+    start(async () => {
+      const ok = await runAction(
+        addFeedbackFollowUpAction({ itemId: sent.itemId, answers: given, note: note.trim() }),
+        "add to your feedback",
+      );
+      if (!ok) return;
+      posthog.capture("feedback_follow_up_added", { ref: sent.ref, answered: given.length });
+      toast.success(`Thanks, that's added to your feedback`);
+      onDone();
+    });
+  }
+
+  function done() {
+    if (pending) return;
+    toast.success("Thanks, your feedback was sent");
+    onDone();
+  }
+
+  return (
+    <form onSubmit={add} className="flex min-h-0 flex-1 flex-col">
+      <div className="flex shrink-0 items-center gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+        <ResponsiveDialogTitle>
+          <span data-replay-safe className="flex items-center gap-1.5">
+            <CircleCheck className="size-4 text-green-600 dark:text-green-500" aria-hidden />
+            Sent as {sent.ref}
+          </span>
+        </ResponsiveDialogTitle>
+        <ResponsiveDialogDescription className="sr-only">
+          Your feedback is sent. Answer a few questions about it, if you like.
+        </ResponsiveDialogDescription>
+        <ResponsiveDialogCloseButton className="ml-auto" />
+      </div>
+
+      <div
+        aria-busy={loading || pending}
+        className={cn(
+          "min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4",
+          pending && "opacity-60",
+        )}
+      >
+        {loading ? (
+          <p data-replay-safe className="text-sm text-muted-foreground">
+            Thanks. Checking if we have any quick questions
+            <LoadingEllipsis />
+          </p>
+        ) : (
+          <>
+            <p data-replay-safe className="text-sm text-muted-foreground">
+              Thanks. A few quick questions would help us act on it, if you have a moment.
+            </p>
+            {questions.map((q, i) => {
+              const picked = answers[i] ?? "";
+              const typed = picked && !q.answers.includes(picked) ? picked : "";
+              return (
+                <fieldset key={i} className="space-y-2" aria-disabled={pending}>
+                  <legend data-replay-safe className="text-sm">
+                    {q.question}
+                  </legend>
+                  <div data-replay-safe className="flex flex-wrap gap-1.5">
+                    {q.answers.map((a) => (
+                      <Button
+                        key={a}
+                        type="button"
+                        size="sm"
+                        variant={picked === a ? "secondary" : "outline"}
+                        aria-pressed={picked === a}
+                        aria-disabled={pending}
+                        className={cn("h-7 rounded-full px-3", picked === a && "ring-2 ring-ring/40")}
+                        onClick={() =>
+                          !pending && setAnswers((prev) => ({ ...prev, [i]: picked === a ? "" : a }))
+                        }
+                      >
+                        {a}
+                      </Button>
+                    ))}
+                  </div>
+                  <Input
+                    aria-label={`Your own answer: ${q.question}`}
+                    value={typed}
+                    maxLength={TYPED_MAX}
+                    readOnly={pending}
+                    placeholder="Or say something else"
+                    onChange={(e) => !pending && setAnswers((prev) => ({ ...prev, [i]: e.target.value }))}
+                  />
+                </fieldset>
+              );
+            })}
+            <div className="space-y-2">
+              <label htmlFor={`${id}-note`} data-replay-safe className="text-sm">
+                Anything else?
+              </label>
+              <Textarea
+                id={`${id}-note`}
+                value={note}
+                onChange={(e) => !pending && setNote(e.target.value)}
+                readOnly={pending}
+                aria-disabled={pending}
+                placeholder="Optional"
+                className="min-h-16"
+              />
+            </div>
+          </>
+        )}
+      </div>
+
+      <div data-replay-safe className="flex shrink-0 justify-end gap-2 border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
+        <Button type="button" variant="outline" size="sm" onClick={done} disabled={pending}>
+          Done
+        </Button>
+        <Button type="submit" size="sm" disabled={!canAdd} aria-disabled={pending}>
+          {pending ? "Adding…" : `Add to ${sent.ref}`}
+        </Button>
+      </div>
+    </form>
   );
 }
