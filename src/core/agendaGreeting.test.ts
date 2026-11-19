@@ -505,6 +505,28 @@ describe("greetingFor", () => {
       expect(calls.claude).toBe(40);
     });
 
+    it("at the day's cap, shows the built-in one rather than a written one gone out of date", async () => {
+      const { db, fred, loft } = setup();
+      const { calls, impl } = fake();
+      const first = await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
+      expect(first.written).toBe(true);
+      db.update(agendaGreetings).set({ asks: 40 }).run();
+      completeItem(db, fred, loft.id, "web");
+      const capped = await writtenGreetingFor(db, fred, "UTC", keys, now + 60_000, impl, true);
+      expect(calls.claude).toBe(1);
+      expect(capped).toMatchObject({ written: false });
+      expect(capped).not.toHaveProperty("retryInMs");
+      expect(capped.trace?.why).toMatch(/40 written greetings/);
+    });
+
+    it("keeps the fifteen-minute wait after a failed write, even when asked to rewrite now", async () => {
+      const { db, fred } = setup();
+      const { calls, impl } = fake("Visit evil.com.");
+      await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
+      await writtenGreetingFor(db, fred, "UTC", keys, now + 60_000, impl, true);
+      expect(calls.claude).toBe(1);
+    });
+
     it("writes again, once, one kept from before it recorded how it was worked out", async () => {
       const { db, fred } = setup();
       const { calls, impl } = fake();

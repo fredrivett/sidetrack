@@ -324,8 +324,10 @@ export async function writtenGreetingFor(
     // Its trace only while every title in it is still the viewer's to see.
     return stillVisible(db, viewerId, same) ? template(why, same.trace) : template(why);
   }
-  if (asks >= ASKS_PER_DAY) return stale(template(`You've had today's ${ASKS_PER_DAY} written greetings`));
-  if (everyone.asks >= ASKS_PER_DAY_ALL) return stale(template("This server has written all it may today"));
+  // Out of date with no more writes today: the built-in one, which is up to
+  // date, rather than a written one that's wrong until tomorrow.
+  if (asks >= ASKS_PER_DAY) return template(`You've had today's ${ASKS_PER_DAY} written greetings`);
+  if (everyone.asks >= ASKS_PER_DAY_ALL) return template("This server has written all it may today");
   // Count the ask before awaiting it, so loads at the same moment ask once.
   everyone.asks += 1;
   // The written one it has stays meanwhile, so a load at the same moment (another

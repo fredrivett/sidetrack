@@ -183,7 +183,8 @@ export function AgendaGreeting({
   const retryInMs = greeting?.retryInMs;
   useEffect(() => {
     if (retryInMs === undefined) return;
-    const t = setTimeout(() => askAgain(), retryInMs + 1000);
+    // With the flag the last ask had, so a Rewrite now isn't put back to the longer wait.
+    const t = setTimeout(() => askAgain(askedNow.current), retryInMs + 1000);
     return () => clearTimeout(t);
   }, [greeting, retryInMs]);
   // A second's tick for "Rewriting in Xs".
@@ -193,7 +194,12 @@ export function AgendaGreeting({
     return () => clearInterval(t);
   }, [retryAt]);
   useEffect(() => {
-    if (shownWith.current === null || standing === shownWith.current) return;
+    if (shownWith.current === null) return;
+    if (standing === shownWith.current) {
+      // Changed back (an undo) before it asked: up to date again.
+      const back = setTimeout(() => setChanged(false), 0);
+      return () => clearTimeout(back);
+    }
     // Faded at once; then, after a moment's grace so ticking off a few in a
     // row asks once, asked for again.
     const fade = setTimeout(() => setChanged(true), 0);
@@ -253,8 +259,8 @@ export function AgendaGreeting({
         greeting?.text && (
           <>
           <p
-            aria-busy={stale || undefined}
-            className={`transition-opacity duration-500 ${stale ? "opacity-45" : ""} mt-2 animate-in font-serif text-[18px] leading-[1.7] font-light text-neutral-700 text-pretty fade-in duration-500 min-[900px]:mt-3 min-[900px]:text-[21px] dark:text-neutral-300`}
+            aria-busy={(stale && asking) || undefined}
+            className={`transition-opacity ${stale ? "opacity-45" : ""} mt-2 animate-in font-serif text-[18px] leading-[1.7] font-light text-neutral-700 text-pretty fade-in duration-500 min-[900px]:mt-3 min-[900px]:text-[21px] dark:text-neutral-300`}
           >
             {parseGreeting(greeting.text).map((part, i) => {
               if (part.kind === "text") return part.text;
@@ -302,13 +308,19 @@ export function AgendaGreeting({
             })}
           </p>
             {stale && (
-              <p className="mt-2 flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400" aria-live="polite">
+              <p className="mt-2 flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
                 <span>
-                  {asking
-                    ? "Rewriting…"
-                    : retryAt !== null && retryAt > clock
-                      ? `Out of date · rewriting in ${Math.ceil((retryAt - clock) / 1000)}s`
-                      : "Out of date"}
+                  {asking ? (
+                    "Rewriting…"
+                  ) : (
+                    <>
+                      Out of date
+                      {/* Seconds left out of the announcement: it'd read every tick. */}
+                      {retryAt !== null && retryAt > clock && (
+                        <span aria-hidden> · rewriting in {Math.ceil((retryAt - clock) / 1000)}s</span>
+                      )}
+                    </>
+                  )}
                 </span>
                 <button
                   type="button"
@@ -321,6 +333,10 @@ export function AgendaGreeting({
                 </button>
               </p>
             )}
+            {/* Always there, so screen readers announce it when it fills. */}
+            <span className="sr-only" aria-live="polite">
+              {stale ? (asking ? "Rewriting the brief" : "The brief is out of date") : ""}
+            </span>
             <div className="mt-2 flex animate-in items-center gap-1 fade-in duration-500">
                 {/* On Claude's greetings only, so a thumbs down is about Claude. */}
                 {onFeedback && greeting.written && (["up", "down"] as const).map((rating) => {
