@@ -228,7 +228,7 @@ export function AgendaGreeting({
                       aria-label={rating === "up" ? "Good greeting" : "Not quite right"}
                       title={rating === "up" ? "Good greeting" : "Not quite right"}
                       onClick={() => onFeedback({ area: "greeting", rating, context: plainText(greeting) })}
-                      className="rounded-md p-1.5 text-neutral-300 outline-none hover:bg-neutral-100 hover:text-neutral-600 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+                      className="rounded-md p-1.5 text-neutral-300 outline-none hover:bg-neutral-100 hover:text-neutral-600 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:focus-visible:ring-neutral-600 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
                     >
                       <Icon className="size-3.5" />
                     </button>
@@ -238,7 +238,7 @@ export function AgendaGreeting({
                   href="/settings/greeting"
                   aria-label="Greeting settings"
                   title="Greeting settings"
-                  className="rounded-md p-1.5 text-neutral-300 outline-none hover:bg-neutral-100 hover:text-neutral-600 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+                  className="rounded-md p-1.5 text-neutral-300 outline-none hover:bg-neutral-100 hover:text-neutral-600 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:focus-visible:ring-neutral-600 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
                 >
                   <Settings className="size-3.5" />
                 </Link>
@@ -246,7 +246,7 @@ export function AgendaGreeting({
                   <button
                     type="button"
                     onClick={() => setExplainOpen(true)}
-                    className="rounded-md px-1.5 py-1 text-xs text-neutral-400 outline-none hover:bg-neutral-100 hover:text-neutral-600 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:text-neutral-500 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+                    className="rounded-md px-1.5 py-1 text-xs text-neutral-400 outline-none hover:bg-neutral-100 hover:text-neutral-600 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:focus-visible:ring-neutral-600 dark:text-neutral-500 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
                   >
                     What is this?
                   </button>

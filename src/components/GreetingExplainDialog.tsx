@@ -97,7 +97,8 @@ export function GreetingExplainDialog({
             </p>
             <Link
               href="/settings/greeting"
-              className="shrink-0 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium hover:bg-accent"
+              aria-label="Change greeting settings"
+              className="shrink-0 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
             >
               Change
             </Link>
