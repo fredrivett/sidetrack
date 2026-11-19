@@ -496,7 +496,7 @@ describe("AgendaView", () => {
         titles: {},
         written: false,
         others: [],
-        retryInMs: 3_000,
+        retryInMs: 15 * 60_000,
       } satisfies Greeting)
       .mockReturnValueOnce(new Promise((r) => (second = r)));
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
@@ -507,9 +507,19 @@ describe("AgendaView", () => {
       expect(screen.getByText("One thing slipped.")).toBeTruthy();
       expect(screen.queryByText("Out of date")).toBeNull();
       expect(screen.queryByRole("button", { name: "Rewrite now" })).toBeNull();
-      const before = vi.mocked(agendaGreetingAction).mock.calls.length;
-      await act(async () => vi.advanceTimersByTime(4_500));
-      expect(vi.mocked(agendaGreetingAction).mock.calls.length).toBe(before + 1);
+      // Told 15 minutes, it checks back after 30s; not in a hidden tab
+      // until it's seen again.
+      const calls = () => vi.mocked(agendaGreetingAction).mock.calls.length;
+      const before = calls();
+      await act(async () => vi.advanceTimersByTime(29_000));
+      expect(calls()).toBe(before);
+      const hidden = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+      await act(async () => vi.advanceTimersByTime(2_000));
+      expect(calls()).toBe(before);
+      hidden.mockReturnValue("visible");
+      await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+      hidden.mockRestore();
+      expect(calls()).toBe(before + 1);
     } finally {
       vi.useFakeTimers({ toFake: ["Date"] });
       vi.setSystemTime(new Date(2026, 10, 14, 12));

@@ -486,6 +486,7 @@ describe("greetingFor", () => {
       // Inside the retry wait: the template, explained without Bob's list.
       const after = await writtenGreetingFor(db, fred, "UTC", keys, now + 3 * 60_000, impl);
       expect(after.trace?.why).toMatch(/turned down.*It tries again in 12 min$/);
+      expect(after.retryInMs).toBe(12 * 60_000);
       expect(JSON.stringify(after)).not.toContain("Secret merger");
     });
 
