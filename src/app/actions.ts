@@ -121,6 +121,7 @@ import {
 import {
   AVATAR_MAX_BYTES,
   setOverdueCollapsed as setOverdueCollapsedCore,
+  setNoDateCollapsed as setNoDateCollapsedCore,
   setAgendaReadAt as setAgendaReadAtCore,
   setBoardFilters as setBoardFiltersCore,
   setGreetingPrefs as setGreetingPrefsCore,
@@ -743,6 +744,14 @@ export async function deleteCommentAction(id: string) {
   const userId = await requireUserId();
   const { db } = getDb();
   deleteCommentCore(db, userId, id, SOURCE);
+  refresh();
+}
+
+/** Fold away or show the Agenda's No date section, for the signed-in user. */
+export async function setNoDateCollapsedAction(collapsed: boolean) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  setNoDateCollapsedCore(db, userId, collapsed);
   refresh();
 }
 

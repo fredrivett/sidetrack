@@ -38,6 +38,25 @@ export function nextUserNumber(db: Db): number {
   return (row?.last ?? 0) + 1;
 }
 
+/** Whether the user has folded away the Agenda's No date section. */
+export function getNoDateCollapsed(db: Db, userId: string): boolean {
+  return (
+    db
+      .select({ noDateCollapsed: users.noDateCollapsed })
+      .from(users)
+      .where(eq(users.id, userId))
+      .get()?.noDateCollapsed ?? false
+  );
+}
+
+/** Fold away or show the Agenda's No date section, as setOverdueCollapsed does Overdue. */
+export function setNoDateCollapsed(db: Db, userId: string, collapsed: boolean): void {
+  // audit-exempt: view state, not a change to anything shown to others.
+  db.update(users).set({ noDateCollapsed: collapsed }).where(eq(users.id, userId)).run();
+  // Unaudited, so announced here: the user's other tabs and devices fold too.
+  announceChange({ actor: userId, projectId: null });
+}
+
 /** Whether the user has folded away the Agenda's Overdue section. */
 export function getOverdueCollapsed(db: Db, userId: string): boolean {
   return (

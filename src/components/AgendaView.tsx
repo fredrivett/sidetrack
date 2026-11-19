@@ -2,7 +2,7 @@
 
 import { ChevronDown } from "lucide-react";
 import { useId, useOptimistic, useState, useTransition } from "react";
-import { setOverdueCollapsedAction } from "@/app/actions";
+import { setNoDateCollapsedAction, setOverdueCollapsedAction } from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { nestItems } from "@/lib/itemTree";
@@ -40,6 +40,7 @@ export function AgendaView({
   prLinksByItem,
   viewerId,
   overdueCollapsed: savedCollapsed,
+  noDateCollapsed: savedNoDateCollapsed,
   greet,
   firstName,
   onFeedback,
@@ -53,6 +54,8 @@ export function AgendaView({
   viewerId: string;
   /** Whether the viewer keeps Overdue folded away, as saved on their account. */
   overdueCollapsed: boolean;
+  /** Whether the viewer keeps No date folded away, as saved on their account. */
+  noDateCollapsed: boolean;
   /** Whether to greet: not before the viewer's timezone is known. */
   greet: boolean;
   /** The viewer's first name, for the greeting's opening line. */
@@ -75,6 +78,41 @@ export function AgendaView({
       );
     });
   const overdueId = useId();
+  const [noDateCollapsed, showNoDateCollapsed] = useOptimistic(savedNoDateCollapsed);
+  const toggleNoDate = () =>
+    start(async () => {
+      const next = !noDateCollapsed;
+      showNoDateCollapsed(next);
+      await runAction(
+        setNoDateCollapsedAction(next),
+        next ? "collapse No date" : "expand No date",
+      );
+    });
+  const noDateId = useId();
+  // Rows 0fr to 1fr animates to the content's own height. Folded, it's inert,
+  // so its rows leave the tab order too.
+  const fold = (id: string, collapsed: boolean, rows: React.ReactNode) => (
+    <div
+      id={id}
+      inert={collapsed}
+      className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none ${
+        collapsed ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100"
+      }`}
+    >
+      {/* -mx-1 px-1 and pb-1 leave room for the rows' focus rings. */}
+      <div className="-mx-1 min-h-0 overflow-hidden">
+        <div className="space-y-1.5 px-1 pt-0.5 pb-1">{rows}</div>
+      </div>
+    </div>
+  );
+  const chevron = (collapsed: boolean, size: string) => (
+    <ChevronDown
+      aria-hidden="true"
+      className={`ml-auto ${size} transition-transform duration-300 ease-out motion-reduce:transition-none ${
+        collapsed ? "" : "rotate-180"
+      }`}
+    />
+  );
   // The row of the item a greeting chip is hovered or focused on.
   const [lit, setLit] = useState<string | null>(null);
   const lightable = (id: string, row: React.ReactNode) => (
@@ -142,8 +180,12 @@ export function AgendaView({
           if (groups.length === 0) return null;
           const row = rowProps(project);
           return (
-            <div key={project.id} className="space-y-1.5 pt-1">
-              <h3 className="flex items-center gap-1.5 px-1 text-xs text-neutral-500 dark:text-neutral-400">
+            // A card per list, so each list's undated items read as one group.
+            <div
+              key={project.id}
+              className="space-y-1.5 rounded-xl border border-neutral-200 bg-neutral-50/70 p-1.5 dark:border-neutral-800 dark:bg-neutral-900/40"
+            >
+              <h3 className="flex items-center gap-1.5 px-1 pt-0.5 text-xs font-medium text-neutral-600 dark:text-neutral-300">
                 <ProjectIcon
                   icon={project.icon}
                   homepageUrl={project.homepageUrl}
@@ -247,28 +289,31 @@ export function AgendaView({
                   <span className="tabular-nums text-red-700/60 dark:text-red-400/60">
                     {openCount(rows)}
                   </span>
-                  <ChevronDown
-                    aria-hidden="true"
-                    className={`ml-auto size-3.5 transition-transform duration-300 ease-out motion-reduce:transition-none ${
-                      overdueCollapsed ? "" : "rotate-180"
-                    }`}
-                  />
+                  {chevron(overdueCollapsed, "size-3.5")}
                 </button>
               </h2>
-              {/* Rows 0fr to 1fr animates to the content's own height. Folded,
-                  it's inert, so its rows leave the tab order too. */}
-              <div
-                id={overdueId}
-                inert={overdueCollapsed}
-                className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none ${
-                  overdueCollapsed ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100"
-                }`}
-              >
-                {/* -mx-1 px-1 and pb-1 leave room for the rows' focus rings. */}
-                <div className="-mx-1 min-h-0 overflow-hidden">
-                  <div className="space-y-1.5 px-1 pt-0.5 pb-1">{renderRows(label, rows)}</div>
-                </div>
-              </div>
+              {fold(overdueId, overdueCollapsed, renderRows(label, rows))}
+            </section>
+          ) : label === "No date" ? (
+            // Larger than the dated sections' labels, and folds away: undated
+            // items are the backlog, not today's work.
+            <section key={label} className="pt-2">
+              <h2 className="text-sm font-medium">
+                <button
+                  type="button"
+                  onClick={toggleNoDate}
+                  aria-expanded={!noDateCollapsed}
+                  aria-controls={noDateId}
+                  className="flex w-full items-center gap-2 rounded-md px-1 py-1 text-left text-neutral-700 outline-none hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:text-neutral-300 dark:hover:text-neutral-100 dark:focus-visible:ring-neutral-600"
+                >
+                  {label}
+                  <span className="tabular-nums text-neutral-400 dark:text-neutral-500">
+                    {openCount(rows)}
+                  </span>
+                  {chevron(noDateCollapsed, "size-4")}
+                </button>
+              </h2>
+              {fold(noDateId, noDateCollapsed, renderRows(label, rows))}
             </section>
           ) : (
             <section key={label} className="space-y-1.5">
