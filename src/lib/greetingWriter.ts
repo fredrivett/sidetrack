@@ -39,6 +39,10 @@ export interface WriterInput {
   /** Token number → item id, for the items it may name. */
   items: Map<number, BriefItem>;
   othersCount: number;
+  /** How many items the picked moves name; the greeting must name one if so. */
+  picked: number;
+  /** Whether slipped tasks were picked, so the triage offer makes sense. */
+  triage: boolean;
 }
 
 const weekdayOf = (day: string) =>
@@ -77,6 +81,8 @@ export function writerInput(brief: AgendaBrief, pick: GreetingPick): WriterInput
   return {
     items,
     othersCount: pick.others.length,
+    picked: moves.reduce((n, m) => n + m.tasks.length, 0),
+    triage: pick.moments.includes("triage"),
     facts: {
       day: brief.weekday,
       weekend: brief.weekend,
@@ -105,13 +111,15 @@ export function writerInput(brief: AgendaBrief, pick: GreetingPick): WriterInput
  * it breaks a rule, so nothing it says unchecked reaches the page.
  */
 export function checkWriterOutput(raw: string, input: WriterInput): string | null {
-  const text = raw.trim();
-  if (!text || text.length > MAX_CHARS || /[\n\r]/.test(text)) return null;
-  // Plain sentences only: no links, markup, shouting or the words the tone avoids.
-  // "Late" alone is fine ("since it's late"); calling a task late isn't.
-  if (/https?:|www\.|[<>*_#`[\]!]|\boverdue\b|\b(?:is|are|was|were|running|too) late\b/i.test(text)) {
-    return null;
-  }
+  // A reply split over lines is still one paragraph.
+  const text = raw.trim().replace(/\s+/g, " ");
+  if (!text || text.length > MAX_CHARS) return null;
+  // Plain sentences only: no links, addresses or phone numbers a title could
+  // smuggle in, no markup or shouting.
+  if (/https?:|www\.|@|\b[a-z0-9-]+\.[a-z]{2,}\b|\d[\d\s-]{3,}\d|[<>*_#`[\]!]/i.test(text)) return null;
+  // No scolding: "late" only for the hour ("it's late"), never a task.
+  const hourLate = /\b(?:it's|it’s|it is|getting|so) late\b|\blate (?:evening|night|in the day)\b/gi;
+  if (/\boverdue\b|\blate\b/i.test(text.replace(hourLate, ""))) return null;
   const TOKEN = /\{\{([^{}]*)\}\}/g;
   const named = new Set<number>();
   let bad = false;
@@ -124,20 +132,24 @@ export function checkWriterOutput(raw: string, input: WriterInput): string | nul
       return item ? `{{item:${item.id}}}` : "";
     }
     m = /^(others|action:triage)\|([^|{}]{1,40})$/.exec(body);
-    if (m && (m[1] !== "others" || input.othersCount > 0)) return `{{${m[1]}|${m[2].trim()}}}`;
+    const allowed = m && (m[1] === "others" ? input.othersCount > 0 : input.triage);
+    if (m && allowed && m[2].trim()) return `{{${m[1]}|${m[2].trim()}}}`;
     bad = true;
     return "";
   });
   if (bad || /[{}]/.test(out.replace(TOKEN, ""))) return null;
-  // The prose around the tokens: three sentences at most, and no title
-  // spelled out where its chip should be.
+  // The prose around the tokens: three sentences at most, and no title of
+  // two words or more spelled out where its chip should be.
   const prose = out.replace(TOKEN, "x");
   if ((prose.match(/[.?](\s|$)/g) ?? []).length > 3) return null;
   for (const item of input.items.values()) {
-    if (item.title.length >= 4 && prose.toLowerCase().includes(item.title.toLowerCase())) return null;
+    const title = item.title.trim();
+    if (!/\s/.test(title)) continue;
+    const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (new RegExp(`\\b${escaped}\\b`, "i").test(prose)) return null;
   }
-  // Something to say about the items it was given: at least one of them.
-  if (input.items.size > 0 && named.size === 0) return null;
+  // When the picked moves name items, the greeting names at least one.
+  if (input.picked > 0 && named.size === 0) return null;
   return out;
 }
 
@@ -177,7 +189,12 @@ export async function writeGreeting(
       signal: AbortSignal.timeout(6000),
     });
     if (!res.ok) return null;
-    const body = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
+    const body = (await res.json()) as {
+      stop_reason?: string;
+      content?: Array<{ type: string; text?: string }>;
+    };
+    // Cut short or refused: not a greeting to show, however tidy it looks.
+    if (body.stop_reason !== "end_turn") return null;
     const text = (body.content ?? [])
       .filter((b) => b.type === "text")
       .map((b) => b.text ?? "")

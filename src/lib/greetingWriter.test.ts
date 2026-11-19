@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgendaBrief, BriefItem } from "../core/agendaBrief";
 import type { GreetingPick } from "./greetingJev";
+import { parseGreeting } from "./greeting";
 import { checkWriterOutput, writeGreeting, writerInput } from "./greetingWriter";
 
 const item = (id: string, title: string, more: Partial<BriefItem> = {}): BriefItem => ({
@@ -71,21 +72,54 @@ describe("checkWriterOutput", () => {
   it.each([
     ["an item it wasn't given", "Start with {{item:9}}."],
     ["a token it doesn't know", "Start with {{item:1}} and {{link:http}}."],
+    ["an action it doesn't know", "Start with {{item:1}}, or {{action:delete|clear it all}}?"],
+    ["an item by its real id", "Start with {{item:k1}}."],
+    ["an action with no words", "Start with {{item:1}}, or {{action:triage|   }}?"],
+    ["an action with too many words", `Start with {{item:1}}, or {{action:triage|${"x".repeat(41)}}}?`],
+    ["a bare domain", "Start with {{item:1}}, then visit evil.com to verify."],
+    ["an email address", "Start with {{item:1}}, then write to help@x."],
+    ["a phone number", "Start with {{item:1}}, then call 0800 123 456."],
     ["a malformed token", "Start with {{item:1} today."],
     ["a stray brace", "Start with {{item:1}} {today}."],
     ["a link", "Start with {{item:1}}, then see evil.example at https://evil.example."],
-    ["a bare domain", "Start with {{item:1}} at www.evil.example."],
+    ["a www address", "Start with {{item:1}} at www.evil.example."],
     ["markup", "Start with **{{item:1}}**."],
     ["an exclamation", "Start with {{item:1}}!"],
     ["a scolding word", "{{item:1}} is overdue."],
     ["calling a task late", "{{item:1}} is running late."],
+    ["calling tasks late", "{{item:1}} and {{item:2}} are both a little late."],
+    ["calling a task late, briefly", "{{item:1}} is late."],
     ["a title spelled out", "Call the bank, then {{item:2}}."],
     ["more than three sentences", "{{item:1}} first. Then this. Then that. And more."],
-    ["a second line", "{{item:1}} first.\nThen this."],
     ["no item when it was given some", "A gentle Wednesday."],
     ["nothing", "  "],
   ])("rejects %s", (_, text) => {
     expect(checkWriterOutput(text, input)).toBeNull();
+  });
+
+  it("offers triage only when slipped tasks were picked", () => {
+    const plan = writerInput(brief, { ...pick, moments: ["plan"], items: { plan: [sam] } });
+    expect(checkWriterOutput("Just {{item:1}}. Want to {{action:triage|give it a new day}}?", plan)).toBeNull();
+  });
+
+  it("keeps a reply split over lines as one paragraph", () => {
+    expect(checkWriterOutput("Just {{item:2}} today.\n\nEnjoy it.", input)).toBe("Just {{item:s1}} today. Enjoy it.");
+  });
+
+  it("lets ordinary words through that happen to be a short title", () => {
+    const rest = writerInput(brief, { ...pick, items: { triage: [item("r1", "Rest")], plan: [item("p1", "Plan the week")] } });
+    expect(checkWriterOutput("{{item:1}} first, then the rest of the day is yours.", rest)).not.toBeNull();
+    expect(checkWriterOutput("{{item:1}} first, a good moment to plan the week.", rest)).toBeNull();
+  });
+
+  it("gives the page only tokens it can read", () => {
+    const out = checkWriterOutput(
+      "{{item:1}} slipped. Want to {{action:triage|give it a new day}}? Then {{item:2}}, ahead of {{others|one other}}.",
+      input,
+    );
+    const parts = parseGreeting(out ?? "");
+    expect(parts.map((p) => p.kind)).toEqual(["item", "text", "action", "text", "item", "text", "others", "text"]);
+    expect(parts.some((p) => "text" in p && p.text.includes("{"))).toBe(false);
   });
 
   it("lets the evening be late", () => {
@@ -99,8 +133,8 @@ describe("checkWriterOutput", () => {
     expect(checkWriterOutput("{{item:1}} first, ahead of {{others|four others}}.", none)).toBeNull();
   });
 
-  it("accepts a plain line when there's no item to name", () => {
-    const quiet = writerInput({ ...brief, lookBack: { ...brief.lookBack, finishedCount: 0 } }, {
+  it("accepts a plain line when no move names an item, even with a look-back", () => {
+    const quiet = writerInput(brief, {
       moments: ["clear"],
       items: {},
       others: [],
@@ -120,17 +154,23 @@ describe("writeGreeting", () => {
     let sent: RequestInit | undefined;
     const impl = (async (_: string, init: RequestInit) => {
       sent = init;
-      return new Response(JSON.stringify({ content: [{ type: "text", text: "Just {{item:2}} today." }] }));
+      return new Response(
+        JSON.stringify({ stop_reason: "end_turn", content: [{ type: "text", text: "Just {{item:2}} today." }] }),
+      );
     }) as unknown as typeof fetch;
     expect(await writeGreeting(brief, pick, "sk-test", impl)).toBe("Just {{item:s1}} today.");
     expect((sent?.headers as Record<string, string>)["x-api-key"]).toBe("sk-test");
     expect(String(sent?.body)).not.toContain("sk-test");
   });
 
-  it("gives up on an error, a rejected reply or a network failure", async () => {
+  it("gives up on an error, a rejected or cut-off reply, or a network failure", async () => {
     expect(await writeGreeting(brief, pick, "k", reply({ error: {} }, 429))).toBeNull();
     expect(
-      await writeGreeting(brief, pick, "k", reply({ content: [{ type: "text", text: "Visit https://x.y now." }] })),
+      await writeGreeting(brief, pick, "k", reply({ stop_reason: "end_turn", content: [{ type: "text", text: "Visit https://x.y now." }] })),
+    ).toBeNull();
+    // Cut off at max_tokens, however tidy what came back.
+    expect(
+      await writeGreeting(brief, pick, "k", reply({ stop_reason: "max_tokens", content: [{ type: "text", text: "Just {{item:2}} today." }] })),
     ).toBeNull();
     const boom = (async () => {
       throw new Error("offline");

@@ -1,13 +1,15 @@
 // Reading the Agenda greeting's tokens (see src/core/agendaGreeting.ts):
 // `{{item:<id>}}` names an item, `{{action:<name>|<words>}}` is a phrase
-// the reader taps. Everything else is plain text.
+// the reader taps, and `{{others|<words>}}` the rest of their undated items.
+// Everything else is plain text.
 
 export type GreetingPart =
   | { kind: "text"; text: string }
   | { kind: "item"; id: string }
-  | { kind: "action"; action: string; text: string };
+  | { kind: "action"; action: string; text: string }
+  | { kind: "others"; text: string };
 
-const TOKEN = /\{\{(?:item:([^}|]+)|action:([^}|]+)\|([^}]+))\}\}/g;
+const TOKEN = /\{\{(?:item:([^}|]+)|action:([^}|]+)\|([^}]+)|others\|([^}]+))\}\}/g;
 
 /** The greeting's parts in order. */
 export function parseGreeting(text: string): GreetingPart[] {
@@ -18,7 +20,9 @@ export function parseGreeting(text: string): GreetingPart[] {
     parts.push(
       m[1] !== undefined
         ? { kind: "item", id: m[1] }
-        : { kind: "action", action: m[2], text: m[3] },
+        : m[4] !== undefined
+          ? { kind: "others", text: m[4] }
+          : { kind: "action", action: m[2], text: m[3] },
     );
     at = m.index + m[0].length;
   }
