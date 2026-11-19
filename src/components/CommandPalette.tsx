@@ -17,7 +17,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { type ReactNode, useEffect, useRef } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useRef, useSyncExternalStore } from "react";
 import type { Item } from "@/core/schema";
 import { formatItemRef } from "@/lib/itemRef";
 import {
@@ -80,6 +80,11 @@ export function CommandPalette({
 }) {
   const router = useRouter();
   const searchRef = useRef<HTMLInputElement>(null);
+  const visibleHeight = useSyncExternalStore(
+    subscribeVisualViewport,
+    visualViewportHeight,
+    () => undefined,
+  );
 
   // Close first, then act, so a dialog the action opens isn't stacked under
   // the closing palette.
@@ -127,7 +132,21 @@ export function CommandPalette({
         <ResponsiveDialogDescription className="sr-only">
           Search commands, lists and items
         </ResponsiveDialogDescription>
-        <Command className="min-h-0 flex-1 bg-transparent in-data-[slot=drawer-content]:pb-2">
+        {/* In the sheet, the palette is no taller than what's visible, less
+            2.5rem of backdrop above it and the 0.75rem swipe handle. The
+            sheet's keyboard inset lifts its bottom above the keyboard, but
+            iOS also pans the page to reveal the search field, which is
+            focused while the sheet is still sliding in from below; without
+            this cap the sheet keeps its full height and the pan pushes its
+            top, search field and all, off the screen. */}
+        <Command
+          className="min-h-0 flex-1 bg-transparent in-data-[slot=drawer-content]:max-h-[calc(var(--visible-height)-3.25rem)] in-data-[slot=drawer-content]:pb-2"
+          style={
+            visibleHeight === undefined
+              ? undefined
+              : ({ "--visible-height": `${visibleHeight}px` } as CSSProperties)
+          }
+        >
           {/* Uncontrolled: cmdk keeps the search, and it unmounts with the
               dialog, so every way of closing (Esc, ⌘K, a swipe, a pick)
               clears it. */}
@@ -223,6 +242,18 @@ export function CommandPalette({
       </ResponsiveDialogContent>
     </ResponsiveDialog>
   );
+}
+
+/** How much of the page is visible: less the on-screen keyboard while it's
+ * open, as iOS lays the keyboard over the page without resizing it. */
+function visualViewportHeight() {
+  return window.visualViewport?.height ?? window.innerHeight;
+}
+
+function subscribeVisualViewport(onChange: () => void) {
+  const vv = window.visualViewport;
+  vv?.addEventListener("resize", onChange);
+  return () => vv?.removeEventListener("resize", onChange);
 }
 
 /** Passes the search up once typing pauses. */
