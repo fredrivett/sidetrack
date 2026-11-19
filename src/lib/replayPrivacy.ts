@@ -38,3 +38,21 @@ export function maskReplayAttributes(data: unknown): void {
     }
   }
 }
+
+// Text is masked too, except the app's own words, so a replay reads like the
+// app: the board's header, field names, fixed buttons and menu items. Mark
+// such text with `data-replay-safe` on the element or one above it; anything
+// unmarked stays masked, so a missed spot only shows as `***`. Mark the fixed
+// text itself, not a container that also shows what people wrote, and put
+// `data-private` on anything personal inside a marked part, such as an
+// avatar's initial; it wins over any `data-replay-safe` around it.
+
+/** Whether replays may show `el`'s text as it is. */
+export function isReplaySafe(el: Element | null | undefined): boolean {
+  return Boolean(el?.closest("[data-replay-safe]")) && !el?.closest("[data-private]");
+}
+
+/** rrweb's `maskTextFn`: the app's own text as it is, the rest as `*`s. */
+export function maskReplayText(text: string, el?: Element | null): string {
+  return isReplaySafe(el) ? text : text.replace(/\S/g, "*");
+}

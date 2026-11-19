@@ -74,7 +74,7 @@ export function NotificationsSubmenu({
   const inherited = (parent && levels[parent.scope]) || levels.all || "default";
   return (
     <DropdownMenuSub>
-      <DropdownMenuSubTrigger>
+      <DropdownMenuSubTrigger data-replay-safe>
         <Bell />
         Notifications
       </DropdownMenuSubTrigger>
@@ -90,7 +90,7 @@ export function NotificationsSubmenu({
             {levelLabel(inherited)} (from {parent?.name ?? "Settings"})
           </DropdownMenuRadioItem>
           {LEVELS.map(({ level, label }) => (
-            <DropdownMenuRadioItem key={level} value={level} closeOnClick>
+            <DropdownMenuRadioItem key={level} data-replay-safe value={level} closeOnClick>
               {label}
             </DropdownMenuRadioItem>
           ))}

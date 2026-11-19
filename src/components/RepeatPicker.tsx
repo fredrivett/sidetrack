@@ -66,7 +66,8 @@ export function RepeatPicker({
   const pressed =
     "border-neutral-900 bg-neutral-900 text-white hover:bg-neutral-800 hover:text-white dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900";
   return (
-    <div className="space-y-1.5">
+    // Its choices and rule are the app's words, shown in replays.
+    <div data-replay-safe className="space-y-1.5">
       <div className="flex flex-wrap items-center gap-1.5">
         {QUICK_REPEATS.map(([label, r]) => (
           <Button

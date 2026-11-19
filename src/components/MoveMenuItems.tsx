@@ -23,19 +23,19 @@ export function MoveMenuItems({
 }) {
   return (
     <>
-      <DropdownMenuItem disabled={!prevId} onClick={() => onMove(`before:${firstId}`)}>
+      <DropdownMenuItem data-replay-safe disabled={!prevId} onClick={() => onMove(`before:${firstId}`)}>
         <ArrowLeftToLine />
         Move to start
       </DropdownMenuItem>
-      <DropdownMenuItem disabled={!prevId} onClick={() => onMove(`before:${prevId}`)}>
+      <DropdownMenuItem data-replay-safe disabled={!prevId} onClick={() => onMove(`before:${prevId}`)}>
         <ArrowLeft />
         Move left
       </DropdownMenuItem>
-      <DropdownMenuItem disabled={!nextId} onClick={() => onMove(`after:${nextId}`)}>
+      <DropdownMenuItem data-replay-safe disabled={!nextId} onClick={() => onMove(`after:${nextId}`)}>
         <ArrowRight />
         Move right
       </DropdownMenuItem>
-      <DropdownMenuItem disabled={!nextId} onClick={() => onMove(`after:${lastId}`)}>
+      <DropdownMenuItem data-replay-safe disabled={!nextId} onClick={() => onMove(`after:${lastId}`)}>
         <ArrowRightToLine />
         Move to end
       </DropdownMenuItem>

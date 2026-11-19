@@ -97,7 +97,7 @@ export function FeedbackDialog({
       <ResponsiveDialogContent initialFocus={messageRef}>
         <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
           <div className="flex shrink-0 items-center gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-            <ResponsiveDialogTitle>Send feedback</ResponsiveDialogTitle>
+            <ResponsiveDialogTitle><span data-replay-safe>Send feedback</span></ResponsiveDialogTitle>
             <ResponsiveDialogDescription className="sr-only">
               Tell us about a bug or an idea.
             </ResponsiveDialogDescription>
@@ -111,7 +111,7 @@ export function FeedbackDialog({
               pending && "opacity-60",
             )}
           >
-            <div role="radiogroup" aria-label="What's this about?" className="flex gap-2">
+            <div role="radiogroup" aria-label="What's this about?" data-replay-safe className="flex gap-2">
               {KINDS.map(([value, emoji, label]) => (
                 <Button
                   key={value}
@@ -147,14 +147,14 @@ export function FeedbackDialog({
                     : "What's on your mind?"
               }
             />
-            <p className="text-xs text-muted-foreground">
+            <p data-replay-safe className="text-xs text-muted-foreground">
               {tooLong
                 ? `That's over ${FEEDBACK_MAX} characters.`
                 : "Sent with your username, this page and your session, so we can see what happened."}
             </p>
           </div>
 
-          <div className="flex shrink-0 justify-end gap-2 border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
+          <div data-replay-safe className="flex shrink-0 justify-end gap-2 border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
             <Button
               type="button"
               variant="outline"

@@ -403,7 +403,7 @@ export function ItemRow({
       {/* A sibling of the trigger, not a child, so clicks in the (portaled) menu
           don't bubble through the React tree to the row's open-detail onClick. */}
       <ContextMenuContent className="w-56">
-        <ContextMenuItem onClick={onOpenDetail}>
+        <ContextMenuItem data-replay-safe onClick={onOpenDetail}>
           <Eye />
           View item
         </ContextMenuItem>
@@ -414,7 +414,7 @@ export function ItemRow({
           <ContextMenuLabel className="font-mono text-[11px] tracking-wide text-neutral-400">
             {ref}
           </ContextMenuLabel>
-          <ContextMenuItem closeOnClick={false} onClick={() => void copy()}>
+          <ContextMenuItem data-replay-safe closeOnClick={false} onClick={() => void copy()}>
             {copied ? (
               <Check />
             ) : (
@@ -426,7 +426,7 @@ export function ItemRow({
             </ContextMenuShortcut>
           </ContextMenuItem>
           {follows && (
-            <ContextMenuItem onClick={() => follows.setFollowing(item, !following)}>
+            <ContextMenuItem data-replay-safe onClick={() => follows.setFollowing(item, !following)}>
               {following ? <BellOff /> : <Bell />}
               {following ? "Unfollow" : "Follow"}
             </ContextMenuItem>
@@ -434,7 +434,7 @@ export function ItemRow({
         </ContextMenuGroup>
         <ContextMenuSeparator />
         <ContextMenuSub>
-          <ContextMenuSubTrigger>
+          <ContextMenuSubTrigger data-replay-safe>
             <UserRound />
             {assigned.length ? "Assignees" : "Assign to"}
             <ContextMenuShortcut>
@@ -456,13 +456,13 @@ export function ItemRow({
             without opening each item; any other day is in the dialog. */}
         {today && (
           <ContextMenuSub>
-            <ContextMenuSubTrigger>
+            <ContextMenuSubTrigger data-replay-safe>
               <CalendarDays />
               Due date
             </ContextMenuSubTrigger>
             <ContextMenuSubContent className="w-52">
               {quickDues(today).map(([label, due]) => (
-                <ContextMenuItem key={label} onClick={() => setDue(due)}>
+                <ContextMenuItem data-replay-safe key={label} onClick={() => setDue(due)}>
                   {label}
                   {sameDue(item, due) ? (
                     <Check className="ml-auto" />
@@ -476,11 +476,11 @@ export function ItemRow({
                   )}
                 </ContextMenuItem>
               ))}
-              <ContextMenuItem onClick={onOpenDetail}>Pick a date…</ContextMenuItem>
+              <ContextMenuItem data-replay-safe onClick={onOpenDetail}>Pick a date…</ContextMenuItem>
               {item.dueDate && (
                 <>
                   <ContextMenuSeparator />
-                  <ContextMenuItem onClick={() => setDue(null)}>
+                  <ContextMenuItem data-replay-safe onClick={() => setDue(null)}>
                     <CalendarX />
                     Clear due date
                   </ContextMenuItem>
@@ -508,7 +508,7 @@ export function ItemRow({
           </>
         )}
         <ContextMenuSeparator />
-        <ContextMenuItem
+        <ContextMenuItem data-replay-safe
           variant="destructive"
           closeOnClick={false}
           onClick={del}

@@ -240,6 +240,7 @@ export function ProjectMenu({
     >
       <DropdownMenuTrigger
         aria-label="List options"
+        data-replay-safe
         aria-disabled={saving || undefined}
         // The after: box grows the tap target to 32x40 on touch without
         // moving the ⋯, which lines up with the rows' avatars (ColumnCard).
@@ -250,11 +251,11 @@ export function ProjectMenu({
         ⋯
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
-        <DropdownMenuItem onClick={onShowDetails}>
+        <DropdownMenuItem data-replay-safe onClick={onShowDetails}>
           <Info />
           List details
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => onAddItem(projectId)}>
+        <DropdownMenuItem data-replay-safe onClick={() => onAddItem(projectId)}>
           <Plus />
           Add new item
           <DropdownMenuShortcut>
@@ -270,24 +271,24 @@ export function ProjectMenu({
           onMove={(ref) => run(() => reorderProjectAction(projectId, ref), `move “${name}”`)}
         />
         <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
+          <DropdownMenuSubTrigger data-replay-safe>
             <ArrowDownUp />
             Sort items by
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent>
             {SORTS.filter(([by]) => aiEnabled || by !== "priority").map(([by, label, Icon]) => (
-              <DropdownMenuItem key={by} onClick={() => sortItems(by, label.toLowerCase())}>
+              <DropdownMenuItem data-replay-safe key={by} onClick={() => sortItems(by, label.toLowerCase())}>
                 <Icon />
                 {label}
               </DropdownMenuItem>
             ))}
           </DropdownMenuSubContent>
         </DropdownMenuSub>
-        <DropdownMenuItem disabled={doneInList === 0} onClick={clearDone}>
+        <DropdownMenuItem data-replay-safe disabled={doneInList === 0} onClick={clearDone}>
           <CheckCheck />
           Tidy done items
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => onShowActivity(projectId)}>
+        <DropdownMenuItem data-replay-safe onClick={() => onShowActivity(projectId)}>
           <History />
           Activity
         </DropdownMenuItem>
@@ -298,25 +299,25 @@ export function ProjectMenu({
         />
         <DropdownMenuSeparator />
         {status === "archived" ? (
-          <DropdownMenuItem onClick={restore}>
+          <DropdownMenuItem data-replay-safe onClick={restore}>
             <ArchiveRestore />
             Restore list
           </DropdownMenuItem>
         ) : (
-          <DropdownMenuItem onClick={archive}>
+          <DropdownMenuItem data-replay-safe onClick={archive}>
             <Archive />
             Archive list
           </DropdownMenuItem>
         )}
         {isOwner && (
-          <DropdownMenuItem onClick={() => onShare(projectId, name)}>
+          <DropdownMenuItem data-replay-safe onClick={() => onShare(projectId, name)}>
             <UserPlus />
             Share…
           </DropdownMenuItem>
         )}
         {(canMove || canTakeOut) && (
           <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
+            <DropdownMenuSubTrigger data-replay-safe>
               <Boxes />
               {isOwner ? "Move to Space" : "Space"}
             </DropdownMenuSubTrigger>
@@ -352,14 +353,14 @@ export function ProjectMenu({
           </DropdownMenuSub>
         )}
         {isOwner && (
-          <DropdownMenuItem onClick={editPrefix}>
+          <DropdownMenuItem data-replay-safe onClick={editPrefix}>
             <Hash />
             Edit ID prefix
           </DropdownMenuItem>
         )}
         {(isOwner || canLeave) && <DropdownMenuSeparator />}
         {isOwner ? (
-          <DropdownMenuItem
+          <DropdownMenuItem data-replay-safe
             variant="destructive"
             closeOnClick={tap.isArmed()}
             onClick={() => tap.confirm(() => removeList({ id: projectId, name, kind: "delete" }))}
@@ -369,7 +370,7 @@ export function ProjectMenu({
             {tap.isArmed() ? "Confirm delete?" : "Delete list"}
           </DropdownMenuItem>
         ) : canLeave && (
-          <DropdownMenuItem
+          <DropdownMenuItem data-replay-safe
             variant="destructive"
             closeOnClick={tap.isArmed()}
             onClick={() => tap.confirm(() => removeList({ id: projectId, name, kind: "leave" }))}

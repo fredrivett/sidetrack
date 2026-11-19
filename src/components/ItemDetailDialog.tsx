@@ -211,6 +211,7 @@ function ItemActivity({ item }: { item: Item }) {
         type="button"
         onClick={() => setExpanded((e) => !e)}
         aria-expanded={expanded}
+        data-replay-safe
         className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-neutral-400 transition touch:-my-2 touch:py-2 touch:pr-4 hover:text-neutral-600 dark:hover:text-neutral-300"
       >
         <ChevronRight
@@ -270,7 +271,7 @@ function Field({
 }) {
   return (
     <div className="space-y-1">
-      <span className="block text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+      <span data-replay-safe className="block text-[11px] font-medium uppercase tracking-wide text-neutral-400">
         {label}
       </span>
       {children}
@@ -610,6 +611,7 @@ export function ItemDetailDialog({
                 size="sm"
                 aria-pressed={following}
                 onClick={() => follows.setFollowing(item, !following)}
+                data-replay-safe
                 className="ml-auto text-neutral-500"
               >
                 {following ? <BellOff /> : <Bell />}
@@ -623,6 +625,7 @@ export function ItemDetailDialog({
               onClick={toggle}
               disabled={pending}
               aria-pressed={completed}
+              data-replay-safe
               className={`${follows ? "" : "ml-auto "}${
                 completed
                   ? "border-green-600/30 bg-green-50 text-green-700 hover:bg-green-100 dark:border-green-500/30 dark:bg-green-950/40 dark:text-green-400 dark:hover:bg-green-950/70"
@@ -699,7 +702,7 @@ export function ItemDetailDialog({
                 ) : (
                   <>
                     <CircleDashed className="size-5 text-neutral-400" />
-                    <span className="text-neutral-500">Unassigned</span>
+                    <span data-replay-safe className="text-neutral-500">Unassigned</span>
                   </>
                 )}
                 <Kbd className="ml-auto">A</Kbd>
@@ -804,7 +807,7 @@ export function ItemDetailDialog({
                       className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-neutral-100 disabled:opacity-50 dark:hover:bg-neutral-800"
                     >
                       <IndentIncrease className="size-4 text-neutral-400" />
-                      <span className="text-neutral-500">
+                      <span data-replay-safe className="text-neutral-500">
                         None — make it a sub-item of…
                       </span>
                       <ChevronDown className="ml-auto size-4 opacity-50" />
@@ -867,7 +870,7 @@ export function ItemDetailDialog({
         </div>
 
         <div className="flex shrink-0 items-center justify-between border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
-          <span className="text-xs text-neutral-400">
+          <span data-replay-safe className="text-xs text-neutral-400">
             {completed && item.completedAt
               ? `Completed ${dayLabel(item.completedAt)}`
               : `Created ${dayLabel(item.createdAt)}`}
@@ -875,6 +878,7 @@ export function ItemDetailDialog({
           <Button
             variant="destructive"
             size="sm"
+            data-replay-safe
             onClick={del}
             disabled={pending}
           >

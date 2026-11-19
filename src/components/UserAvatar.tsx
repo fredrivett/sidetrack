@@ -239,6 +239,8 @@ export function UserAvatar({
   return (
     <span
       aria-hidden
+      // Someone's initial: never shown in replays (lib/replayPrivacy).
+      data-private
       className={cn(
         box,
         "bg-neutral-200 font-medium text-neutral-600 dark:bg-neutral-700 dark:text-neutral-200",

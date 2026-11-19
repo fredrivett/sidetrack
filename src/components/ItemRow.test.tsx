@@ -6,6 +6,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 import { setItemParentAction, updateItemAction } from "@/app/actions";
 import type { AgentSession, Item } from "@/core/schema";
+import { isReplaySafe } from "@/lib/replayPrivacy";
 import { AgentSessionsProvider } from "./agent-sessions";
 import { ItemRow } from "./ItemRow";
 
@@ -212,6 +213,16 @@ describe("ItemRow checklist", () => {
     expect(screen.queryByText(/^Sub-item of/)).toBeNull();
     fireEvent.click(screen.getByText("Move out of “Tidy up flat”"));
     expect(setItemParentAction).toHaveBeenLastCalledWith("i1", null);
+  });
+
+  it("shows only the app's own words in session replays, never the item's", () => {
+    const { row } = renderWith({ nestUnder: { id: "p1", title: "Tidy up flat" } });
+    fireEvent.contextMenu(row);
+    expect(isReplaySafe(screen.getByText("Delete item"))).toBe(true);
+    expect(isReplaySafe(screen.getByText("View item"))).toBe(true);
+    // Titles, here or in a menu item, stay masked.
+    expect(isReplaySafe(screen.getAllByText(item.title)[0])).toBe(false);
+    expect(isReplaySafe(screen.getByText("Sub-item of “Tidy up flat”"))).toBe(false);
   });
 
   it("says so in a toast when nesting from the menu fails", async () => {

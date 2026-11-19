@@ -103,12 +103,13 @@ export function NotificationsInbox({
       </Tooltip>
       <PopoverContent align="end" className="w-[22rem] max-w-[calc(100vw-1rem)] p-0">
         <div className="flex items-baseline justify-between border-b border-border px-4 py-2.5">
-          <h2 className="text-sm font-semibold">Notifications</h2>
+          <h2 data-replay-safe className="text-sm font-semibold">Notifications</h2>
           {unread.length > 0 && (
             <Button
               variant="ghost"
               size="xs"
               className="-my-1 -mr-2 text-muted-foreground"
+              data-replay-safe
               onClick={() => markSeen(unread.map((n) => n.id), true)}
             >
               <CheckCheck />
@@ -117,7 +118,7 @@ export function NotificationsInbox({
           )}
         </div>
         {notifications.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
+          <div data-replay-safe className="flex flex-col items-center gap-2 px-6 py-10 text-center">
             <span className="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
               <Bell className="size-5" />
             </span>
