@@ -427,6 +427,19 @@ describe("greetingFor", () => {
       expect(calls.claude).toBe(40);
     });
 
+    it("writes again, once, one kept from before it recorded how it was worked out", async () => {
+      const { db, fred } = setup();
+      const { calls, impl } = fake();
+      await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
+      const kept = db.select().from(agendaGreetings).get()?.greeting;
+      db.update(agendaGreetings).set({ greeting: kept && { ...kept, trace: undefined } }).run();
+      const again = await writtenGreetingFor(db, fred, "UTC", keys, now + 5 * 60_000, impl);
+      expect(again.trace?.why).toBeNull();
+      expect(calls.claude).toBe(2);
+      expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 10 * 60_000, impl)).toEqual(again);
+      expect(calls.claude).toBe(2);
+    });
+
     it("reads it back after a read stamp, when nothing else changed", async () => {
       const { db, fred } = setup();
       const { calls, impl } = fake();
