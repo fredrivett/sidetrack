@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { listAudit } from "@/core/audit";
-import { addItem, getItem, listItems } from "@/core/items";
+import { addItem, completeItem, getItem, listItems } from "@/core/items";
+import { listLabels } from "@/core/labels";
 import { acceptInvite, inviteMember } from "@/core/members";
 import { createProject, getProject, listProjects } from "@/core/projects";
 import {
@@ -432,6 +433,40 @@ describe("comments", () => {
     expect(data.comments).toEqual([
       expect.objectContaining({ body: "Ordered the washer", agentName: "Test agent" }),
     ]);
+  });
+});
+
+describe("delete_label", () => {
+  it("previews the items it's on, then deletes only with the token, as the agent", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const eng = createProject(db, fred, { name: "Engineering" }, "web");
+    const open = addItem(db, fred, { projectId: eng.id, title: "Fix login", labels: ["bug"] }, "web");
+    const shut = addItem(db, fred, { projectId: eng.id, title: "Old crash", labels: ["bug"] }, "web");
+    completeItem(db, fred, shut.id, "web");
+    const bug = listLabels(db, fred, eng.id)[0];
+    const call = await connectAs(fred);
+
+    const preview = await call("delete_label", { id: bug.id });
+    expect(preview.data).toMatchObject({
+      deleted: false,
+      label: { name: "bug" },
+      usedOn: {
+        active: [{ id: open.id, ref: "ENG-1", title: "Fix login" }],
+        done: [{ id: shut.id, ref: "ENG-2", title: "Old crash" }],
+      },
+      token: expect.any(String),
+    });
+    const made = await call("delete_label", { id: bug.id, token: "x" });
+    expect(made.error).toMatch(/changed.*no change was made/);
+    expect(getItem(db, fred, open.id)?.labels).toEqual(["bug"]);
+
+    const done = await call("delete_label", { id: bug.id, token: preview.data.token });
+    expect(done.data).toMatchObject({ deleted: true });
+    expect(getItem(db, fred, open.id)?.labels).toEqual([]);
+    expect(listLabels(db, fred, eng.id)).toEqual([]);
+    expect(
+      listAudit(db, fred).filter((e) => e.entityId === bug.id && e.action === "delete"),
+    ).toMatchObject([{ agentKeyId: AGENT.keyId }]);
   });
 });
 

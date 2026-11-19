@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { listAudit } from "./audit";
-import { addItem, getItem } from "./items";
-import { addLabel, listLabels, updateLabel } from "./labels";
+import { addItem, completeItem, getItem } from "./items";
+import { addLabel, deleteLabel, labelUsage, listLabels, updateLabel } from "./labels";
 import { createProject } from "./projects";
 import { createTestDb, createTestUser } from "./test-helpers";
 
@@ -79,5 +79,60 @@ describe("labels", () => {
     const before = listAudit(db, userId).length;
     updateLabel(db, userId, l.id, { emoji: "🏃", emojiChosen: false }, "web");
     expect(listAudit(db, userId)).toHaveLength(before);
+  });
+
+  it("shows where a label is used, and deletes it from there only with that view's token", () => {
+    const { db, userId, projectId } = seed();
+    const other = createProject(db, userId, { name: "Other" }, "web");
+    const a = addItem(db, userId, { projectId, title: "a", labels: ["bug", "ui"] }, "web");
+    const b = addItem(db, userId, { projectId, title: "b", labels: ["ui"] }, "web");
+    const c = addItem(db, userId, { projectId: other.id, title: "c", labels: ["ui"] }, "web");
+    completeItem(db, userId, b.id, "web");
+    const ui = listLabels(db, userId, projectId).find((l) => l.name === "ui");
+    if (!ui) throw new Error("no ui label");
+
+    const usage = labelUsage(db, userId, ui.id);
+    expect(usage?.active.map((i) => i.title)).toEqual(["a"]);
+    expect(usage?.done.map((i) => i.title)).toEqual(["b"]);
+    // A token from before the label went on another item is refused.
+    addItem(db, userId, { projectId, title: "d", labels: ["ui"] }, "web");
+    expect(() => deleteLabel(db, userId, ui.id, usage?.token ?? "", "web")).toThrow(/changed/);
+    expect(listLabels(db, userId, projectId).map((l) => l.name)).toEqual(["bug", "ui"]);
+
+    deleteLabel(db, userId, ui.id, labelUsage(db, userId, ui.id)?.token ?? "", "web");
+    expect(listLabels(db, userId, projectId).map((l) => l.name)).toEqual(["bug"]);
+    expect(getItem(db, userId, a.id)?.labels).toEqual(["bug"]);
+    expect(getItem(db, userId, b.id)?.labels).toEqual([]);
+    // The same name on another list is a different label.
+    expect(getItem(db, userId, c.id)?.labels).toEqual(["ui"]);
+    expect(listLabels(db, userId, other.id).map((l) => l.name)).toEqual(["ui"]);
+    expect(
+      listAudit(db, userId).filter((e) => e.entityId === ui.id && e.action === "delete"),
+    ).toMatchObject([{ entityType: "label", detail: 'removed label "ui"' }]);
+    // Someone without access to the list can't see or delete its labels.
+    const stranger = createTestUser(db, { email: "s@x.test", username: "stranger" });
+    const bug = listLabels(db, userId, projectId)[0];
+    expect(labelUsage(db, stranger, bug.id)).toBeUndefined();
+    expect(() => deleteLabel(db, stranger, bug.id, "", "web")).toThrow(/not found/);
+  });
+
+  it("archives a label, keeping it on its items, and restores it", () => {
+    const { db, userId, projectId } = seed();
+    const a = addItem(db, userId, { projectId, title: "a", labels: ["old"] }, "web");
+    const old = listLabels(db, userId, projectId)[0];
+
+    expect(updateLabel(db, userId, old.id, { archived: true }, "web").archivedAt).not.toBeNull();
+    expect(getItem(db, userId, a.id)?.labels).toEqual(["old"]);
+    // Archiving again changes nothing, so logs nothing.
+    const before = listAudit(db, userId).length;
+    updateLabel(db, userId, old.id, { archived: true }, "web");
+    expect(listAudit(db, userId)).toHaveLength(before);
+    expect(updateLabel(db, userId, old.id, { archived: false }, "web").archivedAt).toBeNull();
+    expect(
+      listAudit(db, userId)
+        .filter((e) => e.entityId === old.id && e.action === "update")
+        .map((e) => e.detail)
+        .sort(),
+    ).toEqual(['updated label "old": archived', 'updated label "old": restored']);
   });
 });

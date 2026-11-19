@@ -16,7 +16,15 @@ import {
 } from "@/core/autoEmoji";
 import { itemPriorities } from "@/core/autoPriority";
 import { addComment, listComments, mentionNotice } from "@/core/comments";
-import { addLabel, getLabel, listLabels, updateLabel } from "@/core/labels";
+import {
+  addLabel,
+  deleteLabel,
+  getLabel,
+  labelUsage,
+  type LabelUsage,
+  listLabels,
+  updateLabel,
+} from "@/core/labels";
 import { moveItem, previewMoveItem } from "@/core/move";
 import { getDb } from "@/core/db";
 import { getTimeZone } from "@/core/users";
@@ -1296,7 +1304,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       description:
         "List a list's labels: each has an id, a name (what items carry in `labels`) and an optional emoji. " +
         "Show a label as its emoji then its name, e.g. \"🐛 bug\". emojiChosen is true when someone chose the emoji (or chose none); " +
-        "otherwise it's suggested for the name and follows renames.",
+        "otherwise it's suggested for the name and follows renames. " +
+        "A label with archivedAt set is archived: it stays on the items that have it, but don't offer it for new ones.",
       inputSchema: { list_id: z.string() },
     },
     async ({ list_id }) => {
@@ -1426,25 +1435,74 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     },
   );
 
+  // A label's usage for an agent: each item with its display ref.
+  const usageForAgent = (projectId: string, u: LabelUsage) => {
+    const prefix = projectRefPrefixes(getDb().db, userId)[projectId] ?? "";
+    const shape = (it: LabelUsage["active"][number]) => ({
+      id: it.id,
+      ref: formatItemRef(prefix, it.number),
+      title: it.title,
+    });
+    return { active: u.active.map(shape), done: u.done.map(shape) };
+  };
+
   server.registerTool(
     "update_label",
     {
       title: "Update label",
       description:
-        "Rename a label or change its emoji. A rename carries over to every item with the label. " +
+        "Rename a label, change its emoji, or archive or restore it. A rename carries over to every item with the label. " +
         "emoji is one emoji, or null for none, and is the user's choice, which stays; " +
-        "a label whose emoji nobody chose gets a new suggestion when renamed. id is the label's id from list_labels.",
+        "a label whose emoji nobody chose gets a new suggestion when renamed. " +
+        "archived: true archives it: it stays on the items that have it, but isn't offered for new ones; false puts it back in use. " +
+        "Returns the label and usedOn: the items it's on, active (open) and done, each with its ref and title. " +
+        "Tell the user which items the change touched: list the active ones, and give the done ones as a count unless they ask. " +
+        "id is the label's id from list_labels.",
       inputSchema: {
         id: z.string(),
         name: z.string().min(1).optional(),
         emoji: z.string().nullable().optional(),
+        archived: z.boolean().optional(),
       },
     },
     async ({ id, ...patch }) => {
       const { db } = getDb();
       if (!getLabel(db, userId, id)) return notFound("label", id);
       try {
-        return json(updateLabel(db, userId, id, await withAutoLabelRename(db, userId, id, patch), SOURCE));
+        const label = updateLabel(db, userId, id, await withAutoLabelRename(db, userId, id, patch), SOURCE);
+        const usage = labelUsage(db, userId, id);
+        return json({ label, usedOn: usage && usageForAgent(label.projectId, usage) });
+      } catch (e) {
+        return errorText(`${(e as Error).message} — no change was made.`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "delete_label",
+    {
+      title: "Delete label",
+      description:
+        "Delete a label from its list and take it off every item that has it. To keep it on its items but stop offering it, archive it with update_label instead. " +
+        "Call it first without token: that only previews and changes nothing. It returns the label and usedOn: the items it's on, " +
+        "active (open) and done, each with its ref and title, and a token. " +
+        "Show the user the label and its active items, with the done ones as a count, and ask them to confirm the delete; mention archiving as the alternative. " +
+        "Then call again with that token. The delete is refused if the items it's on have changed since: then preview again and show the user the new one. " +
+        "Never pass the token for a delete the user hasn't seen and agreed to. id is the label's id from list_labels.",
+      inputSchema: { id: z.string(), token: z.string().optional() },
+    },
+    async ({ id, token }) => {
+      const { db } = getDb();
+      const label = getLabel(db, userId, id);
+      const usage = labelUsage(db, userId, id);
+      if (!label || !usage) return notFound("label", id);
+      const usedOn = usageForAgent(label.projectId, usage);
+      if (token === undefined) {
+        return json({ deleted: false, label, usedOn, token: usage.token });
+      }
+      try {
+        deleteLabel(db, userId, id, token, SOURCE);
+        return json({ deleted: true, label, usedOn });
       } catch (e) {
         return errorText(`${(e as Error).message} — no change was made.`);
       }
