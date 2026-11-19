@@ -166,7 +166,7 @@ export function submitFeedback(
         .returning({ seq: projects.itemSeq })
         .get()?.seq ?? 1;
     tx.insert(items)
-      .values({ id, projectId: list.id, title, description, labels, position, number })
+      .values({ id, projectId: list.id, title, description, labels, position, number, createdBy: userId })
       .run();
     recordAudit(tx as unknown as Db, {
       actor: userId,

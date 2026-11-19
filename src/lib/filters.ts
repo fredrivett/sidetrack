@@ -114,20 +114,28 @@ function matchesDue(due: Due, f: ItemFilters, today: string | null): boolean {
   );
 }
 
+type Ownable = { assigneeIds: string[]; createdBy: string | null; projectId: string };
+
 /**
  * Whether `item` is the viewer's to think about: assigned to them, or
- * unassigned. An unassigned sub-item counts only when its parent does, so a
- * step under someone else's task stays theirs. The Agenda and its greeting
- * show only these.
+ * unassigned and added by them (an agent's items are its key owner's). An
+ * unassigned sub-item goes with its parent, so a step under someone else's
+ * task stays theirs and one added to the viewer's stays the viewer's. An
+ * item whose creator is unknown or can no longer open its list (they left,
+ * or it's feedback from outside it) counts for everyone, as before
+ * creators were kept. `canOpen` says who can open a list. The Agenda and
+ * its greeting show only these.
  */
 export function isYours(
-  item: { assigneeIds: string[] },
-  parent: { assigneeIds: string[] } | undefined,
+  item: Ownable,
+  parent: Ownable | undefined,
   viewerId: string,
+  canOpen: (userId: string, projectId: string) => boolean,
 ): boolean {
   if (item.assigneeIds.includes(viewerId)) return true;
   if (item.assigneeIds.length > 0) return false;
-  return !parent || parent.assigneeIds.length === 0 || parent.assigneeIds.includes(viewerId);
+  if (parent) return isYours(parent, undefined, viewerId, canOpen);
+  return !item.createdBy || item.createdBy === viewerId || !canOpen(item.createdBy, item.projectId);
 }
 
 /**

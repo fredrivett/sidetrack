@@ -209,7 +209,7 @@ describe("greetingFor", () => {
       const { db } = createTestDb();
       const fred = createTestUser(db, { name: "Fred Rivett" });
       const home = createProject(db, fred, { name: "Home" }, "web");
-      const done = addItem(db, fred, { projectId: home.id, title: "Renew passport" }, "web");
+      const done = addItem(db, fred, { projectId: home.id, title: "Renew passport", assigneeIds: [fred] }, "web");
       completeItem(db, fred, done.id, "web");
       addItem(db, fred, { projectId: home.id, title: "Sort the loft" }, "web");
       vi.setSystemTime(now);
@@ -313,7 +313,7 @@ describe("greetingFor", () => {
       const shared = createProject(db, bob, { name: "Shared" }, "web");
       inviteMember(db, bob, shared.id, getProfile(db, fred)?.displayUsername ?? "", "web");
       acceptInvite(db, fred, shared.id, "web");
-      const bank = addItem(db, bob, { projectId: shared.id, title: "Call the bank", dueDate: "2026-11-18" }, "web");
+      const bank = addItem(db, bob, { projectId: shared.id, title: "Call the bank", dueDate: "2026-11-18", assigneeIds: [fred] }, "web");
       // Names the shared item first.
       const { calls, impl } = fake("Just {{item:1}} and {{item:2}} today.");
       const first = await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
@@ -332,7 +332,7 @@ describe("greetingFor", () => {
       const shared = createProject(db, bob, { name: "BobSecretList" }, "web");
       inviteMember(db, bob, shared.id, getProfile(db, fred)?.displayUsername ?? "", "web");
       acceptInvite(db, fred, shared.id, "web");
-      addItem(db, bob, { projectId: shared.id, title: "Secret merger", dueDate: "2026-11-18" }, "web");
+      addItem(db, bob, { projectId: shared.id, title: "Secret merger", dueDate: "2026-11-18", assigneeIds: [fred] }, "web");
       return { db, fred, bob, shared, loft };
     }
 
@@ -375,7 +375,7 @@ describe("greetingFor", () => {
       const shared = createProject(db, bob, { name: "Shared" }, "web");
       inviteMember(db, bob, shared.id, getProfile(db, fred)?.displayUsername ?? "", "web");
       acceptInvite(db, fred, shared.id, "web");
-      const loose = addItem(db, bob, { projectId: shared.id, title: "Renew passport" }, "web");
+      const loose = addItem(db, bob, { projectId: shared.id, title: "Renew passport", assigneeIds: [fred] }, "web");
       const { calls, impl } = fake();
       // Leave only the shared undated item unnamed, as an "other".
       vi.spyOn(greetingJev, "pickGreeting").mockImplementation((brief) => ({

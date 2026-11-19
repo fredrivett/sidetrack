@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildAgendaBrief } from "./agendaBrief";
 import { addItem, completeItem } from "./items";
-import { acceptInvite, inviteMember } from "./members";
+import { acceptInvite, inviteMember, removeMember } from "./members";
 import { addComment } from "./comments";
 import { createProject, updateProject } from "./projects";
 import { createTestDb, createTestUser } from "./test-helpers";
@@ -58,6 +58,48 @@ describe("buildAgendaBrief", () => {
     // Sam's step isn't Fred's to count.
     expect(b.dueToday.find((i) => i.title === "Nobody's with steps")?.stepsLeft).toBe(1);
     expect(b.dueToday.find((i) => i.title === "Fred's step under Sam's")?.parent).toBe("Sam's");
+  });
+
+  it("counts an unassigned item only for whoever added it, and a step with its parent", () => {
+    const { db, fred, sam, home, add, brief } = board();
+    const today = "2026-11-18";
+    const bySam = (title: string, more: { parentId?: string; dueDate?: string } = { dueDate: today }) =>
+      addItem(db, sam, { projectId: home.id, title, ...more }, "web");
+    bySam("Sam's errand");
+    const tidy = add("Tidy flat", { dueDate: today });
+    bySam("Kitchen", { parentId: tidy.id });
+    const party = bySam("Sam's party");
+    add("Fred's idea for it", { parentId: party.id });
+    add("Assigned to Fred by Sam", { dueDate: today, assigneeIds: [fred] });
+
+    const b = buildAgendaBrief(db, fred, { now: NOW, timeZone: tz, since: null });
+    expect(titles(b.dueToday)).toEqual(["Tidy flat", "Assigned to Fred by Sam"]);
+    // Sam's step on Fred's task is part of it.
+    expect(b.dueToday[0].stepsLeft).toBe(1);
+    const sams = buildAgendaBrief(db, sam, { now: NOW, timeZone: tz, since: null });
+    expect(titles(sams.dueToday)).toEqual(["Sam's errand", "Sam's party"]);
+    // Fred's step on Sam's task is Sam's to count.
+    expect(sams.dueToday[1].stepsLeft).toBe(1);
+    expect(titles(brief().dueToday)).toEqual(titles(b.dueToday));
+
+    // A step Sam adds to a task assigned to Fred is Fred's too.
+    const errand = add("Fred's errand", { dueDate: today, assigneeIds: [fred] });
+    bySam("Bring the receipt", { parentId: errand.id });
+    expect(buildAgendaBrief(db, fred, { now: NOW, timeZone: tz, since: null }).dueToday.at(-1)).toMatchObject({
+      title: "Fred's errand",
+      stepsLeft: 1,
+    });
+
+    // Once Sam can't open the list, nobody is left to see their unassigned
+    // items but the people who can: they count for everyone again.
+    removeMember(db, fred, home.id, sam, "web");
+    expect(titles(brief().dueToday)).toEqual([
+      "Sam's errand",
+      "Tidy flat",
+      "Sam's party",
+      "Assigned to Fred by Sam",
+      "Fred's errand",
+    ]);
   });
 
   it("reads the viewer's own clock: 2am on Saturday is still Friday evening", () => {

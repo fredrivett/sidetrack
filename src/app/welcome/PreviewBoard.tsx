@@ -104,6 +104,7 @@ function demo(today: string, now: number) {
       description: null,
       labels: [],
       assigneeIds: [],
+      createdBy: null,
       parentId: null,
       position: String(items.length).padStart(3, "0"),
       collapsed: false,
