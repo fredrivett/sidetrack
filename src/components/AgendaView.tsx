@@ -70,8 +70,8 @@ export function AgendaView({
   firstName: string | null;
   /** Opens the feedback form on the greeting; absent where there's no form. */
   onFeedback?: (about: FeedbackAbout) => void;
-  /** The greeting's "+" by the date: New item, due on the viewer's today. */
-  onAddForToday?: (day: string) => void;
+  /** The greeting's "+" by the date: New item, due today. */
+  onAddForToday?: () => void;
   filters: ItemFilters;
 }) {
   const today = useToday();

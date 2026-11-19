@@ -111,8 +111,8 @@ export function AgendaGreeting({
   onFeedback?: (about: FeedbackAbout) => void;
   /** An item opened from one of its dialogs, shown in that dialog. */
   renderItem: RenderItem;
-  /** The "+" by the date: New item, due on the viewer's today. */
-  onAddForToday?: (day: string) => void;
+  /** The "+" by the date: New item, due today. */
+  onAddForToday?: () => void;
 }) {
   const today = useToday();
   // Undefined while it loads; null when there's none to show.
@@ -280,7 +280,7 @@ export function AgendaGreeting({
                 <button
                   type="button"
                   aria-label="Add for today"
-                  onClick={() => onAddForToday(today)}
+                  onClick={onAddForToday}
                   className="-my-1 inline-flex size-5 items-center justify-center rounded-md text-neutral-500 outline-none transition-colors hover:bg-neutral-200/60 hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-neutral-300 touch:-my-2 touch:size-8 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100 dark:focus-visible:ring-neutral-600"
                 >
                   <Plus aria-hidden className="size-3.5 touch:size-4" />

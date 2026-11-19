@@ -25,7 +25,7 @@ import type { NotificationView } from "@/core/notifications";
 import type { PendingSpaceInviteView, SpaceView } from "@/core/spaces";
 import { type ItemFilters, matchesFilters } from "@/lib/filters";
 import { isEditableTarget, matchesShortcut } from "@/lib/keyboard";
-import { type Due, LOCALE_COOKIE } from "@/lib/time";
+import { LOCALE_COOKIE } from "@/lib/time";
 import { CircleCheck, MessageSquarePlus, SquareKanban, Sunrise } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -325,7 +325,7 @@ export function Kanban({
   const [newItem, setNewItem] = useState<{
     open: boolean;
     projectId: string | null;
-    due?: Due;
+    dueToday?: boolean;
   }>({ open: false, projectId: null });
   // New list starts in the Space of the tray whose + opened it, else in none.
   const [newList, setNewList] = useState({ open: false, spaceId: "" });
@@ -528,12 +528,12 @@ export function Kanban({
   // title. With no lists on the board, there's nowhere to add an item —
   // start a list instead.
   const openNewItem = useCallback(
-    (projectId?: string, due?: Due) => {
+    (projectId?: string, dueToday?: boolean) => {
       if (!projects.some((p) => view === "archived" || p.status === "active")) {
         setNewList({ open: true, spaceId: "" });
         return;
       }
-      setNewItem({ open: true, projectId: projectId ?? null, due });
+      setNewItem({ open: true, projectId: projectId ?? null, dueToday });
     },
     [projects, view],
   );
@@ -890,7 +890,7 @@ export function Kanban({
                 : undefined
             }
             firstName={viewer?.name?.trim().split(/\s+/)[0] || null}
-            onAddForToday={(day) => openNewItem(undefined, { dueFrom: null, dueDate: day })}
+            onAddForToday={() => openNewItem(undefined, true)}
             itemsByProject={itemsByProject}
             assigneesByProject={assigneesByProject}
             prLinksByItem={prLinksByItem}
@@ -1025,7 +1025,7 @@ export function Kanban({
           assigneesByProject={assigneesByProject}
           viewerId={viewerId}
           initialProjectId={newItem.projectId}
-          initialDue={newItem.due}
+          dueToday={newItem.dueToday}
           shownOnBoard={shownOnBoard}
         />
 

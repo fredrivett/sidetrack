@@ -52,6 +52,7 @@ import { useCopy } from "@/components/ui/use-copy";
 import { AssigneeOptions } from "./AssigneeOptions";
 import { CreatableCombobox } from "./CreatableCombobox";
 import { DueDatePicker } from "./DueDatePicker";
+import { useToday } from "./use-day-start";
 import { LabelsField } from "./Labels";
 import type { ProjectView } from "./Kanban";
 import { RepeatPicker } from "./RepeatPicker";
@@ -131,7 +132,7 @@ export function NewItemDialog({
   assigneesByProject,
   viewerId,
   initialProjectId,
-  initialDue = null,
+  dueToday = false,
   shownOnBoard,
 }: {
   open: boolean;
@@ -142,8 +143,8 @@ export function NewItemDialog({
   assigneesByProject: Record<string, AssigneeView[]>;
   viewerId: string;
   initialProjectId: string | null;
-  /** The due date it opens with, such as today from the Brief's "+". */
-  initialDue?: Due | null;
+  /** Opens due today, as from the Brief's "+", and keeps today for each next item. */
+  dueToday?: boolean;
   /**
    * Whether an added item, with this many new sub-items, shows on the board
    * under the viewer's filters, for its toast.
@@ -172,6 +173,10 @@ export function NewItemDialog({
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [assignOpen, setAssignOpen] = useState(false);
   const [due, setDue] = useState<Due | null>(null);
+  // Worked out as it's used, so a dialog left open past the day's turnover
+  // gives the next item the new day, not the one it opened on.
+  const today = useToday();
+  const initialDue: Due | null = dueToday && today ? { dueFrom: null, dueDate: today } : null;
   const [repeat, setRepeat] = useState<Repeat | null>(null);
   const [subItems, setSubItems] = useState<string[]>([]);
   const [subDraft, setSubDraft] = useState("");
