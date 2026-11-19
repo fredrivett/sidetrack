@@ -255,7 +255,7 @@ set, nothing is sent anywhere, including to the Sidetrack project.
 | --- | --- | --- |
 | `POSTHOG_KEY` | unset | Project key for server-side error tracking |
 | `POSTHOG_HOST` | `https://us.i.posthog.com` | Server ingestion host (`https://eu.i.posthog.com` for EU Cloud) |
-| `NEXT_PUBLIC_POSTHOG_KEY` | unset | **Build-time.** Project key for pageviews, autocapture, browser errors and session replay (on when the PostHog project turns it on). Signed-in people are identified by user id and username. Element text and attributes, and all text, inputs and images in replays, are masked |
+| `NEXT_PUBLIC_POSTHOG_KEY` | unset | **Build-time.** Project key for pageviews, autocapture, browser errors and session replay (on when the PostHog project turns it on). Signed-in people are identified by user id and username. Element text and attributes are masked. Replays mask inputs, images and everything people wrote, and show only the app's own words, marked `data-replay-safe` (see `src/lib/replayPrivacy.ts`) |
 | `NEXT_PUBLIC_POSTHOG_HOST` | `https://us.i.posthog.com` | **Build-time.** Browser ingestion host. The Docker build doesn't pass it through, so Docker builds use the US host |
 
 `NEXT_PUBLIC_POSTHOG_KEY` is built into the browser bundle. **Don't build it

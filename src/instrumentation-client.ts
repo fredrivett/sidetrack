@@ -1,6 +1,6 @@
 import posthog from "posthog-js";
 import { RELEASE } from "./lib/release";
-import { maskReplayAttributes } from "./lib/replayPrivacy";
+import { maskReplayAttributes, maskReplayText } from "./lib/replayPrivacy";
 
 // Client-side capture: pageviews, autocapture, and unhandled errors.
 //
@@ -19,14 +19,16 @@ if (key) {
     // attributes (an item row's label is its title).
     mask_all_text: true,
     mask_all_element_attributes: true,
-    // Replays keep the layout and every click, with all text and input
-    // values masked and images (avatars) blocked. Attributes rrweb doesn't
-    // mask are masked in before_send, which needs the events uncompressed;
-    // the request batch is still gzipped. No network bodies or headers: a
+    // Replays keep the layout and every click, with input values and all
+    // text masked, except the app's own (maskReplayText), and images
+    // (avatars) blocked. Attributes rrweb doesn't mask are masked in
+    // before_send, which needs the events uncompressed; the request batch
+    // is still gzipped. No network bodies or headers: a
     // Server Action's body is what the user typed.
     session_recording: {
       maskAllInputs: true,
       maskTextSelector: "*",
+      maskTextFn: maskReplayText,
       blockSelector: "img",
       compress_events: false,
       recordHeaders: false,

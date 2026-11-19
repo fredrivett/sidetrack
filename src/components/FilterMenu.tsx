@@ -112,14 +112,14 @@ export function FilterMenu({
         <DropdownMenuContent align="end" className="w-56">
           <DropdownMenuGroup>
             <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
+              <DropdownMenuSubTrigger data-replay-safe>
                 <UserRound />
                 Assignee
                 {byPerson > 0 && <DropdownMenuShortcut>{byPerson}</DropdownMenuShortcut>}
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="w-56">
                 {me && (
-                  <DropdownMenuCheckboxItem
+                  <DropdownMenuCheckboxItem data-replay-safe
                     checked={filters.assignees.includes(me.userId)}
                     onCheckedChange={person(me.userId)}
                   >
@@ -127,7 +127,7 @@ export function FilterMenu({
                     Me
                   </DropdownMenuCheckboxItem>
                 )}
-                <DropdownMenuCheckboxItem
+                <DropdownMenuCheckboxItem data-replay-safe
                   checked={filters.unassigned}
                   onCheckedChange={(on) => set({ unassigned: on })}
                 >
@@ -148,13 +148,13 @@ export function FilterMenu({
               </DropdownMenuSubContent>
             </DropdownMenuSub>
             <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
+              <DropdownMenuSubTrigger data-replay-safe>
                 <Tag />
                 Label
                 {byLabel > 0 && <DropdownMenuShortcut>{byLabel}</DropdownMenuShortcut>}
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="max-h-80 w-56 overflow-y-auto">
-                <DropdownMenuCheckboxItem
+                <DropdownMenuCheckboxItem data-replay-safe
                   checked={filters.unlabelled}
                   onCheckedChange={(on) => set({ unlabelled: on })}
                 >
@@ -178,14 +178,14 @@ export function FilterMenu({
               </DropdownMenuSubContent>
             </DropdownMenuSub>
             <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
+              <DropdownMenuSubTrigger data-replay-safe>
                 <CalendarDays />
                 Due
                 {byDue > 0 && <DropdownMenuShortcut>{byDue}</DropdownMenuShortcut>}
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="w-48">
                 {DUE_FILTERS.map(([key, label]) => (
-                  <DropdownMenuCheckboxItem
+                  <DropdownMenuCheckboxItem data-replay-safe
                     key={key}
                     checked={filters.due.includes(key)}
                     onCheckedChange={(on) => set({ due: toggled<DueFilter>(filters.due, key, on) })}
@@ -195,14 +195,14 @@ export function FilterMenu({
                 ))}
                 <DropdownMenuSeparator />
                 {filters.dueRange && (
-                  <DropdownMenuCheckboxItem
+                  <DropdownMenuCheckboxItem data-replay-safe
                     checked
                     onCheckedChange={() => set({ dueRange: null })}
                   >
                     {spanDates(filters.dueRange.from, filters.dueRange.to, today ?? "")}
                   </DropdownMenuCheckboxItem>
                 )}
-                <DropdownMenuItem onClick={() => setRangeOpen(true)}>
+                <DropdownMenuItem data-replay-safe onClick={() => setRangeOpen(true)}>
                   <CalendarRange />
                   {filters.dueRange ? "Change dates…" : "Dates…"}
                 </DropdownMenuItem>
@@ -211,14 +211,14 @@ export function FilterMenu({
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
-            <DropdownMenuLabel>Finished items</DropdownMenuLabel>
-            <DropdownMenuCheckboxItem
+            <DropdownMenuLabel data-replay-safe>Finished items</DropdownMenuLabel>
+            <DropdownMenuCheckboxItem data-replay-safe
               checked={filters.doneToday}
               onCheckedChange={(on) => set({ doneToday: on })}
             >
               Done today
             </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
+            <DropdownMenuCheckboxItem data-replay-safe
               checked={filters.doneThisWeek}
               onCheckedChange={(on) => set({ doneThisWeek: on })}
             >
@@ -228,7 +228,7 @@ export function FilterMenu({
           {count > 0 && (
             <>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => onChange(NO_FILTERS)}>
+              <DropdownMenuItem data-replay-safe onClick={() => onChange(NO_FILTERS)}>
                 <X />
                 Clear filters
               </DropdownMenuItem>

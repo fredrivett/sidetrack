@@ -1,5 +1,6 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { maskReplayAttributes } from "./replayPrivacy";
+import { maskReplayAttributes, maskReplayText } from "./replayPrivacy";
 
 describe("maskReplayAttributes", () => {
   it("masks content attributes in snapshots, added nodes and attribute changes, and keeps the rest", () => {
@@ -47,5 +48,17 @@ describe("maskReplayAttributes", () => {
     });
     // Text is rrweb's to mask (maskTextSelector), not this.
     expect(button.childNodes[0]).toEqual({ type: 3, textContent: "Buy milk" });
+  });
+});
+
+describe("maskReplayText", () => {
+  it("keeps marked text, masks the rest, and data-private wins inside a marked part", () => {
+    document.body.innerHTML =
+      '<header data-replay-safe><button>Filter</button><span data-private>J</span></header><p>Buy milk</p>';
+    const [button, initial, p] = ["button", "span", "p"].map((t) => document.querySelector(t));
+    expect(maskReplayText("Filter", button)).toBe("Filter");
+    expect(maskReplayText("J", initial)).toBe("*");
+    expect(maskReplayText("Buy milk", p)).toBe("*** ****");
+    expect(maskReplayText("Buy milk", null)).toBe("*** ****");
   });
 });

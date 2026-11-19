@@ -154,7 +154,8 @@ export function DueDatePicker({
   const today = useToday();
   const quick = today ? quickDues(today) : [];
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
+    // Quick dates and the picked day: the app's words, shown in replays.
+    <div data-replay-safe className="flex flex-wrap items-center gap-1.5">
       {/* A pressed quick button already says when it's due. */}
       {due && !quick.some(([, q]) => sameDue(q, due)) && (
         <DueBadge due={due.dueDate} from={due.dueFrom} done={done} />

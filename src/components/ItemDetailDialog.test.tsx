@@ -4,6 +4,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { toast } from "sonner";
 import { addItemAction, setItemParentAction, updateItemAction } from "@/app/actions";
 import type { Item } from "@/core/schema";
+import { isReplaySafe } from "@/lib/replayPrivacy";
 import { ItemDetailDialog } from "./ItemDetailDialog";
 
 // Server actions pull in server-only modules; the dialog only needs callable stubs.
@@ -197,6 +198,18 @@ describe("ItemDetailDialog checklist", () => {
     renderDialog(true, [], [], { title: "Change phone plan" });
     const input = screen.getByPlaceholderText("Add a step…");
     expect(input.getAttribute("aria-label")).not.toMatch(/phone/i);
+  });
+});
+
+describe("ItemDetailDialog session replay", () => {
+  it("shows the dialog's own words in replays, never the item's or people's", () => {
+    renderDialog(true, [], [], { description: "Ask Sam about the venue", assigneeIds: ["u1"] });
+    for (const own of ["Description", "Labels", "Delete", "Complete", "Today"]) {
+      expect(isReplaySafe(screen.getByText(own)), own).toBe(true);
+    }
+    expect(isReplaySafe(screen.getAllByText(item.title)[0])).toBe(false);
+    expect(isReplaySafe(screen.getByText("Ask Sam about the venue"))).toBe(false);
+    expect(isReplaySafe(screen.getByText(viewer.name))).toBe(false);
   });
 });
 
