@@ -40,7 +40,7 @@ describe("proxy, signed in", () => {
 
   // One page serves every view, so switching views never remounts it.
   it.each([
-    ["/agenda", "https://sidetrack.test/?view=agenda"],
+    ["/brief", "https://sidetrack.test/?view=brief"],
     ["/board?p=L1", "https://sidetrack.test/?p=L1&view=board"],
     ["/done", "https://sidetrack.test/?view=done"],
     ["/archived", "https://sidetrack.test/?view=archived"],
@@ -52,17 +52,21 @@ describe("proxy, signed in", () => {
 
   // Links from notifications and bookmarks made before views had paths.
   it.each([
-    ["/", "/agenda"],
+    ["/", "/brief"],
     ["/?view=done", "/done"],
     ["/?view=archived", "/archived"],
-    ["/?view=today", "/agenda"],
-    ["/?view=no-date&p=L1", "/agenda?p=L1"],
+    ["/?view=today", "/brief"],
+    ["/?view=no-date&p=L1", "/brief?p=L1"],
     ["/?p=L1&item=I1", "/board?p=L1&item=I1"],
-    ["/?item=I1", "/agenda?item=I1"],
+    ["/?item=I1", "/brief?item=I1"],
+    // The Agenda was renamed the Brief.
+    ["/?view=agenda", "/brief"],
+    ["/agenda", "/brief"],
+    ["/agenda?item=I1", "/brief?item=I1"],
   ])("sends %s to %s", (path, target) => {
     const res = signedIn(path);
     expect(res.headers.get("location")).toBe(`https://sidetrack.test${target}`);
-    // Temporary, never permanent: a cached / → /agenda would hide the
+    // Temporary, never permanent: a cached / → /brief would hide the
     // welcome page after signing out.
     expect(res.status).toBe(307);
   });

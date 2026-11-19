@@ -224,7 +224,7 @@ links go to the server log ([Password resets](#password-resets)).
 | Variable | Default | Description |
 | --- | --- | --- |
 | `TYPESAFE_API_KEY` | unset | Turns on AI features from [TypeSafe's Jev](https://docs.typesafe.ai). Unset turns them off |
-| `ANTHROPIC_API_KEY` | unset | With `TYPESAFE_API_KEY`, has Claude write the Agenda's greeting. Unset keeps the built-in greetings |
+| `ANTHROPIC_API_KEY` | unset | With `TYPESAFE_API_KEY`, has Claude write the Brief's greeting. Unset keeps the built-in greetings |
 
 With it set:
 
@@ -236,7 +236,7 @@ With it set:
 
 With `ANTHROPIC_API_KEY` too:
 
-- **Claude writes the Agenda's greeting** from what Jev picks: the titles,
+- **Claude writes the Brief's greeting** from what Jev picks: the titles,
   lists and due days of the few items it might name, and counts. Each person
   gets one written at most every two minutes and 40 times a day, and the
   server 2,000 a day in all; past that, and whenever a reply fails its checks,

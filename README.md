@@ -16,7 +16,7 @@ report back as they go.
   link their pull requests
 - 📁 **Lists, items and sub-items**, with emoji labels, due dates, repeats and
   drag to reorder
-- 🗓️ **Board, Agenda and Done** views that update live
+- 🗓️ **Brief, Board and Done** views that update live
 - 👥 **Sharing.** Share a list with someone, or keep lists in a Space for a
   household or small team
 - 🔀 **GitHub.** Pull requests that name an item link to it, and complete it

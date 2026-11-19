@@ -112,11 +112,11 @@ describe.each([
 });
 
 describe("Kanban, switching views", () => {
-  it("puts each view at its own path, Agenda on 1 and Board on 2, keeping the query", () => {
+  it("puts each view at its own path, Brief on 1 and Board on 2, keeping the query", () => {
     window.history.replaceState(null, "", "/board?x=1");
     render(board([list("b", "Work", "active", null)], []));
     fireEvent.keyDown(document, { key: "1" });
-    expect(window.location.pathname + window.location.search).toBe("/agenda?x=1");
+    expect(window.location.pathname + window.location.search).toBe("/brief?x=1");
     fireEvent.keyDown(document, { key: "3" });
     expect(window.location.pathname).toBe("/done");
     fireEvent.keyDown(document, { key: "2" });

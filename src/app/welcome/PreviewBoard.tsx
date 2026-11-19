@@ -344,9 +344,9 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
             <BoardHeader
               nav={
                 // The board's view switch, showing the Board; the preview
-                // has no Agenda or Done to switch to.
+                // has no Brief or Done to switch to.
                 <div className="flex h-7 rounded-md border border-neutral-200 p-0.5 text-[13px] font-medium max-[360px]:text-xs touch:h-9 touch:text-sm touch:max-[360px]:text-xs dark:border-neutral-800">
-                  {["Board", "Agenda", "Done"].map((label, i) => (
+                  {["Board", "Brief", "Done"].map((label, i) => (
                     <span
                       key={label}
                       className={`flex items-center whitespace-nowrap rounded px-2 max-[360px]:px-1.5 sm:px-2.5 ${

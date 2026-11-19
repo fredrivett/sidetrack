@@ -68,6 +68,13 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  // The Agenda was renamed the Brief: old links and notifications open it.
+  if (pathname === "/agenda") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/brief";
+    return NextResponse.redirect(url);
+  }
+
   // Each view has its own path, served by the one board page (app/(board)) so
   // switching views in the browser (Kanban's switchView) never remounts it.
   if (VIEWS.includes(pathname.slice(1))) {
@@ -76,7 +83,7 @@ export function proxy(request: NextRequest) {
     url.searchParams.set("view", pathname.slice(1));
     return NextResponse.rewrite(url);
   }
-  // / opens the Agenda; links from before views had paths (?view=, or ?p=
+  // / opens the Brief; links from before views had paths (?view=, or ?p=
   // for a list on the board) open the view they meant.
   if (pathname === "/") {
     const url = request.nextUrl.clone();
@@ -84,16 +91,18 @@ export function proxy(request: NextRequest) {
     url.searchParams.delete("view");
     url.pathname = VIEWS.includes(view)
       ? `/${view}`
+      : view === "agenda"
+        ? "/brief"
       : url.searchParams.has("p") && view !== "today" && view !== "no-date"
         ? "/board"
-        : "/agenda";
+        : "/brief";
     return NextResponse.redirect(url);
   }
 
   return NextResponse.next();
 }
 
-const VIEWS = ["agenda", "board", "done", "archived"];
+const VIEWS = ["brief", "board", "done", "archived"];
 
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
