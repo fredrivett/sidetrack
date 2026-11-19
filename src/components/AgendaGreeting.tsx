@@ -8,15 +8,8 @@ import { agendaGreetingAction, setAgendaReadAction } from "@/app/actions";
 import type { Greeting } from "@/core/agendaGreeting";
 import type { Item } from "@/core/schema";
 import { parseGreeting } from "@/lib/greeting";
-import {
-  ResponsiveDialog,
-  ResponsiveDialogCloseButton,
-  ResponsiveDialogContent,
-  ResponsiveDialogDescription,
-  ResponsiveDialogTitle,
-} from "./ui/responsive-dialog";
 import type { FeedbackAbout } from "./FeedbackDialog";
-import { GreetingExplainDialog } from "./GreetingExplainDialog";
+import { GreetingDialog, type RenderItem } from "./GreetingDialog";
 import { useToday } from "./use-day-start";
 
 const READ_MS = 2000;
@@ -92,8 +85,10 @@ const dateLine = (day: string) =>
  *
  * Items it names are chips that open them, and light up their row while
  * hovered; an action phrase does what it says; "others" lists the rest of
- * the undated items it picked from. Leaving it, by switching view or tab,
- * counts as having read it, so the next greeting looks back from then.
+ * the undated items it picked from, and "What is this?" how it was worked
+ * out, each in a dialog whose items open in place (GreetingDialog). Leaving
+ * it, by switching view or tab, counts as having read it, so the next
+ * greeting looks back from then.
  */
 export function AgendaGreeting({
   firstName,
@@ -102,6 +97,7 @@ export function AgendaGreeting({
   onAction,
   onHoverItem,
   onFeedback,
+  renderItem,
 }: {
   firstName: string | null;
   /** Items the page has, so a chip can open its item. */
@@ -111,12 +107,19 @@ export function AgendaGreeting({
   onHoverItem: (id: string | null) => void;
   /** A thumbs up or down opens the feedback form; absent hides them. */
   onFeedback?: (about: FeedbackAbout) => void;
+  /** An item opened from one of its dialogs, shown in that dialog. */
+  renderItem: RenderItem;
 }) {
   const today = useToday();
   // Undefined while it loads; null when there's none to show.
   const [greeting, setGreeting] = useState<Greeting | null | undefined>(undefined);
-  const [othersOpen, setOthersOpen] = useState(false);
-  const [explainOpen, setExplainOpen] = useState(false);
+  // Which of its dialogs is up, kept as it closes so it animates out as it was.
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogList, setDialogList] = useState<"explain" | "others">("explain");
+  const openDialog = (list: "explain" | "others") => {
+    setDialogList(list);
+    setDialogOpen(true);
+  };
 
   // Bumped to ask again when an item it names changes while it's open.
   const [asks, setAsks] = useState(0);
@@ -292,7 +295,7 @@ export function AgendaGreeting({
               }
               if (part.kind === "others") {
                 return others.length > 0 ? (
-                  <Tap key={i} onClick={() => setOthersOpen(true)} className={link}>
+                  <Tap key={i} onClick={() => openDialog("others")} className={link}>
                     {part.text}
                   </Tap>
                 ) : (
@@ -384,61 +387,26 @@ export function AgendaGreeting({
                 {greeting.trace && (
                   <button
                     type="button"
-                    onClick={() => setExplainOpen(true)}
+                    onClick={() => openDialog("explain")}
                     className="rounded-md px-1.5 py-1 text-xs text-neutral-400 outline-none hover:bg-neutral-100 hover:text-neutral-600 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:focus-visible:ring-neutral-600 dark:text-neutral-500 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
                   >
                     What is this?
                   </button>
                 )}
               </div>
-            {greeting.trace && (
-              <GreetingExplainDialog open={explainOpen} onOpenChange={setExplainOpen} trace={greeting.trace} />
-            )}
           </>
         )
       )}
 
-      <ResponsiveDialog open={othersOpen} onOpenChange={setOthersOpen}>
-        <ResponsiveDialogContent>
-          <div className="flex items-center gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-            <div className="min-w-0">
-              <ResponsiveDialogTitle>Also in No date</ResponsiveDialogTitle>
-              <ResponsiveDialogDescription className="text-left text-xs">
-                Most worth a look first
-              </ResponsiveDialogDescription>
-            </div>
-            <ResponsiveDialogCloseButton className="ml-auto shrink-0" />
-          </div>
-          <ul className="max-h-[60vh] overflow-y-auto p-2">
-            {others.map((o) => {
-              const item = itemsById.get(o.id);
-              const row = "block w-full rounded-md px-2 py-1.5 text-left text-sm";
-              // One the page hasn't loaded is named, but can't open.
-              if (!item) {
-                return (
-                  <li key={o.id} className={`${row} text-neutral-500`}>
-                    {o.title}
-                  </li>
-                );
-              }
-              return (
-                <li key={o.id}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOthersOpen(false);
-                      onOpenItem(item);
-                    }}
-                    className={`${row} text-neutral-800 outline-none hover:bg-neutral-100 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:text-neutral-200 dark:hover:bg-neutral-800`}
-                  >
-                    {item.title}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </ResponsiveDialogContent>
-      </ResponsiveDialog>
+      <GreetingDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        list={dialogList}
+        trace={greeting?.trace}
+        others={others}
+        itemsById={itemsById}
+        renderItem={renderItem}
+      />
     </div>
   );
 }

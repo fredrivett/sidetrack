@@ -156,7 +156,8 @@ export function DoneView({
               i.completedAt === null &&
               i.id !== detail.item?.id,
           )}
-          onOpenItem={detail.openDetail}
+          onOpenItem={detail.goTo}
+          history={detail.history}
           prefix={detailProject.refPrefix}
           assignees={assigneesByProject[detail.item.projectId] ?? []}
           viewerId={viewerId}

@@ -312,7 +312,8 @@ export function ProjectColumn({
               i.completedAt === null &&
               i.id !== detail.item?.id,
           )}
-          onOpenItem={detail.openDetail}
+          onOpenItem={detail.goTo}
+          history={detail.history}
           prefix={project.refPrefix}
           assignees={assignees}
           viewerId={viewerId}

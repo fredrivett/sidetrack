@@ -40,13 +40,26 @@ beforeAll(() => {
   // week is the 9th to the 15th, next week the 16th to the 22nd.
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date(2026, 10, 14, 12));
+  // Reduced motion, so the greeting dialog swaps views without animating,
+  // which jsdom can't.
   window.matchMedia = ((query: string) => ({
-    matches: false,
+    matches: query.includes("reduce"),
     media: query,
     addEventListener() {},
     removeEventListener() {},
   })) as unknown as typeof window.matchMedia;
   Element.prototype.scrollIntoView = vi.fn();
+  globalThis.ResizeObserver ??= class {
+    observe() {
+      return undefined;
+    }
+    unobserve() {
+      return undefined;
+    }
+    disconnect() {
+      return undefined;
+    }
+  };
 });
 afterAll(() => vi.useRealTimers());
 afterEach(cleanup);
@@ -266,6 +279,31 @@ describe("AgendaView", () => {
     fireEvent.click(screen.getByText("Bins"));
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText(`alice/HOME-${bins.number}`)).toBeTruthy();
+  });
+
+  it("goes back from a sub-item to the item it was opened from, without piling up", async () => {
+    const tidy = item("Tidy flat", "2026-11-14");
+    const kitchen = item("Kitchen", null, { parentId: tidy.id });
+    renderAgenda([tidy, kitchen]);
+    fireEvent.click(screen.getByText("Tidy flat"));
+    const dialog = () => within(screen.getByRole("dialog"));
+    // Opened from the page: nothing to go back to.
+    expect(dialog().queryByRole("button", { name: /^Back to/ })).toBeNull();
+
+    fireEvent.click(dialog().getByRole("button", { name: "Kitchen" }));
+    expect(dialog().getByText(`P1-${kitchen.number}`)).toBeTruthy();
+    fireEvent.click(dialog().getByRole("button", { name: "Back to Tidy flat" }));
+    expect(dialog().getByText(`P1-${tidy.number}`)).toBeTruthy();
+    expect(dialog().queryByRole("button", { name: /^Back to/ })).toBeNull();
+    // Back where it was opened from.
+    expect(document.activeElement).toBe(dialog().getByRole("button", { name: "Kitchen" }));
+
+    // Going to the parent it came from is going back, not a step further.
+    fireEvent.click(dialog().getByRole("button", { name: "Kitchen" }));
+    fireEvent.click(dialog().getByTitle("Sub-item of"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Open parent" }));
+    expect(dialog().getByText(`P1-${tidy.number}`)).toBeTruthy();
+    expect(dialog().queryByRole("button", { name: /^Back to/ })).toBeNull();
   });
 
   it("folds Overdue away as saved for the viewer, and saves a toggle", () => {
@@ -555,7 +593,10 @@ describe("AgendaView", () => {
           { moment: "triage", score: 0.42, said: true, why: "Always said when it applies" },
           { moment: "urgent", score: 0.55, said: false, why: "Scored under 0.6" },
         ],
-        items: [{ id: late.id, title: "Call the bank", list: "Home", score: 0.8, named: true, other: false }],
+        items: [
+          { id: late.id, title: "Call the bank", list: "Home", score: 0.8, named: true, other: false },
+          { id: "gone", title: "Paint the shed", list: "Home", score: 0.3, named: false, other: false },
+        ],
         model: null,
       },
     });
@@ -578,6 +619,15 @@ describe("AgendaView", () => {
     expect(left?.hasAttribute("data-said")).toBe(false);
     expect(left?.textContent).toContain("left out: Scored under 0.6");
     expect(within(dialog).getByText("Call the bank").closest("li")?.textContent).toContain("80%");
+    // Weighed but not loaded on the page: listed, but can't open.
+    expect(within(dialog).getByText("Paint the shed").closest("button")).toBeNull();
+    // An item opens in the same dialog, with a way back to the explanation.
+    fireEvent.click(within(dialog).getByRole("button", { name: /Call the bank/ }));
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(within(screen.getByRole("dialog")).getByText(`P1-${late.number}`)).toBeTruthy();
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Back to What is this?" }));
+    expect(within(screen.getByRole("dialog")).getByText("Items it weighed")).toBeTruthy();
+    expect(within(screen.getByRole("dialog")).queryByText(`P1-${late.number}`)).toBeNull();
   });
 
   it("keeps the opening line and drops the placeholder if the greeting can't load", async () => {

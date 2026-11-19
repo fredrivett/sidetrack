@@ -57,10 +57,12 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   ResponsiveDialog,
+  ResponsiveDialogBackButton,
   ResponsiveDialogCloseButton,
   ResponsiveDialogContent,
   ResponsiveDialogDescription,
   ResponsiveDialogTitle,
+  ResponsiveDialogViews,
 } from "@/components/ui/responsive-dialog";
 import { AssigneeOptions } from "./AssigneeOptions";
 import { AuditEntryRow } from "./AuditDialog";
@@ -77,6 +79,7 @@ import { MoveToListPicker, useMoveItem } from "./MoveItem";
 import { InlineCode, Markdown } from "./Markdown";
 import { rowAfterDelete, SelectedItemContext, useItemShortcuts } from "./useItemShortcuts";
 import { useOptimisticAssignees } from "./use-optimistic-assignees";
+import type { ItemHistory } from "./use-item-detail-dialog";
 import { useItemChanges } from "./use-optimistic-items";
 import { useCopyItemRef } from "./useCopyItemRef";
 import { useFollows } from "./follows";
@@ -395,6 +398,7 @@ function Checklist({
   onAssign,
   pickerFor,
   onPickerFor,
+  focusId,
 }: {
   parent: Item;
   items: Item[];
@@ -408,6 +412,8 @@ function Checklist({
    * which hands its A/I shortcuts over while one is open). */
   pickerFor: string | null;
   onPickerFor: (id: string | null) => void;
+  /** The sub-item just gone back from, focused as the checklist shows. */
+  focusId: string | null;
 }) {
   const [draft, setDraft] = useState("");
   const { setCompleted } = useItemChanges();
@@ -480,6 +486,7 @@ function Checklist({
             />
             <button
               type="button"
+              autoFocus={child.id === focusId}
               onClick={() => onOpenItem(child)}
               className={`min-w-0 flex-1 truncate text-left text-sm hover:underline ${
                 done ? "text-neutral-400 line-through" : ""
@@ -547,7 +554,66 @@ function Checklist({
     </div>
   );
 }
+type ItemDetailProps = {
+  item: Item;
+  /** For a sub-item, the task it belongs to. */
+  parent: Item | null;
+  /** This item's sub-items, in order. */
+  checklist: Item[];
+  /** Tasks this item can become a sub-item of: the list's other open
+   * top-level tasks, in order. */
+  nestTargets: Item[];
+  /** Switch to another item (a sub-item or the parent). */
+  onOpenItem: (item: Item) => void;
+  prefix: string;
+  assignees: AssigneeView[];
+  viewerId: string;
+  prLinks: ItemPrLink[];
+  open: boolean;
+  /** The sub-item just gone back from, to focus its checklist line. */
+  cameFrom?: string | null;
+};
+
+/**
+ * An item's details in a dialog of their own. Going to a sub-item or the
+ * parent slides the new one in, with a way back to the one before
+ * (useItemDetailDialog's history).
+ */
 export function ItemDetailDialog({
+  onOpenChange,
+  history,
+  ...props
+}: ItemDetailProps & {
+  onOpenChange: (open: boolean) => void;
+  /** Where it's been, to go back; absent, there's no way back. */
+  history?: ItemHistory;
+}) {
+  return (
+    <ResponsiveDialog open={props.open} onOpenChange={onOpenChange}>
+      <ResponsiveDialogContent>
+        <ResponsiveDialogViews view={props.item.id} direction={history?.direction ?? "forward"}>
+          <ItemDetailView
+            {...props}
+            cameFrom={history?.direction === "back" ? history.left : null}
+            onClose={() => onOpenChange(false)}
+            back={
+              history?.previous && (
+                <ResponsiveDialogBackButton label={history.previous.title} onClick={history.onBack} />
+              )
+            }
+          />
+        </ResponsiveDialogViews>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
+  );
+}
+
+/**
+ * An item's details: a header, a scrolling body and a footer, for a dialog
+ * of its own (ItemDetailDialog) or as one view of another dialog
+ * (ResponsiveDialogViews), with `back` at the start of its header.
+ */
+export function ItemDetailView({
   item,
   parent,
   checklist,
@@ -558,24 +624,14 @@ export function ItemDetailDialog({
   viewerId,
   prLinks,
   open,
-  onOpenChange,
-}: {
-  item: Item;
-  /** For a sub-item, the task it belongs to. */
-  parent: Item | null;
-  /** This item's sub-items, in order. */
-  checklist: Item[];
-  /** Tasks this item can become a sub-item of: the list's other open
-   * top-level tasks, in order. */
-  nestTargets: Item[];
-  /** Switch the dialog to another item (a sub-item or the parent). */
-  onOpenItem: (item: Item) => void;
-  prefix: string;
-  assignees: AssigneeView[];
-  viewerId: string;
-  prLinks: ItemPrLink[];
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  cameFrom = null,
+  onClose,
+  back,
+}: ItemDetailProps & {
+  /** Leave the item, as deleting or moving it does. */
+  onClose: () => void;
+  /** A way back to the view it was opened from. */
+  back?: React.ReactNode;
 }) {
   const [pending, start] = useTransition();
   const { agentOptions, setAgent } = useAgentAssignment(item, start);
@@ -666,16 +722,17 @@ export function ItemDetailDialog({
     onAssignToMe: canAssignSelf ? toggleMeOnChild : undefined,
   });
 
-  function change(next: boolean) {
-    if (!next) {
+  // On closing, however it closes: reset the picker so a closed dialog never
+  // reopens with it already open (which would also disarm the A/I shortcuts).
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) {
+    setWasOpen(open);
+    if (!open) {
       setConfirmingDelete(false);
-      // Reset the picker so a closed dialog never reopens with it already open
-      // (which would also disarm the A/I shortcuts).
       setAssignOpen(false);
       setDueOpen(false);
       setChildPickerFor(null);
     }
-    onOpenChange(next);
   }
 
   const changes = useItemChanges();
@@ -693,285 +750,285 @@ export function ItemDetailDialog({
     // Deleting the item the board's keys selected moves the selection on.
     if (selection?.selectedId === item.id) selection.select(rowAfterDelete(item.id));
     changes.deleteItem(item);
-    change(false);
+    onClose();
   }
 
   return (
-    <ResponsiveDialog open={open} onOpenChange={change}>
-      <ResponsiveDialogContent>
-        <div className="flex shrink-0 flex-col gap-2 border-b border-neutral-200 px-4 pt-3 pb-4 dark:border-neutral-800">
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => void copy()}
-              title={`Copy ID (${modifierSymbol()}.)`}
-              className="-ml-1.5 inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[11px] tracking-wide touch:py-1.5 touch:text-xs text-neutral-500 transition hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
+    <>
+    <div className="flex shrink-0 flex-col gap-2 border-b border-neutral-200 px-4 pt-3 pb-4 dark:border-neutral-800">
+      <div className="flex min-w-0 items-center gap-1">
+        {back}
+        <button
+          type="button"
+          onClick={() => void copy()}
+          title={`Copy ID (${modifierSymbol()}.)`}
+          className={`${back ? "" : "-ml-1.5 "}inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[11px] tracking-wide touch:py-1.5 touch:text-xs text-neutral-500 transition hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800`}
+        >
+          {copied ? (
+            <Check className="size-3 opacity-70" />
+          ) : (
+            <Copy className="size-3 opacity-70" />
+          )}
+          {copied ? "Copied" : ref}
+        </button>
+        {follows && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-pressed={following}
+            aria-label={following ? "Unfollow" : "Follow"}
+            title={following ? "Unfollow" : "Follow: get notified of changes"}
+            onClick={() => follows.setFollowing(item, !following)}
+            className="ml-auto text-neutral-500"
+          >
+            {/* Filled while you follow it, like a pressed toggle. */}
+            <Bell className={following ? "fill-current text-foreground" : ""} />
+          </Button>
+        )}
+        <ResponsiveDialogCloseButton className={follows ? "" : "ml-auto"} />
+      </div>
+      <div className="flex items-start gap-2">
+        <button
+          type="button"
+          onClick={toggle}
+          disabled={pending}
+          aria-pressed={completed}
+          aria-label={completed ? "Completed" : "Complete"}
+          title={completed ? "Mark as not done (X)" : "Complete (X)"}
+          className={`mt-px shrink-0 rounded-full transition disabled:opacity-50 ${
+            completed
+              ? "text-green-600 hover:text-green-700 dark:text-green-500"
+              : "text-neutral-400 hover:text-green-600 dark:text-neutral-500 dark:hover:text-green-500"
+          }`}
+        >
+          {completed ? <CheckCircle2 className="size-6" /> : <Circle className="size-6" />}
+        </button>
+        <ResponsiveDialogTitle className="min-w-0 flex-1">
+          <EditableText
+            value={item.title}
+            onSave={(next) =>
+              runAction(updateItemAction(item.id, { title: next }), `rename “${item.title}”`)
+            }
+            required
+            className={`block w-full break-words text-base leading-6 font-medium ${
+              completed ? "text-neutral-400 line-through" : ""
+            }`}
+            inputClassName="w-full text-base"
+            renderValue={(title) => <InlineCode>{title}</InlineCode>}
+          />
+        </ResponsiveDialogTitle>
+      </div>
+      <ResponsiveDialogDescription className="sr-only">
+        Item details for {item.title}
+      </ResponsiveDialogDescription>
+      <div className="space-y-3 pl-8">
+        <EditableText
+          value={item.description ?? ""}
+          onSave={(next) =>
+            runAction(
+              updateItemAction(item.id, { description: next || null }),
+              `save the description of “${item.title}”`,
+            )
+          }
+          multiline
+          placeholder="Add description…"
+          className="block w-full break-words text-sm text-neutral-600 dark:text-neutral-300"
+          inputClassName="w-full text-sm"
+          renderValue={(description) => <Markdown>{description}</Markdown>}
+        />
+        <div className="flex flex-wrap items-center gap-1.5">
+          <DueChip
+            open={dueOpen}
+            setOpen={setDueOpen}
+            item={item}
+            done={completed}
+            disabled={pending}
+            onChange={(due) =>
+              start(async () => {
+                await runAction(
+                  updateItemAction(item.id, due ?? { dueDate: null }),
+                  `change the due date of “${item.title}”`,
+                );
+              })
+            }
+          />
+          <RepeatChip
+            item={item}
+            disabled={pending}
+            onChange={(repeat) =>
+              start(async () => {
+                await runAction(
+                  updateItemAction(item.id, { repeat }),
+                  `change how “${item.title}” repeats`,
+                );
+              })
+            }
+          />
+          <DropdownMenu open={assignOpen} onOpenChange={setAssignOpen}>
+            <DropdownMenuTrigger
+              aria-disabled={pending || undefined}
+              title="Assignees (A)"
+              className={assigned.length ? CHIP : EMPTY_CHIP}
             >
-              {copied ? (
-                <Check className="size-3 opacity-70" />
+              {assigned.length ? (
+                <>
+                  <AvatarStack users={assigned} size={18} ringClassName="ring-popover" />
+                  <span className="truncate">{assigneeNames(assigned)}</span>
+                </>
               ) : (
-                <Copy className="size-3 opacity-70" />
+                <>
+                  <UserRound />
+                  <span data-replay-safe>Unassigned</span>
+                </>
               )}
-              {copied ? "Copied" : ref}
-            </button>
-            {follows && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-pressed={following}
-                aria-label={following ? "Unfollow" : "Follow"}
-                title={following ? "Unfollow" : "Follow: get notified of changes"}
-                onClick={() => follows.setFollowing(item, !following)}
-                className="ml-auto text-neutral-500"
-              >
-                {/* Filled while you follow it, like a pressed toggle. */}
-                <Bell className={following ? "fill-current text-foreground" : ""} />
-              </Button>
-            )}
-            <ResponsiveDialogCloseButton className={follows ? "" : "ml-auto"} />
-          </div>
-          <div className="flex items-start gap-2">
-            <button
-              type="button"
-              onClick={toggle}
-              disabled={pending}
-              aria-pressed={completed}
-              aria-label={completed ? "Completed" : "Complete"}
-              title={completed ? "Mark as not done (X)" : "Complete (X)"}
-              className={`mt-px shrink-0 rounded-full transition disabled:opacity-50 ${
-                completed
-                  ? "text-green-600 hover:text-green-700 dark:text-green-500"
-                  : "text-neutral-400 hover:text-green-600 dark:text-neutral-500 dark:hover:text-green-500"
-              }`}
-            >
-              {completed ? <CheckCircle2 className="size-6" /> : <Circle className="size-6" />}
-            </button>
-            <ResponsiveDialogTitle className="min-w-0 flex-1">
-              <EditableText
-                value={item.title}
-                onSave={(next) =>
-                  runAction(updateItemAction(item.id, { title: next }), `rename “${item.title}”`)
-                }
-                required
-                className={`block w-full break-words text-base leading-6 font-medium ${
-                  completed ? "text-neutral-400 line-through" : ""
-                }`}
-                inputClassName="w-full text-base"
-                renderValue={(title) => <InlineCode>{title}</InlineCode>}
-              />
-            </ResponsiveDialogTitle>
-          </div>
-          <ResponsiveDialogDescription className="sr-only">
-            Item details for {item.title}
-          </ResponsiveDialogDescription>
-          <div className="space-y-3 pl-8">
-            <EditableText
-              value={item.description ?? ""}
-              onSave={(next) =>
-                runAction(
-                  updateItemAction(item.id, { description: next || null }),
-                  `save the description of “${item.title}”`,
-                )
-              }
-              multiline
-              placeholder="Add description…"
-              className="block w-full break-words text-sm text-neutral-600 dark:text-neutral-300"
-              inputClassName="w-full text-sm"
-              renderValue={(description) => <Markdown>{description}</Markdown>}
-            />
-            <div className="flex flex-wrap items-center gap-1.5">
-              <DueChip
-                open={dueOpen}
-                setOpen={setDueOpen}
-                item={item}
-                done={completed}
-                disabled={pending}
-                onChange={(due) =>
-                  start(async () => {
-                    await runAction(
-                      updateItemAction(item.id, due ?? { dueDate: null }),
-                      `change the due date of “${item.title}”`,
-                    );
-                  })
-                }
-              />
-              <RepeatChip
-                item={item}
-                disabled={pending}
-                onChange={(repeat) =>
-                  start(async () => {
-                    await runAction(
-                      updateItemAction(item.id, { repeat }),
-                      `change how “${item.title}” repeats`,
-                    );
-                  })
-                }
-              />
-              <DropdownMenu open={assignOpen} onOpenChange={setAssignOpen}>
-                <DropdownMenuTrigger
-                  aria-disabled={pending || undefined}
-                  title="Assignees (A)"
-                  className={assigned.length ? CHIP : EMPTY_CHIP}
-                >
-                  {assigned.length ? (
-                    <>
-                      <AvatarStack users={assigned} size={18} ringClassName="ring-popover" />
-                      <span className="truncate">{assigneeNames(assigned)}</span>
-                    </>
-                  ) : (
-                    <>
-                      <UserRound />
-                      <span data-replay-safe>Unassigned</span>
-                    </>
-                  )}
-                </DropdownMenuTrigger>
-                <DropdownMenuContent data-assignee-picker align="start" className="w-56">
-                  <AssigneeOptions
-                    selected={assigneeIds}
-                    assignees={assignees}
-                    viewerId={viewerId}
-                    onChange={assign}
-                    agents={agentOptions}
-                    onAgentChange={setAgent}
-                  />
-                </DropdownMenuContent>
-              </DropdownMenu>
-              {/* Not for an item in an archived list, which isn't a move target. */}
-              {move?.groups.some((g) => g.lists.some((l) => l.id === item.projectId)) && (
-                <MoveToListPicker
-                  item={item}
-                  disabled={pending}
-                  className={CHIP}
-                  onPick={(projectId) => {
-                    // The item leaves this list, so the sheet takes over.
-                    change(false);
-                    move?.open(item, projectId);
-                  }}
-                />
-              )}
-              <LabelChips
-                key={item.id}
-                projectId={item.projectId}
-                value={labels}
-                onChange={setLabels}
-                draftEmoji={newLabelEmoji}
-                chipClassName={labels.length ? `${EMPTY_CHIP} px-2` : EMPTY_CHIP}
-              />
-              {parent ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    aria-disabled={pending || undefined}
-                    title="Sub-item of"
-                    className={CHIP}
-                  >
-                    <IndentIncrease />
-                    <span className="max-w-48 truncate">{parent.title}</span>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-56">
-                    <DropdownMenuItem onClick={() => onOpenItem(parent)}>
-                      <CornerLeftUp />
-                      Open parent
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => changes.setParent(item, null)}>
-                      <IndentDecrease />
-                      Move out
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ) : (
-                // The touch way to nest an existing task, where there's no
-                // row menu: an item with sub-items can't become one.
-                checklist.length === 0 &&
-                nestTargets.length > 0 && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      aria-disabled={pending || undefined}
-                      aria-label="Make it a sub-item of…"
-                      className={EMPTY_CHIP}
-                    >
-                      <IndentIncrease />
-                      <span data-replay-safe>Parent</span>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-64">
-                      {nestTargets.map((t) => (
-                        <DropdownMenuItem key={t.id} onClick={() => changes.setParent(item, t.id)}>
-                          <span className="truncate">{t.title}</span>
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-4">
-          <AgentWork item={item} assignees={assignees} />
-
-          {!parent && (
-            <Field
-              label={
-                checklist.length
-                  ? `Checklist · ${checklist.filter((c) => c.completedAt !== null).length}/${checklist.length}`
-                  : "Checklist"
-              }
-            >
-              <Checklist
-                parent={item}
-                items={checklist}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent data-assignee-picker align="start" className="w-56">
+              <AssigneeOptions
+                selected={assigneeIds}
                 assignees={assignees}
                 viewerId={viewerId}
-                onOpenItem={(child) => {
-                  setChildPickerFor(null);
-                  onOpenItem(child);
-                }}
-                assigneesById={assigneesById}
-                onAssign={setAssignees}
-                pickerFor={childPickerFor}
-                onPickerFor={setChildPickerFor}
+                onChange={assign}
+                agents={agentOptions}
+                onAgentChange={setAgent}
               />
-            </Field>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {/* Not for an item in an archived list, which isn't a move target. */}
+          {move?.groups.some((g) => g.lists.some((l) => l.id === item.projectId)) && (
+            <MoveToListPicker
+              item={item}
+              disabled={pending}
+              className={CHIP}
+              onPick={(projectId) => {
+                // The item leaves this list, so the sheet takes over.
+                onClose();
+                move?.open(item, projectId);
+              }}
+            />
           )}
-
-          {prLinks.length > 0 && (
-            <Field label="Pull requests">
-              <div className="flex flex-wrap gap-x-3 gap-y-1">
-                {prLinks.map((link) => (
-                  <PrLink key={link.id} url={link.prUrl} state={link.prState} className="text-sm" />
-                ))}
-              </div>
-            </Field>
+          <LabelChips
+            key={item.id}
+            projectId={item.projectId}
+            value={labels}
+            onChange={setLabels}
+            draftEmoji={newLabelEmoji}
+            chipClassName={labels.length ? `${EMPTY_CHIP} px-2` : EMPTY_CHIP}
+          />
+          {parent ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                aria-disabled={pending || undefined}
+                title="Sub-item of"
+                className={CHIP}
+              >
+                <IndentIncrease />
+                <span className="max-w-48 truncate">{parent.title}</span>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuItem onClick={() => onOpenItem(parent)}>
+                  <CornerLeftUp />
+                  Open parent
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => changes.setParent(item, null)}>
+                  <IndentDecrease />
+                  Move out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            // The touch way to nest an existing task, where there's no
+            // row menu: an item with sub-items can't become one.
+            checklist.length === 0 &&
+            nestTargets.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  aria-disabled={pending || undefined}
+                  aria-label="Make it a sub-item of…"
+                  className={EMPTY_CHIP}
+                >
+                  <IndentIncrease />
+                  <span data-replay-safe>Parent</span>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-64">
+                  {nestTargets.map((t) => (
+                    <DropdownMenuItem key={t.id} onClick={() => changes.setParent(item, t.id)}>
+                      <span className="truncate">{t.title}</span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )
           )}
-
-          <Field label="Comments">
-            <ItemComments key={item.id} item={item} viewerId={viewerId} people={assignees} />
-          </Field>
-
-          <ItemActivity item={item} />
         </div>
+      </div>
+    </div>
 
-        <div className="flex shrink-0 items-center justify-between border-t border-neutral-200 px-4 py-2.5 dark:border-neutral-800">
-          <span data-replay-safe className="text-xs text-neutral-400">
-            {completed && item.completedAt
-              ? `Completed ${dayLabel(item.completedAt)}`
-              : `Created ${dayLabel(item.createdAt)}`}
-          </span>
-          <Button
-            variant={confirmingDelete ? "destructive" : "ghost"}
-            size="sm"
-            data-replay-safe
-            onClick={del}
-            disabled={pending}
-            className={confirmingDelete ? "" : "text-neutral-500 hover:text-destructive"}
-          >
-            <Trash2 />
-            {confirmingDelete ? "Confirm delete?" : "Delete"}
-            {!confirmingDelete && <Kbd className="ml-0.5">⌫</Kbd>}
-          </Button>
-        </div>
-      </ResponsiveDialogContent>
-    </ResponsiveDialog>
+    <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-4">
+      <AgentWork item={item} assignees={assignees} />
+
+      {!parent && (
+        <Field
+          label={
+            checklist.length
+              ? `Checklist · ${checklist.filter((c) => c.completedAt !== null).length}/${checklist.length}`
+              : "Checklist"
+          }
+        >
+          <Checklist
+            parent={item}
+            items={checklist}
+            assignees={assignees}
+            viewerId={viewerId}
+            onOpenItem={(child) => {
+              setChildPickerFor(null);
+              onOpenItem(child);
+            }}
+            assigneesById={assigneesById}
+            onAssign={setAssignees}
+            pickerFor={childPickerFor}
+            onPickerFor={setChildPickerFor}
+            focusId={cameFrom}
+          />
+        </Field>
+      )}
+
+      {prLinks.length > 0 && (
+        <Field label="Pull requests">
+          <div className="flex flex-wrap gap-x-3 gap-y-1">
+            {prLinks.map((link) => (
+              <PrLink key={link.id} url={link.prUrl} state={link.prState} className="text-sm" />
+            ))}
+          </div>
+        </Field>
+      )}
+
+      <Field label="Comments">
+        <ItemComments key={item.id} item={item} viewerId={viewerId} people={assignees} />
+      </Field>
+
+      <ItemActivity item={item} />
+    </div>
+
+    <div className="flex shrink-0 items-center justify-between border-t border-neutral-200 px-4 py-2.5 dark:border-neutral-800">
+      <span data-replay-safe className="text-xs text-neutral-400">
+        {completed && item.completedAt
+          ? `Completed ${dayLabel(item.completedAt)}`
+          : `Created ${dayLabel(item.createdAt)}`}
+      </span>
+      <Button
+        variant={confirmingDelete ? "destructive" : "ghost"}
+        size="sm"
+        data-replay-safe
+        onClick={del}
+        disabled={pending}
+        className={confirmingDelete ? "" : "text-neutral-500 hover:text-destructive"}
+      >
+        <Trash2 />
+        {confirmingDelete ? "Confirm delete?" : "Delete"}
+        {!confirmingDelete && <Kbd className="ml-0.5">⌫</Kbd>}
+      </Button>
+    </div>
+    </>
   );
 }
