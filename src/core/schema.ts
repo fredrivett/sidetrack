@@ -641,6 +641,8 @@ export const agendaGreetings = sqliteTable("agenda_greetings", {
   // The UTC day the asks were counted on, and how many.
   askedDay: text("asked_day").notNull(),
   asks: integer("asks").notNull(),
+  // How many asks in a row came close together, which sets how long the next one waits.
+  streak: integer("streak").notNull().default(0),
 });
 
 export const meta = sqliteTable("meta", {

@@ -323,18 +323,67 @@ describe("greetingFor", () => {
       const { calls, impl } = fake();
       await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
       updateItem(db, fred, loft.id, { title: "Sort the attic" }, "web");
+      await writtenGreetingFor(db, fred, "UTC", keys, now + 10_000, impl);
+      // A second ask close on the first: the next waits 30s.
+      updateItem(db, fred, loft.id, { title: "Sort the shed" }, "web");
       // Five seconds on, even asked for now, it waits: five more seconds.
-      expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 5_000, impl, true)).toMatchObject({
+      expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 15_000, impl, true)).toMatchObject({
         retryInMs: 5_000,
       });
       // Twelve seconds on: asked for now, it writes; left to itself, it'd wait 18s more.
-      expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 12_000, impl)).toMatchObject({
+      expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 22_000, impl)).toMatchObject({
         retryInMs: 18_000,
       });
-      expect(calls.claude).toBe(1);
-      const fresh = await writtenGreetingFor(db, fred, "UTC", keys, now + 12_000, impl, true);
       expect(calls.claude).toBe(2);
+      const fresh = await writtenGreetingFor(db, fred, "UTC", keys, now + 22_000, impl, true);
+      expect(calls.claude).toBe(3);
       expect(fresh).not.toHaveProperty("retryInMs");
+    });
+
+    it("writes at once after a quiet spell, then waits longer for each change close on the last", async () => {
+      const { db, fred, loft } = setup();
+      const { calls, impl } = fake();
+      let t = now;
+      await writtenGreetingFor(db, fred, "UTC", keys, t, impl);
+      let n = 0;
+      const rename = () => updateItem(db, fred, loft.id, { title: `Sort the loft ${++n}` }, "web");
+      for (const wait of [10_000, 30_000, 60_000, 120_000, 300_000, 300_000]) {
+        rename();
+        expect(await writtenGreetingFor(db, fred, "UTC", keys, t + 1_000, impl)).toMatchObject({
+          retryInMs: wait - 1_000,
+        });
+        t += wait;
+        await writtenGreetingFor(db, fred, "UTC", keys, t, impl);
+        expect(calls.claude).toBe(n + 1);
+      }
+      // Three minutes quiet past the five-minute wait: written at once, and
+      // the next change waits 10s again.
+      t += 300_000 + 3 * 60_000;
+      rename();
+      await writtenGreetingFor(db, fred, "UTC", keys, t, impl);
+      expect(calls.claude).toBe(n + 1);
+      rename();
+      expect(await writtenGreetingFor(db, fred, "UTC", keys, t + 1_000, impl)).toMatchObject({ retryInMs: 9_000 });
+    });
+
+    it("counts a rewrite now in the back-off, and starts over only once quiet past the wait", async () => {
+      const { db, fred, loft } = setup();
+      const { calls, impl } = fake();
+      await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
+      updateItem(db, fred, loft.id, { title: "Sort the attic" }, "web");
+      await writtenGreetingFor(db, fred, "UTC", keys, now + 10_000, impl, true);
+      expect(calls.claude).toBe(2);
+      // Left to itself after that rewrite now, the next waits 30s, not 10s.
+      updateItem(db, fred, loft.id, { title: "Sort the shed" }, "web");
+      expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 25_000, impl)).toMatchObject({
+        retryInMs: 15_000,
+      });
+      // A millisecond short of 30s plus three quiet minutes is still close on the last.
+      const t = now + 10_000 + 30_000 + 3 * 60_000;
+      await writtenGreetingFor(db, fred, "UTC", keys, t - 1, impl);
+      expect(calls.claude).toBe(3);
+      updateItem(db, fred, loft.id, { title: "Sort the garage" }, "web");
+      expect(await writtenGreetingFor(db, fred, "UTC", keys, t, impl)).toMatchObject({ retryInMs: 60_000 - 1 });
     });
 
     it("keeps one greeting through the morning, and writes another for the afternoon", async () => {
@@ -358,12 +407,12 @@ describe("greetingFor", () => {
       const first = await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
       expect(first.titles).toEqual({ [loft.id]: "Sort the loft" });
       expect(first).not.toHaveProperty("stamps");
-      // Ticked off within 30 seconds: the one it has stays, out of date,
+      // Ticked off within 10 seconds: the one it has stays, out of date,
       // saying when to ask again.
       completeItem(db, fred, loft.id, "web");
-      expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 10_000, impl)).toEqual({
+      expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 4_000, impl)).toEqual({
         ...first,
-        retryInMs: 20_000,
+        retryInMs: 6_000,
       });
       expect(calls.claude).toBe(1);
       // Then it's written again, and read back while nothing it names changes.
@@ -497,7 +546,7 @@ describe("greetingFor", () => {
 
     it("stops asking for one person after 40 in a day", async () => {
       const { db, fred } = setup();
-      // Every reply rejected, so each try past the two minutes asks again.
+      // Every reply rejected, so each try past the fifteen minutes asks again.
       const { calls, impl } = fake("Visit evil.com.");
       for (let n = 0; n < 45; n++) {
         await writtenGreetingFor(db, fred, "UTC", keys, Date.UTC(2026, 10, 18, 4, 30) + n * 16 * 60_000, impl);
@@ -565,9 +614,10 @@ describe("greetingFor", () => {
       const { calls, impl } = fake();
       for (let n = 0; n < 45; n++) {
         addItem(db, fred, { projectId: home.id, title: `Thing ${n}`, dueDate: "2026-11-25" }, "web");
-        // Each side of the date line in turn, three minutes apart, all in one UTC day.
+        // Each side of the date line in turn, six minutes apart (past the
+        // longest backoff), all in one UTC day.
         const zone = n % 2 ? "Pacific/Kiritimati" : "Pacific/Pago_Pago";
-        await writtenGreetingFor(db, fred, zone, keys, Date.UTC(2026, 10, 18, 0, 30) + n * 3 * 60_000, impl);
+        await writtenGreetingFor(db, fred, zone, keys, Date.UTC(2026, 10, 18, 4, 30) + n * 6 * 60_000, impl);
       }
       expect(calls.claude).toBe(40);
     });

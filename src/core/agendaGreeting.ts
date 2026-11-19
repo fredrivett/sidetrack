@@ -187,9 +187,15 @@ function stillVisible(db: Db, viewerId: string, greeting: StoredGreeting): boole
   return seen.length === ids.length;
 }
 
-/** Claude writes one person's greeting at most this often… */
-const ASK_EVERY_MS = 30_000;
-/** …or this often when they ask for it with "Rewrite now"… */
+/**
+ * Claude writes one person's greeting at once after a quiet spell, then waits
+ * longer after each ask that follows close on the last: 10s, 30s, 1 min, 2
+ * min, then 5 min at most…
+ */
+const BACKOFF_MS = [10_000, 30_000, 60_000, 2 * 60_000, 5 * 60_000];
+/** …starting over once nothing has asked for this long past the wait… */
+const QUIET_MS = 3 * 60_000;
+/** …or this long when they ask for it with "Rewrite now" (the back-off's first step)… */
 const ASK_NOW_EVERY_MS = 10_000;
 /** …or this often after an ask for the same part of the day failed… */
 const RETRY_FAILED_MS = 15 * 60_000;
@@ -260,9 +266,10 @@ export function greetingFor(
 /**
  * The viewer's greeting with Jev's picks in Claude's words, when both `keys`
  * are set. Written once a morning, afternoon and evening and read back from
- * agenda_greetings in between; written afresh, at most every ASK_EVERY_MS and
- * ASKS_PER_DAY times a day per person. Anything else, from a failed or
- * rejected write to a limit, gives the template greeting. `fetchImpl` is
+ * agenda_greetings in between; written afresh at once after a quiet spell,
+ * then backing off (BACKOFF_MS), and at most ASKS_PER_DAY times a day per
+ * person. Anything else, from a failed or rejected write to a limit, gives
+ * the template greeting. `fetchImpl` is
  * injectable for tests.
  */
 export async function writtenGreetingFor(
@@ -272,7 +279,7 @@ export async function writtenGreetingFor(
   keys: { jev: string | undefined; anthropic: string | undefined },
   now = Date.now(),
   fetchImpl: typeof fetch = fetch,
-  /** Asked for with "Rewrite now": it waits ASK_NOW_EVERY_MS, not ASK_EVERY_MS. The daily caps still hold. */
+  /** Asked for with "Rewrite now": it waits ASK_NOW_EVERY_MS, not the back-off. The daily caps still hold. */
   rewriteNow = false,
 ): Promise<Greeting> {
   const { brief, name, prefs } = briefFor(db, viewerId, timeZone, now);
@@ -308,8 +315,13 @@ export async function writtenGreetingFor(
   if (everyone.day !== utcDay) Object.assign(everyone, { day: utcDay, asks: 0 });
   // A write that failed for this part of the day likely fails again soon.
   const failed = row?.key === key && !same?.text;
-  const wait = failed ? RETRY_FAILED_MS : rewriteNow ? ASK_NOW_EVERY_MS : ASK_EVERY_MS;
-  if (row && now - row.askedAt < wait) {
+  // Each ask close on the last waits longer; a quiet spell starts it over.
+  const streak = row?.streak ?? 0;
+  const backoff = BACKOFF_MS[Math.min(Math.max(streak, 1), BACKOFF_MS.length) - 1];
+  const quiet = !row || now - row.askedAt >= backoff + QUIET_MS;
+  const wait = failed ? RETRY_FAILED_MS : rewriteNow ? ASK_NOW_EVERY_MS : backoff;
+  // A failed write still waits its full time, quiet or not.
+  if (row && (failed || !quiet) && now - row.askedAt < wait) {
     const minutes = Math.ceil((row.askedAt + wait - now) / 60_000);
     if (!failed) {
       const seconds = Math.ceil((row.askedAt + wait - now) / 1000);
@@ -338,6 +350,7 @@ export async function writtenGreetingFor(
     askedAt: now,
     askedDay: utcDay,
     asks: asks + 1,
+    streak: quiet ? 1 : streak + 1,
   };
   // audit-exempt: a cache of one person's greeting, seen by nobody else.
   db.insert(agendaGreetings)

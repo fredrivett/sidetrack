@@ -54,6 +54,9 @@ function Tap({
   );
 }
 
+/** "45s", or "4m 05s" once the back-off reaches minutes. */
+const countdown = (s: number) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`);
+
 /** "Good morning, Fred." from the browser's clock, until the server's arrives. */
 function helloNow(firstName: string | null): string {
   const hour = new Date().getHours();
@@ -184,7 +187,9 @@ export function AgendaGreeting({
   useEffect(() => {
     if (retryInMs === undefined) return;
     // With the flag the last ask had, so a Rewrite now isn't put back to the longer wait.
-    const t = setTimeout(() => askAgain(askedNow.current), retryInMs + 1000);
+    // At least every 30s: another tab may have rewritten it meanwhile, and a
+    // held ask costs nothing.
+    const t = setTimeout(() => askAgain(askedNow.current), Math.min(retryInMs + 1000, 30_000));
     return () => clearTimeout(t);
   }, [greeting, retryInMs]);
   // A second's tick for "Rewriting in Xs".
@@ -317,7 +322,7 @@ export function AgendaGreeting({
                       Out of date
                       {/* Seconds left out of the announcement: it'd read every tick. */}
                       {retryAt !== null && retryAt > clock && (
-                        <span aria-hidden> · rewriting in {Math.ceil((retryAt - clock) / 1000)}s</span>
+                        <span aria-hidden> · rewriting in {countdown(Math.ceil((retryAt - clock) / 1000))}</span>
                       )}
                     </>
                   )}
