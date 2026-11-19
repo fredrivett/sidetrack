@@ -3,7 +3,7 @@
 import { unstable_rethrow } from "next/navigation";
 import { Settings, ThumbsDown, ThumbsUp } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { agendaGreetingAction, setAgendaReadAction } from "@/app/actions";
 import type { Greeting } from "@/core/agendaGreeting";
 import type { Item } from "@/core/schema";
@@ -82,11 +82,10 @@ const dateLine = (day: string) =>
 /**
  * The Agenda's greeting: the date, a large opening line, then a few calm
  * sentences, beside the sections on a wide screen and above them on a
- * narrow one. Its text is fetched once as the Agenda opens (Claude's, or
- * the template's) and stays as first shown while the Agenda is open: the
- * board reloads on every change, and a later one, written after a read
- * stamp, would drop the look-back from under the reader. Until it arrives,
- * faint lines hold its place, so nothing below moves.
+ * narrow one. Its text is fetched as the Agenda opens (Claude's, or the
+ * template's) and again only when an item it names changes, not on every
+ * board reload: one written after a read stamp drops the look-back. Until
+ * it arrives, faint lines hold its place, so nothing below moves.
  *
  * Items it names are chips that open them, and light up their row while
  * hovered; an action phrase does what it says; "others" lists the rest of
@@ -116,21 +115,58 @@ export function AgendaGreeting({
   const [othersOpen, setOthersOpen] = useState(false);
   const [explainOpen, setExplainOpen] = useState(false);
 
+  // Bumped to ask again when an item it names changes while it's open.
+  const [asks, setAsks] = useState(0);
+
   useEffect(() => {
     let live = true;
     // Background read: it never holds anything up, and a failure just
-    // leaves the opening line on its own.
+    // leaves the opening line on its own. Asking again keeps the greeting
+    // shown until the new one arrives.
     agendaGreetingAction().then(
       (g) => live && setGreeting(g),
       (error) => {
         unstable_rethrow(error);
-        if (live) setGreeting(null);
+        if (live && asks === 0) setGreeting(null);
       },
     );
     return () => {
       live = false;
     };
-  }, []);
+  }, [asks]);
+
+  // How the items it names stand now, on the board, as the server stamps
+  // them: a change (ticked off, renamed, moved, reassigned, gone) asks for
+  // it again, which the server rewrites when it may.
+  const named = greeting?.text ? Object.keys(greeting.titles) : [];
+  const standing = JSON.stringify(
+    named.map((id) => {
+      const i = itemsById.get(id);
+      return i
+        ? [i.title, i.dueDate, i.dueFrom, i.completedAt !== null, [...i.assigneeIds].sort()]
+        : null;
+    }),
+  );
+  const shownWith = useRef<string | null>(null);
+  // Declared first, so it notes how things stood before the check below runs.
+  useEffect(() => {
+    shownWith.current = greeting?.text ? standing : null;
+    // Only when a greeting arrives, not as things change under it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [greeting]);
+  // Out of date but too soon to rewrite: ask again once it may.
+  const retryInMs = greeting?.retryInMs;
+  useEffect(() => {
+    if (retryInMs === undefined) return;
+    const t = setTimeout(() => setAsks((n) => n + 1), retryInMs + 1000);
+    return () => clearTimeout(t);
+  }, [greeting, retryInMs]);
+  useEffect(() => {
+    if (shownWith.current === null || standing === shownWith.current) return;
+    // A moment's grace, so ticking off a few in a row asks once.
+    const t = setTimeout(() => setAsks((n) => n + 1), 1500);
+    return () => clearTimeout(t);
+  }, [standing]);
 
   useEffect(() => {
     // When it came into view; a glance of under READ_MS isn't a read (and

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AgendaBrief, BriefItem } from "./agendaBrief";
 import { greetingFor, templateGreeting, writtenGreetingFor } from "./agendaGreeting";
-import { addItem, completeItem } from "./items";
+import { addItem, completeItem, updateItem } from "./items";
 import { createProject } from "./projects";
 import { createTestDb, createTestUser } from "./test-helpers";
 import * as greetingJev from "../lib/greetingJev";
@@ -292,12 +292,37 @@ describe("greetingFor", () => {
       expect(calls).toEqual({ jev: 1, claude: 1 });
     });
 
+    it("writes it again when a named item changes while it's being written", async () => {
+      const { db, fred, loft } = setup();
+      const f = fake();
+      let during = () => {};
+      const impl = (async (url: string, init: RequestInit) => {
+        if (url.includes("anthropic")) during();
+        return f.impl(url, init);
+      }) as unknown as typeof fetch;
+      const first = await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
+      // A rewrite after a change; meanwhile another tab asks, and the item is ticked.
+      updateItem(db, fred, loft.id, { title: "Sort the attic" }, "web");
+      let meanwhile: unknown;
+      during = () => {
+        during = () => {};
+        completeItem(db, fred, loft.id, "web");
+        meanwhile = writtenGreetingFor(db, fred, "UTC", keys, now + 3 * 60_000, impl);
+      };
+      await writtenGreetingFor(db, fred, "UTC", keys, now + 3 * 60_000, impl);
+      expect(f.calls.claude).toBe(2);
+      // The other tab kept the one it had, and is told when to ask again.
+      expect(await meanwhile).toMatchObject({ text: first.text, written: true, retryInMs: 2 * 60_000 });
+      // The tick came after the brief, so it's written once more.
+      await writtenGreetingFor(db, fred, "UTC", keys, now + 6 * 60_000, impl);
+      expect(f.calls.claude).toBe(3);
+    });
+
     it("keeps one greeting through the morning, and writes another for the afternoon", async () => {
-      const { db, fred, home, loft } = setup();
+      const { db, fred, home } = setup();
       const { calls, impl } = fake();
       const morning = await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
-      // Ticking things off and adding more doesn't rewrite it.
-      completeItem(db, fred, loft.id, "web");
+      // Adding more doesn't rewrite it.
       addItem(db, fred, { projectId: home.id, title: "Reply to Sam", dueDate: "2026-11-18" }, "web");
       expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 2 * 3_600_000, impl)).toEqual(morning);
       expect(calls.claude).toBe(1);
@@ -305,6 +330,40 @@ describe("greetingFor", () => {
       const afternoon = await writtenGreetingFor(db, fred, "UTC", keys, now + 4 * 3_600_000, impl);
       expect(afternoon.hello).toBe("Good afternoon, Fred.");
       expect(calls.claude).toBe(2);
+    });
+
+    it("writes it again when an item it names changes, keeping the old one until it may", async () => {
+      const { db, fred, home, loft } = setup();
+      addItem(db, fred, { projectId: home.id, title: "Reply to Sam", dueDate: "2026-11-18" }, "web");
+      const { calls, impl } = fake();
+      const first = await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
+      expect(first.titles).toEqual({ [loft.id]: "Sort the loft" });
+      expect(first).not.toHaveProperty("stamps");
+      // Ticked off within two minutes: the one it has stays, out of date,
+      // saying when to ask again.
+      completeItem(db, fred, loft.id, "web");
+      expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 60_000, impl)).toEqual({
+        ...first,
+        retryInMs: 60_000,
+      });
+      expect(calls.claude).toBe(1);
+      // Then it's written again, and read back while nothing it names changes.
+      const second = await writtenGreetingFor(db, fred, "UTC", keys, now + 3 * 60_000, impl);
+      expect(calls.claude).toBe(2);
+      expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 6 * 60_000, impl)).toEqual(second);
+      // So does renaming it, moving it to another day or to someone.
+      for (const change of [
+        () => ({ title: "Sort the attic" }),
+        () => ({ dueDate: "2026-11-19" }),
+        (me: string) => ({ assigneeIds: [me] }),
+      ]) {
+        const fresh = setup();
+        const f = fake();
+        await writtenGreetingFor(fresh.db, fresh.fred, "UTC", keys, now, f.impl);
+        updateItem(fresh.db, fresh.fred, fresh.loft.id, change(fresh.fred), "web");
+        await writtenGreetingFor(fresh.db, fresh.fred, "UTC", keys, now + 3 * 60_000, f.impl);
+        expect(f.calls.claude).toBe(2);
+      }
     });
 
     it("writes it again when an item it names is no longer the viewer's to see", async () => {

@@ -31,6 +31,8 @@ export interface Greeting {
   written: boolean;
   /** How it was worked out, for "What is this?". Absent on ones kept from before it was recorded. */
   trace?: GreetingTrace;
+  /** Out of date, and may be written again in this many ms: when to ask again. */
+  retryInMs?: number;
 }
 
 /** How a greeting was worked out: what it looked at and what it decided. */
@@ -65,8 +67,44 @@ export interface GreetingTrace {
   prefs?: { length: GreetingLength; note: boolean };
 }
 
-/** What agenda_greetings keeps: Claude's greeting, or a failed ask's trace with no text. */
-export type StoredGreeting = Omit<Greeting, "hello" | "written">;
+/**
+ * What agenda_greetings keeps: Claude's greeting, or a failed ask's trace
+ * with no text; and, by item id, how each item it names stood when written
+ * (stampOf), so a change to one has it written again. Absent on older rows.
+ */
+export type StoredGreeting = Omit<Greeting, "hello" | "written"> & { stamps?: Record<string, string> };
+
+/** What about an item the greeting depends on: its title, days, whether it's done, and who has it. */
+function stampsOf(db: Db, ids: string[]): Record<string, string> {
+  if (ids.length === 0) return {};
+  return Object.fromEntries(
+    db
+      .select({
+        id: items.id,
+        title: items.title,
+        dueDate: items.dueDate,
+        dueFrom: items.dueFrom,
+        completedAt: items.completedAt,
+        assigneeIds: items.assigneeIds,
+      })
+      .from(items)
+      .where(inArray(items.id, ids))
+      .all()
+      .map((i) =>
+        [
+          i.id,
+          JSON.stringify([i.title, i.dueDate, i.dueFrom, i.completedAt !== null, [...i.assigneeIds].sort()]),
+        ] as const,
+      ),
+  );
+}
+
+/** Whether every item `greeting` names is as it was when written. */
+function unchanged(db: Db, greeting: StoredGreeting): boolean {
+  if (!greeting.stamps) return true;
+  const now = stampsOf(db, Object.keys(greeting.stamps));
+  return Object.entries(greeting.stamps).every(([id, stamp]) => now[id] === stamp);
+}
 
 function traceOf(
   brief: AgendaBrief,
@@ -238,17 +276,27 @@ export async function writtenGreetingFor(
   const template = (why: string, trace = traceOf(brief, prefs, timeZone, now, why)) =>
     fromTemplate(brief, name, prefs, { ...trace, why });
   if (!keys.jev || !keys.anthropic) return template("AI isn't set up on this server");
-  // One greeting a morning, afternoon and evening: it says what mattered
-  // as that part of the day began, and isn't rewritten as the reader ticks
-  // things off or a read stamp moves the look-back.
+  // One greeting a morning, afternoon and evening, written again when an
+  // item it names changes (ticked off, renamed, moved to another day or
+  // person), but not as other things change or a read stamp moves the
+  // look-back.
   const key = `${brief.today}:${brief.partOfDay}`;
   const row = db.select().from(agendaGreetings).where(eq(agendaGreetings.userId, viewerId)).get();
   const same = row?.key === key ? row.greeting : null;
   // One kept from before traces were recorded is written again, once, so
   // "What is this?" has something to explain.
-  if (same?.text && same.trace && stillVisible(db, viewerId, same)) {
-    return { hello, ...same, written: true };
-  }
+  const kept = same?.text && same.trace && stillVisible(db, viewerId, same) ? same : null;
+  // The stamps stay on the server.
+  const shown = (s: StoredGreeting): Greeting => {
+    const g = { ...s };
+    delete g.stamps;
+    return { hello, ...g, written: true };
+  };
+  if (kept && unchanged(db, kept)) return shown(kept);
+  // Until it may ask again, the one it has stays, out of date or not,
+  // rather than the reader seeing it swap for the built-in one.
+  const stale = (fallback: Greeting, retryInMs?: number): Greeting =>
+    kept ? { ...shown(kept), ...(retryInMs !== undefined && { retryInMs }) } : fallback;
   // Counted by UTC day, not the viewer's: their timezone is theirs to
   // change, and a new one mustn't start a new count.
   const utcDay = dayOf(now, "UTC");
@@ -259,18 +307,31 @@ export async function writtenGreetingFor(
   const wait = failed ? RETRY_FAILED_MS : ASK_EVERY_MS;
   if (row && now - row.askedAt < wait) {
     const minutes = Math.ceil((row.askedAt + wait - now) / 60_000);
-    if (!failed) return template(`One was asked for moments ago; it asks again in ${minutes} min`);
+    if (!failed) {
+      return stale(
+        template(`One was asked for moments ago; it asks again in ${minutes} min`),
+        row.askedAt + wait - now,
+      );
+    }
     if (!same) return template("Claude is writing it, or the last try didn't finish");
     const last = same.trace?.why ?? "The last try didn't work";
     const why = `${last}. It tries again in ${minutes} min`;
     // Its trace only while every title in it is still the viewer's to see.
     return stillVisible(db, viewerId, same) ? template(why, same.trace) : template(why);
   }
-  if (asks >= ASKS_PER_DAY) return template(`You've had today's ${ASKS_PER_DAY} written greetings`);
-  if (everyone.asks >= ASKS_PER_DAY_ALL) return template("This server has written all it may today");
+  if (asks >= ASKS_PER_DAY) return stale(template(`You've had today's ${ASKS_PER_DAY} written greetings`));
+  if (everyone.asks >= ASKS_PER_DAY_ALL) return stale(template("This server has written all it may today"));
   // Count the ask before awaiting it, so loads at the same moment ask once.
   everyone.asks += 1;
-  const asked = { key, greeting: null, askedAt: now, askedDay: utcDay, asks: asks + 1 };
+  // The written one it has stays meanwhile, so a load at the same moment (another
+  // tab or device) keeps showing it, and asks again when this one is due back.
+  const asked = {
+    key,
+    greeting: row?.key === key && row.greeting?.text ? row.greeting : null,
+    askedAt: now,
+    askedDay: utcDay,
+    asks: asks + 1,
+  };
   // audit-exempt: a cache of one person's greeting, seen by nobody else.
   db.insert(agendaGreetings)
     .values({ userId: viewerId, ...asked })
@@ -285,6 +346,16 @@ export async function writtenGreetingFor(
       .run();
   };
 
+  // How the items stood when the brief was built, before any await: one that
+  // changes while it's being written gets it written again.
+  const { lookBack, dueToday, overdue, thisWeek, undated, stale: untouched } = brief;
+  const briefed = stampsOf(
+    db,
+    [lookBack.finished, lookBack.slipped, dueToday, overdue, thisWeek, undated, untouched].flatMap((l) =>
+      l.map((i) => i.id),
+    ),
+  );
+
   const scores = await scoreGreeting(brief, keys.jev, fetchImpl);
   if (!scores) {
     const trace = traceOf(brief, prefs, timeZone, now, "Jev didn't answer, so there was nothing to go on");
@@ -298,14 +369,16 @@ export async function writtenGreetingFor(
     keep({ text: "", titles: {}, others: [], trace });
     return template(written.failed, trace);
   }
+  const titles = titlesIn(written.text, brief);
   const greeting: StoredGreeting = {
     text: written.text,
-    titles: titlesIn(written.text, brief),
+    titles,
+    stamps: Object.fromEntries(Object.keys(titles).flatMap((id) => (id in briefed ? [[id, briefed[id]]] : []))),
     others: pick.others.map((i) => ({ id: i.id, title: i.title })),
     trace: traceOf(brief, prefs, timeZone, now, null, { scores, pick, named: written.text }),
   };
   keep(greeting);
-  return { hello, ...greeting, written: true };
+  return shown(greeting);
 }
 
 /** What an action token does when tapped. */
