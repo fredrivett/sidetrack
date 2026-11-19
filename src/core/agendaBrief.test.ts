@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildAgendaBrief } from "./agendaBrief";
 import { addItem, completeItem } from "./items";
-import { acceptInvite, inviteMember } from "./members";
+import { acceptInvite, inviteMember, removeMember } from "./members";
 import { addComment } from "./comments";
 import { createProject, updateProject } from "./projects";
 import { createTestDb, createTestUser } from "./test-helpers";
@@ -81,6 +81,25 @@ describe("buildAgendaBrief", () => {
     // Fred's step on Sam's task is Sam's to count.
     expect(sams.dueToday[1].stepsLeft).toBe(1);
     expect(titles(brief().dueToday)).toEqual(titles(b.dueToday));
+
+    // A step Sam adds to a task assigned to Fred is Fred's too.
+    const errand = add("Fred's errand", { dueDate: today, assigneeIds: [fred] });
+    bySam("Bring the receipt", { parentId: errand.id });
+    expect(buildAgendaBrief(db, fred, { now: NOW, timeZone: tz, since: null }).dueToday.at(-1)).toMatchObject({
+      title: "Fred's errand",
+      stepsLeft: 1,
+    });
+
+    // Once Sam can't open the list, nobody is left to see their unassigned
+    // items but the people who can: they count for everyone again.
+    removeMember(db, fred, home.id, sam, "web");
+    expect(titles(brief().dueToday)).toEqual([
+      "Sam's errand",
+      "Tidy flat",
+      "Sam's party",
+      "Assigned to Fred by Sam",
+      "Fred's errand",
+    ]);
   });
 
   it("reads the viewer's own clock: 2am on Saturday is still Friday evening", () => {

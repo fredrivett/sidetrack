@@ -11,6 +11,7 @@ import { nestItems } from "../lib/itemTree";
 import { addDays, agendaSection, dayOf, weekSpan } from "../lib/time";
 import { hasProjectAccess } from "./access";
 import type { Db } from "./db";
+import { listAssignees } from "./members";
 import { listProjects } from "./projects";
 import { auditLog, type Item, items, projects } from "./schema";
 
@@ -148,7 +149,17 @@ export function buildAgendaBrief(
   const rows = nestItems(found).flatMap(({ children, ...it }) => [it, ...children]);
   const byId = new Map(rows.map((i) => [i.id, i]));
   const parentOf = (i: Item) => (i.parentId ? byId.get(i.parentId) : undefined);
-  const mine = rows.filter((i) => isYours(i, parentOf(i), viewerId));
+  // Who can open each list, so an item whose creator has left counts for everyone.
+  const openers = new Map<string, Set<string>>();
+  const canOpen = (userId: string, projectId: string) => {
+    let who = openers.get(projectId);
+    if (!who) {
+      who = new Set(listAssignees(db, viewerId, projectId).map((a) => a.userId));
+      openers.set(projectId, who);
+    }
+    return who.has(userId);
+  };
+  const mine = rows.filter((i) => isYours(i, parentOf(i), viewerId, canOpen));
   const mineIds = new Set(mine.map((i) => i.id));
 
   const stepsLeft = new Map<string, number>();

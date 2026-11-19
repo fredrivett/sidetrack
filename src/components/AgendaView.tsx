@@ -103,9 +103,16 @@ export function AgendaView({
   }
   // Items arrive in board order, then list order; a stable sort by due day
   // keeps that order within a day (and leaves No date as it is).
-  // Only what's the viewer's: theirs or nobody's (isYours), as the greeting reads it.
+  // Only what's the viewer's: theirs, or nobody's and added by them
+  // (isYours), as the greeting reads it.
+  const canOpen = (userId: string, projectId: string) =>
+    (assigneesByProject[projectId] ?? []).some((a) => a.userId === userId);
   const onAgenda = all
-    .filter((i) => sectionOf.has(i.id) && isYours(i, i.parentId ? byId.get(i.parentId) : undefined, viewerId))
+    .filter(
+      (i) =>
+        sectionOf.has(i.id) &&
+        isYours(i, i.parentId ? byId.get(i.parentId) : undefined, viewerId, canOpen),
+    )
     .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""));
   const shown = onAgenda.filter(
     (i) =>
