@@ -45,6 +45,10 @@ Sidetrack's own work is tracked on the production board (sidetrack.it), in the
 **SDT** list. Find or create items in SDT only, following the Sidetrack MCP
 server's instructions; never use another list for work in this repository.
 
+The exception is feedback: work that answers an item in the **STF** list
+(Sidetrack feedback), including one Amp was assigned, is done on that STF item
+itself, not an SDT copy, so its PR merging checks it off.
+
 # Project structure
 
 - `src/core/` — domain layer (DB, items, projects, audit, fractional indexing). Pure, no React/Next/MCP imports. See `src/core/AGENTS.md`.
