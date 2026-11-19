@@ -100,6 +100,8 @@ export function writerInput(brief: AgendaBrief, pick: GreetingPick): WriterInput
         busy_day_ahead: { day: weekdayOf(pick.heavyDay.day), open: pick.heavyDay.open },
       }),
       ...(pick.others.length > 0 && { others: pick.others.length }),
+      // All that slipped, not just the few named, so it doesn't say "two" of three.
+      ...(pick.moments.includes("triage") && { slipped_total: brief.overdue.length }),
       moves,
     },
   };
