@@ -7,14 +7,14 @@
 // as a chip that opens it: `{{item:<id>}}`. An action reads
 // `{{action:<name>|<words>}}`, the words being what the reader taps.
 
-import { createHash } from "node:crypto";
-import { and as both, eq } from "drizzle-orm";
+import { and as both, eq, inArray } from "drizzle-orm";
 import { pickGreeting, scoreGreeting } from "../lib/greetingJev";
 import { writeGreeting } from "../lib/greetingWriter";
 import { addDays, dayOf } from "../lib/time";
 import { type AgendaBrief, type BriefItem, buildAgendaBrief } from "./agendaBrief";
 import type { Db } from "./db";
-import { agendaGreetings } from "./schema";
+import { hasProjectAccess } from "./access";
+import { agendaGreetings, items, projects } from "./schema";
 import { getAgendaReadAt, getProfile } from "./users";
 
 /** A greeting to show: its opening line, then its text with tokens. */
@@ -26,6 +26,22 @@ export interface Greeting {
   titles: Record<string, string>;
   /** The undated items "{{others|…}}" opens, best first. */
   others: Array<{ id: string; title: string }>;
+}
+
+/**
+ * Whether every item `greeting` names is still on a list the viewer can
+ * open, so a cached one never shows a title from a list they've left.
+ */
+function stillVisible(db: Db, viewerId: string, greeting: { titles: Record<string, string>; others: Array<{ id: string }> }): boolean {
+  const ids = [...new Set([...Object.keys(greeting.titles), ...greeting.others.map((o) => o.id)])];
+  if (ids.length === 0) return true;
+  const seen = db
+    .select({ id: items.id })
+    .from(items)
+    .innerJoin(projects, eq(items.projectId, projects.id))
+    .where(both(inArray(items.id, ids), hasProjectAccess(viewerId)))
+    .all();
+  return seen.length === ids.length;
 }
 
 /** Claude writes one person's greeting at most this often… */
@@ -85,8 +101,8 @@ export function greetingFor(
 
 /**
  * The viewer's greeting with Jev's picks in Claude's words, when both `keys`
- * are set. Read back from agenda_greetings while nothing it was written from
- * has changed; otherwise written afresh, at most every ASK_EVERY_MS and
+ * are set. Written once a morning, afternoon and evening and read back from
+ * agenda_greetings in between; written afresh, at most every ASK_EVERY_MS and
  * ASKS_PER_DAY times a day per person. Anything else, from a failed or
  * rejected write to a limit, gives the template greeting. `fetchImpl` is
  * injectable for tests.
@@ -102,14 +118,14 @@ export async function writtenGreetingFor(
   const { brief, name } = briefFor(db, viewerId, timeZone, now);
   const template = fromTemplate(brief, name);
   if (!keys.jev || !keys.anthropic) return template;
-  // Not `since`, which moves with every read stamp: what the writer says
-  // about it (sinceDay, the finished) is in the rest of the brief.
-  const key = createHash("sha256")
-    .update(JSON.stringify({ ...brief, since: null }))
-    .digest("hex");
+  // One greeting a morning, afternoon and evening: it says what mattered
+  // as that part of the day began, and isn't rewritten as the reader ticks
+  // things off or a read stamp moves the look-back.
+  const key = `${brief.today}:${brief.partOfDay}`;
   const row = db.select().from(agendaGreetings).where(eq(agendaGreetings.userId, viewerId)).get();
-  // Asked already for exactly this; a failed ask isn't retried until something changes.
-  if (row?.key === key) return row.greeting ? { hello: template.hello, ...row.greeting } : template;
+  if (row?.key === key && row.greeting && stillVisible(db, viewerId, row.greeting)) {
+    return { hello: template.hello, ...row.greeting };
+  }
   // Counted by UTC day, not the viewer's: their timezone is theirs to
   // change, and a new one mustn't start a new count.
   const utcDay = dayOf(now, "UTC");

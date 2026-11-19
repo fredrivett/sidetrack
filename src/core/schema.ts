@@ -621,7 +621,7 @@ export const agendaGreetings = sqliteTable("agenda_greetings", {
   userId: text("user_id")
     .primaryKey()
     .references(() => users.id, { onDelete: "cascade" }),
-  // A hash of everything it was written from; a different one is stale.
+  // The viewer's day and part of it ("2026-11-19:morning") it was written for.
   key: text("key").notNull(),
   // Null until a write succeeds for `key`.
   greeting: text("greeting", { mode: "json" }).$type<{
