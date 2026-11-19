@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, ChevronsDownUp, ChevronsUpDown, Plus } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { updateProjectAction } from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
@@ -101,6 +101,9 @@ export function ProjectColumn({
   const [showDoneChoice, setShowDone] = useState(false);
   const hasDoneBadge = doneShown.length > 1;
   const showDone = showDoneChoice && hasDoneBadge;
+  // Set by the first click, so the swap animates but the board's first
+  // render doesn't.
+  const [swapped, setSwapped] = useState(false);
   // Due filters wait for the browser's day (see matchesFilters), so the list
   // doesn't say nothing matches before it knows.
   const waiting = today === null && filtersByDue(filters);
@@ -173,13 +176,16 @@ export function ProjectColumn({
               </div>
             )}
           </div>
-          {hasDoneBadge && (
+          <HeaderSlot show={hasDoneBadge}>
             <button
               type="button"
               aria-pressed={showDone}
               aria-label={`${doneShown.length} done this week`}
               title={showDone ? "Back to the list" : "Done this week"}
-              onClick={() => setShowDone((v) => !v)}
+              onClick={() => {
+                setShowDone(!showDone);
+                setSwapped(true);
+              }}
               className={`mt-1 flex h-6 shrink-0 items-center gap-0.5 rounded-full px-2 text-xs font-medium tabular-nums transition-colors ${
                 showDone
                   ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
@@ -189,8 +195,8 @@ export function ProjectColumn({
               <Check className="size-3.5" />
               {doneShown.length}
             </button>
-          )}
-          {parents.length > 0 && !showDone && (
+          </HeaderSlot>
+          <HeaderSlot show={parents.length > 0 && !showDone}>
             <button
               type="button"
               aria-label={allCollapsed ? "Expand all sub-items" : "Collapse all sub-items"}
@@ -208,7 +214,7 @@ export function ProjectColumn({
                 <ChevronsDownUp className="size-4" />
               )}
             </button>
-          )}
+          </HeaderSlot>
           {/* 32px between its centre and the ⋯'s, as between the Space
               tray's + and ⋯, so in a tray's last list they line up. */}
           <button
@@ -252,7 +258,18 @@ export function ProjectColumn({
         />
       )}
 
-      <div className="space-y-3 pt-1.5">
+      {/* Keyed by what it shows, so each swap mounts it afresh and slides in:
+          Done this week from the badge's side, the list back from the other. */}
+      <div
+        key={showDone ? "done" : "list"}
+        className={`space-y-3 pt-1.5 ${
+          swapped
+            ? `motion-safe:animate-[slide-in_250ms_cubic-bezier(0.2,0.8,0.2,1)] ${
+                showDone ? "[--slide-from:16px_0]" : "[--slide-from:-16px_0]"
+              }`
+            : ""
+        }`}
+      >
         {showDone ? (
           <section className="space-y-1.5">
             <h3 className="text-xs font-medium text-neutral-500">Done this week</h3>
@@ -319,5 +336,24 @@ export function ProjectColumn({
       />
     </ColumnCard>
     </ListSaveContext>
+  );
+}
+
+/**
+ * A header button that folds away rather than popping out: its width eases
+ * to nothing, taking the header's gap with it, and it fades. It stays
+ * mounted, inert while folded, so the change can animate both ways.
+ */
+function HeaderSlot({ show, children }: { show: boolean; children: ReactNode }) {
+  return (
+    <div
+      aria-hidden={!show || undefined}
+      inert={!show}
+      className={`grid shrink-0 transition-[grid-template-columns,margin,opacity] duration-200 ease-out motion-reduce:transition-none ${
+        show ? "grid-cols-[1fr] opacity-100" : "-ml-2 grid-cols-[0fr] opacity-0"
+      }`}
+    >
+      <div className="min-w-0 overflow-hidden">{children}</div>
+    </div>
   );
 }
