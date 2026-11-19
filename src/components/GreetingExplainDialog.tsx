@@ -13,6 +13,7 @@ import {
 const MOMENT_NAME: Record<string, string> = {
   plan: "Today's plan",
   triage: "What slipped",
+  week: "What's left this week",
   urgent: "Something time-sensitive",
   heavy: "A busy day ahead",
   tidy: "Something sitting a while",
@@ -48,6 +49,7 @@ export function GreetingExplainDialog({
   const looked = [
     `${l.dueToday} open today${l.doneToday ? `, ${l.doneToday} done` : ""}`,
     `${l.slipped} slipped`,
+    ...(l.thisWeek !== undefined ? [`${l.thisWeek} still open this week`] : []),
     `${l.undated} undated worth a look`,
     `${l.stale} untouched for weeks`,
     l.sinceDay

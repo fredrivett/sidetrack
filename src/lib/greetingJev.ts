@@ -11,6 +11,7 @@ import { askJev, type NoulQuestion } from "./jev";
 export const MOMENTS = [
   "plan",
   "triage",
+  "week",
   "urgent",
   "heavy",
   "tidy",
@@ -23,6 +24,7 @@ export type Moment = (typeof MOMENTS)[number];
 export const MOMENT_MEANING: Record<Moment, string> = {
   plan: "Help the reader plan today: name what's due today and where to start.",
   triage: "Gently raise items that slipped past their day, offering to give them new days. Never scold.",
+  week: "Nothing is open today, so name what is still open this week (due this week, or on a day still to come), so the week's tasks aren't forgotten.",
   urgent: "Nudge an undated item that reads as time-sensitive (a renewal, a bill, a booking).",
   heavy: "Point out a day ahead that is much busier than the others, so they can get ahead.",
   tidy: "Suggest picking up an undated item that has sat untouched for weeks. Only when today is light and nothing has slipped.",
@@ -44,8 +46,10 @@ export const UNDATED_ITEM_THRESHOLD = 0.3;
  * winds down, and what slipped is always raised (gently) before anything
  * else. Measured live, Jev ranked planning above slipped items and scored
  * winding down at 0.32, which would leave an evening with nothing to say.
+ * A day with nothing open always names the week's open items: "nothing due
+ * today" alone reads as nothing to do (STF-1).
  */
-const ALWAYS: Moment[] = ["triage", "wind-down"];
+const ALWAYS: Moment[] = ["triage", "week", "wind-down"];
 
 const openToday = (brief: AgendaBrief) => brief.dueToday.filter((i) => i.completedAt === null);
 
@@ -69,6 +73,7 @@ export function possibleMoments(brief: AgendaBrief): Moment[] {
   const m: Moment[] = [];
   if (!evening && open.length > 0) m.push("plan");
   if (brief.overdue.length > 0) m.push("triage");
+  if (!evening && open.length === 0 && brief.thisWeek.length > 0) m.push("week");
   if (!evening && brief.undated.length > 0) m.push("urgent");
   if (!evening && heavyDay(brief)) m.push("heavy");
   if (!evening && brief.stale.length > 0 && brief.overdue.length === 0 && open.length <= 1) {
@@ -87,11 +92,13 @@ function pool(brief: AgendaBrief, m: Moment): BriefItem[] {
       ? openToday(brief)
       : m === "triage"
         ? brief.overdue
-        : m === "urgent"
-          ? brief.undated
-          : m === "tidy"
-            ? brief.stale
-            : [];
+        : m === "week"
+          ? brief.thisWeek
+          : m === "urgent"
+            ? brief.undated
+            : m === "tidy"
+              ? brief.stale
+              : [];
   return all.slice(0, POOL_CAP);
 }
 
@@ -129,6 +136,8 @@ export function jevState(brief: AgendaBrief) {
       .map((i) => ({ ...describe(i), done: i.completedAt !== null })),
     slipped: brief.overdue.slice(0, STATE_CAP).map(describe),
     slipped_count: brief.overdue.length,
+    open_this_week: brief.thisWeek.slice(0, STATE_CAP).map(describe),
+    open_this_week_count: brief.thisWeek.length,
     open_per_day_ahead: brief.ahead.slice(0, 7),
     undated_recent_or_deadline: brief.undated.slice(0, STATE_CAP).map(describe),
     undated_untouched_for_weeks: brief.stale.slice(0, STATE_CAP).map(describe),

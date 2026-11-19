@@ -165,7 +165,7 @@ describe("buildAgendaBrief", () => {
     expect(titles(brief().dueToday)).toEqual(["Mine"]);
   });
 
-  it("counts single days ahead to the end of next week, and keeps spans apart", () => {
+  it("counts single days ahead to the end of next week, and lists what's left this week", () => {
     const { add, brief } = board();
     add("Thursday one", { dueDate: "2026-11-19" });
     add("Thursday two", { dueDate: "2026-11-19" });
@@ -191,8 +191,9 @@ describe("buildAgendaBrief", () => {
     expect(b.ahead[0].open).toBe(2);
     expect(b.ahead.at(-1)?.open).toBe(1);
     expect(b.ahead.reduce((n, d) => n + d.open, 0)).toBe(3);
-    // Only the span under way.
-    expect(titles(b.spans)).toEqual(["This week"]);
+    // The Agenda's This week (it's Wednesday): the span under way first, as
+    // it started Monday, then the days to come; nothing from next week.
+    expect(titles(b.thisWeek)).toEqual(["This week", "Thursday one", "Thursday two"]);
   });
 
   it("finds stale undated items by their last change, and recent or deadline-ish ones to nudge", () => {

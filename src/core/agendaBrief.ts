@@ -82,8 +82,8 @@ export interface AgendaBrief {
   overdue: BriefItem[];
   /** Open single-day items per day, from tomorrow to the end of next week. */
   ahead: Array<{ day: string; open: number }>;
-  /** Open spans ("this week") under way today. */
-  spans: BriefItem[];
+  /** The Agenda's This week, open items only: spans under way, and days still to come. */
+  thisWeek: BriefItem[];
   /** Undated open items with a reason to come up: recent or deadline-ish. */
   undated: BriefItem[];
   /** Undated open items nobody has touched for STALE_DAYS, oldest touch first. */
@@ -258,8 +258,11 @@ export function buildAgendaBrief(
     dueToday: mine.filter((i) => sectionOf(i) === "Today").map(brief),
     overdue: open.filter((i) => sectionOf(i) === "Overdue").map(brief),
     ahead,
-    spans: open
-      .filter((i) => i.dueFrom !== null && i.dueFrom <= today && (i.dueDate ?? "") >= today)
+    // A checklist comes up once, as its parent, when the parent is here too.
+    thisWeek: open
+      .filter((i) => sectionOf(i) === "This week" && !(i.parentId && mineIds.has(i.parentId)))
+      // By the day each starts, as the Agenda lists them.
+      .sort((a, b) => (a.dueFrom ?? a.dueDate ?? "").localeCompare(b.dueFrom ?? b.dueDate ?? ""))
       .map(brief),
     undated: undated.map(brief),
     stale: stale.map(brief),

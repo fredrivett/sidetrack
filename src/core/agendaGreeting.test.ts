@@ -41,7 +41,7 @@ const brief = (more: Partial<AgendaBrief> = {}): AgendaBrief => ({
   dueToday: [],
   overdue: [],
   ahead: ahead(),
-  spans: [],
+  thisWeek: [],
   undated: [],
   stale: [],
   ...more,
@@ -112,6 +112,31 @@ describe("templateGreeting", () => {
     expect(templateGreeting(even, "Fred")).toBe(
       "Good morning, Fred. Nothing due today. Two things in No date have been sitting a while, if you feel like picking one up: {{item:s1}} and {{item:s2}}.",
     );
+  });
+
+  // STF-1: "nothing due today" alone, with tasks open this week, read as nothing to do.
+  it("names what's still open this week before anything else on a day with nothing due", () => {
+    const span = it_("span", { dueFrom: "2026-11-16", dueDate: "2026-11-22" });
+    const b = brief({
+      thisWeek: [span, it_("fri", { dueDate: "2026-11-20" })],
+      undated: [it_("renew")],
+      ahead: ahead({ "2026-11-25": 5 }),
+    });
+    expect(templateGreeting(b, null)).toBe(
+      "Good morning. Nothing due today. {{item:span}} and {{item:fri}} are still open this week.",
+    );
+    // More than two: a couple named, never a total.
+    const more = brief({ thisWeek: [span, it_("a"), it_("b"), it_("c")] });
+    expect(templateGreeting(more, null)).toBe(
+      "Good morning. Nothing due today. A few things are still open this week, {{item:span}} and {{item:a}} among them.",
+    );
+    // Today's all done, and one thing is left for the week.
+    const done = brief({ dueToday: [it_("t", { completedAt: 1 })], thisWeek: [span] });
+    expect(templateGreeting(done, null)).toBe(
+      "Good morning. That's everything for today. {{item:span}} is still open this week.",
+    );
+    // The evening still doesn't look ahead.
+    expect(templateGreeting({ ...b, partOfDay: "evening" }, null)).not.toContain("this week");
   });
 
   it("prefers a fresh nudge to a stale one, and is quiet when there's neither", () => {
