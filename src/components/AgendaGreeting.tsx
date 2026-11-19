@@ -51,7 +51,8 @@ export function AgendaGreeting({
   return (
     <p className="px-1 pt-2 pb-1 text-[15px] leading-7 text-neutral-600 text-pretty dark:text-neutral-300">
       {parseGreeting(shown.text).map((part, i) => {
-        if (part.kind === "text") return part.text;
+        // "Others" opens the rest of No date once the Agenda can show them.
+        if (part.kind === "text" || part.kind === "others") return part.text;
         if (part.kind === "action") {
           return (
             <button
