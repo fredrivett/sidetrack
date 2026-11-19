@@ -382,6 +382,7 @@ describe("AgendaView", () => {
         prLinksByItem={{}}
         viewerId="me"
         overdueCollapsed={false}
+        noDateCollapsed={false}
         greet
         firstName="Fred"
         filters={NO_FILTERS}
