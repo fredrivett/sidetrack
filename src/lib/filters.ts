@@ -115,6 +115,22 @@ function matchesDue(due: Due, f: ItemFilters, today: string | null): boolean {
 }
 
 /**
+ * Whether `item` is the viewer's to think about: assigned to them, or
+ * unassigned. An unassigned sub-item counts only when its parent does, so a
+ * step under someone else's task stays theirs. The Agenda and its greeting
+ * show only these.
+ */
+export function isYours(
+  item: { assigneeIds: string[] },
+  parent: { assigneeIds: string[] } | undefined,
+  viewerId: string,
+): boolean {
+  if (item.assigneeIds.includes(viewerId)) return true;
+  if (item.assigneeIds.length > 0) return false;
+  return !parent || parent.assigneeIds.length === 0 || parent.assigneeIds.includes(viewerId);
+}
+
+/**
  * Whether `item` passes the person, label and due filters (not the finished
  * ones, which each view applies where finished items show). A sub-item is
  * part of its parent's task: with no date of its own it's due when its

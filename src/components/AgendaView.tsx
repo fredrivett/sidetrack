@@ -7,7 +7,7 @@ import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { nestItems } from "@/lib/itemTree";
 import { AGENDA_SECTIONS, agendaSection, type AgendaSection } from "@/lib/time";
-import { type ItemFilters, matchesFilters } from "@/lib/filters";
+import { isYours, type ItemFilters, matchesFilters } from "@/lib/filters";
 import { AgendaGreeting } from "./AgendaGreeting";
 import type { FeedbackAbout } from "./FeedbackDialog";
 import { ItemDetailDialog } from "./ItemDetailDialog";
@@ -24,8 +24,8 @@ const openCount = (rows: Item[]) => rows.filter((i) => i.completedAt === null).l
 /**
  * One scroll across every active list, from what's late to what has no date:
  * Overdue, Today, This week, Next week, Later, then No date (see
- * agendaSection). Every open item is on it, and items finished today stay
- * crossed out in place. Dated sections run by due day, ties keeping board and
+ * agendaSection). Every open item assigned to the viewer or to nobody is on
+ * it (isYours), and items finished today stay crossed out in place. Dated sections run by due day, ties keeping board and
  * list order; No date groups its items by list, an undated parent with its
  * undated sub-items under it. Overdue sits in a faint red card the viewer can
  * fold away, which stays folded on every device until they open it again.
@@ -103,8 +103,9 @@ export function AgendaView({
   }
   // Items arrive in board order, then list order; a stable sort by due day
   // keeps that order within a day (and leaves No date as it is).
+  // Only what's the viewer's: theirs or nobody's (isYours), as the greeting reads it.
   const onAgenda = all
-    .filter((i) => sectionOf.has(i.id))
+    .filter((i) => sectionOf.has(i.id) && isYours(i, i.parentId ? byId.get(i.parentId) : undefined, viewerId))
     .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""));
   const shown = onAgenda.filter(
     (i) =>
