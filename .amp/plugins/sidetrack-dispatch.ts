@@ -34,7 +34,10 @@ function startMessage(ref: string): string {
 		`Work on Sidetrack item ${ref}. Read it with get_item, then call start_work with this thread's URL; ` +
 		`Sidetrack already shows you on it, and start_work links this thread there. ` +
 		`Do the work following the repository's AGENTS.md, as far as that guidance takes you, ` +
-		`including opening and owning the pull request. If you're unsure about anything, such as what the ` +
+		`including opening and owning the pull request. Follow the Sidetrack MCP server's instructions for ` +
+		`working on an item too: name your branch start_work's \`branch\`, title the pull request its ` +
+		`\`pr_title\` (the ref in square brackets at the end), call link_item_to_pr with the pull request's ` +
+		`URL, and call report_work at each milestone. If you're unsure about anything, such as what the ` +
 		`item asks, a product decision, or whether the change is safe, don't turn on auto-merge: leave the ` +
 		`pull request open and ask on the item with add_comment. When the pull request merges and it's ` +
 		`clear the change fixes what the item asks, mark the item done with complete_item; if it seems ` +
