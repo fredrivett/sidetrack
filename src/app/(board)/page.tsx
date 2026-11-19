@@ -18,7 +18,6 @@ import { listAllPrLinks, suggestedRepositories } from "@/core/prLinks";
 import { listProjects } from "@/core/projects";
 import { listPendingSpaceInvites, listSpaces, listTrays } from "@/core/spaces";
 import { COLLAPSED_TRAYS_COOKIE, parseCollapsedTrays } from "@/components/SpaceTray";
-import { greetingFor } from "@/core/agendaGreeting";
 import { getBoardFilters, getOverdueCollapsed, getProfile, getTimeZone } from "@/core/users";
 import { getEnv } from "@/lib/env";
 import { cookieLocale, dayOf, LOCALE_COOKIE, startOfDayIn, startOfWeekIn, weekStartBound } from "@/lib/time";
@@ -109,8 +108,6 @@ export default async function Home({
           viewer={viewer}
           timeZone={timeZone}
           overdueCollapsed={getOverdueCollapsed(db, userId)}
-          // Needs the viewer's day, so waits for their browser's timezone.
-          greeting={timeZone ? greetingFor(db, userId, timeZone) : null}
           initialView={
             view === "agenda" || view === "done" || view === "archived"
               ? view

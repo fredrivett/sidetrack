@@ -1,9 +1,8 @@
 "use client";
 
 import { ChevronDown } from "lucide-react";
-import { useId, useOptimistic, useTransition } from "react";
+import { useId, useOptimistic, useState, useTransition } from "react";
 import { setOverdueCollapsedAction } from "@/app/actions";
-import type { Greeting } from "@/core/agendaGreeting";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { nestItems } from "@/lib/itemTree";
@@ -29,8 +28,9 @@ const openCount = (rows: Item[]) => rows.filter((i) => i.completedAt === null).l
  * list order; No date groups its items by list, an undated parent with its
  * undated sub-items under it. Overdue sits in a faint red card the viewer can
  * fold away, which stays folded on every device until they open it again.
- * The header's filters narrow it. A greeting above it all reads the board
- * for the viewer (AgendaGreeting).
+ * The header's filters narrow it. A greeting reads the board for the
+ * viewer (AgendaGreeting): a sticky column on the left on a wide screen,
+ * above the sections on a narrow one.
  */
 export function AgendaView({
   projects,
@@ -39,7 +39,8 @@ export function AgendaView({
   prLinksByItem,
   viewerId,
   overdueCollapsed: savedCollapsed,
-  greeting,
+  greet,
+  firstName,
   filters,
 }: {
   /** Active lists in board order; archived lists stay out. */
@@ -50,8 +51,10 @@ export function AgendaView({
   viewerId: string;
   /** Whether the viewer keeps Overdue folded away, as saved on their account. */
   overdueCollapsed: boolean;
-  /** Null before the viewer's timezone is known. */
-  greeting: Greeting | null;
+  /** Whether to greet: not before the viewer's timezone is known. */
+  greet: boolean;
+  /** The viewer's first name, for the greeting's opening line. */
+  firstName: string | null;
   filters: ItemFilters;
 }) {
   const today = useToday();
@@ -68,6 +71,17 @@ export function AgendaView({
       );
     });
   const overdueId = useId();
+  // The row of the item a greeting chip is hovered or focused on.
+  const [lit, setLit] = useState<string | null>(null);
+  const lightable = (id: string, row: React.ReactNode) => (
+    <div
+      key={id}
+      data-lit={lit === id || undefined}
+      className="rounded-lg transition-shadow duration-200 data-lit:ring-2 data-lit:ring-neutral-300 dark:data-lit:ring-neutral-600"
+    >
+      {row}
+    </div>
+  );
 
   const all = projects.flatMap((p) => itemsByProject[p.id] ?? []);
   const byId = new Map(all.map((i) => [i.id, i]));
@@ -127,9 +141,8 @@ export function AgendaView({
                 <span className="truncate">{project.name}</span>
               </h3>
               {groups.map((group) =>
-                group.parentId ? (
+                lightable(group.id, group.parentId ? (
                   <ItemRow
-                    key={group.id}
                     item={group}
                     prefix={row.prefix}
                     assignees={row.assignees}
@@ -139,8 +152,8 @@ export function AgendaView({
                     onOpenDetail={() => detail.openDetail(group)}
                   />
                 ) : (
-                  <ItemGroupView key={group.id} group={group} {...row} />
-                ),
+                  <ItemGroupView group={group} {...row} />
+                )),
               )}
             </div>
           );
@@ -148,9 +161,9 @@ export function AgendaView({
       : rows.map((item) => {
           const project = projectOf.get(item.projectId);
           const parent = item.parentId ? byId.get(item.parentId) : undefined;
-          return (
+          return lightable(
+            item.id,
             <ItemRow
-              key={item.id}
               item={item}
               prefix={project?.refPrefix ?? ""}
               assignees={assigneesByProject[item.projectId] ?? []}
@@ -164,11 +177,20 @@ export function AgendaView({
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-xl space-y-4 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        {greeting && (
+      {/* Two columns from 900px when greeting: it sticks on the left. */}
+      <div
+        className={`mx-auto w-full max-w-xl p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] ${
+          greet
+            ? "min-[900px]:grid min-[900px]:max-w-5xl min-[900px]:grid-cols-[minmax(0,20rem)_minmax(0,36rem)] min-[900px]:justify-center min-[900px]:gap-10"
+            : ""
+        }`}
+      >
+        {greet && (
+          <aside className="mb-4 min-[900px]:sticky min-[900px]:top-3 min-[900px]:mb-0 min-[900px]:self-start min-[900px]:pt-4">
           <AgendaGreeting
-            greeting={greeting}
+            firstName={firstName}
             itemsById={byId}
+            onHoverItem={setLit}
             onOpenItem={detail.openDetail}
             onAction={(action) => {
               // Until there's a triage of its own: open Overdue and go to it.
@@ -180,7 +202,10 @@ export function AgendaView({
                 ?.scrollIntoView({ behavior: "smooth", block: "start" });
             }}
           />
+          </aside>
         )}
+
+        <div className="min-w-0 space-y-4">
 
         {today && shown.length === 0 && (
           <p className="py-8 text-center text-sm text-neutral-400">
@@ -244,6 +269,7 @@ export function AgendaView({
             </section>
           ),
         )}
+        </div>
       </div>
 
       {detail.item && detailProject && (
