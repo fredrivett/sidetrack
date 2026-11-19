@@ -1,7 +1,8 @@
 "use client";
 
 import { unstable_rethrow } from "next/navigation";
-import { ThumbsDown, ThumbsUp } from "lucide-react";
+import { Settings, ThumbsDown, ThumbsUp } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { agendaGreetingAction, setAgendaReadAction } from "@/app/actions";
 import type { Greeting } from "@/core/agendaGreeting";
@@ -216,7 +217,6 @@ export function AgendaGreeting({
               );
             })}
           </p>
-            {((onFeedback && greeting.written) || greeting.trace) && (
             <div className="mt-2 flex animate-in items-center gap-1 fade-in duration-500">
                 {/* On Claude's greetings only, so a thumbs down is about Claude. */}
                 {onFeedback && greeting.written && (["up", "down"] as const).map((rating) => {
@@ -228,23 +228,30 @@ export function AgendaGreeting({
                       aria-label={rating === "up" ? "Good greeting" : "Not quite right"}
                       title={rating === "up" ? "Good greeting" : "Not quite right"}
                       onClick={() => onFeedback({ area: "greeting", rating, context: plainText(greeting) })}
-                      className="rounded-md p-1.5 text-neutral-300 outline-none hover:bg-neutral-100 hover:text-neutral-600 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+                      className="rounded-md p-1.5 text-neutral-300 outline-none hover:bg-neutral-100 hover:text-neutral-600 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:focus-visible:ring-neutral-600 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
                     >
                       <Icon className="size-3.5" />
                     </button>
                   );
                 })}
+                <Link
+                  href="/settings/greeting"
+                  aria-label="Greeting settings"
+                  title="Greeting settings"
+                  className="rounded-md p-1.5 text-neutral-300 outline-none hover:bg-neutral-100 hover:text-neutral-600 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:focus-visible:ring-neutral-600 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+                >
+                  <Settings className="size-3.5" />
+                </Link>
                 {greeting.trace && (
                   <button
                     type="button"
                     onClick={() => setExplainOpen(true)}
-                    className="rounded-md px-1.5 py-1 text-xs text-neutral-400 outline-none hover:bg-neutral-100 hover:text-neutral-600 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:text-neutral-500 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+                    className="rounded-md px-1.5 py-1 text-xs text-neutral-400 outline-none hover:bg-neutral-100 hover:text-neutral-600 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:focus-visible:ring-neutral-600 dark:text-neutral-500 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
                   >
                     What is this?
                   </button>
                 )}
               </div>
-            )}
             {greeting.trace && (
               <GreetingExplainDialog open={explainOpen} onOpenChange={setExplainOpen} trace={greeting.trace} />
             )}
