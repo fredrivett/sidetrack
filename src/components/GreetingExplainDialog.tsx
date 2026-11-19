@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import type { GreetingTrace } from "@/core/agendaGreeting";
+import type { GreetingLength } from "@/lib/greetingPrefs";
 import {
   ResponsiveDialog,
   ResponsiveDialogCloseButton,
@@ -19,6 +21,12 @@ const MOMENT_NAME: Record<string, string> = {
   tidy: "Something sitting a while",
   "wind-down": "Winding down",
   clear: "A clear day",
+};
+
+const LENGTH_NAME: Record<GreetingLength, string> = {
+  short: "Short",
+  medium: "Medium length",
+  long: "Long",
 };
 
 const pct = (p: number) => `${Math.round(p * 100)}%`;
@@ -154,9 +162,26 @@ export function GreetingExplainDialog({
           )}
 
           <p className="text-xs text-neutral-500">
-            Scores are Jev&rsquo;s sense of how worth saying each one is right now. Slipped items and
-            winding down are always said when they apply.
+            Scores are Jev&rsquo;s sense of how worth saying each one is right now. Slipped items,
+            what&rsquo;s left this week and winding down are always said when they apply, as far as
+            your length leaves room.
           </p>
+
+          <section className="space-y-1.5">
+            <h3 className={h3}>Your settings</h3>
+            {trace.prefs && (
+              <p>
+                {LENGTH_NAME[trace.prefs.length]}
+                {trace.prefs.note ? ", with your note" : ", no note"}.
+              </p>
+            )}
+            <Link
+              href="/settings/greeting"
+              className="inline-block text-sm text-neutral-900 underline underline-offset-2 dark:text-neutral-100"
+            >
+              Change how it greets you
+            </Link>
+          </section>
         </div>
       </ResponsiveDialogContent>
     </ResponsiveDialog>

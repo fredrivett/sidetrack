@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `greeting_prefs` text;

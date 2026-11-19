@@ -200,7 +200,7 @@ export async function scoreGreeting(
 }
 
 export interface GreetingPick {
-  /** At most two, highest first; empty means a quiet one-liner. */
+  /** At most two (one for a short greeting), highest first; empty means a quiet one-liner. */
   moments: Moment[];
   /** Per picked moment, at most two items to name, highest first. */
   items: Partial<Record<Moment, BriefItem[]>>;
@@ -212,8 +212,8 @@ export interface GreetingPick {
   considered: Array<{ moment: Moment; score: number; said: boolean; why: string }>;
 }
 
-/** The moments and items to say, from Jev's scores. */
-export function pickGreeting(brief: AgendaBrief, scores: GreetingScores): GreetingPick {
+/** The moments and items to say, from Jev's scores: `most` moments at most (the reader's length). */
+export function pickGreeting(brief: AgendaBrief, scores: GreetingScores, most = 2): GreetingPick {
   const score = (i: BriefItem) => scores.items[i.id] ?? 0;
   const byScore = (list: BriefItem[]) => [...list].sort((a, b) => score(b) - score(a));
   const asked = Object.keys(scores.moments) as Moment[];
@@ -229,8 +229,8 @@ export function pickGreeting(brief: AgendaBrief, scores: GreetingScores): Greeti
   const named = new Set<string>();
   const why = new Map<Moment, string>();
   for (const m of [...always, ...optional]) {
-    if (moments.length === 2) {
-      why.set(m, "Two things were already being said");
+    if (moments.length >= most) {
+      why.set(m, most === 1 ? "One thing was already being said" : "Two things were already being said");
       continue;
     }
     const undated = m === "urgent" || m === "tidy";

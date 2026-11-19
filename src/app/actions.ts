@@ -121,6 +121,7 @@ import {
   setOverdueCollapsed as setOverdueCollapsedCore,
   setAgendaReadAt as setAgendaReadAtCore,
   setBoardFilters as setBoardFiltersCore,
+  setGreetingPrefs as setGreetingPrefsCore,
   setTimeZone as setTimeZoneCore,
   getTimeZone as getTimeZoneCore,
   setAvatarUrl as setAvatarUrlCore,
@@ -134,6 +135,7 @@ import { notifyInvite, notifyMentions } from "@/lib/email";
 import { suggestEmoji, suggestLabelEmoji } from "@/lib/emojiSuggest";
 import { getEnv } from "@/lib/env";
 import type { ItemFilters } from "@/lib/filters";
+import type { GreetingPrefs } from "@/lib/greetingPrefs";
 import { checkDraftItem, suggestList } from "@/lib/itemSuggest";
 import { formatItemRef } from "@/lib/itemRef";
 import { sendPush } from "@/lib/push";
@@ -791,6 +793,13 @@ export async function setBoardFiltersAction(filters: ItemFilters) {
   setBoardFiltersCore(db, userId, filters);
   // So a board the router kept (back from Settings) opens with them too.
   refresh();
+}
+
+/** How the viewer likes their Agenda greeting; it applies from their next one. */
+export async function setGreetingPrefsAction(prefs: GreetingPrefs) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  return setGreetingPrefsCore(db, userId, prefs);
 }
 
 /** Upload an avatar image (already shrunk by the browser) for the signed-in user. */

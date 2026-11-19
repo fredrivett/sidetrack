@@ -7,7 +7,7 @@ import { createTestDb, createTestUser } from "./test-helpers";
 import * as greetingJev from "../lib/greetingJev";
 import { agendaGreetings } from "./schema";
 import { acceptInvite, inviteMember, removeMember } from "./members";
-import { getProfile, setAgendaReadAt } from "./users";
+import { getGreetingPrefs, getProfile, setAgendaReadAt, setGreetingPrefs } from "./users";
 
 const it_ = (id: string, more: Partial<BriefItem> = {}): BriefItem => ({
   id,
@@ -111,6 +111,28 @@ describe("templateGreeting", () => {
     });
     expect(templateGreeting(even, "Fred")).toBe(
       "Good morning, Fred. Nothing due today. Two things in No date have been sitting a while, if you feel like picking one up: {{item:s1}} and {{item:s2}}.",
+    );
+  });
+
+  it("says less for a shorter length, dropping the look-back before what's due", () => {
+    const b = brief({
+      sinceDay: "2026-11-17",
+      lookBack: { finished: [it_("w")], finishedCount: 1, slipped: [] },
+      overdue: [it_("late")],
+      thisWeek: [it_("span", { dueFrom: "2026-11-16", dueDate: "2026-11-22" })],
+    });
+    const slipped =
+      "{{item:late}} is still waiting. No rush — want to {{action:triage|give it a new day}}?";
+    const week = "{{item:span}} is still open this week.";
+    expect(templateGreeting(b, null)).toBe(
+      `Good morning. Since yesterday you've finished {{item:w}}. ${slipped} ${week}`,
+    );
+    expect(templateGreeting(b, null, "medium")).toBe(`Good morning. ${slipped} ${week}`);
+    expect(templateGreeting(b, null, "short")).toBe(`Good morning. ${slipped}`);
+    // Medium keeps the look-back when there's only one other thing to say.
+    const one = { ...b, thisWeek: [] };
+    expect(templateGreeting(one, null, "medium")).toBe(
+      `Good morning. Since yesterday you've finished {{item:w}}. ${slipped}`,
     );
   });
 
@@ -435,6 +457,44 @@ describe("greetingFor", () => {
         await writtenGreetingFor(db, fred, zone, keys, Date.UTC(2026, 10, 18, 0, 30) + n * 3 * 60_000, impl);
       }
       expect(calls.claude).toBe(40);
+    });
+
+    it("writes to the reader's length and note from their next greeting, without asking again", async () => {
+      const { db, fred, home, loft } = setup();
+      const bank = addItem(db, fred, { projectId: home.id, title: "Call the bank", dueDate: "2026-11-17" }, "web");
+      const { calls, impl } = fake("{{item:1}} is still waiting. Take your time with it.");
+      const asked: string[] = [];
+      const spy = ((url: string, init: RequestInit) => {
+        if (url.includes("anthropic")) asked.push(String(init.body));
+        return impl(url, init);
+      }) as unknown as typeof fetch;
+      const morning = await writtenGreetingFor(db, fred, "UTC", keys, now, spy);
+      expect(morning.written).toBe(true);
+      expect(morning.trace?.prefs).toEqual({ length: "long", note: false });
+
+      setGreetingPrefs(db, fred, { length: "short", note: "  Keep it brief.\n", shareNote: true });
+      expect(getGreetingPrefs(db, fred).note).toBe("Keep it brief.");
+      // Saving doesn't ask for a new one: the morning's stays.
+      expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 3 * 60_000, spy)).toEqual(morning);
+      expect(calls.claude).toBe(1);
+
+      // The afternoon's is asked for in one sentence, about one thing, with
+      // the note; two sentences are turned down, and the short template shows.
+      const afternoon = await writtenGreetingFor(db, fred, "UTC", keys, now + 4 * 3_600_000, spy);
+      const facts = JSON.parse(JSON.parse(asked[1]).messages[0].content.split("\n")[1]) as {
+        max_sentences: number;
+        reader_note: string;
+        moves: unknown[];
+      };
+      expect(facts).toMatchObject({ max_sentences: 1, reader_note: "Keep it brief." });
+      expect(facts.moves).toHaveLength(1);
+      expect(afternoon.written).toBe(false);
+      expect(afternoon.trace?.why).toContain("longer than the length you chose");
+      expect(afternoon.trace?.prefs).toEqual({ length: "short", note: true });
+      expect(afternoon.text).toBe(
+        `{{item:${bank.id}}} is still waiting. No rush — want to {{action:triage|give it a new day}}?`,
+      );
+      expect(afternoon.text).not.toContain(loft.id);
     });
 
     it("uses the template when AI is off", async () => {

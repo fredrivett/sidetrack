@@ -3,6 +3,7 @@
 import {
   Archive,
   Bell,
+  Sunrise,
   Boxes,
   CalendarDays,
   CircleCheck,
@@ -104,6 +105,7 @@ export function CommandPalette({
     { label: "Keyboard shortcuts", icon: <Keyboard />, shortcut: "?", action: onShowShortcuts },
     { label: "Profile settings", icon: <UserRound />, action: () => router.push("/settings/profile") },
     { label: "Notifications", icon: <Bell />, action: () => router.push("/settings/notifications") },
+    { label: "Agenda greeting", icon: <Sunrise />, action: () => router.push("/settings/greeting") },
     { label: "Spaces", icon: <Boxes />, action: () => router.push("/settings/spaces") },
     { label: "API keys", icon: <KeyRound />, action: () => router.push("/settings/keys") },
     { label: "GitHub webhook", icon: <GitHubMark />, action: () => router.push("/settings/github") },
