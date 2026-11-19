@@ -154,7 +154,8 @@ export function AgendaGreeting({
                   onClick={() => onOpenItem(item)}
                   onPointerEnter={() => onHoverItem(item.id)}
                   onPointerLeave={() => onHoverItem(null)}
-                  onFocus={() => onHoverItem(item.id)}
+                  // Keyboard focus only: a click leaves focus on the chip after its dialog closes.
+                  onFocus={(e) => e.currentTarget.matches(":focus-visible") && onHoverItem(item.id)}
                   onBlur={() => onHoverItem(null)}
                   className={`${chip} outline-none hover:bg-neutral-200 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:hover:bg-neutral-700 dark:focus-visible:ring-neutral-600`}
                 >
@@ -184,19 +185,26 @@ export function AgendaGreeting({
           <ul className="max-h-[60vh] overflow-y-auto p-2">
             {others.map((o) => {
               const item = itemsById.get(o.id);
+              const row = "block w-full rounded-md px-2 py-1.5 text-left text-sm";
+              // One the page hasn't loaded is named, but can't open.
+              if (!item) {
+                return (
+                  <li key={o.id} className={`${row} text-neutral-500`}>
+                    {o.title}
+                  </li>
+                );
+              }
               return (
                 <li key={o.id}>
                   <button
                     type="button"
-                    disabled={!item}
                     onClick={() => {
-                      if (!item) return;
                       setOthersOpen(false);
                       onOpenItem(item);
                     }}
-                    className="w-full rounded-md px-2 py-1.5 text-left text-sm text-neutral-800 outline-none hover:bg-neutral-100 focus-visible:ring-2 focus-visible:ring-neutral-300 disabled:text-neutral-400 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                    className={`${row} text-neutral-800 outline-none hover:bg-neutral-100 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:text-neutral-200 dark:hover:bg-neutral-800`}
                   >
-                    {item?.title ?? o.title}
+                    {item.title}
                   </button>
                 </li>
               );

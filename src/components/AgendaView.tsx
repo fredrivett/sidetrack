@@ -18,8 +18,7 @@ import { runAction } from "./run-action";
 import { useToday } from "./use-day-start";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
 
-const openCount = (rows: Item[]) =>
-  rows.filter((i) => i.completedAt === null).length;
+const openCount = (rows: Item[]) => rows.filter((i) => i.completedAt === null).length;
 
 /**
  * One scroll across every active list, from what's late to what has no date:
@@ -60,8 +59,7 @@ export function AgendaView({
 }) {
   const today = useToday();
   // Folds at once, then saves; a failed save unfolds it again with a toast.
-  const [overdueCollapsed, showOverdueCollapsed] =
-    useOptimistic(savedCollapsed);
+  const [overdueCollapsed, showOverdueCollapsed] = useOptimistic(savedCollapsed);
   const [, start] = useTransition();
   const toggleOverdue = () =>
     start(async () => {
@@ -78,9 +76,8 @@ export function AgendaView({
   const lightable = (id: string, row: React.ReactNode) => (
     <div
       key={id}
-      className={`rounded-lg transition-shadow duration-200 ${
-        lit === id ? "ring-2 ring-neutral-300 dark:ring-neutral-600" : ""
-      }`}
+      data-lit={lit === id || undefined}
+      className="rounded-lg transition-shadow duration-200 data-lit:ring-2 data-lit:ring-neutral-300 dark:data-lit:ring-neutral-600"
     >
       {row}
     </div>
@@ -96,11 +93,7 @@ export function AgendaView({
   const sectionOf = new Map<string, AgendaSection>();
   if (today) {
     for (const i of all) {
-      const s = agendaSection(
-        i,
-        i.parentId ? byId.get(i.parentId) : undefined,
-        today,
-      );
+      const s = agendaSection(i, i.parentId ? byId.get(i.parentId) : undefined, today);
       if (s) sectionOf.set(i.id, s);
     }
   }
@@ -112,21 +105,13 @@ export function AgendaView({
   const shown = onAgenda.filter(
     (i) =>
       (filters.doneToday || i.completedAt === null) &&
-      matchesFilters(
-        i,
-        i.parentId ? byId.get(i.parentId) : undefined,
-        filters,
-        today,
-      ),
+      matchesFilters(i, i.parentId ? byId.get(i.parentId) : undefined, filters, today),
   );
   const sections = AGENDA_SECTIONS.map(
-    (label) =>
-      [label, shown.filter((i) => sectionOf.get(i.id) === label)] as const,
+    (label) => [label, shown.filter((i) => sectionOf.get(i.id) === label)] as const,
   ).filter(([, rows]) => rows.length > 0);
 
-  const detailProject = detail.item
-    ? projectOf.get(detail.item.projectId)
-    : undefined;
+  const detailProject = detail.item ? projectOf.get(detail.item.projectId) : undefined;
 
   const rowProps = (project: ProjectView | undefined) => ({
     prefix: project?.refPrefix ?? "",
@@ -141,9 +126,7 @@ export function AgendaView({
       ? projects.map((project) => {
           // A sub-item whose parent the filter hides stays, at the top
           // level, naming its parent (see nestItems).
-          const groups = nestItems(
-            rows.filter((i) => i.projectId === project.id),
-          );
+          const groups = nestItems(rows.filter((i) => i.projectId === project.id));
           if (groups.length === 0) return null;
           const row = rowProps(project);
           return (
@@ -158,22 +141,19 @@ export function AgendaView({
                 <span className="truncate">{project.name}</span>
               </h3>
               {groups.map((group) =>
-                lightable(
-                  group.id,
-                  group.parentId ? (
-                    <ItemRow
-                      item={group}
-                      prefix={row.prefix}
-                      assignees={row.assignees}
-                      viewerId={viewerId}
-                      prLinks={prLinksByItem[group.id] ?? []}
-                      context={byId.get(group.parentId)?.title}
-                      onOpenDetail={() => detail.openDetail(group)}
-                    />
-                  ) : (
-                    <ItemGroupView group={group} {...row} />
-                  ),
-                ),
+                lightable(group.id, group.parentId ? (
+                  <ItemRow
+                    item={group}
+                    prefix={row.prefix}
+                    assignees={row.assignees}
+                    viewerId={viewerId}
+                    prLinks={prLinksByItem[group.id] ?? []}
+                    context={byId.get(group.parentId)?.title}
+                    onOpenDetail={() => detail.openDetail(group)}
+                  />
+                ) : (
+                  <ItemGroupView group={group} {...row} />
+                )),
               )}
             </div>
           );
@@ -189,106 +169,106 @@ export function AgendaView({
               assignees={assigneesByProject[item.projectId] ?? []}
               viewerId={viewerId}
               prLinks={prLinksByItem[item.id] ?? []}
-              context={[project?.name, parent?.title]
-                .filter(Boolean)
-                .join(" › ")}
+              context={[project?.name, parent?.title].filter(Boolean).join(" › ")}
               onOpenDetail={() => detail.openDetail(item)}
-            />,
+            />
           );
         });
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-xl p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[900px]:grid min-[900px]:max-w-5xl min-[900px]:grid-cols-[minmax(0,20rem)_minmax(0,36rem)] min-[900px]:justify-center min-[900px]:gap-10">
+      {/* Two columns from 900px when greeting: it sticks on the left. */}
+      <div
+        className={`mx-auto w-full max-w-xl p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] ${
+          greet
+            ? "min-[900px]:grid min-[900px]:max-w-5xl min-[900px]:grid-cols-[minmax(0,20rem)_minmax(0,36rem)] min-[900px]:justify-center min-[900px]:gap-10"
+            : ""
+        }`}
+      >
         {greet && (
           <aside className="mb-4 min-[900px]:sticky min-[900px]:top-3 min-[900px]:mb-0 min-[900px]:self-start min-[900px]:pt-4">
-            <AgendaGreeting
-              firstName={firstName}
-              itemsById={byId}
-              onHoverItem={setLit}
-              onOpenItem={detail.openDetail}
-              onAction={(action) => {
-                // Until there's a triage of its own: open Overdue and go to it.
-                if (action !== "triage") return;
-                if (overdueCollapsed) toggleOverdue();
-                document
-                  .getElementById(overdueId)
-                  ?.closest("section")
-                  ?.scrollIntoView({ behavior: "smooth", block: "start" });
-              }}
-            />
+          <AgendaGreeting
+            firstName={firstName}
+            itemsById={byId}
+            onHoverItem={setLit}
+            onOpenItem={detail.openDetail}
+            onAction={(action) => {
+              // Until there's a triage of its own: open Overdue and go to it.
+              if (action !== "triage") return;
+              if (overdueCollapsed) toggleOverdue();
+              document
+                .getElementById(overdueId)
+                ?.closest("section")
+                ?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+          />
           </aside>
         )}
 
-        <div className="min-w-0 space-y-4 min-[900px]:col-start-2">
-          {today && shown.length === 0 && (
-            <p className="py-8 text-center text-sm text-neutral-400">
-              {onAgenda.length === 0
-                ? "Nothing to do."
-                : "Nothing here for your filters."}
-            </p>
-          )}
+        <div className="min-w-0 space-y-4">
 
-          {sections.map(([label, rows]) =>
-            label === "Overdue" ? (
-              // A faint red card, in the red of an overdue due chip, so what's late
-              // stands apart; -mx-2 keeps its rows in line with the others.
-              <section
-                key={label}
-                className="-mx-2 rounded-2xl border border-red-200/70 bg-red-50/60 px-2 py-1 dark:border-red-900/35 dark:bg-red-950/20"
-              >
-                <h2 className="text-xs font-medium">
-                  <button
-                    type="button"
-                    onClick={toggleOverdue}
-                    aria-expanded={!overdueCollapsed}
-                    aria-controls={overdueId}
-                    className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-red-700 outline-none hover:text-red-800 focus-visible:ring-2 focus-visible:ring-red-300 dark:text-red-400 dark:hover:text-red-300 dark:focus-visible:ring-red-800"
-                  >
-                    {label}
-                    <span className="tabular-nums text-red-700/60 dark:text-red-400/60">
-                      {openCount(rows)}
-                    </span>
-                    <ChevronDown
-                      aria-hidden="true"
-                      className={`ml-auto size-3.5 transition-transform duration-300 ease-out motion-reduce:transition-none ${
-                        overdueCollapsed ? "" : "rotate-180"
-                      }`}
-                    />
-                  </button>
-                </h2>
-                {/* Rows 0fr to 1fr animates to the content's own height. Folded,
-                  it's inert, so its rows leave the tab order too. */}
-                <div
-                  id={overdueId}
-                  inert={overdueCollapsed}
-                  className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none ${
-                    overdueCollapsed
-                      ? "grid-rows-[0fr] opacity-0"
-                      : "grid-rows-[1fr] opacity-100"
-                  }`}
+        {today && shown.length === 0 && (
+          <p className="py-8 text-center text-sm text-neutral-400">
+            {onAgenda.length === 0 ? "Nothing to do." : "Nothing here for your filters."}
+          </p>
+        )}
+
+        {sections.map(([label, rows]) =>
+          label === "Overdue" ? (
+            // A faint red card, in the red of an overdue due chip, so what's late
+            // stands apart; -mx-2 keeps its rows in line with the others.
+            <section
+              key={label}
+              className="-mx-2 rounded-2xl border border-red-200/70 bg-red-50/60 px-2 py-1 dark:border-red-900/35 dark:bg-red-950/20"
+            >
+              <h2 className="text-xs font-medium">
+                <button
+                  type="button"
+                  onClick={toggleOverdue}
+                  aria-expanded={!overdueCollapsed}
+                  aria-controls={overdueId}
+                  className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-red-700 outline-none hover:text-red-800 focus-visible:ring-2 focus-visible:ring-red-300 dark:text-red-400 dark:hover:text-red-300 dark:focus-visible:ring-red-800"
                 >
-                  {/* -mx-1 px-1 and pb-1 leave room for the rows' focus rings. */}
-                  <div className="-mx-1 min-h-0 overflow-hidden">
-                    <div className="space-y-1.5 px-1 pt-0.5 pb-1">
-                      {renderRows(label, rows)}
-                    </div>
-                  </div>
-                </div>
-              </section>
-            ) : (
-              <section key={label} className="space-y-1.5">
-                {/* Quiet section labels. Counts are what's left. */}
-                <h2 className="flex items-center gap-1.5 px-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">
                   {label}
-                  <span className="tabular-nums text-neutral-400 dark:text-neutral-500">
+                  <span className="tabular-nums text-red-700/60 dark:text-red-400/60">
                     {openCount(rows)}
                   </span>
-                </h2>
-                {renderRows(label, rows)}
-              </section>
-            ),
-          )}
+                  <ChevronDown
+                    aria-hidden="true"
+                    className={`ml-auto size-3.5 transition-transform duration-300 ease-out motion-reduce:transition-none ${
+                      overdueCollapsed ? "" : "rotate-180"
+                    }`}
+                  />
+                </button>
+              </h2>
+              {/* Rows 0fr to 1fr animates to the content's own height. Folded,
+                  it's inert, so its rows leave the tab order too. */}
+              <div
+                id={overdueId}
+                inert={overdueCollapsed}
+                className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none ${
+                  overdueCollapsed ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100"
+                }`}
+              >
+                {/* -mx-1 px-1 and pb-1 leave room for the rows' focus rings. */}
+                <div className="-mx-1 min-h-0 overflow-hidden">
+                  <div className="space-y-1.5 px-1 pt-0.5 pb-1">{renderRows(label, rows)}</div>
+                </div>
+              </div>
+            </section>
+          ) : (
+            <section key={label} className="space-y-1.5">
+              {/* Quiet section labels. Counts are what's left. */}
+              <h2 className="flex items-center gap-1.5 px-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                {label}
+                <span className="tabular-nums text-neutral-400 dark:text-neutral-500">
+                  {openCount(rows)}
+                </span>
+              </h2>
+              {renderRows(label, rows)}
+            </section>
+          ),
+        )}
         </div>
       </div>
 

@@ -258,7 +258,10 @@ describe("AgendaView", () => {
       hello: "Good afternoon, Fred.",
       text: `Since Friday you've finished {{item:gone}}. {{item:${late.id}}} is still waiting. No rush — want to {{action:triage|give it a new day}}? After that, {{others|one other}}.`,
       titles: { gone: "Renew passport", [late.id]: "Call the bank" },
-      others: [{ id: loft.id, title: "Sort the loft" }],
+      others: [
+        { id: loft.id, title: "Sort the loft" },
+        { id: "unloaded", title: "Paint the shed" },
+      ],
     } satisfies Greeting);
     renderAgenda([late, bins, loft], [home], true, {}, true);
     const greeting = await screen.findByText(/^Since Friday/);
@@ -272,17 +275,28 @@ describe("AgendaView", () => {
     // Hovering a chip lights up its row.
     const chip = within(greeting).getByRole("button", { name: "Call the bank" });
     fireEvent.pointerEnter(chip);
-    const row = within(section(/^Overdue/)).getByText("Call the bank").closest("[class*=ring-2]");
-    expect(row).toBeTruthy();
+    const lit = () => section(/^Overdue/).querySelector("[data-lit]");
+    expect(lit()?.textContent).toContain("Call the bank");
     fireEvent.pointerLeave(chip);
+    expect(lit()).toBeNull();
 
     fireEvent.click(within(greeting).getByRole("button", { name: "give it a new day" }));
     expect(vi.mocked(setOverdueCollapsedAction)).toHaveBeenLastCalledWith(false);
     expect(screen.getByRole("button", { name: /^Overdue/ }).getAttribute("aria-expanded")).toBe("true");
 
     fireEvent.click(within(greeting).getByRole("button", { name: "one other" }));
+    // Named, but not a button: the page hasn't loaded it.
+    expect(within(screen.getByRole("dialog")).getByText("Paint the shed").closest("button")).toBeNull();
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Sort the loft" }));
     expect(within(screen.getByRole("dialog")).getByText(`P1-${loft.number}`)).toBeTruthy();
+  });
+
+  it("keeps the opening line and drops the placeholder if the greeting can't load", async () => {
+    vi.mocked(agendaGreetingAction).mockRejectedValueOnce(new Error("offline"));
+    const { container } = renderAgenda([], [home], false, {}, true);
+    expect(container.querySelector(".animate-pulse")).toBeTruthy();
+    await vi.waitFor(() => expect(container.querySelector(".animate-pulse")).toBeNull());
+    expect(screen.getByRole("heading", { level: 2, name: /^Good / })).toBeTruthy();
   });
 
   it("counts the greeting read when the viewer leaves it, not at a glance", () => {
