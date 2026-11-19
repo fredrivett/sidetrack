@@ -135,6 +135,10 @@ describe("templateGreeting", () => {
     expect(templateGreeting(done, null)).toBe(
       "Good morning. That's everything for today. {{item:span}} is still open this week.",
     );
+    // After what slipped, when nothing's open today.
+    expect(templateGreeting(brief({ overdue: [it_("late")], thisWeek: [span] }), null)).toBe(
+      "Good morning. {{item:late}} is still waiting. No rush — want to {{action:triage|give it a new day}}? {{item:span}} is still open this week.",
+    );
     // The evening still doesn't look ahead.
     expect(templateGreeting({ ...b, partOfDay: "evening" }, null)).not.toContain("this week");
   });
@@ -199,6 +203,12 @@ describe("greetingFor", () => {
         `Since Monday you've finished {{item:${done.id}}}. Nothing due today. {{item:${Object.keys(g.titles).find((id) => id !== done.id)}}} might be worth a look, if you feel like picking something up.`,
       );
       expect(Object.values(g.titles).sort()).toEqual(["Renew passport", "Sort the loft"]);
+
+      // What's left this week is titled too, for chips and feedback.
+      addItem(db, fred, { projectId: home.id, title: "Clean the oven", dueDate: "2026-11-20" }, "web");
+      const week = greetingFor(db, fred, "UTC", now);
+      expect(week.text).toContain("is still open this week");
+      expect(Object.values(week.titles)).toContain("Clean the oven");
     } finally {
       vi.useRealTimers();
     }

@@ -172,6 +172,7 @@ function titlesIn(text: string, brief: AgendaBrief): Record<string, string> {
     ...brief.lookBack.slipped,
     ...brief.dueToday,
     ...brief.overdue,
+    ...brief.thisWeek,
     ...brief.undated,
     ...brief.stale,
   ]) {
@@ -415,6 +416,9 @@ export function templateGreeting(brief: AgendaBrief, name: string | null): strin
         ? `${item(brief.overdue[0])} is still waiting. No rush — want to ${action("triage", "give it a new day")}?`
         : `A few earlier things are still waiting. No rush — want to ${action("triage", "give them new days")}, or let some go?`,
     );
+    // With nothing open today, the week too, as Claude's greeting says both.
+    const week = open.length === 0 ? stillThisWeek(brief) : null;
+    if (week) sentences.push(week);
   } else if (open.length > 0) {
     if (brief.partOfDay === "afternoon") {
       sentences.push(

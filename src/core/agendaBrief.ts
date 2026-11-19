@@ -243,6 +243,9 @@ export function buildAgendaBrief(
     )
     .slice(0, CANDIDATE_CAP);
 
+  const weekOpen = open.filter((i) => sectionOf(i) === "This week");
+  const weekIds = new Set(weekOpen.map((i) => i.id));
+
   return {
     today,
     weekday,
@@ -259,8 +262,8 @@ export function buildAgendaBrief(
     overdue: open.filter((i) => sectionOf(i) === "Overdue").map(brief),
     ahead,
     // A checklist comes up once, as its parent, when the parent is here too.
-    thisWeek: open
-      .filter((i) => sectionOf(i) === "This week" && !(i.parentId && mineIds.has(i.parentId)))
+    thisWeek: weekOpen
+      .filter((i) => !(i.parentId && weekIds.has(i.parentId)))
       // By the day each starts, as the Agenda lists them.
       .sort((a, b) => (a.dueFrom ?? a.dueDate ?? "").localeCompare(b.dueFrom ?? b.dueDate ?? ""))
       .map(brief),

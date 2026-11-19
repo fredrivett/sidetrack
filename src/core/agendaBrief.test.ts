@@ -196,6 +196,17 @@ describe("buildAgendaBrief", () => {
     expect(titles(b.thisWeek)).toEqual(["This week", "Thursday one", "Thursday two"]);
   });
 
+  it("keeps a step due this week when its parent isn't in This week, and folds it into one that is", () => {
+    const { add, brief } = board();
+    const move = add("Move house");
+    add("Book the van", { dueDate: "2026-11-20", parentId: move.id });
+    const trip = add("Trip", { dueDate: "2026-11-25" });
+    add("Pack bags", { dueDate: "2026-11-21", parentId: trip.id });
+    const party = add("Party", { dueDate: "2026-11-21" });
+    add("Buy cake", { dueDate: "2026-11-20", parentId: party.id });
+    expect(titles(brief().thisWeek)).toEqual(["Book the van", "Pack bags", "Party"]);
+  });
+
   it("finds stale undated items by their last change, and recent or deadline-ish ones to nudge", () => {
     const { db, fred, add, brief } = board();
     vi.setSystemTime(at("2026-10-01"));
