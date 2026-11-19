@@ -15,11 +15,11 @@ export default async function GreetingSettingsPage() {
       <div className="mx-auto max-w-2xl space-y-6">
         <header className="space-y-1">
           <Link href="/briefing" className="text-xs text-muted-foreground hover:underline">
-            ← Back to Agenda
+            ← Back to Briefing
           </Link>
           <h1 className="text-lg font-semibold tracking-tight">Briefing greeting</h1>
           <p className="text-sm text-muted-foreground">
-            The few sentences at the top of your Agenda. Tell it how you like them.
+            The few sentences at the top of your Briefing. Tell it how you like them.
           </p>
         </header>
         <GreetingPrefsPanel initial={getGreetingPrefs(db, userId)} />
