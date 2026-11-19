@@ -254,11 +254,46 @@ describe("greetingFor", () => {
       expect(calls.claude).toBe(40);
     });
 
+    it("reads it back after a read stamp, when nothing else changed", async () => {
+      const { db, fred } = setup();
+      const { calls, impl } = fake();
+      setAgendaReadAt(db, fred, now - 3_600_000);
+      const g = await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
+      setAgendaReadAt(db, fred, now + 60_000);
+      expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 5 * 60_000, impl)).toEqual(g);
+      expect(calls.claude).toBe(1);
+    });
+
+    it("asks once for loads at the same moment", async () => {
+      const { db, fred } = setup();
+      const { calls, impl } = fake();
+      await Promise.all([
+        writtenGreetingFor(db, fred, "UTC", keys, now, impl),
+        writtenGreetingFor(db, fred, "UTC", keys, now, impl),
+      ]);
+      expect(calls).toEqual({ jev: 1, claude: 1 });
+    });
+
+    it("doesn't start a new day's count when the viewer changes timezone", async () => {
+      const { db, fred, home } = setup();
+      const { calls, impl } = fake();
+      for (let n = 0; n < 45; n++) {
+        addItem(db, fred, { projectId: home.id, title: `Thing ${n}`, dueDate: "2026-11-25" }, "web");
+        // Each side of the date line in turn, three minutes apart, all in one UTC day.
+        const zone = n % 2 ? "Pacific/Kiritimati" : "Pacific/Pago_Pago";
+        await writtenGreetingFor(db, fred, zone, keys, Date.UTC(2026, 10, 18, 0, 30) + n * 3 * 60_000, impl);
+      }
+      expect(calls.claude).toBe(40);
+    });
+
     it("uses the template when AI is off", async () => {
       const { db, fred } = setup();
       const { calls, impl } = fake();
       expect(
         await writtenGreetingFor(db, fred, "UTC", { jev: "k", anthropic: undefined }, now, impl),
+      ).toEqual(greetingFor(db, fred, "UTC", now));
+      expect(
+        await writtenGreetingFor(db, fred, "UTC", { jev: undefined, anthropic: "k" }, now, impl),
       ).toEqual(greetingFor(db, fred, "UTC", now));
       expect(calls).toEqual({ jev: 0, claude: 0 });
     });

@@ -630,7 +630,7 @@ export const agendaGreetings = sqliteTable("agenda_greetings", {
     others: Array<{ id: string; title: string }>;
   }>(),
   askedAt: integer("asked_at").notNull(),
-  // The viewer's day the asks were counted on, and how many.
+  // The UTC day the asks were counted on, and how many.
   askedDay: text("asked_day").notNull(),
   asks: integer("asks").notNull(),
 });

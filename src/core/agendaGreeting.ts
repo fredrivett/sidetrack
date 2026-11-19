@@ -30,7 +30,7 @@ export interface Greeting {
 
 /** Claude writes one person's greeting at most this often… */
 const ASK_EVERY_MS = 2 * 60_000;
-/** …and this many times in their day. */
+/** …and this many times in a UTC day. */
 const ASKS_PER_DAY = 40;
 /** And for everyone on this server together, in a UTC day. */
 const ASKS_PER_DAY_ALL = 2000;
@@ -102,18 +102,24 @@ export async function writtenGreetingFor(
   const { brief, name } = briefFor(db, viewerId, timeZone, now);
   const template = fromTemplate(brief, name);
   if (!keys.jev || !keys.anthropic) return template;
-  const key = createHash("sha256").update(JSON.stringify(brief)).digest("hex");
+  // Not `since`, which moves with every read stamp: what the writer says
+  // about it (sinceDay, the finished) is in the rest of the brief.
+  const key = createHash("sha256")
+    .update(JSON.stringify({ ...brief, since: null }))
+    .digest("hex");
   const row = db.select().from(agendaGreetings).where(eq(agendaGreetings.userId, viewerId)).get();
   // Asked already for exactly this; a failed ask isn't retried until something changes.
   if (row?.key === key) return row.greeting ? { hello: template.hello, ...row.greeting } : template;
-  const asks = row?.askedDay === brief.today ? row.asks : 0;
+  // Counted by UTC day, not the viewer's: their timezone is theirs to
+  // change, and a new one mustn't start a new count.
   const utcDay = dayOf(now, "UTC");
+  const asks = row?.askedDay === utcDay ? row.asks : 0;
   if (everyone.day !== utcDay) Object.assign(everyone, { day: utcDay, asks: 0 });
   if ((row && now - row.askedAt < ASK_EVERY_MS) || asks >= ASKS_PER_DAY) return template;
   if (everyone.asks >= ASKS_PER_DAY_ALL) return template;
   // Count the ask before awaiting it, so loads at the same moment ask once.
   everyone.asks += 1;
-  const asked = { key, greeting: null, askedAt: now, askedDay: brief.today, asks: asks + 1 };
+  const asked = { key, greeting: null, askedAt: now, askedDay: utcDay, asks: asks + 1 };
   // audit-exempt: a cache of one person's greeting, seen by nobody else.
   db.insert(agendaGreetings)
     .values({ userId: viewerId, ...asked })
