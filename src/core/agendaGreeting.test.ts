@@ -602,11 +602,26 @@ describe("greetingFor", () => {
     it("asks once for loads at the same moment", async () => {
       const { db, fred } = setup();
       const { calls, impl } = fake();
-      await Promise.all([
+      const [, other] = await Promise.all([
         writtenGreetingFor(db, fred, "UTC", keys, now, impl),
         writtenGreetingFor(db, fred, "UTC", keys, now, impl),
       ]);
       expect(calls).toEqual({ jev: 1, claude: 1 });
+      // The other gets the built-in one meanwhile, told to ask again.
+      expect(other).toMatchObject({ written: false, retryInMs: expect.any(Number) });
+    });
+
+    it("tells the page when to ask again when a new part of the day comes mid-backoff", async () => {
+      const { db, fred } = setup();
+      const { calls, impl } = fake();
+      const noon = Date.UTC(2026, 10, 18, 12);
+      await writtenGreetingFor(db, fred, "UTC", keys, noon - 5_000, impl);
+      // The afternoon's has none written yet, and the last ask was 6s ago.
+      const held = await writtenGreetingFor(db, fred, "UTC", keys, noon + 1_000, impl);
+      expect(held).toMatchObject({ hello: "Good afternoon, Fred.", written: false, retryInMs: 4_000 });
+      expect(calls.claude).toBe(1);
+      expect(await writtenGreetingFor(db, fred, "UTC", keys, noon + 5_000, impl)).toMatchObject({ written: true });
+      expect(calls.claude).toBe(2);
     });
 
     it("doesn't start a new day's count when the viewer changes timezone", async () => {

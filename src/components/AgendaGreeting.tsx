@@ -234,7 +234,9 @@ export function AgendaGreeting({
     };
   }, []);
 
-  const stale = Boolean(greeting?.text) && (changed || retryAt !== null);
+  // Only a written one goes out of date: the built-in one is always current,
+  // even while the server says when to ask again.
+  const stale = Boolean(greeting?.written && greeting.text) && (changed || retryAt !== null);
 
   // The server render doesn't know the viewer's day or hour.
   if (!today) return <div className="min-h-24" />;

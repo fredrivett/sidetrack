@@ -305,9 +305,12 @@ export async function writtenGreetingFor(
   };
   if (kept && unchanged(db, kept)) return shown(kept);
   // Until it may ask again, the one it has stays, out of date or not,
-  // rather than the reader seeing it swap for the built-in one.
-  const stale = (fallback: Greeting, retryInMs?: number): Greeting =>
-    kept ? { ...shown(kept), ...(retryInMs !== undefined && { retryInMs }) } : fallback;
+  // rather than the reader seeing it swap for the built-in one. With none
+  // kept, the built-in one, still saying when to ask again.
+  const stale = (fallback: Greeting, retryInMs: number): Greeting => ({
+    ...(kept ? shown(kept) : fallback),
+    retryInMs,
+  });
   // Counted by UTC day, not the viewer's: their timezone is theirs to
   // change, and a new one mustn't start a new count.
   const utcDay = dayOf(now, "UTC");
@@ -322,19 +325,19 @@ export async function writtenGreetingFor(
   const wait = failed ? RETRY_FAILED_MS : rewriteNow ? ASK_NOW_EVERY_MS : backoff;
   // A failed write still waits its full time, quiet or not.
   if (row && (failed || !quiet) && now - row.askedAt < wait) {
-    const minutes = Math.ceil((row.askedAt + wait - now) / 60_000);
+    const retryInMs = row.askedAt + wait - now;
+    const minutes = Math.ceil(retryInMs / 60_000);
     if (!failed) {
-      const seconds = Math.ceil((row.askedAt + wait - now) / 1000);
-      return stale(
-        template(`One was asked for moments ago; it asks again in ${seconds}s`),
-        row.askedAt + wait - now,
-      );
+      const seconds = Math.ceil(retryInMs / 1000);
+      return stale(template(`One was asked for moments ago; it asks again in ${seconds}s`), retryInMs);
     }
-    if (!same) return template("Claude is writing it, or the last try didn't finish");
+    // The page asks again when told: sooner than this, as it checks back
+    // at least every 30s, by when one being written has likely landed.
+    if (!same) return { ...template("Claude is writing it, or the last try didn't finish"), retryInMs };
     const last = same.trace?.why ?? "The last try didn't work";
     const why = `${last}. It tries again in ${minutes} min`;
     // Its trace only while every title in it is still the viewer's to see.
-    return stillVisible(db, viewerId, same) ? template(why, same.trace) : template(why);
+    return { ...(stillVisible(db, viewerId, same) ? template(why, same.trace) : template(why)), retryInMs };
   }
   // Out of date with no more writes today: the built-in one, which is up to
   // date, rather than a written one that's wrong until tomorrow.
