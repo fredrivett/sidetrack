@@ -272,14 +272,14 @@ export function AgendaView({
     <div className="flex-1 overflow-y-auto">
       {/* Two columns from 900px when greeting: it sticks on the left. */}
       <div
-        className={`mx-auto w-full max-w-xl p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] ${
+        className={`mx-auto w-full max-w-xl px-3 pt-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[900px]:pt-12 ${
           greet
-            ? "min-[900px]:grid min-[900px]:max-w-5xl min-[900px]:grid-cols-[minmax(0,20rem)_minmax(0,36rem)] min-[900px]:justify-center min-[900px]:gap-10"
+            ? "min-[900px]:grid min-[900px]:max-w-[68rem] min-[900px]:grid-cols-[minmax(0,24rem)_minmax(0,36rem)] min-[900px]:justify-center min-[900px]:gap-10 min-[1100px]:gap-16"
             : ""
         }`}
       >
         {greet && (
-          <aside className="mb-4 min-[900px]:sticky min-[900px]:top-3 min-[900px]:mb-0 min-[900px]:self-start min-[900px]:pt-4">
+          <aside className="mb-4 min-[900px]:sticky min-[900px]:top-12 min-[900px]:mb-0 min-[900px]:self-start min-[900px]:pt-4">
           <AgendaGreeting
             firstName={firstName}
             itemsById={byId}
