@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getEnv } from "../lib/env";
 import { getPostHog } from "../lib/posthog";
+import { isEmoji } from "../lib/projectIcon";
 import { type PushMessage, sendPush } from "../lib/push";
 import { hasProjectAccess, listMemberIds } from "./access";
 import { users } from "./auth-schema";
@@ -1029,6 +1030,17 @@ function cancelUndone(group: Row[]): { kept: Row[]; undone: string[] } {
 /** One push for a group's notifications: its sentence, or a summary of several. */
 function summarise(views: NotificationView[]): Omit<PushMessage, "tag"> {
   const last = views[views.length - 1];
+  // A due reminder leads with the item, quoted so it stays apart from the
+  // "from Sidetrack" iOS adds to the title.
+  if (views.length === 1 && (last.reason === "due-today" || last.reason === "overdue")) {
+    // The list's emoji, when its icon is one; an image icon can't show in a push.
+    const icon = last.list?.icon && isEmoji(last.list.icon) ? `${last.list.icon} ` : "";
+    return {
+      title: `“${last.parts[0].text}”`,
+      body: `${last.reason === "due-today" ? "Due today" : "Overdue"} • ${icon}${last.title}`,
+      url: last.url,
+    };
+  }
   if (views.length === 1) {
     return {
       title: last.title,

@@ -276,6 +276,7 @@ describe("notifications", () => {
     addItem(db, fred, { projectId: listId, title: "Gas", assigneeIds: [fred], dueDate: "2026-11-20" }, "web");
     addItem(db, fred, { projectId: listId, title: "Water", dueDate: "2026-11-20" }, "web");
     addItem(db, fred, { projectId: listId, title: "Paid", assigneeIds: [alice], dueDate: "2026-11-20", completed: true }, "web");
+    updateProject(db, fred, listId, { icon: "🏠" }, "web");
     markNotificationsRead(db, alice);
     const reminders = () =>
       listNotifications(db, alice)
@@ -301,6 +302,12 @@ describe("notifications", () => {
     completeItem(db, alice, rent.id, "web");
     expect(remindDue(db, at(21, 9))).toBe(2);
     expect(reminders()[0]).toBe('"Bins" is overdue');
+    // Just one: the item's the title, the list and its emoji in the body.
+    sendPush.mockClear();
+    await deliverNotifications(db, at(21, 9) + 60_000);
+    const alone = (sendPush.mock.calls as unknown as Array<[unknown[], unknown]>).filter(([t]) => t.length > 0);
+    expect(alone).toHaveLength(1);
+    expect(alone[0][1]).toMatchObject({ title: "“Bins”", body: "Overdue • 🏠 Home" });
     expect(remindDue(db, at(22, 9))).toBe(0);
     // Coming round again by its repeat rule is told by its reminder, not as news.
     completeItem(db, alice, bins.id, "web");
