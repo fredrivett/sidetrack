@@ -5,6 +5,7 @@ import { unstable_rethrow, useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useOptimistic,
   useRef,
@@ -651,6 +652,31 @@ export function Kanban({
     return () => io.disconnect();
   }, [projects, view]);
 
+  // The view switch's underline sits on the header's bottom border under the
+  // current view, and slides to the next one. Measured, since the tabs differ
+  // in width and the header's height depends on what's beside them.
+  const viewTabs = useRef<HTMLDivElement>(null);
+  const [underline, setUnderline] = useState<{ left: number; width: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const group = viewTabs.current;
+    const header = group?.closest("[data-board-header]");
+    if (!group || !header) return;
+    const place = () => {
+      const tab = group.querySelector<HTMLElement>('[aria-pressed="true"]');
+      if (!tab) return setUnderline(null);
+      const g = group.getBoundingClientRect();
+      const t = tab.getBoundingClientRect();
+      const h = header.getBoundingClientRect();
+      setUnderline({ left: t.left - g.left, width: t.width, top: h.bottom - g.top - 2 });
+    };
+    place();
+    // Again once the fonts are in (the Brief's serif changes its width) and
+    // whenever the window resizes.
+    void document.fonts?.ready.then(place);
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [view]);
+
   return (
     <FollowsProvider followedItemIds={followedItemIds}>
     <NotificationLevelsProvider levels={notificationLevels}>
@@ -662,12 +688,12 @@ export function Kanban({
         <BoardHeader
           nav={
             <div
+              ref={viewTabs}
               role="group"
               aria-label="View"
-              // As tall as the header's buttons beside it: 28px, 36px on touch,
-              // where each segment's after: box reaches over the border and
-              // padding to make its tap target the full 36px.
-              className="flex h-7 rounded-md border border-neutral-200 p-0.5 text-[13px] font-medium max-[360px]:text-xs touch:h-9 touch:text-sm touch:max-[360px]:text-xs dark:border-neutral-800"
+              // Tabs, as tall as the header's buttons beside them: 28px, 36px
+              // on touch.
+              className="relative flex h-7 items-stretch text-[13px] font-medium max-[360px]:text-xs touch:h-9 touch:text-sm touch:max-[360px]:text-xs"
             >
               {BOARD_VIEWS.map(([v, label, Icon], i) => (
                 <Tooltip key={v}>
@@ -680,14 +706,21 @@ export function Kanban({
                         onClick={() => switchView(v)}
                         // Icon and name; just the icon on phones, where the
                         // header is full.
-                        className={`relative flex items-center gap-1.5 whitespace-nowrap rounded px-2 transition sm:px-2.5 touch:after:absolute touch:after:inset-x-0 touch:after:-inset-y-[3px] [&_svg]:size-3.5 touch:[&_svg]:size-4 ${
+                        className={`flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-neutral-300 sm:px-2.5 dark:focus-visible:ring-neutral-600 [&_svg]:size-3.5 touch:[&_svg]:size-4 ${
                           view === v
-                            ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
-                            : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                            ? "text-neutral-900 dark:text-neutral-100"
+                            : "text-neutral-400 hover:text-neutral-700 dark:text-neutral-500 dark:hover:text-neutral-200"
                         }`}
                       >
                         <Icon aria-hidden />
-                        <span className="max-sm:sr-only">{label}</span>
+                        {/* The Brief's name in the greeting's italic serif. */}
+                        <span
+                          className={`max-sm:sr-only ${
+                            v === "brief" ? "font-display text-[18px] leading-none font-normal tracking-[-0.01em] italic" : ""
+                          }`}
+                        >
+                          {label}
+                        </span>
                       </button>
                     }
                   />
@@ -696,6 +729,13 @@ export function Kanban({
                   </TooltipContent>
                 </Tooltip>
               ))}
+              {underline && (
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute h-0.5 rounded-full bg-neutral-900 transition-[left,width] duration-300 ease-out motion-reduce:transition-none dark:bg-neutral-100"
+                  style={underline}
+                />
+              )}
             </div>
           }
         >
