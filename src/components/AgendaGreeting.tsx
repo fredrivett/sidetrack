@@ -1,34 +1,88 @@
 "use client";
 
+import { unstable_rethrow } from "next/navigation";
 import { useEffect, useState } from "react";
-import { setAgendaReadAction } from "@/app/actions";
+import { agendaGreetingAction, setAgendaReadAction } from "@/app/actions";
 import type { Greeting } from "@/core/agendaGreeting";
 import type { Item } from "@/core/schema";
 import { parseGreeting } from "@/lib/greeting";
+import {
+  ResponsiveDialog,
+  ResponsiveDialogCloseButton,
+  ResponsiveDialogContent,
+  ResponsiveDialogDescription,
+  ResponsiveDialogTitle,
+} from "./ui/responsive-dialog";
+import { useToday } from "./use-day-start";
 
 const READ_MS = 2000;
 
+/** "Good morning, Fred." from the browser's clock, until the server's arrives. */
+function helloNow(firstName: string | null): string {
+  const hour = new Date().getHours();
+  const to = firstName ? `, ${firstName}` : "";
+  if (hour >= 4 && hour < 12) return `Good morning${to}.`;
+  if (hour >= 12 && hour < 18) return `Good afternoon${to}.`;
+  return `Evening${to}.`;
+}
+
+const dateLine = (day: string) =>
+  new Date(`${day}T12:00:00Z`).toLocaleDateString("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone: "UTC",
+  });
+
 /**
- * The few calm sentences at the top of the Agenda. Items it names are chips
- * that open them; an action phrase does what it says. Leaving it, by
- * switching view or tab, counts as having read it, so the next greeting
- * looks back from then. The greeting stays as first shown while the Agenda
- * is open: the board reloads on every change, and a later one, written
- * after a stamp, would drop the look-back from under the reader.
+ * The Agenda's greeting: the date, a large opening line, then a few calm
+ * sentences, beside the sections on a wide screen and above them on a
+ * narrow one. Its text is fetched once as the Agenda opens (Claude's, or
+ * the template's) and stays as first shown while the Agenda is open: the
+ * board reloads on every change, and a later one, written after a read
+ * stamp, would drop the look-back from under the reader. Until it arrives,
+ * faint lines hold its place, so nothing below moves.
+ *
+ * Items it names are chips that open them, and light up their row while
+ * hovered; an action phrase does what it says; "others" lists the rest of
+ * the undated items it picked from. Leaving it, by switching view or tab,
+ * counts as having read it, so the next greeting looks back from then.
  */
 export function AgendaGreeting({
-  greeting,
+  firstName,
   itemsById,
   onOpenItem,
   onAction,
+  onHoverItem,
 }: {
-  greeting: Greeting;
+  firstName: string | null;
   /** Items the page has, so a chip can open its item. */
   itemsById: Map<string, Item>;
   onOpenItem: (item: Item) => void;
   onAction: (action: string) => void;
+  onHoverItem: (id: string | null) => void;
 }) {
-  const [shown] = useState(greeting);
+  const today = useToday();
+  // Undefined while it loads; null when there's none to show.
+  const [greeting, setGreeting] = useState<Greeting | null | undefined>(undefined);
+  const [othersOpen, setOthersOpen] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    // Background read: it never holds anything up, and a failure just
+    // leaves the opening line on its own.
+    agendaGreetingAction().then(
+      (g) => live && setGreeting(g),
+      (error) => {
+        unstable_rethrow(error);
+        if (live) setGreeting(null);
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
+
   useEffect(() => {
     // When it came into view; a glance of under READ_MS isn't a read (and
     // nor is React's dev-only remount).
@@ -48,44 +102,108 @@ export function AgendaGreeting({
     };
   }, []);
 
+  // The server render doesn't know the viewer's day or hour.
+  if (!today) return <div className="min-h-24" />;
+
+  const chip =
+    "rounded-md bg-neutral-100 px-1 py-px leading-normal text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100";
+  const link =
+    "rounded-sm text-neutral-900 underline decoration-neutral-300 underline-offset-4 outline-none hover:decoration-neutral-500 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:text-neutral-100 dark:decoration-neutral-600 dark:hover:decoration-neutral-400 dark:focus-visible:ring-neutral-600";
+  const others = greeting?.others ?? [];
+
   return (
-    <p className="px-1 pt-2 pb-1 text-[15px] leading-7 text-neutral-600 text-pretty dark:text-neutral-300">
-      {shown.hello}{" "}
-      {parseGreeting(shown.text).map((part, i) => {
-        // "Others" opens the rest of No date once the Agenda can show them.
-        if (part.kind === "text" || part.kind === "others") return part.text;
-        if (part.kind === "action") {
-          return (
-            <button
-              key={i}
-              type="button"
-              onClick={() => onAction(part.action)}
-              className="rounded-sm text-neutral-900 underline decoration-neutral-300 underline-offset-4 outline-none hover:decoration-neutral-500 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:text-neutral-100 dark:decoration-neutral-600 dark:hover:decoration-neutral-400 dark:focus-visible:ring-neutral-600"
-            >
-              {part.text}
-            </button>
-          );
-        }
-        const item = itemsById.get(part.id);
-        const title = item?.title ?? shown.titles[part.id] ?? "";
-        const chip =
-          "rounded-md bg-neutral-100 px-1 py-px leading-normal text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100";
-        // An item the page hasn't loaded, such as one finished days ago, is named but can't open.
-        return item ? (
-          <button
-            key={i}
-            type="button"
-            onClick={() => onOpenItem(item)}
-            className={`${chip} outline-none hover:bg-neutral-200 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:hover:bg-neutral-700 dark:focus-visible:ring-neutral-600`}
-          >
-            {title}
-          </button>
-        ) : (
-          <span key={i} className={chip}>
-            {title}
-          </span>
-        );
-      })}
-    </p>
+    <div className="px-1 pt-2 pb-1">
+      <p className="text-xs font-medium text-neutral-400 dark:text-neutral-500">{dateLine(today)}</p>
+      <h2 className="mt-1 text-[22px] leading-tight font-semibold tracking-tight text-neutral-900 dark:text-neutral-100">
+        {greeting?.hello ?? helloNow(firstName)}
+      </h2>
+      {greeting === undefined ? (
+        <div aria-hidden="true" className="mt-3 space-y-2.5 pt-1">
+          <div className="h-3 w-full animate-pulse rounded bg-neutral-100 dark:bg-neutral-800/70" />
+          <div className="h-3 w-11/12 animate-pulse rounded bg-neutral-100 dark:bg-neutral-800/70" />
+          <div className="h-3 w-2/3 animate-pulse rounded bg-neutral-100 dark:bg-neutral-800/70" />
+        </div>
+      ) : (
+        greeting?.text && (
+          <p className="mt-2 animate-in text-[15px] leading-7 text-neutral-600 text-pretty fade-in duration-500 dark:text-neutral-300">
+            {parseGreeting(greeting.text).map((part, i) => {
+              if (part.kind === "text") return part.text;
+              if (part.kind === "action") {
+                return (
+                  <button key={i} type="button" onClick={() => onAction(part.action)} className={link}>
+                    {part.text}
+                  </button>
+                );
+              }
+              if (part.kind === "others") {
+                return others.length > 0 ? (
+                  <button key={i} type="button" onClick={() => setOthersOpen(true)} className={link}>
+                    {part.text}
+                  </button>
+                ) : (
+                  part.text
+                );
+              }
+              const item = itemsById.get(part.id);
+              const title = item?.title ?? greeting.titles[part.id] ?? "";
+              // An item the page hasn't loaded, such as one finished days ago, is named but can't open.
+              return item ? (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => onOpenItem(item)}
+                  onPointerEnter={() => onHoverItem(item.id)}
+                  onPointerLeave={() => onHoverItem(null)}
+                  onFocus={() => onHoverItem(item.id)}
+                  onBlur={() => onHoverItem(null)}
+                  className={`${chip} outline-none hover:bg-neutral-200 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:hover:bg-neutral-700 dark:focus-visible:ring-neutral-600`}
+                >
+                  {title}
+                </button>
+              ) : (
+                <span key={i} className={chip}>
+                  {title}
+                </span>
+              );
+            })}
+          </p>
+        )
+      )}
+
+      <ResponsiveDialog open={othersOpen} onOpenChange={setOthersOpen}>
+        <ResponsiveDialogContent>
+          <div className="flex items-center gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+            <div className="min-w-0">
+              <ResponsiveDialogTitle>Also in No date</ResponsiveDialogTitle>
+              <ResponsiveDialogDescription className="text-left text-xs">
+                Most worth a look first
+              </ResponsiveDialogDescription>
+            </div>
+            <ResponsiveDialogCloseButton className="ml-auto shrink-0" />
+          </div>
+          <ul className="max-h-[60vh] overflow-y-auto p-2">
+            {others.map((o) => {
+              const item = itemsById.get(o.id);
+              return (
+                <li key={o.id}>
+                  <button
+                    type="button"
+                    disabled={!item}
+                    onClick={() => {
+                      if (!item) return;
+                      setOthersOpen(false);
+                      onOpenItem(item);
+                    }}
+                    className="w-full rounded-md px-2 py-1.5 text-left text-sm text-neutral-800 outline-none hover:bg-neutral-100 focus-visible:ring-2 focus-visible:ring-neutral-300 disabled:text-neutral-400 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                  >
+                    {item?.title ?? o.title}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
+    </div>
   );
 }

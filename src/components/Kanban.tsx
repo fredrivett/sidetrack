@@ -11,7 +11,6 @@ import {
   useState,
   useTransition,
 } from "react";
-import type { Greeting } from "@/core/agendaGreeting";
 import type { AssigneeView, PendingInviteView } from "@/core/members";
 import {
   getItemWithSubItemsAction,
@@ -96,7 +95,6 @@ export function Kanban({
   timeZone,
   initialView,
   overdueCollapsed,
-  greeting,
   projects: serverProjects,
   itemsByProject: serverItemsByProject,
   completedSince,
@@ -127,8 +125,6 @@ export function Kanban({
   initialView: BoardView;
   /** Whether the viewer keeps the Agenda's Overdue section folded away. */
   overdueCollapsed: boolean;
-  /** The Agenda's greeting, or null before the viewer's timezone is known. */
-  greeting: Greeting | null;
   projects: ProjectView[];
   /**
    * Every list's open items and its items finished at or after this, with
@@ -767,7 +763,9 @@ export function Kanban({
           <AgendaView
             projects={active}
             overdueCollapsed={overdueCollapsed}
-            greeting={greeting}
+            // Greets in the viewer's day, so waits for their browser's timezone.
+            greet={timeZone !== null}
+            firstName={viewer?.name?.trim().split(/\s+/)[0] || null}
             itemsByProject={itemsByProject}
             assigneesByProject={assigneesByProject}
             prLinksByItem={prLinksByItem}
