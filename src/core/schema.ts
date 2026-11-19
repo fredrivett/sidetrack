@@ -9,7 +9,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 import type { RepeatUnit } from "../lib/repeat";
-import { apiKeys } from "./auth-schema";
+import { apiKeys, users } from "./auth-schema";
 import type { ChangeEvent } from "./events";
 
 // A list's lifecycle (a "project" in code; "list" to people and agents).
@@ -612,6 +612,28 @@ export const itemFollows = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.itemId, t.userId] }), index("item_follows_user").on(t.userId)],
 );
+
+// The Agenda greeting Claude last wrote for each person (agendaGreeting.ts),
+// so a reload with nothing new reads it back instead of asking again, and
+// when and how often they've been asked today, so nobody can run up the
+// bill. Per person and seen by nobody else, so not audited.
+export const agendaGreetings = sqliteTable("agenda_greetings", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  // A hash of everything it was written from; a different one is stale.
+  key: text("key").notNull(),
+  // Null until a write succeeds for `key`.
+  greeting: text("greeting", { mode: "json" }).$type<{
+    text: string;
+    titles: Record<string, string>;
+    others: Array<{ id: string; title: string }>;
+  }>(),
+  askedAt: integer("asked_at").notNull(),
+  // The viewer's day the asks were counted on, and how many.
+  askedDay: text("asked_day").notNull(),
+  asks: integer("asks").notNull(),
+});
 
 export const meta = sqliteTable("meta", {
   key: text("key").primaryKey(),

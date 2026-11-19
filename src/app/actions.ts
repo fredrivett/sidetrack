@@ -122,10 +122,12 @@ import {
   setAgendaReadAt as setAgendaReadAtCore,
   setBoardFilters as setBoardFiltersCore,
   setTimeZone as setTimeZoneCore,
+  getTimeZone as getTimeZoneCore,
   setAvatarUrl as setAvatarUrlCore,
   setUploadedAvatar as setUploadedAvatarCore,
   setUsername as setUsernameCore,
 } from "@/core/users";
+import { writtenGreetingFor as writtenGreetingForCore } from "@/core/agendaGreeting";
 import { getCurrentSession, requireUserId } from "@/auth/session";
 import { sendAgentRequest } from "@/lib/agentRequest";
 import { notifyInvite, notifyMentions } from "@/lib/email";
@@ -755,6 +757,24 @@ export async function setAgendaReadAction() {
   const userId = await requireUserId();
   const { db } = getDb();
   setAgendaReadAtCore(db, userId, Date.now());
+}
+
+/**
+ * The signed-in user's Agenda greeting: written by Claude when AI is on,
+ * otherwise from the templates. Null before their timezone is known. Takes
+ * nothing from the browser, and agendaGreeting.ts limits how often one
+ * person can make it ask.
+ */
+export async function agendaGreetingAction() {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const timeZone = getTimeZoneCore(db, userId);
+  if (!timeZone) return null;
+  const { TYPESAFE_API_KEY, ANTHROPIC_API_KEY } = getEnv();
+  return writtenGreetingForCore(db, userId, timeZone, {
+    jev: TYPESAFE_API_KEY,
+    anthropic: ANTHROPIC_API_KEY,
+  });
 }
 
 /** Save the browser's timezone for agents' "today". No refresh: nothing shown changes. */

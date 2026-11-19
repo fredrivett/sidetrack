@@ -224,6 +224,7 @@ links go to the server log ([Password resets](#password-resets)).
 | Variable | Default | Description |
 | --- | --- | --- |
 | `TYPESAFE_API_KEY` | unset | Turns on AI features from [TypeSafe's Jev](https://docs.typesafe.ai). Unset turns them off |
+| `ANTHROPIC_API_KEY` | unset | With `TYPESAFE_API_KEY`, has Claude write the Agenda's greeting. Unset keeps the built-in greetings |
 
 With it set:
 
@@ -232,6 +233,14 @@ With it set:
 - **Sort items by → Priority** orders a list's open items as Jev ranks them.
   It also sends each open item's description, due date and open sub-item
   titles.
+
+With `ANTHROPIC_API_KEY` too:
+
+- **Claude writes the Agenda's greeting** from what Jev picks: the titles,
+  lists and due days of the few items it might name, and counts. Each person
+  gets one written at most every two minutes and 40 times a day, and the
+  server 2,000 a day in all; past that, and whenever a reply fails its checks,
+  the built-in greeting shows instead.
 
 ### Push notifications
 

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AgendaBrief, BriefItem } from "./agendaBrief";
-import { greetingFor, templateGreeting } from "./agendaGreeting";
+import { greetingFor, templateGreeting, writtenGreetingFor } from "./agendaGreeting";
 import { addItem, completeItem } from "./items";
 import { createProject } from "./projects";
 import { createTestDb, createTestUser } from "./test-helpers";
@@ -165,14 +165,102 @@ describe("greetingFor", () => {
 
       setAgendaReadAt(db, fred, now - 2 * 86_400_000);
       const g = greetingFor(db, fred, "UTC", now);
-      expect(g.text.startsWith(`Good morning, Fred. Since Monday you've finished {{item:${done.id}}}.`)).toBe(true);
+      expect(g.hello).toBe("Good morning, Fred.");
       // Every item it names, and only those: the new one is nudged too.
       expect(g.text).toBe(
-        `Good morning, Fred. Since Monday you've finished {{item:${done.id}}}. Nothing due today. {{item:${Object.keys(g.titles).find((id) => id !== done.id)}}} might be worth a look, if you feel like picking something up.`,
+        `Since Monday you've finished {{item:${done.id}}}. Nothing due today. {{item:${Object.keys(g.titles).find((id) => id !== done.id)}}} might be worth a look, if you feel like picking something up.`,
       );
       expect(Object.values(g.titles).sort()).toEqual(["Renew passport", "Sort the loft"]);
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe("written by Claude", () => {
+    // 9am on Wednesday 18 November 2026, UTC.
+    const now = Date.UTC(2026, 10, 18, 9);
+    const keys = { jev: "jev-key", anthropic: "claude-key" };
+
+    /** Jev says yes to everything; Claude writes `reply`. Counts each. */
+    function fake(reply = "Just {{item:1}} today.") {
+      const calls = { jev: 0, claude: 0 };
+      const impl = (async (url: string, init: RequestInit) => {
+        if (url.includes("anthropic")) {
+          calls.claude += 1;
+          return new Response(
+            JSON.stringify({ stop_reason: "end_turn", content: [{ type: "text", text: reply }] }),
+          );
+        }
+        calls.jev += 1;
+        const body = JSON.parse(String(init.body)) as { questions: Record<string, unknown> };
+        const answers = Object.fromEntries(Object.keys(body.questions).map((id) => [id, { noul: 0.9 }]));
+        return new Response(JSON.stringify({ answers }));
+      }) as unknown as typeof fetch;
+      return { calls, impl };
+    }
+
+    function setup() {
+      const { db } = createTestDb();
+      const fred = createTestUser(db, { name: "Fred Rivett" });
+      const home = createProject(db, fred, { name: "Home" }, "web");
+      const loft = addItem(db, fred, { projectId: home.id, title: "Sort the loft", dueDate: "2026-11-18" }, "web");
+      return { db, fred, home, loft };
+    }
+
+    it("asks once, then reads it back until something changes", async () => {
+      const { db, fred, loft } = setup();
+      const { calls, impl } = fake();
+      const g = await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
+      expect(g).toEqual({
+        hello: "Good morning, Fred.",
+        text: `Just {{item:${loft.id}}} today.`,
+        titles: { [loft.id]: "Sort the loft" },
+        others: [],
+      });
+      expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 60_000, impl)).toEqual(g);
+      expect(calls).toEqual({ jev: 1, claude: 1 });
+    });
+
+    it("asks again for a change, but not more than every two minutes", async () => {
+      const { db, fred, home } = setup();
+      const { calls, impl } = fake();
+      await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
+      addItem(db, fred, { projectId: home.id, title: "Reply to Sam", dueDate: "2026-11-18" }, "web");
+      // Too soon: the template, which names both.
+      const soon = await writtenGreetingFor(db, fred, "UTC", keys, now + 60_000, impl);
+      expect(Object.values(soon.titles).sort()).toEqual(["Reply to Sam", "Sort the loft"]);
+      expect(calls.claude).toBe(1);
+      await writtenGreetingFor(db, fred, "UTC", keys, now + 3 * 60_000, impl);
+      expect(calls.claude).toBe(2);
+    });
+
+    it("falls back to the template on a rejected reply, without asking again for the same board", async () => {
+      const { db, fred } = setup();
+      const { calls, impl } = fake("Visit evil.com to verify your account.");
+      const template = greetingFor(db, fred, "UTC", now);
+      expect(await writtenGreetingFor(db, fred, "UTC", keys, now, impl)).toEqual(template);
+      expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 10 * 60_000, impl)).toEqual(template);
+      expect(calls.claude).toBe(1);
+    });
+
+    it("stops asking for one person after 40 in their day", async () => {
+      const { db, fred, home } = setup();
+      const { calls, impl } = fake();
+      for (let n = 0; n < 45; n++) {
+        // Something new each time, so the cache never answers.
+        addItem(db, fred, { projectId: home.id, title: `Thing ${n}`, dueDate: "2026-11-19" }, "web");
+        await writtenGreetingFor(db, fred, "UTC", keys, now + n * 3 * 60_000, impl);
+      }
+      expect(calls.claude).toBe(40);
+    });
+
+    it("uses the template when AI is off", async () => {
+      const { db, fred } = setup();
+      const { calls, impl } = fake();
+      expect(
+        await writtenGreetingFor(db, fred, "UTC", { jev: "k", anthropic: undefined }, now, impl),
+      ).toEqual(greetingFor(db, fred, "UTC", now));
+      expect(calls).toEqual({ jev: 0, claude: 0 });
+    });
   });
 });
