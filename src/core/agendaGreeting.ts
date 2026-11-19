@@ -46,6 +46,8 @@ export interface GreetingTrace {
     dueToday: number;
     doneToday: number;
     slipped: number;
+    /** Absent on ones kept from before it was counted. */
+    thisWeek?: number;
     undated: number;
     stale: number;
     finishedSince: number;
@@ -72,7 +74,9 @@ function traceOf(
 ): GreetingTrace {
   const open = brief.dueToday.filter((i) => i.completedAt === null).length;
   const all = new Map(
-    [...brief.dueToday, ...brief.overdue, ...brief.undated, ...brief.stale].map((i) => [i.id, i]),
+    [...brief.dueToday, ...brief.overdue, ...brief.thisWeek, ...brief.undated, ...brief.stale].map(
+      (i) => [i.id, i],
+    ),
   );
   const others = new Set(jev?.pick.others.map((i) => i.id));
   return {
@@ -85,6 +89,7 @@ function traceOf(
       dueToday: open,
       doneToday: brief.dueToday.length - open,
       slipped: brief.overdue.length,
+      thisWeek: brief.thisWeek.length,
       undated: brief.undated.length,
       stale: brief.stale.length,
       finishedSince: brief.lookBack.finishedCount,
@@ -167,6 +172,7 @@ function titlesIn(text: string, brief: AgendaBrief): Record<string, string> {
     ...brief.lookBack.slipped,
     ...brief.dueToday,
     ...brief.overdue,
+    ...brief.thisWeek,
     ...brief.undated,
     ...brief.stale,
   ]) {
@@ -298,6 +304,15 @@ const count = (n: number) => NUMBERS[n] ?? String(n);
 const things = (n: number) => `${count(n)} ${n === 1 ? "thing" : "things"}`;
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
+/** "a and b are still open this week.", or null when nothing is. */
+function stillThisWeek(brief: AgendaBrief): string | null {
+  const week = brief.thisWeek;
+  if (week.length === 0) return null;
+  return week.length <= 2
+    ? `${capital(and(week.map(item)))} ${week.length === 1 ? "is" : "are"} still open this week.`
+    : `A few things are still open this week, ${and(week.slice(0, 2).map(item))} among them.`;
+}
+
 /** "a", "a and b", "a, b and c". */
 function and(parts: string[]): string {
   return parts.length < 2 ? (parts[0] ?? "") : `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
@@ -401,6 +416,9 @@ export function templateGreeting(brief: AgendaBrief, name: string | null): strin
         ? `${item(brief.overdue[0])} is still waiting. No rush — want to ${action("triage", "give it a new day")}?`
         : `A few earlier things are still waiting. No rush — want to ${action("triage", "give them new days")}, or let some go?`,
     );
+    // With nothing open today, the week too, as Claude's greeting says both.
+    const week = open.length === 0 ? stillThisWeek(brief) : null;
+    if (week) sentences.push(week);
   } else if (open.length > 0) {
     if (brief.partOfDay === "afternoon") {
       sentences.push(
@@ -419,12 +437,18 @@ export function templateGreeting(brief: AgendaBrief, name: string | null): strin
     }
   } else if (doneToday > 0) {
     sentences.push("That's everything for today.");
+    const week = stillThisWeek(brief);
+    if (week) sentences.push(week);
   } else {
-    // Nothing due: look ahead, or offer something undated, or just be quiet.
+    // Nothing due: what's left this week, or look ahead, or offer something
+    // undated, or just be quiet.
+    const week = stillThisWeek(brief);
     const heavy = heavyDay(brief);
     const nudge = brief.undated.slice(0, 2);
     const stale = brief.stale.slice(0, 2);
-    if (heavy) {
+    if (week) {
+      sentences.push(`Nothing due today. ${week}`);
+    } else if (heavy) {
       sentences.push(
         `Nothing due today. ${dayName(heavy.day, brief.today)} looks busy, so maybe move one thing earlier?`,
       );

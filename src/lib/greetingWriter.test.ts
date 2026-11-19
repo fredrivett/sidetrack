@@ -31,7 +31,7 @@ const brief: AgendaBrief = {
   dueToday: [sam],
   overdue: [bank],
   ahead: [],
-  spans: [],
+  thisWeek: [],
   undated: [],
   stale: [],
 };
@@ -60,6 +60,25 @@ describe("writerInput", () => {
     // Three slipped, one named: it's told three.
     const three = { ...brief, overdue: [bank, item("o2", "Bins"), item("o3", "Post")] };
     expect(writerInput(three, pick).facts).toMatchObject({ slipped_total: 3 });
+  });
+
+  it("tells it how much is left this week, and that a span is due all week", () => {
+    const span = item("w1", "Clean the oven", { dueFrom: "2026-11-16", dueDate: "2026-11-22" });
+    const fri = item("w2", "Book the dentist", { dueDate: "2026-11-20" });
+    const week = { ...brief, dueToday: [], overdue: [], thisWeek: [span, fri, item("w3", "Post")] };
+    const facts = writerInput(week, {
+      ...pick,
+      moments: ["week"],
+      items: { week: [span, fri] },
+    }).facts as { this_week_total: number; moves: Array<{ tasks: Array<{ due: string }> }> };
+    expect(facts.this_week_total).toBe(3);
+    expect(facts.moves[0].tasks.map((t) => t.due)).toEqual(["this week", "Friday"]);
+    expect(writerInput(brief, pick).facts).not.toHaveProperty("this_week_total");
+    // A span whose week has passed is due on its last day, like any slipped task.
+    const lapsed = item("l1", "Old span", { dueFrom: "2026-11-09", dueDate: "2026-11-15" });
+    const slipped = writerInput({ ...brief, overdue: [lapsed] }, { ...pick, items: { triage: [lapsed] } })
+      .facts as { moves: Array<{ tasks: Array<{ due: string }> }> };
+    expect(slipped.moves[0].tasks[0].due).toBe("Sunday");
   });
 });
 

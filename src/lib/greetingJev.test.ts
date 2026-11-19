@@ -29,7 +29,7 @@ const brief = (more: Partial<AgendaBrief> = {}): AgendaBrief => ({
   dueToday: [],
   overdue: [],
   ahead: Array.from({ length: 11 }, (_, i) => ({ day: `2026-11-${19 + i}`, open: 0 })),
-  spans: [],
+  thisWeek: [],
   undated: [],
   stale: [],
   ...more,
@@ -65,6 +65,16 @@ describe("possibleMoments", () => {
       "clear",
     ]);
     expect(possibleMoments(brief({ stale: [item("s")] }))).toEqual(["tidy", "clear"]);
+    // The week's open items come up on a day with nothing open, not in the
+    // evening, and not when today has its own to plan.
+    const week = { thisWeek: [item("w", { dueFrom: "2026-11-16", dueDate: "2026-11-22" })] };
+    expect(possibleMoments(brief(week))).toEqual(["week", "clear"]);
+    expect(possibleMoments(brief({ ...week, dueToday: [item("a", { completedAt: 1 })] }))).toEqual([
+      "week",
+      "clear",
+    ]);
+    expect(possibleMoments(brief({ ...week, partOfDay: "evening" }))).toEqual(["clear"]);
+    expect(possibleMoments(brief({ ...week, dueToday: [item("a")] }))).toEqual(["plan"]);
   });
 });
 
@@ -150,6 +160,20 @@ describe("pickGreeting", () => {
     });
     expect(pick.moments).toEqual(["wind-down"]);
     expect(pick.items["wind-down"]?.map((i) => i.id)).toEqual(["a"]);
+  });
+
+  // STF-1: "nothing due today" alone, with tasks open this week, read as nothing to do.
+  it("always names what's left this week on a day with nothing open, however Jev scores it", () => {
+    const b = brief({
+      thisWeek: [item("span", { dueFrom: "2026-11-16", dueDate: "2026-11-22" }), item("fri"), item("sat")],
+      undated: [item("u")],
+    });
+    const pick = pickGreeting(b, {
+      moments: { week: 0.2, urgent: 0.9, clear: 0.8 },
+      items: { span: 0.4, fri: 0.7, sat: 0.1, u: 0.9 },
+    });
+    expect(pick.moments).toEqual(["week", "urgent"]);
+    expect(pick.items.week?.map((i) => i.id)).toEqual(["fri", "span"]);
   });
 
   it("skips a moment with nothing worth naming, letting the next one speak", () => {

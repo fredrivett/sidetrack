@@ -165,7 +165,7 @@ describe("buildAgendaBrief", () => {
     expect(titles(brief().dueToday)).toEqual(["Mine"]);
   });
 
-  it("counts single days ahead to the end of next week, and keeps spans apart", () => {
+  it("counts single days ahead to the end of next week, and lists what's left this week", () => {
     const { add, brief } = board();
     add("Thursday one", { dueDate: "2026-11-19" });
     add("Thursday two", { dueDate: "2026-11-19" });
@@ -191,8 +191,20 @@ describe("buildAgendaBrief", () => {
     expect(b.ahead[0].open).toBe(2);
     expect(b.ahead.at(-1)?.open).toBe(1);
     expect(b.ahead.reduce((n, d) => n + d.open, 0)).toBe(3);
-    // Only the span under way.
-    expect(titles(b.spans)).toEqual(["This week"]);
+    // The Agenda's This week (it's Wednesday): the span under way first, as
+    // it started Monday, then the days to come; nothing from next week.
+    expect(titles(b.thisWeek)).toEqual(["This week", "Thursday one", "Thursday two"]);
+  });
+
+  it("keeps a step due this week when its parent isn't in This week, and folds it into one that is", () => {
+    const { add, brief } = board();
+    const move = add("Move house");
+    add("Book the van", { dueDate: "2026-11-20", parentId: move.id });
+    const trip = add("Trip", { dueDate: "2026-11-25" });
+    add("Pack bags", { dueDate: "2026-11-21", parentId: trip.id });
+    const party = add("Party", { dueDate: "2026-11-21" });
+    add("Buy cake", { dueDate: "2026-11-20", parentId: party.id });
+    expect(titles(brief().thisWeek)).toEqual(["Book the van", "Pack bags", "Party"]);
   });
 
   it("finds stale undated items by their last change, and recent or deadline-ish ones to nudge", () => {

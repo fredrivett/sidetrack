@@ -41,7 +41,7 @@ const brief = (more: Partial<AgendaBrief> = {}): AgendaBrief => ({
   dueToday: [],
   overdue: [],
   ahead: ahead(),
-  spans: [],
+  thisWeek: [],
   undated: [],
   stale: [],
   ...more,
@@ -114,6 +114,35 @@ describe("templateGreeting", () => {
     );
   });
 
+  // STF-1: "nothing due today" alone, with tasks open this week, read as nothing to do.
+  it("names what's still open this week before anything else on a day with nothing due", () => {
+    const span = it_("span", { dueFrom: "2026-11-16", dueDate: "2026-11-22" });
+    const b = brief({
+      thisWeek: [span, it_("fri", { dueDate: "2026-11-20" })],
+      undated: [it_("renew")],
+      ahead: ahead({ "2026-11-25": 5 }),
+    });
+    expect(templateGreeting(b, null)).toBe(
+      "Good morning. Nothing due today. {{item:span}} and {{item:fri}} are still open this week.",
+    );
+    // More than two: a couple named, never a total.
+    const more = brief({ thisWeek: [span, it_("a"), it_("b"), it_("c")] });
+    expect(templateGreeting(more, null)).toBe(
+      "Good morning. Nothing due today. A few things are still open this week, {{item:span}} and {{item:a}} among them.",
+    );
+    // Today's all done, and one thing is left for the week.
+    const done = brief({ dueToday: [it_("t", { completedAt: 1 })], thisWeek: [span] });
+    expect(templateGreeting(done, null)).toBe(
+      "Good morning. That's everything for today. {{item:span}} is still open this week.",
+    );
+    // After what slipped, when nothing's open today.
+    expect(templateGreeting(brief({ overdue: [it_("late")], thisWeek: [span] }), null)).toBe(
+      "Good morning. {{item:late}} is still waiting. No rush — want to {{action:triage|give it a new day}}? {{item:span}} is still open this week.",
+    );
+    // The evening still doesn't look ahead.
+    expect(templateGreeting({ ...b, partOfDay: "evening" }, null)).not.toContain("this week");
+  });
+
   it("prefers a fresh nudge to a stale one, and is quiet when there's neither", () => {
     const b = brief({ undated: [it_("renew")], stale: [it_("old")] });
     expect(templateGreeting(b, null)).toBe(
@@ -174,6 +203,12 @@ describe("greetingFor", () => {
         `Since Monday you've finished {{item:${done.id}}}. Nothing due today. {{item:${Object.keys(g.titles).find((id) => id !== done.id)}}} might be worth a look, if you feel like picking something up.`,
       );
       expect(Object.values(g.titles).sort()).toEqual(["Renew passport", "Sort the loft"]);
+
+      // What's left this week is titled too, for chips and feedback.
+      addItem(db, fred, { projectId: home.id, title: "Clean the oven", dueDate: "2026-11-20" }, "web");
+      const week = greetingFor(db, fred, "UTC", now);
+      expect(week.text).toContain("is still open this week");
+      expect(Object.values(week.titles)).toContain("Clean the oven");
     } finally {
       vi.useRealTimers();
     }

@@ -23,6 +23,7 @@ Rules:
 - Refer to a task only by its token, exactly as given, such as {{item:2}}. Never write a task's title yourself.
 - Use {{others|<a few words>}} only when "others" is given, for the rest of their undated tasks, such as "ahead of {{others|four others}}".
 - "slipped_total" is how many tasks slipped in all, including ones you were not given. Use it only so you never imply the named ones are all of them, such as "a few things slipped, {{item:1}} among them"; never state a large number, and never add it to other counts.
+- "this_week_total" is how many tasks are still open this week, including ones you were not given. Use it the same way, such as "a few things are still open this week, {{item:1}} among them".
 - Use {{action:triage|<a few words>}} only for the "triage" move, as the offer to give slipped tasks new days.
 - No exclamation marks, no emoji, no markdown, no links. Never say "overdue" or "late", never scold, never total up their backlog.
 - Do not start with a greeting such as "Good morning"; that is shown above your words.
@@ -31,6 +32,7 @@ Rules:
 Examples of the voice:
 Nothing is due today, so it's yours to shape. Since Monday you've cleared five things, {{item:1}} among them. If you feel like picking something up, {{item:2}} and {{item:3}} might be worth a look, ahead of {{others|four others}}.
 A gentle Wednesday: {{item:1}} and {{item:2}} are today's. Friday looks busier, so today is a good day to get ahead.
+Nothing is due today, but {{item:1}} and {{item:2}} are still open this week.
 {{item:1}} slipped past Monday. No rush — want to {{action:triage|give it a new day}}?
 That's everything for today. Enjoy the evening.`;
 
@@ -61,7 +63,15 @@ export function writerInput(brief: AgendaBrief, pick: GreetingPick): WriterInput
     token: token(i),
     title: i.title,
     list: i.list,
-    ...(i.dueDate && { due: i.dueDate === brief.today ? "today" : weekdayOf(i.dueDate) }),
+    ...(i.dueDate && {
+      // A span under way ("this week") is due all week, not on its last day.
+      due:
+        i.dueFrom && i.dueDate >= brief.today
+          ? "this week"
+          : i.dueDate === brief.today
+            ? "today"
+            : weekdayOf(i.dueDate),
+    }),
     ...(i.stepsLeft > 0 && { steps_left: i.stepsLeft }),
   });
   const moves = pick.moments.map((m) => ({
@@ -103,6 +113,7 @@ export function writerInput(brief: AgendaBrief, pick: GreetingPick): WriterInput
       ...(pick.others.length > 0 && { others: pick.others.length }),
       // All that slipped, not just the few named, so it doesn't say "two" of three.
       ...(pick.moments.includes("triage") && { slipped_total: brief.overdue.length }),
+      ...(pick.moments.includes("week") && { this_week_total: brief.thisWeek.length }),
       moves,
     },
   };
