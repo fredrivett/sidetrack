@@ -4,7 +4,12 @@ import { SortableContext } from "@dnd-kit/sortable";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
-import { setItemParentAction, updateItemAction } from "@/app/actions";
+import {
+  completeItemAction,
+  deleteItemAction,
+  setItemParentAction,
+  updateItemAction,
+} from "@/app/actions";
 import type { AgentSession, Item } from "@/core/schema";
 import { isReplaySafe } from "@/lib/replayPrivacy";
 import { AgentSessionsProvider } from "./agent-sessions";
@@ -20,7 +25,9 @@ vi.mock("@/app/actions", () => ({
   setItemParentAction: vi.fn(),
 }));
 
-vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+vi.mock("sonner", () => ({
+  toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn(), dismiss: vi.fn() }),
+}));
 
 // The sessions provider refreshes the board through the router.
 vi.mock("next/navigation", async (importOriginal) => ({
@@ -443,5 +450,47 @@ describe("ItemRow joint items", () => {
     fireEvent.contextMenu(card);
     fireEvent.keyDown(screen.getByRole("menu"), { key: "i" });
     expect(updateItemAction).not.toHaveBeenCalled();
+  });
+});
+
+describe("ItemRow D, X and ⌫ shortcuts", () => {
+  it("ticks the hovered item on 'x', and deletes it only on a second ⌫", () => {
+    vi.mocked(completeItemAction).mockClear().mockResolvedValue(undefined as never);
+    vi.mocked(deleteItemAction).mockClear().mockResolvedValue(undefined as never);
+    const { container } = renderRow();
+    const card = container.querySelector(".group") as HTMLElement;
+
+    // Not hovered: unarmed.
+    fireEvent.keyDown(document, { key: "x" });
+    fireEvent.keyDown(document, { key: "Backspace" });
+    expect(completeItemAction).not.toHaveBeenCalled();
+
+    fireEvent.pointerEnter(card);
+    fireEvent.keyDown(document, { key: "x" });
+    expect(completeItemAction).toHaveBeenCalledWith("i1");
+
+    fireEvent.keyDown(document, { key: "Backspace" });
+    expect(deleteItemAction).not.toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledWith(
+      expect.stringContaining("Press ⌫ again"),
+      expect.anything(),
+    );
+    // Leaving the card drops the half-made delete.
+    fireEvent.pointerLeave(card);
+    fireEvent.pointerEnter(card);
+    fireEvent.keyDown(document, { key: "Backspace" });
+    expect(deleteItemAction).not.toHaveBeenCalled();
+    fireEvent.keyDown(document, { key: "Backspace" });
+    expect(deleteItemAction).toHaveBeenCalledWith("i1");
+  });
+
+  it("opens the quick due dates on 'd' while hovered", () => {
+    const { container } = renderRow();
+    fireEvent.keyDown(document, { key: "d" });
+    expect(screen.queryByText("Pick a date…")).toBeNull();
+    fireEvent.pointerEnter(container.querySelector(".group") as HTMLElement);
+    fireEvent.keyDown(document, { key: "d" });
+    expect(screen.getByText("Pick a date…")).toBeTruthy();
+    expect(screen.getByText("Tomorrow")).toBeTruthy();
   });
 });
