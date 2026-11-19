@@ -9,6 +9,8 @@ import { Kanban, type ProjectView } from "./Kanban";
 vi.mock("@/app/actions", () => ({
   listDoneBeforeAction: vi.fn(),
   setTimeZoneAction: vi.fn(() => Promise.resolve()),
+  // The Agenda's greeting; it never arrives here.
+  agendaGreetingAction: vi.fn(() => new Promise(() => {})),
 }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
@@ -104,5 +106,18 @@ describe.each([
 
     fireEvent.click(screen.getByRole("button", { name: "Back to board" }));
     expect(columns()).toEqual(["b"]);
+  });
+});
+
+describe("Kanban, switching views", () => {
+  it("puts each view at its own path, Agenda on 1 and Board on 2, keeping the query", () => {
+    window.history.replaceState(null, "", "/board?x=1");
+    render(board([list("b", "Work", "active", null)], []));
+    fireEvent.keyDown(document, { key: "1" });
+    expect(window.location.pathname + window.location.search).toBe("/agenda?x=1");
+    fireEvent.keyDown(document, { key: "3" });
+    expect(window.location.pathname).toBe("/done");
+    fireEvent.keyDown(document, { key: "2" });
+    expect(window.location.pathname).toBe("/board");
   });
 });

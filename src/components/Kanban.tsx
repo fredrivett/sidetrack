@@ -121,7 +121,7 @@ export function Kanban({
   viewer: AvatarUser | null;
   /** The timezone saved for the viewer, kept in step with their browser. */
   timeZone: string | null;
-  /** From `?view=`, so a reload or shared link opens on the same view. */
+  /** From the path (/agenda, /board, …), so a reload or shared link opens on the same view. */
   initialView: BoardView;
   /** Whether the viewer keeps the Agenda's Overdue section folded away. */
   overdueCollapsed: boolean;

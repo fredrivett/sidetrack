@@ -60,7 +60,11 @@ describe("proxy, signed in", () => {
     ["/?p=L1&item=I1", "/board?p=L1&item=I1"],
     ["/?item=I1", "/agenda?item=I1"],
   ])("sends %s to %s", (path, target) => {
-    expect(signedIn(path).headers.get("location")).toBe(`https://sidetrack.test${target}`);
+    const res = signedIn(path);
+    expect(res.headers.get("location")).toBe(`https://sidetrack.test${target}`);
+    // Temporary, never permanent: a cached / → /agenda would hide the
+    // welcome page after signing out.
+    expect(res.status).toBe(307);
   });
 
   it("leaves other pages alone", () => {
