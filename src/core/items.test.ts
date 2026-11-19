@@ -30,6 +30,7 @@ import {
 import { items } from "./schema";
 import { setTimeZone } from "./users";
 import { nestItems } from "../lib/itemTree";
+import type { Repeat } from "../lib/repeat";
 import { createTestDb, createTestUser } from "./test-helpers";
 
 function seedProject() {
@@ -1227,32 +1228,59 @@ describe("repeating items", () => {
     expect(listAudit(db, userId)).toHaveLength(rows);
   });
 
-  it("brings a weekly week back as next week, from its Monday", () => {
+  it("brings a weekend back as one only when its rule keeps to weekends", () => {
     const { db, userId, projectId } = seedProject();
-    const review = addItem(
-      db,
-      userId,
-      {
-        projectId,
-        title: "Weekly review",
-        dueFrom: "2026-11-09",
-        dueDate: "2026-11-15",
-        repeat: { every: 1, unit: "week" },
-      },
-      "web",
-    );
-    // Done on Wednesday the 11th: next due Wednesday the 18th, in the week of the 16th.
-    completeAt(db, userId, review.id, Date.UTC(2026, 10, 11, 12));
-    expect(reopenDueRepeats(db, userId, { timeZone: tz, now: Date.UTC(2026, 10, 16, 3, 59) })).toBe(0);
-    expect(reopenDueRepeats(db, userId, { timeZone: tz, now: Date.UTC(2026, 10, 16, 4) })).toBe(1);
-    expect(getItem(db, userId, review.id)).toMatchObject({
+    const add = (title: string, on?: "weekend") =>
+      addItem(
+        db,
+        userId,
+        {
+          projectId,
+          title,
+          dueFrom: "2026-11-21",
+          dueDate: "2026-11-22",
+          repeat: { every: 2, unit: "week", on },
+        },
+        "web",
+      );
+    const car = add("Clean the car", "weekend");
+    const filter = add("Change the filter");
+    // Both due this weekend, both done three days late on Wednesday the 25th.
+    completeAt(db, userId, car.id, Date.UTC(2026, 10, 25, 12));
+    completeAt(db, userId, filter.id, Date.UTC(2026, 10, 25, 12));
+
+    // Two weeks on is Wednesday 9 December: the filter is due that day alone.
+    expect(reopenDueRepeats(db, userId, { timeZone: tz, now: Date.UTC(2026, 11, 9, 4) })).toBe(1);
+    expect(getItem(db, userId, filter.id)).toMatchObject({
       completedAt: null,
-      dueFrom: "2026-11-16",
-      dueDate: "2026-11-22",
+      dueFrom: null,
+      dueDate: "2026-12-09",
     });
-    expect(listAudit(db, userId)[0].detail).toBe(
-      'reopened "Weekly review" (repeats every week), due 2026-11-16 to 2026-11-22',
-    );
+    // The car waits for the weekend after it, not the 5th the schedule had.
+    expect(reopenDueRepeats(db, userId, { timeZone: tz, now: Date.UTC(2026, 11, 12, 3, 59) })).toBe(0);
+    expect(reopenDueRepeats(db, userId, { timeZone: tz, now: Date.UTC(2026, 11, 12, 4) })).toBe(1);
+    expect(getItem(db, userId, car.id)).toMatchObject({
+      completedAt: null,
+      dueFrom: "2026-12-12",
+      dueDate: "2026-12-13",
+      repeatOn: "weekend",
+    });
+    // The completions are logged later than now, so find the reopening.
+    expect(
+      listAudit(db, userId).find((r) => r.entityId === car.id && r.action === "uncomplete")?.detail,
+    ).toBe('reopened "Clean the car" (repeats every 2 weeks on weekends), due 2026-12-12 to 2026-12-13');
+  });
+
+  it("keeps a rule to days only when it's weekly or monthly", () => {
+    const { db, userId, projectId } = seedProject();
+    const add = (repeat: Repeat) =>
+      addItem(db, userId, { projectId, title: "Bins", repeat }, "web");
+    expect(() => add({ every: 3, unit: "day", on: "weekend" })).toThrow(/daily/);
+    const bins = add({ every: 1, unit: "week", on: "mon" });
+    // Changing only the days is a change, and logged as one.
+    updateItem(db, userId, bins.id, { repeat: { every: 1, unit: "week", on: "tue" } }, "web");
+    expect(getItem(db, userId, bins.id)?.repeatOn).toBe("tue");
+    expect(listAudit(db, userId)[0].detail).toContain("repeats every week on Tuesdays");
   });
 
   it("counts a completion before 4am as the day before, in the user's saved zone", () => {

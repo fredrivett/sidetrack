@@ -68,6 +68,7 @@ const item: Item = {
   dueFrom: null,
   repeatEvery: null,
   repeatUnit: null,
+  repeatOn: null,
   position: "a0",
   number: 42,
   completedAt: null,

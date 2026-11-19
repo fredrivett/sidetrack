@@ -110,7 +110,7 @@ export function addDays(day: string, n: number): string {
 }
 
 /** 0 = Sunday … 6 = Saturday. */
-function weekday(day: string): number {
+export function weekday(day: string): number {
   const [y, m, d] = day.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
 }

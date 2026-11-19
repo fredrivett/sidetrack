@@ -758,7 +758,6 @@ export function ItemDetailDialog({
               key={item.id}
               repeat={repeatOf(item)}
               completedAt={item.completedAt}
-              due={item}
               disabled={pending}
               onChange={(repeat) =>
                 start(async () => {

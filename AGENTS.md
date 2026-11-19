@@ -64,6 +64,10 @@ server's instructions; never use another list for work in this repository.
   dropdown-menu, responsive-dialog, input, …). Reach for an existing primitive
   before hand-rolling markup; add a new one via the shadcn pattern rather than ad-hoc
   components.
+- Never use the browser's native `<select>`: pick one of several values with
+  a `DropdownMenu` whose content is a `DropdownMenuRadioGroup` of
+  `DropdownMenuRadioItem`s (`NotificationLevelsPanel.tsx`, `MenuSelect` in
+  `RepeatPicker.tsx`), so it looks the same on every device.
 - Card actions belong in a `⋯` dropdown menu (`DropdownMenu` +
   `DropdownMenuTrigger`/`Content`/`Item`), with destructive actions marked
   `variant="destructive"` — see `ProjectMenu.tsx` for the canonical shape.

@@ -40,6 +40,7 @@ const base: Item = {
   dueFrom: null,
   repeatEvery: null,
   repeatUnit: null,
+  repeatOn: null,
   position: "a0",
   number: 1,
   completedAt: null,
