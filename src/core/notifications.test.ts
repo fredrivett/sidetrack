@@ -497,6 +497,22 @@ describe("notifications", () => {
     expect(() => setNotificationLevel(db, bob, `space:${space.id}`, "all")).toThrow();
   });
 
+  it("lists ones made in the same millisecond latest first", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(2026, 10, 14, 12));
+      const { db, fred, alice, listId } = seed();
+      const titles = ["A", "B", "C", "D", "E", "F", "G", "H"];
+      for (const title of titles) addItem(db, fred, { projectId: listId, title, assigneeIds: [alice] }, "web");
+      const newestFirst = unread(db, alice);
+      expect(newestFirst).toHaveLength(titles.length);
+      // Each names its item, in the reverse of the order they were made.
+      expect(newestFirst.map((n) => n.match(/"(.)"/)?.[1])).toEqual([...titles].reverse());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("tells a list's or Space's members when it's archived, restored or deleted", () => {
     const { db, fred, alice, listId } = seed();
     updateProject(db, fred, listId, { status: "archived" }, "web");
