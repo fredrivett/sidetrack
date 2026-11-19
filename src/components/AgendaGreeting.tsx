@@ -1,6 +1,7 @@
 "use client";
 
 import { unstable_rethrow } from "next/navigation";
+import { ThumbsDown, ThumbsUp } from "lucide-react";
 import { useEffect, useState } from "react";
 import { agendaGreetingAction, setAgendaReadAction } from "@/app/actions";
 import type { Greeting } from "@/core/agendaGreeting";
@@ -13,9 +14,43 @@ import {
   ResponsiveDialogDescription,
   ResponsiveDialogTitle,
 } from "./ui/responsive-dialog";
+import type { FeedbackAbout } from "./FeedbackDialog";
 import { useToday } from "./use-day-start";
 
 const READ_MS = 2000;
+
+/**
+ * A word or phrase in the prose that does something when tapped. A span,
+ * not a button: a button is a box, so a long title would wrap as a block
+ * of its own instead of flowing with the sentence.
+ */
+function Tap({
+  onClick,
+  className,
+  children,
+  ...events
+}: {
+  onClick: () => void;
+  className: string;
+  children: React.ReactNode;
+} & Pick<React.HTMLAttributes<HTMLSpanElement>, "onPointerEnter" | "onPointerLeave" | "onFocus" | "onBlur">) {
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        e.preventDefault();
+        onClick();
+      }}
+      className={`cursor-pointer ${className}`}
+      {...events}
+    >
+      {children}
+    </span>
+  );
+}
 
 /** "Good morning, Fred." from the browser's clock, until the server's arrives. */
 function helloNow(firstName: string | null): string {
@@ -24,6 +59,14 @@ function helloNow(firstName: string | null): string {
   if (hour >= 4 && hour < 12) return `Good morning${to}.`;
   if (hour >= 12 && hour < 18) return `Good afternoon${to}.`;
   return `Evening${to}.`;
+}
+
+/** The greeting as it reads on the page, chips as their titles. */
+function plainText(greeting: Greeting): string {
+  const body = parseGreeting(greeting.text)
+    .map((part) => (part.kind === "item" ? (greeting.titles[part.id] ?? "") : part.text))
+    .join("");
+  return `${greeting.hello} ${body}`;
 }
 
 const dateLine = (day: string) =>
@@ -54,6 +97,7 @@ export function AgendaGreeting({
   onOpenItem,
   onAction,
   onHoverItem,
+  onFeedback,
 }: {
   firstName: string | null;
   /** Items the page has, so a chip can open its item. */
@@ -61,6 +105,8 @@ export function AgendaGreeting({
   onOpenItem: (item: Item) => void;
   onAction: (action: string) => void;
   onHoverItem: (id: string | null) => void;
+  /** A thumbs up or down opens the feedback form; absent hides them. */
+  onFeedback?: (about: FeedbackAbout) => void;
 }) {
   const today = useToday();
   // Undefined while it loads; null when there's none to show.
@@ -106,7 +152,7 @@ export function AgendaGreeting({
   if (!today) return <div className="min-h-24" />;
 
   const chip =
-    "rounded-md bg-neutral-100 px-1 py-px leading-normal text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100";
+    "rounded-md bg-neutral-100 px-1 py-px leading-normal box-decoration-clone text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100";
   const link =
     "rounded-sm text-neutral-900 underline decoration-neutral-300 underline-offset-4 outline-none hover:decoration-neutral-500 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:text-neutral-100 dark:decoration-neutral-600 dark:hover:decoration-neutral-400 dark:focus-visible:ring-neutral-600";
   const others = greeting?.others ?? [];
@@ -125,21 +171,22 @@ export function AgendaGreeting({
         </div>
       ) : (
         greeting?.text && (
+          <>
           <p className="mt-2 animate-in text-[15px] leading-7 text-neutral-600 text-pretty fade-in duration-500 dark:text-neutral-300">
             {parseGreeting(greeting.text).map((part, i) => {
               if (part.kind === "text") return part.text;
               if (part.kind === "action") {
                 return (
-                  <button key={i} type="button" onClick={() => onAction(part.action)} className={link}>
+                  <Tap key={i} onClick={() => onAction(part.action)} className={link}>
                     {part.text}
-                  </button>
+                  </Tap>
                 );
               }
               if (part.kind === "others") {
                 return others.length > 0 ? (
-                  <button key={i} type="button" onClick={() => setOthersOpen(true)} className={link}>
+                  <Tap key={i} onClick={() => setOthersOpen(true)} className={link}>
                     {part.text}
-                  </button>
+                  </Tap>
                 ) : (
                   part.text
                 );
@@ -148,9 +195,8 @@ export function AgendaGreeting({
               const title = item?.title ?? greeting.titles[part.id] ?? "";
               // An item the page hasn't loaded, such as one finished days ago, is named but can't open.
               return item ? (
-                <button
+                <Tap
                   key={i}
-                  type="button"
                   onClick={() => onOpenItem(item)}
                   onPointerEnter={() => onHoverItem(item.id)}
                   onPointerLeave={() => onHoverItem(null)}
@@ -160,7 +206,7 @@ export function AgendaGreeting({
                   className={`${chip} outline-none hover:bg-neutral-200 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:hover:bg-neutral-700 dark:focus-visible:ring-neutral-600`}
                 >
                   {title}
-                </button>
+                </Tap>
               ) : (
                 <span key={i} className={chip}>
                   {title}
@@ -168,6 +214,27 @@ export function AgendaGreeting({
               );
             })}
           </p>
+            {/* On Claude's greetings only, so a thumbs down is about Claude. */}
+            {onFeedback && greeting.written && (
+              <div className="mt-2 flex animate-in gap-1 fade-in duration-500">
+                {(["up", "down"] as const).map((rating) => {
+                  const Icon = rating === "up" ? ThumbsUp : ThumbsDown;
+                  return (
+                    <button
+                      key={rating}
+                      type="button"
+                      aria-label={rating === "up" ? "Good greeting" : "Not quite right"}
+                      title={rating === "up" ? "Good greeting" : "Not quite right"}
+                      onClick={() => onFeedback({ area: "greeting", rating, context: plainText(greeting) })}
+                      className="rounded-md p-1.5 text-neutral-300 outline-none hover:bg-neutral-100 hover:text-neutral-600 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+                    >
+                      <Icon className="size-3.5" />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </>
         )
       )}
 

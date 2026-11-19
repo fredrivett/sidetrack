@@ -48,6 +48,52 @@ describe("submitFeedback", () => {
     expect(audit.map((a) => [a.actor, a.action])).toEqual([[jane, "create"]]);
   });
 
+  it("files a thumbs up or down on the greeting, tagged with its area, with what it said", () => {
+    const { db } = createTestDb();
+    const owner = createTestUser(db);
+    const jane = createTestUser(db, { username: "jane" });
+    const list = createProject(db, owner, { name: "Feedback" }, "web");
+    const greeting = "Good morning, Jane.\n\nCall the bank slipped past Monday.";
+
+    const up = submitFeedback(
+      db,
+      jane,
+      { listId: list.id, kind: "other", message: "", about: { area: "greeting", rating: "up", context: greeting } },
+      "web",
+    );
+    const item = getItem(db, owner, up.itemId);
+    expect(item?.title).toBe("👍 Agenda greeting");
+    expect(item?.labels).toEqual(["Other", "Feedback", "Agenda greeting"]);
+    expect(item?.description).toBe(
+      "> Good morning, Jane. Call the bank slipped past Monday.\n\n---\nFrom @jane",
+    );
+
+    const down = submitFeedback(
+      db,
+      jane,
+      {
+        listId: list.id,
+        kind: "other",
+        message: "It named a list I'd left",
+        about: { area: "greeting", rating: "down", context: "x".repeat(5000) },
+      },
+      "web",
+    );
+    const said = getItem(db, owner, down.itemId);
+    expect(said?.title).toBe("👎 Agenda greeting: It named a list I'd left");
+    expect(said?.description?.split("\n\n")[1]).toBe(`> ${"x".repeat(1000)}`);
+
+    // Only areas and ratings the app knows.
+    const bad = (about: object) => () =>
+      submitFeedback(db, jane, { listId: list.id, kind: "other", message: "hi", about: about as never }, "web");
+    expect(bad({ area: "Anything I like", rating: "up", context: "" })).toThrow(/area/);
+    expect(bad({ area: "toString", rating: "up", context: "" })).toThrow(/area/);
+    expect(bad({ area: "greeting", rating: "meh", context: "" })).toThrow(/rating/);
+    expect(bad({ area: "greeting", rating: "up", context: { x: 1 } })).toThrow(/rating/);
+    // And a message still needed without one.
+    expect(() => submitFeedback(db, jane, { listId: list.id, kind: "bug", message: " " }, "web")).toThrow(/empty/);
+  });
+
   it("takes five an hour from one person", () => {
     const { db } = createTestDb();
     const owner = createTestUser(db);

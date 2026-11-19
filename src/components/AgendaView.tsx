@@ -9,6 +9,7 @@ import { nestItems } from "@/lib/itemTree";
 import { AGENDA_SECTIONS, agendaSection, type AgendaSection } from "@/lib/time";
 import { type ItemFilters, matchesFilters } from "@/lib/filters";
 import { AgendaGreeting } from "./AgendaGreeting";
+import type { FeedbackAbout } from "./FeedbackDialog";
 import { ItemDetailDialog } from "./ItemDetailDialog";
 import { ItemGroupView } from "./ItemList";
 import { ItemRow } from "./ItemRow";
@@ -41,6 +42,7 @@ export function AgendaView({
   overdueCollapsed: savedCollapsed,
   greet,
   firstName,
+  onFeedback,
   filters,
 }: {
   /** Active lists in board order; archived lists stay out. */
@@ -55,6 +57,8 @@ export function AgendaView({
   greet: boolean;
   /** The viewer's first name, for the greeting's opening line. */
   firstName: string | null;
+  /** Opens the feedback form on the greeting; absent where there's no form. */
+  onFeedback?: (about: FeedbackAbout) => void;
   filters: ItemFilters;
 }) {
   const today = useToday();
@@ -191,6 +195,7 @@ export function AgendaView({
             firstName={firstName}
             itemsById={byId}
             onHoverItem={setLit}
+            onFeedback={onFeedback}
             onOpenItem={detail.openDetail}
             onAction={(action) => {
               // Until there's a triage of its own: open Overdue and go to it.

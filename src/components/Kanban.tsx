@@ -44,7 +44,7 @@ import { NotificationsInbox } from "./NotificationsInbox";
 import { FollowsProvider } from "./follows";
 import { ShortcutsDialog } from "./ShortcutsDialog";
 import { NotificationLevelsProvider, saveLevel } from "./notification-levels";
-import { FeedbackDialog } from "./FeedbackDialog";
+import { type FeedbackAbout, FeedbackDialog } from "./FeedbackDialog";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { ProjectColumn } from "./ProjectColumn";
 import { PullToSearch } from "./PullToSearch";
@@ -439,6 +439,8 @@ export function Kanban({
   const [inboxOpen, setInboxOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  // What the open form is a thumbs up or down on, or null for the header's.
+  const [feedbackAbout, setFeedbackAbout] = useState<FeedbackAbout | null>(null);
   // Items opened from the palette get their own dialog here, since the item
   // may sit in a list the current view doesn't show.
   const boardItems = shown.flatMap((p) => itemsByProject[p.id] ?? []);
@@ -709,7 +711,10 @@ export function Kanban({
                     variant="outline"
                     size="sm"
                     aria-label="Send feedback"
-                    onClick={() => setFeedbackOpen(true)}
+                    onClick={() => {
+                      setFeedbackAbout(null);
+                      setFeedbackOpen(true);
+                    }}
                   >
                     <MessageSquarePlus />
                   </Button>
@@ -765,6 +770,14 @@ export function Kanban({
             overdueCollapsed={overdueCollapsed}
             // Greets in the viewer's day, so waits for their browser's timezone.
             greet={timeZone !== null}
+            onFeedback={
+              feedbackEnabled
+                ? (about) => {
+                    setFeedbackAbout(about);
+                    setFeedbackOpen(true);
+                  }
+                : undefined
+            }
             firstName={viewer?.name?.trim().split(/\s+/)[0] || null}
             itemsByProject={itemsByProject}
             assigneesByProject={assigneesByProject}
@@ -914,7 +927,9 @@ export function Kanban({
         <PullToSearch onOpen={() => setPaletteOpen(true)} />
 
         <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
-        {feedbackEnabled && <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />}
+        {feedbackEnabled && (
+          <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} about={feedbackAbout} />
+        )}
         <CommandPalette
           open={paletteOpen}
           onOpenChange={setPaletteOpen}
