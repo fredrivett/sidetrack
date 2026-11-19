@@ -179,7 +179,7 @@ describe("ItemDetailDialog nesting", () => {
 
   it("makes a plain task a sub-item of the task picked", () => {
     renderDialog(true, [], [other]);
-    const trigger = screen.getByRole("button", { name: /make it a sub-item of/ });
+    const trigger = screen.getByRole("button", { name: /make it a sub-item of/i });
     fireEvent.pointerDown(trigger);
     fireEvent.click(trigger);
     fireEvent.click(screen.getByRole("menuitem", { name: "Tidy up flat" }));
@@ -189,7 +189,7 @@ describe("ItemDetailDialog nesting", () => {
   it("isn't offered for a task with sub-items, which can't become one", () => {
     const child: Item = { ...item, id: "c1", title: "Lounge", parentId: "i1", number: 43 };
     renderDialog(true, [child], [other]);
-    expect(screen.queryByRole("button", { name: /make it a sub-item of/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /make it a sub-item of/i })).toBeNull();
   });
 });
 
@@ -206,7 +206,7 @@ describe("ItemDetailDialog checklist", () => {
 describe("ItemDetailDialog session replay", () => {
   it("shows the dialog's own words in replays, never the item's or people's", () => {
     renderDialog(true, [], [], { description: "Ask Sam about the venue", assigneeIds: ["u1"] });
-    for (const own of ["Description", "Labels", "Delete", "Complete", "Today"]) {
+    for (const own of ["Due date", "Repeat", "Label", "Checklist", "Delete"]) {
       expect(isReplaySafe(screen.getByText(own)), own).toBe(true);
     }
     expect(isReplaySafe(screen.getAllByText(item.title)[0])).toBe(false);
@@ -225,6 +225,12 @@ describe("ItemDetailDialog due date picker", () => {
   afterEach(() => vi.useRealTimers());
 
   function openPicker() {
+    // The quick dates and Pick date sit behind the Due chip.
+    if (!screen.queryByRole("button", { name: "Pick date" })) {
+      const chip = screen.getByRole("button", { name: /^Due/ });
+      fireEvent.pointerDown(chip);
+      fireEvent.click(chip);
+    }
     const trigger = screen.getByRole("button", { name: "Pick date" });
     fireEvent.pointerDown(trigger);
     fireEvent.click(trigger);

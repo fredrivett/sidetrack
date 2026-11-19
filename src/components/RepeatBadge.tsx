@@ -48,7 +48,7 @@ const EVERY_ONE = { day: "Daily", week: "Weekly", month: "Monthly" } as const;
  * A rule in a few words beside the repeat icon, which already says "every":
  * "Weekly", "2 weeks • weekends", "3 days".
  */
-function shortLabel({ every, unit, on }: Repeat): string {
+export function shortLabel({ every, unit, on }: Repeat): string {
   const gap = every === 1 ? EVERY_ONE[unit] : `${every} ${unit}s`;
   return on ? `${gap} • ${repeatOnName(on)}` : gap;
 }
