@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getEnv } from "../lib/env";
 import { getPostHog } from "../lib/posthog";
@@ -843,7 +843,9 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
  * reading, so it reads on, a page at a time, until the inbox is full.
  */
 export function listNotifications(db: Db, userId: string): NotificationView[] {
-  const order = [desc(notifications.createdAt), desc(notifications.id)];
+  // rowid breaks ties between ones made in the same millisecond, latest
+  // first; the id is random, so it would shuffle them.
+  const order = [desc(notifications.createdAt), desc(sql`${notifications}.rowid`)];
   const unseen = describe(
     db,
     userId,
@@ -864,9 +866,8 @@ export function listNotifications(db: Db, userId: string): NotificationView[] {
     seen.push(...describe(db, userId, rows));
     if (rows.length < INBOX_SIZE) break;
   }
-  return [...unseen, ...seen.slice(0, INBOX_SIZE)].sort(
-    (a, b) => b.createdAt - a.createdAt || (a.id < b.id ? 1 : -1),
-  );
+  // A stable sort, so ties keep the order the queries gave them.
+  return [...unseen, ...seen.slice(0, INBOX_SIZE)].sort((a, b) => b.createdAt - a.createdAt);
 }
 
 /**
