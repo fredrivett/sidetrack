@@ -114,15 +114,26 @@ export function writerInput(brief: AgendaBrief, pick: GreetingPick): WriterInput
  * it breaks a rule, so nothing it says unchecked reaches the page.
  */
 export function checkWriterOutput(raw: string, input: WriterInput): string | null {
+  const r = reviewWriterOutput(raw, input);
+  return "text" in r ? r.text : null;
+}
+
+/** Like checkWriterOutput, but saying which rule a rejected reply broke. */
+export function reviewWriterOutput(raw: string, input: WriterInput): { text: string } | { rejected: string } {
   // A reply split over lines is still one paragraph.
   const text = raw.trim().replace(/\s+/g, " ");
-  if (!text || text.length > MAX_CHARS) return null;
+  if (!text) return { rejected: "It was empty" };
+  if (text.length > MAX_CHARS) return { rejected: "It was too long" };
   // Plain sentences only: no links, addresses or phone numbers a title could
   // smuggle in, no markup or shouting.
-  if (/https?:|www\.|@|\b[a-z0-9-]+\.[a-z]{2,}\b|\d[\d\s-]{3,}\d|[<>*_#`[\]!]/i.test(text)) return null;
+  if (/https?:|www\.|@|\b[a-z0-9-]+\.[a-z]{2,}\b|\d[\d\s-]{3,}\d|[<>*_#`[\]!]/i.test(text)) {
+    return { rejected: "It had a link, address, number, markup or an exclamation mark" };
+  }
   // No scolding: "late" only for the hour ("it's late"), never a task.
   const hourLate = /\b(?:it's|it’s|it is|getting) late(?: (?:evening|night|in the day))?\b/gi;
-  if (/\boverdue\b|\blate\b/i.test(text.replace(hourLate, ""))) return null;
+  if (/\boverdue\b|\blate\b/i.test(text.replace(hourLate, ""))) {
+    return { rejected: "It called something overdue or late" };
+  }
   const TOKEN = /\{\{([^{}]*)\}\}/g;
   const named = new Set<number>();
   let bad = false;
@@ -140,34 +151,43 @@ export function checkWriterOutput(raw: string, input: WriterInput): string | nul
     bad = true;
     return "";
   });
-  if (bad || /[{}]/.test(out.replace(TOKEN, ""))) return null;
+  if (bad || /[{}]/.test(out.replace(TOKEN, ""))) {
+    return { rejected: "It used a link to an item or an action it wasn't given" };
+  }
   // The prose around the tokens: three sentences at most, and no title of
   // two words or more spelled out where its chip should be.
   const prose = out.replace(TOKEN, "x");
-  if ((prose.match(/[.?](\s|$)/g) ?? []).length > 3) return null;
+  if ((prose.match(/[.?](\s|$)/g) ?? []).length > 3) {
+    return { rejected: "It was more than three sentences" };
+  }
   for (const item of input.items.values()) {
     const title = item.title.trim().replace(/\s+/g, " ");
     if (!title.includes(" ")) continue;
     const escaped = title.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&");
     // Whole words, by Unicode letters, so "Call Sam?" and "Pay José" count.
-    if (new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "iu").test(prose)) return null;
+    if (new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "iu").test(prose)) {
+      return { rejected: "It wrote out an item's title instead of linking it" };
+    }
   }
   // When the picked moves name items, the greeting names at least one.
-  if (input.picked > 0 && named.size === 0) return null;
-  return out;
+  if (input.picked > 0 && named.size === 0) {
+    return { rejected: "It didn't name any of the items it was given" };
+  }
+  return { text: out };
 }
 
 /**
  * The greeting's body for `brief` and `pick`, written by Claude, checked, with
- * page tokens. Null when the request fails, times out (6 s) or the output
- * breaks a rule. `fetchImpl` is injectable for tests.
+ * page tokens; or why there's none: the request failed, timed out (6 s) or
+ * the reply broke a rule. Never the rejected reply itself, which may carry
+ * text from a title. `fetchImpl` is injectable for tests.
  */
 export async function writeGreeting(
   brief: AgendaBrief,
   pick: GreetingPick,
   apiKey: string,
   fetchImpl: typeof fetch = fetch,
-): Promise<string | null> {
+): Promise<{ text: string } | { failed: string }> {
   const input = writerInput(brief, pick);
   try {
     const res = await fetchImpl(ENDPOINT, {
@@ -192,19 +212,20 @@ export async function writeGreeting(
       }),
       signal: AbortSignal.timeout(6000),
     });
-    if (!res.ok) return null;
+    if (!res.ok) return { failed: `Claude didn't answer (HTTP ${res.status})` };
     const body = (await res.json()) as {
       stop_reason?: string;
       content?: Array<{ type: string; text?: string }>;
     };
     // Cut short or refused: not a greeting to show, however tidy it looks.
-    if (body.stop_reason !== "end_turn") return null;
+    if (body.stop_reason !== "end_turn") return { failed: "Claude's reply was cut short" };
     const text = (body.content ?? [])
       .filter((b) => b.type === "text")
       .map((b) => b.text ?? "")
       .join("");
-    return checkWriterOutput(text, input);
+    const r = reviewWriterOutput(text, input);
+    return "text" in r ? r : { failed: `Claude's reply was turned down: ${r.rejected.toLowerCase()}` };
   } catch {
-    return null;
+    return { failed: "Claude didn't answer in time" };
   }
 }

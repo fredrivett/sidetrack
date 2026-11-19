@@ -15,6 +15,7 @@ import {
   ResponsiveDialogTitle,
 } from "./ui/responsive-dialog";
 import type { FeedbackAbout } from "./FeedbackDialog";
+import { GreetingExplainDialog } from "./GreetingExplainDialog";
 import { useToday } from "./use-day-start";
 
 const READ_MS = 2000;
@@ -112,6 +113,7 @@ export function AgendaGreeting({
   // Undefined while it loads; null when there's none to show.
   const [greeting, setGreeting] = useState<Greeting | null | undefined>(undefined);
   const [othersOpen, setOthersOpen] = useState(false);
+  const [explainOpen, setExplainOpen] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -214,10 +216,10 @@ export function AgendaGreeting({
               );
             })}
           </p>
-            {/* On Claude's greetings only, so a thumbs down is about Claude. */}
-            {onFeedback && greeting.written && (
-              <div className="mt-2 flex animate-in gap-1 fade-in duration-500">
-                {(["up", "down"] as const).map((rating) => {
+            {((onFeedback && greeting.written) || greeting.trace) && (
+            <div className="mt-2 flex animate-in items-center gap-1 fade-in duration-500">
+                {/* On Claude's greetings only, so a thumbs down is about Claude. */}
+                {onFeedback && greeting.written && (["up", "down"] as const).map((rating) => {
                   const Icon = rating === "up" ? ThumbsUp : ThumbsDown;
                   return (
                     <button
@@ -232,7 +234,19 @@ export function AgendaGreeting({
                     </button>
                   );
                 })}
+                {greeting.trace && (
+                  <button
+                    type="button"
+                    onClick={() => setExplainOpen(true)}
+                    className="rounded-md px-1.5 py-1 text-xs text-neutral-400 outline-none hover:bg-neutral-100 hover:text-neutral-600 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:text-neutral-500 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+                  >
+                    What is this?
+                  </button>
+                )}
               </div>
+            )}
+            {greeting.trace && (
+              <GreetingExplainDialog open={explainOpen} onOpenChange={setExplainOpen} trace={greeting.trace} />
             )}
           </>
         )

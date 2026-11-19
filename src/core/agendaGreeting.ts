@@ -8,10 +8,10 @@
 // `{{action:<name>|<words>}}`, the words being what the reader taps.
 
 import { and as both, eq, inArray } from "drizzle-orm";
-import { pickGreeting, scoreGreeting } from "../lib/greetingJev";
-import { writeGreeting } from "../lib/greetingWriter";
+import { type GreetingPick, type Moment, pickGreeting, scoreGreeting } from "../lib/greetingJev";
+import { WRITER_MODEL, writeGreeting } from "../lib/greetingWriter";
 import { addDays, dayOf } from "../lib/time";
-import { type AgendaBrief, type BriefItem, buildAgendaBrief } from "./agendaBrief";
+import { type AgendaBrief, type BriefItem, buildAgendaBrief, type PartOfDay } from "./agendaBrief";
 import type { Db } from "./db";
 import { hasProjectAccess } from "./access";
 import { agendaGreetings, items, projects } from "./schema";
@@ -28,14 +28,107 @@ export interface Greeting {
   others: Array<{ id: string; title: string }>;
   /** Whether Claude wrote it, rather than the templates. */
   written: boolean;
+  /** How it was worked out, for "What is this?". Absent on ones kept from before it was recorded. */
+  trace?: GreetingTrace;
+}
+
+/** How a greeting was worked out: what it looked at and what it decided. */
+export interface GreetingTrace {
+  day: string;
+  partOfDay: PartOfDay;
+  /** When it was worked out, and the viewer's time zone then, to show it in. */
+  at: number;
+  timeZone: string;
+  /** Why the built-in greeting shows instead of Claude's; null when it's Claude's. */
+  why: string | null;
+  /** What it read off the board, as counts. */
+  looked: {
+    dueToday: number;
+    doneToday: number;
+    slipped: number;
+    undated: number;
+    stale: number;
+    finishedSince: number;
+    /** The day it looks back to, or null the first time. */
+    sinceDay: string | null;
+  };
+  /** Each thing it could say, Jev's score and why it was or wasn't said; null before Jev. */
+  moments: Array<{ moment: Moment; score: number; said: boolean; why: string }> | null;
+  /** The items Jev weighed, its score for each, and what came of it; null before Jev. */
+  items: Array<{ id: string; title: string; list: string; score: number; named: boolean; other: boolean }> | null;
+  /** The model that wrote it, when one did. */
+  model: string | null;
+}
+
+/** What agenda_greetings keeps: Claude's greeting, or a failed ask's trace with no text. */
+export type StoredGreeting = Omit<Greeting, "hello" | "written">;
+
+function traceOf(
+  brief: AgendaBrief,
+  timeZone: string,
+  now: number,
+  why: string | null,
+  jev?: { scores: { items: Record<string, number> }; pick: GreetingPick; named: string },
+): GreetingTrace {
+  const open = brief.dueToday.filter((i) => i.completedAt === null).length;
+  const all = new Map(
+    [...brief.dueToday, ...brief.overdue, ...brief.undated, ...brief.stale].map((i) => [i.id, i]),
+  );
+  const others = new Set(jev?.pick.others.map((i) => i.id));
+  return {
+    day: brief.today,
+    partOfDay: brief.partOfDay,
+    at: now,
+    timeZone,
+    why,
+    looked: {
+      dueToday: open,
+      doneToday: brief.dueToday.length - open,
+      slipped: brief.overdue.length,
+      undated: brief.undated.length,
+      stale: brief.stale.length,
+      finishedSince: brief.lookBack.finishedCount,
+      sinceDay: brief.sinceDay,
+    },
+    moments: jev
+      ? jev.pick.considered
+      : null,
+    items: jev
+      ? Object.entries(jev.scores.items)
+          .flatMap(([id, score]) => {
+            const i = all.get(id);
+            return i
+              ? [
+                  {
+                    id,
+                    title: i.title,
+                    list: i.list,
+                    score,
+                    named: jev.named.includes(`{{item:${id}}}`),
+                    other: others.has(id),
+                  },
+                ]
+              : [];
+          })
+          .sort((a, b) => b.score - a.score)
+      : null,
+    model: why ? null : WRITER_MODEL,
+  };
 }
 
 /**
  * Whether every item `greeting` names is still on a list the viewer can
  * open, so a cached one never shows a title from a list they've left.
  */
-function stillVisible(db: Db, viewerId: string, greeting: { titles: Record<string, string>; others: Array<{ id: string }> }): boolean {
-  const ids = [...new Set([...Object.keys(greeting.titles), ...greeting.others.map((o) => o.id)])];
+function stillVisible(db: Db, viewerId: string, greeting: StoredGreeting): boolean {
+  // Every id it holds a title for: named, in others, or weighed in the trace.
+  const ids = [
+    ...new Set([
+      ...Object.keys(greeting.titles),
+      ...greeting.others.map((o) => o.id),
+      ...(greeting.trace?.items ?? []).map((i) => i.id),
+    ]),
+  ];
   if (ids.length === 0) return true;
   const seen = db
     .select({ id: items.id })
@@ -82,11 +175,15 @@ function titlesIn(text: string, brief: AgendaBrief): Record<string, string> {
   return titles;
 }
 
-function fromTemplate(brief: AgendaBrief, name: string | null): Greeting {
+function fromTemplate(
+  brief: AgendaBrief,
+  name: string | null,
+  trace: GreetingTrace,
+): Greeting {
   const hello = helloFor(brief, name);
   // templateGreeting always opens with the hello.
   const text = templateGreeting(brief, name).slice(hello.length).trimStart();
-  return { hello, text, titles: titlesIn(text, brief), others: [], written: false };
+  return { hello, text, titles: titlesIn(text, brief), others: [], written: false, trace };
 }
 
 /**
@@ -100,7 +197,7 @@ export function greetingFor(
   now = Date.now(),
 ): Greeting {
   const { brief, name } = briefFor(db, viewerId, timeZone, now);
-  return fromTemplate(brief, name);
+  return fromTemplate(brief, name, traceOf(brief, timeZone, now, "AI isn't set up on this server"));
 }
 
 /**
@@ -120,25 +217,36 @@ export async function writtenGreetingFor(
   fetchImpl: typeof fetch = fetch,
 ): Promise<Greeting> {
   const { brief, name } = briefFor(db, viewerId, timeZone, now);
-  const template = fromTemplate(brief, name);
-  if (!keys.jev || !keys.anthropic) return template;
+  const hello = helloFor(brief, name);
+  const template = (why: string, trace = traceOf(brief, timeZone, now, why)) =>
+    fromTemplate(brief, name, { ...trace, why });
+  if (!keys.jev || !keys.anthropic) return template("AI isn't set up on this server");
   // One greeting a morning, afternoon and evening: it says what mattered
   // as that part of the day began, and isn't rewritten as the reader ticks
   // things off or a read stamp moves the look-back.
   const key = `${brief.today}:${brief.partOfDay}`;
   const row = db.select().from(agendaGreetings).where(eq(agendaGreetings.userId, viewerId)).get();
-  if (row?.key === key && row.greeting && stillVisible(db, viewerId, row.greeting)) {
-    return { hello: template.hello, ...row.greeting, written: true };
-  }
+  const same = row?.key === key ? row.greeting : null;
+  if (same?.text && stillVisible(db, viewerId, same)) return { hello, ...same, written: true };
   // Counted by UTC day, not the viewer's: their timezone is theirs to
   // change, and a new one mustn't start a new count.
   const utcDay = dayOf(now, "UTC");
   const asks = row?.askedDay === utcDay ? row.asks : 0;
   if (everyone.day !== utcDay) Object.assign(everyone, { day: utcDay, asks: 0 });
   // A write that failed for this part of the day likely fails again soon.
-  const wait = row?.key === key && !row.greeting ? RETRY_FAILED_MS : ASK_EVERY_MS;
-  if ((row && now - row.askedAt < wait) || asks >= ASKS_PER_DAY) return template;
-  if (everyone.asks >= ASKS_PER_DAY_ALL) return template;
+  const failed = row?.key === key && !same?.text;
+  const wait = failed ? RETRY_FAILED_MS : ASK_EVERY_MS;
+  if (row && now - row.askedAt < wait) {
+    const minutes = Math.ceil((row.askedAt + wait - now) / 60_000);
+    if (!failed) return template(`One was asked for moments ago; it asks again in ${minutes} min`);
+    if (!same) return template("Claude is writing it, or the last try didn't finish");
+    const last = same.trace?.why ?? "The last try didn't work";
+    const why = `${last}. It tries again in ${minutes} min`;
+    // Its trace only while every title in it is still the viewer's to see.
+    return stillVisible(db, viewerId, same) ? template(why, same.trace) : template(why);
+  }
+  if (asks >= ASKS_PER_DAY) return template(`You've had today's ${ASKS_PER_DAY} written greetings`);
+  if (everyone.asks >= ASKS_PER_DAY_ALL) return template("This server has written all it may today");
   // Count the ask before awaiting it, so loads at the same moment ask once.
   everyone.asks += 1;
   const asked = { key, greeting: null, askedAt: now, askedDay: utcDay, asks: asks + 1 };
@@ -147,22 +255,36 @@ export async function writtenGreetingFor(
     .values({ userId: viewerId, ...asked })
     .onConflictDoUpdate({ target: agendaGreetings.userId, set: asked })
     .run();
+  // Only if no later ask has claimed the row since.
+  const keep = (greeting: StoredGreeting) => {
+    // audit-exempt: as above.
+    db.update(agendaGreetings)
+      .set({ greeting })
+      .where(both(eq(agendaGreetings.userId, viewerId), eq(agendaGreetings.key, key)))
+      .run();
+  };
 
   const scores = await scoreGreeting(brief, keys.jev, fetchImpl);
-  const pick = scores && pickGreeting(brief, scores);
-  const text = pick && (await writeGreeting(brief, pick, keys.anthropic, fetchImpl));
-  if (!pick || !text) return template;
-  const greeting = {
-    text,
-    titles: titlesIn(text, brief),
+  if (!scores) {
+    const trace = traceOf(brief, timeZone, now, "Jev didn't answer, so there was nothing to go on");
+    keep({ text: "", titles: {}, others: [], trace });
+    return template(trace.why ?? "", trace);
+  }
+  const pick = pickGreeting(brief, scores);
+  const written = await writeGreeting(brief, pick, keys.anthropic, fetchImpl);
+  if ("failed" in written) {
+    const trace = traceOf(brief, timeZone, now, written.failed, { scores, pick, named: "" });
+    keep({ text: "", titles: {}, others: [], trace });
+    return template(written.failed, trace);
+  }
+  const greeting: StoredGreeting = {
+    text: written.text,
+    titles: titlesIn(written.text, brief),
     others: pick.others.map((i) => ({ id: i.id, title: i.title })),
+    trace: traceOf(brief, timeZone, now, null, { scores, pick, named: written.text }),
   };
-  // audit-exempt: as above. Only if no later ask has claimed the row since.
-  db.update(agendaGreetings)
-    .set({ greeting })
-    .where(both(eq(agendaGreetings.userId, viewerId), eq(agendaGreetings.key, key)))
-    .run();
-  return { hello: template.hello, ...greeting, written: true };
+  keep(greeting);
+  return { hello, ...greeting, written: true };
 }
 
 /** What an action token does when tapped. */

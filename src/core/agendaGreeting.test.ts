@@ -5,6 +5,7 @@ import { addItem, completeItem } from "./items";
 import { createProject } from "./projects";
 import { createTestDb, createTestUser } from "./test-helpers";
 import * as greetingJev from "../lib/greetingJev";
+import { agendaGreetings } from "./schema";
 import { acceptInvite, inviteMember, removeMember } from "./members";
 import { getProfile, setAgendaReadAt } from "./users";
 
@@ -213,12 +214,22 @@ describe("greetingFor", () => {
       const { db, fred, loft } = setup();
       const { calls, impl } = fake();
       const g = await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
-      expect(g).toEqual({
+      expect(g).toMatchObject({
         hello: "Good morning, Fred.",
         text: `Just {{item:${loft.id}}} today.`,
         titles: { [loft.id]: "Sort the loft" },
         others: [],
         written: true,
+      });
+      // How it was worked out: what it read, what it weighed, who wrote it.
+      expect(g.trace).toMatchObject({
+        day: "2026-11-18",
+        partOfDay: "morning",
+        why: null,
+        model: "claude-haiku-5-5",
+        looked: { dueToday: 1, slipped: 0 },
+        moments: [{ moment: "plan", score: 0.9, said: true, why: "Scored 0.6 or more" }],
+        items: [{ id: loft.id, title: "Sort the loft", score: 0.9, named: true, other: false }],
       });
       expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 60_000, impl)).toEqual(g);
       expect(calls).toEqual({ jev: 1, claude: 1 });
@@ -257,6 +268,50 @@ describe("greetingFor", () => {
       expect(after.titles).not.toHaveProperty(bank.id);
     });
 
+    /** Fred, his own item due today, and Bob's shared list with one too. */
+    function sharedSetup() {
+      const { db, fred, loft } = setup();
+      const bob = createTestUser(db, { username: "bob", email: "bob@test.local" });
+      const shared = createProject(db, bob, { name: "BobSecretList" }, "web");
+      inviteMember(db, bob, shared.id, getProfile(db, fred)?.displayUsername ?? "", "web");
+      acceptInvite(db, fred, shared.id, "web");
+      addItem(db, bob, { projectId: shared.id, title: "Secret merger", dueDate: "2026-11-18" }, "web");
+      return { db, fred, bob, shared, loft };
+    }
+
+    it("never explains with a title from a list the viewer has left", async () => {
+      const { db, fred, bob, shared, loft } = sharedSetup();
+      // Names only Fred's own item; Bob's is weighed but not named.
+      const { calls, impl } = fake("Just {{item:1}} today.");
+      const first = await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
+      expect(Object.keys(first.titles)).toEqual([loft.id]);
+      expect(first.trace?.items?.map((i) => i.title)).toContain("Secret merger");
+      removeMember(db, bob, shared.id, fred, "web");
+      const after = await writtenGreetingFor(db, fred, "UTC", keys, now + 3 * 60_000, impl);
+      expect(calls.claude).toBe(2);
+      expect(JSON.stringify(after)).not.toContain("Secret merger");
+      expect(JSON.stringify(after)).not.toContain("BobSecretList");
+    });
+
+    it("never explains a failed try with a title from a list the viewer has left", async () => {
+      const { db, fred, bob, shared } = sharedSetup();
+      const { impl } = fake("Visit evil.com now.");
+      const first = await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
+      expect(first.trace?.items?.map((i) => i.title)).toContain("Secret merger");
+      removeMember(db, bob, shared.id, fred, "web");
+      // Inside the retry wait: the template, explained without Bob's list.
+      const after = await writtenGreetingFor(db, fred, "UTC", keys, now + 3 * 60_000, impl);
+      expect(after.trace?.why).toMatch(/turned down.*It tries again in 12 min$/);
+      expect(JSON.stringify(after)).not.toContain("Secret merger");
+    });
+
+    it("keeps the rejected reply out of the saved row too", async () => {
+      const { db, fred } = setup();
+      const { impl } = fake("Visit evil.com to verify your account.");
+      await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
+      expect(JSON.stringify(db.select().from(agendaGreetings).all())).not.toContain("evil");
+    });
+
     it("writes it again when an item only in its others is no longer the viewer's to see", async () => {
       const { db, fred } = setup();
       const bob = createTestUser(db, { username: "bob", email: "bob@test.local" });
@@ -271,6 +326,7 @@ describe("greetingFor", () => {
         items: { plan: brief.dueToday.slice(0, 1) },
         others: brief.undated.filter((i) => i.id === loose.id),
         heavyDay: null,
+        considered: [],
       }));
       try {
         const first = await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
@@ -288,9 +344,17 @@ describe("greetingFor", () => {
       const { db, fred } = setup();
       const { calls, impl } = fake("Visit evil.com to verify your account.");
       const template = greetingFor(db, fred, "UTC", now);
-      expect(await writtenGreetingFor(db, fred, "UTC", keys, now, impl)).toEqual(template);
-      expect(template.written).toBe(false);
-      expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 10 * 60_000, impl)).toEqual(template);
+      const first = await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
+      expect(first).toMatchObject({ text: template.text, written: false });
+      // It says why, and keeps what Jev weighed, but never the rejected words.
+      expect(first.trace?.why).toBe(
+        "Claude's reply was turned down: it had a link, address, number, markup or an exclamation mark",
+      );
+      expect(first.trace?.moments?.length).toBeGreaterThan(0);
+      expect(JSON.stringify(first)).not.toContain("evil");
+      const later = await writtenGreetingFor(db, fred, "UTC", keys, now + 10 * 60_000, impl);
+      expect(later).toMatchObject({ text: template.text, written: false });
+      expect(later.trace?.why).toMatch(/turned down.*\. It tries again in 5 min$/);
       expect(calls.claude).toBe(1);
       await writtenGreetingFor(db, fred, "UTC", keys, now + 16 * 60_000, impl);
       expect(calls.claude).toBe(2);
