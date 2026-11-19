@@ -1,0 +1,1 @@
+ALTER TABLE `labels` ADD `archived_at` integer;

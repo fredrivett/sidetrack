@@ -25,6 +25,8 @@ import {
 import {
   type LabelEmoji,
   addLabel as addLabelCore,
+  deleteLabel as deleteLabelCore,
+  listLabelUsage as listLabelUsageCore,
   listLabels as listLabelsCore,
   updateLabel as updateLabelCore,
 } from "@/core/labels";
@@ -853,7 +855,7 @@ export async function addLabelAction(
 
 export async function updateLabelAction(
   id: string,
-  patch: { name?: string; emoji?: string | null; emojiChosen?: boolean },
+  patch: { name?: string; emoji?: string | null; emojiChosen?: boolean; archived?: boolean },
 ) {
   const userId = await requireUserId();
   const { db } = getDb();
@@ -866,6 +868,20 @@ export async function updateLabelAction(
   );
   refresh();
   return l;
+}
+
+/** `token` is from the label's usage, as listLabelUsageAction gave it. */
+export async function deleteLabelAction(id: string, token: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  deleteLabelCore(db, userId, id, token, SOURCE);
+  refresh();
+}
+
+export async function listLabelUsageAction(projectId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  return listLabelUsageCore(db, userId, projectId);
 }
 
 export async function listLabelsAction(projectId: string) {

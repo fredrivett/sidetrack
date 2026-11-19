@@ -484,6 +484,9 @@ export const labels = sqliteTable(
     name: text("name").notNull(),
     emoji: text("emoji"),
     emojiChosen: integer("emoji_chosen", { mode: "boolean" }).notNull().default(false),
+    // When it was archived: it stays on the items that have it, but isn't
+    // offered for new ones. null = in use.
+    archivedAt: integer("archived_at"),
   },
   (t) => [uniqueIndex("labels_project_name").on(t.projectId, t.name)],
 );

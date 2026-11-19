@@ -94,12 +94,9 @@ export async function withAutoLabelEmoji(
  * The label patch with the emoji brought up to date, when it renames a label
  * nobody chose an emoji for and sets no emoji itself.
  */
-export async function withAutoLabelRename(
-  db: Db,
-  userId: string,
-  id: string,
-  patch: { name?: string; emoji?: string | null; emojiChosen?: boolean },
-) {
+export async function withAutoLabelRename<
+  P extends { name?: string; emoji?: string | null; emojiChosen?: boolean },
+>(db: Db, userId: string, id: string, patch: P): Promise<P> {
   const name = patch.name?.trim();
   if (!name || patch.emoji !== undefined) return patch;
   const label = getLabel(db, userId, id);

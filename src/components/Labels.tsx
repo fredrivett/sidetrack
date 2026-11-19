@@ -44,7 +44,7 @@ export function LabelBadge({
 }) {
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] text-neutral-500 dark:bg-neutral-800 ${className}`}
+      className={`inline-flex items-center gap-1 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300 ${className}`}
     >
       {emoji && <span className="text-[11px] leading-none">{emoji}</span>}
       {name}
@@ -91,7 +91,8 @@ export function SavedLabelChip({
   disabled,
 }: {
   label: Label;
-  onRemove: () => void;
+  /** Takes it off the item; omit where it can't be removed. */
+  onRemove?: () => void;
   /** The rename saved, for a form holding the item's labels by name. */
   onRenamed?: (name: string) => void;
   disabled?: boolean;
@@ -146,7 +147,9 @@ export function SavedLabelChip({
         className="min-w-0 truncate rounded pr-1 pl-0.5 hover:bg-muted touch:py-1.5"
         inputClassName="field-sizing-content h-6 min-w-12 pr-1 pl-0.5 py-0 text-sm"
       />
-      <RemoveButton name={label.name} onRemove={onRemove} disabled={saving || disabled} />
+      {onRemove && (
+        <RemoveButton name={label.name} onRemove={onRemove} disabled={saving || disabled} />
+      )}
     </span>
   );
 }
@@ -196,6 +199,7 @@ interface Option {
   emoji: string | null;
   /** The "Create …" row: picking it creates `name`, the text typed. */
   create?: boolean;
+  archived?: boolean;
 }
 
 /**
@@ -228,9 +232,15 @@ export function LabelPicker({
     () => suggestLabelEmojiAction(projectId, typed),
     Boolean(typed) && !exists && !disabled,
   );
+  // Archived labels stay on their items but aren't offered, unless typed in
+  // full, so one can be used again rather than clash with a new one.
   const options: Option[] = labels
-    .filter((l) => !selected.includes(l.name))
-    .map((l) => ({ name: l.name, emoji: l.emoji }));
+    .filter(
+      (l) =>
+        !selected.includes(l.name) &&
+        (l.archivedAt === null || l.name.toLowerCase() === typed.toLowerCase()),
+    )
+    .map((l) => ({ name: l.name, emoji: l.emoji, archived: l.archivedAt !== null }));
   const items: Option[] =
     typed && !exists
       ? [...options, { name: typed, emoji: suggestions[0] ?? null, create: true }]
@@ -277,6 +287,7 @@ export function LabelPicker({
                 <span className="truncate">
                   {item.emoji && <span className="mr-1">{item.emoji}</span>}
                   {item.name}
+                  {item.archived && <span className="ml-1 text-muted-foreground">(archived)</span>}
                 </span>
               )}
             </ComboboxItem>

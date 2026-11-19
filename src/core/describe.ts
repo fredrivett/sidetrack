@@ -321,14 +321,20 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
         t("added label "),
         { text: event.emoji ? `${event.emoji} ${event.name}` : event.name, em: "place", quote: true },
       ];
+    case "label.deleted":
+      return [
+        t("removed label "),
+        { text: event.emoji ? `${event.emoji} ${event.name}` : event.name, em: "place", quote: true },
+      ];
     case "label.updated": {
-      const { name, emoji } = event.changes;
+      const { name, emoji, archived } = event.changes;
       const changes = [
         name && `renamed to "${name.to}"`,
         emoji &&
           (emoji.kept
             ? emoji.to ? `chose ${emoji.to}` : "chose no emoji"
             : emoji.to ? `emoji ${emoji.to}` : "emoji removed"),
+        archived !== undefined && (archived ? "archived" : "restored"),
       ].filter((p): p is string => Boolean(p));
       return [
         t("updated label "),

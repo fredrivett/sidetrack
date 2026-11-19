@@ -197,7 +197,16 @@ export type ChangeEvent =
         name?: { from: string; to: string };
         /** kept: the emoji it had (Jev's), chosen as is. */
         emoji?: { to: string | null; kept?: true };
+        /** true: archived; false: back in use. */
+        archived?: boolean;
       };
+    }
+  | {
+      type: "label.deleted";
+      projectId: string;
+      labelId: string;
+      name: string;
+      emoji: string | null;
     }
   // Spaces
   | ({ type: "space.created"; color: SpaceColor | null } & SpaceAt)
@@ -374,8 +383,14 @@ export function auditColumns(event: ChangeEvent): {
       return member("delete", event.membershipId, event.projectId);
     case "label.created":
     case "label.updated":
+    case "label.deleted":
       return {
-        action: event.type === "label.created" ? "create" : "update",
+        action:
+          event.type === "label.created"
+            ? "create"
+            : event.type === "label.updated"
+              ? "update"
+              : "delete",
         entityType: "label",
         entityId: event.labelId,
         projectId: event.projectId,

@@ -72,6 +72,7 @@ const LABELS: Record<string, Label[]> = Object.fromEntries(
       name,
       emoji,
       emojiChosen: true,
+      archivedAt: null,
     })),
   ]),
 );

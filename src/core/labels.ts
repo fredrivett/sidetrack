@@ -1,4 +1,5 @@
-import { and, asc, eq } from "drizzle-orm";
+import { createHash } from "node:crypto";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { isEmoji } from "@/lib/projectIcon";
 import { hasProjectAccess } from "./access";
@@ -134,6 +135,7 @@ export function addLabel(
     name,
     emoji: normalizeEmoji(input.emoji ?? null),
     emojiChosen: input.emoji !== undefined && input.emojiChosen !== false,
+    archivedAt: null,
   };
   db.transaction((tx) => {
     tx.insert(labels).values(label).run();
@@ -159,13 +161,14 @@ export function getLabel(db: Db, userId: string, id: string): Label | undefined 
  * Rename a label or change its emoji. A rename carries over to every item
  * with the label. `emoji` is someone's choice unless `emojiChosen` is false,
  * when it's Jev's suggestion for the (new) name: that never replaces an
- * emoji someone chose, including their choice of none.
+ * emoji someone chose, including their choice of none. An archived label
+ * stays on the items that have it, but isn't offered for new ones.
  */
 export function updateLabel(
   db: Db,
   userId: string,
   id: string,
-  patch: { name?: string; emoji?: string | null; emojiChosen?: boolean },
+  patch: { name?: string; emoji?: string | null; emojiChosen?: boolean; archived?: boolean },
   source: AuditOrigin,
 ): Label {
   const existing = getLabel(db, userId, id);
@@ -199,6 +202,10 @@ export function updateLabel(
       // Choosing the emoji it already had (Jev's) is still a choice.
       if (emoji === existing.emoji) changes.emoji = { to: emoji, kept: true };
     }
+  }
+  if (patch.archived !== undefined && patch.archived !== (existing.archivedAt !== null)) {
+    next.archivedAt = patch.archived ? Date.now() : null;
+    changes.archived = patch.archived;
   }
   if (Object.keys(next).length === 0) return existing;
 
@@ -236,4 +243,109 @@ export function updateLabel(
     });
   });
   return { ...existing, ...next };
+}
+
+/** An item a label is on, as the person deciding about the label sees it. */
+export interface LabelUsageItem {
+  id: string;
+  number: number;
+  title: string;
+  completedAt: number | null;
+}
+
+/**
+ * Which items a label is on: open ones, then done ones (newest first), and
+ * a token naming exactly that, which deleteLabel needs, so a delete only
+ * goes ahead on the items the person was shown.
+ */
+export interface LabelUsage {
+  active: LabelUsageItem[];
+  done: LabelUsageItem[];
+  token: string;
+}
+
+/** Every label on a list with its usage, by label id. */
+export function listLabelUsage(
+  db: Db,
+  userId: string,
+  projectId: string,
+): Record<string, LabelUsage> {
+  const all = listLabels(db, userId, projectId);
+  if (all.length === 0) return {};
+  const rows = db
+    .select({
+      id: items.id,
+      number: items.number,
+      title: items.title,
+      completedAt: items.completedAt,
+      labels: items.labels,
+    })
+    .from(items)
+    .where(eq(items.projectId, projectId))
+    .orderBy(desc(items.completedAt), asc(items.number))
+    .all();
+  return Object.fromEntries(
+    all.map((label) => {
+      const on = rows
+        .filter((r) => r.labels.includes(label.name))
+        .map(({ id, number, title, completedAt }) => ({ id, number, title, completedAt }));
+      const active = on.filter((it) => it.completedAt === null);
+      const done = on.filter((it) => it.completedAt !== null);
+      const token = createHash("sha256")
+        .update(JSON.stringify({ userId, id: label.id, name: label.name, on: on.map((it) => it.id) }))
+        .digest("hex")
+        .slice(0, 16);
+      return [label.id, { active, done, token }];
+    }),
+  );
+}
+
+export function labelUsage(db: Db, userId: string, id: string): LabelUsage | undefined {
+  const label = getLabel(db, userId, id);
+  return label && listLabelUsage(db, userId, label.projectId)[id];
+}
+
+/**
+ * Delete a label from its list, taking it off every item that has it. Needs
+ * the token from its usage, and is refused if the items it's on have
+ * changed since.
+ */
+export function deleteLabel(
+  db: Db,
+  userId: string,
+  id: string,
+  token: string,
+  source: AuditOrigin,
+): void {
+  const existing = getLabel(db, userId, id);
+  if (!existing) throw new Error(`label not found: ${id}`);
+  if (labelUsage(db, userId, id)?.token !== token) {
+    throw new Error("the label's items have changed since you looked: check its usage again");
+  }
+  db.transaction((tx) => {
+    tx.delete(labels).where(eq(labels.id, id)).run();
+    const tagged = tx
+      .select({ id: items.id, labels: items.labels })
+      .from(items)
+      .where(eq(items.projectId, existing.projectId))
+      .all()
+      .filter((it) => it.labels.includes(existing.name));
+    for (const it of tagged) {
+      tx.update(items)
+        .set({ labels: it.labels.filter((l) => l !== existing.name) })
+        .where(eq(items.id, it.id))
+        .run();
+    }
+    recordAudit(tx as unknown as Db, {
+      actor: userId,
+      source,
+      event: {
+        type: "label.deleted",
+        projectId: existing.projectId,
+        labelId: id,
+        name: existing.name,
+        emoji: existing.emoji,
+      },
+    });
+  });
 }
