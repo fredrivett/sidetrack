@@ -189,7 +189,7 @@ export function CommentCard({
   const users = c.author ? [c.author] : [];
   const agents = c.agentName ? [{ id: c.id, name: c.agentName }] : [];
   return (
-    <li className="group/comment rounded-lg border border-neutral-200 bg-neutral-50/70 px-3 pt-2 pb-2.5 dark:border-neutral-800 dark:bg-neutral-800/30">
+    <li className="group/comment rounded-lg bg-neutral-50 px-3 pt-2 pb-2.5 ring-1 ring-neutral-950/5 dark:bg-white/[0.03] dark:ring-white/5">
       <div className="flex h-6 items-center gap-2 text-[13px]">
         {/* The agent ahead of the person it wrote for, as in Activity. */}
         {(users.length > 0 || agents.length > 0) && (
@@ -291,7 +291,9 @@ function Composer({
   return (
     <div
       aria-busy={saving || undefined}
-      className={`rounded-lg border border-input transition-[color,box-shadow,opacity] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 dark:bg-input/30 ${saving ? "opacity-60" : ""}`}
+      // One line until it's focused or holds a draft, then room to write
+      // and the button to send it.
+      className={`group/composer rounded-lg border border-input bg-background transition-[color,box-shadow,opacity] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 dark:bg-input/30 ${saving ? "opacity-60" : ""}`}
     >
       <MentionTextarea
         people={people}
@@ -307,9 +309,11 @@ function Composer({
         placeholder="Leave a comment…"
         maxLength={COMMENT_MAX}
         aria-label="Add a comment"
-        className="flex field-sizing-content max-h-60 min-h-12 w-full resize-none bg-transparent px-3 pt-2.5 pb-0 text-base outline-none transition-colors placeholder:text-muted-foreground md:text-sm"
+        className={`flex field-sizing-content max-h-60 w-full resize-none bg-transparent px-3 py-1.5 text-base outline-none transition-colors placeholder:text-muted-foreground focus:min-h-16 focus:pb-0 md:text-sm ${empty ? "min-h-9" : "min-h-16 pb-0"}`}
       />
-      <div className="flex justify-end px-2 pb-2">
+      <div
+        className={`justify-end px-2 pb-2 ${empty && !saving ? "hidden group-focus-within/composer:flex" : "flex"}`}
+      >
         <Button
           type="button"
           size="sm"

@@ -2,18 +2,18 @@
 
 import {
   Bell,
-  BellOff,
+  CalendarDays,
   Check,
   CheckCircle2,
-  ChevronDown,
   ChevronRight,
   Circle,
-  CircleDashed,
   Copy,
+  CornerLeftUp,
   ExternalLink,
   GitBranch,
   IndentDecrease,
   IndentIncrease,
+  Repeat as RepeatIcon,
   Trash2,
   UserRound,
 } from "lucide-react";
@@ -41,8 +41,8 @@ import type { AgentSession, Item, ItemPrLink } from "@/core/schema";
 import { toggleAssignee } from "@/lib/assignees";
 import { formatItemRef } from "@/lib/itemRef";
 import { modifierSymbol } from "@/lib/keyboard";
-import { repeatOf } from "@/lib/repeat";
-import { dayLabel, formatRelative } from "@/lib/time";
+import { type Repeat, repeatOf } from "@/lib/repeat";
+import { dayLabel, type Due, formatRelative } from "@/lib/time";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -52,7 +52,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Kbd } from "@/components/ui/kbd";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   ResponsiveDialog,
   ResponsiveDialogCloseButton,
@@ -62,13 +62,15 @@ import {
 } from "@/components/ui/responsive-dialog";
 import { AssigneeOptions } from "./AssigneeOptions";
 import { AuditEntryRow } from "./AuditDialog";
+import { useDueLabel } from "./DueBadge";
 import { DueDatePicker } from "./DueDatePicker";
 import { PrLink } from "./PrLink";
+import { shortLabel } from "./RepeatBadge";
 import { RepeatPicker } from "./RepeatPicker";
 import { runAction } from "./run-action";
 import { EditableText } from "./EditableText";
 import { ItemComments } from "./ItemComments";
-import { LabelsField } from "./Labels";
+import { LabelChips } from "./Labels";
 import { MoveToListPicker, useMoveItem } from "./MoveItem";
 import { InlineCode, Markdown } from "./Markdown";
 import { useAssignShortcuts } from "./useAssignShortcuts";
@@ -212,7 +214,7 @@ function ItemActivity({ item }: { item: Item }) {
         onClick={() => setExpanded((e) => !e)}
         aria-expanded={expanded}
         data-replay-safe
-        className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-neutral-400 transition touch:-my-2 touch:py-2 touch:pr-4 hover:text-neutral-600 dark:hover:text-neutral-300"
+        className="flex items-center gap-1 text-xs font-medium text-neutral-500 transition touch:-my-2 touch:py-2 touch:pr-4 hover:text-neutral-700 dark:hover:text-neutral-300"
       >
         <ChevronRight
           className={`size-3.5 transition-transform ${expanded ? "rotate-90" : ""}`}
@@ -271,11 +273,105 @@ function Field({
 }) {
   return (
     <div className="space-y-1">
-      <span data-replay-safe className="block text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+      <span data-replay-safe className="block text-xs font-medium text-neutral-500">
         {label}
       </span>
       {children}
     </div>
+  );
+}
+
+/** A field in the dialog's chip bar, set. */
+const CHIP =
+  "inline-flex h-7 max-w-full min-w-0 shrink-0 items-center gap-1.5 rounded-full border border-input px-2.5 text-sm transition hover:bg-muted aria-disabled:pointer-events-none aria-disabled:opacity-50 data-popup-open:bg-muted touch:h-9 touch:px-3 [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-muted-foreground";
+/** A field in the chip bar with nothing set: dashed, its name in grey. */
+const EMPTY_CHIP = `${CHIP} border-dashed text-muted-foreground hover:text-foreground`;
+
+/**
+ * The due date as a chip: when it's due, red once overdue and amber on the
+ * day, opening the quick dates and the calendar. Picking one closes it.
+ */
+function DueChip({
+  item,
+  done,
+  disabled,
+  onChange,
+}: {
+  item: Item;
+  done: boolean;
+  disabled: boolean;
+  onChange: (due: Due | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const due = item.dueDate ? { dueDate: item.dueDate, dueFrom: item.dueFrom } : null;
+  return (
+    <Popover open={open} onOpenChange={(next) => setOpen(next && !disabled)}>
+      <PopoverTrigger aria-disabled={disabled || undefined} className={due ? CHIP : EMPTY_CHIP}>
+        <CalendarDays />
+        {due ? <DueChipLabel due={due} done={done} /> : <span data-replay-safe>Due date</span>}
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-80 max-w-[calc(100vw-2rem)] p-2">
+        <DueDatePicker
+          key={item.id}
+          due={due}
+          done={done}
+          disabled={disabled}
+          onChange={(next) => {
+            setOpen(false);
+            onChange(next);
+          }}
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function DueChipLabel({ due, done }: { due: Due; done: boolean }) {
+  const { label, tone } = useDueLabel(due.dueDate, due.dueFrom, done);
+  return (
+    <span
+      data-replay-safe
+      className={
+        tone === "overdue"
+          ? "text-red-600 dark:text-red-400"
+          : tone === "today"
+            ? "text-amber-700 dark:text-amber-300"
+            : ""
+      }
+    >
+      <span className="sr-only">Due </span>
+      {label}
+    </span>
+  );
+}
+
+/** How the item repeats as a chip, opening the repeat picker. */
+function RepeatChip({
+  item,
+  disabled,
+  onChange,
+}: {
+  item: Item;
+  disabled: boolean;
+  onChange: (repeat: Repeat | null) => void;
+}) {
+  const repeat = repeatOf(item);
+  return (
+    <Popover>
+      <PopoverTrigger aria-disabled={disabled || undefined} className={repeat ? CHIP : EMPTY_CHIP}>
+        <RepeatIcon />
+        <span data-replay-safe>{repeat ? shortLabel(repeat) : "Repeat"}</span>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-80 max-w-[calc(100vw-2rem)] p-2">
+        <RepeatPicker
+          key={item.id}
+          repeat={repeat}
+          completedAt={item.completedAt}
+          disabled={disabled}
+          onChange={onChange}
+        />
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -588,13 +684,13 @@ export function ItemDetailDialog({
   return (
     <ResponsiveDialog open={open} onOpenChange={change}>
       <ResponsiveDialogContent>
-        <div className="flex shrink-0 flex-col gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-          <div className="flex items-center gap-2">
+        <div className="flex shrink-0 flex-col gap-2 border-b border-neutral-200 px-4 pt-3 pb-4 dark:border-neutral-800">
+          <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={() => void copy()}
-              title="Copy ID"
-              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[11px] tracking-wide touch:py-1.5 touch:text-xs text-neutral-500 transition hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
+              title={`Copy ID (${modifierSymbol()}.)`}
+              className="-ml-1.5 inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[11px] tracking-wide touch:py-1.5 touch:text-xs text-neutral-500 transition hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
             >
               {copied ? (
                 <Check className="size-3 opacity-70" />
@@ -602,62 +698,59 @@ export function ItemDetailDialog({
                 <Copy className="size-3 opacity-70" />
               )}
               {copied ? "Copied" : ref}
-              <Kbd className="ml-0.5">{modifierSymbol()}.</Kbd>
             </button>
             {follows && (
               <Button
                 type="button"
                 variant="ghost"
-                size="sm"
+                size="icon-sm"
                 aria-pressed={following}
+                aria-label={following ? "Unfollow" : "Follow"}
+                title={following ? "Unfollow" : "Follow: get notified of changes"}
                 onClick={() => follows.setFollowing(item, !following)}
-                data-replay-safe
                 className="ml-auto text-neutral-500"
               >
-                {following ? <BellOff /> : <Bell />}
-                {following ? "Unfollow" : "Follow"}
+                {/* Filled while you follow it, like a pressed toggle. */}
+                <Bell className={following ? "fill-current text-foreground" : ""} />
               </Button>
             )}
-            <Button
+            <ResponsiveDialogCloseButton className={follows ? "" : "ml-auto"} />
+          </div>
+          <div className="flex items-start gap-2">
+            <button
               type="button"
-              variant="outline"
-              size="sm"
               onClick={toggle}
               disabled={pending}
               aria-pressed={completed}
-              data-replay-safe
-              className={`${follows ? "" : "ml-auto "}${
+              aria-label={completed ? "Completed" : "Complete"}
+              title={completed ? "Mark as not done" : "Complete"}
+              className={`mt-px shrink-0 rounded-full transition disabled:opacity-50 ${
                 completed
-                  ? "border-green-600/30 bg-green-50 text-green-700 hover:bg-green-100 dark:border-green-500/30 dark:bg-green-950/40 dark:text-green-400 dark:hover:bg-green-950/70"
-                  : ""
+                  ? "text-green-600 hover:text-green-700 dark:text-green-500"
+                  : "text-neutral-400 hover:text-green-600 dark:text-neutral-500 dark:hover:text-green-500"
               }`}
             >
-              {completed ? <CheckCircle2 /> : <Circle />}
-              {completed ? "Completed" : "Complete"}
-            </Button>
-            <ResponsiveDialogCloseButton />
+              {completed ? <CheckCircle2 className="size-6" /> : <Circle className="size-6" />}
+            </button>
+            <ResponsiveDialogTitle className="min-w-0 flex-1">
+              <EditableText
+                value={item.title}
+                onSave={(next) =>
+                  runAction(updateItemAction(item.id, { title: next }), `rename “${item.title}”`)
+                }
+                required
+                className={`block w-full break-words text-base leading-6 font-medium ${
+                  completed ? "text-neutral-400 line-through" : ""
+                }`}
+                inputClassName="w-full text-base"
+                renderValue={(title) => <InlineCode>{title}</InlineCode>}
+              />
+            </ResponsiveDialogTitle>
           </div>
-          <ResponsiveDialogTitle>
-            <EditableText
-              value={item.title}
-              onSave={(next) =>
-                runAction(updateItemAction(item.id, { title: next }), `rename “${item.title}”`)
-              }
-              required
-              className={`block w-full break-words text-base font-medium ${
-                completed ? "text-neutral-400 line-through" : ""
-              }`}
-              inputClassName="w-full text-base"
-              renderValue={(title) => <InlineCode>{title}</InlineCode>}
-            />
-          </ResponsiveDialogTitle>
           <ResponsiveDialogDescription className="sr-only">
             Item details for {item.title}
           </ResponsiveDialogDescription>
-        </div>
-
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4">
-          <Field label="Description">
+          <div className="space-y-3 pl-8">
             <EditableText
               value={item.description ?? ""}
               onSave={(next) =>
@@ -672,183 +765,157 @@ export function ItemDetailDialog({
               inputClassName="w-full text-sm"
               renderValue={(description) => <Markdown>{description}</Markdown>}
             />
-          </Field>
-
-          <Field label="Labels">
-            <LabelsField
-              key={item.id}
-              projectId={item.projectId}
-              value={labels}
-              onChange={setLabels}
-              draftEmoji={newLabelEmoji}
-            />
-          </Field>
-
-          <AgentWork item={item} assignees={assignees} />
-
-          <Field label="Assignees">
-            <DropdownMenu open={assignOpen} onOpenChange={setAssignOpen}>
-              <DropdownMenuTrigger
+            <div className="flex flex-wrap items-center gap-1.5">
+              <DueChip
+                item={item}
+                done={completed}
                 disabled={pending}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-neutral-100 disabled:opacity-50 dark:hover:bg-neutral-800"
-              >
-                {assigned.length ? (
-                  <>
-                    <AvatarStack users={assigned} size={20} ringClassName="ring-popover" />
-                    <span className="truncate text-neutral-700 dark:text-neutral-200">
-                      {assigneeNames(assigned)}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <CircleDashed className="size-5 text-neutral-400" />
-                    <span data-replay-safe className="text-neutral-500">Unassigned</span>
-                  </>
-                )}
-                <Kbd className="ml-auto">A</Kbd>
-                <ChevronDown className="size-4 opacity-50" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent data-assignee-picker align="start" className="w-56">
-                <AssigneeOptions
-                  selected={assigneeIds}
-                  assignees={assignees}
-                  viewerId={viewerId}
-                  onChange={assign}
-                  agents={agentOptions}
-                  onAgentChange={setAgent}
-                />
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </Field>
-
-          {/* Not for an item in an archived list, which isn't a move target. */}
-          {move?.groups.some((g) => g.lists.some((l) => l.id === item.projectId)) && (
-            <Field label="List">
-              <MoveToListPicker
+                onChange={(due) =>
+                  start(async () => {
+                    await runAction(
+                      updateItemAction(item.id, due ?? { dueDate: null }),
+                      `change the due date of “${item.title}”`,
+                    );
+                  })
+                }
+              />
+              <RepeatChip
                 item={item}
                 disabled={pending}
-                onPick={(projectId) => {
-                  // The item leaves this list, so the sheet takes over.
-                  change(false);
-                  move?.open(item, projectId);
-                }}
+                onChange={(repeat) =>
+                  start(async () => {
+                    await runAction(
+                      updateItemAction(item.id, { repeat }),
+                      `change how “${item.title}” repeats`,
+                    );
+                  })
+                }
               />
-            </Field>
-          )}
-
-          <Field label="Due">
-            <DueDatePicker
-              key={item.id}
-              due={item.dueDate ? { dueDate: item.dueDate, dueFrom: item.dueFrom } : null}
-              done={completed}
-              disabled={pending}
-              onChange={(due) =>
-                start(async () => {
-                  await runAction(
-                    updateItemAction(item.id, due ?? { dueDate: null }),
-                    `change the due date of “${item.title}”`,
-                  );
-                })
-              }
-            />
-          </Field>
-
-          <Field label="Repeat">
-            <RepeatPicker
-              key={item.id}
-              repeat={repeatOf(item)}
-              completedAt={item.completedAt}
-              disabled={pending}
-              onChange={(repeat) =>
-                start(async () => {
-                  await runAction(
-                    updateItemAction(item.id, { repeat }),
-                    `change how “${item.title}” repeats`,
-                  );
-                })
-              }
-            />
-          </Field>
-
-          {parent ? (
-            <Field label="Sub-item of">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => onOpenItem(parent)}
-                  className="min-w-0 flex-1 truncate text-left text-sm text-neutral-700 hover:underline dark:text-neutral-200"
+              <DropdownMenu open={assignOpen} onOpenChange={setAssignOpen}>
+                <DropdownMenuTrigger
+                  aria-disabled={pending || undefined}
+                  title="Assignees (A)"
+                  className={assigned.length ? CHIP : EMPTY_CHIP}
                 >
-                  {parent.title}
-                </button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
+                  {assigned.length ? (
+                    <>
+                      <AvatarStack users={assigned} size={18} ringClassName="ring-popover" />
+                      <span className="truncate">{assigneeNames(assigned)}</span>
+                    </>
+                  ) : (
+                    <>
+                      <UserRound />
+                      <span data-replay-safe>Unassigned</span>
+                    </>
+                  )}
+                </DropdownMenuTrigger>
+                <DropdownMenuContent data-assignee-picker align="start" className="w-56">
+                  <AssigneeOptions
+                    selected={assigneeIds}
+                    assignees={assignees}
+                    viewerId={viewerId}
+                    onChange={assign}
+                    agents={agentOptions}
+                    onAgentChange={setAgent}
+                  />
+                </DropdownMenuContent>
+              </DropdownMenu>
+              {/* Not for an item in an archived list, which isn't a move target. */}
+              {move?.groups.some((g) => g.lists.some((l) => l.id === item.projectId)) && (
+                <MoveToListPicker
+                  item={item}
                   disabled={pending}
-                  onClick={() =>
-                    changes.setParent(item, null)
-                  }
-                >
-                  <IndentDecrease />
-                  Move out
-                </Button>
-              </div>
-            </Field>
-          ) : (
-            <>
-              {/* The touch way to nest an existing task, where there's no row
-                  menu: an item with sub-items can't become one. */}
-              {checklist.length === 0 && nestTargets.length > 0 && (
-                <Field label="Sub-item of">
+                  className={CHIP}
+                  onPick={(projectId) => {
+                    // The item leaves this list, so the sheet takes over.
+                    change(false);
+                    move?.open(item, projectId);
+                  }}
+                />
+              )}
+              <LabelChips
+                key={item.id}
+                projectId={item.projectId}
+                value={labels}
+                onChange={setLabels}
+                draftEmoji={newLabelEmoji}
+                chipClassName={labels.length ? `${EMPTY_CHIP} px-2` : EMPTY_CHIP}
+              />
+              {parent ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    aria-disabled={pending || undefined}
+                    title="Sub-item of"
+                    className={CHIP}
+                  >
+                    <IndentIncrease />
+                    <span className="max-w-48 truncate">{parent.title}</span>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-56">
+                    <DropdownMenuItem onClick={() => onOpenItem(parent)}>
+                      <CornerLeftUp />
+                      Open parent
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => changes.setParent(item, null)}>
+                      <IndentDecrease />
+                      Move out
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                // The touch way to nest an existing task, where there's no
+                // row menu: an item with sub-items can't become one.
+                checklist.length === 0 &&
+                nestTargets.length > 0 && (
                   <DropdownMenu>
                     <DropdownMenuTrigger
-                      disabled={pending}
-                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-neutral-100 disabled:opacity-50 dark:hover:bg-neutral-800"
+                      aria-disabled={pending || undefined}
+                      aria-label="Make it a sub-item of…"
+                      className={EMPTY_CHIP}
                     >
-                      <IndentIncrease className="size-4 text-neutral-400" />
-                      <span data-replay-safe className="text-neutral-500">
-                        None — make it a sub-item of…
-                      </span>
-                      <ChevronDown className="ml-auto size-4 opacity-50" />
+                      <IndentIncrease />
+                      <span data-replay-safe>Parent</span>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start" className="w-64">
                       {nestTargets.map((t) => (
-                        <DropdownMenuItem
-                          key={t.id}
-                          onClick={() =>
-                            changes.setParent(item, t.id)
-                          }
-                        >
+                        <DropdownMenuItem key={t.id} onClick={() => changes.setParent(item, t.id)}>
                           <span className="truncate">{t.title}</span>
                         </DropdownMenuItem>
                       ))}
                     </DropdownMenuContent>
                   </DropdownMenu>
-                </Field>
+                )
               )}
-              <Field
-                label={
-                  checklist.length
-                    ? `Checklist · ${checklist.filter((c) => c.completedAt !== null).length}/${checklist.length}`
-                    : "Checklist"
-                }
-              >
-                <Checklist
-                  parent={item}
-                  items={checklist}
-                  assignees={assignees}
-                  viewerId={viewerId}
-                  onOpenItem={(child) => {
-                    setChildPickerFor(null);
-                    onOpenItem(child);
-                  }}
-                  assigneesById={assigneesById}
-                  onAssign={setAssignees}
-                  pickerFor={childPickerFor}
-                  onPickerFor={setChildPickerFor}
-                />
-              </Field>
-            </>
+            </div>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-4">
+          <AgentWork item={item} assignees={assignees} />
+
+          {!parent && (
+            <Field
+              label={
+                checklist.length
+                  ? `Checklist · ${checklist.filter((c) => c.completedAt !== null).length}/${checklist.length}`
+                  : "Checklist"
+              }
+            >
+              <Checklist
+                parent={item}
+                items={checklist}
+                assignees={assignees}
+                viewerId={viewerId}
+                onOpenItem={(child) => {
+                  setChildPickerFor(null);
+                  onOpenItem(child);
+                }}
+                assigneesById={assigneesById}
+                onAssign={setAssignees}
+                pickerFor={childPickerFor}
+                onPickerFor={setChildPickerFor}
+              />
+            </Field>
           )}
 
           {prLinks.length > 0 && (
@@ -868,18 +935,19 @@ export function ItemDetailDialog({
           <ItemActivity item={item} />
         </div>
 
-        <div className="flex shrink-0 items-center justify-between border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
+        <div className="flex shrink-0 items-center justify-between border-t border-neutral-200 px-4 py-2.5 dark:border-neutral-800">
           <span data-replay-safe className="text-xs text-neutral-400">
             {completed && item.completedAt
               ? `Completed ${dayLabel(item.completedAt)}`
               : `Created ${dayLabel(item.createdAt)}`}
           </span>
           <Button
-            variant="destructive"
+            variant={confirmingDelete ? "destructive" : "ghost"}
             size="sm"
             data-replay-safe
             onClick={del}
             disabled={pending}
+            className={confirmingDelete ? "" : "text-neutral-500 hover:text-destructive"}
           >
             <Trash2 />
             {confirmingDelete ? "Confirm delete?" : "Delete"}

@@ -5,7 +5,6 @@ import {
   BadgeMinus,
   BadgePlus,
   Check,
-  ChevronDown,
   FolderInput,
   TriangleAlert,
 } from "lucide-react";
@@ -132,10 +131,13 @@ export function MoveToListPicker({
   item,
   disabled,
   onPick,
+  className,
 }: {
   item: Item;
   disabled: boolean;
   onPick: (projectId: string) => void;
+  /** The trigger's look: a chip in the dialog's chip bar. */
+  className: string;
 }) {
   const move = useMoveItem();
   const [open, setOpen] = useState(false);
@@ -152,7 +154,8 @@ export function MoveToListPicker({
     >
       <DropdownMenuTrigger
         aria-disabled={disabled}
-        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-neutral-100 aria-disabled:opacity-50 dark:hover:bg-neutral-800"
+        title="Move to another list"
+        className={className}
       >
         <ProjectIcon
           icon={current.icon}
@@ -161,10 +164,6 @@ export function MoveToListPicker({
           size={16}
         />
         <span className="min-w-0 truncate">{current.name}</span>
-        <span className="ml-auto shrink-0 text-xs text-neutral-500">
-          Move to…
-        </span>
-        <ChevronDown className="size-4 shrink-0 opacity-50" />
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"

@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, X } from "lucide-react";
+import { Plus, Tag, X } from "lucide-react";
 import { createContext, useContext, useState, useTransition } from "react";
 import { suggestLabelEmojiAction, updateLabelAction } from "@/app/actions";
 import type { LabelEmoji } from "@/core/labels";
@@ -14,6 +14,7 @@ import {
   ComboboxItem,
   ComboboxList,
 } from "@/components/ui/combobox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { EditableText } from "./EditableText";
 import { IconPicker } from "./ProjectIconPicker";
 import { runAction } from "./run-action";
@@ -89,6 +90,7 @@ export function SavedLabelChip({
   onRemove,
   onRenamed,
   disabled,
+  className,
 }: {
   label: Label;
   /** Takes it off the item; omit where it can't be removed. */
@@ -96,6 +98,8 @@ export function SavedLabelChip({
   /** The rename saved, for a form holding the item's labels by name. */
   onRenamed?: (name: string) => void;
   disabled?: boolean;
+  /** Merged into the chip's look, such as a round one in a chip bar. */
+  className?: string;
 }) {
   const [saving, start] = useTransition();
   const emoji = useTitleEmoji({
@@ -113,7 +117,7 @@ export function SavedLabelChip({
   return (
     <span
       aria-busy={saving || undefined}
-      className={cn(CHIP, saving && "opacity-60")}
+      className={cn(CHIP, className, saving && "opacity-60")}
     >
       <IconPicker
         icon={emoji.shown.emoji}
@@ -164,6 +168,7 @@ export function DraftLabelChip({
   onEmoji,
   onRemove,
   disabled,
+  className,
 }: {
   name: string;
   emoji: EmojiChoice;
@@ -171,9 +176,10 @@ export function DraftLabelChip({
   onEmoji?: (emoji: string | null) => void;
   onRemove: () => void;
   disabled?: boolean;
+  className?: string;
 }) {
   return (
-    <span className={CHIP}>
+    <span className={cn(CHIP, className)}>
       <IconPicker
         icon={emoji.emoji}
         chosen={emoji.chosen}
@@ -361,5 +367,74 @@ export function LabelsField({
         onAdd={(name, emoji) => onChange([...value, name], { name, emoji })}
       />
     </div>
+  );
+}
+
+/**
+ * A saved item's labels as chips in a row of other chips (the item dialog's
+ * chip bar), then a dashed chip that opens the picker to add one: "Label"
+ * while it has none, just the icon once it has some. Renders a fragment, so
+ * the chips wrap with their neighbours.
+ */
+export function LabelChips({
+  projectId,
+  value,
+  onChange,
+  draftEmoji,
+  chipClassName,
+}: {
+  projectId: string;
+  value: string[];
+  onChange: (names: string[], added?: { name: string; emoji?: LabelEmoji }) => void;
+  draftEmoji: Record<string, LabelEmoji>;
+  /** The add chip's look, matching the row's other empty chips. */
+  chipClassName: string;
+}) {
+  const labels = useListLabels(projectId);
+  const [open, setOpen] = useState(false);
+  const remove = (name: string) => onChange(value.filter((n) => n !== name));
+  return (
+    <>
+      {value.map((name) => {
+        const label = labels.find((l) => l.name === name);
+        return label ? (
+          <SavedLabelChip
+            key={name}
+            label={label}
+            onRemove={() => remove(name)}
+            className="rounded-full pl-2"
+          />
+        ) : (
+          // A new label until the list has it: its emoji as typed.
+          <DraftLabelChip
+            key={name}
+            name={name}
+            emoji={draftEmoji[name] ?? UNCHOSEN}
+            onRemove={() => remove(name)}
+            className="rounded-full pl-2"
+          />
+        );
+      })}
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger
+          aria-label={value.length ? "Add a label" : undefined}
+          className={chipClassName}
+        >
+          <Tag />
+          {value.length === 0 && <span data-replay-safe>Label</span>}
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-64 p-2">
+          <LabelPicker
+            projectId={projectId}
+            labels={labels}
+            selected={value}
+            onAdd={(name, emoji) => {
+              setOpen(false);
+              onChange([...value, name], { name, emoji });
+            }}
+          />
+        </PopoverContent>
+      </Popover>
+    </>
   );
 }
