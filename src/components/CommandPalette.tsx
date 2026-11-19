@@ -17,11 +17,10 @@ import {
   UserRound,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { type CSSProperties, type ReactNode, useEffect, useSyncExternalStore } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import type { Item } from "@/core/schema";
 import { formatItemRef } from "@/lib/itemRef";
 import {
-  CommandDialog,
   Command,
   CommandEmpty,
   CommandGroup,
@@ -31,9 +30,13 @@ import {
   CommandShortcut,
   useCommandState,
 } from "@/components/ui/command";
-import { Button } from "@/components/ui/button";
-import { DialogClose } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogDescription,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
 import type { BoardView, ProjectView } from "./Kanban";
 import { GitHubMark } from "./GitHubMark";
 import { ProjectIcon } from "./ProjectIcon";
@@ -76,11 +79,7 @@ export function CommandPalette({
   onSearch: (search: string) => void;
 }) {
   const router = useRouter();
-  const visibleBottom = useSyncExternalStore(
-    subscribeVisualViewport,
-    visualViewportBottom,
-    () => undefined,
-  );
+  const searchRef = useRef<HTMLInputElement>(null);
 
   // Close first, then act, so a dialog the action opens isn't stacked under
   // the closing palette.
@@ -117,140 +116,113 @@ export function CommandPalette({
   const titleOf = new Map(items.map(({ item }) => [item.id, item.title]));
 
   return (
-    <CommandDialog
-      open={open}
-      onOpenChange={onOpenChange}
-      title="Command palette"
-      description="Search commands, lists and items"
-      className="top-4 sm:top-1/4 sm:max-w-lg"
-    >
-      <Command style={{ "--visible-bottom": `${visibleBottom ?? 0}px` } as CSSProperties}>
-        {/* Uncontrolled: cmdk keeps the search, and it unmounts with the
-            dialog, so every way of closing (Esc, ⌘K, Cancel, a pick) clears
-            it. Phones get Cancel because their keyboard has no Esc and the
-            list fills the screen above it, leaving no backdrop to tap. */}
-        <div className="flex items-start *:data-[slot=command-input-wrapper]:flex-1">
-          <CommandInput placeholder="Search commands, lists, items…" />
-          <DialogClose
-            render={<Button variant="ghost" size="sm" className="mt-1 h-8 touch:h-8 sm:hidden" />}
-          >
-            Cancel
-          </DialogClose>
-        </div>
-        <ReportSearch onSearch={onSearch} />
-        {/* On phones the list runs down to the bottom of what's visible, so
-            it fits above the on-screen keyboard and grows back when it
-            closes; dvh can't, as iOS lays the keyboard over the page
-            without resizing it. 4.75rem is the palette's 1rem top offset,
-            the search field and padding (2.75rem), and a 1rem gap below.
-            It animates its real height, from cmdk's measured content
-            height, so it eases with the keyboard: a max-height transition
-            spends most of its time above the content and looks like a
-            snap. */}
-        <CommandList className="max-sm:h-[min(var(--cmdk-list-height),calc(var(--visible-bottom)-4.75rem))] max-sm:max-h-none max-sm:transition-[height] max-sm:duration-250 max-sm:ease-out sm:max-h-[min(24rem,60dvh)]">
-          <CommandEmpty>No matches.</CommandEmpty>
-          <CommandGroup heading="Commands">
-            {commands.map((c) => (
-              <CommandItem key={c.label} value={c.label} onSelect={() => run(c.action)}>
-                {c.icon}
-                {c.label}
-                {/* Key hints mean nothing on a phone. */}
-                {c.shortcut && (
-                  <CommandShortcut className="max-sm:hidden">{c.shortcut}</CommandShortcut>
-                )}
-              </CommandItem>
-            ))}
-          </CommandGroup>
-          <CommandGroup heading="Lists">
-            {lists.map((list) => (
-              <CommandItem
-                key={list.id}
-                // Values must be unique; the prefix keeps same-named lists apart.
-                value={`${list.name} ${list.refPrefix}`}
-                onSelect={() => run(() => onOpenList(list.id))}
-              >
-                <ProjectIcon
-                  icon={list.icon}
-                  homepageUrl={list.homepageUrl}
-                  name={list.name}
-                  size={16}
-                />
-                <span className="truncate">{list.name}</span>
-              </CommandItem>
-            ))}
-          </CommandGroup>
-          <WhenSearching>
-            <CommandGroup heading="Items">
-              {items.map(({ item, list }) => {
-                const ref = formatItemRef(list.refPrefix, item.number);
-                const parent = item.parentId ? titleOf.get(item.parentId) : undefined;
-                return (
-                  <CommandItem
-                    key={item.id}
-                    // The ref is board-unique, so it keeps duplicate titles
-                    // apart and lets "SID-12" find its item.
-                    value={`${item.title} ${ref}`}
-                    keywords={[list.name]}
-                    onSelect={() => run(() => onOpenItem(item))}
-                  >
-                    {item.completedAt ? (
-                      <CircleCheck className="text-muted-foreground" />
-                    ) : (
-                      <Circle className="text-muted-foreground" />
-                    )}
-                    <span className="flex min-w-0 flex-col">
-                      <span
-                        className={`truncate ${item.completedAt ? "text-muted-foreground line-through" : ""}`}
-                      >
-                        {item.title}
-                      </span>
-                      <span className="truncate text-xs text-muted-foreground">
-                        {[list.name, parent].filter(Boolean).join(" › ")}
-                      </span>
-                    </span>
-                    <CommandShortcut className="tracking-normal">{ref}</CommandShortcut>
-                  </CommandItem>
-                );
-              })}
+    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+      {/* A bottom sheet on phones, swiped down to close; a modal a quarter
+          of the way down on desktop. */}
+      <ResponsiveDialogContent
+        initialFocus={searchRef}
+        className="overflow-hidden data-[slot=dialog-content]:top-1/4 data-[slot=dialog-content]:translate-y-0"
+      >
+        <ResponsiveDialogTitle className="sr-only">Command palette</ResponsiveDialogTitle>
+        <ResponsiveDialogDescription className="sr-only">
+          Search commands, lists and items
+        </ResponsiveDialogDescription>
+        <Command className="min-h-0 flex-1 bg-transparent in-data-[slot=drawer-content]:pb-2">
+          {/* Uncontrolled: cmdk keeps the search, and it unmounts with the
+              dialog, so every way of closing (Esc, ⌘K, a swipe, a pick)
+              clears it. */}
+          <CommandInput ref={searchRef} placeholder="Search commands, lists, items…" />
+          <ReportSearch onSearch={onSearch} />
+          {/* In the sheet the list takes whatever height the sheet has left,
+              which already sits above the on-screen keyboard. */}
+          <CommandList className="max-h-[min(24rem,60dvh)] in-data-[slot=drawer-content]:max-h-none in-data-[slot=drawer-content]:min-h-0 in-data-[slot=drawer-content]:flex-1">
+            <CommandEmpty>No matches.</CommandEmpty>
+            <CommandGroup heading="Commands">
+              {commands.map((c) => (
+                <CommandItem key={c.label} value={c.label} onSelect={() => run(c.action)}>
+                  {c.icon}
+                  {c.label}
+                  {/* Key hints mean nothing on a phone. */}
+                  {c.shortcut && (
+                    <CommandShortcut className="in-data-[slot=drawer-content]:hidden">{c.shortcut}</CommandShortcut>
+                  )}
+                </CommandItem>
+              ))}
             </CommandGroup>
-          </WhenSearching>
-        </CommandList>
-        {/* Keyboard hints; phones have no keyboard to hint at. */}
-        <div className="hidden items-center justify-end gap-3 border-t px-2 pt-2 pb-1 text-xs text-muted-foreground sm:flex">
-          <span className="flex items-center gap-1">
-            <Kbd>↑</Kbd>
-            <Kbd>↓</Kbd>
-            to move
-          </span>
-          <span className="flex items-center gap-1">
-            <Kbd>↵</Kbd>
-            to open
-          </span>
-          <span className="flex items-center gap-1">
-            <Kbd>esc</Kbd>
-            to close
-          </span>
-        </div>
-      </Command>
-    </CommandDialog>
+            <CommandGroup heading="Lists">
+              {lists.map((list) => (
+                <CommandItem
+                  key={list.id}
+                  // Values must be unique; the prefix keeps same-named lists apart.
+                  value={`${list.name} ${list.refPrefix}`}
+                  onSelect={() => run(() => onOpenList(list.id))}
+                >
+                  <ProjectIcon
+                    icon={list.icon}
+                    homepageUrl={list.homepageUrl}
+                    name={list.name}
+                    size={16}
+                  />
+                  <span className="truncate">{list.name}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            <WhenSearching>
+              <CommandGroup heading="Items">
+                {items.map(({ item, list }) => {
+                  const ref = formatItemRef(list.refPrefix, item.number);
+                  const parent = item.parentId ? titleOf.get(item.parentId) : undefined;
+                  return (
+                    <CommandItem
+                      key={item.id}
+                      // The ref is board-unique, so it keeps duplicate titles
+                      // apart and lets "SID-12" find its item.
+                      value={`${item.title} ${ref}`}
+                      keywords={[list.name]}
+                      onSelect={() => run(() => onOpenItem(item))}
+                    >
+                      {item.completedAt ? (
+                        <CircleCheck className="text-muted-foreground" />
+                      ) : (
+                        <Circle className="text-muted-foreground" />
+                      )}
+                      <span className="flex min-w-0 flex-col">
+                        <span
+                          className={`truncate ${item.completedAt ? "text-muted-foreground line-through" : ""}`}
+                        >
+                          {item.title}
+                        </span>
+                        <span className="truncate text-xs text-muted-foreground">
+                          {[list.name, parent].filter(Boolean).join(" › ")}
+                        </span>
+                      </span>
+                      <CommandShortcut className="tracking-normal">{ref}</CommandShortcut>
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            </WhenSearching>
+          </CommandList>
+          {/* Keyboard hints; phones have no keyboard to hint at. */}
+          <div className="flex items-center justify-end gap-3 border-t px-2 pt-2 pb-1 text-xs text-muted-foreground in-data-[slot=drawer-content]:hidden">
+            <span className="flex items-center gap-1">
+              <Kbd>↑</Kbd>
+              <Kbd>↓</Kbd>
+              to move
+            </span>
+            <span className="flex items-center gap-1">
+              <Kbd>↵</Kbd>
+              to open
+            </span>
+            <span className="flex items-center gap-1">
+              <Kbd>esc</Kbd>
+              to close
+            </span>
+          </div>
+        </Command>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
-}
-
-/** Where the visible part of the page ends, in the layout viewport's pixels:
- * above the on-screen keyboard while it's open. */
-function visualViewportBottom() {
-  const vv = window.visualViewport;
-  return vv ? vv.offsetTop + vv.height : window.innerHeight;
-}
-
-function subscribeVisualViewport(onChange: () => void) {
-  const vv = window.visualViewport;
-  vv?.addEventListener("resize", onChange);
-  vv?.addEventListener("scroll", onChange);
-  return () => {
-    vv?.removeEventListener("resize", onChange);
-    vv?.removeEventListener("scroll", onChange);
-  };
 }
 
 /** Passes the search up once typing pauses. */
