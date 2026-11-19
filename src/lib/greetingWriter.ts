@@ -22,6 +22,7 @@ Rules:
 - Say only what the facts give you. Never invent tasks, times, people or numbers.
 - Refer to a task only by its token, exactly as given, such as {{item:2}}. Never write a task's title yourself.
 - Use {{others|<a few words>}} only when "others" is given, for the rest of their undated tasks, such as "ahead of {{others|four others}}".
+- "slipped_total" is how many tasks slipped in all, including ones you were not given. Use it only so you never imply the named ones are all of them, such as "a few things slipped, {{item:1}} among them"; never state a large number, and never add it to other counts.
 - Use {{action:triage|<a few words>}} only for the "triage" move, as the offer to give slipped tasks new days.
 - No exclamation marks, no emoji, no markdown, no links. Never say "overdue" or "late", never scold, never total up their backlog.
 - Do not start with a greeting such as "Good morning"; that is shown above your words.
@@ -100,6 +101,8 @@ export function writerInput(brief: AgendaBrief, pick: GreetingPick): WriterInput
         busy_day_ahead: { day: weekdayOf(pick.heavyDay.day), open: pick.heavyDay.open },
       }),
       ...(pick.others.length > 0 && { others: pick.others.length }),
+      // All that slipped, not just the few named, so it doesn't say "two" of three.
+      ...(pick.moments.includes("triage") && { slipped_total: brief.overdue.length }),
       moves,
     },
   };

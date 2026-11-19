@@ -53,7 +53,12 @@ describe("writerInput", () => {
     expect(input.facts).toMatchObject({
       finished_since_last_visit: { count: 5, since: "Monday" },
       others: 1,
+      slipped_total: 1,
     });
+    expect(writerInput(brief, { ...pick, moments: ["plan"] }).facts).not.toHaveProperty("slipped_total");
+    // Three slipped, one named: it's told three.
+    const three = { ...brief, overdue: [bank, item("o2", "Bins"), item("o3", "Post")] };
+    expect(writerInput(three, pick).facts).toMatchObject({ slipped_total: 3 });
   });
 });
 
