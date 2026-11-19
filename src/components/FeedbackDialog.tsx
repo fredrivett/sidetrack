@@ -2,10 +2,9 @@
 
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { CircleCheck, Send } from "lucide-react";
-import { unstable_rethrow } from "next/navigation";
 import posthog from "posthog-js";
 import { toast } from "sonner";
-import { addFeedbackFollowUpAction, feedbackFollowUpsAction, sendFeedbackAction } from "@/app/actions";
+import { addFeedbackFollowUpAction, sendFeedbackAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import {
   ResponsiveDialog,
@@ -27,6 +26,7 @@ import {
 import type { FollowUp } from "@/lib/feedbackFollowUps";
 import { RELEASE } from "@/lib/release";
 import { cn } from "@/lib/utils";
+import { aiRead } from "./ai-read";
 import { runAction } from "./run-action";
 
 const KINDS: [FeedbackKind, string, string][] = [
@@ -138,10 +138,7 @@ export function FeedbackDialog({
       // never hold), so a failure or nothing to ask just closes as before.
       setSent({ ...filed, questions: null });
       asking.current = filed.itemId;
-      const questions = await feedbackFollowUpsAction(filed.itemId).catch((e) => {
-        unstable_rethrow(e);
-        return [];
-      });
+      const questions = await aiRead("feedbackFollowUps", { itemId: filed.itemId }).catch(() => []);
       if (asking.current !== filed.itemId) return;
       if (!questions.length) {
         toast.success("Thanks, your feedback was sent");

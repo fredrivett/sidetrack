@@ -6,6 +6,9 @@ import { auditPlugin } from "./eslint-rules/audit-in-transaction.mjs";
 // Local rule: catches around Server Actions let Next's redirects through.
 import { rethrowRedirectPlugin } from "./eslint-rules/rethrow-redirect.mjs";
 
+const AI_READ =
+  "Asking an AI in a Server Action holds up every save behind it. Add an AI read in src/app/api/ai/reads.ts instead.";
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -90,6 +93,27 @@ const eslintConfig = defineConfig([
     ignores: ["src/**/*.test.ts", "src/**/*.test.tsx"],
     plugins: { redirect: rethrowRedirectPlugin },
     rules: { "redirect/rethrow-redirect": "error" },
+  },
+  // A read that asks an AI is an AI read (src/app/api/ai/reads.ts), not a
+  // Server Action: Next runs Server Actions one at a time, so a slow model
+  // would hold up every save behind it (src/app/AGENTS.md).
+  {
+    files: ["src/app/actions.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            ...["@/lib/jev", "@/lib/itemSuggest", "@/lib/feedbackFollowUps", "@/lib/greetingJev", "@/lib/greetingWriter"].map(
+              (name) => ({ name, allowTypeImports: true, message: AI_READ }),
+            ),
+            { name: "@/lib/emojiSuggest", importNames: ["suggestEmoji", "suggestLabelEmoji"], message: AI_READ },
+            { name: "@/core/agendaGreeting", importNames: ["writtenGreetingFor"], message: AI_READ },
+            { name: "@/core/feedback", importNames: ["feedbackFollowUps"], message: AI_READ },
+          ],
+        },
+      ],
+    },
   },
 ]);
 

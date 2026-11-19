@@ -3,7 +3,7 @@
 import { useId, useRef, useState, useTransition } from "react";
 import { Boxes, ChevronDown, Plus } from "lucide-react";
 import { toast } from "sonner";
-import { createProjectAction, suggestListIconsAction } from "@/app/actions";
+import { createProjectAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -28,6 +28,7 @@ import { normalizeHomepageUrl } from "@/lib/url";
 import { IconPicker } from "./ProjectIconPicker";
 import { runAction } from "./run-action";
 import { type EmojiChoice, UNCHOSEN, useTitleEmoji } from "./use-emoji-choice";
+import { aiRead } from "./ai-read";
 
 function Label({
   htmlFor,
@@ -105,7 +106,7 @@ export function NewProjectDialog({
     title: open ? trimmedName : "",
     savedTitle: null,
     context: [summary, homepageUrl],
-    suggest: (next) => suggestListIconsAction({ name: next, summary, homepageUrl }),
+    suggest: (next, signal) => aiRead("listIcons", { name: next, summary, homepageUrl }, signal),
     none: Boolean(homepageUrl),
   });
   const prefix = dedupePrefix(derivePrefix(trimmedName), new Set(takenPrefixes));

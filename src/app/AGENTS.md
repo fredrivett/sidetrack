@@ -21,6 +21,25 @@ in `src/components/`.
   so anyone could read or forge them. Pass values as arguments to an
   action in `actions.ts` instead, and check them on the server.
 
+## AI reads (`api/ai/`)
+
+- Next runs a page's Server Actions one at a time, so an action that waits
+  seconds on a model holds up every save and read behind it (an item's
+  comments sat on "Loading…" behind the greeting). A read that asks Jev or
+  Claude is an AI read instead: an entry in `api/ai/reads.ts`, called with
+  `aiRead(name, input, signal)` (`src/components/ai-read.ts`), which takes
+  its types from that entry. ESLint blocks the AI modules in `actions.ts`.
+- `api/ai/[read]/route.ts` makes the checks a Server Action would get for
+  free, and more: same origin, signed in (the user comes from the session,
+  never the body), a capped body, the entry's zod input, a per-user rate
+  limit, and a bare status on failure. An entry only says what it reads.
+- Pass the entry's `fetch` to the model call, so the request stops when the
+  browser gives up on it (newer typing aborts the old suggestion). Use the
+  global `fetch` only for work worth finishing anyway, like the greeting's
+  shared cache.
+- Saves that ask an AI along the way (sort by priority, a new list's icon)
+  stay Server Actions: they change data, and a route can't refresh the page.
+
 ## Pages
 
 - `page.tsx` is a Server Component that reads from `getDb()` directly.

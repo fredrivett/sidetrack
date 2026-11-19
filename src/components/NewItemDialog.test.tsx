@@ -9,8 +9,9 @@ import { NewItemDialog } from "./NewItemDialog";
 vi.mock("@/app/actions", () => ({
   addItemAction: vi.fn(async (input: { title: string }) => ({ id: "new", projectId: "p1", title: input.title })),
   createProjectAction: vi.fn(),
-  suggestForNewItemAction: vi.fn(() => new Promise(() => {})),
 }));
+// Jev's suggestions never arrive here.
+vi.mock("./ai-read", () => ({ aiRead: vi.fn(() => new Promise(() => {})) }));
 
 beforeAll(() => {
   vi.useFakeTimers({ toFake: ["Date"] });

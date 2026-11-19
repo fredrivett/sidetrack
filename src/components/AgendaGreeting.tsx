@@ -1,14 +1,14 @@
 "use client";
 
-import { unstable_rethrow } from "next/navigation";
 import { Plus, RefreshCw, Settings, ThumbsDown, ThumbsUp } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { agendaGreetingAction, setAgendaReadAction } from "@/app/actions";
+import { setAgendaReadAction } from "@/app/actions";
 import type { Greeting } from "@/core/agendaGreeting";
 import type { Item } from "@/core/schema";
 import { parseGreeting } from "@/lib/greeting";
+import { aiRead } from "./ai-read";
 import type { FeedbackAbout } from "./FeedbackDialog";
 import { GreetingDialog, type RenderItem } from "./GreetingDialog";
 import { useToday } from "./use-day-start";
@@ -151,7 +151,7 @@ export function AgendaGreeting({
     // Background read: it never holds anything up, and a failure just
     // leaves the opening line on its own. Asking again keeps the greeting
     // shown until the new one arrives.
-    agendaGreetingAction(askedNow.current).then(
+    aiRead("greeting", { now: askedNow.current }).then(
       (g) => {
         if (!live) return;
         setGreeting(g);
@@ -162,8 +162,7 @@ export function AgendaGreeting({
         // Up to date unless the server is holding an out-of-date one.
         if (at === null) setChanged(false);
       },
-      (error) => {
-        unstable_rethrow(error);
+      () => {
         if (!live) return;
         setAsking(false);
         if (asks === 0) setGreeting(null);

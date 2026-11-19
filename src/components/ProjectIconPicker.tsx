@@ -3,7 +3,7 @@
 import { Check, SmilePlus, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { suggestListIconsAction, updateProjectAction } from "@/app/actions";
+import { updateProjectAction } from "@/app/actions";
 import type { Project } from "@/core/schema";
 import { normalizeWebUrl } from "@/lib/url";
 import { cn } from "@/lib/utils";
@@ -25,6 +25,7 @@ import { ProjectIcon } from "./ProjectIcon";
 import { runAction } from "./run-action";
 import { useTitleEmoji } from "./use-emoji-choice";
 import { useListSave } from "./use-list-saves";
+import { aiRead } from "./ai-read";
 
 /** A saved list's icon (see useTitleEmoji): `rename` keeps it in step. */
 export function useListIcon(project: Project) {
@@ -34,7 +35,8 @@ export function useListIcon(project: Project) {
     title: name,
     savedTitle: name,
     context: [summary, homepageUrl],
-    suggest: (next) => suggestListIconsAction({ id: project.id, name: next, summary, homepageUrl }),
+    suggest: (next, signal) =>
+      aiRead("listIcons", { id: project.id, name: next, summary, homepageUrl }, signal),
     none: Boolean(homepageUrl),
   });
   return {
