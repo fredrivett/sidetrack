@@ -195,7 +195,7 @@ function stillVisible(db: Db, viewerId: string, greeting: StoredGreeting): boole
 const BACKOFF_MS = [10_000, 30_000, 60_000, 2 * 60_000, 5 * 60_000];
 /** …starting over once nothing has asked for this long past the wait… */
 const QUIET_MS = 3 * 60_000;
-/** …or at most this long when they ask for it with "Rewrite now"… */
+/** …or this long when they ask for it with "Rewrite now" (the back-off's first step)… */
 const ASK_NOW_EVERY_MS = 10_000;
 /** …or this often after an ask for the same part of the day failed… */
 const RETRY_FAILED_MS = 15 * 60_000;
@@ -267,8 +267,9 @@ export function greetingFor(
  * The viewer's greeting with Jev's picks in Claude's words, when both `keys`
  * are set. Written once a morning, afternoon and evening and read back from
  * agenda_greetings in between; written afresh at once after a quiet spell,
- * then backing off (BACKOFF_MS), and at most ASKS_PER_DAY times a day per person. Anything else, from a failed or
- * rejected write to a limit, gives the template greeting. `fetchImpl` is
+ * then backing off (BACKOFF_MS), and at most ASKS_PER_DAY times a day per
+ * person. Anything else, from a failed or rejected write to a limit, gives
+ * the template greeting. `fetchImpl` is
  * injectable for tests.
  */
 export async function writtenGreetingFor(
@@ -278,7 +279,7 @@ export async function writtenGreetingFor(
   keys: { jev: string | undefined; anthropic: string | undefined },
   now = Date.now(),
   fetchImpl: typeof fetch = fetch,
-  /** Asked for with "Rewrite now": it waits ASK_NOW_EVERY_MS at most, not the backoff. The daily caps still hold. */
+  /** Asked for with "Rewrite now": it waits ASK_NOW_EVERY_MS, not the back-off. The daily caps still hold. */
   rewriteNow = false,
 ): Promise<Greeting> {
   const { brief, name, prefs } = briefFor(db, viewerId, timeZone, now);
@@ -318,7 +319,7 @@ export async function writtenGreetingFor(
   const streak = row?.streak ?? 0;
   const backoff = BACKOFF_MS[Math.min(Math.max(streak, 1), BACKOFF_MS.length) - 1];
   const quiet = !row || now - row.askedAt >= backoff + QUIET_MS;
-  const wait = failed ? RETRY_FAILED_MS : rewriteNow ? Math.min(backoff, ASK_NOW_EVERY_MS) : backoff;
+  const wait = failed ? RETRY_FAILED_MS : rewriteNow ? ASK_NOW_EVERY_MS : backoff;
   // A failed write still waits its full time, quiet or not.
   if (row && (failed || !quiet) && now - row.askedAt < wait) {
     const minutes = Math.ceil((row.askedAt + wait - now) / 60_000);

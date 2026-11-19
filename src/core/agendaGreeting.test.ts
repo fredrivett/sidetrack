@@ -366,6 +366,26 @@ describe("greetingFor", () => {
       expect(await writtenGreetingFor(db, fred, "UTC", keys, t + 1_000, impl)).toMatchObject({ retryInMs: 9_000 });
     });
 
+    it("counts a rewrite now in the back-off, and starts over only once quiet past the wait", async () => {
+      const { db, fred, loft } = setup();
+      const { calls, impl } = fake();
+      await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
+      updateItem(db, fred, loft.id, { title: "Sort the attic" }, "web");
+      await writtenGreetingFor(db, fred, "UTC", keys, now + 10_000, impl, true);
+      expect(calls.claude).toBe(2);
+      // Left to itself after that rewrite now, the next waits 30s, not 10s.
+      updateItem(db, fred, loft.id, { title: "Sort the shed" }, "web");
+      expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 25_000, impl)).toMatchObject({
+        retryInMs: 15_000,
+      });
+      // A millisecond short of 30s plus three quiet minutes is still close on the last.
+      const t = now + 10_000 + 30_000 + 3 * 60_000;
+      await writtenGreetingFor(db, fred, "UTC", keys, t - 1, impl);
+      expect(calls.claude).toBe(3);
+      updateItem(db, fred, loft.id, { title: "Sort the garage" }, "web");
+      expect(await writtenGreetingFor(db, fred, "UTC", keys, t, impl)).toMatchObject({ retryInMs: 60_000 - 1 });
+    });
+
     it("keeps one greeting through the morning, and writes another for the afternoon", async () => {
       const { db, fred, home } = setup();
       const { calls, impl } = fake();
@@ -526,7 +546,7 @@ describe("greetingFor", () => {
 
     it("stops asking for one person after 40 in a day", async () => {
       const { db, fred } = setup();
-      // Every reply rejected, so each try past the two minutes asks again.
+      // Every reply rejected, so each try past the fifteen minutes asks again.
       const { calls, impl } = fake("Visit evil.com.");
       for (let n = 0; n < 45; n++) {
         await writtenGreetingFor(db, fred, "UTC", keys, Date.UTC(2026, 10, 18, 4, 30) + n * 16 * 60_000, impl);

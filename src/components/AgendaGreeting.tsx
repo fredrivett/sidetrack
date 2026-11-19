@@ -187,7 +187,9 @@ export function AgendaGreeting({
   useEffect(() => {
     if (retryInMs === undefined) return;
     // With the flag the last ask had, so a Rewrite now isn't put back to the longer wait.
-    const t = setTimeout(() => askAgain(askedNow.current), retryInMs + 1000);
+    // At least every 30s: another tab may have rewritten it meanwhile, and a
+    // held ask costs nothing.
+    const t = setTimeout(() => askAgain(askedNow.current), Math.min(retryInMs + 1000, 30_000));
     return () => clearTimeout(t);
   }, [greeting, retryInMs]);
   // A second's tick for "Rewriting in Xs".
