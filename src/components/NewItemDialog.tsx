@@ -418,7 +418,7 @@ export function NewItemDialog({
                 placeholder="Add a task…"
               />
               {duplicate && (
-                <p className="text-xs text-amber-700 dark:text-amber-400">
+                <p data-item-ref={duplicate.ref} className="text-xs text-amber-700 dark:text-amber-400">
                   Looks like {duplicate.ref} “{duplicate.title}” is already on
                   this list.
                 </p>
@@ -429,6 +429,7 @@ export function NewItemDialog({
                   variant="outline"
                   size="xs"
                   onClick={() => setParent({ projectId, item: parentHint })}
+                  data-item-ref={parentHint.ref}
                   className="max-w-full font-normal text-muted-foreground"
                 >
                   <CornerDownRight data-icon="inline-start" />
@@ -438,7 +439,10 @@ export function NewItemDialog({
                 </Button>
               )}
               {chosenParent && (
-                <p className="inline-flex h-6 max-w-full items-center gap-1 rounded-md bg-muted pr-0.5 pl-1.5 text-xs">
+                <p
+                  data-item-ref={chosenParent.ref}
+                  className="inline-flex h-6 max-w-full items-center gap-1 rounded-md bg-muted pr-0.5 pl-1.5 text-xs"
+                >
                   <CornerDownRight className="size-3 shrink-0 text-muted-foreground" />
                   <span className="truncate">
                     Sub-item of {chosenParent.ref} “{chosenParent.title}”

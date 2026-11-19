@@ -9,6 +9,7 @@ import {
 } from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
+import { formatItemRef } from "@/lib/itemRef";
 import { nestItems } from "@/lib/itemTree";
 import { AGENDA_SECTIONS, agendaSection, type AgendaSection } from "@/lib/time";
 import { isYours, type ItemFilters, matchesFilters } from "@/lib/filters";
@@ -305,6 +306,7 @@ export function AgendaView({
           <AgendaGreeting
             firstName={firstName}
             itemsById={byId}
+            refOf={(item) => formatItemRef(projectOf.get(item.projectId)?.refPrefix ?? "", item.number)}
             onHoverItem={setLit}
             onFeedback={onFeedback}
             onAddForToday={onAddForToday}

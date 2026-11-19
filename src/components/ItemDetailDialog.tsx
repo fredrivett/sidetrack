@@ -390,6 +390,7 @@ function RepeatChip({
  */
 function Checklist({
   parent,
+  prefix,
   items,
   assignees,
   viewerId,
@@ -401,6 +402,8 @@ function Checklist({
   focusId,
 }: {
   parent: Item;
+  /** The list's ref prefix, for ⌘. on a hovered sub-item. */
+  prefix: string;
   items: Item[];
   assignees: AssigneeView[];
   viewerId: string;
@@ -478,7 +481,11 @@ function Checklist({
         const childAssigneeIds = assigneesById[child.id] ?? child.assigneeIds;
         const assigned = assignees.filter((a) => childAssigneeIds.includes(a.userId));
         return (
-          <div key={child.id} className="flex items-center gap-2 px-1 py-0.5">
+          <div
+            key={child.id}
+            data-item-ref={formatItemRef(prefix, child.number)}
+            className="flex items-center gap-2 px-1 py-0.5"
+          >
             <Checkbox
               checked={done}
               onCheckedChange={() => setCompleted(child, !done)}
@@ -920,6 +927,7 @@ export function ItemDetailView({
               <DropdownMenuTrigger
                 aria-disabled={pending || undefined}
                 title="Sub-item of"
+                data-item-ref={formatItemRef(prefix, parent.number)}
                 className={CHIP}
               >
                 <IndentIncrease />
@@ -952,7 +960,11 @@ export function ItemDetailView({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-64">
                   {nestTargets.map((t) => (
-                    <DropdownMenuItem key={t.id} onClick={() => changes.setParent(item, t.id)}>
+                    <DropdownMenuItem
+                      key={t.id}
+                      data-item-ref={formatItemRef(prefix, t.number)}
+                      onClick={() => changes.setParent(item, t.id)}
+                    >
                       <span className="truncate">{t.title}</span>
                     </DropdownMenuItem>
                   ))}
@@ -977,6 +989,7 @@ export function ItemDetailView({
         >
           <Checklist
             parent={item}
+            prefix={prefix}
             items={checklist}
             assignees={assignees}
             viewerId={viewerId}

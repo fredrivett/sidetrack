@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getEnv } from "../lib/env";
+import { formatItemRef } from "../lib/itemRef";
 import { getPostHog } from "../lib/posthog";
 import { isEmoji } from "../lib/projectIcon";
 import { type PushMessage, sendPush } from "../lib/push";
@@ -53,6 +54,8 @@ export interface NotificationView {
   title: string;
   /** Where tapping it goes, a path in the app. */
   url: string;
+  /** The ref of the item it's about, such as "SID-42", for ⌘. to copy. */
+  itemRef?: string;
   createdAt: number;
   readAt: number | null;
   /** Who made the change; null when their account is gone. */
@@ -581,7 +584,9 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           .select({
             id: items.id,
             title: items.title,
+            number: items.number,
             projectId: items.projectId,
+            prefix: projects.prefix,
             list: projects.name,
             icon: projects.icon,
             homepageUrl: projects.homepageUrl,
@@ -674,6 +679,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           title: now.list,
           list: listPart(now.projectId, now.list, now).list,
           url: `/board?p=${encodeURIComponent(now.projectId)}&item=${encodeURIComponent(now.id)}`,
+          itemRef: formatItemRef(now.prefix, now.number),
           parts: [
             { text: now.title, em: "item", quote: true },
             { text: r.reason === "due-today" ? " is due today" : " is overdue" },
@@ -707,7 +713,12 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
       const now = open.get(about.itemId);
       if (!now) return [];
       const item: Part = { text: now.title, em: "item", quote: true };
-      const at = { title: now.list, list: listPart(now.projectId, now.list, now).list, url: `/board?p=${encodeURIComponent(now.projectId)}&item=${encodeURIComponent(now.id)}` };
+      const at = {
+        title: now.list,
+        list: listPart(now.projectId, now.list, now).list,
+        url: `/board?p=${encodeURIComponent(now.projectId)}&item=${encodeURIComponent(now.id)}`,
+        itemRef: formatItemRef(now.prefix, now.number),
+      };
       const say = (parts: Part[], snippet: string | null = null): NotificationView[] => [
         { ...base, ...at, parts, snippet },
       ];

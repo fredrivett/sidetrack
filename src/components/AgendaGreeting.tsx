@@ -29,6 +29,7 @@ function Tap({
   onClick: () => void;
   className: string;
   children: React.ReactNode;
+  "data-item-ref"?: string;
 } & Pick<React.HTMLAttributes<HTMLSpanElement>, "onPointerEnter" | "onPointerLeave" | "onFocus" | "onBlur">) {
   return (
     <span
@@ -100,10 +101,13 @@ export function AgendaGreeting({
   onFeedback,
   renderItem,
   onAddForToday,
+  refOf,
 }: {
   firstName: string | null;
   /** Items the page has, so a chip can open its item. */
   itemsById: Map<string, Item>;
+  /** An item's ref, such as "SID-42", for ⌘. on a hovered chip. */
+  refOf: (item: Item) => string;
   onOpenItem: (item: Item) => void;
   onAction: (action: string) => void;
   onHoverItem: (id: string | null) => void;
@@ -333,6 +337,7 @@ export function AgendaGreeting({
                 <Tap
                   key={i}
                   onClick={() => onOpenItem(item)}
+                  data-item-ref={refOf(item)}
                   onPointerEnter={() => onHoverItem(item.id)}
                   onPointerLeave={() => onHoverItem(null)}
                   // Keyboard focus only: a click leaves focus on the chip after its dialog closes.
@@ -429,6 +434,7 @@ export function AgendaGreeting({
         trace={greeting?.trace}
         others={others}
         itemsById={itemsById}
+        refOf={refOf}
         renderItem={renderItem}
       />
     </div>

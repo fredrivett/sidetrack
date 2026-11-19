@@ -98,6 +98,7 @@ describe("notifications", () => {
     expect(listNotifications(db, fred)[0]).toMatchObject({
       title: "Home",
       url: `/board?p=${listId}&item=${item.id}`,
+      itemRef: "HOM-1",
       reason: "assigned",
     });
   });

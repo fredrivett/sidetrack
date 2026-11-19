@@ -132,6 +132,8 @@ export function NotificationsInbox({
             {notifications.map((n) => (
               <li
                 key={n.id}
+                // ⌘. copies its item's ref while hovered (CopyHoveredItemRef).
+                data-item-ref={n.itemRef}
                 // The row's button covers it, under the list chips, which are
                 // buttons of their own; the row shows its hover and focus.
                 // Its background is opaque and named, for the dot's outline.
