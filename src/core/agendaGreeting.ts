@@ -188,7 +188,9 @@ function stillVisible(db: Db, viewerId: string, greeting: StoredGreeting): boole
 }
 
 /** Claude writes one person's greeting at most this often… */
-const ASK_EVERY_MS = 2 * 60_000;
+const ASK_EVERY_MS = 30_000;
+/** …or this often when they ask for it with "Rewrite now"… */
+const ASK_NOW_EVERY_MS = 10_000;
 /** …or this often after an ask for the same part of the day failed… */
 const RETRY_FAILED_MS = 15 * 60_000;
 /** …and this many times in a UTC day. */
@@ -270,6 +272,8 @@ export async function writtenGreetingFor(
   keys: { jev: string | undefined; anthropic: string | undefined },
   now = Date.now(),
   fetchImpl: typeof fetch = fetch,
+  /** Asked for with "Rewrite now": it waits ASK_NOW_EVERY_MS, not ASK_EVERY_MS. The daily caps still hold. */
+  rewriteNow = false,
 ): Promise<Greeting> {
   const { brief, name, prefs } = briefFor(db, viewerId, timeZone, now);
   const hello = helloFor(brief, name);
@@ -304,12 +308,13 @@ export async function writtenGreetingFor(
   if (everyone.day !== utcDay) Object.assign(everyone, { day: utcDay, asks: 0 });
   // A write that failed for this part of the day likely fails again soon.
   const failed = row?.key === key && !same?.text;
-  const wait = failed ? RETRY_FAILED_MS : ASK_EVERY_MS;
+  const wait = failed ? RETRY_FAILED_MS : rewriteNow ? ASK_NOW_EVERY_MS : ASK_EVERY_MS;
   if (row && now - row.askedAt < wait) {
     const minutes = Math.ceil((row.askedAt + wait - now) / 60_000);
     if (!failed) {
+      const seconds = Math.ceil((row.askedAt + wait - now) / 1000);
       return stale(
-        template(`One was asked for moments ago; it asks again in ${minutes} min`),
+        template(`One was asked for moments ago; it asks again in ${seconds}s`),
         row.askedAt + wait - now,
       );
     }
@@ -319,8 +324,10 @@ export async function writtenGreetingFor(
     // Its trace only while every title in it is still the viewer's to see.
     return stillVisible(db, viewerId, same) ? template(why, same.trace) : template(why);
   }
-  if (asks >= ASKS_PER_DAY) return stale(template(`You've had today's ${ASKS_PER_DAY} written greetings`));
-  if (everyone.asks >= ASKS_PER_DAY_ALL) return stale(template("This server has written all it may today"));
+  // Out of date with no more writes today: the built-in one, which is up to
+  // date, rather than a written one that's wrong until tomorrow.
+  if (asks >= ASKS_PER_DAY) return template(`You've had today's ${ASKS_PER_DAY} written greetings`);
+  if (everyone.asks >= ASKS_PER_DAY_ALL) return template("This server has written all it may today");
   // Count the ask before awaiting it, so loads at the same moment ask once.
   everyone.asks += 1;
   // The written one it has stays meanwhile, so a load at the same moment (another

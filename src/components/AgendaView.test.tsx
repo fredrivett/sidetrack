@@ -423,10 +423,67 @@ describe("AgendaView", () => {
     // Ticking off what it names does, after a moment, and the greeting stays
     // until the new one comes.
     rerender(board([{ ...late, completedAt: 1 }, { ...bins, title: "Put the bins out" }]));
+    // Faded and marked out of date at once, before it asks.
+    await screen.findByText("Out of date");
     await waitFor(() => expect(calls()).toBe(before + 1), { timeout: 3000 });
-    expect(screen.getByText(/is still waiting\.$/)).toBeTruthy();
-    await act(async () => answer({ ...first, text: "That's everything for today.", titles: {} }));
-    expect(screen.getByText("That's everything for today.")).toBeTruthy();
+    expect(screen.getByText("Rewriting…")).toBeTruthy();
+    // Too soon to rewrite: the old one stays, counting down, with Rewrite now.
+    let again!: (g: Greeting) => void;
+    vi.mocked(agendaGreetingAction).mockReturnValueOnce(new Promise((r) => (again = r)));
+    await act(async () => answer({ ...first, retryInMs: 20_000 }));
+    expect(screen.getByText("Out of date")).toBeTruthy();
+    expect(screen.getByText(/· rewriting in (19|20)s$/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Rewrite now" }));
+    expect(vi.mocked(agendaGreetingAction)).toHaveBeenLastCalledWith(true);
+    // Still too soon: the retry it schedules keeps asking as "Rewrite now" did.
+    let third!: (g: Greeting) => void;
+    vi.mocked(agendaGreetingAction).mockReturnValueOnce(new Promise((r) => (third = r)));
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    try {
+      await act(async () => again({ ...first, retryInMs: 3_000 }));
+      await act(async () => vi.advanceTimersByTime(4_500));
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(vi.mocked(agendaGreetingAction)).toHaveBeenLastCalledWith(true);
+    await act(async () => third({ ...first, text: "That's everything for today.", titles: {} }));
+    expect(screen.getByText("That's everything for today.").hasAttribute("aria-busy")).toBe(false);
+    expect(screen.queryByRole("button", { name: "Rewrite now" })).toBeNull();
+  });
+
+  it("stops showing the greeting out of date when a change to what it names is undone before it asks", async () => {
+    const late = item("Call the bank", "2026-11-10");
+    vi.mocked(agendaGreetingAction).mockResolvedValueOnce({
+      hello: "Good morning, Fred.",
+      text: `{{item:${late.id}}} is still waiting.`,
+      titles: { [late.id]: "Call the bank" },
+      written: true,
+      others: [],
+    } satisfies Greeting);
+    const board = (items: Item[]) => (
+      <AgendaView
+        projects={[home]}
+        itemsByProject={{ p1: items }}
+        assigneesByProject={{}}
+        prLinksByItem={{}}
+        viewerId="me"
+        overdueCollapsed={false}
+        noDateCollapsed={false}
+        noDateFoldedLists={[]}
+        greet
+        firstName="Fred"
+        filters={NO_FILTERS}
+      />
+    );
+    const { rerender } = render(board([late]));
+    await screen.findByText(/is still waiting\.$/);
+    const before = vi.mocked(agendaGreetingAction).mock.calls.length;
+    rerender(board([{ ...late, completedAt: 1 }]));
+    await screen.findByText("Out of date");
+    rerender(board([late]));
+    await waitFor(() => expect(screen.queryByText("Out of date")).toBeNull());
+    await new Promise((r) => setTimeout(r, 1800));
+    expect(vi.mocked(agendaGreetingAction).mock.calls.length).toBe(before);
   });
 
   it("explains how the greeting was worked out", async () => {
