@@ -191,9 +191,15 @@ describe("AgendaView", () => {
     for (const hidden of ["Theirs", "Their step"]) expect(screen.queryByText(hidden)).toBeNull();
     cleanup();
 
+    // Only theirs: nothing to do, not a filter hiding things.
+    renderAgenda([item("Theirs", "2026-11-14", { assigneeIds: ["them"] })]);
+    expect(screen.getByText("Nothing to do.")).toBeTruthy();
+    cleanup();
+
     // Picking them in the header doesn't bring their items back.
     renderAgenda([item("Theirs", "2026-11-14", { assigneeIds: ["them"] })], [home], false, { assignees: ["them"] });
     expect(screen.queryByText("Theirs")).toBeNull();
+    expect(screen.getByText("Nothing to do.")).toBeTruthy();
   });
 
   it("groups undated items by list and keeps a filtered sub-item with its parent named", () => {

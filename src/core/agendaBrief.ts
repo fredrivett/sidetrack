@@ -90,7 +90,6 @@ export interface AgendaBrief {
   stale: BriefItem[];
 }
 
-
 /** Morning until noon, afternoon until 6pm, then evening until the 4am turnover. */
 function partOfDay(now: number, timeZone: string): PartOfDay {
   const hour = Number(
