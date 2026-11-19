@@ -127,6 +127,13 @@ export function FeedbackDialog({
       );
       if (!ok) return;
       posthog.capture("feedback_submitted", { kind, ref: filed.ref, area: about?.area, rating: about?.rating });
+      // A thumbs up is a kind word, not a report to fill in: no questions,
+      // and no Claude call or "Checking…" wait to find there are none.
+      if (about?.rating === "up") {
+        toast.success("Thanks, your feedback was sent");
+        onOpenChange(false);
+        return;
+      }
       // It's filed. Claude's questions are an optional extra (AI suggestions
       // never hold), so a failure or nothing to ask just closes as before.
       setSent({ ...filed, questions: null });
