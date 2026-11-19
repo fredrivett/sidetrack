@@ -1,8 +1,9 @@
 import { Geist, Geist_Mono, Instrument_Serif, Literata } from "next/font/google";
 
 // The app's fonts. globals.css names them in --font-sans, --font-mono,
-// --font-display (the Agenda greeting's hello) and --font-serif (its prose); loading them here adds their @font-face rules. Shared by the
-// root layout and global-error, which replaces it and loads its own.
+// --font-display (the Agenda greeting's hello) and --font-serif (its
+// prose); loading them here adds their @font-face rules. Shared by the root
+// layout and global-error, which replaces it and loads its own.
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
