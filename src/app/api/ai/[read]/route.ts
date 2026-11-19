@@ -16,7 +16,7 @@ const PER_MINUTE = 60;
  * answer with a bare status; what went wrong reaches the error tracker
  * (instrumentation.ts), not the browser.
  */
-export async function POST(request: Request, ctx: RouteContext<"/api/ai/[read]">) {
+export async function POST(request: Request, ctx: { params: Promise<{ read: string }> }) {
   const { read: name } = await ctx.params;
   if (!Object.hasOwn(AI_READS, name)) return status(404);
   const read = AI_READS[name as AiReadName];
