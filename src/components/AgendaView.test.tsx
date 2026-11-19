@@ -149,6 +149,7 @@ describe("AgendaView", () => {
     const mixed = () => [
       item("today, mine", "2026-11-14", { assigneeIds: ["me"] }),
       item("late, theirs", "2026-11-10", { assigneeIds: ["them"] }),
+      item("late, nobody's", "2026-11-11"),
       item("next week, ours", "2026-11-18", { assigneeIds: ["them", "me"] }),
       item("today, done", "2026-11-14", doneOn(14)),
       item("no date", null, { labels: ["errand"] }),
@@ -169,9 +170,30 @@ describe("AgendaView", () => {
     // Done today off, and only what's late.
     renderAgenda(mixed(), [home], false, { doneToday: false, due: ["overdue", "today"] });
     expect(screen.getByText("today, mine")).toBeTruthy();
-    expect(screen.getByText("late, theirs")).toBeTruthy();
+    expect(screen.getByText("late, nobody's")).toBeTruthy();
     expect(screen.queryByText("today, done")).toBeNull();
     expect(screen.queryByText("next week, ours")).toBeNull();
+  });
+
+  it("shows only what's the viewer's or nobody's, whatever the filters", () => {
+    const theirs = item("Their launch", null, { assigneeIds: ["them"] });
+    renderAgenda([
+      item("Mine", "2026-11-14", { assigneeIds: ["me"] }),
+      item("Nobody's", "2026-11-14"),
+      item("Joint", "2026-11-14", { assigneeIds: ["them", "me"] }),
+      item("Theirs", "2026-11-14", { assigneeIds: ["them"] }),
+      theirs,
+      // An unassigned step under their task stays theirs; one assigned to me doesn't.
+      item("Their step", null, { parentId: theirs.id }),
+      item("My step", null, { parentId: theirs.id, assigneeIds: ["me"] }),
+    ]);
+    for (const shown of ["Mine", "Nobody's", "Joint", "My step"]) expect(screen.getByText(shown)).toBeTruthy();
+    for (const hidden of ["Theirs", "Their step"]) expect(screen.queryByText(hidden)).toBeNull();
+    cleanup();
+
+    // Picking them in the header doesn't bring their items back.
+    renderAgenda([item("Theirs", "2026-11-14", { assigneeIds: ["them"] })], [home], false, { assignees: ["them"] });
+    expect(screen.queryByText("Theirs")).toBeNull();
   });
 
   it("groups undated items by list and keeps a filtered sub-item with its parent named", () => {

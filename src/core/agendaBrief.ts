@@ -5,6 +5,7 @@
 // later) only ever states what's here.
 
 import { and, eq, gte, inArray, isNull, max, or } from "drizzle-orm";
+import { isYours } from "../lib/filters";
 import { formatItemRef } from "../lib/itemRef";
 import { nestItems } from "../lib/itemTree";
 import { addDays, agendaSection, dayOf, weekSpan } from "../lib/time";
@@ -89,16 +90,6 @@ export interface AgendaBrief {
   stale: BriefItem[];
 }
 
-/**
- * Whether `item` is the viewer's to think about: assigned to them, or
- * unassigned. An unassigned sub-item counts only when its parent does, so a
- * step under someone else's task stays theirs.
- */
-function counts(item: Item, parent: Item | undefined, viewerId: string): boolean {
-  if (item.assigneeIds.includes(viewerId)) return true;
-  if (item.assigneeIds.length > 0) return false;
-  return !parent || parent.assigneeIds.length === 0 || parent.assigneeIds.includes(viewerId);
-}
 
 /** Morning until noon, afternoon until 6pm, then evening until the 4am turnover. */
 function partOfDay(now: number, timeZone: string): PartOfDay {
@@ -158,7 +149,7 @@ export function buildAgendaBrief(
   const rows = nestItems(found).flatMap(({ children, ...it }) => [it, ...children]);
   const byId = new Map(rows.map((i) => [i.id, i]));
   const parentOf = (i: Item) => (i.parentId ? byId.get(i.parentId) : undefined);
-  const mine = rows.filter((i) => counts(i, parentOf(i), viewerId));
+  const mine = rows.filter((i) => isYours(i, parentOf(i), viewerId));
   const mineIds = new Set(mine.map((i) => i.id));
 
   const stepsLeft = new Map<string, number>();
