@@ -1,14 +1,28 @@
 "use client";
 
+import { ChevronDown } from "lucide-react";
 import { useState } from "react";
 import {
   MAX_REPEAT_EVERY,
+  nextDue,
   type Repeat,
+  REPEAT_ONS,
   REPEAT_UNITS,
+  type RepeatOn,
+  repeatOnName,
   type RepeatUnit,
 } from "@/lib/repeat";
 import { Button } from "@/components/ui/button";
-import { useComesBack } from "./RepeatBadge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { backLabel, useComesBack } from "./RepeatBadge";
+import { useToday } from "./use-day-start";
 
 const QUICK_REPEATS: Array<[string, Repeat]> = [
   ["Daily", { every: 1, unit: "day" }],
@@ -16,29 +30,38 @@ const QUICK_REPEATS: Array<[string, Repeat]> = [
   ["Monthly", { every: 1, unit: "month" }],
 ];
 
-const sameRepeat = (a: Repeat | null, b: Repeat | null) =>
+// Daily, Weekly and Monthly whichever days they keep to.
+const sameGap = (a: Repeat | null, b: Repeat | null) =>
   a?.every === b?.every && a?.unit === b?.unit;
+const sameRepeat = (a: Repeat | null, b: Repeat | null) =>
+  sameGap(a, b) && (a?.on ?? null) === (b?.on ?? null);
+
+/** `every` `unit`, keeping the days `was` kept to when the new unit can. */
+function withGap(every: number, unit: RepeatUnit, was: Repeat | null): Repeat {
+  return unit !== "day" && was?.on
+    ? { every, unit, on: was.on }
+    : { every, unit };
+}
 
 /**
  * How often a task comes round again: Daily, Weekly, Monthly, or Custom for
- * "every 3 days" and the like. The count saves on blur or Enter, the unit as
- * soon as it's picked. Keyed by item, so a draft never carries over.
+ * "every 3 days" and the like, and for a weekly or monthly rule, the days it
+ * keeps to ("on weekends"). The count saves on blur or Enter, the unit and
+ * days as soon as they're picked. Keyed by item, so a draft never carries
+ * over.
  */
 export function RepeatPicker({
   repeat,
   completedAt,
-  due = null,
   disabled,
   onChange,
 }: {
   repeat: Repeat | null;
   completedAt: number | null;
-  /** When it was due, for a week or weekend that comes back as one. */
-  due?: { dueDate: string | null; dueFrom: string | null } | null;
   disabled: boolean;
   onChange: (repeat: Repeat | null) => void;
 }) {
-  const isQuick = QUICK_REPEATS.some(([, r]) => sameRepeat(r, repeat));
+  const isQuick = QUICK_REPEATS.some(([, r]) => sameGap(r, repeat));
   const [custom, setCustom] = useState(false);
   const [every, setEvery] = useState(String(repeat?.every ?? ""));
   const [unit, setUnit] = useState<RepeatUnit>(repeat?.unit ?? "day");
@@ -49,8 +72,11 @@ export function RepeatPicker({
     setEvery(String(repeat?.every ?? ""));
     setUnit(repeat?.unit ?? "day");
   }
-  const back = useComesBack(repeat, completedAt, due);
+  const back = useComesBack(repeat, completedAt);
+  const today = useToday();
   const editing = custom || (repeat !== null && !isQuick);
+  // Only a weekly or monthly rule keeps to days: daily would skip most.
+  const keepsToDays = repeat !== null && repeat.unit !== "day";
 
   function save(nextEvery: string, nextUnit: RepeatUnit) {
     const n = Number(nextEvery);
@@ -59,7 +85,7 @@ export function RepeatPicker({
       setEvery(String(repeat?.every ?? ""));
       return;
     }
-    const next = { every: n, unit: nextUnit };
+    const next = withGap(n, nextUnit, repeat);
     if (!sameRepeat(next, repeat)) onChange(next);
   }
 
@@ -76,13 +102,14 @@ export function RepeatPicker({
             variant="outline"
             size="xs"
             disabled={disabled}
-            aria-pressed={!editing && sameRepeat(r, repeat)}
+            aria-pressed={!editing && sameGap(r, repeat)}
             data-repeat-choice
             onClick={() => {
               setCustom(false);
-              onChange(r);
+              const next = withGap(r.every, r.unit, repeat);
+              if (!sameRepeat(next, repeat)) onChange(next);
             }}
-            className={!editing && sameRepeat(r, repeat) ? pressed : ""}
+            className={!editing && sameGap(r, repeat) ? pressed : ""}
           >
             {label}
           </Button>
@@ -114,66 +141,143 @@ export function RepeatPicker({
           </Button>
         )}
       </div>
-      {editing && (
-        <div className="flex items-center gap-1.5 text-xs text-neutral-600 dark:text-neutral-300">
-          Every
-          <input
-            type="number"
-            inputMode="numeric"
-            min={1}
-            max={MAX_REPEAT_EVERY}
-            value={every}
-            placeholder="3"
-            disabled={disabled}
-            onChange={(e) => setEvery(e.target.value)}
-            onBlur={(e) => {
-              // Clicking Daily, Weekly, Monthly or Clear replaces the draft,
-              // so don't save it first.
-              if (
-                e.relatedTarget instanceof HTMLElement &&
-                e.relatedTarget.closest("[data-repeat-choice]")
-              ) {
-                return;
-              }
-              save(every, unit);
-            }}
-            onKeyDown={(e) => {
-              // Enter commits the count; in the new-item dialog it mustn't
-              // also submit the form with the old rule.
-              if (e.key === "Enter") {
-                e.preventDefault();
-                save(every, unit);
-              }
-            }}
-            aria-label="Repeat every"
-            className="h-6 w-14 rounded-md border border-neutral-200 bg-transparent px-1.5 text-xs dark:border-neutral-800"
-          />
-          <select
-            value={unit}
-            disabled={disabled}
-            onChange={(e) => {
-              const u = e.target.value as RepeatUnit;
-              setUnit(u);
-              save(every || "1", u);
-            }}
-            aria-label="Repeat unit"
-            className="h-6 rounded-md border border-neutral-200 bg-transparent px-1 text-xs dark:border-neutral-800 dark:bg-neutral-900"
-          >
-            {REPEAT_UNITS.map((u) => (
-              <option key={u} value={u}>
-                {every === "1" ? u : `${u}s`}
-              </option>
-            ))}
-          </select>
+      {(editing || keepsToDays) && (
+        <div className="flex flex-wrap items-center gap-1.5 text-xs text-neutral-600 dark:text-neutral-300">
+          {editing && (
+            <>
+              Every
+              <input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={MAX_REPEAT_EVERY}
+                value={every}
+                placeholder="3"
+                disabled={disabled}
+                onChange={(e) => setEvery(e.target.value)}
+                onBlur={(e) => {
+                  // Clicking Daily, Weekly, Monthly or Clear replaces the draft,
+                  // so don't save it first.
+                  if (
+                    e.relatedTarget instanceof HTMLElement &&
+                    e.relatedTarget.closest("[data-repeat-choice]")
+                  ) {
+                    return;
+                  }
+                  save(every, unit);
+                }}
+                onKeyDown={(e) => {
+                  // Enter commits the count; in the new-item dialog it mustn't
+                  // also submit the form with the old rule.
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    save(every, unit);
+                  }
+                }}
+                aria-label="Repeat every"
+                className="h-6 w-14 rounded-md border border-neutral-200 bg-transparent px-1.5 text-xs dark:border-neutral-800"
+              />
+              <MenuSelect
+                label="Repeat unit"
+                value={unit}
+                options={REPEAT_UNITS.map((u) => [
+                  u,
+                  every === "1" ? u : `${u}s`,
+                ])}
+                disabled={disabled}
+                onChange={(u) => {
+                  setUnit(u);
+                  save(every || "1", u);
+                }}
+              />
+            </>
+          )}
+          {keepsToDays && repeat && (
+            <>
+              {editing ? "on" : "On"}
+              <MenuSelect
+                label="Repeat on"
+                value={repeat.on ?? "any"}
+                options={[
+                  ["any", "any day"],
+                  ["weekend", repeatOnName("weekend")],
+                  null,
+                  ...REPEAT_ONS.filter((on) => on !== "weekend").map(
+                    (on): [RepeatOn, string] => [on, repeatOnName(on)],
+                  ),
+                ]}
+                disabled={disabled}
+                onChange={(on) =>
+                  onChange(
+                    on === "any"
+                      ? { every: repeat.every, unit: repeat.unit }
+                      : { ...repeat, on },
+                  )
+                }
+              />
+            </>
+          )}
         </div>
       )}
       {repeat && (
         <p className="text-xs text-neutral-400">
           {back
             ? `Next: ${back}.`
-            : "Counts from when it's done: finish it late and the next one moves too."}
+            : today
+              ? `Counts from when it's done: finish it today and it's back ${backLabel(
+                  nextDue(today, repeat),
+                  today,
+                ).replace("Tomorrow", "tomorrow")}.`
+              : "Counts from when it's done: finish it late and the next one moves too."}
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * A small menu that picks one of `options`, shaped like the count beside it;
+ * a null option is a line between groups.
+ */
+function MenuSelect<T extends string>({
+  label,
+  value,
+  options,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: Array<[T, string] | null>;
+  disabled: boolean;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label={label}
+        disabled={disabled}
+        className="flex h-6 items-center gap-0.5 rounded-md border border-neutral-200 px-1.5 text-xs transition hover:bg-accent disabled:opacity-50 dark:border-neutral-800"
+      >
+        {options.find((o) => o?.[0] === value)?.[1]}
+        <ChevronDown className="size-3 opacity-50" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-auto min-w-28">
+        <DropdownMenuRadioGroup
+          value={value}
+          onValueChange={(next: T) => next !== value && onChange(next)}
+        >
+          {options.map((o, i) =>
+            o ? (
+              <DropdownMenuRadioItem key={o[0]} value={o[0]} closeOnClick>
+                {o[1]}
+              </DropdownMenuRadioItem>
+            ) : (
+              <DropdownMenuSeparator key={i} />
+            ),
+          )}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

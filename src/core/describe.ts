@@ -197,7 +197,7 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
       if (event.due.dueDate) parts.push(t(`, due ${dueText(event.due)}`));
       if (event.labels.length) parts.push(t(`, labelled ${event.labels.join(", ")}`));
       if (event.assignees.length) parts.push(t(", assigned to "), ...people(names, event.assignees));
-      if (event.repeat) parts.push(t(`, repeats ${repeatLabel(event.repeat).toLowerCase()}`));
+      if (event.repeat) parts.push(t(`, repeats ${repeatLabel(event.repeat).replace("Every", "every")}`));
       return parts;
     }
     case "item.updated": {
@@ -222,7 +222,7 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
       if (c.due) changes.push([t(c.due.dueDate ? `due ${dueText(c.due)}` : "due date cleared")]);
       if (c.repeat !== undefined) {
         changes.push([
-          t(c.repeat ? `repeats ${repeatLabel(c.repeat).toLowerCase()}` : "no longer repeats"),
+          t(c.repeat ? `repeats ${repeatLabel(c.repeat).replace("Every", "every")}` : "no longer repeats"),
         ]);
       }
       return [
@@ -241,7 +241,7 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
     case "item.reopened": {
       const parts: Part[] = [t("reopened "), item(event)];
       if (event.forSubItem) parts.push(t(" for an open sub-item"));
-      if (event.repeat) parts.push(t(` (repeats ${repeatLabel(event.repeat).toLowerCase()})`));
+      if (event.repeat) parts.push(t(` (repeats ${repeatLabel(event.repeat).replace("Every", "every")})`));
       if (event.with) parts.push(t(" with "), item(event.with));
       if (event.due) parts.push(t(`, due ${dueText(event.due)}`));
       return parts;

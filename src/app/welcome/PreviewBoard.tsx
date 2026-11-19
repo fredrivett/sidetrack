@@ -113,6 +113,7 @@ function demo(today: string, now: number) {
       dueFrom: null,
       repeatEvery: null,
       repeatUnit: null,
+      repeatOn: null,
       completedAt: null,
       createdAt: now,
       ...extra,

@@ -315,7 +315,7 @@ export function ItemRow({
                   <DueBadge due={item.dueDate} from={item.dueFrom} done={completed} />
                 )}
                 {repeat && (
-                  <RepeatBadge repeat={repeat} completedAt={item.completedAt} due={item} />
+                  <RepeatBadge repeat={repeat} completedAt={item.completedAt} />
                 )}
                 {item.labels.map((name) => (
                   <LabelBadge

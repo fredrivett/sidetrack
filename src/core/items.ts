@@ -12,6 +12,7 @@ import {
   MAX_REPEAT_EVERY,
   nextDue,
   type Repeat,
+  REPEAT_ONS,
   REPEAT_UNITS,
   repeatOf,
 } from "../lib/repeat";
@@ -222,17 +223,23 @@ function assertDue(
   return { dueDate: to, dueFrom: from === to ? null : from };
 }
 
-// A repeat rule is a whole number of days, weeks or months; null clears it.
+// A repeat rule is a whole number of days, weeks or months, and a weekly or
+// monthly one may keep to a weekday or weekends; null clears it.
 function assertRepeat(repeat: Repeat | null): Repeat | null {
   if (!repeat) return null;
-  const { every, unit } = repeat;
+  const { every, unit, on } = repeat;
   if (!(REPEAT_UNITS as readonly string[]).includes(unit)) {
     throw new Error(`invalid repeat unit: ${unit} (expected day, week or month)`);
   }
   if (!Number.isInteger(every) || every < 1 || every > MAX_REPEAT_EVERY) {
     throw new Error(`invalid repeat: every ${every} (expected 1 to ${MAX_REPEAT_EVERY})`);
   }
-  return { every, unit };
+  if (!on) return { every, unit };
+  if (!(REPEAT_ONS as readonly string[]).includes(on)) {
+    throw new Error(`invalid repeat on: ${on} (expected ${REPEAT_ONS.join(", ")})`);
+  }
+  if (unit === "day") throw new Error("a daily repeat can't keep to certain days");
+  return { every, unit, on };
 }
 
 /** An item's sub-items, in order, for a user who can see the item. */
@@ -407,6 +414,7 @@ export function addItem(
         createdBy: userId,
         repeatEvery: repeat?.every ?? null,
         repeatUnit: repeat?.unit ?? null,
+        repeatOn: repeat?.on ?? null,
         position,
         number,
         createdAt: now,
@@ -588,9 +596,10 @@ export function updateItem(
   if (patch.repeat !== undefined) {
     const r = assertRepeat(patch.repeat);
     const was = repeatOf(existing);
-    if (r?.every !== was?.every || r?.unit !== was?.unit) {
+    if (r?.every !== was?.every || r?.unit !== was?.unit || r?.on !== was?.on) {
       next.repeatEvery = r?.every ?? null;
       next.repeatUnit = r?.unit ?? null;
+      next.repeatOn = r?.on ?? null;
       changes.repeat = r;
     }
   }
@@ -753,8 +762,8 @@ export function reopenDueRepeats(
     const rule = repeatOf(it);
     const done = it.completedAt;
     if (!rule || done === null) continue;
-    // A week or weekend comes back as a span, from its first day.
-    const next = nextDue(dayOf(done, timeZone), rule, it);
+    // A rule on weekends comes back as one, from its Saturday.
+    const next = nextDue(dayOf(done, timeZone), rule);
     if ((next.dueFrom ?? next.dueDate) > today) continue;
     db.transaction((tx) => {
       const parent = it.parentId

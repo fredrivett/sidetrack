@@ -554,7 +554,6 @@ export function NewItemDialog({
                 key={added}
                 repeat={repeat}
                 completedAt={null}
-                due={due}
                 disabled={pending}
                 onChange={setRepeat}
               />

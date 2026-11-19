@@ -8,7 +8,7 @@ import {
   text,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
-import type { RepeatUnit } from "../lib/repeat";
+import type { RepeatOn, RepeatUnit } from "../lib/repeat";
 import type { StoredGreeting } from "./agendaGreeting";
 import { apiKeys, users } from "./auth-schema";
 import type { ChangeEvent } from "./events";
@@ -296,6 +296,9 @@ export const items = sqliteTable(
     // after the day it was done (reopenDueRepeats in items.ts).
     repeatEvery: integer("repeat_every"),
     repeatUnit: text("repeat_unit").$type<RepeatUnit>(),
+    // The days a weekly or monthly rule keeps to ("on weekends", "on
+    // Saturdays"); null for any day, and always for a daily rule.
+    repeatOn: text("repeat_on").$type<RepeatOn>(),
     completedAt: integer("completed_at"),
     createdAt: integer("created_at")
       .notNull()
