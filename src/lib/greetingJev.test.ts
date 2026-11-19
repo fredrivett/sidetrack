@@ -176,6 +176,13 @@ describe("pickGreeting", () => {
     expect(pick.items.week?.map((i) => i.id)).toEqual(["fri", "span"]);
   });
 
+  it("says one thing for a short greeting", () => {
+    const b = brief({ overdue: [item("late")], thisWeek: [item("fri")] });
+    const pick = pickGreeting(b, { moments: { triage: 0.9, week: 0.9 }, items: { late: 0.9, fri: 0.9 } }, 1);
+    expect(pick.moments).toEqual(["triage"]);
+    expect(pick.considered.find((c) => c.moment === "week")?.why).toBe("One thing was already being said");
+  });
+
   it("skips a moment with nothing worth naming, letting the next one speak", () => {
     const b = brief({ undated: [item("plants")], ahead: days([0, 0, 6, 0, 1, 0, 0]) });
     const pick = pickGreeting(b, {

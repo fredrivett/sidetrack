@@ -82,6 +82,19 @@ describe("writerInput", () => {
   });
 });
 
+describe("writerInput, with the reader's settings", () => {
+  it("passes on the note and caps the sentences at the chosen length", () => {
+    const short = writerInput(brief, pick, { length: "short", note: "No praise.", shareNote: false });
+    expect(short.facts).toMatchObject({ max_sentences: 1, reader_note: "No praise." });
+    expect(input.facts).toMatchObject({ max_sentences: 3 });
+    expect(input.facts).not.toHaveProperty("reader_note");
+    const two = "{{item:1}} is still waiting. {{item:2}} is today's.";
+    expect(checkWriterOutput(two, input)).not.toBeNull();
+    expect(checkWriterOutput(two, short)).toBeNull();
+    expect(checkWriterOutput("{{item:1}} is still waiting.", short)).not.toBeNull();
+  });
+});
+
 describe("checkWriterOutput", () => {
   it("turns numbered tokens back into the page's tokens", () => {
     expect(

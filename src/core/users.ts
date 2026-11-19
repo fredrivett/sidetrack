@@ -6,6 +6,7 @@ import { announceChange } from "./changes";
 import type { Db } from "./db";
 import { uploadedAvatarPath } from "../lib/avatar";
 import { type ItemFilters, itemFiltersSchema, parseItemFilters } from "../lib/filters";
+import { type GreetingPrefs, parseGreetingPrefs } from "../lib/greetingPrefs";
 import { normalizeWebUrl } from "../lib/url";
 import { isReservedUsername, validateUsername } from "../lib/username";
 
@@ -200,6 +201,29 @@ export function setBoardFilters(db: Db, userId: string, filters: ItemFilters): v
   // audit-exempt: a personal view setting, not a change to anything shared
   // (see above).
   db.update(users).set({ boardFilters: parsed }).where(eq(users.id, userId)).run();
+}
+
+/** How the user likes their Agenda greeting; the defaults until they say. */
+export function getGreetingPrefs(db: Db, userId: string): GreetingPrefs {
+  const row = db
+    .select({ greetingPrefs: users.greetingPrefs })
+    .from(users)
+    .where(eq(users.id, userId))
+    .get();
+  return parseGreetingPrefs(row?.greetingPrefs ?? null);
+}
+
+/**
+ * Save how the user likes their Agenda greeting. Not audited, like their
+ * board filters: it shapes what they alone see. It applies from their next
+ * greeting, so saving never asks Claude for a new one.
+ */
+export function setGreetingPrefs(db: Db, userId: string, prefs: GreetingPrefs): GreetingPrefs {
+  const parsed = parseGreetingPrefs(prefs);
+  // audit-exempt: a personal view setting, not a change to anything shared
+  // (see above).
+  db.update(users).set({ greetingPrefs: parsed }).where(eq(users.id, userId)).run();
+  return parsed;
 }
 
 /** Largest uploaded avatar accepted. The browser shrinks images to 256px first, so real uploads are far below this. */

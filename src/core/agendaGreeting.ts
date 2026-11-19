@@ -11,11 +11,12 @@ import { and as both, eq, inArray } from "drizzle-orm";
 import { type GreetingPick, type Moment, pickGreeting, scoreGreeting } from "../lib/greetingJev";
 import { WRITER_MODEL, writeGreeting } from "../lib/greetingWriter";
 import { addDays, dayOf } from "../lib/time";
+import { type GreetingLength, type GreetingPrefs, LENGTH_LIMITS } from "../lib/greetingPrefs";
 import { type AgendaBrief, type BriefItem, buildAgendaBrief, type PartOfDay } from "./agendaBrief";
 import type { Db } from "./db";
 import { hasProjectAccess } from "./access";
 import { agendaGreetings, items, projects } from "./schema";
-import { getAgendaReadAt, getProfile } from "./users";
+import { getAgendaReadAt, getGreetingPrefs, getProfile } from "./users";
 
 /** A greeting to show: its opening line, then its text with tokens. */
 export interface Greeting {
@@ -60,6 +61,8 @@ export interface GreetingTrace {
   items: Array<{ id: string; title: string; list: string; score: number; named: boolean; other: boolean }> | null;
   /** The model that wrote it, when one did. */
   model: string | null;
+  /** The reader's settings it followed. Absent on ones from before they could choose. */
+  prefs?: { length: GreetingLength; note: boolean };
 }
 
 /** What agenda_greetings keeps: Claude's greeting, or a failed ask's trace with no text. */
@@ -67,6 +70,7 @@ export type StoredGreeting = Omit<Greeting, "hello" | "written">;
 
 function traceOf(
   brief: AgendaBrief,
+  prefs: GreetingPrefs,
   timeZone: string,
   now: number,
   why: string | null,
@@ -118,6 +122,7 @@ function traceOf(
           .sort((a, b) => b.score - a.score)
       : null,
     model: why ? null : WRITER_MODEL,
+    prefs: { length: prefs.length, note: prefs.note !== "" },
   };
 }
 
@@ -161,7 +166,7 @@ function briefFor(db: Db, viewerId: string, timeZone: string, now: number) {
     since: getAgendaReadAt(db, viewerId),
   });
   const name = getProfile(db, viewerId)?.name?.trim().split(/\s+/)[0] || null;
-  return { brief, name };
+  return { brief, name, prefs: getGreetingPrefs(db, viewerId) };
 }
 
 /** The titles of the brief's items `text` names. */
@@ -184,11 +189,12 @@ function titlesIn(text: string, brief: AgendaBrief): Record<string, string> {
 function fromTemplate(
   brief: AgendaBrief,
   name: string | null,
+  prefs: GreetingPrefs,
   trace: GreetingTrace,
 ): Greeting {
   const hello = helloFor(brief, name);
   // templateGreeting always opens with the hello.
-  const text = templateGreeting(brief, name).slice(hello.length).trimStart();
+  const text = templateGreeting(brief, name, prefs.length).slice(hello.length).trimStart();
   return { hello, text, titles: titlesIn(text, brief), others: [], written: false, trace };
 }
 
@@ -202,8 +208,13 @@ export function greetingFor(
   timeZone: string,
   now = Date.now(),
 ): Greeting {
-  const { brief, name } = briefFor(db, viewerId, timeZone, now);
-  return fromTemplate(brief, name, traceOf(brief, timeZone, now, "AI isn't set up on this server"));
+  const { brief, name, prefs } = briefFor(db, viewerId, timeZone, now);
+  return fromTemplate(
+    brief,
+    name,
+    prefs,
+    traceOf(brief, prefs, timeZone, now, "AI isn't set up on this server"),
+  );
 }
 
 /**
@@ -222,10 +233,10 @@ export async function writtenGreetingFor(
   now = Date.now(),
   fetchImpl: typeof fetch = fetch,
 ): Promise<Greeting> {
-  const { brief, name } = briefFor(db, viewerId, timeZone, now);
+  const { brief, name, prefs } = briefFor(db, viewerId, timeZone, now);
   const hello = helloFor(brief, name);
-  const template = (why: string, trace = traceOf(brief, timeZone, now, why)) =>
-    fromTemplate(brief, name, { ...trace, why });
+  const template = (why: string, trace = traceOf(brief, prefs, timeZone, now, why)) =>
+    fromTemplate(brief, name, prefs, { ...trace, why });
   if (!keys.jev || !keys.anthropic) return template("AI isn't set up on this server");
   // One greeting a morning, afternoon and evening: it says what mattered
   // as that part of the day began, and isn't rewritten as the reader ticks
@@ -272,14 +283,14 @@ export async function writtenGreetingFor(
 
   const scores = await scoreGreeting(brief, keys.jev, fetchImpl);
   if (!scores) {
-    const trace = traceOf(brief, timeZone, now, "Jev didn't answer, so there was nothing to go on");
+    const trace = traceOf(brief, prefs, timeZone, now, "Jev didn't answer, so there was nothing to go on");
     keep({ text: "", titles: {}, others: [], trace });
     return template(trace.why ?? "", trace);
   }
-  const pick = pickGreeting(brief, scores);
-  const written = await writeGreeting(brief, pick, keys.anthropic, fetchImpl);
+  const pick = pickGreeting(brief, scores, LENGTH_LIMITS[prefs.length].moments);
+  const written = await writeGreeting(brief, pick, keys.anthropic, fetchImpl, prefs);
   if ("failed" in written) {
-    const trace = traceOf(brief, timeZone, now, written.failed, { scores, pick, named: "" });
+    const trace = traceOf(brief, prefs, timeZone, now, written.failed, { scores, pick, named: "" });
     keep({ text: "", titles: {}, others: [], trace });
     return template(written.failed, trace);
   }
@@ -287,7 +298,7 @@ export async function writtenGreetingFor(
     text: written.text,
     titles: titlesIn(written.text, brief),
     others: pick.others.map((i) => ({ id: i.id, title: i.title })),
-    trace: traceOf(brief, timeZone, now, null, { scores, pick, named: written.text }),
+    trace: traceOf(brief, prefs, timeZone, now, null, { scores, pick, named: written.text }),
   };
   keep(greeting);
   return { hello, ...greeting, written: true };
@@ -370,7 +381,11 @@ export function helloFor(brief: AgendaBrief, name: string | null): string {
  * The greeting for `brief`, with item and action tokens. `name` is the
  * viewer's first name, or null to greet without one.
  */
-export function templateGreeting(brief: AgendaBrief, name: string | null): string {
+export function templateGreeting(
+  brief: AgendaBrief,
+  name: string | null,
+  length: GreetingLength = "long",
+): string {
   const hello = helloFor(brief, name);
 
   const open = brief.dueToday.filter((i) => i.completedAt === null);
@@ -396,17 +411,17 @@ export function templateGreeting(brief: AgendaBrief, name: string | null): strin
     ])}`;
   }
 
-  const sentences = [hello];
+  // What it says, most important first; the look-back goes before them,
+  // when the reader's length leaves room.
+  const sentences: string[] = [];
 
   // Warmth from the look-back, when there's a day to look back to.
   const finished = brief.lookBack.finishedCount;
   const when = brief.sinceDay ? sinceWord(brief, brief.sinceDay) : null;
-  if (when && finished > 0) {
-    const since = when === "last time" ? "Since last time" : `Since ${when}`;
-    sentences.push(
-      `${since} you've finished ${finished === 1 ? item(brief.lookBack.finished[0]) : count(finished)}${finished >= 3 ? " — nice" : ""}.`,
-    );
-  }
+  const back =
+    when && finished > 0
+      ? `${when === "last time" ? "Since last time" : `Since ${when}`} you've finished ${finished === 1 ? item(brief.lookBack.finished[0]) : count(finished)}${finished >= 3 ? " — nice" : ""}.`
+      : null;
 
   const day = brief.weekday;
   if (brief.overdue.length > 0) {
@@ -436,9 +451,9 @@ export function templateGreeting(brief: AgendaBrief, name: string | null): strin
       );
     }
   } else if (doneToday > 0) {
-    sentences.push("That's everything for today.");
+    // One part, so a short greeting doesn't stop at "that's everything".
     const week = stillThisWeek(brief);
-    if (week) sentences.push(week);
+    sentences.push(week ? `That's everything for today. ${week}` : "That's everything for today.");
   } else {
     // Nothing due: what's left this week, or look ahead, or offer something
     // undated, or just be quiet.
@@ -472,5 +487,12 @@ export function templateGreeting(brief: AgendaBrief, name: string | null): strin
     }
   }
 
-  return sentences.join(" ");
+  // Short says the main thing; medium a second, or the look-back; long all.
+  const kept =
+    length === "short"
+      ? sentences.slice(0, 1)
+      : length === "medium" && sentences.length >= 2
+        ? sentences.slice(0, 2)
+        : [...(back ? [back] : []), ...sentences];
+  return [hello, ...kept].join(" ");
 }
