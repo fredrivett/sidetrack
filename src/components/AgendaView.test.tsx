@@ -486,6 +486,56 @@ describe("AgendaView", () => {
     expect(vi.mocked(agendaGreetingAction).mock.calls.length).toBe(before);
   });
 
+  it("asks again when told, from the built-in greeting too, without calling that out of date", async () => {
+    const late = item("Call the bank", "2026-11-10");
+    let second!: (g: Greeting) => void;
+    vi.mocked(agendaGreetingAction)
+      .mockResolvedValueOnce({
+        hello: "Good morning, Fred.",
+        text: "One thing slipped.",
+        titles: {},
+        written: false,
+        others: [],
+        retryInMs: 15 * 60_000,
+      } satisfies Greeting)
+      .mockReturnValueOnce(new Promise((r) => (second = r)));
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    vi.setSystemTime(new Date(2026, 10, 14, 12));
+    try {
+      renderAgenda([late], [home], false, {}, true);
+      await act(async () => {});
+      expect(screen.getByText("One thing slipped.")).toBeTruthy();
+      expect(screen.queryByText("Out of date")).toBeNull();
+      expect(screen.queryByRole("button", { name: "Rewrite now" })).toBeNull();
+      // Told 15 minutes, it checks back after 30s; not in a hidden tab
+      // until it's seen again.
+      const calls = () => vi.mocked(agendaGreetingAction).mock.calls.length;
+      const before = calls();
+      await act(async () => vi.advanceTimersByTime(29_000));
+      expect(calls()).toBe(before);
+      const hidden = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+      await act(async () => vi.advanceTimersByTime(2_000));
+      expect(calls()).toBe(before);
+      hidden.mockReturnValue("visible");
+      await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+      hidden.mockRestore();
+      expect(calls()).toBe(before + 1);
+    } finally {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date(2026, 10, 14, 12));
+    }
+    await act(async () =>
+      second({
+        hello: "Good morning, Fred.",
+        text: `{{item:${late.id}}} is still waiting.`,
+        titles: { [late.id]: "Call the bank" },
+        written: true,
+        others: [],
+      }),
+    );
+    expect(screen.getByText(/is still waiting\.$/)).toBeTruthy();
+  });
+
   it("explains how the greeting was worked out", async () => {
     const late = item("Call the bank", "2026-11-10");
     vi.mocked(agendaGreetingAction).mockResolvedValueOnce({

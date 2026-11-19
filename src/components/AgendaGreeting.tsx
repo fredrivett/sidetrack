@@ -188,16 +188,28 @@ export function AgendaGreeting({
     if (retryInMs === undefined) return;
     // With the flag the last ask had, so a Rewrite now isn't put back to the longer wait.
     // At least every 30s: another tab may have rewritten it meanwhile, and a
-    // held ask costs nothing.
-    const t = setTimeout(() => askAgain(askedNow.current), Math.min(retryInMs + 1000, 30_000));
-    return () => clearTimeout(t);
+    // held ask costs nothing. A hidden tab waits until it's seen again.
+    const ask = () => {
+      if (document.visibilityState === "hidden") return;
+      document.removeEventListener("visibilitychange", ask);
+      askAgain(askedNow.current);
+    };
+    const t = setTimeout(() => {
+      if (document.visibilityState === "hidden") document.addEventListener("visibilitychange", ask);
+      else ask();
+    }, Math.min(retryInMs + 1000, 30_000));
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("visibilitychange", ask);
+    };
   }, [greeting, retryInMs]);
-  // A second's tick for "Rewriting in Xs".
+  // A second's tick for "Rewriting in Xs", shown only on a written one.
+  const written = Boolean(greeting?.written);
   useEffect(() => {
-    if (retryAt === null) return;
+    if (retryAt === null || !written) return;
     const t = setInterval(() => setClock(Date.now()), 1000);
     return () => clearInterval(t);
-  }, [retryAt]);
+  }, [retryAt, written]);
   useEffect(() => {
     if (shownWith.current === null) return;
     if (standing === shownWith.current) {
@@ -234,7 +246,9 @@ export function AgendaGreeting({
     };
   }, []);
 
-  const stale = Boolean(greeting?.text) && (changed || retryAt !== null);
+  // Only a written one goes out of date: the built-in one is always current,
+  // even while the server says when to ask again.
+  const stale = Boolean(greeting?.written && greeting.text) && (changed || retryAt !== null);
 
   // The server render doesn't know the viewer's day or hour.
   if (!today) return <div className="min-h-24" />;
