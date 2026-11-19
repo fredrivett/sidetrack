@@ -96,6 +96,7 @@ export function Kanban({
   initialView,
   overdueCollapsed,
   noDateCollapsed,
+  noDateFoldedLists,
   projects: serverProjects,
   itemsByProject: serverItemsByProject,
   completedSince,
@@ -128,6 +129,8 @@ export function Kanban({
   overdueCollapsed: boolean;
   /** Whether the viewer keeps the Agenda's No date section folded away. */
   noDateCollapsed: boolean;
+  /** The lists whose cards the viewer keeps folded in the Agenda's No date. */
+  noDateFoldedLists: string[];
   projects: ProjectView[];
   /**
    * Every list's open items and its items finished at or after this, with
@@ -771,6 +774,7 @@ export function Kanban({
             projects={active}
             overdueCollapsed={overdueCollapsed}
             noDateCollapsed={noDateCollapsed}
+            noDateFoldedLists={noDateFoldedLists}
             // Greets in the viewer's day, so waits for their browser's timezone.
             greet={timeZone !== null}
             onFeedback={

@@ -6,6 +6,7 @@ import {
   setItemsCollapsedAction,
   setOverdueCollapsedAction,
   setNoDateCollapsedAction,
+  setNoDateListFoldedAction,
   agendaGreetingAction,
 } from "@/app/actions";
 import type { Greeting } from "@/core/agendaGreeting";
@@ -26,6 +27,7 @@ vi.mock("@/app/actions", () => ({
   setItemsCollapsedAction: vi.fn(),
   setOverdueCollapsedAction: vi.fn(),
   setNoDateCollapsedAction: vi.fn(),
+  setNoDateListFoldedAction: vi.fn(),
   setAgendaReadAction: vi.fn(),
   agendaGreetingAction: vi.fn(async () => null),
   // The item dialog reads its comments when it opens, and its history when expanded.
@@ -95,6 +97,7 @@ function renderAgenda(
       viewerId="me"
       overdueCollapsed={overdueCollapsed}
       noDateCollapsed={false}
+      noDateFoldedLists={[]}
       greet={greet}
       firstName="Fred"
       onFeedback={onFeedback}
@@ -303,6 +306,25 @@ describe("AgendaView", () => {
     expect(rows?.contains(screen.getByText("Bins"))).toBe(false);
   });
 
+  it("folds one list's card in No date at once and saves it, leaving the others open", () => {
+    const buy = { ...home, id: "p2", name: "Buy", prefix: "BUY", refPrefix: "BUY" } as ProjectView;
+    renderAgenda([item("Tidy flat", null), item("Slippers", null, { projectId: "p2" })], [home, buy]);
+    const homeToggle = screen.getByRole("button", { name: /^Home/ });
+    const homeRows = document.getElementById(homeToggle.getAttribute("aria-controls") ?? "");
+    expect(homeRows?.textContent).toContain("Tidy flat");
+
+    vi.mocked(setNoDateListFoldedAction).mockReturnValue(new Promise(() => {}));
+    fireEvent.click(homeToggle);
+    expect(vi.mocked(setNoDateListFoldedAction)).toHaveBeenLastCalledWith(home.id, true);
+    expect(homeToggle.getAttribute("aria-expanded")).toBe("false");
+    expect(homeRows?.hasAttribute("inert")).toBe(true);
+    // Buy's card, and No date itself, stay open.
+    const buyToggle = screen.getByRole("button", { name: /^Buy/ });
+    expect(buyToggle.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("button", { name: /^No date/ }).getAttribute("aria-expanded")).toBe("true");
+    expect(document.getElementById(buyToggle.getAttribute("aria-controls") ?? "")?.hasAttribute("inert")).toBe(false);
+  });
+
   it("greets with chips that open their items, and a triage phrase that opens Overdue", async () => {
     const late = item("Call the bank", "2026-11-10");
     const bins = item("Bins", "2026-11-14");
@@ -384,6 +406,7 @@ describe("AgendaView", () => {
         viewerId="me"
         overdueCollapsed={false}
         noDateCollapsed={false}
+        noDateFoldedLists={[]}
         greet
         firstName="Fred"
         filters={NO_FILTERS}
@@ -500,6 +523,7 @@ describe("AgendaView", () => {
         viewerId="me"
         overdueCollapsed={false}
         noDateCollapsed={false}
+        noDateFoldedLists={[]}
         greet
         firstName="Fred"
         filters={NO_FILTERS}

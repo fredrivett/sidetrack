@@ -2,7 +2,11 @@
 
 import { ChevronDown } from "lucide-react";
 import { useId, useOptimistic, useState, useTransition } from "react";
-import { setNoDateCollapsedAction, setOverdueCollapsedAction } from "@/app/actions";
+import {
+  setNoDateCollapsedAction,
+  setNoDateListFoldedAction,
+  setOverdueCollapsedAction,
+} from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { nestItems } from "@/lib/itemTree";
@@ -41,6 +45,7 @@ export function AgendaView({
   viewerId,
   overdueCollapsed: savedCollapsed,
   noDateCollapsed: savedNoDateCollapsed,
+  noDateFoldedLists: savedFoldedLists,
   greet,
   firstName,
   onFeedback,
@@ -56,6 +61,8 @@ export function AgendaView({
   overdueCollapsed: boolean;
   /** Whether the viewer keeps No date folded away, as saved on their account. */
   noDateCollapsed: boolean;
+  /** The lists whose cards in No date the viewer keeps folded, as saved on their account. */
+  noDateFoldedLists: string[];
   /** Whether to greet: not before the viewer's timezone is known. */
   greet: boolean;
   /** The viewer's first name, for the greeting's opening line. */
@@ -89,6 +96,21 @@ export function AgendaView({
       );
     });
   const noDateId = useId();
+  // Each list's card in No date folds on its own, the same way.
+  const [foldedLists, showListFolded] = useOptimistic(
+    savedFoldedLists,
+    (lists: string[], { id, folded }: { id: string; folded: boolean }) =>
+      folded ? [...lists.filter((l) => l !== id), id] : lists.filter((l) => l !== id),
+  );
+  const toggleList = (project: ProjectView) =>
+    start(async () => {
+      const folded = !foldedLists.includes(project.id);
+      showListFolded({ id: project.id, folded });
+      await runAction(
+        setNoDateListFoldedAction(project.id, folded),
+        `${folded ? "collapse" : "expand"} ${project.name}`,
+      );
+    });
   // Rows 0fr to 1fr animates to the content's own height. Folded, it's inert,
   // so its rows leave the tab order too.
   const fold = (id: string, collapsed: boolean, rows: React.ReactNode) => (
@@ -176,25 +198,41 @@ export function AgendaView({
       ? projects.map((project) => {
           // A sub-item whose parent the filter hides stays, at the top
           // level, naming its parent (see nestItems).
-          const groups = nestItems(rows.filter((i) => i.projectId === project.id));
+          const listRows = rows.filter((i) => i.projectId === project.id);
+          const groups = nestItems(listRows);
           if (groups.length === 0) return null;
           const row = rowProps(project);
+          const folded = foldedLists.includes(project.id);
+          const bodyId = `${noDateId}-${project.id}`;
           return (
-            // A card per list, so each list's undated items read as one group.
+            // A card per list, so each list's undated items read as one group,
+            // and fold away one list at a time.
             <div
               key={project.id}
-              className="space-y-1.5 rounded-xl border border-neutral-200 bg-neutral-50/70 p-1.5 dark:border-neutral-800 dark:bg-neutral-900/40"
+              className="rounded-xl border border-neutral-200 bg-neutral-50/70 p-1.5 dark:border-neutral-800 dark:bg-neutral-900/40"
             >
-              <h3 className="flex items-center gap-1.5 px-1 pt-0.5 text-xs font-medium text-neutral-600 dark:text-neutral-300">
-                <ProjectIcon
-                  icon={project.icon}
-                  homepageUrl={project.homepageUrl}
-                  name={project.name}
-                  size={16}
-                />
-                <span className="truncate">{project.name}</span>
+              <h3 className="text-xs font-medium">
+                <button
+                  type="button"
+                  onClick={() => toggleList(project)}
+                  aria-expanded={!folded}
+                  aria-controls={bodyId}
+                  className="flex w-full items-center gap-1.5 rounded-md px-1 py-0.5 text-left text-neutral-600 outline-none hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:text-neutral-300 dark:hover:text-neutral-100 dark:focus-visible:ring-neutral-600"
+                >
+                  <ProjectIcon
+                    icon={project.icon}
+                    homepageUrl={project.homepageUrl}
+                    name={project.name}
+                    size={16}
+                  />
+                  <span className="truncate">{project.name}</span>
+                  <span className="tabular-nums text-neutral-400 dark:text-neutral-500">
+                    {openCount(listRows)}
+                  </span>
+                  {chevron(folded, "size-3.5")}
+                </button>
               </h3>
-              {groups.map((group) =>
+              {fold(bodyId, folded, groups.map((group) =>
                 lightable(group.id, group.parentId ? (
                   <ItemRow
                     item={group}
@@ -208,7 +246,7 @@ export function AgendaView({
                 ) : (
                   <ItemGroupView group={group} {...row} />
                 )),
-              )}
+              ))}
             </div>
           );
         })

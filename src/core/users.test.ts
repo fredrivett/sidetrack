@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createTestDb, createTestUser } from "./test-helpers";
 import { NO_FILTERS } from "../lib/filters";
 import {
+  getNoDateFoldedLists,
   getOverdueCollapsed,
   getBoardFilters,
   getProfile,
@@ -10,6 +11,7 @@ import {
   getUserNumber,
   nextUserNumber,
   setAvatarUrl,
+  setNoDateListFolded,
   setOverdueCollapsed,
   setBoardFilters,
   setTimeZone,
@@ -65,6 +67,30 @@ describe("Agenda's Overdue fold", () => {
     expect(getOverdueCollapsed(db, other)).toBe(false);
     setOverdueCollapsed(db, me, false);
     expect(getOverdueCollapsed(db, me)).toBe(false);
+    expect(listAudit(db, me, {})).toHaveLength(0);
+  });
+});
+
+describe("Agenda's No date list folds", () => {
+  it("fold one list at a time, per user, once each, and refuse anything that isn't an id", () => {
+    const { db } = createTestDb();
+    const me = createTestUser(db);
+    const other = createTestUser(db);
+    expect(getNoDateFoldedLists(db, me)).toEqual([]);
+    setNoDateListFolded(db, me, "home", true);
+    setNoDateListFolded(db, me, "buy", true);
+    setNoDateListFolded(db, me, "home", true);
+    expect(getNoDateFoldedLists(db, me)).toEqual(["buy", "home"]);
+    expect(getNoDateFoldedLists(db, other)).toEqual([]);
+    setNoDateListFolded(db, me, "buy", false);
+    expect(getNoDateFoldedLists(db, me)).toEqual(["home"]);
+    expect(() => setNoDateListFolded(db, me, "x".repeat(65), true)).toThrow();
+    expect(() => setNoDateListFolded(db, me, { id: "home" } as unknown as string, true)).toThrow();
+    expect(() => setNoDateListFolded(db, me, "buy", "true" as unknown as boolean)).toThrow();
+    expect(getNoDateFoldedLists(db, me)).toEqual(["home"]);
+    // A saved value of the wrong shape reads as nothing folded.
+    db.update(users).set({ noDateFoldedLists: { home: true } }).where(eq(users.id, me)).run();
+    expect(getNoDateFoldedLists(db, me)).toEqual([]);
     expect(listAudit(db, me, {})).toHaveLength(0);
   });
 });

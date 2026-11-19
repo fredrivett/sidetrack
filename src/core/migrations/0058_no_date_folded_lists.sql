@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `no_date_folded_lists` text;
