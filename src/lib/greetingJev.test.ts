@@ -163,6 +163,33 @@ describe("pickGreeting", () => {
     expect(pick.others).toEqual([]);
   });
 
+  it("says why each moment was or wasn't said", () => {
+    const pick = pickGreeting(
+      brief({
+        dueToday: [item("a")],
+        overdue: [item("o")],
+        undated: [item("u")],
+        ahead: Array.from({ length: 7 }, (_, i) => ({ day: `2026-11-${19 + i}`, open: i === 1 ? 6 : 1 })),
+      }),
+      { moments: { triage: 0.3, plan: 0.9, heavy: 0.8, urgent: 0.7 }, items: { a: 0.9, o: 0.9, u: 0.1 } },
+    );
+    expect(Object.fromEntries(pick.considered.map((c) => [c.moment, [c.said, c.why]]))).toEqual({
+      triage: [true, "Always said when it applies"],
+      plan: [true, "Scored 0.6 or more"],
+      heavy: [false, "Two things were already being said"],
+      urgent: [false, "Two things were already being said"],
+    });
+    // With room, an undated moment with nothing worth naming is left out for that.
+    const room = pickGreeting(brief({ undated: [item("u")] }), {
+      moments: { urgent: 0.7, clear: 0.2 },
+      items: { u: 0.1 },
+    });
+    expect(room.considered).toEqual([
+      { moment: "urgent", score: 0.7, said: false, why: "No item scored 0.3 or more to name" },
+      { moment: "clear", score: 0.2, said: false, why: "Scored under 0.6" },
+    ]);
+  });
+
   it("is quiet when no moment is confident", () => {
     const pick = pickGreeting(brief({ dueToday: [item("a")] }), {
       moments: { plan: 0.55 },

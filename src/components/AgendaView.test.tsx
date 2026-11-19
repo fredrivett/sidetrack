@@ -322,11 +322,12 @@ describe("AgendaView", () => {
         day: "2026-11-14",
         partOfDay: "morning",
         at: Date.UTC(2026, 10, 14, 9),
+        timeZone: "UTC",
         why: "Claude's reply was turned down: it called something overdue or late",
         looked: { dueToday: 0, doneToday: 0, slipped: 1, undated: 2, stale: 0, finishedSince: 0, sinceDay: null },
         moments: [
-          { moment: "triage", meaning: "", score: 0.42, said: true, why: "Always said when it applies" },
-          { moment: "urgent", meaning: "", score: 0.55, said: false, why: "Scored under 0.6" },
+          { moment: "triage", score: 0.42, said: true, why: "Always said when it applies" },
+          { moment: "urgent", score: 0.55, said: false, why: "Scored under 0.6" },
         ],
         items: [{ id: late.id, title: "Call the bank", list: "Home", score: 0.8, named: true, other: false }],
         model: null,
@@ -343,6 +344,10 @@ describe("AgendaView", () => {
     const said = within(dialog).getByText("What slipped").closest("li");
     expect(said?.hasAttribute("data-said")).toBe(true);
     expect(said?.textContent).toContain("42%");
+    // The built-in greeting showed, so Claude's picks weren't said.
+    expect(said?.textContent).toContain("picked: Always said when it applies");
+    expect(within(dialog).getByText("What Claude was asked to say")).toBeTruthy();
+    expect(within(dialog).getByText(/worked out at 09:00/)).toBeTruthy();
     const left = within(dialog).getByText("Something time-sensitive").closest("li");
     expect(left?.hasAttribute("data-said")).toBe(false);
     expect(left?.textContent).toContain("left out: Scored under 0.6");

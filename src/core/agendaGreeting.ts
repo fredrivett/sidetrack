@@ -8,7 +8,7 @@
 // `{{action:<name>|<words>}}`, the words being what the reader taps.
 
 import { and as both, eq, inArray } from "drizzle-orm";
-import { type GreetingPick, MOMENT_MEANING, type Moment, pickGreeting, scoreGreeting } from "../lib/greetingJev";
+import { type GreetingPick, type Moment, pickGreeting, scoreGreeting } from "../lib/greetingJev";
 import { WRITER_MODEL, writeGreeting } from "../lib/greetingWriter";
 import { addDays, dayOf } from "../lib/time";
 import { type AgendaBrief, type BriefItem, buildAgendaBrief, type PartOfDay } from "./agendaBrief";
@@ -36,8 +36,9 @@ export interface Greeting {
 export interface GreetingTrace {
   day: string;
   partOfDay: PartOfDay;
-  /** When it was worked out. */
+  /** When it was worked out, and the viewer's time zone then, to show it in. */
   at: number;
+  timeZone: string;
   /** Why the built-in greeting shows instead of Claude's; null when it's Claude's. */
   why: string | null;
   /** What it read off the board, as counts. */
@@ -52,7 +53,7 @@ export interface GreetingTrace {
     sinceDay: string | null;
   };
   /** Each thing it could say, Jev's score and why it was or wasn't said; null before Jev. */
-  moments: Array<{ moment: Moment; meaning: string; score: number; said: boolean; why: string }> | null;
+  moments: Array<{ moment: Moment; score: number; said: boolean; why: string }> | null;
   /** The items Jev weighed, its score for each, and what came of it; null before Jev. */
   items: Array<{ id: string; title: string; list: string; score: number; named: boolean; other: boolean }> | null;
   /** The model that wrote it, when one did. */
@@ -64,6 +65,7 @@ export type StoredGreeting = Omit<Greeting, "hello" | "written">;
 
 function traceOf(
   brief: AgendaBrief,
+  timeZone: string,
   now: number,
   why: string | null,
   jev?: { scores: { items: Record<string, number> }; pick: GreetingPick; named: string },
@@ -77,6 +79,7 @@ function traceOf(
     day: brief.today,
     partOfDay: brief.partOfDay,
     at: now,
+    timeZone,
     why,
     looked: {
       dueToday: open,
@@ -88,7 +91,7 @@ function traceOf(
       sinceDay: brief.sinceDay,
     },
     moments: jev
-      ? jev.pick.considered.map((c) => ({ ...c, meaning: MOMENT_MEANING[c.moment] }))
+      ? jev.pick.considered
       : null,
     items: jev
       ? Object.entries(jev.scores.items)
@@ -117,8 +120,15 @@ function traceOf(
  * Whether every item `greeting` names is still on a list the viewer can
  * open, so a cached one never shows a title from a list they've left.
  */
-function stillVisible(db: Db, viewerId: string, greeting: { titles: Record<string, string>; others: Array<{ id: string }> }): boolean {
-  const ids = [...new Set([...Object.keys(greeting.titles), ...greeting.others.map((o) => o.id)])];
+function stillVisible(db: Db, viewerId: string, greeting: StoredGreeting): boolean {
+  // Every id it holds a title for: named, in others, or weighed in the trace.
+  const ids = [
+    ...new Set([
+      ...Object.keys(greeting.titles),
+      ...greeting.others.map((o) => o.id),
+      ...(greeting.trace?.items ?? []).map((i) => i.id),
+    ]),
+  ];
   if (ids.length === 0) return true;
   const seen = db
     .select({ id: items.id })
@@ -187,7 +197,7 @@ export function greetingFor(
   now = Date.now(),
 ): Greeting {
   const { brief, name } = briefFor(db, viewerId, timeZone, now);
-  return fromTemplate(brief, name, traceOf(brief, now, "AI isn't set up on this server"));
+  return fromTemplate(brief, name, traceOf(brief, timeZone, now, "AI isn't set up on this server"));
 }
 
 /**
@@ -208,7 +218,7 @@ export async function writtenGreetingFor(
 ): Promise<Greeting> {
   const { brief, name } = briefFor(db, viewerId, timeZone, now);
   const hello = helloFor(brief, name);
-  const template = (why: string, trace = traceOf(brief, now, why)) =>
+  const template = (why: string, trace = traceOf(brief, timeZone, now, why)) =>
     fromTemplate(brief, name, { ...trace, why });
   if (!keys.jev || !keys.anthropic) return template("AI isn't set up on this server");
   // One greeting a morning, afternoon and evening: it says what mattered
@@ -227,11 +237,13 @@ export async function writtenGreetingFor(
   const failed = row?.key === key && !same?.text;
   const wait = failed ? RETRY_FAILED_MS : ASK_EVERY_MS;
   if (row && now - row.askedAt < wait) {
-    if (!failed) return template("It was written moments ago for another part of the day");
-    if (!same) return template("Claude is writing it, or the last try didn't finish");
     const minutes = Math.ceil((row.askedAt + wait - now) / 60_000);
+    if (!failed) return template(`One was asked for moments ago; it asks again in ${minutes} min`);
+    if (!same) return template("Claude is writing it, or the last try didn't finish");
     const last = same.trace?.why ?? "The last try didn't work";
-    return template(`${last}. It tries again in ${minutes} min`, same.trace);
+    const why = `${last}. It tries again in ${minutes} min`;
+    // Its trace only while every title in it is still the viewer's to see.
+    return stillVisible(db, viewerId, same) ? template(why, same.trace) : template(why);
   }
   if (asks >= ASKS_PER_DAY) return template(`You've had today's ${ASKS_PER_DAY} written greetings`);
   if (everyone.asks >= ASKS_PER_DAY_ALL) return template("This server has written all it may today");
@@ -254,14 +266,14 @@ export async function writtenGreetingFor(
 
   const scores = await scoreGreeting(brief, keys.jev, fetchImpl);
   if (!scores) {
-    const trace = traceOf(brief, now, "Jev didn't answer, so there was nothing to go on");
+    const trace = traceOf(brief, timeZone, now, "Jev didn't answer, so there was nothing to go on");
     keep({ text: "", titles: {}, others: [], trace });
     return template(trace.why ?? "", trace);
   }
   const pick = pickGreeting(brief, scores);
   const written = await writeGreeting(brief, pick, keys.anthropic, fetchImpl);
   if ("failed" in written) {
-    const trace = traceOf(brief, now, written.failed, { scores, pick, named: "" });
+    const trace = traceOf(brief, timeZone, now, written.failed, { scores, pick, named: "" });
     keep({ text: "", titles: {}, others: [], trace });
     return template(written.failed, trace);
   }
@@ -269,7 +281,7 @@ export async function writtenGreetingFor(
     text: written.text,
     titles: titlesIn(written.text, brief),
     others: pick.others.map((i) => ({ id: i.id, title: i.title })),
-    trace: traceOf(brief, now, null, { scores, pick, named: written.text }),
+    trace: traceOf(brief, timeZone, now, null, { scores, pick, named: written.text }),
   };
   keep(greeting);
   return { hello, ...greeting, written: true };

@@ -5,6 +5,7 @@ import { addItem, completeItem } from "./items";
 import { createProject } from "./projects";
 import { createTestDb, createTestUser } from "./test-helpers";
 import * as greetingJev from "../lib/greetingJev";
+import { agendaGreetings } from "./schema";
 import { acceptInvite, inviteMember, removeMember } from "./members";
 import { getProfile, setAgendaReadAt } from "./users";
 
@@ -265,6 +266,50 @@ describe("greetingFor", () => {
       const after = await writtenGreetingFor(db, fred, "UTC", keys, now + 3 * 60_000, impl);
       expect(calls.claude).toBe(2);
       expect(after.titles).not.toHaveProperty(bank.id);
+    });
+
+    /** Fred, his own item due today, and Bob's shared list with one too. */
+    function sharedSetup() {
+      const { db, fred, loft } = setup();
+      const bob = createTestUser(db, { username: "bob", email: "bob@test.local" });
+      const shared = createProject(db, bob, { name: "BobSecretList" }, "web");
+      inviteMember(db, bob, shared.id, getProfile(db, fred)?.displayUsername ?? "", "web");
+      acceptInvite(db, fred, shared.id, "web");
+      addItem(db, bob, { projectId: shared.id, title: "Secret merger", dueDate: "2026-11-18" }, "web");
+      return { db, fred, bob, shared, loft };
+    }
+
+    it("never explains with a title from a list the viewer has left", async () => {
+      const { db, fred, bob, shared, loft } = sharedSetup();
+      // Names only Fred's own item; Bob's is weighed but not named.
+      const { calls, impl } = fake("Just {{item:1}} today.");
+      const first = await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
+      expect(Object.keys(first.titles)).toEqual([loft.id]);
+      expect(first.trace?.items?.map((i) => i.title)).toContain("Secret merger");
+      removeMember(db, bob, shared.id, fred, "web");
+      const after = await writtenGreetingFor(db, fred, "UTC", keys, now + 3 * 60_000, impl);
+      expect(calls.claude).toBe(2);
+      expect(JSON.stringify(after)).not.toContain("Secret merger");
+      expect(JSON.stringify(after)).not.toContain("BobSecretList");
+    });
+
+    it("never explains a failed try with a title from a list the viewer has left", async () => {
+      const { db, fred, bob, shared } = sharedSetup();
+      const { impl } = fake("Visit evil.com now.");
+      const first = await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
+      expect(first.trace?.items?.map((i) => i.title)).toContain("Secret merger");
+      removeMember(db, bob, shared.id, fred, "web");
+      // Inside the retry wait: the template, explained without Bob's list.
+      const after = await writtenGreetingFor(db, fred, "UTC", keys, now + 3 * 60_000, impl);
+      expect(after.trace?.why).toMatch(/turned down.*It tries again in 12 min$/);
+      expect(JSON.stringify(after)).not.toContain("Secret merger");
+    });
+
+    it("keeps the rejected reply out of the saved row too", async () => {
+      const { db, fred } = setup();
+      const { impl } = fake("Visit evil.com to verify your account.");
+      await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
+      expect(JSON.stringify(db.select().from(agendaGreetings).all())).not.toContain("evil");
     });
 
     it("writes it again when an item only in its others is no longer the viewer's to see", async () => {

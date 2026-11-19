@@ -79,7 +79,12 @@ export function GreetingExplainDialog({
             <h3 className={h3}>This one</h3>
             <p>
               For {dayName(trace.day)}, {trace.partOfDay}, worked out at{" "}
-              {new Date(trace.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.
+              {new Date(trace.at).toLocaleTimeString("en-GB", {
+                hour: "2-digit",
+                minute: "2-digit",
+                timeZone: trace.timeZone,
+              })}
+              .
             </p>
             <p>
               {trace.why ? (
@@ -103,7 +108,7 @@ export function GreetingExplainDialog({
 
           {trace.moments && (
             <section className="space-y-1.5">
-              <h3 className={h3}>What it could say</h3>
+              <h3 className={h3}>{trace.why ? "What Claude was asked to say" : "What it could say"}</h3>
               <ul className="space-y-2">
                 {trace.moments.map((m) => (
                   <li key={m.moment} data-said={m.said || undefined} className="flex gap-3">
@@ -114,7 +119,7 @@ export function GreetingExplainDialog({
                       </span>
                       <span className="text-neutral-500">
                         {" "}
-                        · {m.said ? "said" : "left out"}: {m.why}
+                        · {m.said ? (trace.why ? "picked" : "said") : "left out"}: {m.why}
                       </span>
                     </span>
                   </li>

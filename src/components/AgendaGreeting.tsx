@@ -216,6 +216,7 @@ export function AgendaGreeting({
               );
             })}
           </p>
+            {((onFeedback && greeting.written) || greeting.trace) && (
             <div className="mt-2 flex animate-in items-center gap-1 fade-in duration-500">
                 {/* On Claude's greetings only, so a thumbs down is about Claude. */}
                 {onFeedback && greeting.written && (["up", "down"] as const).map((rating) => {
@@ -243,6 +244,7 @@ export function AgendaGreeting({
                   </button>
                 )}
               </div>
+            )}
             {greeting.trace && (
               <GreetingExplainDialog open={explainOpen} onOpenChange={setExplainOpen} trace={greeting.trace} />
             )}
