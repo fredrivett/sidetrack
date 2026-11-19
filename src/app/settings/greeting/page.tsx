@@ -14,10 +14,10 @@ export default async function GreetingSettingsPage() {
     <main className="min-h-dvh px-4 py-6 sm:px-6">
       <div className="mx-auto max-w-2xl space-y-6">
         <header className="space-y-1">
-          <Link href="/agenda" className="text-xs text-muted-foreground hover:underline">
+          <Link href="/briefing" className="text-xs text-muted-foreground hover:underline">
             ← Back to Agenda
           </Link>
-          <h1 className="text-lg font-semibold tracking-tight">Agenda greeting</h1>
+          <h1 className="text-lg font-semibold tracking-tight">Briefing greeting</h1>
           <p className="text-sm text-muted-foreground">
             The few sentences at the top of your Agenda. Tell it how you like them.
           </p>

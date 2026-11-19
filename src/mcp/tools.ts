@@ -420,11 +420,11 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "List today",
       description:
-        "What's due now on the user's Agenda view: items across their active lists (not archived) that are due today or overdue, " +
+        "What's due now on the user's Briefing view: items across their active lists (not archived) that are due today or overdue, " +
         "items due in a span that has started (dueFrom on or before today, e.g. due this week from Monday), " +
         "plus items finished today, which the user sees crossed out. Overdue items come first, then by board order. " +
         "The user sees them under Overdue (dueDate before today), Today (due today alone) and This week (a span under way); " +
-        "their Agenda also shows what's due later, under This week, Next week and Later, which this tool leaves out. " +
+        "their Briefing also shows what's due later, under This week, Next week and Later, which this tool leaves out. " +
         "Returns { today, timeZone, items }, plus a note when the timezone is a UTC fallback. today is the user's current day (YYYY-MM-DD) in timeZone, which their browser reports; " +
         "the day turns over at 4am, so at 1am it's still the day before. Use today to work out dates like tomorrow for due_date. " +
         "Each item carries its ref, listName and, for a sub-item, parentTitle. " +
@@ -473,7 +473,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "List items with no date",
       description:
-        "The No date section of the user's Agenda view: tasks with no due date across their active lists (not archived), " +
+        "The No date section of the user's Briefing view: tasks with no due date across their active lists (not archived), " +
         "for planning when to do them. Sub-items of a dated parent are left out, since they are planned with their parent. " +
         "Items finished today are included, which the user sees crossed out. " +
         "Returns { today, timeZone, lists }, plus a note when the timezone is a UTC fallback; today works as in list_today. " +

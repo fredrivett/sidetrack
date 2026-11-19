@@ -26,7 +26,7 @@ const SECTIONS: Array<{ title: string; shortcuts: Array<[string, string[]]> }> =
       ["New list", ["⇧", "C"]],
       ["Filter", ["F"]],
       ["Notifications", ["N"]],
-      ["Go to Agenda", ["1"]],
+      ["Go to Briefing", ["1"]],
       ["Go to Board", ["2"]],
       ["Go to Done", ["3"]],
     ],

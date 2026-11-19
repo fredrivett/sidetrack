@@ -25,7 +25,7 @@ import type { PendingSpaceInviteView, SpaceView } from "@/core/spaces";
 import { type ItemFilters, matchesFilters } from "@/lib/filters";
 import { isEditableTarget, matchesShortcut } from "@/lib/keyboard";
 import { LOCALE_COOKIE } from "@/lib/time";
-import { CalendarDays, CircleCheck, MessageSquarePlus, SquareKanban } from "lucide-react";
+import { CircleCheck, MessageSquarePlus, SquareKanban, Sunrise } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -77,9 +77,9 @@ export type ProjectView = Project & {
   suggestedRepository?: string;
 };
 
-/** The header's views, each at its own path (/agenda, /board, /done); / opens the Agenda. */
+/** The header's views, each at its own path (/briefing, /board, /done); / opens the Briefing. */
 const BOARD_VIEWS = [
-  ["agenda", "Agenda", CalendarDays],
+  ["briefing", "Briefing", Sunrise],
   ["board", "Board", SquareKanban],
   ["done", "Done", CircleCheck],
 ] as const;
@@ -123,7 +123,7 @@ export function Kanban({
   viewer: AvatarUser | null;
   /** The timezone saved for the viewer, kept in step with their browser. */
   timeZone: string | null;
-  /** From the path (/agenda, /board, …), so a reload or shared link opens on the same view. */
+  /** From the path (/briefing, /board, …), so a reload or shared link opens on the same view. */
   initialView: BoardView;
   /** Whether the viewer keeps the Agenda's Overdue section folded away. */
   overdueCollapsed: boolean;
@@ -769,7 +769,7 @@ export function Kanban({
           />
         </BoardHeader>
         <InvitesBanner invites={pendingInvites} spaceInvites={pendingSpaceInvites} />
-        {view === "agenda" ? (
+        {view === "briefing" ? (
           <AgendaView
             projects={active}
             overdueCollapsed={overdueCollapsed}
