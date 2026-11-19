@@ -191,15 +191,16 @@ export function AgendaGreeting({
   if (!today) return <div className="min-h-24" />;
 
   const chip =
-    "rounded-md bg-neutral-100 px-1 py-px leading-normal box-decoration-clone text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100";
+    // A small white card, like the item rows beside it, in the UI face.
+    "relative -top-px rounded-md border border-neutral-300 bg-white px-1.5 py-px font-sans text-[0.8em] font-medium leading-normal box-decoration-clone text-neutral-900 shadow-xs dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100";
   const link =
-    "rounded-sm text-neutral-900 underline decoration-neutral-300 underline-offset-4 outline-none hover:decoration-neutral-500 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:text-neutral-100 dark:decoration-neutral-600 dark:hover:decoration-neutral-400 dark:focus-visible:ring-neutral-600";
+    "rounded-sm text-neutral-900 underline decoration-neutral-500 decoration-[1.5px] underline-offset-4 outline-none hover:decoration-neutral-900 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:text-neutral-100 dark:decoration-neutral-500 dark:hover:decoration-neutral-300 dark:focus-visible:ring-neutral-600";
   const others = greeting?.others ?? [];
 
   return (
     <div className="px-1 pt-2 pb-1">
       <p className="text-xs font-medium text-neutral-400 dark:text-neutral-500">{dateLine(today)}</p>
-      <h2 className="mt-1 text-[22px] leading-tight font-semibold tracking-tight text-neutral-900 dark:text-neutral-100">
+      <h2 className="mt-1 font-display text-[36px] leading-[1.1] font-normal tracking-[-0.01em] text-neutral-900 italic min-[900px]:text-[46px] dark:text-neutral-100">
         {greeting?.hello ?? helloNow(firstName)}
       </h2>
       {greeting === undefined ? (
@@ -211,7 +212,7 @@ export function AgendaGreeting({
       ) : (
         greeting?.text && (
           <>
-          <p className="mt-2 animate-in text-[15px] leading-7 text-neutral-600 text-pretty fade-in duration-500 dark:text-neutral-300">
+          <p className="mt-2 animate-in font-serif text-[18px] leading-[1.7] font-light text-neutral-700 text-pretty fade-in duration-500 min-[900px]:mt-3 min-[900px]:text-[21px] dark:text-neutral-300">
             {parseGreeting(greeting.text).map((part, i) => {
               if (part.kind === "text") return part.text;
               if (part.kind === "action") {
@@ -242,7 +243,7 @@ export function AgendaGreeting({
                   // Keyboard focus only: a click leaves focus on the chip after its dialog closes.
                   onFocus={(e) => e.currentTarget.matches(":focus-visible") && onHoverItem(item.id)}
                   onBlur={() => onHoverItem(null)}
-                  className={`${chip} outline-none hover:bg-neutral-200 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:hover:bg-neutral-700 dark:focus-visible:ring-neutral-600`}
+                  className={`${chip} outline-none hover:border-neutral-400 hover:bg-neutral-50 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:hover:border-neutral-500 dark:hover:bg-neutral-800 dark:focus-visible:ring-neutral-600`}
                 >
                   {title}
                 </Tap>

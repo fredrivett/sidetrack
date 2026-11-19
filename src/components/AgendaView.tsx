@@ -274,7 +274,7 @@ export function AgendaView({
       <div
         className={`mx-auto w-full max-w-xl p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] ${
           greet
-            ? "min-[900px]:grid min-[900px]:max-w-5xl min-[900px]:grid-cols-[minmax(0,20rem)_minmax(0,36rem)] min-[900px]:justify-center min-[900px]:gap-10"
+            ? "min-[900px]:grid min-[900px]:max-w-5xl min-[900px]:grid-cols-[minmax(0,24rem)_minmax(0,36rem)] min-[900px]:justify-center min-[900px]:gap-10"
             : ""
         }`}
       >
