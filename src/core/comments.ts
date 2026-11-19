@@ -108,6 +108,19 @@ export function listComments(db: Db, userId: string, itemId: string): CommentVie
   return selectComments(db, userId, eq(comments.itemId, itemId)).map(withoutItem);
 }
 
+/** How many comments each item the user can open has, for the board's rows; items without any are left out. */
+export function countCommentsByItem(db: Db, userId: string): Record<string, number> {
+  const rows = db
+    .select({ itemId: comments.itemId, count: sql<number>`count(*)` })
+    .from(comments)
+    .innerJoin(items, eq(items.id, comments.itemId))
+    .innerJoin(projects, eq(projects.id, items.projectId))
+    .where(hasProjectAccess(userId))
+    .groupBy(comments.itemId)
+    .all();
+  return Object.fromEntries(rows.map((r) => [r.itemId, r.count]));
+}
+
 export function getComment(db: Db, userId: string, id: string): CommentView | undefined {
   return selectComments(db, userId, eq(comments.id, id)).map(withoutItem)[0];
 }
