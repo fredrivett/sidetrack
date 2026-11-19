@@ -233,7 +233,7 @@ export function AgendaView({
             </section>
           ) : (
             <section key={label} className="space-y-1.5">
-              {/* Quiet, like a list's "Done this week (n)". Counts are what's left. */}
+              {/* Quiet section labels. Counts are what's left. */}
               <h2 className="flex items-center gap-1.5 px-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">
                 {label}
                 <span className="tabular-nums text-neutral-400 dark:text-neutral-500">

@@ -41,7 +41,7 @@ export const itemFiltersSchema = z.object({
     .nullable(),
   /** Items finished today stay in their list, crossed out, until tomorrow. */
   doneToday: z.boolean(),
-  /** Each list keeps a "Done this week" section under it. */
+  /** Each list's header counts what was done this week; tapping it shows them. */
   doneThisWeek: z.boolean(),
 });
 export type ItemFilters = z.infer<typeof itemFiltersSchema>;
