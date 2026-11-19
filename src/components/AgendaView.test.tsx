@@ -576,6 +576,7 @@ describe("AgendaView", () => {
 
   it("explains how the greeting was worked out", async () => {
     const late = item("Call the bank", "2026-11-10");
+    const paid = item("Pay rent", "2026-11-14", doneOn(14));
     vi.mocked(agendaGreetingAction).mockResolvedValueOnce({
       hello: "Good morning, Fred.",
       text: `{{item:${late.id}}} slipped.`,
@@ -596,11 +597,12 @@ describe("AgendaView", () => {
         items: [
           { id: late.id, title: "Call the bank", list: "Home", score: 0.8, named: true, other: false },
           { id: "gone", title: "Paint the shed", list: "Home", score: 0.3, named: false, other: false },
+          { id: paid.id, title: "Pay rent", list: "Home", score: 0.2, named: true, other: false },
         ],
         model: null,
       },
     });
-    renderAgenda([late], [home], false, {}, true, vi.fn());
+    renderAgenda([late, paid], [home], false, {}, true, vi.fn());
     await screen.findByText(/slipped\./);
     // The built-in greeting has no thumbs, but still explains itself.
     expect(screen.queryByRole("button", { name: "Good greeting" })).toBeNull();
@@ -619,6 +621,9 @@ describe("AgendaView", () => {
     expect(left?.hasAttribute("data-said")).toBe(false);
     expect(left?.textContent).toContain("left out: Scored under 0.6");
     expect(within(dialog).getByText("Call the bank").closest("li")?.textContent).toContain("80%");
+    // Finished since it was worked out: crossed out, as on the board.
+    expect(within(dialog).getByText("Call the bank").className).not.toContain("line-through");
+    expect(within(dialog).getByText("Pay rent").className).toContain("line-through");
     // Weighed but not loaded on the page: listed, but can't open.
     expect(within(dialog).getByText("Paint the shed").closest("button")).toBeNull();
     // An item opens in the same dialog, with a way back to the explanation.

@@ -160,7 +160,15 @@ export function GreetingDialog({
                               onClick={() => openFromList(o.id)}
                               className={`${row} text-neutral-800 outline-none hover:bg-neutral-100 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:text-neutral-200 dark:hover:bg-neutral-800`}
                             >
-                              {live.title}
+                              <span
+                                className={
+                                  live.completedAt !== null
+                                    ? "text-neutral-400 line-through dark:text-neutral-500"
+                                    : ""
+                                }
+                              >
+                                {live.title}
+                              </span>
                             </button>
                           ) : (
                             <span className={`${row} text-neutral-500`}>{o.title}</span>
@@ -322,11 +330,21 @@ function Explanation({
           <h3 className={h3}>Items it weighed</h3>
           <ul className="space-y-1.5">
             {trace.items.map((i) => {
+              // Finished since, crossed out as on the board.
+              const done = itemsById.get(i.id)?.completedAt != null;
               const row = (
                 <>
                   <span className="w-10 shrink-0 text-right tabular-nums text-neutral-400">{pct(i.score)}</span>
                   <span className="min-w-0">
-                    <span className={i.named ? "font-medium text-neutral-900 dark:text-neutral-100" : ""}>
+                    <span
+                      className={`${i.named ? "font-medium" : ""} ${
+                        done
+                          ? "text-neutral-400 line-through dark:text-neutral-500"
+                          : i.named
+                            ? "text-neutral-900 dark:text-neutral-100"
+                            : ""
+                      }`}
+                    >
                       {i.title}
                     </span>
                     <span className="text-neutral-500">
