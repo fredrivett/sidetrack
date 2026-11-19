@@ -118,7 +118,7 @@ export function checkWriterOutput(raw: string, input: WriterInput): string | nul
   // smuggle in, no markup or shouting.
   if (/https?:|www\.|@|\b[a-z0-9-]+\.[a-z]{2,}\b|\d[\d\s-]{3,}\d|[<>*_#`[\]!]/i.test(text)) return null;
   // No scolding: "late" only for the hour ("it's late"), never a task.
-  const hourLate = /\b(?:it's|it’s|it is|getting|so) late\b|\blate (?:evening|night|in the day)\b/gi;
+  const hourLate = /\b(?:it's|it’s|it is|getting) late(?: (?:evening|night|in the day))?\b/gi;
   if (/\boverdue\b|\blate\b/i.test(text.replace(hourLate, ""))) return null;
   const TOKEN = /\{\{([^{}]*)\}\}/g;
   const named = new Set<number>();
@@ -143,10 +143,11 @@ export function checkWriterOutput(raw: string, input: WriterInput): string | nul
   const prose = out.replace(TOKEN, "x");
   if ((prose.match(/[.?](\s|$)/g) ?? []).length > 3) return null;
   for (const item of input.items.values()) {
-    const title = item.title.trim();
-    if (!/\s/.test(title)) continue;
-    const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    if (new RegExp(`\\b${escaped}\\b`, "i").test(prose)) return null;
+    const title = item.title.trim().replace(/\s+/g, " ");
+    if (!title.includes(" ")) continue;
+    const escaped = title.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&");
+    // Whole words, by Unicode letters, so "Call Sam?" and "Pay José" count.
+    if (new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "iu").test(prose)) return null;
   }
   // When the picked moves name items, the greeting names at least one.
   if (input.picked > 0 && named.size === 0) return null;

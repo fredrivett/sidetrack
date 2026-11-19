@@ -89,6 +89,7 @@ describe("checkWriterOutput", () => {
     ["calling a task late", "{{item:1}} is running late."],
     ["calling tasks late", "{{item:1}} and {{item:2}} are both a little late."],
     ["calling a task late, briefly", "{{item:1}} is late."],
+    ["calling a task so late", "{{item:1}} is so late."],
     ["a title spelled out", "Call the bank, then {{item:2}}."],
     ["more than three sentences", "{{item:1}} first. Then this. Then that. And more."],
     ["no item when it was given some", "A gentle Wednesday."],
@@ -110,6 +111,9 @@ describe("checkWriterOutput", () => {
     const rest = writerInput(brief, { ...pick, items: { triage: [item("r1", "Rest")], plan: [item("p1", "Plan the week")] } });
     expect(checkWriterOutput("{{item:1}} first, then the rest of the day is yours.", rest)).not.toBeNull();
     expect(checkWriterOutput("{{item:1}} first, a good moment to plan the week.", rest)).toBeNull();
+    const asked = writerInput(brief, { ...pick, items: { triage: [item("c1", "Call  Sam?")], plan: [item("j1", "Pay José")] } });
+    expect(checkWriterOutput("Call Sam? Then {{item:2}}.", asked)).toBeNull();
+    expect(checkWriterOutput("{{item:1}}, then pay José today.", asked)).toBeNull();
   });
 
   it("gives the page only tokens it can read", () => {
