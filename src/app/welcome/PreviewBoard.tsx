@@ -1,6 +1,6 @@
 "use client";
 
-import { History } from "lucide-react";
+import { CircleCheck, History, SquareKanban, Sunrise } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { AssigneeView } from "@/core/members";
 import type { AgentSession, Item, Label } from "@/core/schema";
@@ -343,19 +343,35 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
           <div className="flex h-[36rem] flex-col overflow-hidden rounded-2xl [&_section]:[--column-width:calc(100vw-82px)] border border-neutral-200 bg-neutral-50 text-left shadow-xl shadow-neutral-900/5 dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-black/40">
             <BoardHeader
               nav={
-                // The board's view switch, showing the Board; the preview
-                // has no Brief or Done to switch to.
-                <div className="flex h-7 rounded-md border border-neutral-200 p-0.5 text-[13px] font-medium max-[360px]:text-xs touch:h-9 touch:text-sm touch:max-[360px]:text-xs dark:border-neutral-800">
-                  {["Board", "Brief", "Done"].map((label, i) => (
+                // The board's view switch (Kanban), showing the Board; the
+                // preview has no Brief or Done to switch to, so its underline
+                // stays put: on the header's bottom border, 8px of padding
+                // and the 1px border below the tabs, which stretch to the
+                // header's height when its right side wraps to two rows.
+                <div className="flex min-h-7 items-stretch self-stretch text-[13px] font-medium max-[360px]:text-xs touch:min-h-9 touch:text-sm touch:max-[360px]:text-xs">
+                  {(
+                    [
+                      ["Brief", Sunrise],
+                      ["Board", SquareKanban],
+                      ["Done", CircleCheck],
+                    ] as const
+                  ).map(([label, Icon]) => (
                     <span
                       key={label}
-                      className={`flex items-center whitespace-nowrap rounded px-2 max-[360px]:px-1.5 sm:px-2.5 ${
-                        i === 0
-                          ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
-                          : "text-neutral-600 dark:text-neutral-300"
+                      className={`relative flex items-center gap-1.5 whitespace-nowrap px-2 sm:px-2.5 [&_svg]:size-3.5 touch:[&_svg]:size-4 ${
+                        label === "Board"
+                          ? "text-neutral-900 after:absolute after:inset-x-0 after:-bottom-[9px] after:h-0.5 after:rounded-full after:bg-neutral-900 dark:text-neutral-100 dark:after:bg-neutral-100"
+                          : "text-neutral-500 dark:text-neutral-400"
                       }`}
                     >
-                      {label}
+                      <Icon aria-hidden />
+                      <span
+                        className={`max-sm:sr-only ${
+                          label === "Brief" ? "font-display text-[18px] leading-none font-normal tracking-[-0.01em] italic" : ""
+                        }`}
+                      >
+                        {label}
+                      </span>
                     </span>
                   ))}
                 </div>

@@ -26,7 +26,7 @@ export function BoardHeader({
     // 320px; px-3 lines the logo up with the views below.
     // The header is the app's own text; the avatar's initial is data-private.
     <div data-replay-safe data-board-header className="flex items-center justify-between gap-2 max-[360px]:gap-1.5 border-b border-neutral-200 px-3 py-2 sm:gap-3 sm:px-4 dark:border-neutral-800">
-      <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+      <div className="flex shrink-0 items-center gap-2 self-stretch sm:gap-3">
         <h1 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
           <LogoMark />
           {/* The name gives way to the view switch on phones. */}
