@@ -38,7 +38,7 @@ const THEME_OPTIONS: Record<Theme, { label: string; Icon: typeof Sun }> = {
 const SETTINGS_LINKS: [href: string, label: string, Icon: ComponentType<{ className?: string }>][] = [
   ["/settings/profile", "Profile", UserRound],
   ["/settings/notifications", "Notifications", Bell],
-  ["/settings/greeting", "Briefing greeting", Sunrise],
+  ["/settings/greeting", "Brief greeting", Sunrise],
   ["/settings/spaces", "Spaces", Boxes],
   ["/settings/keys", "API keys", KeyRound],
   ["/settings/github", "GitHub", GitHubMark],

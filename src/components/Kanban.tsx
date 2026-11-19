@@ -77,9 +77,9 @@ export type ProjectView = Project & {
   suggestedRepository?: string;
 };
 
-/** The header's views, each at its own path (/briefing, /board, /done); / opens the Briefing. */
+/** The header's views, each at its own path (/brief, /board, /done); / opens the Brief. */
 const BOARD_VIEWS = [
-  ["briefing", "Briefing", Sunrise],
+  ["brief", "Brief", Sunrise],
   ["board", "Board", SquareKanban],
   ["done", "Done", CircleCheck],
 ] as const;
@@ -123,7 +123,7 @@ export function Kanban({
   viewer: AvatarUser | null;
   /** The timezone saved for the viewer, kept in step with their browser. */
   timeZone: string | null;
-  /** From the path (/briefing, /board, …), so a reload or shared link opens on the same view. */
+  /** From the path (/brief, /board, …), so a reload or shared link opens on the same view. */
   initialView: BoardView;
   /** Whether the viewer keeps the Agenda's Overdue section folded away. */
   overdueCollapsed: boolean;
@@ -769,7 +769,7 @@ export function Kanban({
           />
         </BoardHeader>
         <InvitesBanner invites={pendingInvites} spaceInvites={pendingSpaceInvites} />
-        {view === "briefing" ? (
+        {view === "brief" ? (
           <AgendaView
             projects={active}
             overdueCollapsed={overdueCollapsed}

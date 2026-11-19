@@ -14,7 +14,7 @@ export default function Launch() {
         dangerouslySetInnerHTML={{
           __html: `requestAnimationFrame(function () {
   setTimeout(function () {
-    function go() { location.replace("/briefing"); }
+    function go() { location.replace("/brief"); }
     if (navigator.onLine) go();
     else addEventListener("online", go, { once: true });
   });

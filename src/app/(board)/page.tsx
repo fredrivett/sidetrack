@@ -110,9 +110,9 @@ export default async function Home({
           overdueCollapsed={getOverdueCollapsed(db, userId)}
           noDateCollapsed={getNoDateCollapsed(db, userId)}
           noDateFoldedLists={getNoDateFoldedLists(db, userId)}
-          // From the path (/briefing, /board, …), which the proxy passes as ?view=.
+          // From the path (/brief, /board, …), which the proxy passes as ?view=.
           initialView={
-            view === "board" || view === "done" || view === "archived" ? view : "briefing"
+            view === "board" || view === "done" || view === "archived" ? view : "brief"
           }
           projects={projects}
           itemsByProject={itemsByProject}

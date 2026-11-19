@@ -100,7 +100,7 @@ export function CommandPalette({
   }[] = [
     { label: "New item", icon: <Plus />, shortcut: "C", action: onNewItem },
     { label: "New list", icon: <ListPlus />, shortcut: "⇧C", action: onNewList },
-    { label: "Go to Briefing", icon: <Sunrise />, shortcut: "1", action: () => onSwitchView("briefing") },
+    { label: "Go to Brief", icon: <Sunrise />, shortcut: "1", action: () => onSwitchView("brief") },
     { label: "Go to Board", icon: <Columns3 />, shortcut: "2", action: () => onSwitchView("board") },
     { label: "Go to Done", icon: <CircleCheck />, shortcut: "3", action: () => onSwitchView("done") },
     { label: "Go to Archived", icon: <Archive />, action: () => onSwitchView("archived") },
@@ -108,7 +108,7 @@ export function CommandPalette({
     { label: "Keyboard shortcuts", icon: <Keyboard />, shortcut: "?", action: onShowShortcuts },
     { label: "Profile settings", icon: <UserRound />, action: () => router.push("/settings/profile") },
     { label: "Notifications", icon: <Bell />, action: () => router.push("/settings/notifications") },
-    { label: "Briefing greeting", icon: <Sunrise />, action: () => router.push("/settings/greeting") },
+    { label: "Brief greeting", icon: <Sunrise />, action: () => router.push("/settings/greeting") },
     { label: "Spaces", icon: <Boxes />, action: () => router.push("/settings/spaces") },
     { label: "API keys", icon: <KeyRound />, action: () => router.push("/settings/keys") },
     { label: "GitHub webhook", icon: <GitHubMark />, action: () => router.push("/settings/github") },

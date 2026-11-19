@@ -68,10 +68,10 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // The Agenda was renamed the Briefing: old links and notifications open it.
+  // The Agenda was renamed the Brief: old links and notifications open it.
   if (pathname === "/agenda") {
     const url = request.nextUrl.clone();
-    url.pathname = "/briefing";
+    url.pathname = "/brief";
     return NextResponse.redirect(url);
   }
 
@@ -83,7 +83,7 @@ export function proxy(request: NextRequest) {
     url.searchParams.set("view", pathname.slice(1));
     return NextResponse.rewrite(url);
   }
-  // / opens the Briefing; links from before views had paths (?view=, or ?p=
+  // / opens the Brief; links from before views had paths (?view=, or ?p=
   // for a list on the board) open the view they meant.
   if (pathname === "/") {
     const url = request.nextUrl.clone();
@@ -92,17 +92,17 @@ export function proxy(request: NextRequest) {
     url.pathname = VIEWS.includes(view)
       ? `/${view}`
       : view === "agenda"
-        ? "/briefing"
+        ? "/brief"
       : url.searchParams.has("p") && view !== "today" && view !== "no-date"
         ? "/board"
-        : "/briefing";
+        : "/brief";
     return NextResponse.redirect(url);
   }
 
   return NextResponse.next();
 }
 
-const VIEWS = ["briefing", "board", "done", "archived"];
+const VIEWS = ["brief", "board", "done", "archived"];
 
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],

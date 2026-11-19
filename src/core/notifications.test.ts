@@ -294,7 +294,7 @@ describe("notifications", () => {
     expect(hers).toHaveLength(1);
     expect(hers[0][1]).toMatchObject({
       title: "Due",
-      url: "/briefing",
+      url: "/brief",
       body: expect.stringMatching(/^"(Bins|Rent)" and "(Bins|Rent)" are due today$/),
     });
     // Next morning, once more for what's still open; then no more.

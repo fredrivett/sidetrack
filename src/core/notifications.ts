@@ -1050,7 +1050,7 @@ function summarise(views: NotificationView[]): Omit<PushMessage, "tag"> {
       : views.every((v) => v.reason === "overdue")
         ? "are overdue"
         : "are due or overdue";
-    return { title: "Due", body: `${named} ${when}`, url: "/briefing" };
+    return { title: "Due", body: `${named} ${when}`, url: "/brief" };
   }
   // Who: the person each sentence starts with, in order of first change.
   const names = [
