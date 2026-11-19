@@ -323,7 +323,15 @@ export async function writtenGreetingFor(
   if (everyone.asks >= ASKS_PER_DAY_ALL) return stale(template("This server has written all it may today"));
   // Count the ask before awaiting it, so loads at the same moment ask once.
   everyone.asks += 1;
-  const asked = { key, greeting: null, askedAt: now, askedDay: utcDay, asks: asks + 1 };
+  // The written one it has stays meanwhile, so a load at the same moment (another
+  // tab or device) keeps showing it, and asks again when this one is due back.
+  const asked = {
+    key,
+    greeting: row?.key === key && row.greeting?.text ? row.greeting : null,
+    askedAt: now,
+    askedDay: utcDay,
+    asks: asks + 1,
+  };
   // audit-exempt: a cache of one person's greeting, seen by nobody else.
   db.insert(agendaGreetings)
     .values({ userId: viewerId, ...asked })
@@ -337,6 +345,16 @@ export async function writtenGreetingFor(
       .where(both(eq(agendaGreetings.userId, viewerId), eq(agendaGreetings.key, key)))
       .run();
   };
+
+  // How the items stood when the brief was built, before any await: one that
+  // changes while it's being written gets it written again.
+  const { lookBack, dueToday, overdue, thisWeek, undated, stale: untouched } = brief;
+  const briefed = stampsOf(
+    db,
+    [lookBack.finished, lookBack.slipped, dueToday, overdue, thisWeek, undated, untouched].flatMap((l) =>
+      l.map((i) => i.id),
+    ),
+  );
 
   const scores = await scoreGreeting(brief, keys.jev, fetchImpl);
   if (!scores) {
@@ -355,7 +373,7 @@ export async function writtenGreetingFor(
   const greeting: StoredGreeting = {
     text: written.text,
     titles,
-    stamps: stampsOf(db, Object.keys(titles)),
+    stamps: Object.fromEntries(Object.keys(titles).flatMap((id) => (id in briefed ? [[id, briefed[id]]] : []))),
     others: pick.others.map((i) => ({ id: i.id, title: i.title })),
     trace: traceOf(brief, prefs, timeZone, now, null, { scores, pick, named: written.text }),
   };

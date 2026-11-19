@@ -292,6 +292,32 @@ describe("greetingFor", () => {
       expect(calls).toEqual({ jev: 1, claude: 1 });
     });
 
+    it("writes it again when a named item changes while it's being written", async () => {
+      const { db, fred, loft } = setup();
+      const f = fake();
+      let during = () => {};
+      const impl = (async (url: string, init: RequestInit) => {
+        if (url.includes("anthropic")) during();
+        return f.impl(url, init);
+      }) as unknown as typeof fetch;
+      const first = await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
+      // A rewrite after a change; meanwhile another tab asks, and the item is ticked.
+      updateItem(db, fred, loft.id, { title: "Sort the attic" }, "web");
+      let meanwhile: unknown;
+      during = () => {
+        during = () => {};
+        completeItem(db, fred, loft.id, "web");
+        meanwhile = writtenGreetingFor(db, fred, "UTC", keys, now + 3 * 60_000, impl);
+      };
+      await writtenGreetingFor(db, fred, "UTC", keys, now + 3 * 60_000, impl);
+      expect(f.calls.claude).toBe(2);
+      // The other tab kept the one it had, and is told when to ask again.
+      expect(await meanwhile).toMatchObject({ text: first.text, written: true, retryInMs: 2 * 60_000 });
+      // The tick came after the brief, so it's written once more.
+      await writtenGreetingFor(db, fred, "UTC", keys, now + 6 * 60_000, impl);
+      expect(f.calls.claude).toBe(3);
+    });
+
     it("keeps one greeting through the morning, and writes another for the afternoon", async () => {
       const { db, fred, home } = setup();
       const { calls, impl } = fake();
