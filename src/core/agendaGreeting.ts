@@ -7,35 +7,47 @@
 // as a chip that opens it: `{{item:<id>}}`. An action reads
 // `{{action:<name>|<words>}}`, the words being what the reader taps.
 
-import { addDays } from "../lib/time";
+import { createHash } from "node:crypto";
+import { and as both, eq } from "drizzle-orm";
+import { pickGreeting, scoreGreeting } from "../lib/greetingJev";
+import { writeGreeting } from "../lib/greetingWriter";
+import { addDays, dayOf } from "../lib/time";
 import { type AgendaBrief, type BriefItem, buildAgendaBrief } from "./agendaBrief";
 import type { Db } from "./db";
+import { agendaGreetings } from "./schema";
 import { getAgendaReadAt, getProfile } from "./users";
 
-/** A greeting to show: its text with tokens, and each named item's title. */
+/** A greeting to show: its opening line, then its text with tokens. */
 export interface Greeting {
+  /** "Good morning, Fred." */
+  hello: string;
   text: string;
   /** By item id, for items the page may not have loaded. */
   titles: Record<string, string>;
+  /** The undated items "{{others|…}}" opens, best first. */
+  others: Array<{ id: string; title: string }>;
 }
 
-/**
- * The viewer's greeting at `now` in `timeZone`, looking back to their last
- * read. From the templates for now; Jev and the writer come later.
- */
-export function greetingFor(
-  db: Db,
-  viewerId: string,
-  timeZone: string,
-  now = Date.now(),
-): Greeting {
+/** Claude writes one person's greeting at most this often… */
+const ASK_EVERY_MS = 2 * 60_000;
+/** …and this many times in a UTC day. */
+const ASKS_PER_DAY = 40;
+/** And for everyone on this server together, in a UTC day. */
+const ASKS_PER_DAY_ALL = 2000;
+const everyone = { day: "", asks: 0 };
+
+function briefFor(db: Db, viewerId: string, timeZone: string, now: number) {
   const brief = buildAgendaBrief(db, viewerId, {
     now,
     timeZone,
     since: getAgendaReadAt(db, viewerId),
   });
-  const name = getProfile(db, viewerId)?.name;
-  const text = templateGreeting(brief, name?.trim().split(/\s+/)[0] || null);
+  const name = getProfile(db, viewerId)?.name?.trim().split(/\s+/)[0] || null;
+  return { brief, name };
+}
+
+/** The titles of the brief's items `text` names. */
+function titlesIn(text: string, brief: AgendaBrief): Record<string, string> {
   const titles: Record<string, string> = {};
   for (const i of [
     ...brief.lookBack.finished,
@@ -47,7 +59,88 @@ export function greetingFor(
   ]) {
     if (text.includes(`{{item:${i.id}}}`)) titles[i.id] = i.title;
   }
-  return { text, titles };
+  return titles;
+}
+
+function fromTemplate(brief: AgendaBrief, name: string | null): Greeting {
+  const hello = helloFor(brief, name);
+  // templateGreeting always opens with the hello.
+  const text = templateGreeting(brief, name).slice(hello.length).trimStart();
+  return { hello, text, titles: titlesIn(text, brief), others: [] };
+}
+
+/**
+ * The viewer's greeting at `now` in `timeZone`, from the templates, looking
+ * back to their last read.
+ */
+export function greetingFor(
+  db: Db,
+  viewerId: string,
+  timeZone: string,
+  now = Date.now(),
+): Greeting {
+  const { brief, name } = briefFor(db, viewerId, timeZone, now);
+  return fromTemplate(brief, name);
+}
+
+/**
+ * The viewer's greeting with Jev's picks in Claude's words, when both `keys`
+ * are set. Read back from agenda_greetings while nothing it was written from
+ * has changed; otherwise written afresh, at most every ASK_EVERY_MS and
+ * ASKS_PER_DAY times a day per person. Anything else, from a failed or
+ * rejected write to a limit, gives the template greeting. `fetchImpl` is
+ * injectable for tests.
+ */
+export async function writtenGreetingFor(
+  db: Db,
+  viewerId: string,
+  timeZone: string,
+  keys: { jev: string | undefined; anthropic: string | undefined },
+  now = Date.now(),
+  fetchImpl: typeof fetch = fetch,
+): Promise<Greeting> {
+  const { brief, name } = briefFor(db, viewerId, timeZone, now);
+  const template = fromTemplate(brief, name);
+  if (!keys.jev || !keys.anthropic) return template;
+  // Not `since`, which moves with every read stamp: what the writer says
+  // about it (sinceDay, the finished) is in the rest of the brief.
+  const key = createHash("sha256")
+    .update(JSON.stringify({ ...brief, since: null }))
+    .digest("hex");
+  const row = db.select().from(agendaGreetings).where(eq(agendaGreetings.userId, viewerId)).get();
+  // Asked already for exactly this; a failed ask isn't retried until something changes.
+  if (row?.key === key) return row.greeting ? { hello: template.hello, ...row.greeting } : template;
+  // Counted by UTC day, not the viewer's: their timezone is theirs to
+  // change, and a new one mustn't start a new count.
+  const utcDay = dayOf(now, "UTC");
+  const asks = row?.askedDay === utcDay ? row.asks : 0;
+  if (everyone.day !== utcDay) Object.assign(everyone, { day: utcDay, asks: 0 });
+  if ((row && now - row.askedAt < ASK_EVERY_MS) || asks >= ASKS_PER_DAY) return template;
+  if (everyone.asks >= ASKS_PER_DAY_ALL) return template;
+  // Count the ask before awaiting it, so loads at the same moment ask once.
+  everyone.asks += 1;
+  const asked = { key, greeting: null, askedAt: now, askedDay: utcDay, asks: asks + 1 };
+  // audit-exempt: a cache of one person's greeting, seen by nobody else.
+  db.insert(agendaGreetings)
+    .values({ userId: viewerId, ...asked })
+    .onConflictDoUpdate({ target: agendaGreetings.userId, set: asked })
+    .run();
+
+  const scores = await scoreGreeting(brief, keys.jev, fetchImpl);
+  const pick = scores && pickGreeting(brief, scores);
+  const text = pick && (await writeGreeting(brief, pick, keys.anthropic, fetchImpl));
+  if (!pick || !text) return template;
+  const greeting = {
+    text,
+    titles: titlesIn(text, brief),
+    others: pick.others.map((i) => ({ id: i.id, title: i.title })),
+  };
+  // audit-exempt: as above. Only if no later ask has claimed the row since.
+  db.update(agendaGreetings)
+    .set({ greeting })
+    .where(both(eq(agendaGreetings.userId, viewerId), eq(agendaGreetings.key, key)))
+    .run();
+  return { hello: template.hello, ...greeting };
 }
 
 /** What an action token does when tapped. */
@@ -106,18 +199,20 @@ function dayName(day: string, today: string): string {
   return day > addDays(today, 6) ? `Next ${name}` : name;
 }
 
+/** "Good morning, Fred.", or without the name when it's null. */
+export function helloFor(brief: AgendaBrief, name: string | null): string {
+  const to = name ? `, ${name}` : "";
+  if (brief.partOfDay === "morning") return `Good morning${to}.`;
+  if (brief.partOfDay === "afternoon") return `Good afternoon${to}.`;
+  return `Evening${to}.`;
+}
+
 /**
  * The greeting for `brief`, with item and action tokens. `name` is the
  * viewer's first name, or null to greet without one.
  */
 export function templateGreeting(brief: AgendaBrief, name: string | null): string {
-  const to = name ? `, ${name}` : "";
-  const hello =
-    brief.partOfDay === "morning"
-      ? `Good morning${to}.`
-      : brief.partOfDay === "afternoon"
-        ? `Good afternoon${to}.`
-        : `Evening${to}.`;
+  const hello = helloFor(brief, name);
 
   const open = brief.dueToday.filter((i) => i.completedAt === null);
   const doneToday = brief.dueToday.length - open.length;

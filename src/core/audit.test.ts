@@ -265,6 +265,7 @@ const TABLE_AUDIT: Record<string, "audited" | `exempt: ${string}`> = {
   users: "audited",
   avatars: "audited",
   audit_log: "exempt: the log itself",
+  agenda_greetings: "exempt: a cache of one person's greeting, seen by nobody else",
   meta: "exempt: app bookkeeping (sign-up lock, last backup time)",
   sessions: "exempt: Better Auth sign-in state",
   push_subscriptions: "exempt: where to deliver push on one device, like a session",

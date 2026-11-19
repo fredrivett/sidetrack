@@ -251,8 +251,10 @@ describe("AgendaView", () => {
     const bins = item("Bins", "2026-11-14");
     vi.mocked(setOverdueCollapsedAction).mockReturnValue(new Promise(() => {}));
     renderAgenda([late, bins], [home], true, {}, {
-      text: `Good afternoon. Since Friday you've finished {{item:gone}}. {{item:${late.id}}} is still waiting. No rush — want to {{action:triage|give it a new day}}?`,
+      hello: "Good afternoon.",
+      text: `Since Friday you've finished {{item:gone}}. {{item:${late.id}}} is still waiting. No rush — want to {{action:triage|give it a new day}}?`,
       titles: { gone: "Renew passport", [late.id]: "Call the bank" },
+      others: [],
     });
     const greeting = screen.getByText(/^Good afternoon/);
     expect(greeting.textContent).toBe(
@@ -270,7 +272,7 @@ describe("AgendaView", () => {
   });
 
   it("counts the greeting read when the viewer leaves it, not at a glance", () => {
-    const greeting = { text: "Good morning.", titles: {} };
+    const greeting = { hello: "Good morning.", text: "", titles: {}, others: [] };
     vi.mocked(setAgendaReadAction).mockClear();
     renderAgenda([], [home], false, {}, greeting);
     cleanup();
@@ -293,18 +295,18 @@ describe("AgendaView", () => {
         prLinksByItem={{}}
         viewerId="me"
         overdueCollapsed={false}
-        greeting={{ text, titles: {} }}
+        greeting={{ hello: "Good morning.", text, titles: {}, others: [] }}
         filters={NO_FILTERS}
       />
     );
-    const { rerender } = render(props("Good morning. Since Friday you've finished four."));
+    const { rerender } = render(props("Since Friday you've finished four."));
     vi.setSystemTime(Date.now() + 5000);
     Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
     document.dispatchEvent(new Event("visibilitychange"));
     Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
     expect(vi.mocked(setAgendaReadAction)).toHaveBeenCalledTimes(1);
     // The board reloads with a greeting written after the stamp.
-    rerender(props("Good morning."));
+    rerender(props(""));
     expect(screen.getByText(/^Good morning/).textContent).toBe(
       "Good morning. Since Friday you've finished four.",
     );
