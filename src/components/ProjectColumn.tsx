@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronsDownUp, ChevronsUpDown, Plus } from "lucide-react";
+import { Check, ChevronsDownUp, ChevronsUpDown, Plus } from "lucide-react";
 import { useState } from "react";
 import { updateProjectAction } from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
@@ -9,11 +9,10 @@ import type { SpaceView } from "@/core/spaces";
 import { filtersByDue, type ItemFilters, matchesFilters, shownInGroups } from "@/lib/filters";
 import { nestItems } from "@/lib/itemTree";
 import { ColumnCard } from "./BoardLayout";
-import { DoneSection } from "./DoneSection";
 import type { ProjectView } from "./Kanban";
 import { EditableText } from "./EditableText";
 import { ItemDetailDialog } from "./ItemDetailDialog";
-import { DraggableItemList } from "./ItemList";
+import { DraggableItemList, ItemGroupView } from "./ItemList";
 import { ProjectDetailDialog } from "./ProjectDetailDialog";
 import { ProjectIconPicker, useListIcon } from "./ProjectIconPicker";
 import { ProjectMenu } from "./ProjectMenu";
@@ -97,12 +96,17 @@ export function ProjectColumn({
   );
   const shownDone = shownInGroups(done, (i, parent) => matchesFilters(i, parent, filters, today));
   const doneShown = done.filter((g) => shownDone.has(g.id));
+  // The header's badge swaps the list for these, and shows only for more than
+  // one. Derived, so the list comes back by itself when they drop to one.
+  const [showDoneChoice, setShowDone] = useState(false);
+  const hasDoneBadge = doneShown.length > 1;
+  const showDone = showDoneChoice && hasDoneBadge;
   // Due filters wait for the browser's day (see matchesFilters), so the list
   // doesn't say nothing matches before it knows.
   const waiting = today === null && filtersByDue(filters);
 
   // Lives above the list/done split so it survives an item moving between
-  // DraggableItemList and DoneSection when it's reopened or the day turns
+  // the list and Done this week when it's reopened or the day turns
   // over — see the hook for the live-lookup / closing-snapshot details.
   const detail = useItemDetailDialog(items);
   // The column re-renders with fresh server props on every edit. It unmounts
@@ -169,7 +173,24 @@ export function ProjectColumn({
               </div>
             )}
           </div>
-          {parents.length > 0 && (
+          {hasDoneBadge && (
+            <button
+              type="button"
+              aria-pressed={showDone}
+              aria-label={`${doneShown.length} done this week`}
+              title={showDone ? "Back to the list" : "Done this week"}
+              onClick={() => setShowDone((v) => !v)}
+              className={`mt-1 flex h-6 shrink-0 items-center gap-0.5 rounded-full px-2 text-xs font-medium tabular-nums transition-colors ${
+                showDone
+                  ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
+                  : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700"
+              }`}
+            >
+              <Check className="size-3.5" />
+              {doneShown.length}
+            </button>
+          )}
+          {parents.length > 0 && !showDone && (
             <button
               type="button"
               aria-label={allCollapsed ? "Expand all sub-items" : "Collapse all sub-items"}
@@ -232,30 +253,37 @@ export function ProjectColumn({
       )}
 
       <div className="space-y-3 pt-1.5">
-        {!waiting && <DraggableItemList
-          projectId={project.id}
-          groups={inList}
-          shown={shownInList}
-          collapsed={collapsedItems}
-          onToggleCollapsed={(id) =>
-            setCollapsed([id], !collapsedItems.has(id))
-          }
-          prefix={project.refPrefix}
-          assignees={assignees}
-          viewerId={viewerId}
-          prLinksByItem={prLinksByItem}
-          onOpenDetail={detail.openDetail}
-          onAddItem={() => onAddItem(project.id)}
-        />}
-        {doneShown.length > 0 && (
-          <DoneSection
-            groups={doneShown}
-            shown={shownDone}
+        {showDone ? (
+          <section className="space-y-1.5">
+            <h3 className="text-xs font-medium text-neutral-500">Done this week</h3>
+            {doneShown.map((g) => (
+              <ItemGroupView
+                key={g.id}
+                group={g}
+                shown={shownDone}
+                prefix={project.refPrefix}
+                assignees={assignees}
+                viewerId={viewerId}
+                prLinksByItem={prLinksByItem}
+                onOpenDetail={detail.openDetail}
+              />
+            ))}
+          </section>
+        ) : (
+          !waiting && <DraggableItemList
+            projectId={project.id}
+            groups={inList}
+            shown={shownInList}
+            collapsed={collapsedItems}
+            onToggleCollapsed={(id) =>
+              setCollapsed([id], !collapsedItems.has(id))
+            }
             prefix={project.refPrefix}
             assignees={assignees}
             viewerId={viewerId}
             prLinksByItem={prLinksByItem}
             onOpenDetail={detail.openDetail}
+            onAddItem={() => onAddItem(project.id)}
           />
         )}
       </div>
