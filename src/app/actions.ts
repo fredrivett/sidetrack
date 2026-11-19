@@ -788,7 +788,7 @@ export async function setAgendaReadAction() {
  * nothing from the browser, and agendaGreeting.ts limits how often one
  * person can make it ask.
  */
-export async function agendaGreetingAction() {
+export async function agendaGreetingAction(rewriteNow?: boolean) {
   const userId = await requireUserId();
   const { db } = getDb();
   const timeZone = getTimeZoneCore(db, userId);
@@ -797,7 +797,7 @@ export async function agendaGreetingAction() {
   return writtenGreetingForCore(db, userId, timeZone, {
     jev: TYPESAFE_API_KEY,
     anthropic: ANTHROPIC_API_KEY,
-  });
+  }, undefined, undefined, rewriteNow === true);
 }
 
 /** Save the browser's timezone for agents' "today". No refresh: nothing shown changes. */

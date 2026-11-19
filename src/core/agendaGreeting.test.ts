@@ -312,10 +312,29 @@ describe("greetingFor", () => {
       await writtenGreetingFor(db, fred, "UTC", keys, now + 3 * 60_000, impl);
       expect(f.calls.claude).toBe(2);
       // The other tab kept the one it had, and is told when to ask again.
-      expect(await meanwhile).toMatchObject({ text: first.text, written: true, retryInMs: 2 * 60_000 });
+      expect(await meanwhile).toMatchObject({ text: first.text, written: true, retryInMs: 30_000 });
       // The tick came after the brief, so it's written once more.
       await writtenGreetingFor(db, fred, "UTC", keys, now + 6 * 60_000, impl);
       expect(f.calls.claude).toBe(3);
+    });
+
+    it("writes it again sooner when asked to rewrite now, but not again within ten seconds", async () => {
+      const { db, fred, loft } = setup();
+      const { calls, impl } = fake();
+      await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
+      updateItem(db, fred, loft.id, { title: "Sort the attic" }, "web");
+      // Five seconds on, even asked for now, it waits: five more seconds.
+      expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 5_000, impl, true)).toMatchObject({
+        retryInMs: 5_000,
+      });
+      // Twelve seconds on: asked for now, it writes; left to itself, it'd wait 18s more.
+      expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 12_000, impl)).toMatchObject({
+        retryInMs: 18_000,
+      });
+      expect(calls.claude).toBe(1);
+      const fresh = await writtenGreetingFor(db, fred, "UTC", keys, now + 12_000, impl, true);
+      expect(calls.claude).toBe(2);
+      expect(fresh).not.toHaveProperty("retryInMs");
     });
 
     it("keeps one greeting through the morning, and writes another for the afternoon", async () => {
@@ -339,12 +358,12 @@ describe("greetingFor", () => {
       const first = await writtenGreetingFor(db, fred, "UTC", keys, now, impl);
       expect(first.titles).toEqual({ [loft.id]: "Sort the loft" });
       expect(first).not.toHaveProperty("stamps");
-      // Ticked off within two minutes: the one it has stays, out of date,
+      // Ticked off within 30 seconds: the one it has stays, out of date,
       // saying when to ask again.
       completeItem(db, fred, loft.id, "web");
-      expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 60_000, impl)).toEqual({
+      expect(await writtenGreetingFor(db, fred, "UTC", keys, now + 10_000, impl)).toEqual({
         ...first,
-        retryInMs: 60_000,
+        retryInMs: 20_000,
       });
       expect(calls.claude).toBe(1);
       // Then it's written again, and read back while nothing it names changes.

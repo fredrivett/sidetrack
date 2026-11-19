@@ -423,10 +423,20 @@ describe("AgendaView", () => {
     // Ticking off what it names does, after a moment, and the greeting stays
     // until the new one comes.
     rerender(board([{ ...late, completedAt: 1 }, { ...bins, title: "Put the bins out" }]));
+    // Faded and marked out of date at once, before it asks.
+    await waitFor(() => expect(screen.getByText(/is still waiting\.$/).getAttribute("aria-busy")).toBe("true"));
     await waitFor(() => expect(calls()).toBe(before + 1), { timeout: 3000 });
-    expect(screen.getByText(/is still waiting\.$/)).toBeTruthy();
-    await act(async () => answer({ ...first, text: "That's everything for today.", titles: {} }));
-    expect(screen.getByText("That's everything for today.")).toBeTruthy();
+    expect(screen.getByText("Rewriting…")).toBeTruthy();
+    // Too soon to rewrite: the old one stays, counting down, with Rewrite now.
+    let again!: (g: Greeting) => void;
+    vi.mocked(agendaGreetingAction).mockReturnValueOnce(new Promise((r) => (again = r)));
+    await act(async () => answer({ ...first, retryInMs: 20_000 }));
+    expect(screen.getByText(/Out of date · rewriting in (19|20)s/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Rewrite now" }));
+    expect(vi.mocked(agendaGreetingAction)).toHaveBeenLastCalledWith(true);
+    await act(async () => again({ ...first, text: "That's everything for today.", titles: {} }));
+    expect(screen.getByText("That's everything for today.").hasAttribute("aria-busy")).toBe(false);
+    expect(screen.queryByRole("button", { name: "Rewrite now" })).toBeNull();
   });
 
   it("explains how the greeting was worked out", async () => {
