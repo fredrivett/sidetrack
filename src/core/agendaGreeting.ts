@@ -244,7 +244,11 @@ export async function writtenGreetingFor(
   const key = `${brief.today}:${brief.partOfDay}`;
   const row = db.select().from(agendaGreetings).where(eq(agendaGreetings.userId, viewerId)).get();
   const same = row?.key === key ? row.greeting : null;
-  if (same?.text && stillVisible(db, viewerId, same)) return { hello, ...same, written: true };
+  // One kept from before traces were recorded is written again, once, so
+  // "What is this?" has something to explain.
+  if (same?.text && same.trace && stillVisible(db, viewerId, same)) {
+    return { hello, ...same, written: true };
+  }
   // Counted by UTC day, not the viewer's: their timezone is theirs to
   // change, and a new one mustn't start a new count.
   const utcDay = dayOf(now, "UTC");
