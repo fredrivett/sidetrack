@@ -153,11 +153,6 @@ export function reviewWriterOutput(raw: string, input: WriterInput): { text: str
   if (/https?:|www\.|@|\b[a-z0-9-]+\.[a-z]{2,}\b|\d[\d\s-]{3,}\d|[<>*_#`[\]!]/i.test(text)) {
     return { rejected: "It had a link, address, number, markup or an exclamation mark" };
   }
-  // The prompt shows "among them" for both slipped and this week's tasks;
-  // said twice it reads like a template.
-  if ((text.match(/\bamong them\b/gi) ?? []).length > 1) {
-    return { rejected: "It said \"among them\" twice" };
-  }
   // No scolding: "late" only for the hour ("it's late"), never a task.
   const hourLate = /\b(?:it's|it’s|it is|getting) late(?: (?:evening|night|in the day))?\b/gi;
   if (/\boverdue\b|\blate\b/i.test(text.replace(hourLate, ""))) {

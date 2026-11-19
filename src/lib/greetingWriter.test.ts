@@ -132,7 +132,6 @@ describe("checkWriterOutput", () => {
     ["a title spelled out", "Call the bank, then {{item:2}}."],
     ["more than three sentences", "{{item:1}} first. Then this. Then that. And more."],
     ["no item when it was given some", "A gentle Wednesday."],
-    ["\"among them\" twice", "A few slipped, {{item:1}} among them. A few are open, {{item:2}} among them."],
     ["nothing", "  "],
   ])("rejects %s", (_, text) => {
     expect(checkWriterOutput(text, input)).toBeNull();
