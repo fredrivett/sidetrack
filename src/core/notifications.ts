@@ -672,7 +672,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           agentName: null,
           title: now.list,
           list: listPart(now.projectId, now.list, now).list,
-          url: `/?p=${encodeURIComponent(now.projectId)}&item=${encodeURIComponent(now.id)}`,
+          url: `/board?p=${encodeURIComponent(now.projectId)}&item=${encodeURIComponent(now.id)}`,
           parts: [
             { text: now.title, em: "item", quote: true },
             { text: r.reason === "due-today" ? " is due today" : " is overdue" },
@@ -706,7 +706,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
       const now = open.get(about.itemId);
       if (!now) return [];
       const item: Part = { text: now.title, em: "item", quote: true };
-      const at = { title: now.list, list: listPart(now.projectId, now.list, now).list, url: `/?p=${encodeURIComponent(now.projectId)}&item=${encodeURIComponent(now.id)}` };
+      const at = { title: now.list, list: listPart(now.projectId, now.list, now).list, url: `/board?p=${encodeURIComponent(now.projectId)}&item=${encodeURIComponent(now.id)}` };
       const say = (parts: Part[], snippet: string | null = null): NotificationView[] => [
         { ...base, ...at, parts, snippet },
       ];
@@ -809,7 +809,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           title: name,
           list: place.list,
           // An archived list shows in the Archived view, not on the board.
-          url: status?.to === "archived" ? "/?view=archived" : `/?p=${encodeURIComponent(event.projectId)}`,
+          url: status?.to === "archived" ? "/archived" : `/board?p=${encodeURIComponent(event.projectId)}`,
           parts,
           snippet: null,
         },
@@ -1050,7 +1050,7 @@ function summarise(views: NotificationView[]): Omit<PushMessage, "tag"> {
       : views.every((v) => v.reason === "overdue")
         ? "are overdue"
         : "are due or overdue";
-    return { title: "Due", body: `${named} ${when}`, url: "/?view=agenda" };
+    return { title: "Due", body: `${named} ${when}`, url: "/agenda" };
   }
   // Who: the person each sentence starts with, in order of first change.
   const names = [

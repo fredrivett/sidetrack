@@ -108,13 +108,9 @@ export default async function Home({
           viewer={viewer}
           timeZone={timeZone}
           overdueCollapsed={getOverdueCollapsed(db, userId)}
+          // From the path (/agenda, /board, …), which the proxy passes as ?view=.
           initialView={
-            view === "agenda" || view === "done" || view === "archived"
-              ? view
-              : // Links from before Today and No date became Agenda.
-                view === "today" || view === "no-date"
-                ? "agenda"
-                : "board"
+            view === "board" || view === "done" || view === "archived" ? view : "agenda"
           }
           projects={projects}
           itemsByProject={itemsByProject}

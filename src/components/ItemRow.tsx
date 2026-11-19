@@ -58,6 +58,7 @@ import { LabelBadge, useListLabels } from "./Labels";
 import { MoveToListContextMenu } from "./MoveItem";
 import { DueBadge } from "./DueBadge";
 import { PrLink } from "./PrLink";
+import { ProjectIcon } from "./ProjectIcon";
 import { RepeatBadge } from "./RepeatBadge";
 import { useToday } from "./use-day-start";
 import { useAssignShortcuts } from "./useAssignShortcuts";
@@ -98,6 +99,7 @@ export function ItemRow({
   nestUnder,
   parentTitle,
   context,
+  list,
   onOpenDetail,
 }: {
   item: Item;
@@ -114,6 +116,8 @@ export function ItemRow({
   parentTitle?: string;
   /** Where the item lives, shown below its title in views across lists. */
   context?: string;
+  /** The item's list, as the first tag, in views that don't group by list. */
+  list?: { name: string; icon: string | null; homepageUrl: string | null };
   onOpenDetail: () => void;
 }) {
   const isDragging = drag?.isDragging ?? false;
@@ -294,8 +298,19 @@ export function ItemRow({
                 {context}
               </span>
             )}
-            {(item.labels.length > 0 || item.dueDate || repeat) && (
+            {(list || item.labels.length > 0 || item.dueDate || repeat) && (
               <span className="flex flex-wrap items-center gap-1">
+                {list && (
+                  <span className="inline-flex max-w-full items-center gap-1 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] text-neutral-500 dark:bg-neutral-800">
+                    <ProjectIcon
+                      icon={list.icon}
+                      homepageUrl={list.homepageUrl}
+                      name={list.name}
+                      size={12}
+                    />
+                    <span className="truncate">{list.name}</span>
+                  </span>
+                )}
                 {item.dueDate && (
                   <DueBadge due={item.dueDate} from={item.dueFrom} done={completed} />
                 )}
