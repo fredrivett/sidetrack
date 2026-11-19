@@ -33,6 +33,7 @@ const base: Item = {
   description: null,
   labels: [],
   assigneeIds: [],
+  createdBy: null,
   parentId: null,
   collapsed: false,
   dueDate: null,

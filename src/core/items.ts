@@ -404,6 +404,7 @@ export function addItem(
         parentId: parent?.id ?? null,
         ...due,
         assigneeIds,
+        createdBy: userId,
         repeatEvery: repeat?.every ?? null,
         repeatUnit: repeat?.unit ?? null,
         position,
