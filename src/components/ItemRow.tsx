@@ -13,6 +13,7 @@ import {
   IndentDecrease,
   IndentIncrease,
   ListChecks,
+  MessageSquare,
   TextAlignStart,
   Trash2,
   UserRound,
@@ -57,6 +58,7 @@ import { toggleAssignee } from "@/lib/assignees";
 import { formatItemRef } from "@/lib/itemRef";
 import { repeatOf } from "@/lib/repeat";
 import { AssigneeOptions } from "./AssigneeOptions";
+import { useCommentCount } from "./comment-counts";
 import { LabelBadge, useListLabels } from "./Labels";
 import { MoveToListContextMenu } from "./MoveItem";
 import { DueBadge } from "./DueBadge";
@@ -156,6 +158,7 @@ export function ItemRow({
   const completed = item.completedAt !== null;
   const repeat = repeatOf(item);
   const listLabels = useListLabels(item.projectId);
+  const commentCount = useCommentCount(item.id);
   const ref = formatItemRef(prefix, item.number);
   // Shown in the list's member order, so joint items line up across rows.
   const { assigneesById, setAssignees } = useOptimisticAssignees([item]);
@@ -333,6 +336,17 @@ export function ItemRow({
                     aria-label="Has description"
                     className="ml-0.5 inline size-3.5 -translate-y-px text-neutral-400"
                   />
+                </span>
+              )}
+              {commentCount > 0 && (
+                <span
+                  role="img"
+                  aria-label={`${commentCount} comment${commentCount === 1 ? "" : "s"}`}
+                  className="whitespace-nowrap text-[11px] tabular-nums text-neutral-400"
+                >
+                  {"\u00a0"}
+                  <MessageSquare className="ml-0.5 mr-0.5 inline size-3.5 -translate-y-px" />
+                  {commentCount}
                 </span>
               )}
             </span>

@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { AgentSessionsProvider } from "@/components/agent-sessions";
+import { CommentCountsProvider } from "@/components/comment-counts";
 import { Kanban } from "@/components/Kanban";
 import { LiveUpdates } from "@/components/LiveUpdates";
 import {
@@ -7,6 +8,7 @@ import {
   listStartableAgents,
   listStartableLists,
 } from "@/core/agentSessions";
+import { countCommentsByItem } from "@/core/comments";
 import { listLabels } from "@/core/labels";
 import { getDb } from "@/core/db";
 import { projectRefPrefixes } from "@/core/itemRef";
@@ -103,46 +105,48 @@ export default async function Home({
         startable={listStartableAgents(db, userId)}
         startableIn={listStartableLists(db, userId)}
       >
-        <Kanban
-          viewerId={userId}
-          viewer={viewer}
-          timeZone={timeZone}
-          overdueCollapsed={getOverdueCollapsed(db, userId)}
-          noDateCollapsed={getNoDateCollapsed(db, userId)}
-          noDateFoldedLists={getNoDateFoldedLists(db, userId)}
-          // From the path (/brief, /board, …), which the proxy passes as ?view=.
-          initialView={
-            view === "board" || view === "done" || view === "archived" ? view : "brief"
+        <CommentCountsProvider counts={countCommentsByItem(db, userId)}>
+          <Kanban
+            viewerId={userId}
+            viewer={viewer}
+            timeZone={timeZone}
+            overdueCollapsed={getOverdueCollapsed(db, userId)}
+            noDateCollapsed={getNoDateCollapsed(db, userId)}
+            noDateFoldedLists={getNoDateFoldedLists(db, userId)}
+            // From the path (/brief, /board, …), which the proxy passes as ?view=.
+            initialView={
+              view === "board" || view === "done" || view === "archived" ? view : "brief"
+            }
+            projects={projects}
+            itemsByProject={itemsByProject}
+            completedSince={completedSince}
+            labelsByProject={labelsByProject}
+            assigneesByProject={assigneesByProject}
+            prLinksByItem={prLinksByItem}
+            pendingInvites={pendingInvites}
+            spaces={listSpaces(db, userId)}
+            trayOrder={listTrays(db, userId)}
+            pendingSpaceInvites={listPendingSpaceInvites(db, userId)}
+            initialListId={typeof p === "string" ? p : null}
+            initialItemId={typeof item === "string" ? item : null}
+          // A push can link to an item not loaded with the board.
+          initialItemExtra={
+            typeof item === "string" &&
+            !Object.values(itemsByProject).some((list) => list.some((i) => i.id === item))
+              ? getItemWithSubItems(db, userId, item)
+              : []
           }
-          projects={projects}
-          itemsByProject={itemsByProject}
-          completedSince={completedSince}
-          labelsByProject={labelsByProject}
-          assigneesByProject={assigneesByProject}
-          prLinksByItem={prLinksByItem}
-          pendingInvites={pendingInvites}
-          spaces={listSpaces(db, userId)}
-          trayOrder={listTrays(db, userId)}
-          pendingSpaceInvites={listPendingSpaceInvites(db, userId)}
-          initialListId={typeof p === "string" ? p : null}
-          initialItemId={typeof item === "string" ? item : null}
-        // A push can link to an item not loaded with the board.
-        initialItemExtra={
-          typeof item === "string" &&
-          !Object.values(itemsByProject).some((list) => list.some((i) => i.id === item))
-            ? getItemWithSubItems(db, userId, item)
-            : []
-        }
-          notifications={listNotifications(db, userId)}
-          followedItemIds={listFollowedItemIds(db, userId)}
-          notificationLevels={listNotificationLevels(db, userId)}
-          initialCollapsedTrays={parseCollapsedTrays(
-            cookieStore.get(COLLAPSED_TRAYS_COOKIE)?.value,
-          )}
-          filters={getBoardFilters(db, userId)}
-          aiEnabled={Boolean(getEnv().TYPESAFE_API_KEY)}
-          feedbackEnabled={Boolean(getEnv().FEEDBACK_LIST_ID)}
-        />
+            notifications={listNotifications(db, userId)}
+            followedItemIds={listFollowedItemIds(db, userId)}
+            notificationLevels={listNotificationLevels(db, userId)}
+            initialCollapsedTrays={parseCollapsedTrays(
+              cookieStore.get(COLLAPSED_TRAYS_COOKIE)?.value,
+            )}
+            filters={getBoardFilters(db, userId)}
+            aiEnabled={Boolean(getEnv().TYPESAFE_API_KEY)}
+            feedbackEnabled={Boolean(getEnv().FEEDBACK_LIST_ID)}
+          />
+        </CommentCountsProvider>
         <LiveUpdates />
         <PostHogIdentify userId={userId} username={viewer?.displayUsername ?? null} />
       </AgentSessionsProvider>

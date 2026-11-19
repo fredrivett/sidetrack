@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { listAudit } from "./audit";
 import {
   addComment,
+  countCommentsByItem,
   deleteComment,
   listComments,
   listRecentComments,
@@ -69,11 +70,15 @@ describe("comments", () => {
     expect(() => addComment(db, alice, itemId, "Hi", "web")).toThrow(/not found/);
     addComment(db, owner, itemId, "Private until shared", "web");
     expect(listComments(db, alice, itemId)).toEqual([]);
+    expect(countCommentsByItem(db, alice)).toEqual({});
 
     inviteMember(db, owner, projectId, "alice", "web");
     acceptInvite(db, alice, projectId, "web");
     expect(listComments(db, alice, itemId)).toHaveLength(1);
     expect(addComment(db, alice, itemId, "On it", "web").author?.name).toBe("Alice");
+    const quiet = addItem(db, owner, { projectId, title: "Quiet" }, "web");
+    expect(countCommentsByItem(db, alice)).toEqual({ [itemId]: 2 });
+    expect(countCommentsByItem(db, owner)[quiet.id]).toBeUndefined();
   });
 
   it("lets only the author edit or delete, and audits only real changes", () => {
