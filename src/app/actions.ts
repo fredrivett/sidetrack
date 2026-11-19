@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { appBaseUrl } from "./site";
 import {
   createApiKey as createApiKeyCore,
@@ -254,16 +255,18 @@ export async function inviteMemberAction(projectId: string, person: string) {
   const { db } = getDb();
   const member = inviteMemberCore(db, userId, projectId, person, SOURCE);
 
-  // Notify the invitee by email (best-effort; the in-app banner is the source
-  // of truth, so notifyInvite never throws).
+  // Notify the invitee by email, once the invite has answered: it's
+  // best-effort (the in-app banner is the source of truth, so notifyInvite
+  // never throws), and a slow mail server mustn't hold up the page's saves.
   const project = getProjectCore(db, userId, projectId);
   if (member.email && project) {
-    await notifyInvite({
+    const invite = {
       to: member.email,
       inviterName: session.user.name,
       projectName: project.name,
       url: await appBaseUrl(),
-    });
+    };
+    after(() => notifyInvite(invite));
   }
 
   refresh();
@@ -343,16 +346,17 @@ export async function inviteSpaceMemberAction(spaceId: string, person: string) {
   if (!session) redirect("/login");
   const { db } = getDb();
   const member = inviteSpaceMemberCore(db, session.user.id, spaceId, person, SOURCE);
-  // Best-effort, like a list invite: the in-app banner is the source of truth.
+  // Best-effort and after answering, like a list invite.
   const space = listSpacesCore(db, session.user.id).find((s) => s.id === spaceId);
   if (member.email && space) {
-    await notifyInvite({
+    const invite = {
       to: member.email,
       inviterName: session.user.name,
       projectName: space.name,
       url: await appBaseUrl(),
-      kind: "space",
-    });
+      kind: "space" as const,
+    };
+    after(() => notifyInvite(invite));
   }
   refresh();
   return member;
@@ -645,7 +649,12 @@ export async function addCommentAction(itemId: string, body: string) {
   const { db } = getDb();
   const comment = addCommentCore(db, userId, itemId, body, SOURCE);
   const notice = mentionNoticeCore(db, userId, comment);
-  if (notice) await notifyMentions(notice, await appBaseUrl());
+  // Emailed once the comment has answered: best-effort (notifyMentions never
+  // throws), and a slow mail server mustn't hold up the page's saves.
+  if (notice) {
+    const url = await appBaseUrl();
+    after(() => notifyMentions(notice, url));
+  }
   refresh();
   return comment;
 }
@@ -657,7 +666,10 @@ export async function updateCommentAction(id: string, body: string) {
   const comment = updateCommentCore(db, userId, id, body, SOURCE);
   // Only the people the edit newly mentions hear about it.
   const notice = mentionNoticeCore(db, userId, comment, before);
-  if (notice) await notifyMentions(notice, await appBaseUrl());
+  if (notice) {
+    const url = await appBaseUrl();
+    after(() => notifyMentions(notice, url));
+  }
   refresh();
   return comment;
 }
