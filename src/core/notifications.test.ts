@@ -492,6 +492,10 @@ describe("notifications", () => {
 
   it("tells a list's or Space's members when it's archived, restored or deleted", () => {
     const { db, fred, alice, listId } = seed();
+    // A millisecond apart each time it's read, so the order below is the
+    // order things happened: changes in the same millisecond have none.
+    let t = Date.now();
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => ++t);
     updateProject(db, fred, listId, { status: "archived" }, "web");
     expect(listNotifications(db, alice)[0]).toMatchObject({ url: "/archived", reason: "member" });
     updateProject(db, fred, listId, { status: "active", name: "Flat" }, "web");
@@ -507,6 +511,7 @@ describe("notifications", () => {
     deleteProject(db, fred, listId, "web");
     expect(unread(db, alice)).toEqual(['Fred deleted "Flat"', 'Fred deleted "Family"']);
     expect(unread(db, fred)).toEqual([]);
+    clock.mockRestore();
   });
 
   it("pushes each notification once, to the recipient's devices on the current key", async () => {
