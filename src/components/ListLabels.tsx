@@ -305,16 +305,17 @@ function UsageList({
 }) {
   return (
     <ul className="space-y-1">
-      {items.map((it) => (
-        <li key={it.id} className="flex min-w-0 items-baseline gap-2 text-sm">
-          <span className="shrink-0 font-mono text-[11px] text-neutral-500">
-            {formatItemRef(prefix, it.number)}
-          </span>
-          <span className={cn("min-w-0 truncate", done && "text-neutral-500 line-through")}>
-            {it.title}
-          </span>
-        </li>
-      ))}
+      {items.map((it) => {
+        const ref = formatItemRef(prefix, it.number);
+        return (
+          <li key={it.id} data-item-ref={ref} className="flex min-w-0 items-baseline gap-2 text-sm">
+            <span className="shrink-0 font-mono text-[11px] text-neutral-500">{ref}</span>
+            <span className={cn("min-w-0 truncate", done && "text-neutral-500 line-through")}>
+              {it.title}
+            </span>
+          </li>
+        );
+      })}
     </ul>
   );
 }

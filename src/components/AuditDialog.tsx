@@ -182,13 +182,10 @@ function FeedCommentRow({
   showList: boolean;
   onOpen?: () => void;
 }) {
+  const ref = project ? formatItemRef(project.prefix, c.item.number) : undefined;
   const item = (
     <>
-      {project && (
-        <span className="shrink-0 font-mono text-[11px] text-neutral-400">
-          {formatItemRef(project.prefix, c.item.number)}
-        </span>
-      )}
+      {ref && <span className="shrink-0 font-mono text-[11px] text-neutral-400">{ref}</span>}
       <span className="truncate">{c.item.title}</span>
       {showList && project && (
         <span className="shrink-0 text-neutral-400">· {project.name}</span>
@@ -206,12 +203,15 @@ function FeedCommentRow({
           <button
             type="button"
             onClick={onOpen}
+            data-item-ref={ref}
             className={`${itemClass} hover:text-neutral-900 hover:underline dark:hover:text-neutral-100`}
           >
             {item}
           </button>
         ) : (
-          <p className={itemClass}>{item}</p>
+          <p data-item-ref={ref} className={itemClass}>
+            {item}
+          </p>
         )
       }
     />

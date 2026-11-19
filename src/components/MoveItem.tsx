@@ -356,6 +356,7 @@ function MoveSheet({
                 {[top, ...subs].map((r) => (
                   <li
                     key={r.id}
+                    data-item-ref={r.from}
                     className={`flex items-center gap-2 ${r === top ? "" : "pl-4"}`}
                   >
                     <span className="min-w-0 flex-1 truncate">{r.title}</span>

@@ -75,6 +75,7 @@ export function GreetingDialog({
   trace,
   others,
   itemsById,
+  refOf,
   renderItem,
 }: {
   open: boolean;
@@ -83,6 +84,8 @@ export function GreetingDialog({
   trace: GreetingTrace | undefined;
   others: Array<{ id: string; title: string }>;
   itemsById: Map<string, Item>;
+  /** An item's ref, for ⌘. on a hovered row. */
+  refOf: (item: Item) => string;
   renderItem: RenderItem;
 }) {
   // The item shown, or none for the list.
@@ -143,6 +146,7 @@ export function GreetingDialog({
                   <Explanation
                     trace={trace}
                     itemsById={itemsById}
+                    refOf={refOf}
                     cameFrom={cameFrom}
                     onOpen={openFromList}
                   />
@@ -158,6 +162,7 @@ export function GreetingDialog({
                               type="button"
                               autoFocus={o.id === cameFrom}
                               onClick={() => openFromList(o.id)}
+                              data-item-ref={refOf(live)}
                               className={`${row} text-neutral-800 outline-none hover:bg-neutral-100 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:text-neutral-200 dark:hover:bg-neutral-800`}
                             >
                               <span
@@ -224,11 +229,13 @@ function ListBody({
 function Explanation({
   trace,
   itemsById,
+  refOf,
   cameFrom,
   onOpen,
 }: {
   trace: GreetingTrace;
   itemsById: Map<string, Item>;
+  refOf: (item: Item) => string;
   cameFrom: string | null;
   onOpen: (id: string) => void;
 }) {
@@ -355,13 +362,15 @@ function Explanation({
                   </span>
                 </>
               );
+              const live = itemsById.get(i.id);
               return (
                 <li key={i.id}>
-                  {itemsById.has(i.id) ? (
+                  {live ? (
                     <button
                       type="button"
                       autoFocus={i.id === cameFrom}
                       onClick={() => onOpen(i.id)}
+                      data-item-ref={refOf(live)}
                       className="-mx-2 -my-0.5 flex w-[calc(100%+1rem)] gap-3 rounded-md px-2 py-0.5 text-left outline-none hover:bg-neutral-100 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:hover:bg-neutral-800 dark:focus-visible:ring-neutral-600"
                     >
                       {row}

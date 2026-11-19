@@ -196,6 +196,7 @@ export function CommandPalette({
                       // The ref is board-unique, so it keeps duplicate titles
                       // apart and lets "SID-12" find its item.
                       value={`${item.title} ${ref}`}
+                      data-item-ref={ref}
                       keywords={[list.name]}
                       onSelect={() => run(() => onOpenItem(item))}
                     >
