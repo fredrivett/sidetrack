@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { finishWork, startWork } from "./agentSessions";
 import { addComment, updateComment } from "./comments";
 import { plainText } from "./describe";
@@ -76,6 +76,13 @@ function subscribe(db: ReturnType<typeof seed>["db"], userId: string) {
 const due = () => Date.now() + 5 * 60_000;
 
 beforeEach(() => sendPush.mockClear());
+// A millisecond on each time it's read, so notifications list in the order
+// things happened: changes in the same millisecond have none.
+beforeEach(() => {
+  let t = Date.now();
+  vi.spyOn(Date, "now").mockImplementation(() => ++t);
+});
+afterEach(() => vi.restoreAllMocks());
 
 describe("notifications", () => {
   it("tells newly assigned people, never the person assigning", () => {
