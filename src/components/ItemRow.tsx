@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import {
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -45,6 +46,8 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -61,7 +64,8 @@ import { PrLink } from "./PrLink";
 import { ProjectIcon } from "./ProjectIcon";
 import { RepeatBadge } from "./RepeatBadge";
 import { useToday } from "./use-day-start";
-import { useAssignShortcuts } from "./useAssignShortcuts";
+import { toast } from "sonner";
+import { rowAfterDelete, SelectedItemContext, useItemShortcuts } from "./useItemShortcuts";
 import { useOptimisticAssignees } from "./use-optimistic-assignees";
 import { useItemChanges } from "./use-optimistic-items";
 import { useCopyItemRef } from "./useCopyItemRef";
@@ -127,6 +131,18 @@ export function ItemRow({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
+  const [dueOpen, setDueOpen] = useState(false);
+  const dueAnchor = useRef<HTMLDivElement>(null);
+  // The item the arrow keys selected owns the shortcuts while there is one;
+  // otherwise the hovered item does.
+  const selection = useContext(SelectedItemContext);
+  const selectedId = selection?.selectedId ?? null;
+  const selected = selectedId === item.id;
+  const owns = selectedId ? selected : hovered;
+  // ⌫ asks first: the row turns red until a second ⌫ deletes it, or it stops
+  // owning the shortcuts.
+  const [keyDelete, setKeyDelete] = useState(false);
+  if (keyDelete && !owns) setKeyDelete(false);
   const canHover = useMediaQuery("(hover: hover)");
   const today = useToday();
 
@@ -159,7 +175,7 @@ export function ItemRow({
   const follows = useFollows();
   const following = follows?.isFollowing(item.id) ?? false;
   const { copied, copy } = useCopyItemRef(ref, {
-    active: hovered,
+    active: owns,
     deferToDialog: true,
     toast: true,
   });
@@ -197,16 +213,39 @@ export function ItemRow({
     setAssignOpen(false);
   }, [assign, assigneeIds, viewerId]);
 
-  // Linear's assignment shortcuts: A opens the picker, I toggles me. Armed
-  // while the card is hovered, and kept armed while the picker is open so the I
-  // hint on the "me" row works there too — opening the picker drops `hovered`
-  // (its modal backdrop swallows the pointer), so we OR in `assignOpen`.
-  // Deferred to an open detail dialog so we don't assign the wrong item.
-  useAssignShortcuts({
-    active: hovered || assignOpen,
+  const openDue = useCallback(() => setDueOpen(true), []);
+  const toggleDone = useCallback(
+    () => changes.setCompleted(item, item.completedAt === null),
+    [changes, item],
+  );
+  const keyDel = useCallback(() => {
+    if (keyDelete) {
+      toast.dismiss(`delete-${item.id}`);
+      // The selection moves on to the next item, as it leaves.
+      if (selected) selection?.select(rowAfterDelete(item.id));
+      changes.deleteItem(item);
+      return;
+    }
+    setKeyDelete(true);
+    toast(`Press ⌫ again to delete “${item.title}”`, { id: `delete-${item.id}` });
+  }, [changes, item, keyDelete, selected, selection]);
+
+  // Linear-style shortcuts: A opens the picker, I toggles me, D the due date,
+  // X ticks it, ⌫ deletes. Armed while the card is hovered or selected, and
+  // kept armed while the picker is open so the I hint on the "me" row works
+  // there too — opening the picker drops `hovered` (its modal backdrop
+  // swallows the pointer), so we OR in `assignOpen`. Deferred to an open
+  // detail dialog so we don't act on the wrong item.
+  useItemShortcuts({
+    active: owns || assignOpen,
     deferToDialog: true,
     onOpenPicker: openPicker,
     onAssignToMe: canAssignSelf ? toggleMe : undefined,
+    onDue: today ? openDue : undefined,
+    onToggleDone: toggleDone,
+    onDelete: keyDel,
+    // ↵ only on the selected item, not one the pointer happens to rest on.
+    onOpen: selected ? onOpenDetail : undefined,
   });
 
   function openDetail() {
@@ -238,13 +277,18 @@ export function ItemRow({
         onPointerDownCapture={() => {
           draggedRef.current = false;
         }}
+        data-item-row={item.id}
+        data-parent-id={item.parentId ?? undefined}
+        data-selected={selected || undefined}
         onPointerEnter={() => setHovered(true)}
         onPointerLeave={() => setHovered(false)}
         onClick={openDetail}
         // Pointer everywhere, like the title button and controls inside it:
         // a click opens the item, and the lifted card shows grabbing once a
         // drag starts.
-        className={`group relative flex cursor-pointer items-start gap-2 rounded-lg border border-neutral-200 bg-white p-2 outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 ${
+        className={`group relative flex cursor-pointer items-start gap-2 rounded-lg border border-neutral-200 bg-white p-2 outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 data-selected:ring-2 data-selected:ring-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 ${
+          keyDelete ? "ring-2 ring-destructive! " : ""
+        }${
           drag ? "touch-manipulation" : ""
         } ${
           // While dragged, the row stays behind as the empty slot it would
@@ -339,7 +383,7 @@ export function ItemRow({
         {/* The checklist progress and avatar sit in a box one title-line tall
             so they centre on the first line however many lines the title
             wraps to, and a parent row is no taller than any other. */}
-        <div className="flex h-5 shrink-0 items-center gap-1">
+        <div ref={dueAnchor} className="flex h-5 shrink-0 items-center gap-1">
           {checklist && (
             // Progress doubles as the show/hide toggle for the sub-items.
             <button
@@ -413,6 +457,46 @@ export function ItemRow({
               />
             </DropdownMenuContent>
           </DropdownMenu>
+          {/* D's quick dates, the same as the right-click menu's Due date;
+              any other day is in the dialog. No trigger: it opens from the
+              shortcut, by the row's avatar. */}
+          {today && (
+            <DropdownMenu open={dueOpen} onOpenChange={setDueOpen}>
+              <DropdownMenuContent
+                anchor={dueAnchor}
+                align="end"
+                className="w-52"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {quickDues(today).map(([label, due]) => (
+                  <DropdownMenuItem data-replay-safe key={label} onClick={() => setDue(due)}>
+                    {label}
+                    {sameDue(item, due) ? (
+                      <Check className="ml-auto" />
+                    ) : (
+                      due.dueFrom && (
+                        <span className="ml-auto text-xs text-muted-foreground">
+                          {spanDates(due.dueFrom, due.dueDate, today)}
+                        </span>
+                      )
+                    )}
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuItem data-replay-safe onClick={onOpenDetail}>
+                  Pick a date…
+                </DropdownMenuItem>
+                {item.dueDate && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem data-replay-safe onClick={() => setDue(null)}>
+                      <CalendarX />
+                      Clear due date
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </ContextMenuTrigger>
       {/* A sibling of the trigger, not a child, so clicks in the (portaled) menu
@@ -474,6 +558,9 @@ export function ItemRow({
             <ContextMenuSubTrigger data-replay-safe>
               <CalendarDays />
               Due date
+              <ContextMenuShortcut>
+                <Kbd>D</Kbd>
+              </ContextMenuShortcut>
             </ContextMenuSubTrigger>
             <ContextMenuSubContent className="w-52">
               {quickDues(today).map(([label, due]) => (
@@ -535,6 +622,11 @@ export function ItemRow({
         >
           <Trash2 className={confirmingDelete ? "text-white!" : undefined} />
           {confirmingDelete ? "Confirm delete?" : "Delete item"}
+          {!confirmingDelete && (
+            <ContextMenuShortcut>
+              <Kbd>⌫</Kbd>
+            </ContextMenuShortcut>
+          )}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

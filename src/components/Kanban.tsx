@@ -65,6 +65,7 @@ import {
 } from "./use-optimistic-items";
 import { assigneeName, type AvatarUser } from "./UserAvatar";
 import { UserMenu } from "./UserMenu";
+import { NAV_KEYS, SelectedItemContext, stepItemRow } from "./useItemShortcuts";
 
 /**
  * A list (a "project" in code) plus per-viewer display data: whether the viewer owns it (vs. it
@@ -447,6 +448,13 @@ export function Kanban({
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   // What the open form is a thumbs up or down on, or null for the header's.
   const [feedbackAbout, setFeedbackAbout] = useState<FeedbackAbout | null>(null);
+  // The item the movement keys selected (stepItemRow), which owns the item
+  // shortcuts until the pointer moves.
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const selection = useMemo(
+    () => ({ selectedId: selectedItemId, select: setSelectedItemId }),
+    [selectedItemId],
+  );
   // Items opened from the palette get their own dialog here, since the item
   // may sit in a list the current view doesn't show.
   const boardItems = shown.flatMap((p) => itemsByProject[p.id] ?? []);
@@ -557,12 +565,15 @@ export function Kanban({
 
   // Global shortcuts: ⌘K / Ctrl+K toggles the command palette, even from a
   // field. Then Linear-style bare keys: / → palette, C → new item, ⇧C → new
-  // list, F → Filter, N → notifications, 1–3 → the header's views, ? → the
-  // list of shortcuts (ShortcutsDialog, which lists any new one too). Those
-  // are skipped while typing in a field, and when a command modifier is held
-  // so we don't shadow ⌘C / Ctrl+C copy. F, N, the views and ? also wait
-  // while a dialog is open (an item's, the palette), which they'd act behind.
-  // A and I are taken: they assign the hovered item (useAssignShortcuts).
+  // list, F → Filter, N → notifications, 1–3 → the header's views, ! → Send
+  // feedback (where it's on), ? → the list of shortcuts (ShortcutsDialog,
+  // which lists any new one too). Those are skipped while typing in a field,
+  // and when a command modifier is held so we don't shadow ⌘C / Ctrl+C copy.
+  // F, N, the views, ! and ? also wait
+  // while a dialog is open (an item's, the palette), which they'd act behind,
+  // as do the arrows and HJKL, which select an item (Esc lets go).
+  // A, I, D, X, ⌫ and ↵ are taken: they act on the hovered or selected item
+  // (useItemShortcuts).
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (matchesShortcut(e, { key: "k", mod: true, shift: false, alt: false })) {
@@ -585,13 +596,42 @@ export function Kanban({
         return;
       }
       if (document.querySelector('[role="dialog"]')) return;
+      // An open menu or other widget keeps its own arrows and Esc.
+      if (
+        (e.target as Element | null)?.closest?.(
+          '[role="menu"], [role="listbox"], [role="radiogroup"], [role="tablist"], [role="slider"]',
+        )
+      ) {
+        return;
+      }
+      if (e.key === "Escape" && selectedItemId) {
+        setSelectedItemId(null);
+        return;
+      }
       // ? is Shift+/ on most layouts, so it comes before the Shift check.
       if (matchesShortcut(e, { key: "?" })) {
         e.preventDefault();
         setShortcutsOpen(true);
         return;
       }
+      // ! is Shift+1 on most layouts, so it comes before the Shift check too.
+      if (feedbackEnabled && matchesShortcut(e, { key: "!" })) {
+        e.preventDefault();
+        setFeedbackAbout(null);
+        setFeedbackOpen(true);
+        return;
+      }
       if (e.shiftKey) return;
+      const dir = NAV_KEYS[e.key.length === 1 ? e.key.toLowerCase() : e.key];
+      // Not while a row is picked up: dnd-kit moves it with the arrows.
+      if (dir && !document.querySelector('[aria-pressed="true"][aria-roledescription]')) {
+        const row = stepItemRow(selectedItemId, dir);
+        if (!row) return;
+        e.preventDefault();
+        setSelectedItemId(row.dataset.itemRow ?? null);
+        row.scrollIntoView({ block: "nearest", inline: "nearest" });
+        return;
+      }
       const nextView = BOARD_VIEWS[Number(e.key) - 1]?.[0];
       if (matchesShortcut(e, { key: "f" })) {
         e.preventDefault();
@@ -601,12 +641,24 @@ export function Kanban({
         setInboxOpen((o) => !o);
       } else if (nextView) {
         e.preventDefault();
+        setSelectedItemId(null);
         switchView(nextView);
       }
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [openNewItem, switchView]);
+  }, [openNewItem, switchView, feedbackEnabled, selectedItemId]);
+
+  // Moving the pointer hands the shortcuts back to the hovered item. Scrolling
+  // to the selection moves rows under a still pointer without moving it.
+  useEffect(() => {
+    if (!selectedItemId) return;
+    function onMove(e: PointerEvent) {
+      if (e.movementX || e.movementY) setSelectedItemId(null);
+    }
+    document.addEventListener("pointermove", onMove);
+    return () => document.removeEventListener("pointermove", onMove);
+  }, [selectedItemId]);
 
   // On first paint, and on coming back from Agenda or Done (which unmount
   // the rail):
@@ -686,6 +738,7 @@ export function Kanban({
 
   return (
     <FollowsProvider followedItemIds={followedItemIds}>
+    <SelectedItemContext value={selection}>
     <NotificationLevelsProvider levels={notificationLevels}>
     <ItemChangesContext value={itemChanges}>
     <LabelsContext value={labelsByProject}>
@@ -763,6 +816,7 @@ export function Kanban({
                     variant="outline"
                     size="sm"
                     aria-label="Send feedback"
+                    aria-keyshortcuts="!"
                     onClick={() => {
                       setFeedbackAbout(null);
                       setFeedbackOpen(true);
@@ -772,7 +826,9 @@ export function Kanban({
                   </Button>
                 }
               />
-              <TooltipContent side="bottom">Send feedback</TooltipContent>
+              <TooltipContent side="bottom">
+                Send feedback <Kbd>!</Kbd>
+              </TooltipContent>
             </Tooltip>
           )}
           <NotificationsInbox
@@ -980,7 +1036,7 @@ export function Kanban({
 
         <PullToSearch onOpen={() => setPaletteOpen(true)} />
 
-        <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+        <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} feedbackEnabled={feedbackEnabled} />
         {feedbackEnabled && (
           <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} about={feedbackAbout} />
         )}
@@ -1035,6 +1091,7 @@ export function Kanban({
     </LabelsContext>
     </ItemChangesContext>
     </NotificationLevelsProvider>
+    </SelectedItemContext>
     </FollowsProvider>
   );
 }

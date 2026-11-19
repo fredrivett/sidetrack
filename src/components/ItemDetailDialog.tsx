@@ -20,6 +20,7 @@ import {
 import { unstable_rethrow } from "next/navigation";
 import {
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -46,6 +47,7 @@ import { dayLabel, type Due, formatRelative } from "@/lib/time";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Kbd } from "@/components/ui/kbd";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -73,7 +75,7 @@ import { ItemComments } from "./ItemComments";
 import { LabelChips } from "./Labels";
 import { MoveToListPicker, useMoveItem } from "./MoveItem";
 import { InlineCode, Markdown } from "./Markdown";
-import { useAssignShortcuts } from "./useAssignShortcuts";
+import { rowAfterDelete, SelectedItemContext, useItemShortcuts } from "./useItemShortcuts";
 import { useOptimisticAssignees } from "./use-optimistic-assignees";
 import { useItemChanges } from "./use-optimistic-items";
 import { useCopyItemRef } from "./useCopyItemRef";
@@ -296,13 +298,17 @@ function DueChip({
   done,
   disabled,
   onChange,
+  open,
+  setOpen,
 }: {
   item: Item;
   done: boolean;
   disabled: boolean;
   onChange: (due: Due | null) => void;
+  /** Open, as the D shortcut leaves it. */
+  open: boolean;
+  setOpen: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const due = item.dueDate ? { dueDate: item.dueDate, dueFrom: item.dueFrom } : null;
   return (
     <Popover open={open} onOpenChange={(next) => setOpen(next && !disabled)}>
@@ -630,7 +636,7 @@ export function ItemDetailDialog({
 
   // Linear's assignment shortcuts while the dialog owns the screen: A opens the
   // picker, I adds or removes me. Stays armed while the picker is open so the I
-  // hint shown on the "me" row works there (useAssignShortcuts listens ahead of
+  // hint shown on the "me" row works there (useItemShortcuts listens ahead of
   // the menu's typeahead). No deferToDialog: this is the dialog
   // the shortcuts defer to, so it should respond.
   // While a sub-item's picker is open, I toggles me on that sub-item (as its
@@ -644,12 +650,17 @@ export function ItemDetailDialog({
     setChildPickerFor(null);
   }, [assigneesById, setAssignees, childPickerFor, viewerId]);
   const noop = useCallback(() => {}, []);
-  useAssignShortcuts({
-    active: open && childPickerFor === null,
+  // D opens the due date, X ticks the item, ⌫ deletes it (asking first).
+  const [dueOpen, setDueOpen] = useState(false);
+  useItemShortcuts({
+    active: open && childPickerFor === null && !dueOpen,
     onOpenPicker: openPicker,
     onAssignToMe: canAssignSelf ? toggleMe : undefined,
+    onDue: () => !pending && setDueOpen(true),
+    onToggleDone: () => toggle(),
+    onDelete: () => del(),
   });
-  useAssignShortcuts({
+  useItemShortcuts({
     active: open && childPickerFor !== null,
     onOpenPicker: noop,
     onAssignToMe: canAssignSelf ? toggleMeOnChild : undefined,
@@ -661,6 +672,7 @@ export function ItemDetailDialog({
       // Reset the picker so a closed dialog never reopens with it already open
       // (which would also disarm the A/I shortcuts).
       setAssignOpen(false);
+      setDueOpen(false);
       setChildPickerFor(null);
     }
     onOpenChange(next);
@@ -668,6 +680,7 @@ export function ItemDetailDialog({
 
   const changes = useItemChanges();
   const move = useMoveItem();
+  const selection = useContext(SelectedItemContext);
   function toggle() {
     changes.setCompleted(item, !completed);
   }
@@ -677,6 +690,8 @@ export function ItemDetailDialog({
       setConfirmingDelete(true);
       return;
     }
+    // Deleting the item the board's keys selected moves the selection on.
+    if (selection?.selectedId === item.id) selection.select(rowAfterDelete(item.id));
     changes.deleteItem(item);
     change(false);
   }
@@ -723,7 +738,7 @@ export function ItemDetailDialog({
               disabled={pending}
               aria-pressed={completed}
               aria-label={completed ? "Completed" : "Complete"}
-              title={completed ? "Mark as not done" : "Complete"}
+              title={completed ? "Mark as not done (X)" : "Complete (X)"}
               className={`mt-px shrink-0 rounded-full transition disabled:opacity-50 ${
                 completed
                   ? "text-green-600 hover:text-green-700 dark:text-green-500"
@@ -767,6 +782,8 @@ export function ItemDetailDialog({
             />
             <div className="flex flex-wrap items-center gap-1.5">
               <DueChip
+                open={dueOpen}
+                setOpen={setDueOpen}
                 item={item}
                 done={completed}
                 disabled={pending}
@@ -951,6 +968,7 @@ export function ItemDetailDialog({
           >
             <Trash2 />
             {confirmingDelete ? "Confirm delete?" : "Delete"}
+            {!confirmingDelete && <Kbd className="ml-0.5">⌫</Kbd>}
           </Button>
         </div>
       </ResponsiveDialogContent>

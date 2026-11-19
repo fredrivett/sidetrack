@@ -16,6 +16,7 @@ const SECTIONS: Array<{ title: string; shortcuts: Array<[string, string[]]> }> =
     shortcuts: [
       ["Command palette", ["mod", "K"]],
       ["Search", ["/"]],
+      ["Send feedback", ["!"]],
       ["Keyboard shortcuts", ["?"]],
     ],
   },
@@ -29,13 +30,20 @@ const SECTIONS: Array<{ title: string; shortcuts: Array<[string, string[]]> }> =
       ["Go to Brief", ["1"]],
       ["Go to Board", ["2"]],
       ["Go to Done", ["3"]],
+      ["Select item above or below", ["↑", "↓"]],
+      ["Select in the next list", ["←", "→"]],
+      ["…or, Vim-style", ["H", "J", "K", "L"]],
+      ["Open selected item", ["↵"]],
     ],
   },
   {
-    title: "Hovered or open item",
+    title: "Hovered, selected or open item",
     shortcuts: [
       ["Assign", ["A"]],
       ["Assign to me", ["I"]],
+      ["Due date", ["D"]],
+      ["Complete", ["X"]],
+      ["Delete", ["⌫"]],
       ["Copy ref", ["mod", "."]],
     ],
   },
@@ -48,13 +56,16 @@ const SECTIONS: Array<{ title: string; shortcuts: Array<[string, string[]]> }> =
   },
 ];
 
-/** The ? shortcut's list of every keyboard shortcut. */
+/** The ? shortcut's list of every keyboard shortcut. Send feedback is
+ * listed only where this deployment takes feedback. */
 export function ShortcutsDialog({
   open,
   onOpenChange,
+  feedbackEnabled = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  feedbackEnabled?: boolean;
 }) {
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
@@ -71,7 +82,9 @@ export function ShortcutsDialog({
                 {section.title}
               </h3>
               <dl>
-                {section.shortcuts.map(([label, keys]) => (
+                {section.shortcuts
+                  .filter(([label]) => feedbackEnabled || label !== "Send feedback")
+                  .map(([label, keys]) => (
                   <div key={label} className="flex items-center justify-between py-1 text-sm">
                     <dt>{label}</dt>
                     <dd>

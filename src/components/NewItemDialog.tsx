@@ -56,7 +56,7 @@ import { LabelsField } from "./Labels";
 import type { ProjectView } from "./Kanban";
 import { RepeatPicker } from "./RepeatPicker";
 import { runAction } from "./run-action";
-import { useAssignShortcuts } from "./useAssignShortcuts";
+import { useItemShortcuts } from "./useItemShortcuts";
 import { AvatarStack, assigneeNames } from "./UserAvatar";
 
 // Wait for a pause in typing before asking Jev about the draft.
@@ -254,7 +254,7 @@ export function NewItemDialog({
     () => setAssigneeIds((cur) => toggleAssignee(cur, viewerId)),
     [viewerId],
   );
-  useAssignShortcuts({
+  useItemShortcuts({
     active: open && Boolean(projectId) && !pending,
     onOpenPicker: openPicker,
     onAssignToMe: canAssignSelf ? toggleMe : undefined,

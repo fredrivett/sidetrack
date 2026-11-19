@@ -1,0 +1,154 @@
+"use client";
+
+import { createContext, useEffect } from "react";
+import { isEditableTarget, matchesShortcut } from "@/lib/keyboard";
+
+/** The item the board's arrow keys (or HJKL) selected, or null, and how to
+ * change it. While there is one, it owns the item shortcuts rather than the
+ * hovered item. Null outside the board. */
+export const SelectedItemContext = createContext<{
+  selectedId: string | null;
+  select: (id: string | null) => void;
+} | null>(null);
+
+/** Linear's assignment shortcuts: A opens the assignee picker, I toggles me. */
+export const OPEN_ASSIGNEE_SHORTCUT = { key: "a" } as const;
+export const ASSIGN_TO_ME_SHORTCUT = { key: "i" } as const;
+
+/**
+ * Arm Linear-style item shortcuts on the item that currently "owns" them:
+ * `A` opens the assignee picker, `I` adds the viewer to the item's assignees
+ * (or takes them off if they're already on it), `D` opens its due date, `X`
+ * ticks it done or not, ⌫ (or Delete) deletes it, asking first, and ↵ opens
+ * it.
+ *
+ * `active` arms a document-level key listener — pass the condition under which
+ * this item should own the shortcuts (a hovered or selected card, an open
+ * detail dialog, …), and disarm it while the picker itself is open so the menu
+ * keeps its own keyboard handling. Set `deferToDialog` on a card so a
+ * still-hovered row behind an open dialog yields to that dialog ([role=dialog])
+ * rather than acting on the wrong item. `onAssignToMe` is omitted when the
+ * viewer can't assign themselves (not a candidate on this project), which also
+ * drops the `I` binding; any other handler left out drops its key too.
+ */
+export function useItemShortcuts({
+  active,
+  deferToDialog,
+  onOpenPicker,
+  onAssignToMe,
+  onDue,
+  onToggleDone,
+  onDelete,
+  onOpen,
+}: {
+  active: boolean;
+  deferToDialog?: boolean;
+  onOpenPicker: () => void;
+  onAssignToMe?: () => void;
+  onDue?: () => void;
+  onToggleDone?: () => void;
+  onDelete?: () => void;
+  onOpen?: () => void;
+}) {
+  useEffect(() => {
+    if (!active) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (isEditableTarget(e.target)) return;
+      // Inside any other menu (the row's right-click menu, the dialog's parent
+      // picker), letters belong to that menu's typeahead. Assignee pickers
+      // carry data-assignee-picker so their own I hint still works.
+      const menu = (e.target as Element | null)?.closest?.('[role="menu"]');
+      if (menu && !menu.hasAttribute("data-assignee-picker")) return;
+      // Bare keys only — never shadow ⌘A / Ctrl+A (select all) and friends.
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // A hovered card behind an open dialog must not steal the shortcut from
+      // the dialog, which renders a [role=dialog] popup over it.
+      if (deferToDialog && document.querySelector('[role="dialog"]')) return;
+      let run: (() => void) | undefined;
+      if (matchesShortcut(e, OPEN_ASSIGNEE_SHORTCUT)) run = onOpenPicker;
+      else if (matchesShortcut(e, ASSIGN_TO_ME_SHORTCUT)) run = onAssignToMe;
+      // The rest act on the item itself, so not from inside an assignee picker.
+      else if (menu) return;
+      else if (matchesShortcut(e, { key: "d" })) run = onDue;
+      else if (matchesShortcut(e, { key: "x" })) run = onToggleDone;
+      else if (e.key === "Backspace" || e.key === "Delete") run = onDelete;
+      else if (e.key === "Enter" && !e.shiftKey) run = onOpen;
+      if (!run || e.repeat) return;
+      e.preventDefault();
+      run();
+    }
+    // Capture phase: while an assignee picker is open its menu has focus, and
+    // base-ui's typeahead stops every letter key from bubbling, which would
+    // swallow the I its "me" row advertises.
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
+  }, [active, deferToDialog, onOpenPicker, onAssignToMe, onDue, onToggleDone, onDelete, onOpen]);
+}
+
+/** The board's movement keys: the arrows, and Vim's HJKL. */
+export const NAV_KEYS: Record<string, "up" | "down" | "left" | "right"> = {
+  ArrowUp: "up",
+  k: "up",
+  ArrowDown: "down",
+  j: "down",
+  ArrowLeft: "left",
+  h: "left",
+  ArrowRight: "right",
+  l: "right",
+};
+
+/**
+ * The row the movement keys go to from the selected item: up and down within
+ * its list, left and right to the same place in the next list with items, or
+ * its last item if that list is shorter. Views that don't group by list are
+ * one column. With nothing selected (or it's gone), the hovered row, else the
+ * first one on screen. Null when there are no rows.
+ */
+export function stepItemRow(
+  selectedId: string | null,
+  dir: (typeof NAV_KEYS)[string],
+): HTMLElement | null {
+  const rows = [...document.querySelectorAll<HTMLElement>("[data-item-row]")].filter(
+    (r) => !r.closest('[role="dialog"]'),
+  );
+  const current = rows.find((r) => r.dataset.itemRow === selectedId);
+  if (!current) {
+    const onScreen = (r: HTMLElement) => {
+      const b = r.getBoundingClientRect();
+      return b.left >= 0 && b.right <= innerWidth && b.bottom > 0 && b.top < innerHeight;
+    };
+    return rows.find((r) => r.matches(":hover")) ?? rows.find(onScreen) ?? rows[0] ?? null;
+  }
+  // Rows by list, lists in board order (the DOM's, left to right).
+  const columns = new Map<Element | null, HTMLElement[]>();
+  for (const r of rows) {
+    const col = r.closest("[data-project-id]");
+    columns.set(col, [...(columns.get(col) ?? []), r]);
+  }
+  const lists = [...columns.values()];
+  const at = lists.findIndex((l) => l.includes(current));
+  const i = lists[at].indexOf(current);
+  if (dir === "up") return lists[at][i - 1] ?? current;
+  if (dir === "down") return lists[at][i + 1] ?? current;
+  const next = lists[at + (dir === "left" ? -1 : 1)];
+  return next ? next[Math.min(i, next.length - 1)] : current;
+}
+
+/**
+ * The item to select once `id` is deleted: the next one down its list, else
+ * the one above, skipping its own sub-items, which go with it. Null when it
+ * was the list's only item.
+ */
+export function rowAfterDelete(id: string): string | null {
+  for (const dir of ["down", "up"] as const) {
+    let at = id;
+    for (;;) {
+      const row = stepItemRow(at, dir);
+      const next = row?.dataset.itemRow;
+      if (!row || !next || next === at) break;
+      if (row.dataset.parentId !== id) return next;
+      at = next;
+    }
+  }
+  return null;
+}
