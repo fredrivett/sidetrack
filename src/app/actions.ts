@@ -32,7 +32,6 @@ import {
 } from "@/core/labels";
 import {
   autoNewListIcon,
-  listIconContext,
   withAutoLabelEmoji,
   withAutoLabelRename,
   withAutoListIcon,
@@ -50,7 +49,6 @@ import {
 import { getDb } from "@/core/db";
 import {
   addFeedbackFollowUp as addFeedbackFollowUpCore,
-  feedbackFollowUps as feedbackFollowUpsCore,
   submitFeedback as submitFeedbackCore,
 } from "@/core/feedback";
 import type { FeedbackArea, FeedbackKind, FeedbackRating } from "@/lib/feedback";
@@ -70,7 +68,6 @@ import {
   uncompleteItem as uncompleteItemCore,
   updateItem as updateItemCore,
 } from "@/core/items";
-import { projectRefPrefixes as projectRefPrefixesCore } from "@/core/itemRef";
 import {
   type MissingLabelChoice,
   moveItem as moveItemCore,
@@ -88,9 +85,6 @@ import {
   createProject as createProjectCore,
   deleteProject as deleteProjectCore,
   getProject as getProjectCore,
-  getProjectWithItems as getProjectWithItemsCore,
-  listProjects as listProjectsCore,
-  sampleOpenItemTitles as sampleOpenItemTitlesCore,
   reorderProject as reorderProjectCore,
   updateProject as updateProjectCore,
 } from "@/core/projects";
@@ -131,21 +125,16 @@ import {
   setBoardFilters as setBoardFiltersCore,
   setGreetingPrefs as setGreetingPrefsCore,
   setTimeZone as setTimeZoneCore,
-  getTimeZone as getTimeZoneCore,
   setAvatarUrl as setAvatarUrlCore,
   setUploadedAvatar as setUploadedAvatarCore,
   setUsername as setUsernameCore,
 } from "@/core/users";
-import { writtenGreetingFor as writtenGreetingForCore } from "@/core/agendaGreeting";
 import { getCurrentSession, requireUserId } from "@/auth/session";
 import { sendAgentRequest } from "@/lib/agentRequest";
 import { notifyInvite, notifyMentions } from "@/lib/email";
-import { suggestEmoji, suggestLabelEmoji } from "@/lib/emojiSuggest";
 import { getEnv } from "@/lib/env";
 import type { ItemFilters } from "@/lib/filters";
 import type { GreetingPrefs } from "@/lib/greetingPrefs";
-import { checkDraftItem, suggestList } from "@/lib/itemSuggest";
-import { formatItemRef } from "@/lib/itemRef";
 import { sendPush } from "@/lib/push";
 import type { Repeat } from "@/lib/repeat";
 
@@ -229,92 +218,6 @@ export async function setProjectSpaceAction(projectId: string, spaceId: string |
   const { db } = getDb();
   setProjectSpaceCore(db, userId, projectId, spaceId, SOURCE);
   refresh();
-}
-
-// Read-only icon suggestions for a list as it's being written: a saved one
-// (`id`, whose items Jev also reads) or one in the New list dialog. Nothing
-// is applied here. [] when AI is off.
-export async function suggestListIconsAction(input: {
-  id?: string;
-  name: string;
-  summary: string;
-  homepageUrl: string | null;
-}) {
-  const userId = await requireUserId();
-  const apiKey = getEnv().TYPESAFE_API_KEY;
-  if (!apiKey || !input.name.trim()) return [];
-  const { id, ...patch } = input;
-  const context = id
-    ? listIconContext(getDb().db, userId, id, patch)?.context
-    : { ...patch, itemTitles: [] };
-  return context ? suggestEmoji(context, apiKey) : [];
-}
-
-// Emoji for a label, from its name (typed so far) and its list's, when one
-// is chosen yet. Read-only; [] when AI is off.
-export async function suggestLabelEmojiAction(projectId: string, name: string) {
-  const userId = await requireUserId();
-  const apiKey = getEnv().TYPESAFE_API_KEY;
-  if (!apiKey || !name.trim()) return [];
-  const { db } = getDb();
-  // No list chosen yet is fine (New item); a list they can't see isn't.
-  const project = projectId ? getProjectCore(db, userId, projectId) : undefined;
-  if (projectId && !project) return [];
-  return suggestLabelEmoji({ name: name.trim(), listName: project?.name ?? "" }, apiKey);
-}
-
-// Read-only suggestions for an item being written in the New item dialog:
-// the list it fits (when none was chosen), and an open item in that list it
-// repeats or is a step of. Nothing is applied here; the dialog shows them.
-export async function suggestForNewItemAction(input: {
-  projectId: string | null;
-  title: string;
-  description: string;
-}) {
-  const userId = await requireUserId();
-  const apiKey = getEnv().TYPESAFE_API_KEY;
-  const draft = { title: input.title.trim(), description: input.description.trim() };
-  const nothing = { projectId: null, duplicate: null, parent: null };
-  if (!apiKey || !draft.title) return nothing;
-  const { db } = getDb();
-  let projectId = input.projectId;
-  if (!projectId) {
-    const titles = sampleOpenItemTitlesCore(db, userId, 10);
-    const lists = listProjectsCore(db, userId)
-      .filter((p) => p.status === "active")
-      .map((p) => ({
-        id: p.id,
-        name: p.name,
-        summary: p.summary,
-        itemTitles: titles.get(p.id) ?? [],
-      }));
-    projectId = await suggestList(draft, lists, apiKey);
-    if (!projectId) return nothing;
-  }
-  const found = getProjectWithItemsCore(db, userId, projectId);
-  if (!found) return nothing;
-  const { duplicateId, parentId } = await checkDraftItem(
-    draft,
-    found.items.map((it) => ({
-      id: it.id,
-      title: it.title,
-      topLevel: !it.parentId,
-    })),
-    apiKey,
-  );
-  // The ref as the board shows it: owner-qualified when the prefix clashes.
-  const prefix = projectRefPrefixesCore(db, userId)[projectId] ?? found.project.prefix;
-  const hint = (id: string | null) => {
-    const it = found.items.find((i) => i.id === id);
-    return it
-      ? {
-          id: it.id,
-          ref: formatItemRef(prefix, it.number),
-          title: it.title,
-        }
-      : null;
-  };
-  return { projectId, duplicate: hint(duplicateId), parent: hint(parentId) };
 }
 
 export async function reorderProjectAction(id: string, ref: string) {
@@ -527,19 +430,6 @@ export async function sendFeedbackAction(input: {
   const sent = submitFeedbackCore(db, userId, { ...input, listId }, SOURCE);
   refresh();
   return sent;
-}
-
-/**
- * Claude's follow-up questions about feedback the user just sent, each with
- * likely answers; [] when there's nothing to ask or AI isn't on here. Takes
- * only the item's id: core reads what they sent, and asks once per item.
- */
-export async function feedbackFollowUpsAction(itemId: string) {
-  const userId = await requireUserId();
-  const { FEEDBACK_LIST_ID, ANTHROPIC_API_KEY } = getEnv();
-  if (!FEEDBACK_LIST_ID) return [];
-  const { db } = getDb();
-  return feedbackFollowUpsCore(db, userId, { listId: FEEDBACK_LIST_ID, itemId }, ANTHROPIC_API_KEY);
 }
 
 /** Adds the user's answers to follow-up questions to feedback they just sent. */
@@ -811,24 +701,6 @@ export async function setAgendaReadAction() {
   const userId = await requireUserId();
   const { db } = getDb();
   setAgendaReadAtCore(db, userId, Date.now());
-}
-
-/**
- * The signed-in user's Agenda greeting: written by Claude when AI is on,
- * otherwise from the templates. Null before their timezone is known. Takes
- * nothing from the browser, and agendaGreeting.ts limits how often one
- * person can make it ask.
- */
-export async function agendaGreetingAction(rewriteNow?: boolean) {
-  const userId = await requireUserId();
-  const { db } = getDb();
-  const timeZone = getTimeZoneCore(db, userId);
-  if (!timeZone) return null;
-  const { TYPESAFE_API_KEY, ANTHROPIC_API_KEY } = getEnv();
-  return writtenGreetingForCore(db, userId, timeZone, {
-    jev: TYPESAFE_API_KEY,
-    anthropic: ANTHROPIC_API_KEY,
-  }, undefined, undefined, rewriteNow === true);
 }
 
 /** Save the browser's timezone for agents' "today". No refresh: nothing shown changes. */

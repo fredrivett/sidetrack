@@ -9,9 +9,9 @@ import { Kanban, type ProjectView } from "./Kanban";
 vi.mock("@/app/actions", () => ({
   listDoneBeforeAction: vi.fn(),
   setTimeZoneAction: vi.fn(() => Promise.resolve()),
-  // The Agenda's greeting; it never arrives here.
-  agendaGreetingAction: vi.fn(() => new Promise(() => {})),
 }));
+// The Agenda's greeting; it never arrives here.
+vi.mock("./ai-read", () => ({ aiRead: vi.fn(() => new Promise(() => {})) }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
   unstable_rethrow: vi.fn(),

@@ -1,6 +1,5 @@
 "use client";
 
-import { unstable_rethrow } from "next/navigation";
 import { useEffect, useEffectEvent, useState } from "react";
 
 // Every emoji that goes with a title (a list's icon, a label's emoji) works
@@ -30,7 +29,7 @@ export const UNCHOSEN: EmojiChoice = { emoji: null, chosen: false };
  */
 export function useEmojiSuggestions(
   context: string,
-  suggest: () => Promise<string[]>,
+  suggest: (signal: AbortSignal) => Promise<string[]>,
   enabled: boolean,
 ): string[] {
   const [answered, setAnswered] = useState<{ for: string; emoji: string[] } | null>(null);
@@ -38,18 +37,19 @@ export function useEmojiSuggestions(
   const known = answered?.for === context;
   useEffect(() => {
     if (!enabled || known) return;
-    let current = true;
+    // Newer text gives up on the answer for this, and stops Jev's work on it.
+    const stale = new AbortController();
     const timer = setTimeout(() => {
-      void ask()
-        .then((emoji) => {
-          if (current) setAnswered({ for: context, emoji });
-        })
-        // A suggestion that fails is just left out, but a signed-out
-        // session's redirect to /login goes through to Next.
-        .catch((e) => unstable_rethrow(e));
+      // A suggestion that fails is just left out.
+      ask(stale.signal).then(
+        (emoji) => {
+          if (!stale.signal.aborted) setAnswered({ for: context, emoji });
+        },
+        () => {},
+      );
     }, SUGGEST_DELAY_MS);
     return () => {
-      current = false;
+      stale.abort();
       clearTimeout(timer);
     };
   }, [enabled, known, context]);
@@ -107,7 +107,7 @@ export function useTitleEmoji({
   savedTitle: string | null;
   /** Whatever else Jev reads, so a change to it asks again. */
   context?: unknown[];
-  suggest: (title: string) => Promise<string[]>;
+  suggest: (title: string, signal: AbortSignal) => Promise<string[]>;
   none?: boolean;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
@@ -116,7 +116,7 @@ export function useTitleEmoji({
   const fresh = current !== savedTitle;
   const suggestions = useEmojiSuggestions(
     JSON.stringify([current, ...context]),
-    () => suggest(current),
+    (signal) => suggest(current, signal),
     Boolean(current) && (opened || (fresh && !saved.chosen && !none)),
   );
   const auto = !fresh ? undefined : none ? null : suggestions[0];

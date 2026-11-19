@@ -10,7 +10,6 @@ import {
   Plus,
   X,
 } from "lucide-react";
-import { unstable_rethrow } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -20,11 +19,8 @@ import {
   useTransition,
 } from "react";
 import { toast } from "sonner";
-import {
-  addItemAction,
-  createProjectAction,
-  suggestForNewItemAction,
-} from "@/app/actions";
+import { addItemAction, createProjectAction } from "@/app/actions";
+import type { AiReadResult } from "@/app/api/ai/reads";
 import type { LabelEmoji } from "@/core/labels";
 import type { AssigneeView } from "@/core/members";
 import type { Item } from "@/core/schema";
@@ -59,11 +55,12 @@ import { RepeatPicker } from "./RepeatPicker";
 import { runAction } from "./run-action";
 import { useItemShortcuts } from "./useItemShortcuts";
 import { AvatarStack, assigneeNames } from "./UserAvatar";
+import { aiRead } from "./ai-read";
 
 // Wait for a pause in typing before asking Jev about the draft.
 const SUGGEST_DELAY_MS = 400;
 
-type Suggestion = Awaited<ReturnType<typeof suggestForNewItemAction>>;
+type Suggestion = AiReadResult<"newItem">;
 type ItemHint = NonNullable<Suggestion["parent"]>;
 
 function Field({
@@ -283,21 +280,19 @@ export function NewItemDialog({
 
   useEffect(() => {
     if (!open || !draft.title) return;
-    let current = true;
+    // Newer typing gives up on the answer for this draft, and stops Jev's work on it.
+    const stale = new AbortController();
     const timer = setTimeout(() => {
-      void suggestForNewItemAction({
-        projectId: fixedProjectId || null,
-        ...draft,
-      })
-        .then((value) => {
-          if (current) setSuggested({ for: context, value });
-        })
-        // A suggestion that fails is just left out, but a signed-out
-        // session's redirect to /login goes through to Next.
-        .catch((e) => unstable_rethrow(e));
+      // A suggestion that fails is just left out.
+      aiRead("newItem", { projectId: fixedProjectId || null, ...draft }, stale.signal).then(
+        (value) => {
+          if (!stale.signal.aborted) setSuggested({ for: context, value });
+        },
+        () => {},
+      );
     }, SUGGEST_DELAY_MS);
     return () => {
-      current = false;
+      stale.abort();
       clearTimeout(timer);
     };
     // `context` covers the draft, the fixed list and the adds so far.

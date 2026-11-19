@@ -7,8 +7,8 @@ import {
   setOverdueCollapsedAction,
   setNoDateCollapsedAction,
   setNoDateListFoldedAction,
-  agendaGreetingAction,
 } from "@/app/actions";
+import { aiRead } from "./ai-read";
 import type { Greeting } from "@/core/agendaGreeting";
 import type { FeedbackAbout } from "./FeedbackDialog";
 import type { Item } from "@/core/schema";
@@ -29,11 +29,12 @@ vi.mock("@/app/actions", () => ({
   setNoDateCollapsedAction: vi.fn(),
   setNoDateListFoldedAction: vi.fn(),
   setAgendaReadAction: vi.fn(),
-  agendaGreetingAction: vi.fn(async () => null),
   // The item dialog reads its comments when it opens, and its history when expanded.
   listCommentsAction: vi.fn(async () => []),
   listAuditAction: vi.fn(async () => []),
 }));
+// The greeting is the only AI read here.
+vi.mock("./ai-read", () => ({ aiRead: vi.fn(async () => null) }));
 
 beforeAll(() => {
   // Midday on Saturday the 14th, in whatever zone the tests run in. This
@@ -368,7 +369,7 @@ describe("AgendaView", () => {
     const bins = item("Bins", "2026-11-14");
     const loft = item("Sort the loft", null);
     vi.mocked(setOverdueCollapsedAction).mockReturnValue(new Promise(() => {}));
-    vi.mocked(agendaGreetingAction).mockResolvedValueOnce({
+    vi.mocked(aiRead).mockResolvedValueOnce({
       hello: "Good afternoon, Fred.",
       text: `Since Friday you've finished {{item:gone}}. {{item:${late.id}}} is still waiting. No rush — want to {{action:triage|give it a new day}}? After that, {{others|one other}}.`,
       titles: { gone: "Renew passport", [late.id]: "Call the bank" },
@@ -432,7 +433,7 @@ describe("AgendaView", () => {
       others: [],
     } satisfies Greeting;
     let answer!: (g: Greeting) => void;
-    vi.mocked(agendaGreetingAction)
+    vi.mocked(aiRead)
       .mockResolvedValueOnce(first)
       .mockReturnValueOnce(new Promise((r) => (answer = r)));
     const board = (items: Item[]) => (
@@ -452,7 +453,7 @@ describe("AgendaView", () => {
     );
     const { rerender } = render(board([late, bins]));
     await screen.findByText(/is still waiting\.$/);
-    const calls = () => vi.mocked(agendaGreetingAction).mock.calls.length;
+    const calls = () => vi.mocked(aiRead).mock.calls.length;
     const before = calls();
     // Something it doesn't name changing doesn't ask.
     rerender(board([late, { ...bins, title: "Put the bins out" }]));
@@ -467,15 +468,15 @@ describe("AgendaView", () => {
     expect(screen.getByText("Rewriting…")).toBeTruthy();
     // Too soon to rewrite: the old one stays, counting down, with Rewrite now.
     let again!: (g: Greeting) => void;
-    vi.mocked(agendaGreetingAction).mockReturnValueOnce(new Promise((r) => (again = r)));
+    vi.mocked(aiRead).mockReturnValueOnce(new Promise((r) => (again = r)));
     await act(async () => answer({ ...first, retryInMs: 20_000 }));
     expect(screen.getByText("Out of date")).toBeTruthy();
     expect(screen.getByText(/· rewriting in (19|20)s$/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Rewrite now" }));
-    expect(vi.mocked(agendaGreetingAction)).toHaveBeenLastCalledWith(true);
+    expect(vi.mocked(aiRead)).toHaveBeenLastCalledWith("greeting", { now: true });
     // Still too soon: the retry it schedules keeps asking as "Rewrite now" did.
     let third!: (g: Greeting) => void;
-    vi.mocked(agendaGreetingAction).mockReturnValueOnce(new Promise((r) => (third = r)));
+    vi.mocked(aiRead).mockReturnValueOnce(new Promise((r) => (third = r)));
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
     try {
       await act(async () => again({ ...first, retryInMs: 3_000 }));
@@ -483,7 +484,7 @@ describe("AgendaView", () => {
     } finally {
       vi.useRealTimers();
     }
-    expect(vi.mocked(agendaGreetingAction)).toHaveBeenLastCalledWith(true);
+    expect(vi.mocked(aiRead)).toHaveBeenLastCalledWith("greeting", { now: true });
     await act(async () => third({ ...first, text: "That's everything for today.", titles: {} }));
     expect(screen.getByText("That's everything for today.").hasAttribute("aria-busy")).toBe(false);
     expect(screen.queryByRole("button", { name: "Rewrite now" })).toBeNull();
@@ -491,7 +492,7 @@ describe("AgendaView", () => {
 
   it("stops showing the greeting out of date when a change to what it names is undone before it asks", async () => {
     const late = item("Call the bank", "2026-11-10");
-    vi.mocked(agendaGreetingAction).mockResolvedValueOnce({
+    vi.mocked(aiRead).mockResolvedValueOnce({
       hello: "Good morning, Fred.",
       text: `{{item:${late.id}}} is still waiting.`,
       titles: { [late.id]: "Call the bank" },
@@ -515,19 +516,19 @@ describe("AgendaView", () => {
     );
     const { rerender } = render(board([late]));
     await screen.findByText(/is still waiting\.$/);
-    const before = vi.mocked(agendaGreetingAction).mock.calls.length;
+    const before = vi.mocked(aiRead).mock.calls.length;
     rerender(board([{ ...late, completedAt: 1 }]));
     await screen.findByText("Out of date");
     rerender(board([late]));
     await waitFor(() => expect(screen.queryByText("Out of date")).toBeNull());
     await new Promise((r) => setTimeout(r, 1800));
-    expect(vi.mocked(agendaGreetingAction).mock.calls.length).toBe(before);
+    expect(vi.mocked(aiRead).mock.calls.length).toBe(before);
   });
 
   it("asks again when told, from the built-in greeting too, without calling that out of date", async () => {
     const late = item("Call the bank", "2026-11-10");
     let second!: (g: Greeting) => void;
-    vi.mocked(agendaGreetingAction)
+    vi.mocked(aiRead)
       .mockResolvedValueOnce({
         hello: "Good morning, Fred.",
         text: "One thing slipped.",
@@ -547,7 +548,7 @@ describe("AgendaView", () => {
       expect(screen.queryByRole("button", { name: "Rewrite now" })).toBeNull();
       // Told 15 minutes, it checks back after 30s; not in a hidden tab
       // until it's seen again.
-      const calls = () => vi.mocked(agendaGreetingAction).mock.calls.length;
+      const calls = () => vi.mocked(aiRead).mock.calls.length;
       const before = calls();
       await act(async () => vi.advanceTimersByTime(29_000));
       expect(calls()).toBe(before);
@@ -599,7 +600,7 @@ describe("AgendaView", () => {
   it("explains how the greeting was worked out", async () => {
     const late = item("Call the bank", "2026-11-10");
     const paid = item("Pay rent", "2026-11-14", doneOn(14));
-    vi.mocked(agendaGreetingAction).mockResolvedValueOnce({
+    vi.mocked(aiRead).mockResolvedValueOnce({
       hello: "Good morning, Fred.",
       text: `{{item:${late.id}}} slipped.`,
       titles: { [late.id]: "Call the bank" },
@@ -658,7 +659,7 @@ describe("AgendaView", () => {
   });
 
   it("keeps the opening line and drops the placeholder if the greeting can't load", async () => {
-    vi.mocked(agendaGreetingAction).mockRejectedValueOnce(new Error("offline"));
+    vi.mocked(aiRead).mockRejectedValueOnce(new Error("offline"));
     const { container } = renderAgenda([], [home], false, {}, true);
     expect(container.querySelector(".animate-pulse")).toBeTruthy();
     await vi.waitFor(() => expect(container.querySelector(".animate-pulse")).toBeNull());
@@ -680,8 +681,8 @@ describe("AgendaView", () => {
 
   it("stamps a read when the tab is hidden, but keeps showing the greeting it opened with", async () => {
     vi.mocked(setAgendaReadAction).mockClear();
-    vi.mocked(agendaGreetingAction).mockClear();
-    vi.mocked(agendaGreetingAction).mockResolvedValueOnce({
+    vi.mocked(aiRead).mockClear();
+    vi.mocked(aiRead).mockResolvedValueOnce({
       hello: "Good morning, Fred.",
       text: "Since Friday you've finished four.",
       titles: {},
@@ -714,7 +715,7 @@ describe("AgendaView", () => {
       />,
     );
     expect(screen.getByText("Since Friday you've finished four.")).toBeTruthy();
-    expect(vi.mocked(agendaGreetingAction)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(aiRead)).toHaveBeenCalledTimes(1);
     vi.setSystemTime(new Date(2026, 10, 14, 12));
   });
 

@@ -2,7 +2,7 @@
 
 import { Plus, Tag, X } from "lucide-react";
 import { createContext, useContext, useState, useTransition } from "react";
-import { suggestLabelEmojiAction, updateLabelAction } from "@/app/actions";
+import { updateLabelAction } from "@/app/actions";
 import type { LabelEmoji } from "@/core/labels";
 import type { Label } from "@/core/schema";
 import { cn } from "@/lib/utils";
@@ -19,6 +19,7 @@ import { EditableText } from "./EditableText";
 import { IconPicker } from "./ProjectIconPicker";
 import { runAction } from "./run-action";
 import { type EmojiChoice, UNCHOSEN, useEmojiSuggestions, useTitleEmoji } from "./use-emoji-choice";
+import { aiRead } from "./ai-read";
 
 // Each list's labels, by list id, read by every row and dialog that shows an
 // item's labels (useListLabels) instead of being passed down through every
@@ -106,7 +107,7 @@ export function SavedLabelChip({
     saved: { emoji: label.emoji, chosen: label.emojiChosen },
     title: label.name,
     savedTitle: label.name,
-    suggest: (name) => suggestLabelEmojiAction(label.projectId, name),
+    suggest: (name, signal) => aiRead("labelEmoji", { projectId: label.projectId, name }, signal),
   });
   const save = (patch: Parameters<typeof updateLabelAction>[1], what: string) =>
     new Promise<boolean>((resolve) =>
@@ -235,7 +236,7 @@ export function LabelPicker({
     selected.some((n) => n.toLowerCase() === typed.toLowerCase());
   const suggestions = useEmojiSuggestions(
     JSON.stringify([projectId, typed]),
-    () => suggestLabelEmojiAction(projectId, typed),
+    (signal) => aiRead("labelEmoji", { projectId, name: typed }, signal),
     Boolean(typed) && !exists && !disabled,
   );
   // Archived labels stay on their items but aren't offered, unless typed in
