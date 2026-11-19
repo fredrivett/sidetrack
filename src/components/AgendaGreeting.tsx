@@ -1,7 +1,8 @@
 "use client";
 
 import { unstable_rethrow } from "next/navigation";
-import { RefreshCw, Settings, ThumbsDown, ThumbsUp } from "lucide-react";
+import { Plus, RefreshCw, Settings, ThumbsDown, ThumbsUp } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { agendaGreetingAction, setAgendaReadAction } from "@/app/actions";
@@ -98,6 +99,7 @@ export function AgendaGreeting({
   onHoverItem,
   onFeedback,
   renderItem,
+  onAddForToday,
 }: {
   firstName: string | null;
   /** Items the page has, so a chip can open its item. */
@@ -109,6 +111,8 @@ export function AgendaGreeting({
   onFeedback?: (about: FeedbackAbout) => void;
   /** An item opened from one of its dialogs, shown in that dialog. */
   renderItem: RenderItem;
+  /** The "+" by the date: New item, due today. */
+  onAddForToday?: () => void;
 }) {
   const today = useToday();
   // Undefined while it loads; null when there's none to show.
@@ -266,7 +270,27 @@ export function AgendaGreeting({
 
   return (
     <div className="px-1 pt-2 pb-1">
-      <p className="text-xs font-medium text-neutral-400 dark:text-neutral-500">{dateLine(today)}</p>
+      <div className="flex items-center gap-1">
+        <p className="text-xs font-medium text-neutral-400 dark:text-neutral-500">{dateLine(today)}</p>
+        {onAddForToday && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                // Quiet, as the date is, but dark enough to read as a control.
+                <button
+                  type="button"
+                  aria-label="Add for today"
+                  onClick={onAddForToday}
+                  className="-my-1 inline-flex size-5 items-center justify-center rounded-md text-neutral-500 outline-none transition-colors hover:bg-neutral-200/60 hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-neutral-300 touch:-my-2 touch:size-8 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100 dark:focus-visible:ring-neutral-600"
+                >
+                  <Plus aria-hidden className="size-3.5 touch:size-4" />
+                </button>
+              }
+            />
+            <TooltipContent side="bottom">Add for today</TooltipContent>
+          </Tooltip>
+        )}
+      </div>
       <div aria-hidden="true" className="mt-3 h-px w-8 bg-neutral-300 dark:bg-neutral-700" />
       <h2 className="mt-3 font-display text-[36px] leading-[1.1] font-normal tracking-[-0.01em] text-neutral-900 italic min-[900px]:text-[46px] dark:text-neutral-100">
         {greeting?.hello ?? helloNow(firstName)}

@@ -574,6 +574,28 @@ describe("AgendaView", () => {
     expect(screen.getByText(/is still waiting\.$/)).toBeTruthy();
   });
 
+  it("adds for today from the + by the date", () => {
+    const onAddForToday = vi.fn();
+    render(
+      <AgendaView
+        projects={[home]}
+        itemsByProject={{}}
+        assigneesByProject={{}}
+        prLinksByItem={{}}
+        viewerId="me"
+        overdueCollapsed={false}
+        noDateCollapsed={false}
+        noDateFoldedLists={[]}
+        greet
+        firstName="Fred"
+        onAddForToday={onAddForToday}
+        filters={NO_FILTERS}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add for today" }));
+    expect(onAddForToday).toHaveBeenCalledTimes(1);
+  });
+
   it("explains how the greeting was worked out", async () => {
     const late = item("Call the bank", "2026-11-10");
     const paid = item("Pay rent", "2026-11-14", doneOn(14));
