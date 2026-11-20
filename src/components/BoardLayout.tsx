@@ -42,8 +42,12 @@ export function BoardHeader({
           menu or hover still shows its background. By element, not
           data-slot, which the menu and tooltip triggers overwrite; the
           preview's mock buttons are spans with data-slot="button". Icons
-          with their own size (the account fallback) keep it. */}
-      <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 max-[360px]:gap-1 sm:gap-3 max-sm:[&_:is(button,[data-slot=button])]:aspect-square max-sm:[&_:is(button,[data-slot=button])]:border-transparent max-sm:[&_:is(button,[data-slot=button])]:px-0 max-sm:[&_:is(button,[data-slot=button]):not(:hover,[aria-expanded=true])]:bg-transparent touch:max-sm:[&_:is(button,[data-slot=button])>svg:not([class*=size-])]:size-5">{children}</div>
+          with their own size (the account fallback) keep it.
+          The account avatar, always last, fills its box where the icons
+          beside it have padding round them, so it gets that padding (6px,
+          8px on touch) again as margin, to look as far from its neighbour
+          as they are from each other. */}
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 max-[360px]:gap-1 sm:gap-3 max-sm:[&>:last-child]:ml-1.5 touch:max-sm:[&>:last-child]:ml-2 max-sm:[&_:is(button,[data-slot=button])]:aspect-square max-sm:[&_:is(button,[data-slot=button])]:border-transparent max-sm:[&_:is(button,[data-slot=button])]:px-0 max-sm:[&_:is(button,[data-slot=button]):not(:hover,[aria-expanded=true])]:bg-transparent touch:max-sm:[&_:is(button,[data-slot=button])>svg:not([class*=size-])]:size-5">{children}</div>
     </div>
   );
 }
