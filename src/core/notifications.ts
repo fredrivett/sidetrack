@@ -73,6 +73,9 @@ export interface NotificationView {
   } | null;
   /** The agent that made it for them. */
   agentName: string | null;
+  /** For an invite: who was invited (null: the reader) and to where, so a
+   * push about one invite to several places or people can say it once. */
+  invite?: { who: string | null; place: string };
 }
 
 const INBOX_SIZE = 30;
@@ -225,7 +228,8 @@ function rule(
       return {
         // The invitee can't open it yet; the rest are told who's coming.
         to: [...as("invited", [event.member.userId]), ...as("joined", listPeople(event.projectId))],
-        groupKey: `list:${event.projectId}`,
+        // One invite to several places or people is told as one.
+        groupKey: event.inviteId ? `invite:${event.inviteId}` : `list:${event.projectId}`,
         projectId: event.projectId,
       };
     case "member.joined":
@@ -265,7 +269,7 @@ function rule(
           ...as("invited", [event.member.userId]),
           ...as("joined", spacePeople(event.space.spaceId)),
         ],
-        groupKey: `space:${event.space.spaceId}`,
+        groupKey: event.inviteId ? `invite:${event.inviteId}` : `space:${event.space.spaceId}`,
         spaceId: event.space.spaceId,
       };
     case "space.member.joined":
@@ -867,6 +871,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           title: name,
           list: place.list,
           url: event.type === "member.invited" ? `/board?p=${encodeURIComponent(event.projectId)}` : "/",
+          invite: { who: event.member.name, place: name },
           parts: [
             who,
             t(" invited "),
@@ -889,6 +894,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           ...base,
           title: name,
           url: "/",
+          invite: { who: null, place: name },
           parts: [
             who,
             t(" invited you to "),
@@ -1216,6 +1222,25 @@ function summarise(views: NotificationView[], today: string): Omit<PushMessage, 
         ? "are overdue"
         : "are due or overdue";
     return { title: "Due", body: `${named} ${when}`, url: "/brief" };
+  }
+  // One invite to several places or people: said once, naming each.
+  // Only when one person sent them all: a Space's other admin may have
+  // invited someone else in the same window.
+  const invites = views.flatMap((v) => (v.invite ? [v.invite] : []));
+  if (
+    invites.length === views.length &&
+    new Set(views.map((v) => v.parts[0]?.text)).size === 1
+  ) {
+    const and = (list: string[]) =>
+      list.length === 1 ? list[0] : `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
+    const invited = [...new Set(invites.map((i) => i.who ?? "you"))];
+    const places = [...new Set(invites.map((i) => `"${i.place}"`))];
+    const by = last.parts[0]?.text ?? "Someone";
+    return {
+      title: places.length === 1 ? last.title : "Invites",
+      body: `${by} invited ${and(invited)} to ${and(places)}`,
+      url: invited.includes("you") ? "/" : last.url,
+    };
   }
   // Who: the person each sentence starts with, in order of first change.
   const names = [

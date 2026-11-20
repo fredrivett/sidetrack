@@ -52,6 +52,7 @@ import { ProjectColumn } from "./ProjectColumn";
 import { PullToSearch } from "./PullToSearch";
 import { runAction } from "./run-action";
 import { ShareDialog } from "./ShareDialog";
+import { InviteDialog } from "./InviteDialog";
 import { InstallReporter } from "./GetStarted";
 import type { GetStarted } from "@/lib/getStarted";
 import { SpaceMenu } from "./SpaceMenu";
@@ -103,6 +104,12 @@ const DONE_PAGE = 50;
 const NEW_ITEM_CLOSED: { open: boolean; projectId: string | null; dueToday?: boolean } = {
   open: false,
   projectId: null,
+};
+
+const SHARE_CLOSED: { open: boolean; projectId: string | null; projectName: string } = {
+  open: false,
+  projectId: null,
+  projectName: "",
 };
 
 export function Kanban({
@@ -348,11 +355,10 @@ export function Kanban({
   const [newItem, setNewItem] = useStoredState("new-item", NEW_ITEM_CLOSED, "session");
   // New list starts in the Space of the tray whose + opened it, else in none.
   const [newList, setNewList] = useState({ open: false, spaceId: "" });
-  const [share, setShare] = useState<{
-    open: boolean;
-    projectId: string | null;
-    projectName: string;
-  }>({ open: false, projectId: null, projectName: "" });
+  // Kept for this tab, so Invite people and its draft come back after a reload.
+  const [inviting, setInviting] = useStoredState("inviting", false, "session");
+  // Kept for this tab, so Share and its draft come back after a reload.
+  const [share, setShare] = useStoredState("share", SHARE_CLOSED, "session");
 
   // Active lists are on the board, in the viewer's order. Archived lists, and
   // their items, show only in the Archived view, in the same order. Each
@@ -546,7 +552,7 @@ export function Kanban({
   const openShare = useCallback(
     (projectId: string, projectName: string) =>
       setShare({ open: true, projectId, projectName }),
-    [],
+    [setShare],
   );
 
   // Open the new-item dialog with the caller's list (a list's ⋯ menu), or
@@ -822,6 +828,7 @@ export function Kanban({
             archivedCount={archived.length}
             onShowArchived={() => switchView("archived")}
             onShowActivity={() => setAudit({ open: true })}
+            onInvite={() => setInviting(true)}
           />
         </BoardHeader>
         <InvitesBanner invites={pendingInvites} spaceInvites={pendingSpaceInvites} />
@@ -1049,6 +1056,12 @@ export function Kanban({
           onOpenChange={(open) => setShare((s) => ({ ...s, open }))}
           projectId={share.projectId}
           projectName={share.projectName}
+        />
+        <InviteDialog
+          open={inviting}
+          onOpenChange={setInviting}
+          spaces={spaces.filter((s) => s.role === "admin").map(({ id, name }) => ({ id, name }))}
+          lists={active.filter((p) => p.isOwner).map(({ id, name }) => ({ id, name }))}
         />
       </BoardMain>
     </BoardDrag>

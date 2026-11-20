@@ -166,6 +166,8 @@ export type ChangeEvent =
       member: PersonAt;
       /** Absent on invites from before list roles, which were all editors. */
       role?: ListRole;
+      /** Set when one invite covered several places or people (invitePeople). */
+      inviteId?: string;
     }
   /** The list's owner changed what a member can do on it. */
   | {
@@ -250,6 +252,8 @@ export type ChangeEvent =
       member: PersonAt;
       /** Absent on invites from before Space roles beyond member. */
       role?: SpaceRole;
+      /** Set when one invite covered several places or people (invitePeople). */
+      inviteId?: string;
     }
   | {
       type: "space.member.joined" | "space.member.declined";

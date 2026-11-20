@@ -225,6 +225,31 @@ describe("deliverInviteEmail", () => {
     expect(await text("editor")).not.toContain(" as ");
   });
 
+  it("names every place one invite covers, and what they'll do in each", async () => {
+    const smtp = smtpStub();
+    await deliverInviteEmail(
+      {
+        ...INVITE,
+        places: [
+          { name: "Home", kind: "list", role: "editor" },
+          { name: "Health", kind: "list", role: "viewer" },
+          { name: "Family", kind: "space", role: "commenter" },
+        ],
+      },
+      {
+        env: { ...noEnv, SMTP_URL: "smtp://localhost:1025" },
+        fetchFn: fetchStub({}).fn,
+        log: () => {},
+        sendSmtp: smtp.fn,
+      },
+    );
+    const { subject, text } = smtp.calls[0].message;
+    expect(subject).toBe(`${INVITE.inviterName} invited you to Sidetrack`);
+    expect(text).toContain(
+      `invited you to "Home", "Health" (as a viewer) and "Family" (a space, as a commenter) in Sidetrack.`,
+    );
+  });
+
   it("labels a Resend rejection as the invite email", async () => {
     const { fn } = fetchStub({
       ok: false,

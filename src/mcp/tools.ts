@@ -104,6 +104,7 @@ import {
   updateSpace,
 } from "@/core/spaces";
 import { type InviteKind, notifyInvite, notifyMentions } from "@/lib/email";
+import { invitePeople, type InvitePlace } from "@/core/invites";
 import { getEnv } from "@/lib/env";
 import { formatItemRef, workPrTitle } from "@/lib/itemRef";
 import { checkDraftItem } from "@/lib/itemSuggest";
@@ -1832,6 +1833,61 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       return json(
         listSpaceMembers(db, userId, space_id).map(({ userId: user_id, ...m }) => ({ user_id, ...m })),
       );
+    },
+  );
+
+  server.registerTool(
+    "invite_people",
+    {
+      title: "Invite people to several places",
+      description:
+        "Invite one or more existing users to several lists and Spaces at once, each place with its own role, " +
+        "as one invite: all of it lands or none does. people are usernames (\"alice\" or \"@alice\") or emails. " +
+        "Each place is a list_id (owner only; role editor, commenter or viewer) or a space_id (admins only; " +
+        "role member, commenter or viewer). Each invitee gets one push and one email naming every place; " +
+        "people already in a place hear only of that place. Use it instead of invite_member / invite_space_member " +
+        "when the user names more than one place or person. Check with the user before inviting someone they didn't name.",
+      inputSchema: {
+        people: z.array(z.string().min(1)).min(1),
+        places: z
+          .array(
+            z.union([
+              z.object({ list_id: z.string(), role: z.enum(LIST_ROLES).optional() }),
+              z.object({ space_id: z.string(), role: z.enum(["member", "commenter", "viewer"]).optional() }),
+            ]),
+          )
+          .min(1),
+      },
+    },
+    async ({ people, places }) => {
+      const { db } = getDb();
+      const spaces = listSpaces(db, userId);
+      const resolved: InvitePlace[] = [];
+      for (const p of places) {
+        if ("list_id" in p) {
+          if (!getProject(db, userId, p.list_id)) return notFound("list", p.list_id);
+          resolved.push({ kind: "list", id: p.list_id, role: p.role ?? "editor" });
+        } else {
+          if (!spaces.some((s) => s.id === p.space_id)) return notFound("space", p.space_id);
+          resolved.push({ kind: "space", id: p.space_id, role: p.role ?? "member" });
+        }
+      }
+      const { sent, places: invited } = invitePeople(db, userId, { people, places: resolved }, SOURCE);
+      const named = invited.map(({ name, kind, role }) => ({ name, kind, role }));
+      const inviterName = getUserName(db, userId) ?? "Someone";
+      const emails = new Set(sent.flatMap((s) => (s.member.email ? [s.member.email] : [])));
+      for (const to of emails) {
+        await notifyInvite({
+          to,
+          inviterName,
+          projectName: named[0].name,
+          url: ctx.baseUrl,
+          kind: named[0].kind,
+          role: named[0].role,
+          places: named,
+        });
+      }
+      return json(sent.map((s) => ({ [s.kind === "list" ? "list_id" : "space_id"]: s.placeId, ...s.member })));
     },
   );
 

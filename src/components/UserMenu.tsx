@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, Bell, Boxes, CalendarDays, Check, CircleUserRound, History, KeyRound, Loader2, LogOut, Mail, Moon, Sun, SunMoon, Sunrise, UserRound } from "lucide-react";
+import { Archive, Bell, Boxes, CalendarDays, Check, CircleUserRound, History, KeyRound, Loader2, LogOut, Mail, Moon, Sun, SunMoon, Sunrise, UserPlus, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import posthog from "posthog-js";
@@ -48,8 +48,8 @@ const SETTINGS_LINKS: [href: string, label: string, Icon: ComponentType<{ classN
 ];
 
 /**
- * The avatar's menu: who's signed in, settings and theme, Activity and
- * Archived lists, sign out and the build.
+ * The avatar's menu: who's signed in, settings and theme, inviting people,
+ * Activity and Archived lists, sign out and the build.
  */
 export function UserMenu({
   user,
@@ -57,6 +57,7 @@ export function UserMenu({
   onShowArchived,
   onShowActivity,
   onTry,
+  onInvite,
 }: {
   user: AvatarUser | null;
   /** How many lists are archived, for the Archived lists item. */
@@ -70,6 +71,8 @@ export function UserMenu({
    * do instead, as there's no account to open them on.
    */
   onTry?: () => void;
+  /** Opens Invite people, for several lists and Spaces at once. */
+  onInvite: () => void;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -179,6 +182,10 @@ export function UserMenu({
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
+          <DropdownMenuItem onClick={onInvite}>
+            <UserPlus />
+            Invite people…
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={onShowActivity}>
             <History />
             Activity

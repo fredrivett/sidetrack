@@ -116,6 +116,7 @@ import {
   savePushSubscription as savePushSubscriptionCore,
 } from "@/core/push";
 import type { AuditSource, ListRole, NotificationLevel, ProjectStatus, SpaceColor, SpaceRole } from "@/core/schema";
+import { invitePeople as invitePeopleCore, type InvitePlace } from "@/core/invites";
 import {
   acceptSpaceInvite as acceptSpaceInviteCore,
   createSpace as createSpaceCore,
@@ -295,6 +296,37 @@ export async function inviteMemberAction(projectId: string, person: string, role
 
   refresh();
   return member;
+}
+
+/**
+ * Invite several people to several lists and Spaces at once, each place
+ * with its own role. All or nothing; each person gets one email naming
+ * every place.
+ */
+export async function invitePeopleAction(people: string[], places: InvitePlace[]) {
+  const session = await getCurrentSession();
+  if (!session) redirect("/login");
+  const userId = session.user.id;
+  const { db } = getDb();
+  const { sent, places: named } = invitePeopleCore(db, userId, { people, places }, SOURCE);
+
+  // One email each, best-effort and after answering, like a single invite.
+  const url = await appBaseUrl();
+  const emails = new Map(sent.flatMap((s) => (s.member.email ? [[s.member.userId, s.member.email]] : [])));
+  for (const to of emails.values()) {
+    const invite = {
+      to,
+      inviterName: session.user.name,
+      projectName: named[0]?.name ?? "",
+      url,
+      kind: named[0]?.kind,
+      role: named[0]?.role,
+      places: named.map(({ name, kind, role }) => ({ name, kind, role })),
+    };
+    after(() => notifyInvite(invite));
+  }
+  refresh();
+  return sent.length;
 }
 
 /** Change what a member of the list can do on it: edit, comment or only view. */
