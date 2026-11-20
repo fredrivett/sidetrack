@@ -728,6 +728,11 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           : a?.name || (a?.displayUsername ? `@${a.displayUsername}` : a?.email) || "Someone"),
       em: "person",
     };
+    // Whoever joined, even through their agent: it's them on the list now.
+    const person: Part = {
+      text: a?.name || (a?.displayUsername ? `@${a.displayUsername}` : a?.email) || "Someone",
+      em: "person",
+    };
     const t = (text: string): Part => ({ text });
     const base = {
       id: r.id,
@@ -909,7 +914,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
             ? list.space
               ? [who, t(" added "), place, t(" to "), { text: list.space, em: "place", quote: true }]
               : [who, t(" added "), place]
-            : [who, t(" joined "), place, ...(event.type === "member.joined" ? asRole(event.role) : [])];
+            : [person, t(" joined "), place, ...(event.type === "member.joined" ? asRole(event.role) : [])];
       return [
         {
           ...base,
@@ -934,7 +939,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           parts:
             event.type === "space.member.role"
               ? [who, t(` made you ${roleWords(event.role)} of `), space]
-              : [who, t(" joined "), space, ...asRole(event.role)],
+              : [person, t(" joined "), space, ...asRole(event.role)],
           snippet: null,
         },
       ];
