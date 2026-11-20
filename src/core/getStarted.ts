@@ -1,7 +1,7 @@
 // The Agenda's Get started stack: a few steps that make Sidetrack part of
 // someone's day. Each step's progress is read from what the user has done
-// (their lists, who they share with, the audit log, their API keys and push
-// devices), so it can't drift from the data and people who did a step before
+// (their lists, who they share with, two-factor sign-in, the audit log, their
+// API keys and push devices), so it can't drift from the data and people who did a step before
 // the stack existed get it ticked. The one fact nothing else records, that the app was installed,
 // is an audited `profile.installed` event. How the stack is left (which cards
 // went to the back, whether it's collapsed) is view state on the user's row.
@@ -177,6 +177,13 @@ export function getGetStarted(db: Db, userId: string): GetStarted {
 
   const done: Record<GetStartedStep, boolean> = {
     lists: lists >= GET_STARTED_MIN_LISTS,
+    // Unticks if they turn it off again.
+    secure:
+      db
+        .select({ on: users.twoFactorEnabled })
+        .from(users)
+        .where(eq(users.id, userId))
+        .get()?.on === true,
     phone: installed.has("phone") || iosPush,
     computer: installed.has("computer"),
     share: isSharing(db, userId),

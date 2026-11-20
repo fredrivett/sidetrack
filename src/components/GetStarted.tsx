@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, House } from "lucide-react";
+import { Check, ChevronDown, House, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import posthog from "posthog-js";
 import { unstable_rethrow } from "next/navigation";
@@ -36,6 +36,7 @@ import { runAction } from "./run-action";
 
 const TITLES: Record<GetStartedStep, string> = {
   lists: "Set up your lists",
+  secure: "Secure your account",
   phone: "Add Sidetrack to your Home Screen",
   computer: "Install Sidetrack on your computer",
   share: "Share with someone",
@@ -186,6 +187,15 @@ export function GetStartedStack({
           <Button size="sm" onClick={onAddList}>
             Add a list
           </Button>
+        );
+        break;
+      case "secure":
+        why = "Turn on two-factor sign-in, so signing in also asks for a code from an authenticator app. Your password alone won't get anyone in.";
+        actions = (
+          <Link href="/settings/profile?setup=two-factor" className={buttonVariants({ size: "sm" })}>
+            <ShieldCheck data-icon="inline-start" />
+            Set up two-factor
+          </Link>
         );
         break;
       case "phone": {

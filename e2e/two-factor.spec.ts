@@ -2,9 +2,12 @@ import { totpCode } from "@/auth/totp.test-helper";
 import { expect, test } from "./fixtures";
 
 test("sets up two-factor sign-in, then signs in with a code", async ({ page, user }) => {
-  await page.goto("/settings/profile");
+  // From Get started's card, which opens setup at the password step.
+  await page.goto("/brief");
+  const getStarted = page.getByRole("region", { name: "Get started" });
+  await getStarted.getByRole("button", { name: "Secure your account" }).click();
+  await getStarted.getByRole("link", { name: "Set up two-factor" }).click();
   const panel = page.getByRole("region", { name: "Two-factor sign-in" });
-  await panel.getByRole("button", { name: "Set up" }).click();
   await panel.getByRole("textbox", { name: "Your password" }).fill(user.password);
   await panel.getByRole("button", { name: "Continue" }).click();
 
@@ -31,4 +34,9 @@ test("sets up two-factor sign-in, then signs in with a code", async ({ page, use
   await expect(
     page.getByRole("region", { name: "Two-factor sign-in" }).getByText("On", { exact: true }),
   ).toBeVisible();
+  // And Get started has ticked it.
+  await page.goto("/brief");
+  await expect(
+    page.getByRole("region", { name: "Get started" }).getByRole("listitem").filter({ hasText: "Secure your account" }),
+  ).toContainText("Done");
 });

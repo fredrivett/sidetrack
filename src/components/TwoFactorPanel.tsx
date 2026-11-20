@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Download, KeyRound, ShieldCheck, ShieldOff } from "lucide-react";
 import { toast } from "sonner";
@@ -43,10 +43,26 @@ function manualKey(totpURI: string): string {
  * the change and the audit triggers (migration 0065) log it. Errors show
  * inline, like the other settings panels.
  */
-export function TwoFactorPanel({ email, enabled: initialEnabled }: { email: string; enabled: boolean }) {
+export function TwoFactorPanel({
+  email,
+  enabled: initialEnabled,
+  startSetup = false,
+}: {
+  email: string;
+  enabled: boolean;
+  /** Open straight on the password step of setup, scrolled into view, as
+   * Get started's "Secure your account" card links here. */
+  startSetup?: boolean;
+}) {
   const router = useRouter();
   const [enabled, setEnabled] = useState(initialEnabled);
-  const [view, setView] = useState<View>({ kind: "idle" });
+  const [view, setView] = useState<View>(
+    startSetup && !initialEnabled ? { kind: "confirm", action: "enable" } : { kind: "idle" },
+  );
+  const sectionRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (startSetup && !initialEnabled) sectionRef.current?.scrollIntoView({ block: "center" });
+  }, [startSetup, initialEnabled]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -134,6 +150,7 @@ export function TwoFactorPanel({ email, enabled: initialEnabled }: { email: stri
 
   return (
     <section
+      ref={sectionRef}
       aria-labelledby="two-factor-heading"
       aria-busy={pending || undefined}
       className="space-y-3 rounded-lg border border-border p-4"
