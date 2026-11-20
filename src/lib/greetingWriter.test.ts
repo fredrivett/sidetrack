@@ -34,6 +34,7 @@ const brief: AgendaBrief = {
   thisWeek: [],
   undated: [],
   stale: [],
+  dayNote: null,
 };
 const pick: GreetingPick = {
   moments: ["triage", "plan"],
@@ -140,6 +141,21 @@ describe("checkWriterOutput", () => {
   it("offers triage only when slipped tasks were picked", () => {
     const plan = writerInput(brief, { ...pick, moments: ["plan"], items: { plan: [sam] } });
     expect(checkWriterOutput("Just {{item:1}}. Want to {{action:triage|give it a new day}}?", plan)).toBeNull();
+  });
+
+  it("offers to move today's tasks only when a lighter day was picked, and passes on the note", () => {
+    const offer = "Just {{item:1}} today. Want to {{action:lighten|move it to tomorrow}}?";
+    const plan = writerInput(brief, { ...pick, moments: ["plan"], items: { plan: [sam] } });
+    expect(checkWriterOutput(offer, plan)).toBeNull();
+    const tired = { ...brief, dayNote: "Not feeling well" };
+    const lighter = writerInput(tired, { ...pick, moments: ["plan", "lighten"], items: { plan: [sam] } });
+    expect(lighter.facts).toMatchObject({ note_for_today: "Not feeling well" });
+    expect(plan.facts).not.toHaveProperty("note_for_today");
+    expect(checkWriterOutput(offer, lighter)).toBe(
+      "Just {{item:s1}} today. Want to {{action:lighten|move it to tomorrow}}?",
+    );
+    // Triage stays tied to what slipped, whatever else was picked.
+    expect(checkWriterOutput("Just {{item:1}}. Want to {{action:triage|give it a new day}}?", lighter)).toBeNull();
   });
 
   it("keeps a reply split over lines as one paragraph", () => {

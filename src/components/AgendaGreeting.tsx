@@ -1,16 +1,19 @@
 "use client";
 
-import { Plus, RefreshCw, Settings, ThumbsDown, ThumbsUp } from "lucide-react";
+import { NotebookPen, Plus, RefreshCw, Settings, ThumbsDown, ThumbsUp } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { setAgendaReadAction } from "@/app/actions";
+import { setAgendaReadAction, setDayNoteAction } from "@/app/actions";
 import type { Greeting } from "@/core/agendaGreeting";
 import type { Item } from "@/core/schema";
 import { parseGreeting } from "@/lib/greeting";
+import { NOTE_MAX } from "@/lib/greetingPrefs";
 import { aiRead } from "./ai-read";
+import { EditableText } from "./EditableText";
 import type { FeedbackAbout } from "./FeedbackDialog";
 import { GreetingDialog, type RenderItem } from "./GreetingDialog";
+import { runAction } from "./run-action";
 import { useToday } from "./use-day-start";
 
 const READ_MS = 2000;
@@ -121,6 +124,8 @@ export function AgendaGreeting({
   const today = useToday();
   // Undefined while it loads; null when there's none to show.
   const [greeting, setGreeting] = useState<Greeting | null | undefined>(undefined);
+  // The viewer's note for today: as each greeting brings it, then as they save it.
+  const [note, setNote] = useState("");
   // Which of its dialogs is up, kept as it closes so it animates out as it was.
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogList, setDialogList] = useState<"explain" | "others">("explain");
@@ -155,6 +160,7 @@ export function AgendaGreeting({
       (g) => {
         if (!live) return;
         setGreeting(g);
+        setNote(g?.note ?? "");
         setAsking(false);
         const at = g?.retryInMs === undefined ? null : Date.now() + g.retryInMs;
         setRetryAt(at);
@@ -424,6 +430,30 @@ export function AgendaGreeting({
               </div>
           </>
         )
+      )}
+
+      {/* What they wrote about today, for the greeting to be written with:
+          saved as typed, then the greeting asks to be rewritten with it.
+          Not offered when AI is off, as nothing would read it. */}
+      {greeting && !greeting.aiOff && (
+        <div className="mt-3 flex animate-in items-baseline gap-2 fade-in duration-500">
+          <NotebookPen aria-hidden className="size-3.5 shrink-0 translate-y-0.5 text-neutral-400 dark:text-neutral-500" />
+          <EditableText
+            value={note}
+            placeholder="How's today looking?"
+            maxLength={NOTE_MAX}
+            onSave={async (next) => {
+              const saved = await runAction(
+                setDayNoteAction(next).then((kept) => setNote(kept ?? "")),
+                "save your note for today",
+              );
+              if (saved) askAgain(true);
+            }}
+            renderValue={(v) => <span className="italic">&ldquo;{v}&rdquo;</span>}
+            className="min-w-0 flex-1 rounded-md text-sm text-neutral-600 outline-none hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:text-neutral-400 dark:hover:text-neutral-100 dark:focus-visible:ring-neutral-600"
+            inputClassName="min-w-0 flex-1"
+          />
+        </div>
       )}
 
       <GreetingDialog

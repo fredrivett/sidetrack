@@ -33,6 +33,10 @@ export interface Greeting {
   trace?: GreetingTrace;
   /** Out of date, and may be written again in this many ms: when to ask again. */
   retryInMs?: number;
+  /** The viewer's note for today (dayNotes.ts), as it is now; null or absent for none. */
+  note?: string | null;
+  /** AI isn't set up, so nothing reads a note: the page doesn't offer one. */
+  aiOff?: true;
 }
 
 /** How a greeting was worked out: what it looked at and what it decided. */
@@ -56,6 +60,8 @@ export interface GreetingTrace {
     finishedSince: number;
     /** The day it looks back to, or null the first time. */
     sinceDay: string | null;
+    /** Whether it read the viewer's note for today. Absent on ones from before notes. */
+    dayNote?: boolean;
   };
   /** Each thing it could say, Jev's score and why it was or wasn't said; null before Jev. */
   moments: Array<{ moment: Moment; score: number; said: boolean; why: string }> | null;
@@ -72,7 +78,11 @@ export interface GreetingTrace {
  * with no text; and, by item id, how each item it names stood when written
  * (stampOf), so a change to one has it written again. Absent on older rows.
  */
-export type StoredGreeting = Omit<Greeting, "hello" | "written"> & { stamps?: Record<string, string> };
+export type StoredGreeting = Omit<Greeting, "hello" | "written" | "note"> & {
+  stamps?: Record<string, string>;
+  /** The note for today it was written with; absent on rows from before notes, which had none. */
+  note?: string | null;
+};
 
 /** What about an item the greeting depends on: its title, days, whether it's done, and who has it. */
 function stampsOf(db: Db, ids: string[]): Record<string, string> {
@@ -136,6 +146,7 @@ function traceOf(
       stale: brief.stale.length,
       finishedSince: brief.lookBack.finishedCount,
       sinceDay: brief.sinceDay,
+      dayNote: brief.dayNote !== null,
     },
     moments: jev
       ? jev.pick.considered
@@ -241,7 +252,15 @@ function fromTemplate(
   const hello = helloFor(brief, name);
   // templateGreeting always opens with the hello.
   const text = templateGreeting(brief, name, prefs.length).slice(hello.length).trimStart();
-  return { hello, text, titles: titlesIn(text, brief), others: [], written: false, trace };
+  return {
+    hello,
+    text,
+    titles: titlesIn(text, brief),
+    others: [],
+    written: false,
+    trace,
+    note: brief.dayNote,
+  };
 }
 
 /**
@@ -254,13 +273,14 @@ export function greetingFor(
   timeZone: string,
   now = Date.now(),
 ): Greeting {
-  const { brief, name, prefs } = briefFor(db, viewerId, timeZone, now);
-  return fromTemplate(
-    brief,
-    name,
-    prefs,
-    traceOf(brief, prefs, timeZone, now, "AI isn't set up on this server"),
-  );
+  const found = briefFor(db, viewerId, timeZone, now);
+  // The templates don't read the note, so it isn't one of the facts.
+  const brief = { ...found.brief, dayNote: null };
+  const { name, prefs } = found;
+  return {
+    ...fromTemplate(brief, name, prefs, traceOf(brief, prefs, timeZone, now, "AI isn't set up on this server")),
+    aiOff: true,
+  };
 }
 
 /**
@@ -282,28 +302,29 @@ export async function writtenGreetingFor(
   /** Asked for with "Rewrite now": it waits ASK_NOW_EVERY_MS, not the back-off. The daily caps still hold. */
   rewriteNow = false,
 ): Promise<Greeting> {
+  if (!keys.jev || !keys.anthropic) return greetingFor(db, viewerId, timeZone, now);
   const { brief, name, prefs } = briefFor(db, viewerId, timeZone, now);
   const hello = helloFor(brief, name);
   const template = (why: string, trace = traceOf(brief, prefs, timeZone, now, why)) =>
     fromTemplate(brief, name, prefs, { ...trace, why });
-  if (!keys.jev || !keys.anthropic) return template("AI isn't set up on this server");
   // One greeting a morning, afternoon and evening, written again when an
   // item it names changes (ticked off, renamed, moved to another day or
-  // person), but not as other things change or a read stamp moves the
-  // look-back.
+  // person) or the viewer's note for today does, but not as other things
+  // change or a read stamp moves the look-back.
   const key = `${brief.today}:${brief.partOfDay}`;
   const row = db.select().from(agendaGreetings).where(eq(agendaGreetings.userId, viewerId)).get();
   const same = row?.key === key ? row.greeting : null;
   // One kept from before traces were recorded is written again, once, so
   // "What is this?" has something to explain.
   const kept = same?.text && same.trace && stillVisible(db, viewerId, same) ? same : null;
-  // The stamps stay on the server.
+  // The stamps stay on the server, and the note shown is today's as it is now.
   const shown = (s: StoredGreeting): Greeting => {
     const g = { ...s };
     delete g.stamps;
-    return { hello, ...g, written: true };
+    delete g.note;
+    return { hello, ...g, written: true, note: brief.dayNote };
   };
-  if (kept && unchanged(db, kept)) return shown(kept);
+  if (kept && unchanged(db, kept) && (kept.note ?? null) === brief.dayNote) return shown(kept);
   // Until it may ask again, the one it has stays, out of date or not,
   // rather than the reader seeing it swap for the built-in one. With none
   // kept, the built-in one, still saying when to ask again.
@@ -399,13 +420,14 @@ export async function writtenGreetingFor(
     stamps: Object.fromEntries(Object.keys(titles).flatMap((id) => (id in briefed ? [[id, briefed[id]]] : []))),
     others: pick.others.map((i) => ({ id: i.id, title: i.title })),
     trace: traceOf(brief, prefs, timeZone, now, null, { scores, pick, named: written.text }),
+    note: brief.dayNote,
   };
   keep(greeting);
   return shown(greeting);
 }
 
 /** What an action token does when tapped. */
-export type GreetingAction = "triage";
+export type GreetingAction = "triage" | "lighten";
 
 const item = (i: BriefItem) => `{{item:${i.id}}}`;
 const action = (name: GreetingAction, words: string) => `{{action:${name}|${words}}}`;

@@ -126,10 +126,12 @@ import {
   setBoardFilters as setBoardFiltersCore,
   setGreetingPrefs as setGreetingPrefsCore,
   setTimeZone as setTimeZoneCore,
+  getTimeZone as getTimeZoneCore,
   setAvatarUrl as setAvatarUrlCore,
   setUploadedAvatar as setUploadedAvatarCore,
   setUsername as setUsernameCore,
 } from "@/core/users";
+import { setDayNote as setDayNoteCore } from "@/core/dayNotes";
 import { getCurrentSession, requireUserId } from "@/auth/session";
 import { sendAgentRequest } from "@/lib/agentRequest";
 import { notifyInvite, notifyMentions } from "@/lib/email";
@@ -138,6 +140,7 @@ import type { ItemFilters } from "@/lib/filters";
 import type { GreetingPrefs } from "@/lib/greetingPrefs";
 import { sendPush } from "@/lib/push";
 import type { Repeat } from "@/lib/repeat";
+import { dayOf } from "@/lib/time";
 
 const SOURCE: AuditSource = "web";
 
@@ -713,6 +716,18 @@ export async function setAgendaReadAction() {
   const userId = await requireUserId();
   const { db } = getDb();
   setAgendaReadAtCore(db, userId, Date.now());
+}
+
+/**
+ * The signed-in user's note for today, in their time zone; "" removes it.
+ * Returns it as kept. No refresh: only their greeting reads it, and it asks again.
+ */
+export async function setDayNoteAction(text: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const timeZone = getTimeZoneCore(db, userId);
+  if (!timeZone) throw new Error("time zone not known yet");
+  return setDayNoteCore(db, userId, dayOf(Date.now(), timeZone), String(text));
 }
 
 /** Save the browser's timezone for agents' "today". No refresh: nothing shown changes. */
