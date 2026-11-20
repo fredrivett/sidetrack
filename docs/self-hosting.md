@@ -219,6 +219,20 @@ links go to the server log ([Password resets](#password-resets)).
 | --- | --- | --- |
 | `FEEDBACK_LIST_ID` | unset | The id of one of your lists (the `p=` in its URL). Shows a **Send feedback** button in everyone's header and files each one there as an item labelled Bug, Idea or Other and Feedback, with who sent it, their page and build, and PostHog replay links when PostHog is on. Senders don't join the list or see what others sent. Unset hides the form |
 
+### Email forwarding
+
+Gives each person a private address to forward email to, kept for triage
+against their lists. Receiving runs on a Cloudflare Email Worker in
+`workers/email-in`: deploy it with `wrangler deploy`, set its `EMAIL_IN_SECRET`
+with `wrangler secret put` and its `SIDETRACK_URL` in `wrangler.toml`, then add
+the domain to Cloudflare Email Routing with a catch-all rule that sends to the
+Worker.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `EMAIL_IN_DOMAIN` | unset | The domain addresses are on, such as `to.example.com`. Set with `EMAIL_IN_SECRET`; unset turns email forwarding off |
+| `EMAIL_IN_SECRET` | unset | A random value, such as `openssl rand -hex 32`, the same as the Worker's. Sidetrack refuses deliveries not signed with it |
+
 ### AI suggestions
 
 | Variable | Default | Description |

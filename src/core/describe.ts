@@ -530,6 +530,12 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
       return event.included
         ? [t("included calendar "), key(event.name), t(" in Sidetrack")]
         : [t("left calendar "), key(event.name), t(" out of Sidetrack")];
+    case "email.address.created":
+      return event.replaced
+        ? [t("replaced the email forwarding address")]
+        : [t("set up an email forwarding address")];
+    case "email.address.removed":
+      return [t("turned off email forwarding")];
     case "profile.username":
       return [
         t("changed username from "),

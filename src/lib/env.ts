@@ -74,6 +74,10 @@ export interface ServerEnv {
   ANTHROPIC_API_KEY: string | undefined;
   // The list "Send feedback" files items in. Unset hides the form.
   FEEDBACK_LIST_ID: string | undefined;
+  // Email in: the domain users' addresses are on (say, to.sidetrack.it) and
+  // the secret the receiving Cloudflare Worker (workers/email-in) signs each
+  // email with. Unset turns email in off.
+  EMAIL_IN: { domain: string; secret: string } | undefined;
   // Web Push (VAPID) keys and contact, for push notifications. Unset turns
   // push off. The subject defaults to BETTER_AUTH_URL.
   VAPID: { publicKey: string; privateKey: string; subject: string } | undefined;
@@ -148,12 +152,25 @@ function schemaFor(mode: EnvMode) {
       TYPESAFE_API_KEY: optionalTrimmed,
       ANTHROPIC_API_KEY: optionalTrimmed,
       FEEDBACK_LIST_ID: optionalTrimmed,
+      EMAIL_IN_DOMAIN: optionalTrimmed,
+      EMAIL_IN_SECRET: optionalTrimmed,
       VAPID_PUBLIC_KEY: optionalTrimmed,
       VAPID_PRIVATE_KEY: optionalTrimmed,
       VAPID_SUBJECT: optionalTrimmed,
       CALENDAR_SECRET_KEY: optionalTrimmed,
     })
     .superRefine((env, ctx) => {
+      // A domain without a secret couldn't check the Worker's deliveries, and
+      // a secret without a domain has no addresses to hand out.
+      if (!env.EMAIL_IN_DOMAIN !== !env.EMAIL_IN_SECRET) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["EMAIL_IN_SECRET"],
+          message:
+            "EMAIL_IN_DOMAIN and EMAIL_IN_SECRET go together: set both (the secret " +
+            "is the one the email-in Worker signs with) or neither.",
+        });
+      }
       // Half a key pair would only fail when the first push is sent.
       if (!env.VAPID_PUBLIC_KEY !== !env.VAPID_PRIVATE_KEY) {
         ctx.addIssue({
@@ -280,6 +297,10 @@ function schemaFor(mode: EnvMode) {
       ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
       FEEDBACK_LIST_ID: env.FEEDBACK_LIST_ID,
       CALENDAR_SECRET_KEY: env.CALENDAR_SECRET_KEY ? (parseSecretKey(env.CALENDAR_SECRET_KEY) ?? undefined) : undefined,
+      EMAIL_IN:
+        env.EMAIL_IN_DOMAIN && env.EMAIL_IN_SECRET
+          ? { domain: env.EMAIL_IN_DOMAIN.toLowerCase(), secret: env.EMAIL_IN_SECRET }
+          : undefined,
       VAPID:
         // superRefine checked that a key pair comes with a subject.
         env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY

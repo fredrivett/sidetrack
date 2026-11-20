@@ -43,6 +43,8 @@ const eslintConfig = defineConfig([
     // Stryker's sandbox copies (with injected @ts-nocheck) and HTML report.
     ".stryker-tmp/**",
     "reports/**",
+    // The email-in Worker is its own package, built by wrangler.
+    "workers/**",
   ]),
   // Agent anti-pattern rules. Agents reach for `any` and stub throws when the
   // type or implementation is hard; block them at the linter so they show up

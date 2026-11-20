@@ -261,6 +261,8 @@ const TABLE_AUDIT: Record<string, "audited" | `exempt: ${string}`> = {
   agent_webhooks: "audited",
   comments: "audited",
   github_webhooks: "audited",
+  email_addresses: "audited",
+  inbound_emails: "exempt: received mail awaiting triage, seen only by its owner; acting on it is audited",
   github_webhook_secrets: "audited",
   users: "audited",
   avatars: "audited",

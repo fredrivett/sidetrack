@@ -331,6 +331,9 @@ export type AccountEvent =
   /** Signed in again with a new password, after the old one stopped working. */
   | { type: "calendar.reconnected"; accountId: string; username: string }
   | { type: "calendar.included"; accountId: string; calendarId: string; name: string; included: boolean }
+  /** `replaced`: a new address for a user who had one; the old one stops working. */
+  | { type: "email.address.created"; addressId: string; replaced: boolean }
+  | { type: "email.address.removed"; addressId: string }
   | { type: "profile.username"; userId: string; from: string; to: string }
   /** `image` null: cleared. */
   | { type: "profile.avatar"; userId: string; image: string | null; uploaded?: true }
@@ -496,6 +499,10 @@ export function auditColumns(event: ChangeEvent): {
     case "calendar.reconnected":
     case "calendar.included":
       return account("update", "calendar", event.accountId);
+    case "email.address.created":
+      return account(event.replaced ? "update" : "create", "email_address", event.addressId);
+    case "email.address.removed":
+      return account("delete", "email_address", event.addressId);
     case "profile.username":
     case "profile.password":
       return account("update", "profile", event.userId);
