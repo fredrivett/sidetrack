@@ -56,6 +56,7 @@ export function UserMenu({
   archivedCount,
   onShowArchived,
   onShowActivity,
+  onTry,
 }: {
   user: AvatarUser | null;
   /** How many lists are archived, for the Archived lists item. */
@@ -64,6 +65,11 @@ export function UserMenu({
   onShowArchived: () => void;
   /** Opens Activity for the whole board. */
   onShowActivity: () => void;
+  /**
+   * The landing page's preview: what settings, Archived lists and Sign out
+   * do instead, as there's no account to open them on.
+   */
+  onTry?: () => void;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -127,17 +133,24 @@ export function UserMenu({
         )}
         <DropdownMenuGroup>
           <DropdownMenuLabel className="px-2.5">Settings</DropdownMenuLabel>
-          {SETTINGS_LINKS.map(([href, label, Icon]) => (
-            <DropdownMenuItem
-              key={href}
-              render={
-                <Link href={href}>
-                  <Icon />
-                  {label}
-                </Link>
-              }
-            />
-          ))}
+          {SETTINGS_LINKS.map(([href, label, Icon]) =>
+            onTry ? (
+              <DropdownMenuItem key={href} onClick={onTry}>
+                <Icon />
+                {label}
+              </DropdownMenuItem>
+            ) : (
+              <DropdownMenuItem
+                key={href}
+                render={
+                  <Link href={href}>
+                    <Icon />
+                    {label}
+                  </Link>
+                }
+              />
+            ),
+          )}
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>
               <ThemeIcon />
@@ -170,14 +183,19 @@ export function UserMenu({
             <History />
             Activity
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={onShowArchived}>
+          <DropdownMenuItem onClick={onTry ?? onShowArchived}>
             <Archive />
             Archived lists{archivedCount > 0 ? ` (${archivedCount})` : ""}
           </DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        {/* Stays open so "Signing out…" shows until the redirect to /login. */}
-        <DropdownMenuItem closeOnClick={false} onClick={onSignOut} disabled={pending}>
+        {/* Stays open so "Signing out…" shows until the redirect to /login;
+            the preview's closes, for its toast. */}
+        <DropdownMenuItem
+          closeOnClick={!!onTry}
+          onClick={onTry ?? onSignOut}
+          disabled={pending}
+        >
           {pending ? <Loader2 className="animate-spin" /> : <LogOut />}
           {pending ? "Signing out…" : "Sign out"}
         </DropdownMenuItem>

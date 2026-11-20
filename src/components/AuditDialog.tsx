@@ -181,7 +181,7 @@ function FeedCommentRow({
   onOpen,
 }: {
   comment: FeedComment;
-  project: Project | undefined;
+  project: Pick<Project, "name" | "prefix"> | undefined;
   people: AssigneeView[] | undefined;
   showList: boolean;
   onOpen?: () => void;
@@ -236,16 +236,19 @@ export function AuditDialog({
   items = [],
   onOpenItem,
   onClose,
+  preview,
 }: {
   open: boolean;
   projectId?: string;
-  projects: Project[];
+  projects: Pick<Project, "id" | "name" | "prefix">[];
   /** Who can open each list's items, for the comments' mentions. */
   assigneesByProject?: Record<string, AssigneeView[]>;
   /** The items the board has, which a comment's item can be opened from. */
   items?: Item[];
   onOpenItem?: (item: Item) => void;
   onClose: () => void;
+  /** The landing page's preview: these, newest first, instead of loading them. */
+  preview?: { entries: AuditEntryWithActor[]; comments: FeedComment[] };
 }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [limit, setLimit] = useState(PAGE);
@@ -293,7 +296,7 @@ export function AuditDialog({
   const loaded = useRef({ projectId, filter, limit });
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || preview) return;
     let active = true;
     start(async () => {
       // The Comments tab reads the comments; every other tab, the log.
@@ -331,12 +334,23 @@ export function AuditDialog({
     return () => {
       active = false;
     };
-  }, [open, projectId, filter, limit]);
+  }, [open, projectId, filter, limit, preview]);
 
   const showingComments = filter === "comments";
-  const groups = useMemo(() => byDay(entries, (e) => e.ts), [entries]);
-  const commentGroups = useMemo(() => byDay(comments, (c) => c.createdAt), [comments]);
-  const shownCount = showingComments ? comments.length : entries.length;
+  const shownEntries = useMemo(
+    () =>
+      preview
+        ? preview.entries.filter((e) => filter === "all" || e.source === filter)
+        : entries,
+    [preview, filter, entries],
+  );
+  const shownComments = preview?.comments ?? comments;
+  const groups = useMemo(() => byDay(shownEntries, (e) => e.ts), [shownEntries]);
+  const commentGroups = useMemo(
+    () => byDay(shownComments, (c) => c.createdAt),
+    [shownComments],
+  );
+  const shownCount = showingComments ? shownComments.length : shownEntries.length;
 
   // 500 is the most the log or the feed returns, so there's no more to show
   // past it.
