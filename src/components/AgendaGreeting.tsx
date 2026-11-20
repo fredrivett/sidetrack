@@ -1,9 +1,10 @@
 "use client";
 
-import { NotebookPen, Plus, RefreshCw, Settings, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
+import { ChevronDown, NotebookPen, Plus, RefreshCw, Settings, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { setAgendaReadAction, setDayNoteAction } from "@/app/actions";
 import type { Greeting } from "@/core/agendaGreeting";
 import type { Item } from "@/core/schema";
@@ -11,12 +12,13 @@ import { DAY_TAGS, type DayTag, joinDayNote, splitDayNote, toggleDayTag } from "
 import { parseGreeting } from "@/lib/greeting";
 import { NOTE_MAX } from "@/lib/greetingPrefs";
 import { aiRead } from "./ai-read";
-import { EditableText } from "./EditableText";
 import type { FeedbackAbout } from "./FeedbackDialog";
 import { GreetingDialog, type RenderItem } from "./GreetingDialog";
 import { runAction } from "./run-action";
 import { Struck } from "./Struck";
 import { useToday } from "./use-day-start";
+import { useDraft } from "./use-draft";
+import { useStoredState } from "./use-stored-state";
 
 const READ_MS = 2000;
 
@@ -170,6 +172,9 @@ export function AgendaGreeting({
   };
 
   const notesSaving = useRef(0);
+  // Held while a save is in flight: the server cleans the note up, and its
+  // saved text is what the box's draft is kept against.
+  const [savingNote, setSavingNote] = useState(false);
   /**
    * Shows `next` as today's note at once and saves it, putting the last one
    * back if it fails; once saves stop for a moment, the greeting is
@@ -184,23 +189,54 @@ export function AgendaGreeting({
     show(next);
     clearTimeout(rewriteSoon.current);
     notesSaving.current += 1;
+    setSavingNote(true);
     const saved = await runAction(
       // As the server kept it, unless it's been changed again since.
       setDayNoteAction(next).then((kept) => noteNow.current === next && show(kept ?? "")),
       "save your note for today",
     );
     notesSaving.current -= 1;
+    setSavingNote(notesSaving.current > 0);
     // Even after a failure: an earlier save in the run may have landed. One
     // that didn't change the note is answered without asking Claude.
     if (notesSaving.current === 0) rewriteSoon.current = setTimeout(() => askAgain(true), 1500);
     if (!saved && noteNow.current === next) show(before);
     return saved;
   };
-  const toggleTag = (tag: DayTag) => {
-    const next = toggleDayTag(noteNow.current, tag);
-    if (next !== null) void saveNote(next);
-  };
   useEffect(() => () => clearTimeout(rewriteSoon.current), []);
+
+  // The check-in folds away under its heading, as each person leaves it.
+  const [noteOpen, setNoteOpen] = useStoredState("greeting:note-open", true);
+  const noteId = useId();
+  // What's typed, kept through a reload until it's saved; per day, so
+  // yesterday's unsaved words don't turn up today.
+  const noteDraft = useDraft(today ? `day:${today}:note` : null, dayNote.rest);
+  // Escape drops the edit; the blur it causes then saves nothing.
+  const cancelled = useRef(false);
+  /** Saves what's typed with the note's tags, on leaving the box. */
+  const saveTyped = () => {
+    if (cancelled.current) {
+      cancelled.current = false;
+      return;
+    }
+    // Held: the box took no typing, and the save under way decides the draft.
+    if (notesSaving.current > 0) return;
+    const typedNow = noteDraft.value;
+    if (typedNow.trim() === dayNote.rest) {
+      noteDraft.clear();
+      return;
+    }
+    void saveNote(joinDayNote(splitDayNote(noteNow.current).tags, typedNow)).then(
+      // A failed save keeps the draft (see "Drafts" in AGENTS.md).
+      (saved) => saved && noteDraft.clear(),
+    );
+  };
+
+  /** Toggles `tag`, saving it with what's in the box, even if not saved yet. */
+  const toggleTag = (tag: DayTag) => {
+    const next = toggleDayTag(joinDayNote(splitDayNote(noteNow.current).tags, noteDraft.value), tag);
+    if (next !== null) void saveNote(next).then((saved) => saved && noteDraft.clear());
+  };
 
   // Tags that fit what's being typed, asked for once typing pauses. Kept
   // once the edit's over, to tap; a failed ask suggests nothing new.
@@ -518,50 +554,98 @@ export function AgendaGreeting({
           landing page's preview, where it can't be saved. */}
       {greeting && !greeting.aiOff && !isFixed && (
         <div className="mt-3 animate-in fade-in duration-500">
-          <div className="flex items-baseline gap-2">
-            <NotebookPen aria-hidden className="size-3.5 shrink-0 translate-y-0.5 text-neutral-400 dark:text-neutral-500" />
-            <EditableText
-              value={dayNote.rest}
-              placeholder={dayNote.tags.length ? "Anything else?" : "How's today looking?"}
-              // What's left of the note once its tags are in.
-              maxLength={NOTE_MAX - (dayNote.tags.length ? joinDayNote(dayNote.tags, "x").length - 1 : 0)}
-              onSave={(rest) => saveNote(joinDayNote(splitDayNote(noteNow.current).tags, rest))}
-              onDraftChange={(typed) => typed !== null && setTyped(typed)}
-              renderValue={(v) => <span className="italic">&ldquo;{v}&rdquo;</span>}
-              className="min-w-0 flex-1 rounded-md text-sm text-neutral-600 outline-none hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:text-neutral-400 dark:hover:text-neutral-100 dark:focus-visible:ring-neutral-600"
-              inputClassName="min-w-0 flex-1"
+          <button
+            type="button"
+            onClick={() => setNoteOpen((open) => !open)}
+            aria-expanded={noteOpen}
+            aria-controls={noteId}
+            className="flex w-full min-w-0 items-center gap-2 rounded-md py-0.5 text-left text-sm text-neutral-600 outline-none hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:text-neutral-400 dark:hover:text-neutral-100 dark:focus-visible:ring-neutral-600"
+          >
+            <NotebookPen aria-hidden className="size-3.5 shrink-0 text-neutral-400 dark:text-neutral-500" />
+            <span className="shrink-0">How&apos;s today looking?</span>
+            {/* Folded, what they said shows beside it, so it's still in view. */}
+            {!noteOpen && note && (
+              <span className="min-w-0 truncate italic text-neutral-400 dark:text-neutral-500">{note}</span>
+            )}
+            <ChevronDown
+              aria-hidden
+              className={`ml-auto size-3.5 shrink-0 transition-transform duration-300 ease-out motion-reduce:transition-none ${noteOpen ? "rotate-180" : ""}`}
             />
-          </div>
-          {/* Quick words for the note, toggled as they're tapped; the ones
-              Jev thinks fit what was typed are marked as suggestions. */}
-          <div role="group" aria-label="How today feels" className="mt-2 flex flex-wrap gap-1.5 pl-5.5">
-            {(Object.keys(DAY_TAGS) as DayTag[]).map((tag) => {
-              const on = dayNote.tags.includes(tag);
-              const hint = !on && suggested.includes(tag);
-              // Too long a note to add it to without cutting off what was typed.
-              const full = toggleDayTag(note, tag) === null;
-              return (
-                <button
-                  key={tag}
-                  type="button"
-                  aria-pressed={on}
-                  aria-disabled={full || undefined}
-                  title={full ? "Your note is too long to add this" : hint ? "Suggested from your note" : undefined}
-                  onClick={() => toggleTag(tag)}
-                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-neutral-300 aria-disabled:pointer-events-none aria-disabled:opacity-40 touch:py-1 dark:focus-visible:ring-neutral-600 ${
-                    on
-                      ? "border-neutral-800 bg-neutral-800 text-white hover:bg-neutral-700 dark:border-neutral-200 dark:bg-neutral-200 dark:text-neutral-900 dark:hover:bg-neutral-300"
-                      : hint
-                        ? "border-neutral-400 border-dashed bg-white text-neutral-800 hover:border-neutral-500 dark:border-neutral-500 dark:bg-neutral-900 dark:text-neutral-100"
-                        : "border-neutral-200 text-neutral-500 hover:border-neutral-300 hover:text-neutral-800 dark:border-neutral-800 dark:text-neutral-400 dark:hover:border-neutral-700 dark:hover:text-neutral-100"
-                  }`}
-                >
-                  {hint && <Sparkles aria-hidden className="size-3" />}
-                  {tag}
-                  {hint && <span className="sr-only"> (suggested)</span>}
-                </button>
-              );
-            })}
+          </button>
+          {/* Rows 0fr to 1fr animates to the content's height; folded, it's inert. */}
+          <div
+            id={noteId}
+            inert={!noteOpen}
+            className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none ${
+              noteOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+            }`}
+          >
+            {/* -mx-1 px-1 and pb-1 leave room for the focus rings. */}
+            <div className="-mx-1 min-h-0 overflow-hidden">
+              <div className="px-1 pt-2 pb-1 pl-6.5">
+                <Textarea
+                  draft={noteDraft}
+                  aria-label="How's today looking?"
+                  placeholder={dayNote.tags.length ? "Anything else?" : "A few words about today, if you like"}
+                  rows={2}
+                  // What's left of the note once its tags are in.
+                  maxLength={NOTE_MAX - (dayNote.tags.length ? joinDayNote(dayNote.tags, "x").length - 1 : 0)}
+                  readOnly={savingNote}
+                  aria-busy={savingNote || undefined}
+                  onChange={(e) => {
+                    // Kept as one line, as the server keeps it, so a pasted break isn't lost on save.
+                    const text = e.target.value.replace(/\s*\n\s*/g, " ");
+                    noteDraft.set(text);
+                    setTyped(text);
+                  }}
+                  onBlur={saveTyped}
+                  onKeyDown={(e) => {
+                    // Enter saves, as the one-line note did; it wraps rather than breaks.
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      e.currentTarget.blur();
+                    }
+                    if (e.key === "Escape") {
+                      cancelled.current = true;
+                      noteDraft.clear();
+                      e.currentTarget.blur();
+                    }
+                  }}
+                  className={`min-h-14 resize-none text-sm transition-opacity ${savingNote ? "opacity-60" : ""}`}
+                />
+                {/* Quick words for the note, toggled as they're tapped; the ones
+                    Jev thinks fit what was typed are marked as suggestions. */}
+                <div role="group" aria-label="How today feels" className="mt-2 flex flex-wrap gap-1.5">
+                  {(Object.keys(DAY_TAGS) as DayTag[]).map((tag) => {
+                    const on = dayNote.tags.includes(tag);
+                    const hint = !on && suggested.includes(tag);
+                    // Too long a note to add it to without cutting off what was typed.
+                    const full = toggleDayTag(joinDayNote(dayNote.tags, noteDraft.value), tag) === null;
+                    return (
+                      <button
+                        key={tag}
+                        type="button"
+                        aria-pressed={on}
+                        aria-disabled={full || undefined}
+                        title={full ? "Your note is too long to add this" : hint ? "Suggested from your note" : undefined}
+                        onClick={() => toggleTag(tag)}
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-neutral-300 aria-disabled:pointer-events-none aria-disabled:opacity-40 touch:py-1 dark:focus-visible:ring-neutral-600 ${
+                          on
+                            ? "border-neutral-800 bg-neutral-800 text-white hover:bg-neutral-700 dark:border-neutral-200 dark:bg-neutral-200 dark:text-neutral-900 dark:hover:bg-neutral-300"
+                            : hint
+                              ? "border-neutral-400 border-dashed bg-white text-neutral-800 hover:border-neutral-500 dark:border-neutral-500 dark:bg-neutral-900 dark:text-neutral-100"
+                              : "border-neutral-200 text-neutral-500 hover:border-neutral-300 hover:text-neutral-800 dark:border-neutral-800 dark:text-neutral-400 dark:hover:border-neutral-700 dark:hover:text-neutral-100"
+                        }`}
+                      >
+                        {hint && <Sparkles aria-hidden className="size-3" />}
+                        {tag}
+                        {hint && <span className="sr-only"> (suggested)</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
