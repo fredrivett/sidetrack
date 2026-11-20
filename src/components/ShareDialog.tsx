@@ -211,6 +211,7 @@ export function ShareDialog({
               label="What they can do"
               value={role}
               roles={LIST_ROLES}
+              scope="list"
               disabled={pending}
               onChange={setRole}
             />
@@ -255,6 +256,7 @@ export function ShareDialog({
                       label={`What ${displayName(m)} can do`}
                       value={m.role}
                       roles={LIST_ROLES}
+              scope="list"
                       disabled={pending}
                       onChange={(next) => changeRole(m.userId, next)}
                     />

@@ -413,11 +413,14 @@ export function Kanban({
           .map((t) => ({ ...t, lists: movable.filter((p) => trayByList[p.id] === t.id) }))
           .filter((t) => t.lists.length > 0);
   const moveTargets = movable.length > 1 ? moveGroups : null;
-  // Everyone on the board's lists, to filter by. Someone filtered by who has
-  // since left every list no longer narrows anything.
+  // Everyone who can hold work on the board's lists, to filter by: viewers
+  // and commenters are never assigned. Someone filtered by who has since
+  // left every list no longer narrows anything.
   const people = [
     ...new Map(
-      active.flatMap((p) => assigneesByProject[p.id] ?? []).map((a) => [a.userId, a]),
+      active
+        .flatMap((p) => (assigneesByProject[p.id] ?? []).filter((a) => a.canEdit))
+        .map((a) => [a.userId, a]),
     ).values(),
   ].sort((a, b) => assigneeName(a).localeCompare(assigneeName(b)));
   // Every label on the board's lists; the same name in two lists is one

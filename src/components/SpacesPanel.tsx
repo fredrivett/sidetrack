@@ -266,6 +266,7 @@ function SpaceCard({
             label="What they can do"
             value={role}
             roles={INVITE_ROLES}
+            scope="space"
             onChange={setRole}
           />
           <Button type="submit" size="sm" disabled={!person.trim()}>
@@ -295,15 +296,40 @@ function SpaceCard({
                 )}
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                {m.status === "pending" ? (
+                {m.status === "pending" && (
                   <span className={`${BADGE} bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400`}>
                     Pending
                   </span>
+                )}
+                {m.status === "pending" && m.role !== "admin" ? (
+                  // What they'll be able to do once they join; admins are
+                  // made from people who have.
+                  isAdmin ? (
+                    <RoleSelect
+                      label={`What ${displayName(m)} can do`}
+                      value={m.role}
+                      roles={INVITE_ROLES}
+                      scope="space"
+                      onChange={(next) =>
+                        save(
+                          () => setSpaceMemberRoleAction(space.id, m.userId, next),
+                          `change ${displayName(m)}'s role`,
+                        )
+                      }
+                    />
+                  ) : (
+                    m.role !== "member" && (
+                      <span className={`${BADGE} bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400`}>
+                        {roleName(m.role)}
+                      </span>
+                    )
+                  )
                 ) : isAdmin && !(m.role === "admin" && admins.length === 1) ? (
                   <RoleSelect
                     label={`What ${displayName(m)} can do`}
                     value={m.role}
                     roles={SPACE_ROLES}
+                    scope="space"
                     onChange={(next) =>
                       save(
                         () => setSpaceMemberRoleAction(space.id, m.userId, next),

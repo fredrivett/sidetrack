@@ -269,6 +269,7 @@ export async function inviteMemberAction(projectId: string, person: string, role
       inviterName: session.user.name,
       projectName: project.name,
       url: await appBaseUrl(),
+      role,
     };
     after(() => notifyInvite(invite));
   }
@@ -371,6 +372,7 @@ export async function inviteSpaceMemberAction(
       projectName: space.name,
       url: await appBaseUrl(),
       kind: "space" as const,
+      role,
     };
     after(() => notifyInvite(invite));
   }

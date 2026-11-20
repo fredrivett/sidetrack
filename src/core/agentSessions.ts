@@ -196,7 +196,10 @@ export function reportWork(
   rawNote: string,
   source: AgentOrigin,
 ): AgentSession {
-  const item = itemOrThrow(db, userId, itemId);
+  // An agent whose owner lost edit had its session ended, so it hears that
+  // first, as any agent without a session does.
+  const item = getItem(db, userId, itemId);
+  if (!item) throw new Error(`item not found: ${itemId}`);
   const note = cleanNote(rawNote);
   const session = openSession(db, itemId, source.agent.keyId);
   if (!session) {
@@ -204,6 +207,7 @@ export function reportWork(
       `${source.agent.name} has no open work session on "${item.title}"; call start_work first`,
     );
   }
+  requireListAccess(db, userId, item.projectId, "edit");
   const now = Date.now();
   db.transaction((tx) => {
     tx.update(agentSessions)
@@ -230,11 +234,13 @@ export function finishWork(
   input: { note?: string | null },
   source: AgentOrigin,
 ): AgentSession | null {
-  const item = itemOrThrow(db, userId, itemId);
+  const item = getItem(db, userId, itemId);
+  if (!item) throw new Error(`item not found: ${itemId}`);
   // A blank closing note is no note, so it can't stop the session closing.
   const note = input.note?.trim() ? cleanNote(input.note) : null;
   const session = openSession(db, itemId, source.agent.keyId);
   if (!session) return null;
+  requireListAccess(db, userId, item.projectId, "edit");
   const now = Date.now();
   const patch = { finishedAt: now, lastActiveAt: now, ...(note ? { note } : {}) };
   db.transaction((tx) => {

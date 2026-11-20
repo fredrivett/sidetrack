@@ -190,6 +190,12 @@ describe("spaces", () => {
     expect(() => setSpaceMemberRole(db, fred, spaceId, bob, "admin", "web")).toThrow(
       /joined/,
     );
+    // Their invite's other roles can change before they join, and hold after.
+    setSpaceMemberRole(db, fred, spaceId, bob, "viewer", "web");
+    expect(listSpaceMembers(db, fred, spaceId).find((m) => m.userId === bob)).toMatchObject({
+      status: "pending",
+      role: "viewer",
+    });
 
     // Once Alice is an admin too, all admins are equal: she can demote Fred,
     // and he can then leave.

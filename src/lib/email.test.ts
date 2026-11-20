@@ -205,6 +205,26 @@ describe("deliverInviteEmail", () => {
     expect(text).toContain('join the space "Household"');
   });
 
+  it("says when they'll only view or comment, and not for an editor", async () => {
+    const text = async (role: "viewer" | "commenter" | "editor") => {
+      const smtp = smtpStub();
+      await deliverInviteEmail(
+        { ...INVITE, role },
+        {
+          env: { ...noEnv, SMTP_URL: "smtp://localhost:1025" },
+          fetchFn: fetchStub({}).fn,
+          log: () => {},
+          sendSmtp: smtp.fn,
+        },
+      );
+      return smtp.calls[0].message.text;
+    };
+    expect(await text("viewer")).toContain('"Engineering" in Sidetrack, as a viewer.');
+    expect(await text("commenter")).toContain("as a commenter.");
+    expect(await text("editor")).toContain('collaborate on "Engineering"');
+    expect(await text("editor")).not.toContain(" as ");
+  });
+
   it("labels a Resend rejection as the invite email", async () => {
     const { fn } = fetchStub({
       ok: false,

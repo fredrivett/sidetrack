@@ -195,8 +195,11 @@ export function ProjectMenu({
   // Its owner moves it between Spaces they can add lists to (as an admin or
   // member); its owner or an admin of its Space can take it out (core
   // enforces the same).
-  const targets = spaces.filter((s) => s.role === "admin" || s.role === "member");
-  const canMove = isOwner && targets.length > 0;
+  // The list's own Space stays listed, ticked, whatever their role in it.
+  const targets = spaces.filter(
+    (s) => s.id === spaceId || s.role === "admin" || s.role === "member",
+  );
+  const canMove = isOwner && targets.some((s) => s.id !== spaceId);
   const canTakeOut = spaceId !== null && (isOwner || space?.role === "admin");
   // Reaching a list through its Space, leaving the list alone changes nothing.
   const canLeave = !isOwner && !space;

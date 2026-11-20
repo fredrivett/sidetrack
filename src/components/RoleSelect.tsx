@@ -19,21 +19,26 @@ export function RoleSelect<R extends ListRole | SpaceRole>({
   label,
   value,
   roles,
+  scope,
   disabled,
   onChange,
 }: {
   label: string;
   value: R;
   roles: readonly R[];
+  /** Whether the roles are for one list or a Space, for their hints. */
+  scope: "list" | "space";
   disabled?: boolean;
   onChange: (role: R) => void;
 }) {
   return (
-    <DropdownMenu>
+    // aria-disabled rather than disabled while saving, so the trigger keeps
+    // keyboard focus; it just won't open.
+    <DropdownMenu onOpenChange={(open, details) => open && disabled && details.cancel()}>
       <DropdownMenuTrigger
         aria-label={label}
-        disabled={disabled}
-        className="flex h-7 shrink-0 items-center gap-0.5 rounded-md border border-neutral-200 px-2 text-xs whitespace-nowrap transition hover:bg-accent disabled:opacity-50 dark:border-neutral-800"
+        aria-disabled={disabled || undefined}
+        className="flex h-7 shrink-0 items-center gap-0.5 rounded-md border border-neutral-200 px-2 text-xs whitespace-nowrap transition hover:bg-accent aria-disabled:opacity-50 dark:border-neutral-800"
       >
         {roleName(value)}
         <ChevronDown className="size-3 opacity-50" />
@@ -47,7 +52,7 @@ export function RoleSelect<R extends ListRole | SpaceRole>({
             <DropdownMenuRadioItem key={r} value={r} closeOnClick className="items-start">
               <span className="flex flex-col">
                 <span>{roleName(r)}</span>
-                <span className="text-xs text-neutral-500">{roleHint(r)}</span>
+                <span className="text-xs text-neutral-500">{roleHint(r, scope)}</span>
               </span>
             </DropdownMenuRadioItem>
           ))}

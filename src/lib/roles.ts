@@ -23,13 +23,19 @@ export function roleWords(role: Role): string {
   return role === "admin" || role === "editor" ? `an ${role}` : `a ${role}`;
 }
 
-/** What the role lets someone do with the lists it covers. */
-export function roleHint(role: Role): string {
-  return role === "viewer"
-    ? "Sees the lists and their items, but can't change or comment on them"
-    : role === "commenter"
-      ? "Sees the lists and comments, but can't change them"
-      : role === "admin"
-        ? "Changes anything, and manages the Space and its people"
-        : "Changes anything on the lists";
+/** What the role lets someone do, on one list or across a Space's lists. */
+export function roleHint(role: Role, scope: "list" | "space"): string {
+  const its = scope === "list" ? "its items" : "its lists and their items";
+  switch (role) {
+    case "viewer":
+      return `Sees ${its}, but can't change or comment on them`;
+    case "commenter":
+      return `Sees ${its} and comments on them, but can't change them`;
+    case "admin":
+      return "Changes anything, and manages the Space and its people";
+    case "member":
+      return "Changes its lists and their items, and adds lists to it";
+    case "editor":
+      return "Changes its items and details";
+  }
 }

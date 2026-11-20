@@ -264,8 +264,8 @@ export function inviteSpaceMember(
   source: AuditOrigin,
   role: Exclude<SpaceRole, "admin"> = "member",
 ): SpaceMemberView {
-  if (!["member", "commenter", "viewer"].includes(role)) throw new Error(`invalid role: ${role}`);
   const { space } = requireAdmin(db, userId, spaceId, "invite people");
+  if (!["member", "commenter", "viewer"].includes(role)) throw new Error(`invalid role: ${role}`);
   const target = findUserByHandle(db, handle);
   if (!target) throw new Error(`no account found for "${handle.trim()}"`);
   const existing = membershipOf(db, target.id, spaceId);
@@ -424,7 +424,8 @@ export function removeSpaceMember(
 
 /**
  * Change someone's role in a Space: admin, member, commenter or viewer.
- * Admin-only, for people who've accepted. The last admin can't be given
+ * Admin-only. A pending invite's role can change too, but not to admin:
+ * admins are made from people who've joined. The last admin can't be given
  * another role. Taking edit away takes them off the Space's items and ends
  * their agents there (revokeListAccess), on lists they can't edit another way.
  */
@@ -441,8 +442,9 @@ export function setSpaceMemberRole(
   }
   const { space } = requireAdmin(db, userId, spaceId, "change roles");
   const membership = membershipOf(db, targetUserId, spaceId);
-  if (membership?.status !== "accepted") {
-    throw new Error("only people who've joined the space can have their role changed");
+  if (!membership) throw new Error("they aren't in this space");
+  if (membership.status !== "accepted" && role === "admin") {
+    throw new Error("only people who've joined the space can be made an admin");
   }
   if (membership.role === role) return;
   const target = db.select().from(users).where(eq(users.id, targetUserId)).get();

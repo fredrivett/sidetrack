@@ -205,7 +205,11 @@ export function NewItemDialog({
   const context = JSON.stringify([draft, fixedProjectId, added]);
   const suggestion =
     draft.title && suggested?.for === context ? suggested.value : null;
-  const projectId = fixedProjectId || suggestion?.projectId || "";
+  // A suggested list counts only if it's one they can add to here.
+  const suggestedList = projects.some((p) => p.id === suggestion?.projectId)
+    ? suggestion?.projectId
+    : null;
+  const projectId = fixedProjectId || suggestedList || "";
   const listSuggested = !fixedProjectId && Boolean(projectId);
   const project = projects.find((p) => p.id === projectId);
   // Sub-items go one level deep, so an item with its own checklist can't
@@ -213,16 +217,18 @@ export function NewItemDialog({
   const hasChecklist = subItems.length > 0 || Boolean(subDraft.trim());
   const chosenParent =
     !hasChecklist && parent?.projectId === projectId ? parent.item : null;
-  const duplicate = suggestion?.duplicate ?? null;
+  // Hints about items on a list they can't add to are no use here.
+  const hints = projectId ? suggestion : null;
+  const duplicate = hints?.duplicate ?? null;
   const parentHint =
-    !hasChecklist && !chosenParent && suggestion?.parent?.id !== duplicate?.id
-      ? (suggestion?.parent ?? null)
+    !hasChecklist && !chosenParent && hints?.parent?.id !== duplicate?.id
+      ? (hints?.parent ?? null)
       : null;
-  // Only the list's owner and members can be assigned, so switching lists
-  // drops anyone who isn't on the new one (and brings them back on return).
+  // Only those who can edit the list can be assigned, so switching lists
+  // drops anyone who can't edit the new one (and brings them back on return).
   const listAssignees = assigneesByProject[projectId] ?? [];
-  const assigned = listAssignees.filter((a) => assigneeIds.includes(a.userId));
-  const canAssignSelf = listAssignees.some((a) => a.userId === viewerId);
+  const assigned = listAssignees.filter((a) => a.canEdit && assigneeIds.includes(a.userId));
+  const canAssignSelf = listAssignees.some((a) => a.canEdit && a.userId === viewerId);
   // A, I and D as in the item dialog, A and I once a list is chosen.
   // They're ignored while typing in a field.
   const openPicker = useCallback(() => setAssignOpen(true), []);

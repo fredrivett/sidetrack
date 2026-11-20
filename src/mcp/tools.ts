@@ -82,6 +82,8 @@ import {
   PROJECT_STATUSES,
   SPACE_COLORS,
   LIST_ROLES,
+  type ListRole,
+  type SpaceRole,
   SPACE_ROLES,
 } from "@/core/schema";
 import {
@@ -311,6 +313,7 @@ async function sendInviteNotification(
   name: string,
   toEmail: string | null,
   kind: InviteKind = "list",
+  role?: ListRole | SpaceRole,
 ) {
   if (!toEmail) return;
   await notifyInvite({
@@ -319,6 +322,7 @@ async function sendInviteNotification(
     projectName: name,
     url,
     kind,
+    role,
   });
 }
 
@@ -1599,7 +1603,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       const project = getProject(db, userId, list_id);
       if (!project) return notFound("list", list_id);
       const member = inviteMember(db, userId, list_id, person, SOURCE, role);
-      await sendInviteNotification(db, ctx.baseUrl, userId, project.name, member.email);
+      await sendInviteNotification(db, ctx.baseUrl, userId, project.name, member.email, "list", role);
       return json(member);
     },
   );
@@ -1851,7 +1855,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       const space = listSpaces(db, userId).find((s) => s.id === space_id);
       if (!space) return notFound("space", space_id);
       const member = inviteSpaceMember(db, userId, space_id, person, SOURCE, role);
-      await sendInviteNotification(db, ctx.baseUrl, userId, space.name, member.email, "space");
+      await sendInviteNotification(db, ctx.baseUrl, userId, space.name, member.email, "space", role);
       return json(member);
     },
   );
