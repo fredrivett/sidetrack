@@ -16,7 +16,7 @@ import {
   ResponsiveDialogDescription,
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
-import { DueText } from "./DueBadge";
+import { DueBadge } from "./DueBadge";
 import { runAction } from "./run-action";
 import { CommentCard } from "./ItemComments";
 import { AvatarStack } from "./UserAvatar";
@@ -124,7 +124,7 @@ export function AuditEntryRow({
           <p className="break-words text-sm text-neutral-600 dark:text-neutral-300">
             {e.parts.map((part, i) =>
               part.due ? (
-                <DueText key={i} due={part.due.dueDate} from={part.due.dueFrom} />
+                <DueBadge key={i} due={part.due.dueDate} from={part.due.dueFrom} done />
               ) : part.em ? (
                 <span key={i} className="font-medium text-foreground">
                   {part.text}

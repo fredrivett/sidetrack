@@ -10,7 +10,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import type { NotificationView } from "@/core/notifications";
 import { formatRelative } from "@/lib/time";
 import { cn } from "@/lib/utils";
-import { DueText } from "./DueBadge";
+import { DueBadge } from "./DueBadge";
 import { runAction } from "./run-action";
 import { ProjectIcon } from "./ProjectIcon";
 import { AgentAvatar, UserAvatar } from "./UserAvatar";
@@ -182,7 +182,7 @@ export function NotificationsInbox({
                       return list ? (
                         <ListChip key={i} list={list} name={part.text} onOpen={() => openList(n, list.id)} />
                       ) : part.due ? (
-                        <DueText key={i} due={part.due.dueDate} from={part.due.dueFrom} />
+                        <DueBadge key={i} due={part.due.dueDate} from={part.due.dueFrom} done />
                       ) : part.em ? (
                         <strong key={i} className="font-semibold">
                           {part.text}
