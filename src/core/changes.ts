@@ -19,15 +19,34 @@ export interface Change {
   projectId: string | null;
 }
 
-type Listener = (changes: Change[]) => void;
+/** A batch of changes, and the number of the last one in it (see changeSeq). */
+type Listener = (changes: Change[], seq: number) => void;
 
 declare global {
-  var __sidetrackChanges: { listeners: Set<Listener>; pending: Change[] } | undefined;
+  var __sidetrackChanges:
+    | { listeners: Set<Listener>; pending: Change[]; seq: number }
+    | undefined;
 }
 
 // On globalThis, like the DB, so Server Actions, MCP tools, and the events
-// route share one, whichever bundle loaded this module.
-const bus = (globalThis.__sidetrackChanges ??= { listeners: new Set(), pending: [] });
+// route share one, whichever bundle loaded this module. Numbering starts at
+// the time the server started, so a restarted server's numbers are higher
+// than any its predecessor gave out.
+const bus = (globalThis.__sidetrackChanges ??= {
+  listeners: new Set(),
+  pending: [],
+  seq: Date.now(),
+});
+
+/**
+ * The number of the latest change. Each change gets the next one as it's
+ * made, before its transaction commits, and nothing else runs in between: so
+ * a page that reads this before it reads its data shows every change up to
+ * it, and needs no reload for the events of those changes (LiveUpdates).
+ */
+export function changeSeq(): number {
+  return bus.seq;
+}
 
 /**
  * Announce a change once the synchronous work in progress has finished, and
@@ -37,13 +56,15 @@ const bus = (globalThis.__sidetrackChanges ??= { listeners: new Set(), pending: 
  * nothing new.
  */
 export function announceChange(change: Change): void {
+  bus.seq++;
   if (bus.pending.push(change) > 1) return;
   setImmediate(() => {
     const changes = bus.pending.splice(0);
+    const seq = bus.seq;
     for (const listener of bus.listeners) {
       // A throw here would be uncaught and stop the server.
       try {
-        listener(changes);
+        listener(changes, seq);
       } catch (error) {
         getPostHog()?.captureException(error);
       }
@@ -64,12 +85,16 @@ export function onChanges(listener: Listener): () => void {
  * their own changes, changes to a list they can see or are invited to, and
  * account and Space changes by the people they share lists or a Space with,
  * whose names and avatars show on those lists (Space changes have no list). A list they have just lost, deleted or
- * removed from, counts too, so it leaves their board. Returns the
- * unsubscribe function.
+ * removed from, counts too, so it leaves their board. onChange gets the
+ * batch's number (changeSeq). Returns the unsubscribe function.
  */
-export function watchChanges(db: Db, userId: string, onChange: () => void): () => void {
+export function watchChanges(
+  db: Db,
+  userId: string,
+  onChange: (seq: number) => void,
+): () => void {
   let before = audience(db, userId);
-  const listener: Listener = (changes) => {
+  const listener: Listener = (changes, seq) => {
     const after = audience(db, userId);
     const affected = changes.some(
       ({ actor, projectId }) =>
@@ -79,7 +104,7 @@ export function watchChanges(db: Db, userId: string, onChange: () => void): () =
           : before.lists.has(projectId) || after.lists.has(projectId)),
     );
     before = after;
-    if (affected) onChange();
+    if (affected) onChange(seq);
   };
   return onChanges(listener);
 }

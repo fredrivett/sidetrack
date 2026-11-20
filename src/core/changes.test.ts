@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { watchChanges } from "./changes";
+import { changeSeq, watchChanges } from "./changes";
 import { addItem, setItemsCollapsed } from "./items";
 import { acceptInvite, inviteMember } from "./members";
 import { linkItemToPr, setPrState } from "./prLinks";
@@ -173,6 +173,25 @@ describe("watchChanges", () => {
     setOverdueCollapsed(db, owner, true);
     await settle();
     expect(heard).toEqual({ [owner]: 1, [stranger]: 0 });
+  });
+
+  // A page reads the number before its data, and skips the events of
+  // changes it already shows (LiveUpdates).
+  it("numbers each batch above what was read before its changes, and within what's read after", async () => {
+    const numbers: number[] = [];
+    stops.push(watchChanges(db, owner, (seq) => numbers.push(seq)));
+    const before = changeSeq();
+    addItem(db, owner, { projectId, title: "One" }, "web");
+    addItem(db, owner, { projectId, title: "Two" }, "web");
+    const after = changeSeq();
+    await settle();
+    addItem(db, owner, { projectId, title: "Three" }, "web");
+    await settle();
+    expect(numbers).toHaveLength(2);
+    expect(numbers[0]).toBeGreaterThan(before);
+    expect(numbers[0]).toBe(after);
+    expect(numbers[1]).toBeGreaterThan(after);
+    expect(numbers[1]).toBe(changeSeq());
   });
 
   // The board reloads to reopen repeating items by the viewer's new day.
