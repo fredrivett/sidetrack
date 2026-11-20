@@ -12,6 +12,7 @@ import { formatRelative } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { DueBadge } from "./DueBadge";
 import { runAction } from "./run-action";
+import { Struck } from "./Struck";
 import { ProjectIcon } from "./ProjectIcon";
 import { AgentAvatar, UserAvatar } from "./UserAvatar";
 
@@ -187,7 +188,7 @@ export function NotificationsInbox({
                         <DueBadge key={i} due={part.due.dueDate} from={part.due.dueFrom} done />
                       ) : part.em ? (
                         <strong key={i} className="font-semibold">
-                          {part.text}
+                          {part.done ? <Struck className="[--strike-gap:var(--row-bg)]">{part.text}</Struck> : part.text}
                         </strong>
                       ) : (
                         part.text

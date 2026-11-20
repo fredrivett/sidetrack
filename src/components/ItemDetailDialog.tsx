@@ -83,6 +83,7 @@ import type { ItemHistory } from "./use-item-detail-dialog";
 import { useItemChanges } from "./use-optimistic-items";
 import { useCopyItemRef } from "./useCopyItemRef";
 import { useFollows } from "./follows";
+import { Struck } from "./Struck";
 import { AgentAvatar, AvatarStack, assigneeName, assigneeNames } from "./UserAvatar";
 import { useAgentAssignment, useItemAgentSessions } from "./agent-sessions";
 
@@ -904,7 +905,13 @@ export function ItemDetailView({
                 className={CHIP}
               >
                 <IndentIncrease />
-                <span className="max-w-48 truncate">{parent.title}</span>
+                <span className="max-w-48 truncate">
+                  {parent.completedAt !== null ? (
+                    <Struck className="[--strike-gap:var(--color-popover)]">{parent.title}</Struck>
+                  ) : (
+                    parent.title
+                  )}
+                </span>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-56">
                 <DropdownMenuItem onClick={() => onOpenItem(parent)}>

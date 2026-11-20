@@ -593,6 +593,8 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
   const itemIds = [
     ...new Set([
       ...events.flatMap((e) => itemOf(e)?.itemId ?? []),
+      // A sub-item's parent, to show whether it's done.
+      ...events.flatMap((e) => (e.type === "item.created" && e.parent ? [e.parent.itemId] : [])),
       ...rows.flatMap((r) => r.itemId ?? []),
     ]),
   ];
@@ -604,6 +606,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
             title: items.title,
             number: items.number,
             projectId: items.projectId,
+            completedAt: items.completedAt,
             prefix: projects.prefix,
             list: projects.name,
             icon: projects.icon,
@@ -738,7 +741,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
     if (about) {
       const now = open.get(about.itemId);
       if (!now) return [];
-      const item: Part = { text: now.title, em: "item", quote: true };
+      const item: Part = { text: now.title, em: "item", quote: true, ...(now.completedAt !== null && { done: true }) };
       const at = {
         title: now.list,
         list: listPart(now.projectId, now.list, now).list,
@@ -753,7 +756,18 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           return r.reason === "assigned"
             ? say([who, t(" added "), item, t(" for you")])
             : event.parent
-              ? say([who, t(" added "), item, t(" to "), { text: event.parent.title, em: "item", quote: true }])
+              ? say([
+                  who,
+                  t(" added "),
+                  item,
+                  t(" to "),
+                  {
+                    text: event.parent.title,
+                    em: "item",
+                    quote: true,
+                    ...(open.get(event.parent.itemId)?.completedAt != null && { done: true }),
+                  },
+                ])
               : say([who, t(" added "), item, t(" to "), listPart(now.projectId, now.list, now)]);
         case "item.updated":
           if (r.reason === "assigned") return say([who, t(" assigned you "), item]);

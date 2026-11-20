@@ -14,6 +14,7 @@ import { EditableText } from "./EditableText";
 import type { FeedbackAbout } from "./FeedbackDialog";
 import { GreetingDialog, type RenderItem } from "./GreetingDialog";
 import { runAction } from "./run-action";
+import { Struck } from "./Struck";
 import { useToday } from "./use-day-start";
 
 const READ_MS = 2000;
@@ -360,7 +361,13 @@ export function AgendaGreeting({
                   onBlur={() => onHoverItem(null)}
                   className={`${card} outline-none hover:border-neutral-400 hover:bg-neutral-50 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:hover:border-neutral-500 dark:hover:bg-neutral-800 dark:focus-visible:ring-neutral-600`}
                 >
-                  {title}
+                  {item.completedAt !== null ? (
+                    <Struck className="[--strike-gap:var(--color-white)] dark:[--strike-gap:var(--color-neutral-900)]">
+                      {title}
+                    </Struck>
+                  ) : (
+                    title
+                  )}
                 </Tap>
               ) : (
                 // One the page hasn't loaded opens nothing, so it's muted.

@@ -141,7 +141,8 @@ describe("notifications", () => {
       parts: [
         { text: "Amp", em: "person" },
         { text: " finished work on " },
-        { text: "Ship it", em: "item", quote: true },
+        // Completed since, so it reads struck through.
+        { text: "Ship it", em: "item", quote: true, done: true },
       ],
       snippet: "Merged #12",
       agentName: "Amp",
