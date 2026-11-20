@@ -82,11 +82,15 @@ export function proxy(request: NextRequest) {
 
   // Each view has its own path, served by the one board page (app/(board)) so
   // switching views in the browser (Kanban's switchView) never remounts it.
+  // The view also goes in a request header for the page's loading.tsx, which
+  // gets no searchParams, so its skeleton is the view that's opening.
   if (VIEWS.includes(pathname.slice(1))) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     url.searchParams.set("view", pathname.slice(1));
-    return NextResponse.rewrite(url);
+    const headers = new Headers(request.headers);
+    headers.set("x-board-view", pathname.slice(1));
+    return NextResponse.rewrite(url, { request: { headers } });
   }
   // / opens the Brief; links from before views had paths (?view=, or ?p=
   // for a list on the board) open the view they meant.

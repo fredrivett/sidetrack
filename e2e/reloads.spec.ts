@@ -172,3 +172,18 @@ test("picks an unsaved edit back up after a reload, and keeps it when the save f
   await expect(dialog.getByText("The ferns by the window")).toBeVisible();
   await expect(field).toBeHidden();
 });
+
+test("opens each view on its own loading skeleton", async ({ page, user }) => {
+  user.addList("Home", ["Water plants"]);
+  // The skeleton streams ahead of the page, which replaces it at once, so
+  // read it from the HTML. The installed app opens /launch, then the Brief:
+  // neither may show the board's lists on the way.
+  const html = async (path: string) => (await page.request.get(path)).text();
+  for (const path of ["/launch", "/brief"]) {
+    const brief = await html(path);
+    expect(brief).toContain("Loading your Brief…");
+    expect(brief).not.toContain("Loading lists…");
+  }
+  expect(await html("/board")).toContain("Loading lists…");
+  expect(await html("/done")).toContain("Loading what");
+});

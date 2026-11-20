@@ -9,7 +9,8 @@ import { BoardSkeleton } from "@/components/BoardSkeleton";
 export default function Launch() {
   return (
     <>
-      <BoardSkeleton />
+      {/* The Brief's, as that's where it goes. */}
+      <BoardSkeleton view="brief" />
       <script
         dangerouslySetInnerHTML={{
           __html: `requestAnimationFrame(function () {
