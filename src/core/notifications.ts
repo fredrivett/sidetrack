@@ -300,8 +300,8 @@ function rule(
  * finished, or assigned or mentioned them): an agent acting with their API
  * key is working for them, so the rest is their own doing. What other
  * people's agents, GitHub and Sidetrack itself do is heard at the level set
- * for "agents" (agentLevel). Only people who can open the list hear about
- * something in it.
+ * for "agents" (agentLevel). Only people who can open the list, or are in
+ * the Space, hear about something in it; an invitee is told before they can.
  */
 // audit-exempt: derived from the audit row written in this transaction.
 export function writeNotifications(
@@ -844,9 +844,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
             who,
             t(" invited you to "),
             { text: name, em: "place", quote: true },
-            ...(event.role && event.role !== "editor" && event.role !== "member"
-              ? [t(` as ${roleWords(event.role)}`)]
-              : []),
+            ...asRole(event.role),
           ],
           snippet: null,
         },
