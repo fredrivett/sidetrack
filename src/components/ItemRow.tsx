@@ -172,6 +172,13 @@ function ItemRowView({
   const [hovered, setHovered] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   const [dueOpen, setDueOpen] = useState(false);
+  // A board has hundreds of rows, and a menu costs more to mount than the row
+  // around it, so the assignee and D menus wait until they could be used:
+  // the pointer reaching the row, or the menu opening. They stay mounted
+  // after, so later opens and closes animate as usual.
+  const [menusWanted, setMenusWanted] = useState(false);
+  const assignMenu = menusWanted || assignOpen;
+  const [dueMenu, setDueMenu] = useState(false);
   const dueAnchor = useRef<HTMLDivElement>(null);
   // The item the arrow keys selected owns the shortcuts while there is one;
   // otherwise the hovered item does.
@@ -252,7 +259,10 @@ function ItemRowView({
     setAssignOpen(false);
   }, [assign, assigneeIds, viewerId]);
 
-  const openDue = useCallback(() => setDueOpen(true), []);
+  const openDue = useCallback(() => {
+    setDueMenu(true);
+    setDueOpen(true);
+  }, []);
   const toggleDone = useCallback(
     () => changes.setCompleted(item, item.completedAt === null),
     [changes, item],
@@ -296,6 +306,30 @@ function ItemRowView({
     onOpenDetail();
   }
 
+  // The assignees' button, the same before its menu mounts as after, when
+  // it's the menu's trigger.
+  const assigneeButton = {
+    "aria-label": [
+      agents.length ? `${agents.map(agentLabel).join(", ")} on it` : "",
+      assigned.length ? `Assigned to ${assigneeNames(assigned)}` : "",
+      assigned.length ? "Change assignees" : "Assign",
+    ]
+      .filter(Boolean)
+      .join(". "),
+    disabled: pending,
+    onPointerDown: (e: React.PointerEvent) => e.stopPropagation(),
+    className:
+      assigned.length || agents.length
+        ? "flex rounded-full outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-400 disabled:opacity-50"
+        : "rounded p-1 text-neutral-300 opacity-0 transition hover:bg-neutral-100 hover:text-neutral-600 group-hover:opacity-100 data-[popup-open]:opacity-100 disabled:opacity-50 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 [@media(hover:none)]:hidden",
+  };
+  const assigneeFace =
+    assigned.length || agents.length ? (
+      <AvatarStack users={assigned} agents={agents} size={20} unfurl />
+    ) : (
+      <UserRound className="size-4" />
+    );
+
   return (
     // Item actions live in a right-click menu rather than a ⋯ button, so the
     // row stays checkbox, title, avatar with nothing reserving space beside
@@ -319,7 +353,10 @@ function ItemRowView({
         data-item-row={item.id}
         data-parent-id={item.parentId ?? undefined}
         data-selected={selected || undefined}
-        onPointerEnter={() => setHovered(true)}
+        onPointerEnter={() => {
+          setHovered(true);
+          setMenusWanted(true);
+        }}
         onPointerLeave={() => setHovered(false)}
         onClick={openDetail}
         // Pointer everywhere, like the title button and controls inside it:
@@ -482,54 +519,51 @@ function ItemRowView({
               </span>
             )
           ) : (
-          <DropdownMenu open={assignOpen} onOpenChange={setAssignOpen}>
-            <DropdownMenuTrigger
-              aria-label={[
-                agents.length ? `${agents.map(agentLabel).join(", ")} on it` : "",
-                assigned.length ? `Assigned to ${assigneeNames(assigned)}` : "",
-                assigned.length ? "Change assignees" : "Assign",
-              ]
-                .filter(Boolean)
-                .join(". ")}
-              disabled={pending}
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => e.stopPropagation()}
-              className={
-                assigned.length || agents.length
-                  ? "flex rounded-full outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-400 disabled:opacity-50"
-                  : "rounded p-1 text-neutral-300 opacity-0 transition hover:bg-neutral-100 hover:text-neutral-600 group-hover:opacity-100 data-[popup-open]:opacity-100 disabled:opacity-50 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 [@media(hover:none)]:hidden"
-              }
+          assignMenu ? (
+            <DropdownMenu open={assignOpen} onOpenChange={setAssignOpen}>
+              <DropdownMenuTrigger
+                {...assigneeButton}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {assigneeFace}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                data-assignee-picker
+                align="end"
+                className="w-52"
+                // Portaled out of the row in the DOM, but React events still bubble
+                // through the component tree — stop them so picking an assignee doesn't
+                // also open the detail dialog via the row's onClick.
+                onClick={(e) => e.stopPropagation()}
+              >
+                <AssigneeOptions
+                  selected={assigneeIds}
+                  assignees={assignees}
+                  viewerId={viewerId}
+                  onChange={assign}
+                  agents={agentOptions}
+                  onAgentChange={setAgent}
+                />
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            // Touch has no pointer to arrive first: the tap opens it.
+            <button
+              type="button"
+              {...assigneeButton}
+              onClick={(e) => {
+                e.stopPropagation();
+                setAssignOpen(true);
+              }}
             >
-              {assigned.length || agents.length ? (
-                <AvatarStack users={assigned} agents={agents} size={20} unfurl />
-              ) : (
-                <UserRound className="size-4" />
-              )}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              data-assignee-picker
-              align="end"
-              className="w-52"
-              // Portaled out of the row in the DOM, but React events still bubble
-              // through the component tree — stop them so picking an assignee doesn't
-              // also open the detail dialog via the row's onClick.
-              onClick={(e) => e.stopPropagation()}
-            >
-              <AssigneeOptions
-                selected={assigneeIds}
-                assignees={assignees}
-                viewerId={viewerId}
-                onChange={assign}
-                agents={agentOptions}
-                onAgentChange={setAgent}
-              />
-            </DropdownMenuContent>
-          </DropdownMenu>
+              {assigneeFace}
+            </button>
+          )
           )}
           {/* D's quick dates, the same as the right-click menu's Due date;
               any other day is in the dialog. No trigger: it opens from the
               shortcut, by the row's avatar. */}
-          {canEdit && today && (
+          {canEdit && today && dueMenu && (
             <DropdownMenu open={dueOpen} onOpenChange={setDueOpen}>
               <DropdownMenuContent
                 anchor={dueAnchor}
