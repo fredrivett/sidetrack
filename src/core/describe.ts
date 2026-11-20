@@ -340,7 +340,11 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
         ...lostText(event.lost),
       ];
     case "member.joined":
-      return [t("accepted invite to "), list(event.listName)];
+      return [
+        t("accepted invite to "),
+        list(event.listName),
+        ...(event.role && event.role !== "editor" ? [t(` as ${roleWords(event.role)}`)] : []),
+      ];
     case "member.declined":
       return [t("declined invite to "), list(event.listName)];
     case "member.removed": {
@@ -413,7 +417,11 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
         ...(event.role && event.role !== "member" ? [t(` as ${roleWords(event.role)}`)] : []),
       ];
     case "space.member.joined":
-      return [t("accepted invite to space "), space(event.space)];
+      return [
+        t("accepted invite to space "),
+        space(event.space),
+        ...(event.role && event.role !== "member" ? [t(` as ${roleWords(event.role)}`)] : []),
+      ];
     case "space.member.declined":
       return [t("declined invite to space "), space(event.space)];
     case "space.member.removed": {

@@ -182,6 +182,8 @@ export type ChangeEvent =
       projectId: string;
       listName: string;
       membershipId: string;
+      /** What they joined as; absent on joins from before it was recorded. */
+      role?: ListRole;
     }
   | {
       type: "member.removed";
@@ -249,7 +251,13 @@ export type ChangeEvent =
       /** Absent on invites from before Space roles beyond member. */
       role?: SpaceRole;
     }
-  | { type: "space.member.joined" | "space.member.declined"; space: SpaceAt; membershipId: string }
+  | {
+      type: "space.member.joined" | "space.member.declined";
+      space: SpaceAt;
+      membershipId: string;
+      /** What they joined as; absent on joins from before it was recorded. */
+      role?: SpaceRole;
+    }
   | {
       type: "space.member.removed";
       space: SpaceAt;

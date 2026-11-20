@@ -7,7 +7,7 @@ import { getPostHog } from "../lib/posthog";
 import { isEmoji } from "../lib/projectIcon";
 import { dayOf } from "../lib/time";
 import { type PushMessage, sendPush } from "../lib/push";
-import { hasProjectAccess, listMemberIds } from "./access";
+import { hasProjectAccess, listAccess, listMemberIds } from "./access";
 import { users } from "./auth-schema";
 import { onChanges } from "./changes";
 import type { Db } from "./db";
@@ -26,7 +26,9 @@ import {
   NOTIFICATION_LEVELS,
   NOTIFICATION_REASONS,
   type NotificationLevel,
+  type ListRole,
   type NotificationReason,
+  type SpaceRole,
   notificationSettings,
   notifications,
   projects,
@@ -119,6 +121,23 @@ function rule(
     projectId,
   });
   const followers = (itemId: string) => as("following", followersOf(db, itemId));
+  // Who hears that someone was invited to or joined a list or Space:
+  // everyone on it who can comment or more. Viewers only look on.
+  const listPeople = (projectId: string) =>
+    listMemberIds(db, projectId).filter((u) => listAccess(db, u, projectId) !== "view");
+  const spacePeople = (spaceId: string) =>
+    db
+      .select({ userId: spaceMembers.userId })
+      .from(spaceMembers)
+      .where(
+        and(
+          eq(spaceMembers.spaceId, spaceId),
+          eq(spaceMembers.status, "accepted"),
+          inArray(spaceMembers.role, ["admin", "member", "commenter"]),
+        ),
+      )
+      .all()
+      .map((r) => r.userId);
   switch (event.type) {
     case "item.created": {
       const assignees = event.assignees.map((a) => a.userId);
@@ -202,20 +221,18 @@ function rule(
       return onItem(event.item.itemId, event.projectId, as("mentioned", mentioned));
     }
     case "member.invited":
-      return { to: as("invited", [event.member.userId]), groupKey: `list:${event.projectId}` };
-    case "member.joined": {
-      const owner = db
-        .select({ userId: projects.userId })
-        .from(projects)
-        .where(eq(projects.id, event.projectId))
-        .get()?.userId;
       return {
-        // Its owner let them in; to everyone else on it, it's activity.
-        to: [...as("joined", owner ? [owner] : []), ...as("activity", listMemberIds(db, event.projectId))],
+        // The invitee can't open it yet; the rest are told who's coming.
+        to: [...as("invited", [event.member.userId]), ...as("joined", listPeople(event.projectId))],
         groupKey: `list:${event.projectId}`,
         projectId: event.projectId,
       };
-    }
+    case "member.joined":
+      return {
+        to: as("joined", listPeople(event.projectId)),
+        groupKey: `list:${event.projectId}`,
+        projectId: event.projectId,
+      };
     case "list.updated": {
       const { name, status } = event.changes;
       if (!name && !status) return null;
@@ -243,28 +260,19 @@ function rule(
         : null;
     case "space.member.invited":
       return {
-        to: as("invited", [event.member.userId]),
-        groupKey: `space:${event.space.spaceId}`,
-      };
-    case "space.member.joined": {
-      const admins = db
-        .select({ userId: spaceMembers.userId })
-        .from(spaceMembers)
-        .where(
-          and(
-            eq(spaceMembers.spaceId, event.space.spaceId),
-            eq(spaceMembers.status, "accepted"),
-            eq(spaceMembers.role, "admin"),
-          ),
-        )
-        .all()
-        .map((r) => r.userId);
-      return {
-        to: as("joined", admins),
+        to: [
+          ...as("invited", [event.member.userId]),
+          ...as("joined", spacePeople(event.space.spaceId)),
+        ],
         groupKey: `space:${event.space.spaceId}`,
         spaceId: event.space.spaceId,
       };
-    }
+    case "space.member.joined":
+      return {
+        to: as("joined", spacePeople(event.space.spaceId)),
+        groupKey: `space:${event.space.spaceId}`,
+        spaceId: event.space.spaceId,
+      };
     case "member.role":
       return {
         to: as("role", [event.member.userId]),
@@ -292,8 +300,8 @@ function rule(
  * finished, or assigned or mentioned them): an agent acting with their API
  * key is working for them, so the rest is their own doing. What other
  * people's agents, GitHub and Sidetrack itself do is heard at the level set
- * for "agents" (agentLevel). Only people who can open the list hear about
- * something in it.
+ * for "agents" (agentLevel). Only people who can open the list, or are in
+ * the Space, hear about something in it; an invitee is told before they can.
  */
 // audit-exempt: derived from the audit row written in this transaction.
 export function writeNotifications(
@@ -317,16 +325,18 @@ export function writeNotifications(
     if (!had || strength(reason) < strength(had)) best.set(userId, reason);
   }
   const { projectId, spaceId } = r;
+  // An invitee is told before they can open the place they're invited to.
   const to = [...best].filter(
     ([u, reason]) =>
       (u !== change.actor || (change.agent !== null && tierOf(reason) === "direct")) &&
-      (!projectId ||
+      (reason === "invited" ||
+        !projectId ||
         db
           .select({ id: projects.id })
           .from(projects)
           .where(and(eq(projects.id, projectId), hasProjectAccess(u)))
           .get()) &&
-      (!spaceId || inSpace(db, u, spaceId)),
+      (reason === "invited" || !spaceId || inSpace(db, u, spaceId)),
   );
   // Each at the level they chose for where it happened.
   const space =
@@ -624,6 +634,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
     ...new Set(
       events.flatMap((e) =>
         e.type === "member.joined" ||
+        e.type === "member.invited" ||
         e.type === "member.role" ||
         e.type === "list.updated" ||
         e.type === "list.created"
@@ -652,7 +663,11 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
   const spaceIds = [
     ...new Set(
       events.flatMap((e) =>
-        e.type === "space.member.joined" || e.type === "space.member.role" ? [e.space.spaceId] : [],
+        e.type === "space.member.joined" ||
+        e.type === "space.member.invited" ||
+        e.type === "space.member.role"
+          ? [e.space.spaceId]
+          : [],
       ),
     ),
   ];
@@ -780,6 +795,41 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           ];
       }
     }
+    // What someone joined or was invited as, when it's less than editing.
+    const asRole = (role: ListRole | SpaceRole | undefined): Part[] =>
+      role && role !== "editor" && role !== "member" ? [t(` as ${roleWords(role)}`)] : [];
+    // Someone else invited: told to those already in the list or Space, by
+    // its current name, while they still are.
+    if (
+      (event.type === "member.invited" || event.type === "space.member.invited") &&
+      r.reason !== "invited"
+    ) {
+      const list = event.type === "member.invited" ? lists.get(event.projectId) : undefined;
+      const name =
+        event.type === "member.invited" ? list?.name : spaceNames.get(event.space.spaceId);
+      if (!name) return [];
+      const place: Part =
+        event.type === "member.invited" && list
+          ? listPart(event.projectId, name, list)
+          : { text: name, em: "place", quote: true };
+      return [
+        {
+          ...base,
+          title: name,
+          list: place.list,
+          url: event.type === "member.invited" ? `/board?p=${encodeURIComponent(event.projectId)}` : "/",
+          parts: [
+            who,
+            t(" invited "),
+            { text: event.member.name, em: "person" },
+            t(" to "),
+            place,
+            ...asRole(event.role),
+          ],
+          snippet: null,
+        },
+      ];
+    }
     // Invites: named as they were sent, since the invitee can't see the list
     // or Space (or any rename of it) until they join. The board shows the
     // invite to accept.
@@ -794,9 +844,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
             who,
             t(" invited you to "),
             { text: name, em: "place", quote: true },
-            ...(event.role && event.role !== "editor" && event.role !== "member"
-              ? [t(` as ${roleWords(event.role)}`)]
-              : []),
+            ...asRole(event.role),
           ],
           snippet: null,
         },
@@ -847,7 +895,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
             ? list.space
               ? [who, t(" added "), place, t(" to "), { text: list.space, em: "place", quote: true }]
               : [who, t(" added "), place]
-            : [who, t(" joined "), place];
+            : [who, t(" joined "), place, ...(event.type === "member.joined" ? asRole(event.role) : [])];
       return [
         {
           ...base,
@@ -872,7 +920,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           parts:
             event.type === "space.member.role"
               ? [who, t(` made you ${roleWords(event.role)} of `), space]
-              : [who, t(" joined "), space],
+              : [who, t(" joined "), space, ...asRole(event.role)],
           snippet: null,
         },
       ];

@@ -337,6 +337,7 @@ export function acceptSpaceInvite(
         type: "space.member.joined",
         space: { spaceId, name: spaceName(db, spaceId) },
         membershipId: membership.id,
+        role: membership.role,
       },
     });
   });
