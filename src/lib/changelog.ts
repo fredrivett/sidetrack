@@ -9,9 +9,6 @@ import { z } from "zod";
 
 export const CHANGES_DIR = join(process.cwd(), "changes");
 
-/** Who may approve an entry's wording, by adding `changelog-approved`. */
-export const CHANGELOG_APPROVER = "fredrivett";
-
 const entrySchema = z
   .object({
     date: z
@@ -78,13 +75,12 @@ export function loadEntries(dir = CHANGES_DIR): ChangelogEntry[] {
 /**
  * What stops a PR merging, or [] when it may. A PR either carries
  * `no-changelog` and touches no entry, or adds or updates an entry that lists
- * its number and has the approver's `changelog-approved` label.
+ * its number. Fred approves an entry's wording in the agent's thread before
+ * the PR opens (AGENTS.md, "Changelog"); CI doesn't check that.
  */
 export function checkPullRequest(pr: {
   number: number;
   labels: string[];
-  /** Who last added `changelog-approved`, if anyone. */
-  approvedBy: string | null;
   /** Entries in files the PR added or changed. */
   changed: ChangelogEntry[];
 }): string[] {
@@ -93,16 +89,9 @@ export function checkPullRequest(pr: {
       ? [`no-changelog is set, but the PR changes ${pr.changed.map((e) => e.file).join(", ")}`]
       : [];
   }
-  const errors: string[] = [];
-  if (!pr.changed.some((e) => e.pr.includes(pr.number))) {
-    errors.push(
-      `Add an entry in changes/ with ${pr.number} in its pr list (or add it to the entry this PR finishes), or label the PR no-changelog if users won't notice it.`,
-    );
-  }
-  if (!pr.labels.includes("changelog-approved")) {
-    errors.push(`Entries need ${CHANGELOG_APPROVER} to approve their wording with the changelog-approved label.`);
-  } else if (pr.approvedBy !== CHANGELOG_APPROVER) {
-    errors.push(`changelog-approved was added by ${pr.approvedBy ?? "someone else"}, not ${CHANGELOG_APPROVER}.`);
-  }
-  return errors;
+  return pr.changed.some((e) => e.pr.includes(pr.number))
+    ? []
+    : [
+        `Add an entry in changes/ with ${pr.number} in its pr list (or add it to the entry this PR finishes), or label the PR no-changelog if users won't notice it.`,
+      ];
 }

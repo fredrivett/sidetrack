@@ -191,8 +191,7 @@ commit or fail together — never write one without the other.
 using Sidetrack could notice. Entries are files in `changes/` (format in
 `changes/README.md`, checked by `src/lib/changelog.ts`). The Changelog
 workflow fails a PR unless it either carries the `no-changelog` label and
-touches no entry, or adds or updates an entry whose `pr` list has its number,
-and `fredrivett` has added the `changelog-approved` label.
+touches no entry, or adds or updates an entry whose `pr` list has its number.
 
 - **Entry or not.** Anything a user sees or does differently gets one, from a
   big feature to a small fix. Tests, CI, refactors, dependencies, pure visual
@@ -207,10 +206,15 @@ and `fredrivett` has added the `changelog-approved` label.
   `for: self-hosters` when only people running their own copy will notice.
   `post: true` when it might be worth a longer post; say so to Fred in the
   PR and your final message, and he decides whether to write one.
-- **Sign-off.** Before asking Fred to approve, show him a rough mockup of the
-  entry at the top of the feed (a visual artifact, or a screenshot of
-  `/changelog` from the dev server), in the thread and in the PR body. Fred
-  approves or rewords it. Never add `changelog-approved` yourself.
+- **Sign-off.** Fred approves every entry's wording before it's pushed. Show
+  him a rough mockup of the entry at the top of the feed (a visual artifact,
+  or a screenshot of `/changelog` from the dev server) in the thread. Then
+  the harness asks him: `git push` and `gh pr create` stop while the branch
+  has an unapproved entry (`.amp/plugins/changelog-approval.ts`, and the
+  Claude Code hooks running `scripts/changelog-approval.ts`). If he rewords
+  it, use his text exactly. Never write to the approvals record in `.git`
+  yourself. Put the approved entry and mockup in the PR body. Adding
+  `no-changelog` needs no sign-off.
 
 Writing an entry:
 

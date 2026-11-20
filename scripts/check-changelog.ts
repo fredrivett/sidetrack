@@ -1,7 +1,7 @@
 // The changelog check on every PR (.github/workflows/changelog.yml). The rules
 // live in checkPullRequest (src/lib/changelog.ts); this gathers what it needs
-// from git and GitHub. Needs PR_NUMBER, BASE_SHA, LABELS (JSON array of
-// names), GITHUB_REPOSITORY and GH_TOKEN.
+// from git and the PR event. Needs PR_NUMBER, BASE_SHA and LABELS (JSON array
+// of label names).
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -25,18 +25,7 @@ const changed = run("git", [
     return parseEntry(name, readFileSync(join(CHANGES_DIR, name), "utf8"));
   });
 
-// The label's latest "labeled" event says who added it; label names alone
-// can't, and anyone with write access can add one.
-let approvedBy: string | null = null;
-if (labels.includes("changelog-approved")) {
-  const actors = run("gh", [
-    "api", "--paginate", `repos/${process.env.GITHUB_REPOSITORY}/issues/${number}/events`,
-    "--jq", '.[] | select(.event == "labeled" and .label.name == "changelog-approved") | .actor.login',
-  ]).split("\n").filter(Boolean);
-  approvedBy = actors.at(-1) ?? null;
-}
-
-const errors = checkPullRequest({ number, labels, approvedBy, changed });
+const errors = checkPullRequest({ number, labels, changed });
 for (const e of changed) console.log(`Entry ${e.file}: ${e.text}`);
 if (errors.length) {
   for (const e of errors) console.error(`✗ ${e}`);

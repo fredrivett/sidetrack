@@ -1,8 +1,7 @@
 name: Changelog
 
-# Each PR adds an approved entry to changes/ or carries no-changelog
-# (AGENTS.md, "Changelog"). Labels change without a push, so labeling
-# re-runs the check too.
+# Each PR adds an entry to changes/ or carries no-changelog (AGENTS.md,
+# "Changelog"). Labels change without a push, so labeling re-runs the check.
 on:
   pull_request:
     branches: [main]
@@ -14,8 +13,6 @@ concurrency:
 
 permissions:
   contents: read
-  issues: read
-  pull-requests: read
 
 jobs:
   changelog:
@@ -40,7 +37,6 @@ jobs:
 
       - name: Check entry
         env:
-          GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}

@@ -52,38 +52,29 @@ describe("checkPullRequest", () => {
     { file: "a.md", date: "2026-11-19", type: "new", pr, text: "x" },
   ];
 
-  it("passes an entry for this PR approved by Fred", () => {
-    expect(
-      checkPullRequest({ number: 7, labels: ["changelog-approved"], approvedBy: "fredrivett", changed: changed([7]) }),
-    ).toEqual([]);
+  it("passes an entry for this PR", () => {
+    expect(checkPullRequest({ number: 7, labels: [], changed: changed([7]) })).toEqual([]);
   });
 
   it("passes a follow-up that adds its number to an earlier entry", () => {
-    expect(
-      checkPullRequest({ number: 8, labels: ["changelog-approved"], approvedBy: "fredrivett", changed: changed([7, 8]) }),
-    ).toEqual([]);
+    expect(checkPullRequest({ number: 8, labels: [], changed: changed([7, 8]) })).toEqual([]);
   });
 
-  it("passes no-changelog without asking for approval", () => {
-    expect(checkPullRequest({ number: 7, labels: ["no-changelog"], approvedBy: null, changed: [] })).toEqual([]);
+  it("passes no-changelog", () => {
+    expect(checkPullRequest({ number: 7, labels: ["no-changelog"], changed: [] })).toEqual([]);
   });
 
-  it("fails an entry approved by anyone but Fred", () => {
-    const errors = checkPullRequest({ number: 7, labels: ["changelog-approved"], approvedBy: "agent-bot", changed: changed([7]) });
-    expect(errors).toEqual([expect.stringContaining("added by agent-bot")]);
+  it("fails a PR with no entry and no label", () => {
+    expect(checkPullRequest({ number: 7, labels: [], changed: [] })).toHaveLength(1);
   });
 
-  it("fails an unapproved entry", () => {
-    expect(checkPullRequest({ number: 7, labels: [], approvedBy: null, changed: changed([7]) })).toHaveLength(1);
-  });
-
-  it("fails an approved PR whose changed entries don't name it", () => {
-    const errors = checkPullRequest({ number: 9, labels: ["changelog-approved"], approvedBy: "fredrivett", changed: changed([7]) });
+  it("fails a PR whose changed entries don't name it", () => {
+    const errors = checkPullRequest({ number: 9, labels: [], changed: changed([7]) });
     expect(errors).toEqual([expect.stringContaining("with 9 in its pr list")]);
   });
 
-  // Editing an entry changes what users read, so it needs approval too.
+  // Editing an entry changes what users read, so it can't hide behind the label.
   it("fails no-changelog on a PR that edits an entry", () => {
-    expect(checkPullRequest({ number: 7, labels: ["no-changelog"], approvedBy: null, changed: changed([3]) })).toHaveLength(1);
+    expect(checkPullRequest({ number: 7, labels: ["no-changelog"], changed: changed([3]) })).toHaveLength(1);
   });
 });
