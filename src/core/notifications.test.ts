@@ -392,6 +392,42 @@ describe("notifications", () => {
     expect(unread(db, alice)).toEqual(['Fred made you an admin of "Family"', 'Fred invited you to "Family"']);
   });
 
+  it("tells everyone on a list or Space but its viewers who's invited and who joins, and as what", () => {
+    const { db, fred, alice, listId } = seed();
+    const vic = createTestUser(db, { username: "vic", name: "Vic" });
+    const bob = createTestUser(db, { username: "bob", name: "Bob" });
+    inviteMember(db, fred, listId, "vic", "web", "viewer");
+    acceptInvite(db, vic, listId, "web");
+    for (const u of [fred, alice, vic]) markNotificationsRead(db, u);
+    inviteMember(db, fred, listId, "bob", "web", "commenter");
+    expect(unread(db, alice)).toEqual(['Fred invited @bob to "Home" as a commenter']);
+    expect(unread(db, bob)).toEqual(['Fred invited you to "Home" as a commenter']);
+    acceptInvite(db, bob, listId, "web");
+    expect(unread(db, fred)).toEqual(['Bob joined "Home" as a commenter']);
+    expect(unread(db, alice)[0]).toBe('Bob joined "Home" as a commenter');
+    // A viewer only looks on.
+    expect(unread(db, vic)).toEqual([]);
+
+    // In a Space: admins, members and commenters hear; its viewers don't.
+    const space = createSpace(db, fred, { name: "Family" }, "web");
+    const join = (handle: string, id: string, role: "member" | "commenter" | "viewer") => {
+      inviteSpaceMember(db, fred, space.id, handle, "web", role);
+      acceptSpaceInvite(db, id, space.id, "web");
+    };
+    join("alice", alice, "member");
+    join("bob", bob, "commenter");
+    join("vic", vic, "viewer");
+    const jo = createTestUser(db, { username: "jo", name: "Jo" });
+    for (const u of [fred, alice, bob, vic]) markNotificationsRead(db, u);
+    inviteSpaceMember(db, fred, space.id, "jo", "web", "viewer");
+    acceptSpaceInvite(db, jo, space.id, "web");
+    const told = ['Jo joined "Family" as a viewer', 'Fred invited @jo to "Family" as a viewer'];
+    expect(unread(db, alice)).toEqual(told);
+    expect(unread(db, bob)).toEqual(told);
+    expect(unread(db, fred)).toEqual([told[0]]);
+    expect(unread(db, vic)).toEqual([]);
+  });
+
   it("writes nothing when the change rolls back", () => {
     const { db, fred, alice, listId } = seed();
     // One blank sub-item title rolls back the item with it.
@@ -423,6 +459,9 @@ describe("notifications", () => {
     // Being mentioned made Alice a follower, so she heard the next comment
     // too; her mention quotes the comment as it reads now.
     expect(unread(db, alice)).toEqual([
+      // On the list herself, she's told who joined it.
+      'Bob joined "Home"',
+      'Fred invited @bob to "Home"',
       'Fred commented on "Fix tap": @bob any idea?',
       'Fred mentioned you on "Fix tap": @alice can you look? cc @bob',
     ]);

@@ -297,6 +297,7 @@ export function acceptInvite(
         projectId,
         listName: projectName(db, projectId),
         membershipId: membership.id,
+        role: membership.role,
       },
     });
   });
