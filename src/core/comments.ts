@@ -40,7 +40,7 @@ function cleanBody(raw: string): string {
 
 /** A comment in a feed across items: the comment plus the item it's on. */
 export interface FeedComment extends CommentView {
-  item: Pick<Item, "id" | "title" | "number" | "projectId">;
+  item: Pick<Item, "id" | "title" | "number" | "projectId" | "completedAt">;
 }
 
 function selectComments(
@@ -60,6 +60,7 @@ function selectComments(
         title: items.title,
         number: items.number,
         projectId: items.projectId,
+        completedAt: items.completedAt,
       },
       name: users.name,
       displayUsername: users.displayUsername,

@@ -19,6 +19,7 @@ import {
 import { DueBadge } from "./DueBadge";
 import { runAction } from "./run-action";
 import { CommentCard } from "./ItemComments";
+import { Struck } from "./Struck";
 import { AvatarStack } from "./UserAvatar";
 
 const PAGE = 100;
@@ -127,7 +128,7 @@ export function AuditEntryRow({
                 <DueBadge key={i} due={part.due.dueDate} from={part.due.dueFrom} done />
               ) : part.em ? (
                 <span key={i} className="font-medium text-foreground">
-                  {part.text}
+                  {part.done ? <Struck className="[--strike-gap:var(--color-popover)]">{part.text}</Struck> : part.text}
                 </span>
               ) : (
                 part.text
@@ -189,7 +190,13 @@ function FeedCommentRow({
   const item = (
     <>
       {ref && <span className="shrink-0 font-mono text-[11px] text-neutral-400">{ref}</span>}
-      <span className="truncate">{c.item.title}</span>
+      <span className="truncate">
+        {c.item.completedAt !== null ? (
+          <Struck className="[--strike-gap:var(--color-popover)]">{c.item.title}</Struck>
+        ) : (
+          c.item.title
+        )}
+      </span>
       {showList && project && (
         <span className="shrink-0 text-neutral-400">· {project.name}</span>
       )}

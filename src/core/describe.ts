@@ -21,6 +21,8 @@ export interface Part {
   text: string;
   em?: "person" | "item" | "place";
   quote?: boolean;
+  /** An item that's done now, which reads struck through, as on the board. */
+  done?: boolean;
   /** A list the reader can open, to show with its icon and link to. */
   list?: { id: string; icon: string | null; homepageUrl: string | null };
   /** When something's due, which readers see relative to their own day
@@ -37,6 +39,8 @@ export interface Part {
  */
 export interface Names {
   item(it: ItemAt, projectId: string): string;
+  /** Whether the item is done now, when it reads by its current title. */
+  done(it: ItemAt, projectId: string): boolean;
   person(p: PersonAt): string;
   list(id: string, fallback: string): string;
   space(s: SpaceAt): string;
@@ -69,7 +73,7 @@ export function namesFor(db: Db, events: ChangeEvent[], viewer: string): Names {
   collect(events, ids);
   const itemRows = ids.items.size
     ? db
-        .select({ id: items.id, title: items.title, projectId: items.projectId })
+        .select({ id: items.id, title: items.title, projectId: items.projectId, completedAt: items.completedAt })
         .from(items)
         .where(inArray(items.id, [...ids.items]))
         .all()
@@ -113,6 +117,10 @@ export function namesFor(db: Db, events: ChangeEvent[], viewer: string): Names {
     item(it, projectId) {
       const row = itemById.get(it.itemId);
       return row && row.projectId === projectId ? row.title : it.title;
+    },
+    done(it, projectId) {
+      const row = itemById.get(it.itemId);
+      return row?.projectId === projectId && row.completedAt !== null;
     },
     person: (p) => people.get(p.userId) ?? p.name,
     list: (id, fallback) => lists.get(id) ?? fallback,
@@ -195,6 +203,7 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
     text: names.item(it, projectId),
     em: "item",
     quote: true,
+    ...(names.done(it, projectId) && { done: true }),
   });
   const person = (p: PersonAt): Part => ({ text: names.person(p), em: "person" });
   const list = (name: string): Part => ({
@@ -222,7 +231,7 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
       // A rename keeps the name it had, so the row says what it was.
       const subject: Part = c.title
         ? { text: c.title.from, em: "item" }
-        : { text: names.item(event, projectId), em: "item" };
+        : { text: names.item(event, projectId), em: "item", ...(names.done(event, projectId) && { done: true }) };
       const changes: Part[][] = [];
       if (c.title) changes.push([t(`renamed to "${c.title.to}"`)]);
       if (c.description) {

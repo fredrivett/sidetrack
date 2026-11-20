@@ -232,3 +232,21 @@ body {
     cursor: pointer;
   }
 }
+
+/* A done item named in running text, such as a notification (Struck.tsx):
+   grey and struck through, with the line set off from the letters by a
+   1px band of the surface's colour (--strike-gap) either side. The band is
+   a wider line-through under the line itself, so it wraps with the text. */
+@utility strike {
+  color: var(--color-neutral-400);
+  text-decoration: line-through 3.25px var(--strike-gap, var(--color-background));
+  @variant dark {
+    color: var(--color-neutral-500);
+  }
+}
+@utility strike-line {
+  text-decoration: line-through 1.25px var(--color-neutral-500);
+  @variant dark {
+    text-decoration-color: var(--color-neutral-400);
+  }
+}
