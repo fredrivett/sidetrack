@@ -503,7 +503,8 @@ export function Kanban({
     ...loadedItems,
     ...fetchedItems.filter((f) => !loadedItems.some((i) => i.id === f.id)),
   ];
-  const paletteDetail = useItemDetailDialog(detailItems, initialItemId);
+  // The board's dialog also reopens the item that was open before a reload.
+  const paletteDetail = useItemDetailDialog(detailItems, initialItemId, true);
   // ?item= opens the item once; a reload shouldn't open it again.
   useEffect(() => {
     const url = new URL(window.location.href);
