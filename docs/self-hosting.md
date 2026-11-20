@@ -139,6 +139,25 @@ the data, so copy them somewhere else now and then:
 docker cp sidetrack:/data/backups ./sidetrack-backups
 ```
 
+Or have Sidetrack upload each one to an S3-compatible bucket, such as
+Cloudflare R2, Backblaze B2 or AWS S3, by setting the `BACKUP_*` variables
+([Backups off the server](#backups-off-the-server)). Each upload is
+compressed and encrypted, named for the time it was made
+(`sidetrack-<time>.db.gz.enc`), and never replaced or deleted. Have the bucket
+delete old ones with a lifecycle rule; a retention lock as well means no one
+who gets into the server can delete them. A failed upload is logged, and
+reported to PostHog when `POSTHOG_KEY` is set.
+
+To open an uploaded backup, download it and run, in a checkout of Sidetrack:
+
+```bash
+BACKUP_ENCRYPTION_KEY=<your key> pnpm backup:open sidetrack-<time>.db.gz.enc
+```
+
+That writes `sidetrack-<time>.db`, which you restore like any other backup,
+below. Without the key the backups can't be opened, so keep it somewhere other
+than the server, such as your password manager.
+
 To restore a backup:
 
 ```bash
@@ -200,6 +219,18 @@ without them.
 | `DB_PATH` | `./data/sidetrack.db` | SQLite database path. The Docker image sets it to the `/data` volume; leave it there |
 | `BACKUP_DIR` | `./data/backups` | Where daily backups go (the last 7 are kept). The Docker image sets it to the `/data` volume |
 | `SIDETRACK_SEED` | `false` | `true` lets `pnpm db:seed` fill a fresh database with demo data. Development only; never on a real instance |
+
+### Backups off the server
+
+Set all five to upload each daily backup ([Backups](#backups)), or none.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `BACKUP_S3_ENDPOINT` | unset | The bucket service's S3 URL, such as `https://<account-id>.r2.cloudflarestorage.com` |
+| `BACKUP_S3_BUCKET` | unset | The bucket's name |
+| `BACKUP_S3_ACCESS_KEY_ID` | unset | Access key that can write to the bucket |
+| `BACKUP_S3_SECRET_ACCESS_KEY` | unset | Its secret |
+| `BACKUP_ENCRYPTION_KEY` | unset | Encrypts the uploads. Generate with `openssl rand -base64 32`, and keep a copy off the server: without it, the backups can't be opened |
 
 ### Email
 

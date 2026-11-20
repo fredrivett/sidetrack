@@ -85,6 +85,33 @@ export interface ServerEnv {
   // bytes as base64. Unset turns calendars off. Changing it means everyone
   // reconnects their calendars.
   CALENDAR_SECRET_KEY: Buffer | undefined;
+  // Where each daily backup is also uploaded, encrypted (core/backup.ts): an
+  // S3-compatible bucket off the server, such as Cloudflare R2. Unset keeps
+  // backups on the server only.
+  BACKUP_UPLOAD:
+    | { endpoint: string; bucket: string; accessKeyId: string; secretAccessKey: string; key: Buffer }
+    | undefined;
+}
+
+// Uploading a backup takes all of these; a missing one would only fail at the
+// first upload, up to a day after the deploy.
+const BACKUP_UPLOAD_VARS = [
+  "BACKUP_S3_ENDPOINT",
+  "BACKUP_S3_BUCKET",
+  "BACKUP_S3_ACCESS_KEY_ID",
+  "BACKUP_S3_SECRET_ACCESS_KEY",
+  "BACKUP_ENCRYPTION_KEY",
+] as const;
+
+// superRefine has checked they come together and the key parses.
+function backupUpload(
+  env: Partial<Record<(typeof BACKUP_UPLOAD_VARS)[number], string>>,
+): ServerEnv["BACKUP_UPLOAD"] {
+  const key = env.BACKUP_ENCRYPTION_KEY ? parseSecretKey(env.BACKUP_ENCRYPTION_KEY) : null;
+  const { BACKUP_S3_ENDPOINT: endpoint, BACKUP_S3_BUCKET: bucket } = env;
+  const { BACKUP_S3_ACCESS_KEY_ID: accessKeyId, BACKUP_S3_SECRET_ACCESS_KEY: secretAccessKey } = env;
+  if (!key || !endpoint || !bucket || !accessKeyId || !secretAccessKey) return undefined;
+  return { endpoint: endpoint.replace(/\/+$/, ""), bucket, accessKeyId, secretAccessKey, key };
 }
 
 // Production-required vars are enforced only when actually running in
@@ -157,6 +184,11 @@ function schemaFor(mode: EnvMode) {
       VAPID_PUBLIC_KEY: optionalTrimmed,
       VAPID_PRIVATE_KEY: optionalTrimmed,
       VAPID_SUBJECT: optionalTrimmed,
+      BACKUP_S3_ENDPOINT: optionalTrimmed,
+      BACKUP_S3_BUCKET: optionalTrimmed,
+      BACKUP_S3_ACCESS_KEY_ID: optionalTrimmed,
+      BACKUP_S3_SECRET_ACCESS_KEY: optionalTrimmed,
+      BACKUP_ENCRYPTION_KEY: optionalTrimmed,
       CALENDAR_SECRET_KEY: optionalTrimmed,
     })
     .superRefine((env, ctx) => {
@@ -202,6 +234,33 @@ function schemaFor(mode: EnvMode) {
           path: ["CALENDAR_SECRET_KEY"],
           message:
             "CALENDAR_SECRET_KEY must be 32 bytes as base64; generate one with " +
+            "`openssl rand -base64 32`.",
+        });
+      }
+      const backupSet = BACKUP_UPLOAD_VARS.filter((name) => env[name]);
+      if (backupSet.length > 0 && backupSet.length < BACKUP_UPLOAD_VARS.length) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["BACKUP_S3_ENDPOINT"],
+          message: `${BACKUP_UPLOAD_VARS.join(", ")} go together to upload backups: set all or none.`,
+        });
+      }
+      if (env.BACKUP_S3_ENDPOINT && !isHttpUrl(env.BACKUP_S3_ENDPOINT)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["BACKUP_S3_ENDPOINT"],
+          message:
+            "BACKUP_S3_ENDPOINT must be the bucket service's https:// URL, such as " +
+            "https://<account-id>.r2.cloudflarestorage.com.",
+        });
+      }
+      // A key that isn't 32 bytes would only fail at the first upload.
+      if (env.BACKUP_ENCRYPTION_KEY && !parseSecretKey(env.BACKUP_ENCRYPTION_KEY)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["BACKUP_ENCRYPTION_KEY"],
+          message:
+            "BACKUP_ENCRYPTION_KEY must be 32 bytes as base64; generate one with " +
             "`openssl rand -base64 32`.",
         });
       }
@@ -297,6 +356,7 @@ function schemaFor(mode: EnvMode) {
       ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
       FEEDBACK_LIST_ID: env.FEEDBACK_LIST_ID,
       CALENDAR_SECRET_KEY: env.CALENDAR_SECRET_KEY ? (parseSecretKey(env.CALENDAR_SECRET_KEY) ?? undefined) : undefined,
+      BACKUP_UPLOAD: backupUpload(env),
       EMAIL_IN:
         env.EMAIL_IN_DOMAIN && env.EMAIL_IN_SECRET
           ? { domain: env.EMAIL_IN_DOMAIN.toLowerCase(), secret: env.EMAIL_IN_SECRET }

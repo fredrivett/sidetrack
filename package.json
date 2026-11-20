@@ -15,6 +15,7 @@
     "test:mutation": "stryker run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/core/migrate.ts",
+    "backup:open": "tsx scripts/open-backup.ts",
     "db:seed": "ALLOW_SIGNUP=true tsx scripts/seed.ts",
     "mailpit": "docker compose -f docker-compose.dev.yml up"
   },
@@ -25,6 +26,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@posthog/nextjs-config": "^1.9.52",
+    "aws4fetch": "^1.0.20",
     "better-auth": "1.6.11",
     "better-sqlite3": "^12.10.0",
     "chrono-node": "^2.10.3",
