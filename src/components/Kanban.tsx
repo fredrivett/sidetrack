@@ -303,8 +303,11 @@ export function Kanban({
       document.cookie = `${LOCALE_COOKIE}=${encodeURIComponent(locale)}; path=/; max-age=31536000; samesite=lax`;
       const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       if (browserZone && browserZone !== timeZone) {
-        // Reload once it's saved: repeating items reopen by the viewer's day.
-        void setTimeZoneAction(browserZone).then(() => router.refresh());
+        // Saving it reloads the board through LiveUpdates, so repeating
+        // items reopen by the viewer's day. Not router.refresh() here: on
+        // first load that raced the item dialog opening, and Next answered
+        // with a full page load.
+        void setTimeZoneAction(browserZone);
       }
     }
     sync();
@@ -313,7 +316,7 @@ export function Kanban({
     }
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [timeZone, router]);
+  }, [timeZone]);
 
   // When the day turns over with the page open (or a tab comes back the next
   // morning), reload the board: the server reopens repeating items due today.

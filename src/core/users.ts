@@ -224,6 +224,9 @@ export function setTimeZone(db: Db, userId: string, timeZone: string): void {
   // audit-exempt: the device reporting its zone, not a user action
   // (see above).
   db.update(users).set({ timeZone: canonical }).where(eq(users.id, userId)).run();
+  // Unaudited, so announced here: open boards reload (LiveUpdates), and the
+  // server reopens repeating items by the viewer's new day.
+  announceChange({ actor: userId, projectId: null });
 }
 
 /** The filters the user last set on their board, or none. */

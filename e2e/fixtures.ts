@@ -4,7 +4,6 @@ import { auth } from "@/auth/better-auth";
 import { getDb } from "@/core/db";
 import { addItem } from "@/core/items";
 import { createProject } from "@/core/projects";
-import { setTimeZone } from "@/core/users";
 
 export { expect };
 
@@ -27,7 +26,7 @@ export type User = {
  * tests never see each other's data and can run in parallel.
  */
 export const test = base.extend<{ user: User }>({
-  user: async ({ context, baseURL, timezoneId }, use) => {
+  user: async ({ context, baseURL }, use) => {
     const handle = `e2e${randomUUID().replace(/-/g, "").slice(0, 12)}`;
     const email = `${handle}@sidetrack.test`;
     const { headers, response } = await auth.api.signUpEmail({
@@ -47,9 +46,6 @@ export const test = base.extend<{ user: User }>({
       "x-forwarded-for": `10.${Number(ip.slice(0, 2)) % 256}.${Number(ip.slice(2, 4)) % 256}.${Number(ip.slice(4, 6)) % 256}`,
     });
     const { db } = getDb();
-    // As for anyone who has used the app before. A new user's first board
-    // saves it, and a click during that save's refresh reloads the page.
-    setTimeZone(db, response.user.id, timezoneId ?? "Europe/London");
     await use({
       id: response.user.id,
       email,
