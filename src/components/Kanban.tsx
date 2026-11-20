@@ -712,38 +712,6 @@ export function Kanban({
     return () => io.disconnect();
   }, [projects, view]);
 
-  // The view switch's underline sits on the header's bottom border under the
-  // current view, and slides to the next one. Measured, since the tabs differ
-  // in width and the header's height depends on what's beside them.
-  const viewTabs = useRef<HTMLDivElement>(null);
-  const [underline, setUnderline] = useState<{ left: number; width: number; top: number } | null>(null);
-  useLayoutEffect(() => {
-    const group = viewTabs.current;
-    const header = group?.closest("[data-board-header]");
-    if (!group || !header) return;
-    const place = () => {
-      const tab = group.querySelector<HTMLElement>('[aria-pressed="true"]');
-      if (!tab) return setUnderline(null);
-      const g = group.getBoundingClientRect();
-      const t = tab.getBoundingClientRect();
-      const h = header.getBoundingClientRect();
-      setUnderline({ left: t.left - g.left, width: t.width, top: h.bottom - g.top - 2 });
-    };
-    place();
-    // Again once the fonts are in (the Brief's serif changes its width), and
-    // whenever the header or the tabs change size: the header wrapping or the
-    // window resizing. (No ResizeObserver in jsdom.)
-    void document.fonts?.ready.then(place);
-    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
-    ro?.observe(header);
-    ro?.observe(group);
-    window.addEventListener("resize", place);
-    return () => {
-      ro?.disconnect();
-      window.removeEventListener("resize", place);
-    };
-  }, [view]);
-
   return (
     <FollowsProvider followedItemIds={followedItemIds}>
     <SelectedItemContext value={selection}>
@@ -754,58 +722,7 @@ export function Kanban({
     <BoardDrag groups={moveTargets}>
       <BoardMain>
         <BoardHeader
-          nav={
-            <div
-              ref={viewTabs}
-              role="group"
-              aria-label="View"
-              // Tabs, as tall as the header's buttons beside them: 28px, 36px
-              // on touch.
-              className="relative flex h-7 items-stretch text-[13px] font-medium max-[360px]:text-xs touch:h-9 touch:text-sm touch:max-[360px]:text-xs"
-            >
-              {BOARD_VIEWS.map(([v, label, Icon], i) => (
-                <Tooltip key={v}>
-                  <TooltipTrigger
-                    render={
-                      <button
-                        type="button"
-                        aria-pressed={view === v}
-                        aria-keyshortcuts={String(i + 1)}
-                        onClick={() => switchView(v)}
-                        // Icon and name; just the icon on phones, where the
-                        // header is full.
-                        className={`flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-neutral-300 sm:px-2.5 dark:focus-visible:ring-neutral-600 [&_svg]:size-3.5 touch:[&_svg]:size-4 ${
-                          view === v
-                            ? "text-neutral-900 dark:text-neutral-100"
-                            : "text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                        }`}
-                      >
-                        <Icon aria-hidden />
-                        {/* The Brief's name in the greeting's italic serif. */}
-                        <span
-                          className={`max-sm:sr-only ${
-                            v === "brief" ? "font-display text-[18px] leading-none font-normal tracking-[-0.01em] italic" : ""
-                          }`}
-                        >
-                          {label}
-                        </span>
-                      </button>
-                    }
-                  />
-                  <TooltipContent side="bottom">
-                    Go to {label} <Kbd>{i + 1}</Kbd>
-                  </TooltipContent>
-                </Tooltip>
-              ))}
-              {underline && (
-                <span
-                  aria-hidden
-                  className="pointer-events-none absolute h-0.5 rounded-full bg-neutral-900 transition-[left,width] duration-300 ease-out motion-reduce:transition-none dark:bg-neutral-100"
-                  style={underline}
-                />
-              )}
-            </div>
-          }
+          nav={<ViewTabs view={view} onSwitch={switchView} />}
         >
           <FilterMenu
             open={filterOpen}
@@ -1104,5 +1021,97 @@ export function Kanban({
     </NotificationLevelsProvider>
     </SelectedItemContext>
     </FollowsProvider>
+  );
+}
+
+/**
+ * The Brief, Board and Done switch, with an underline under the current view
+ * that slides to the next. Its own component so measuring the underline
+ * re-renders only the tabs, not the board under them.
+ */
+function ViewTabs({ view, onSwitch }: { view: BoardView; onSwitch: (next: BoardView) => void }) {
+  // The view switch's underline sits on the header's bottom border under the
+  // current view, and slides to the next one. Measured, since the tabs differ
+  // in width and the header's height depends on what's beside them.
+  const viewTabs = useRef<HTMLDivElement>(null);
+  const [underline, setUnderline] = useState<{ left: number; width: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const group = viewTabs.current;
+    const header = group?.closest("[data-board-header]");
+    if (!group || !header) return;
+    const place = () => {
+      const tab = group.querySelector<HTMLElement>('[aria-pressed="true"]');
+      if (!tab) return setUnderline(null);
+      const g = group.getBoundingClientRect();
+      const t = tab.getBoundingClientRect();
+      const h = header.getBoundingClientRect();
+      setUnderline({ left: t.left - g.left, width: t.width, top: h.bottom - g.top - 2 });
+    };
+    place();
+    // Again once the fonts are in (the Brief's serif changes its width), and
+    // whenever the header or the tabs change size: the header wrapping or the
+    // window resizing. (No ResizeObserver in jsdom.)
+    void document.fonts?.ready.then(place);
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
+    ro?.observe(header);
+    ro?.observe(group);
+    window.addEventListener("resize", place);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", place);
+    };
+  }, [view]);
+
+  return (
+    <div
+      ref={viewTabs}
+      role="group"
+      aria-label="View"
+      // Tabs, as tall as the header's buttons beside them: 28px, 36px
+      // on touch.
+      className="relative flex h-7 items-stretch text-[13px] font-medium max-[360px]:text-xs touch:h-9 touch:text-sm touch:max-[360px]:text-xs"
+    >
+      {BOARD_VIEWS.map(([v, label, Icon], i) => (
+        <Tooltip key={v}>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                aria-pressed={view === v}
+                aria-keyshortcuts={String(i + 1)}
+                onClick={() => onSwitch(v)}
+                // Icon and name; just the icon on phones, where the
+                // header is full.
+                className={`flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-neutral-300 sm:px-2.5 dark:focus-visible:ring-neutral-600 [&_svg]:size-3.5 touch:[&_svg]:size-4 ${
+                  view === v
+                    ? "text-neutral-900 dark:text-neutral-100"
+                    : "text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                }`}
+              >
+                <Icon aria-hidden />
+                {/* The Brief's name in the greeting's italic serif. */}
+                <span
+                  className={`max-sm:sr-only ${
+                    v === "brief" ? "font-display text-[18px] leading-none font-normal tracking-[-0.01em] italic" : ""
+                  }`}
+                >
+                  {label}
+                </span>
+              </button>
+            }
+          />
+          <TooltipContent side="bottom">
+            Go to {label} <Kbd>{i + 1}</Kbd>
+          </TooltipContent>
+        </Tooltip>
+      ))}
+      {underline && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute h-0.5 rounded-full bg-neutral-900 transition-[left,width] duration-300 ease-out motion-reduce:transition-none dark:bg-neutral-100"
+          style={underline}
+        />
+      )}
+    </div>
   );
 }
