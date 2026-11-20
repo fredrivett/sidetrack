@@ -7,6 +7,7 @@ import { feedbackFollowUps } from "@/core/feedback";
 import { projectRefPrefixes } from "@/core/itemRef";
 import { getProject, getProjectWithItems, listProjects, sampleOpenItemTitles } from "@/core/projects";
 import { getTimeZone } from "@/core/users";
+import { suggestDayTags } from "@/lib/dayTags";
 import { suggestEmoji, suggestLabelEmoji } from "@/lib/emojiSuggest";
 import { getEnv } from "@/lib/env";
 import { formatItemRef } from "@/lib/itemRef";
@@ -135,6 +136,13 @@ export const AI_READS = {
       return suggestLabelEmoji({ name: name.trim(), listName: project?.name ?? "" }, apiKey, fetch);
     },
   ),
+
+  /** The day-note tags that fit what's being typed about today, to suggest. [] when AI is off. */
+  dayTags: read(z.object({ text }), async ({ text: typed }, { fetch }) => {
+    const apiKey = getEnv().TYPESAFE_API_KEY;
+    if (!apiKey || !typed.trim()) return [];
+    return suggestDayTags(typed.trim(), apiKey, fetch);
+  }),
 
   /**
    * Claude's follow-up questions about feedback the user just sent, each
