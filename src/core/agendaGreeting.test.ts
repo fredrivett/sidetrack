@@ -725,6 +725,13 @@ describe("greetingFor", () => {
         await writtenGreetingFor(db, fred, "UTC", { jev: undefined, anthropic: "k" }, now, impl),
       ).toEqual(greetingFor(db, fred, "UTC", now));
       expect(calls).toEqual({ jev: 0, claude: 0 });
+      // Nothing reads a note then, so the page isn't asked to offer one,
+      // and "What is this?" doesn't say it read one.
+      setDayNote(db, fred, "2026-11-18", "Not feeling well");
+      const off = await writtenGreetingFor(db, fred, "UTC", { jev: undefined, anthropic: undefined }, now, impl);
+      expect(off).toMatchObject({ aiOff: true, note: null });
+      expect(off.trace?.looked.dayNote).toBe(false);
+      expect((await writtenGreetingFor(db, fred, "UTC", keys, now, impl)).aiOff).toBeUndefined();
     });
   });
 });

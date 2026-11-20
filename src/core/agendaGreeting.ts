@@ -35,6 +35,8 @@ export interface Greeting {
   retryInMs?: number;
   /** The viewer's note for today (dayNotes.ts), as it is now; null or absent for none. */
   note?: string | null;
+  /** AI isn't set up, so nothing reads a note: the page doesn't offer one. */
+  aiOff?: true;
 }
 
 /** How a greeting was worked out: what it looked at and what it decided. */
@@ -271,13 +273,14 @@ export function greetingFor(
   timeZone: string,
   now = Date.now(),
 ): Greeting {
-  const { brief, name, prefs } = briefFor(db, viewerId, timeZone, now);
-  return fromTemplate(
-    brief,
-    name,
-    prefs,
-    traceOf(brief, prefs, timeZone, now, "AI isn't set up on this server"),
-  );
+  const found = briefFor(db, viewerId, timeZone, now);
+  // The templates don't read the note, so it isn't one of the facts.
+  const brief = { ...found.brief, dayNote: null };
+  const { name, prefs } = found;
+  return {
+    ...fromTemplate(brief, name, prefs, traceOf(brief, prefs, timeZone, now, "AI isn't set up on this server")),
+    aiOff: true,
+  };
 }
 
 /**
@@ -299,11 +302,11 @@ export async function writtenGreetingFor(
   /** Asked for with "Rewrite now": it waits ASK_NOW_EVERY_MS, not the back-off. The daily caps still hold. */
   rewriteNow = false,
 ): Promise<Greeting> {
+  if (!keys.jev || !keys.anthropic) return greetingFor(db, viewerId, timeZone, now);
   const { brief, name, prefs } = briefFor(db, viewerId, timeZone, now);
   const hello = helloFor(brief, name);
   const template = (why: string, trace = traceOf(brief, prefs, timeZone, now, why)) =>
     fromTemplate(brief, name, prefs, { ...trace, why });
-  if (!keys.jev || !keys.anthropic) return template("AI isn't set up on this server");
   // One greeting a morning, afternoon and evening, written again when an
   // item it names changes (ticked off, renamed, moved to another day or
   // person) or the viewer's note for today does, but not as other things

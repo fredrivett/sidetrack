@@ -433,8 +433,9 @@ export function AgendaGreeting({
       )}
 
       {/* What they wrote about today, for the greeting to be written with:
-          saved as typed, then the greeting asks to be rewritten with it. */}
-      {greeting && (
+          saved as typed, then the greeting asks to be rewritten with it.
+          Not offered when AI is off, as nothing would read it. */}
+      {greeting && !greeting.aiOff && (
         <div className="mt-3 flex animate-in items-baseline gap-2 fade-in duration-500">
           <NotebookPen aria-hidden className="size-3.5 shrink-0 translate-y-0.5 text-neutral-400 dark:text-neutral-500" />
           <EditableText
