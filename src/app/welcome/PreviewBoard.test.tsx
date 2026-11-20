@@ -101,7 +101,7 @@ it("keeps every change in the page", async () => {
   noServerCalls();
   expect(greeting().textContent).not.toMatch(/boiler/);
   expect(greeting().textContent).toMatch(
-    /^Write the launch post is the one for today\. Take the bins out is due tomorrow\./,
+    /^Write the launch post is the one for today\. Email the waitlist is due tomorrow, so worth a head start today\./,
   );
 
   fireEvent.click(screen.getByRole("button", { name: "Board" }));
