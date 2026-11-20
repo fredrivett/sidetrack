@@ -1,6 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { ITEM_SORTS } from "../lib/itemSorts";
 import { repeatLabel } from "../lib/repeat";
+import { dueWord } from "../lib/time";
 import { users } from "./auth-schema";
 import type { Db } from "./db";
 import type { AccessLost, ChangeEvent, DueAt, ItemAt, ListChanges, PersonAt, SpaceAt } from "./events";
@@ -22,6 +23,9 @@ export interface Part {
   quote?: boolean;
   /** A list the reader can open, to show with its icon and link to. */
   list?: { id: string; icon: string | null; homepageUrl: string | null };
+  /** When something's due, which readers see relative to their own day
+   * ("this weekend"); `text` has its dates. */
+  due?: { dueDate: string; dueFrom: string | null };
 }
 
 /**
@@ -116,13 +120,26 @@ export function namesFor(db: Db, events: ChangeEvent[], viewer: string): Names {
   };
 }
 
-/** A sentence as plain text, names in quotes: `completed "Fix tap"`. */
-export function plainText(parts: Part[]): string {
-  return parts.map((p) => (p.quote ? `"${p.text}"` : p.text)).join("");
+/**
+ * A sentence as plain text, names in quotes: `completed "Fix tap"`. Given
+ * the reader's `today`, a due date reads in words where it can ("this
+ * weekend"), else as its dates.
+ */
+export function plainText(parts: Part[], today?: string): string {
+  return parts
+    .map((p) => {
+      const word = p.due && today ? dueWord(p.due.dueDate, today, p.due.dueFrom) : null;
+      return word ? word.toLowerCase() : p.quote ? `"${p.text}"` : p.text;
+    })
+    .join("");
 }
 
-export function dueText(due: DueAt): string {
-  return due.dueFrom ? `${due.dueFrom} to ${due.dueDate}` : (due.dueDate ?? "");
+/** When something's due, as a Part (see Part.due). */
+export function duePart(due: DueAt & { dueDate: string }): Part {
+  return {
+    text: due.dueFrom ? `${due.dueFrom} to ${due.dueDate}` : due.dueDate,
+    due: { dueDate: due.dueDate, dueFrom: due.dueFrom },
+  };
 }
 
 const t = (text: string): Part => ({ text });
@@ -194,7 +211,7 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
       const parts: Part[] = event.parent
         ? [t("added "), item(event), t(" to "), item(event.parent)]
         : [t("added task "), item(event)];
-      if (event.due.dueDate) parts.push(t(`, due ${dueText(event.due)}`));
+      if (event.due.dueDate) parts.push(t(", due "), duePart({ ...event.due, dueDate: event.due.dueDate }));
       if (event.labels.length) parts.push(t(`, labelled ${event.labels.join(", ")}`));
       if (event.assignees.length) parts.push(t(", assigned to "), ...people(names, event.assignees));
       if (event.repeat) parts.push(t(`, repeats ${repeatLabel(event.repeat).replace("Every", "every")}`));
@@ -219,7 +236,11 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
       if (c.assignees?.removed.length) {
         changes.push([t("unassigned "), ...people(names, c.assignees.removed)]);
       }
-      if (c.due) changes.push([t(c.due.dueDate ? `due ${dueText(c.due)}` : "due date cleared")]);
+      if (c.due) {
+        changes.push(
+          c.due.dueDate ? [t("due "), duePart({ ...c.due, dueDate: c.due.dueDate })] : [t("due date cleared")],
+        );
+      }
       if (c.repeat !== undefined) {
         changes.push([
           t(c.repeat ? `repeats ${repeatLabel(c.repeat).replace("Every", "every")}` : "no longer repeats"),
@@ -243,7 +264,7 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
       if (event.forSubItem) parts.push(t(" for an open sub-item"));
       if (event.repeat) parts.push(t(` (repeats ${repeatLabel(event.repeat).replace("Every", "every")})`));
       if (event.with) parts.push(t(" with "), item(event.with));
-      if (event.due) parts.push(t(`, due ${dueText(event.due)}`));
+      if (event.due?.dueDate) parts.push(t(", due "), duePart({ ...event.due, dueDate: event.due.dueDate }));
       return parts;
     }
     case "item.reordered":

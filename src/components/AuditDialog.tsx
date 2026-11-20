@@ -16,6 +16,7 @@ import {
   ResponsiveDialogDescription,
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
+import { DueText } from "./DueBadge";
 import { runAction } from "./run-action";
 import { CommentCard } from "./ItemComments";
 import { AvatarStack } from "./UserAvatar";
@@ -122,7 +123,9 @@ export function AuditEntryRow({
           // Who and what stand out; the words between them don't.
           <p className="break-words text-sm text-neutral-600 dark:text-neutral-300">
             {e.parts.map((part, i) =>
-              part.em ? (
+              part.due ? (
+                <DueText key={i} due={part.due.dueDate} from={part.due.dueFrom} />
+              ) : part.em ? (
                 <span key={i} className="font-medium text-foreground">
                   {part.text}
                 </span>

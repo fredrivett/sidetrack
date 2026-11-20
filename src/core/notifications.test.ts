@@ -25,6 +25,7 @@ import {
   updateSpace,
 } from "./spaces";
 import { createTestDb, createTestUser } from "./test-helpers";
+import { dayOf, weekSpan } from "../lib/time";
 
 const sendPush = vi.hoisted(() => vi.fn(async () => ({ sent: 1, gone: [] as string[] })));
 vi.mock("../lib/push", async (importOriginal) => ({
@@ -587,6 +588,29 @@ describe("notifications", () => {
     await deliverNotifications(db, Date.now() + 31_000);
     expect(sendPush.mock.calls[0]).toContainEqual(
       expect.objectContaining({ body: 'Fred assigned you "Fix tap"' }),
+    );
+  });
+
+  it("says when something's due in words in a push, where it can", async () => {
+    const { db, fred, alice, listId } = seed();
+    subscribe(db, alice);
+    const item = addItem(db, fred, { projectId: listId, title: "Fix tap" }, "web");
+    setFollowing(db, alice, item.id, true);
+    await deliverNotifications(db, due());
+    sendPush.mockClear();
+    // Alice hasn't saved a time zone, so her days are UTC's.
+    const weekend = weekSpan(dayOf(Date.now(), "UTC"), 0, "weekend");
+    updateItem(db, fred, item.id, weekend, "web");
+    await deliverNotifications(db, due());
+    expect(sendPush.mock.calls[0]).toContainEqual(
+      expect.objectContaining({ body: 'Fred set "Fix tap" due this weekend' }),
+    );
+    // A span with no word for it keeps its dates.
+    sendPush.mockClear();
+    updateItem(db, fred, item.id, { dueFrom: "2030-01-02", dueDate: "2030-01-04" }, "web");
+    await deliverNotifications(db, due());
+    expect(sendPush.mock.calls[0]).toContainEqual(
+      expect.objectContaining({ body: 'Fred set "Fix tap" due 2030-01-02 to 2030-01-04' }),
     );
   });
 
