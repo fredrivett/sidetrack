@@ -15,7 +15,9 @@ export const ICLOUD_CALDAV = "https://caldav.icloud.com/";
 
 /** iCloud's CalDAV hosts: caldav.icloud.com and the pNN-caldav.icloud.com it sends people to. */
 export const isICloudUrl = (url: URL) =>
-  url.protocol === "https:" && (url.hostname === "caldav.icloud.com" || url.hostname.endsWith(".icloud.com"));
+  url.protocol === "https:" &&
+  (url.port === "" || url.port === "443") &&
+  /^(p\d+-)?caldav\.icloud\.com$/.test(url.hostname);
 
 export interface CalDavOptions {
   username: string;
@@ -90,7 +92,8 @@ async function propRequest(
         },
       },
     });
-    if (res.status === 401 || res.status === 403) throw new CalDavAuthError();
+    // Only a 401 is the password: a 403 can be one calendar the account can't read any more.
+    if (res.status === 401) throw new CalDavAuthError();
     if (res.location !== undefined) {
       if (hop >= MAX_REDIRECTS) throw new CalDavError("too many redirects");
       current = new URL(res.location, current);

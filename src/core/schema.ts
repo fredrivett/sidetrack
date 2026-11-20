@@ -539,7 +539,7 @@ export const calendars = sqliteTable(
     color: text("color"),
     included: integer("included", { mode: "boolean" }).notNull().default(true),
     // The ctag its events were last fetched at, and when: they're fetched
-    // again when it changes, and daily anyway as the window moves on.
+    // again when it changes, and every 6 hours anyway as the window moves on.
     ctag: text("ctag"),
     eventsFetchedAt: integer("events_fetched_at"),
     createdAt: integer("created_at").notNull(),

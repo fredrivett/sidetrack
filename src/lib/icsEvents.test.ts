@@ -125,4 +125,63 @@ END:VEVENT`);
     const found = eventsIn(["not a calendar", good], { from: ms("2026-11-21T00:00Z"), to: ms("2026-11-22T00:00Z") }, opts);
     expect(found.map((e) => e.title)).toEqual(["Fine"]);
   });
+
+  it("never lets one calendar's zone definition change how another's times are read", () => {
+    const fake = cal(
+      `BEGIN:VTIMEZONE
+TZID:Europe/Paris
+BEGIN:STANDARD
+DTSTART:19700101T000000
+TZOFFSETFROM:+0500
+TZOFFSETTO:+0500
+END:STANDARD
+END:VTIMEZONE`,
+      `BEGIN:VEVENT
+UID:bait
+DTSTART;TZID=Europe/Paris:20261120T090000
+SUMMARY:Bait
+END:VEVENT`,
+    );
+    const window = { from: ms("2026-11-20T00:00Z"), to: ms("2026-11-21T00:00Z") };
+    // The invite's own definition applies to the invite.
+    expect(eventsIn([fake], window, opts)[0].start).toBe(ms("2026-11-20T04:00Z"));
+    const real = cal(`BEGIN:VEVENT
+UID:meeting
+DTSTART;TZID=Europe/Paris:20261120T090000
+SUMMARY:Meeting
+END:VEVENT`);
+    // 9am in Paris is 8am UTC in November, whatever was read before.
+    expect(eventsIn([real], window, opts)[0].start).toBe(ms("2026-11-20T08:00Z"));
+  });
+
+  it("keeps repeats of rules that started long ago, quickly", () => {
+    const window = { from: ms("2026-11-20T00:00Z"), to: ms("2026-11-22T00:00Z") };
+    const hourly = cal(`BEGIN:VEVENT
+UID:hourly
+DTSTART:20231101T000000Z
+RRULE:FREQ=HOURLY
+SUMMARY:Ping
+END:VEVENT`);
+    expect(eventsIn([hourly], window, opts)).toHaveLength(48);
+    const birthday = cal(`BEGIN:VEVENT
+UID:bday
+DTSTART;VALUE=DATE:19600121
+RRULE:FREQ=YEARLY;BYMONTH=11;BYMONTHDAY=21
+SUMMARY:Birthday
+END:VEVENT`);
+    expect(eventsIn([birthday], window, opts).map((e) => e.startDay)).toEqual(["2026-11-21"]);
+    // A floating time is read in the owner's zone, which was slow per repeat.
+    const floating = cal(`BEGIN:VEVENT
+UID:float
+DTSTART:20000101T090000
+RRULE:FREQ=DAILY
+SUMMARY:Walk
+END:VEVENT`);
+    const started = performance.now();
+    expect(eventsIn([floating], window, opts).map((e) => new Date(e.start).toISOString())).toEqual([
+      "2026-11-20T09:00:00.000Z",
+      "2026-11-21T09:00:00.000Z",
+    ]);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
 });

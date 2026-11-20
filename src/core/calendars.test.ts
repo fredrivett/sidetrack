@@ -27,6 +27,12 @@ const state = {
   authed: [] as string[],
   // Events relative to now, so the window always holds them.
   ics: "",
+  /** Whether the calendar list includes Home and Work. */
+  listed: { home: true, work: true },
+  /** A status Work's REPORT answers instead of its events. */
+  workStatus: 207,
+  /** Holds Home's REPORT until it resolves. */
+  hold: null as Promise<void> | null,
 };
 let server: http.Server;
 let base = "";
@@ -51,10 +57,18 @@ beforeAll(async () => {
     if (req.url === "/123/calendars/" && req.method === "PROPFIND")
       return send(
         ok("/123/calendars/", "<d:resourcetype><d:collection/></d:resourcetype>") +
-          ok(
-            "/123/calendars/home/",
+          (state.listed.home
+            ? ok(
+                "/123/calendars/home/",
             `<d:resourcetype><d:collection/><c:calendar/></d:resourcetype><d:displayname>Home</d:displayname><cs:getctag>${state.ctag}</cs:getctag><a:calendar-color>#FF2968FF</a:calendar-color><c:supported-calendar-component-set><c:comp name="VEVENT"/></c:supported-calendar-component-set>`,
-          ) +
+              )
+            : "") +
+          (state.listed.work
+            ? ok(
+                "/123/calendars/work/",
+                `<d:resourcetype><d:collection/><c:calendar/></d:resourcetype><d:displayname>Work</d:displayname><cs:getctag>${state.ctag}</cs:getctag>`,
+              )
+            : "") +
           ok(
             "/123/calendars/tasks/",
             `<d:resourcetype><d:collection/><c:calendar/></d:resourcetype><d:displayname>Reminders</d:displayname><c:supported-calendar-component-set><c:comp name="VTODO"/></c:supported-calendar-component-set>`,
@@ -62,7 +76,14 @@ beforeAll(async () => {
       );
     if (req.url === "/123/calendars/home/" && req.method === "REPORT") {
       state.reports++;
-      return send(ok("/123/calendars/home/a.ics", `<c:calendar-data>${state.ics}</c:calendar-data>`));
+      const reply = () => send(ok("/123/calendars/home/a.ics", `<c:calendar-data>${state.ics}</c:calendar-data>`));
+      if (state.hold) void state.hold.then(reply);
+      else reply();
+      return;
+    }
+    if (req.url === "/123/calendars/work/" && req.method === "REPORT") {
+      if (state.workStatus !== 207) return void res.writeHead(state.workStatus).end();
+      return send(ok("/123/calendars/work/b.ics", `<c:calendar-data>${eventAt("standup", "Standup", Date.now() + 3_600_000)}</c:calendar-data>`));
     }
     res.writeHead(404).end();
   });
@@ -77,7 +98,15 @@ const eventAt = (uid: string, title: string, start: number) =>
 
 let config: CalendarConfig;
 beforeEach(() => {
-  Object.assign(state, { password: PASSWORD, ctag: "1", reports: 0, authed: [] });
+  Object.assign(state, {
+    password: PASSWORD,
+    ctag: "1",
+    reports: 0,
+    authed: [],
+    listed: { home: true, work: true },
+    workStatus: 207,
+    hold: null,
+  });
   state.ics = eventAt("dentist", "Dentist", Date.now() + 86_400_000);
   config = {
     key: randomBytes(32),
@@ -99,6 +128,7 @@ describe("calendars", () => {
     const view = await connectICloud(db, fred, { username: "fred@icloud.com", password: " abcd-efgh-ijkl-mnop\n" }, "web", config);
     expect(view.calendars).toEqual([
       { id: expect.any(String), name: "Home", color: "#ff2968", included: true, events: 1 },
+      { id: expect.any(String), name: "Work", color: null, included: true, events: 1 },
     ]);
     const row = db.select().from(calendarAccounts).get();
     expect(row?.secret).not.toContain(PASSWORD);
@@ -106,7 +136,7 @@ describe("calendars", () => {
     const audit = listAudit(db, fred, {});
     expect(audit.map((e) => e.detail)).toEqual(['connected the iCloud calendars of "fred@icloud.com"']);
     expect(JSON.stringify(audit)).not.toContain(PASSWORD);
-    expect(db.select().from(calendarEvents).all().map((e) => e.title)).toEqual(["Dentist"]);
+    expect(db.select().from(calendarEvents).all().map((e) => e.title).sort()).toEqual(["Dentist", "Standup"]);
   });
 
   it("saves nothing when iCloud refuses the password", async () => {
@@ -128,7 +158,7 @@ describe("calendars", () => {
     state.ics = eventAt("dentist", "Dentist (moved)", Date.now() + 2 * 86_400_000);
     await syncCalendarAccount(db, id, config);
     expect(state.reports).toBe(2);
-    expect(db.select().from(calendarEvents).all().map((e) => e.title)).toEqual(["Dentist (moved)"]);
+    expect(db.select().from(calendarEvents).all().map((e) => e.title).sort()).toEqual(["Dentist (moved)", "Standup"]);
   });
 
   it("stops syncing once the password is revoked, until they sign in again", async () => {
@@ -160,7 +190,7 @@ describe("calendars", () => {
     expect(setCalendarIncluded(db, sam, cal, false, "web")).toBe(false);
     expect(disconnectCalendarAccount(db, sam, view.id, "web")).toBe(false);
     expect(setCalendarIncluded(db, fred, cal, false, "web")).toBe(true);
-    expect(db.select().from(calendarEvents).all()).toEqual([]);
+    expect(db.select().from(calendarEvents).where(eq(calendarEvents.calendarId, cal)).all()).toEqual([]);
     expect(listCalendarAccounts(db, fred)[0].calendars[0].included).toBe(false);
     expect(disconnectCalendarAccount(db, fred, view.id, "web")).toBe(true);
     expect(db.select().from(calendarAccounts).where(eq(calendarAccounts.userId, fred)).all()).toEqual([]);
@@ -175,5 +205,66 @@ describe("calendars", () => {
       }),
     ).rejects.toBeInstanceOf(CalendarConnectError);
     expect(state.authed).toEqual([]);
+  });
+
+  it("keeps a calendar left out while a sync was fetching it", async () => {
+    const { db, fred } = setup();
+    const view = await connectICloud(db, fred, { username: "fred@icloud.com", password: PASSWORD }, "web", config);
+    const home = view.calendars.find((c) => c.name === "Home")?.id ?? "";
+    let release = () => {};
+    state.hold = new Promise((r) => (release = r));
+    state.ctag = "2";
+    const syncing = syncCalendarAccount(db, view.id, config);
+    while (state.reports < 2) await new Promise((r) => setTimeout(r, 5));
+    setCalendarIncluded(db, fred, home, false, "web");
+    release();
+    await syncing;
+    expect(db.select().from(calendarEvents).where(eq(calendarEvents.calendarId, home)).all()).toEqual([]);
+  });
+
+  it("keeps calendars and the owner's choices when one goes missing from an answer", async () => {
+    const { db, fred } = setup();
+    const view = await connectICloud(db, fred, { username: "fred@icloud.com", password: PASSWORD }, "web", config);
+    const work = view.calendars.find((c) => c.name === "Work")?.id ?? "";
+    setCalendarIncluded(db, fred, work, false, "web");
+    const audited = listAudit(db, fred, {}).length;
+    // An answer listing nothing is taken as a glitch: nothing changes.
+    state.listed = { home: false, work: false };
+    await syncCalendarAccount(db, view.id, config);
+    expect(listCalendarAccounts(db, fred)[0]).toMatchObject({ lastError: expect.stringMatching(/no calendars/) });
+    expect(listCalendarAccounts(db, fred)[0].calendars.map((c) => c.events)).toEqual([1, 0]);
+    // Home gone for one sync: its copied events go, the rows stay.
+    state.listed = { home: false, work: true };
+    await syncCalendarAccount(db, view.id, config);
+    const missing = listCalendarAccounts(db, fred)[0].calendars;
+    expect(missing.map((c) => [c.name, c.included, c.events])).toEqual([
+      ["Home", true, 0],
+      ["Work", false, 0],
+    ]);
+    // Back again, as they were: Work still left out, Home fetched again.
+    state.listed = { home: true, work: true };
+    await syncCalendarAccount(db, view.id, config);
+    const back = listCalendarAccounts(db, fred)[0].calendars;
+    expect(back.map((c) => [c.id, c.included, c.events])).toEqual([
+      [missing[0].id, true, 1],
+      [work, false, 0],
+    ]);
+    expect(listAudit(db, fred, {})).toHaveLength(audited);
+  });
+
+  it("syncs the other calendars when one fails, without asking to sign in again", async () => {
+    const { db, fred } = setup();
+    state.workStatus = 403;
+    const view = await connectICloud(db, fred, { username: "fred@icloud.com", password: PASSWORD }, "web", config);
+    const account = listCalendarAccounts(db, fred)[0];
+    expect(account).toMatchObject({ needsReconnect: false, lastSyncedAt: expect.any(Number), lastError: expect.stringMatching(/403/) });
+    expect(account.calendars.map((c) => [c.name, c.events])).toEqual([
+      ["Home", 1],
+      ["Work", 0],
+    ]);
+    // Once it works again, the error clears.
+    state.workStatus = 207;
+    await syncCalendarAccount(db, view.id, config, Date.now() + 7 * 3_600_000);
+    expect(listCalendarAccounts(db, fred)[0]).toMatchObject({ lastError: null });
   });
 });

@@ -26,8 +26,16 @@ export interface Occurrence {
 }
 
 const TEXT_MAX = 200;
-/** Repeats looked at per event at most, so a rule started years ago can't spin. */
-const MAX_REPEATS = 20_000;
+/**
+ * Repeats stepped through per event at most: a minutely rule started years
+ * ago stops here rather than holding up the server. Repeats long before the
+ * window cost only a step, so an hourly rule from a few years back is fine.
+ */
+const MAX_STEPS = 200_000;
+/** Occurrences kept per event at most. */
+const MAX_KEPT = 500;
+/** No zone is more than 14 hours from UTC, so a wall-clock time is within this of its real time. */
+const ZONE_SLACK_MS = 15 * 3_600_000;
 const DAY_MS = 86_400_000;
 
 const clip = (text: unknown) => {
@@ -36,30 +44,41 @@ const clip = (text: unknown) => {
   return one ? Array.from(one).slice(0, TEXT_MAX).join("") : null;
 };
 
+// One formatter per zone: making one is far slower than using it.
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
 /** How far `timeZone` is ahead of UTC at `ms`, in ms. */
 function zoneOffset(ms: number, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hourCycle: "h23",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).formatToParts(ms);
+  let format = formatters.get(timeZone);
+  if (!format) {
+    format = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+    formatters.set(timeZone, format);
+  }
+  const parts = format.formatToParts(ms);
   const n = (type: string) => Number(parts.find((p) => p.type === type)?.value);
   return Date.UTC(n("year"), n("month") - 1, n("day"), n("hour"), n("minute"), n("second")) - (ms - (ms % 1000));
 }
 
 const isZone = (timeZone: string) => {
   try {
-    new Intl.DateTimeFormat("en-US", { timeZone });
+    zoneOffset(0, timeZone);
     return true;
   } catch {
     return false;
   }
 };
+
+/** A time's wall clock read as UTC (ms): within ZONE_SLACK_MS of when it really is, cheaply. */
+const wallMs = (time: ICAL.Time) => Date.UTC(time.year, time.month - 1, time.day, time.hour, time.minute, time.second);
 
 /**
  * A timed ICAL.Time as ms. Times in a zone the data defined (VTIMEZONE), or
@@ -110,10 +129,9 @@ export function eventsIn(
     } catch {
       continue;
     }
-    for (const tz of root.getAllSubcomponents("vtimezone")) {
-      const tzid = String(tz.getFirstPropertyValue("tzid") ?? "");
-      if (tzid && !ICAL.TimezoneService.has(tzid)) ICAL.TimezoneService.register(tz);
-    }
+    // Zones the data defines (VTIMEZONE) are read from the same data by
+    // ical.js. They're never registered globally: a zone from one person's
+    // invite must not change how anyone else's events are read.
     // A recurring event comes as its rule plus one VEVENT per changed repeat.
     const byUid = new Map<string, { master?: ICAL.Component; changed: ICAL.Component[] }>();
     for (const vevent of root.getAllSubcomponents("vevent")) {
@@ -132,24 +150,37 @@ export function eventsIn(
             add(out, uid, "", event, event.startDate, event.endDate, window, addresses, opts.fallbackZone);
             continue;
           }
+          // Repeats long before the window are only stepped past, unless a
+          // changed repeat lands near the window, which could be any of them.
+          const span = event.duration.toSeconds() * 1000;
+          const movedNear = group.changed.some((c) => {
+            const start = c.getFirstPropertyValue("dtstart");
+            return start instanceof ICAL.Time && Math.abs(wallMs(start) - window.from) < window.to - window.from + 7 * DAY_MS;
+          });
           const repeats = event.iterator();
-          for (let n = 0, next = repeats.next(); next && n < MAX_REPEATS; n++, next = repeats.next()) {
+          let kept = 0;
+          for (let n = 0, next = repeats.next(); next && n < MAX_STEPS && kept < MAX_KEPT; n++, next = repeats.next()) {
+            const wall = wallMs(next);
             // Repeats come in order of their original start. Stop a week past
             // the window, so one moved into it from a few days later still counts.
-            const original = next.isDate ? Date.parse(`${dayOf(next)}T00:00:00Z`) : toMs(next, opts.fallbackZone);
-            if (original >= window.to + 7 * DAY_MS) break;
+            if (wall >= window.to + 7 * DAY_MS + ZONE_SLACK_MS) break;
+            if (!movedNear && wall + span + ZONE_SLACK_MS < window.from) continue;
             const details = event.getOccurrenceDetails(next);
-            add(
-              out,
-              uid,
-              details.recurrenceId.toString(),
-              details.item,
-              details.startDate,
-              details.endDate,
-              window,
-              addresses,
-              opts.fallbackZone,
-            );
+            if (
+              add(
+                out,
+                uid,
+                details.recurrenceId.toString(),
+                details.item,
+                details.startDate,
+                details.endDate,
+                window,
+                addresses,
+                opts.fallbackZone,
+              )
+            ) {
+              kept++;
+            }
           }
         } else {
           // Only changed repeats, without their rule: each stands on its own.
@@ -176,11 +207,11 @@ function add(
   window: { from: number; to: number },
   addresses: Set<string>,
   fallbackZone: string,
-): void {
+): boolean {
   const status = String(event.component.getFirstPropertyValue("status") ?? "").toUpperCase();
-  if (status === "CANCELLED") return;
+  if (status === "CANCELLED") return false;
   const answer = ownAnswer(event, addresses);
-  if (answer === "DECLINED") return;
+  if (answer === "DECLINED") return false;
   const allDay = startDate.isDate;
   let start: number;
   let end: number;
@@ -199,7 +230,7 @@ function add(
     if (end < start) end = start;
   }
   // Overlapping the window; an instant event counts at its start.
-  if (start >= window.to || (end > start ? end <= window.from : start < window.from)) return;
+  if (start >= window.to || (end > start ? end <= window.from : start < window.from)) return false;
   out.push({
     uid,
     recurrenceId,
@@ -212,4 +243,5 @@ function add(
     endDay,
     tentative: status === "TENTATIVE" || answer === "TENTATIVE",
   });
+  return true;
 }

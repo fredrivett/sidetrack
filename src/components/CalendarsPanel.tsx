@@ -30,6 +30,8 @@ function ConnectForm({ username: known, onDone }: { username?: string; onDone?: 
   const [error, setError] = useState<string | null>(null);
 
   function connect() {
+    // Enter in a field still submits while it's signing in.
+    if (pending) return;
     setError(null);
     startTransition(async () => {
       try {

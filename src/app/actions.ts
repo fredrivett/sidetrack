@@ -965,10 +965,11 @@ export async function setCalendarIncludedAction(calendarId: string, included: bo
   const config = calendarConfig();
   const { db } = getDb();
   if (!setCalendarIncludedCore(db, userId, calendarId, included, SOURCE)) return;
-  // Including one fetches its events now, rather than at the next sync.
+  // Including one fetches its events after this returns, rather than at the
+  // next sync, so the page's other saves don't wait on iCloud.
   if (included && config) {
     const account = listCalendarAccountsCore(db, userId).find((a) => a.calendars.some((c) => c.id === calendarId));
-    if (account) await syncCalendarAccountCore(db, account.id, config);
+    if (account) after(() => syncCalendarAccountCore(db, account.id, config));
   }
   revalidatePath("/settings/calendars");
   refresh();

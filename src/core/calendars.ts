@@ -175,7 +175,7 @@ export async function connectICloud(
         .values({ id, userId, kind: "icloud", username, secret, homeUrl, createdAt: now })
         .run();
     }
-    keepCalendars(tx as unknown as Db, id, found, now);
+    keepCalendars(tx as unknown as Db, id, found, now, true);
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
@@ -240,25 +240,40 @@ export function setCalendarIncluded(
   return true;
 }
 
+/** Calendars are matched by path: iCloud may move an account to another of its hosts. */
+const pathOf = (url: string) => new URL(url).pathname;
+
 /**
  * Bring an account's calendars in line with what its server lists: new ones
- * added (included, unless they're birthdays), names and colours updated,
- * gone ones removed with their events.
+ * added (included, unless they're birthdays), names, colours and hosts
+ * updated. With `prune` (connecting, which the caller audits), ones it no
+ * longer lists are removed. Sync never removes one or touches whether it's
+ * included, which is the owner's choice: a calendar missing from one answer
+ * only loses its copied events, and comes back as it was.
  */
-// audit-exempt: the server's own list of calendars, kept in step; the caller's transaction audits a connect.
-function keepCalendars(tx: Db, accountId: string, found: Awaited<ReturnType<typeof listCalendars>>, now: number) {
+// audit-exempt: the server's own list of calendars, kept in step; connecting audits in the caller's transaction.
+function keepCalendars(
+  db: Db,
+  accountId: string,
+  found: Awaited<ReturnType<typeof listCalendars>>,
+  now: number,
+  prune: boolean,
+) {
   const known = new Map(
-    tx.select().from(calendars).where(eq(calendars.accountId, accountId)).all().map((c) => [c.remoteUrl, c]),
+    db.select().from(calendars).where(eq(calendars.accountId, accountId)).all().map((c) => [pathOf(c.remoteUrl), c]),
   );
   for (const remote of found) {
-    const row = known.get(remote.url);
-    known.delete(remote.url);
+    const row = known.get(pathOf(remote.url));
+    known.delete(pathOf(remote.url));
     if (row) {
-      if (row.name !== remote.name || row.color !== remote.color) {
-        tx.update(calendars).set({ name: remote.name, color: remote.color }).where(eq(calendars.id, row.id)).run();
+      if (row.name !== remote.name || row.color !== remote.color || row.remoteUrl !== remote.url) {
+        db.update(calendars)
+          .set({ name: remote.name, color: remote.color, remoteUrl: remote.url })
+          .where(eq(calendars.id, row.id))
+          .run();
       }
     } else {
-      tx.insert(calendars)
+      db.insert(calendars)
         .values({
           id: nanoid(12),
           accountId,
@@ -271,36 +286,57 @@ function keepCalendars(tx: Db, accountId: string, found: Awaited<ReturnType<type
         .run();
     }
   }
-  for (const gone of known.values()) tx.delete(calendars).where(eq(calendars.id, gone.id)).run();
+  for (const gone of known.values()) {
+    if (prune) db.delete(calendars).where(eq(calendars.id, gone.id)).run();
+    else {
+      db.delete(calendarEvents).where(eq(calendarEvents.calendarId, gone.id)).run();
+      db.update(calendars).set({ ctag: null, eventsFetchedAt: null }).where(eq(calendars.id, gone.id)).run();
+    }
+  }
 }
 
-/** Replace a calendar's copy of its events with `found`, fetched at `now` with `ctag`. */
+/**
+ * Replace a calendar's copy of its events with `found`, fetched at `now`
+ * with `ctag`, unless it was left out or removed while they were fetched.
+ * Run in a transaction, unaudited, so the copy is never half replaced.
+ */
 // audit-exempt: a cache of the owner's own calendar, rebuilt by sync; nobody made a change here.
-function replaceEvents(tx: Db, calendarId: string, found: ReturnType<typeof eventsIn>, ctag: string | null, now: number) {
+function replaceEvents(tx: Db, calendarId: string, found: ReturnType<typeof eventsIn>, ctag: string | null, now: number): boolean {
+  const still = tx.select({ included: calendars.included }).from(calendars).where(eq(calendars.id, calendarId)).get();
+  if (!still?.included) return false;
   tx.delete(calendarEvents).where(eq(calendarEvents.calendarId, calendarId)).run();
   for (const e of found) tx.insert(calendarEvents).values({ id: nanoid(12), calendarId, ...e }).run();
   tx.update(calendars).set({ ctag, eventsFetchedAt: now }).where(eq(calendars.id, calendarId)).run();
+  return true;
 }
 
-/** Note how an account's sync went. */
+/**
+ * Note how an account's sync went: what went wrong if anything did, when it
+ * finished (`at`; left as it was for a sync that didn't), and whether it
+ * needs signing in again.
+ */
 // audit-exempt: sync status, not a change anyone made.
-function noteSync(db: Db, accountId: string, result: { at: number } | { error: string; reconnect: boolean }) {
+function noteSync(db: Db, accountId: string, result: { error: string | null; at?: number; reconnect?: true }) {
   db.update(calendarAccounts)
-    .set(
-      "at" in result
-        ? { lastSyncedAt: result.at, lastError: null }
-        : { lastError: result.error, needsReconnect: result.reconnect },
-    )
+    .set({
+      lastError: result.error,
+      ...(result.at !== undefined && { lastSyncedAt: result.at }),
+      ...(result.reconnect && { needsReconnect: true }),
+    })
     .where(eq(calendarAccounts.id, accountId))
     .run();
 }
 
+const syncError = (error: unknown) =>
+  error instanceof CalDavError ? `Couldn't sync: ${error.message}.` : "Couldn't reach iCloud; Sidetrack will try again.";
+
 /**
  * Fetch an account's calendars, and the events of each included one whose
  * ctag changed or that wasn't fetched for REFETCH_EVERY_MS. A refused
- * password stops sync until they reconnect; any other failure is noted and
- * tried again next time. Announces a change when events changed, so an
- * open Agenda reloads. Never throws for the server's sake.
+ * password stops sync until they reconnect. A calendar that fails is noted
+ * and tried again next time, without holding up the others. Announces a
+ * change when events changed, so an open Agenda reloads. Never throws for
+ * the server's sake.
  */
 export async function syncCalendarAccount(db: Db, accountId: string, config: CalendarConfig, now = Date.now()) {
   const account = db
@@ -320,44 +356,48 @@ export async function syncCalendarAccount(db: Db, accountId: string, config: Cal
   }
   const opts = davOptions(config, a.username, password);
   let changed = false;
+  let failed: string | null = null;
   try {
     const found = await listCalendars(a.homeUrl, opts);
-    db.transaction((tx) => keepCalendars(tx as unknown as Db, a.id, found, now));
-    const ctags = new Map(found.map((c) => [c.url, c.ctag]));
+    // An answer listing nothing is more likely a glitch than every calendar gone.
+    if (found.length === 0) throw new CalDavError("iCloud listed no calendars");
+    keepCalendars(db, a.id, found, now, false);
+    const ctags = new Map(found.map((c) => [pathOf(c.url), c.ctag]));
     const due = db
       .select()
       .from(calendars)
-      .where(
-        and(
-          eq(calendars.accountId, a.id),
-          eq(calendars.included, true),
-        ),
-      )
+      .where(and(eq(calendars.accountId, a.id), eq(calendars.included, true)))
       .all()
       .filter((c) => {
-        const ctag = ctags.get(c.remoteUrl) ?? null;
+        const path = pathOf(c.remoteUrl);
+        if (!ctags.has(path)) return false;
+        const ctag = ctags.get(path) ?? null;
         return ctag === null || ctag !== c.ctag || c.eventsFetchedAt === null || c.eventsFetchedAt < now - REFETCH_EVERY_MS;
       });
     const window = windowAt(now);
     for (const cal of due) {
-      const data = await fetchEventData(cal.remoteUrl, window, opts);
-      const events = eventsIn(data, window, {
-        addresses: [a.username, account.email],
-        fallbackZone: account.timeZone ?? "UTC",
-      });
-      db.transaction((tx) => replaceEvents(tx as unknown as Db, cal.id, events, ctags.get(cal.remoteUrl) ?? null, now));
-      changed = true;
+      try {
+        const data = await fetchEventData(cal.remoteUrl, window, opts);
+        const events = eventsIn(data, window, {
+          addresses: [a.username, account.email],
+          fallbackZone: account.timeZone ?? "UTC",
+        });
+        const ctag = ctags.get(pathOf(cal.remoteUrl)) ?? null;
+        if (db.transaction((tx) => replaceEvents(tx as unknown as Db, cal.id, events, ctag, now))) changed = true;
+      } catch (error) {
+        if (error instanceof CalDavAuthError) throw error;
+        getPostHog()?.captureException(error);
+        failed ??= syncError(error);
+      }
     }
-    noteSync(db, a.id, { at: now });
+    noteSync(db, a.id, { at: now, error: failed });
   } catch (error) {
     if (error instanceof CalDavAuthError) {
       noteSync(db, a.id, { error: "iCloud refused the password; it may have been revoked. Please sign in again.", reconnect: true });
     } else {
       getPostHog()?.captureException(error);
-      noteSync(db, a.id, {
-        error: error instanceof CalDavError ? `Couldn't sync: ${error.message}.` : "Couldn't reach iCloud; Sidetrack will try again.",
-        reconnect: false,
-      });
+      // Not a sync: the account keeps its last good time, and the error says why.
+      noteSync(db, a.id, { error: syncError(error) });
     }
   }
   if (changed) announceChange({ actor: a.userId, projectId: null });
@@ -381,7 +421,8 @@ export async function syncDueCalendars(db: Db, config: CalendarConfig, now = Dat
   for (const { id } of due) {
     if ((lastTried.get(id) ?? -Infinity) > now - SYNC_EVERY_MS + 60_000) continue;
     lastTried.set(id, now);
-    await syncCalendarAccount(db, id, config, now);
+    // Each at its own time: the ones before may have taken a while.
+    await syncCalendarAccount(db, id, config);
   }
 }
 
