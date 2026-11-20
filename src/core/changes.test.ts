@@ -12,7 +12,7 @@ import {
   inviteSpaceMember,
   setProjectSpace,
 } from "./spaces";
-import { setOverdueCollapsed, setUsername } from "./users";
+import { setOverdueCollapsed, setTimeZone, setUsername } from "./users";
 
 type Db = ReturnType<typeof createTestDb>["db"];
 
@@ -171,6 +171,14 @@ describe("watchChanges", () => {
   it("tells the user's other pages about folding the Agenda's Overdue section", async () => {
     watch(owner, stranger);
     setOverdueCollapsed(db, owner, true);
+    await settle();
+    expect(heard).toEqual({ [owner]: 1, [stranger]: 0 });
+  });
+
+  // The board reloads to reopen repeating items by the viewer's new day.
+  it("tells the user's pages about a new time zone", async () => {
+    watch(owner, stranger);
+    setTimeZone(db, owner, "Asia/Tokyo");
     await settle();
     expect(heard).toEqual({ [owner]: 1, [stranger]: 0 });
   });

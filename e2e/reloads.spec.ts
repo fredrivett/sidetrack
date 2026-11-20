@@ -1,3 +1,5 @@
+import { getDb } from "@/core/db";
+import { getTimeZone, setTimeZone } from "@/core/users";
 import { expect, test } from "./fixtures";
 
 // What an open page does when the server changes under it: another tab's
@@ -72,4 +74,23 @@ test("after a deploy, keeps what's open and offers to reload", async ({ page, co
   });
   await reloaded;
   expect(await page.evaluate(() => "e2eMarker" in window)).toBe(false);
+});
+
+test("saves a new time zone without reloading what's being opened", async ({ page, user }) => {
+  user.addList("Home", ["Water plants"]);
+  // Last seen somewhere else: the board saves the browser's zone on load.
+  setTimeZone(getDb().db, user.id, "America/New_York");
+  await page.goto("/board");
+  await page.evaluate(() => Object.assign(window, { e2eMarker: true }));
+  // At once, while the save is in flight.
+  await page.getByRole("button", { name: "Water plants", exact: true }).click();
+  // ...and carry on in it: a reload would take the dialog away mid-edit.
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Water plants" }).click();
+  await page.keyboard.press("ControlOrMeta+A");
+  await page.keyboard.type("Water the ferns");
+  await page.keyboard.press("Enter");
+  await expect(dialog.getByRole("button", { name: "Water the ferns" })).toBeVisible();
+  await expect.poll(() => getTimeZone(getDb().db, user.id)).toBe("Europe/London");
+  expect(await page.evaluate(() => "e2eMarker" in window)).toBe(true);
 });
