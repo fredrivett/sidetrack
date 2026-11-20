@@ -184,7 +184,7 @@ const davTime = (ms: number) => new Date(ms).toISOString().replace(/[-:]/g, "").
 /**
  * The iCalendar text of every event in `calendarUrl` with an occurrence
  * between `from` and `to` (ms): one resource per event, recurring ones with
- * their rule and exceptions, to expand with icsEvents.ts.
+ * their rule and exceptions, to expand with icsEvents.mts.
  */
 export async function fetchEventData(
   calendarUrl: string,

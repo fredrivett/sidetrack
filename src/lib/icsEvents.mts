@@ -80,6 +80,14 @@ const isZone = (timeZone: string) => {
 /** A time's wall clock read as UTC (ms): within ZONE_SLACK_MS of when it really is, cheaply. */
 const wallMs = (time: ICAL.Time) => Date.UTC(time.year, time.month - 1, time.day, time.hour, time.minute, time.second);
 
+/** The zone a time names without the data defining it, such as "Europe/London" alone, when it's a real one. */
+function namedZone(time: ICAL.Time): string | null {
+  // ical.js keeps the TZID it couldn't resolve here, untyped, and drops it
+  // from the copies it makes of a repeating event's start.
+  const tzid = (time as ICAL.Time & { timezone?: string }).timezone;
+  return tzid && isZone(tzid) ? tzid : null;
+}
+
 /**
  * A timed ICAL.Time as ms. Times in a zone the data defined (VTIMEZONE), or
  * UTC, ical.js converts itself. One naming a zone it didn't define, such as
@@ -88,9 +96,7 @@ const wallMs = (time: ICAL.Time) => Date.UTC(time.year, time.month - 1, time.day
  */
 function toMs(time: ICAL.Time, fallbackZone: string): number {
   if (time.zone && time.zone.tzid !== "floating") return time.toUnixTime() * 1000;
-  // ical.js keeps the TZID it couldn't resolve here, untyped.
-  const tzid = (time as ICAL.Time & { timezone?: string }).timezone;
-  const named = tzid && isZone(tzid) ? tzid : fallbackZone;
+  const named = namedZone(time) ?? fallbackZone;
   const wall = Date.UTC(time.year, time.month - 1, time.day, time.hour, time.minute, time.second);
   // The offset at the wall time read as UTC, then again at the guess, for times near a change.
   const guess = wall - zoneOffset(wall, named);
@@ -157,6 +163,8 @@ export function eventsIn(
             const start = c.getFirstPropertyValue("dtstart");
             return start instanceof ICAL.Time && Math.abs(wallMs(start) - window.from) < window.to - window.from + 7 * DAY_MS;
           });
+          // Repeats lose the zone their event names, so read them in it.
+          const zone = namedZone(event.startDate) ?? opts.fallbackZone;
           const repeats = event.iterator();
           let kept = 0;
           for (let n = 0, next = repeats.next(); next && n < MAX_STEPS && kept < MAX_KEPT; n++, next = repeats.next()) {
@@ -176,7 +184,7 @@ export function eventsIn(
                 details.endDate,
                 window,
                 addresses,
-                opts.fallbackZone,
+                zone,
               )
             ) {
               kept++;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eventsIn } from "./icsEvents";
+import { eventsIn } from "./icsEvents.mts";
 
 const LONDON = `BEGIN:VTIMEZONE
 TZID:Europe/London
@@ -93,6 +93,22 @@ END:VEVENT`,
     expect(found[0]).toMatchObject({ title: "Holiday", allDay: true, startDay: "2026-11-23", endDay: "2026-11-25" });
     // 9am in New York is 2pm UTC in November.
     expect(found[1]).toMatchObject({ title: "NY call", allDay: false, start: ms("2026-11-24T14:00Z") });
+  });
+
+  it("reads each repeat in a zone its event names without defining", () => {
+    const ics = cal(`BEGIN:VEVENT
+UID:ny-daily
+DTSTART;TZID=America/New_York:20261120T090000
+DTEND;TZID=America/New_York:20261120T093000
+RRULE:FREQ=DAILY
+SUMMARY:NY standup
+END:VEVENT`);
+    const found = eventsIn([ics], { from: ms("2026-11-20T00:00Z"), to: ms("2026-11-22T00:00Z") }, opts);
+    // The owner is in London, but 9am in New York is 2pm UTC every day.
+    expect(found.map((e) => [new Date(e.start).toISOString(), e.end - e.start])).toEqual([
+      ["2026-11-20T14:00:00.000Z", 30 * 60_000],
+      ["2026-11-21T14:00:00.000Z", 30 * 60_000],
+    ]);
   });
 
   it("leaves out cancelled and declined events, and marks tentative ones", () => {

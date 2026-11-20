@@ -175,6 +175,19 @@ describe("calendars", () => {
     expect(again).toMatchObject({ id, needsReconnect: false, lastError: null });
   });
 
+  it("keeps calendars and choices when signing in again gets an empty list", async () => {
+    const { db, fred } = setup();
+    const view = await connectICloud(db, fred, { username: "fred@icloud.com", password: PASSWORD }, "web", config);
+    const work = view.calendars.find((c) => c.name === "Work")?.id ?? "";
+    setCalendarIncluded(db, fred, work, false, "web");
+    const before = listCalendarAccounts(db, fred)[0].calendars;
+    state.listed = { home: false, work: false };
+    await expect(
+      connectICloud(db, fred, { username: "fred@icloud.com", password: PASSWORD }, "web", config),
+    ).rejects.toBeInstanceOf(CalendarConnectError);
+    expect(listCalendarAccounts(db, fred)[0].calendars).toEqual(before);
+  });
+
   it("asks to reconnect when the saved password can't be opened with the key", async () => {
     const { db, fred } = setup();
     const { id } = await connectICloud(db, fred, { username: "fred@icloud.com", password: PASSWORD }, "web", config);

@@ -23,7 +23,8 @@ import {
   listCalendars,
 } from "../lib/caldav";
 import { getEnv } from "../lib/env";
-import { eventsIn } from "../lib/icsEvents";
+import type { Occurrence } from "../lib/icsEvents.mts";
+import { expandEvents, ExpandTimeoutError } from "../lib/icsExpand";
 import { getPostHog } from "../lib/posthog";
 import { openSecret, sealSecret } from "../lib/secretBox";
 import { type AuditOrigin, recordAudit } from "./audit";
@@ -155,6 +156,11 @@ export async function connectICloud(
     if (error instanceof CalDavAuthError) throw new CalendarConnectError(REFUSED);
     getPostHog()?.captureException(error);
     throw new CalendarConnectError("Couldn't reach iCloud. Please try again.");
+  }
+  // Signing in prunes calendars iCloud no longer lists, so an answer listing
+  // none, more likely a glitch, would lose them all and the owner's choices.
+  if (found.length === 0) {
+    throw new CalendarConnectError("iCloud didn't list any calendars for that Apple ID. Please try again.");
   }
   const existing = db
     .select()
@@ -301,7 +307,7 @@ function keepCalendars(
  * Run in a transaction, unaudited, so the copy is never half replaced.
  */
 // audit-exempt: a cache of the owner's own calendar, rebuilt by sync; nobody made a change here.
-function replaceEvents(tx: Db, calendarId: string, found: ReturnType<typeof eventsIn>, ctag: string | null, now: number): boolean {
+function replaceEvents(tx: Db, calendarId: string, found: Occurrence[], ctag: string | null, now: number): boolean {
   const still = tx.select({ included: calendars.included }).from(calendars).where(eq(calendars.id, calendarId)).get();
   if (!still?.included) return false;
   tx.delete(calendarEvents).where(eq(calendarEvents.calendarId, calendarId)).run();
@@ -328,7 +334,8 @@ function noteSync(db: Db, accountId: string, result: { error: string | null; at?
 }
 
 const syncError = (error: unknown) =>
-  error instanceof CalDavError ? `Couldn't sync: ${error.message}.` : "Couldn't reach iCloud; Sidetrack will try again.";
+  error instanceof CalDavError || error instanceof ExpandTimeoutError
+    ? `Couldn't sync: ${error.message}.` : "Couldn't reach iCloud; Sidetrack will try again.";
 
 /**
  * Fetch an account's calendars, and the events of each included one whose
@@ -378,7 +385,7 @@ export async function syncCalendarAccount(db: Db, accountId: string, config: Cal
     for (const cal of due) {
       try {
         const data = await fetchEventData(cal.remoteUrl, window, opts);
-        const events = eventsIn(data, window, {
+        const events = await expandEvents(data, window, {
           addresses: [a.username, account.email],
           fallbackZone: account.timeZone ?? "UTC",
         });
