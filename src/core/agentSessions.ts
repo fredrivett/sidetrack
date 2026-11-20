@@ -3,7 +3,7 @@ import { nanoid } from "nanoid";
 import type { AgentRequest } from "../lib/agentRequest";
 import { formatItemRef, workBranchName } from "../lib/itemRef";
 import { normalizeWebUrl } from "../lib/url";
-import { hasProjectAccess, isListAdmin } from "./access";
+import { canEditProject, hasProjectAccess, isListAdmin, requireListAccess } from "./access";
 import { apiKeys } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
@@ -52,9 +52,11 @@ function openSession(db: Db, itemId: string, agentKeyId: string) {
     .get();
 }
 
+/** An item the user can open and change: agents work only for those who could do the work themselves. */
 function itemOrThrow(db: Db, userId: string, itemId: string): Item {
   const item = getItem(db, userId, itemId);
   if (!item) throw new Error(`item not found: ${itemId}`);
+  requireListAccess(db, userId, item.projectId, "edit");
   return item;
 }
 
@@ -328,7 +330,7 @@ export function listStartableLists(db: Db, userId: string): string[] {
   return db
     .select()
     .from(projects)
-    .where(and(hasProjectAccess(userId), isNotNull(projects.repository)))
+    .where(and(canEditProject(userId), isNotNull(projects.repository)))
     .all()
     .filter((p) => startRefusal(db, userId, p) === null)
     .map((p) => p.id);

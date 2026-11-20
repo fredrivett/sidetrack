@@ -22,6 +22,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ProjectIcon } from "./ProjectIcon";
+import { useListAccess } from "./list-access";
 import { runAction } from "./run-action";
 import { useTitleEmoji } from "./use-emoji-choice";
 import { useListSave } from "./use-list-saves";
@@ -64,6 +65,19 @@ export function ProjectIconPicker({
 }) {
   // Held on the list: its column dims until the new icon lands.
   const { saving, save } = useListSave();
+  // Someone who can't change the list sees its icon, with no picker.
+  if (useListAccess(project.id) !== "edit") {
+    return (
+      <span className="inline-flex shrink-0 p-1 -ml-1">
+        <ProjectIcon
+          icon={listIcon.shown.emoji}
+          homepageUrl={project.homepageUrl}
+          name={project.name}
+          size={size}
+        />
+      </span>
+    );
+  }
   return (
     <IconPicker
       icon={listIcon.shown.emoji}

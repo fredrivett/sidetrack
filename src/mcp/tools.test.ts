@@ -123,6 +123,28 @@ describe("tool output", () => {
   });
 });
 
+describe("list roles", () => {
+  it("says what the user can do on each list, and a viewer's change is an error that changes nothing", async () => {
+    const lorna = createTestUser(db, { username: "lorna" });
+    const jo = createTestUser(db, { username: "jo" });
+    const list = createProject(db, lorna, { name: "Life" }, "web");
+    addItem(db, lorna, { projectId: list.id, title: "Swim" }, "web");
+    const asLorna = await connectAs(lorna);
+    expect(
+      (await asLorna("invite_member", { list_id: list.id, person: "jo", role: "viewer" })).data,
+    ).toMatchObject({ role: "viewer", status: "pending" });
+    acceptInvite(db, jo, list.id, "web");
+
+    const asJo = await connectAs(jo);
+    expect((await asJo("list_lists")).data).toEqual([expect.objectContaining({ id: list.id, access: "view" })]);
+    expect((await asJo("complete_item", { id: "LIF-1" })).error).toMatch(/view this list but not change it/);
+    expect(getItem(db, lorna, (await asLorna("get_item", { id: "LIF-1" })).data.id as string)?.completedAt).toBeNull();
+
+    expect((await asLorna("set_member_role", { list_id: list.id, user_id: jo, role: "editor" })).error).toBeNull();
+    expect((await asJo("complete_item", { id: "LIF-1" })).error).toBeNull();
+  });
+});
+
 describe("emails", () => {
   it("link invites to the app's address the request came in on", async () => {
     const fred = createTestUser(db, { username: "fred" });

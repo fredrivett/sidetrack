@@ -19,6 +19,7 @@ export function EditableText({
   renderValue,
   onDraftChange,
   mentions,
+  readOnly = false,
 }: {
   value: string;
   /** Saves the new text. Wrap the action in runAction, so a failure toasts
@@ -45,6 +46,8 @@ export function EditableText({
   /** Multiline only: typing `@` suggests these people to mention, as the
    * new-comment box does. */
   mentions?: AssigneeView[];
+  /** Shows the value, not editable, for someone who can't change it; nothing when empty. */
+  readOnly?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -103,6 +106,13 @@ export function EditableText({
   function type(next: string) {
     setDraft(next);
     onDraftChange?.(next);
+  }
+
+  if (readOnly) {
+    if (!shown) return null;
+    return (
+      <span className={`text-left ${className}`}>{renderValue ? renderValue(shown) : shown}</span>
+    );
   }
 
   if (!editing) {

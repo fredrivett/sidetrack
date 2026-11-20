@@ -8,8 +8,10 @@ import {
   listMembersAction,
   listSuggestedCollaboratorsAction,
   removeMemberAction,
+  setMemberRoleAction,
 } from "@/app/actions";
 import type { CollaboratorView, MemberView } from "@/core/members";
+import { LIST_ROLES, type ListRole } from "@/core/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -19,6 +21,7 @@ import {
   ResponsiveDialogDescription,
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
+import { RoleSelect } from "./RoleSelect";
 import { runAction } from "./run-action";
 import { useTapToConfirm } from "./use-tap-to-confirm";
 
@@ -46,6 +49,8 @@ export function ShareDialog({
   const [members, setMembers] = useState<MemberView[]>([]);
   const [suggestions, setSuggestions] = useState<CollaboratorView[]>([]);
   const [person, setPerson] = useState("");
+  // What the next invite lets them do; it stays as chosen between invites.
+  const [role, setRole] = useState<ListRole>("editor");
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   // Removing someone takes a second tap: it also takes them off their items.
@@ -128,7 +133,7 @@ export function ShareDialog({
     setError(null);
     start(async () => {
       try {
-        await inviteMemberAction(projectId, handle);
+        await inviteMemberAction(projectId, handle, role);
       } catch (err) {
         unstable_rethrow(err);
         if (latestProjectId.current !== projectId) return;
@@ -136,6 +141,22 @@ export function ShareDialog({
         return;
       }
       if (fromForm && latestProjectId.current === projectId) setPerson("");
+      await reload(projectId);
+    });
+  }
+
+  function changeRole(targetUserId: string, next: ListRole) {
+    if (!projectId) return;
+    setError(null);
+    start(async () => {
+      try {
+        await setMemberRoleAction(projectId, targetUserId, next);
+      } catch (err) {
+        unstable_rethrow(err);
+        if (latestProjectId.current !== projectId) return;
+        setError("Couldn't change what they can do. Please try again.");
+        return;
+      }
       await reload(projectId);
     });
   }
@@ -167,7 +188,7 @@ export function ShareDialog({
           </div>
           <ResponsiveDialogDescription className="text-xs text-neutral-500">
             Invite people by username or email. They’ll need a Sidetrack account
-            and must accept before they can edit.
+            and must accept before they can see it.
           </ResponsiveDialogDescription>
         </div>
 
@@ -185,6 +206,13 @@ export function ShareDialog({
               placeholder="username or email"
               autoComplete="off"
               disabled={pending}
+            />
+            <RoleSelect
+              label="What they can do"
+              value={role}
+              roles={LIST_ROLES}
+              disabled={pending}
+              onChange={setRole}
             />
             <Button type="submit" size="sm" disabled={!person.trim() || pending}>
               <UserPlus data-icon="inline-start" />
@@ -223,6 +251,13 @@ export function ShareDialog({
                         Pending
                       </span>
                     )}
+                    <RoleSelect
+                      label={`What ${displayName(m)} can do`}
+                      value={m.role}
+                      roles={LIST_ROLES}
+                      disabled={pending}
+                      onChange={(next) => changeRole(m.userId, next)}
+                    />
                     <button
                       type="button"
                       onClick={() => tap.confirm(() => remove(m.userId), m.userId)}

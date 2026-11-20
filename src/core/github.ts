@@ -2,6 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { asc, eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { formatItemRef, parseItemRef, refsInPrTitle } from "../lib/itemRef";
+import { listAccess } from "./access";
 import { endAgentSessions } from "./agentSessions";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
@@ -245,6 +246,7 @@ export function applyPullRequestEvent(
         ? "draft"
         : "open";
   const prefixes = projectRefPrefixes(db, userId);
+  const editable = (projectId: string) => listAccess(db, userId, projectId) === "edit";
   if (event.action === "closed" && !event.merged) {
     setPrState(db, userId, prUrl, prState);
     // The work this PR carried has stopped: take its agents off its items,
@@ -253,7 +255,7 @@ export function applyPullRequestEvent(
     // state no delivery has reported yet.
     for (const link of listItemsForPr(db, userId, prUrl)) {
       const item = getItem(db, userId, link.itemId);
-      if (!item || item.completedAt !== null) continue;
+      if (!item || item.completedAt !== null || !editable(item.projectId)) continue;
       const otherOpen = listPrLinksForItem(db, userId, item.id).some(
         (l) => l.prUrl !== prUrl && l.prState !== "merged" && l.prState !== "closed",
       );
@@ -270,7 +272,8 @@ export function applyPullRequestEvent(
   const unresolved = new Set<string>();
   for (const ref of refsInPrTitle(event.title)) {
     const r = resolveItemRef(db, userId, ref);
-    if (r.status !== "ok") {
+    // An item on a list the webhook's owner can only view is left alone, as one they can't see.
+    if (r.status !== "ok" || !editable(r.item.projectId)) {
       result.unresolved.push(ref);
       const parsed = parseItemRef(ref);
       if (parsed) unresolved.add(formatItemRef(parsed.prefix, parsed.number));
@@ -283,7 +286,7 @@ export function applyPullRequestEvent(
   for (const link of listItemsForPr(db, userId, prUrl)) {
     if (link.linkedBySource !== "github" || named.has(link.itemId)) continue;
     const item = getItem(db, userId, link.itemId);
-    if (!item) continue;
+    if (!item || !editable(item.projectId)) continue;
     const ref = formatItemRef(prefixes[item.projectId] ?? "", item.number);
     const parsed = parseItemRef(ref);
     if (parsed && unresolved.has(formatItemRef(parsed.prefix, parsed.number))) continue;
@@ -294,7 +297,7 @@ export function applyPullRequestEvent(
   if (event.action === "closed" && event.merged) {
     for (const link of listItemsForPr(db, userId, prUrl)) {
       const item = getItem(db, userId, link.itemId);
-      if (!item || item.completedAt !== null) continue;
+      if (!item || item.completedAt !== null || !editable(item.projectId)) continue;
       completeItem(db, userId, item.id, "github");
       result.completed.push(formatItemRef(prefixes[item.projectId] ?? "", item.number));
     }

@@ -20,7 +20,7 @@ import {
   setBoardFiltersAction,
   setTimeZoneAction,
 } from "@/app/actions";
-import type { Item, ItemPrLink, Label, NotificationLevel, Project } from "@/core/schema";
+import type { Item, ItemPrLink, Label, ListAccess, NotificationLevel, Project } from "@/core/schema";
 import type { NotificationView } from "@/core/notifications";
 import type { PendingSpaceInviteView, SpaceView } from "@/core/spaces";
 import { type ItemFilters, matchesFilters } from "@/lib/filters";
@@ -59,6 +59,7 @@ import { useStoredState } from "./use-stored-state";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
 import { useSameContent } from "./use-same-content";
 import { LabelsContext } from "./Labels";
+import { ListAccessContext } from "./list-access";
 import { RemoveListContext, useOptimisticLists } from "./use-list-saves";
 import {
   applyItemChange,
@@ -77,6 +78,8 @@ import { createSelection, NAV_KEYS, SelectedItemContext, stepItemRow } from "./u
  */
 export type ProjectView = Project & {
   isOwner: boolean;
+  /** What the viewer can do on it: edit, comment or only view. */
+  access: ListAccess;
   refPrefix: string;
   /** Offered to the admin while the list has no repository: see suggestedRepositories. */
   suggestedRepository?: string;
@@ -398,14 +401,16 @@ export function Kanban({
     }
   }
   // Where an item can move: the board's lists, on their trays (one group
-  // without Spaces), in the viewer's order. Nowhere with a single list.
+  // without Spaces), in the viewer's order, leaving out lists they can only
+  // view or comment on. Nowhere with a single list.
+  const movable = active.filter((p) => p.access === "edit");
   const moveGroups =
     spaces.length === 0
-      ? [{ id: "personal", name: "Lists", lists: active }]
+      ? [{ id: "personal", name: "Lists", lists: movable }]
       : trays
-          .map((t) => ({ ...t, lists: active.filter((p) => trayByList[p.id] === t.id) }))
+          .map((t) => ({ ...t, lists: movable.filter((p) => trayByList[p.id] === t.id) }))
           .filter((t) => t.lists.length > 0);
-  const moveTargets = active.length > 1 ? moveGroups : null;
+  const moveTargets = movable.length > 1 ? moveGroups : null;
   // Everyone on the board's lists, to filter by. Someone filtered by who has
   // since left every list no longer narrows anything.
   const people = [
@@ -532,11 +537,15 @@ export function Kanban({
 
   // Open the new-item dialog with the caller's list (a list's ⋯ menu), or
   // none (the C shortcut, the palette), which the dialog suggests from the
-  // title. With no lists on the board, there's nowhere to add an item —
-  // start a list instead.
+  // title. With no lists on the board the viewer can add to, there's nowhere
+  // to add an item — start a list instead.
   const openNewItem = useCallback(
     (projectId?: string, dueToday?: boolean) => {
-      if (!projects.some((p) => view === "archived" || p.status === "active")) {
+      if (
+        !projects.some(
+          (p) => p.access === "edit" && (view === "archived" || p.status === "active"),
+        )
+      ) {
         setNewList({ open: true, spaceId: "" });
         return;
       }
@@ -711,12 +720,18 @@ export function Kanban({
     return () => io.disconnect();
   }, [projects, view]);
 
+  // Kept the same across refreshes that don't change it, like the labels.
+  const accessByProject = useSameContent(
+    Object.fromEntries(projects.map((p) => [p.id, p.access])),
+  );
+
   return (
     <FollowsProvider followedItemIds={followedItemIds}>
     <SelectedItemContext value={selection}>
     <NotificationLevelsProvider levels={notificationLevels}>
     <ItemChangesContext value={itemChanges}>
     <LabelsContext value={sameLabels}>
+    <ListAccessContext value={accessByProject}>
     <RemoveListContext value={removeList}>
     <BoardDrag groups={moveTargets}>
       <BoardMain>
@@ -944,7 +959,7 @@ export function Kanban({
             setNewItem((s) => ({ ...s, open: false }));
             paletteDetail.openDetail(item);
           }}
-          projects={shown}
+          projects={shown.filter((p) => p.access === "edit")}
           assigneesByProject={assigneesByProject}
           viewerId={viewerId}
           initialProjectId={newItem.projectId}
@@ -1015,6 +1030,7 @@ export function Kanban({
       </BoardMain>
     </BoardDrag>
     </RemoveListContext>
+    </ListAccessContext>
     </LabelsContext>
     </ItemChangesContext>
     </NotificationLevelsProvider>

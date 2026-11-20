@@ -89,7 +89,7 @@ export function useItemShortcuts({
 }: {
   active: boolean;
   deferToDialog?: boolean;
-  onOpenPicker: () => void;
+  onOpenPicker?: () => void;
   onAssignToMe?: () => void;
   onDue?: () => void;
   onToggleDone?: () => void;

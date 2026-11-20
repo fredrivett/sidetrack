@@ -1,6 +1,6 @@
 import type { ItemSort } from "../lib/itemSorts";
 import type { Repeat } from "../lib/repeat";
-import type { AuditAction, AuditEntity, ProjectStatus, SpaceColor, SpaceRole } from "./schema";
+import type { AuditAction, AuditEntity, ListRole, ProjectStatus, SpaceColor, SpaceRole } from "./schema";
 
 // Change events: what a change did, as data. The function making a change
 // records one with recordAudit, in the change's transaction, and it's stored
@@ -163,6 +163,18 @@ export type ChangeEvent =
       listName: string;
       membershipId: string;
       member: PersonAt;
+      /** Absent on invites from before list roles, which were all editors. */
+      role?: ListRole;
+    }
+  /** The list's owner changed what a member can do on it. */
+  | {
+      type: "member.role";
+      projectId: string;
+      listName: string;
+      membershipId: string;
+      member: PersonAt;
+      role: ListRole;
+      lost?: AccessLost;
     }
   | {
       type: "member.joined" | "member.declined";
@@ -228,7 +240,14 @@ export type ChangeEvent =
   /** A Space, or the viewer's Personal tray, moved on their board. */
   | ({ type: "space.reordered" } & SpaceAt)
   // People in a Space
-  | { type: "space.member.invited"; space: SpaceAt; membershipId: string; member: PersonAt }
+  | {
+      type: "space.member.invited";
+      space: SpaceAt;
+      membershipId: string;
+      member: PersonAt;
+      /** Absent on invites from before Space roles beyond member. */
+      role?: SpaceRole;
+    }
   | { type: "space.member.joined" | "space.member.declined"; space: SpaceAt; membershipId: string }
   | {
       type: "space.member.removed";
@@ -244,6 +263,7 @@ export type ChangeEvent =
       membershipId: string;
       member: PersonAt;
       role: SpaceRole;
+      lost?: AccessLost;
     }
   // Pull requests
   | ({ type: "item.pr.linked" | "item.pr.unlinked"; projectId: string; prUrl: string } & ItemAt)
@@ -377,6 +397,7 @@ export function auditColumns(event: ChangeEvent): {
     case "member.invited":
       return member("create", event.membershipId, event.projectId);
     case "member.joined":
+    case "member.role":
       return member("update", event.membershipId, event.projectId);
     case "member.declined":
     case "member.removed":

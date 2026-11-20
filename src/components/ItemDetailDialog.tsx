@@ -9,6 +9,8 @@ import {
   Copy,
   CornerLeftUp,
   ExternalLink,
+  Eye,
+  MessageSquare,
   GitBranch,
   IndentDecrease,
   IndentIncrease,
@@ -67,7 +69,10 @@ import { PrLink } from "./PrLink";
 import { runAction } from "./run-action";
 import { EditableText } from "./EditableText";
 import { ItemComments } from "./ItemComments";
-import { LabelChips } from "./Labels";
+import { LabelBadge, LabelChips, useListLabels } from "./Labels";
+import { DueBadge } from "./DueBadge";
+import { RepeatBadge } from "./RepeatBadge";
+import { useListAccess } from "./list-access";
 import { MoveToListPicker, useMoveItem } from "./MoveItem";
 import { AssigneeChip, CHIP, DueChip, EMPTY_CHIP, Field, RepeatChip } from "./DialogFields";
 import { InlineCode, Markdown } from "./Markdown";
@@ -279,6 +284,7 @@ function Checklist({
   pickerFor,
   onPickerFor,
   focusId,
+  readOnly = false,
 }: {
   parent: Item;
   /** The list's ref prefix, for ⌘. on a hovered sub-item. */
@@ -296,6 +302,8 @@ function Checklist({
   onPickerFor: (id: string | null) => void;
   /** The sub-item just gone back from, focused as the checklist shows. */
   focusId: string | null;
+  /** For those who can't change the list: ticks and assignees shown, not changed, and no new steps. */
+  readOnly?: boolean;
 }) {
   const [draft, setDraft] = useState("");
   const { setCompleted } = useItemChanges();
@@ -368,7 +376,8 @@ function Checklist({
             <Checkbox
               checked={done}
               onCheckedChange={() => setCompleted(child, !done)}
-              aria-label={`${done ? "Uncomplete" : "Complete"} ${child.title}`}
+              readOnly={readOnly}
+              aria-label={`${readOnly ? (done ? "Done:" : "Not done:") : done ? "Uncomplete" : "Complete"} ${child.title}`}
             />
             <button
               type="button"
@@ -380,6 +389,9 @@ function Checklist({
             >
               {child.title}
             </button>
+            {readOnly ? (
+              assigned.length > 0 && <AvatarStack users={assigned} size={18} />
+            ) : (
             <DropdownMenu
               open={pickerFor === child.id}
               onOpenChange={(o) => onPickerFor(o ? child.id : null)}
@@ -407,6 +419,7 @@ function Checklist({
                 />
               </DropdownMenuContent>
             </DropdownMenu>
+            )}
           </div>
         );
       })}
@@ -420,6 +433,9 @@ function Checklist({
           <span className="min-w-0 flex-1 truncate">{title}</span>
         </div>
       ))}
+      {readOnly ? (
+        items.length === 0 && <p className="px-1 text-sm text-neutral-400">No steps.</p>
+      ) : (
       <Input
         ref={input}
         value={draft}
@@ -437,9 +453,62 @@ function Checklist({
         // ignores autocomplete="off"). The dialog is already titled.
         aria-label="Add a sub-item"
       />
+      )}
     </div>
   );
 }
+/**
+ * The item's fields for someone who can view or comment on its list but not
+ * change it: what the editable chips show, as plain text.
+ */
+function ReadOnlyFields({
+  item,
+  parent,
+  assigned,
+  labelEmoji,
+  onOpenItem,
+}: {
+  item: Item;
+  parent: Item | null;
+  assigned: AssigneeView[];
+  labelEmoji: (name: string) => string | null;
+  onOpenItem: (item: Item) => void;
+}) {
+  const repeat = repeatOf(item);
+  const done = item.completedAt !== null;
+  const any = item.dueDate || repeat || assigned.length > 0 || item.labels.length > 0 || parent;
+  return (
+    <div className="space-y-3 pl-8">
+      {item.description?.trim() && (
+        <div className="break-words text-sm text-neutral-600 dark:text-neutral-300">
+          <Markdown>{item.description}</Markdown>
+        </div>
+      )}
+      {any && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {item.dueDate && <DueBadge due={item.dueDate} from={item.dueFrom} done={done} />}
+          {repeat && <RepeatBadge repeat={repeat} completedAt={item.completedAt} />}
+          {assigned.length > 0 && (
+            <span className="inline-flex items-center gap-1.5 text-xs text-neutral-500">
+              <AvatarStack users={assigned} size={18} />
+              {assigneeNames(assigned)}
+            </span>
+          )}
+          {item.labels.map((name) => (
+            <LabelBadge key={name} name={name} emoji={labelEmoji(name)} />
+          ))}
+          {parent && (
+            <button type="button" onClick={() => onOpenItem(parent)} className={CHIP}>
+              <CornerLeftUp />
+              <span className="max-w-48 truncate">{parent.title}</span>
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 type ItemDetailProps = {
   item: Item;
   /** For a sub-item, the task it belongs to. */
@@ -521,6 +590,10 @@ export function ItemDetailView({
 }) {
   const [pending, start] = useTransition();
   const { agentOptions, setAgent } = useAgentAssignment(item, start);
+  // A viewer or commenter reads it all, changing nothing (commenters comment).
+  const access = useListAccess(item.projectId);
+  const canEdit = access === "edit";
+  const listLabels = useListLabels(item.projectId);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   // A sub-item's assignee picker in the checklist, when one is open.
@@ -595,7 +668,7 @@ export function ItemDetailView({
   // D opens the due date, X ticks the item, ⌫ deletes it (asking first).
   const [dueOpen, setDueOpen] = useState(false);
   useItemShortcuts({
-    active: open && childPickerFor === null && !dueOpen,
+    active: open && childPickerFor === null && !dueOpen && canEdit,
     onOpenPicker: openPicker,
     onAssignToMe: canAssignSelf ? toggleMe : undefined,
     onDue: () => !pending && setDueOpen(true),
@@ -675,6 +748,15 @@ export function ItemDetailView({
         <ResponsiveDialogCloseButton className={follows ? "" : "ml-auto"} />
       </div>
       <div className="flex items-start gap-2">
+        {!canEdit ? (
+          <span
+            role="img"
+            aria-label={completed ? "Done" : "Not done"}
+            className={`mt-px shrink-0 ${completed ? "text-green-600 dark:text-green-500" : "text-neutral-300 dark:text-neutral-600"}`}
+          >
+            {completed ? <CheckCircle2 className="size-6" /> : <Circle className="size-6" />}
+          </span>
+        ) : (
         <button
           type="button"
           onClick={toggle}
@@ -690,7 +772,17 @@ export function ItemDetailView({
         >
           {completed ? <CheckCircle2 className="size-6" /> : <Circle className="size-6" />}
         </button>
+        )}
         <ResponsiveDialogTitle className="min-w-0 flex-1">
+          {!canEdit ? (
+            <span
+              className={`block w-full break-words text-base leading-6 font-medium ${
+                completed ? "text-neutral-400 line-through" : ""
+              }`}
+            >
+              <InlineCode>{item.title}</InlineCode>
+            </span>
+          ) : (
           <EditableText
             value={item.title}
             onSave={(next) =>
@@ -703,11 +795,21 @@ export function ItemDetailView({
             inputClassName="w-full text-base"
             renderValue={(title) => <InlineCode>{title}</InlineCode>}
           />
+          )}
         </ResponsiveDialogTitle>
       </div>
       <ResponsiveDialogDescription className="sr-only">
         Item details for {item.title}
       </ResponsiveDialogDescription>
+      {!canEdit ? (
+        <ReadOnlyFields
+          item={item}
+          parent={parent}
+          assigned={assigned}
+          labelEmoji={(name) => listLabels.find((l) => l.name === name)?.emoji ?? null}
+          onOpenItem={onOpenItem}
+        />
+      ) : (
       <div className="space-y-3 pl-8">
         <EditableText
           value={item.description ?? ""}
@@ -842,6 +944,7 @@ export function ItemDetailView({
           )}
         </div>
       </div>
+      )}
     </div>
 
     <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-4">
@@ -870,6 +973,7 @@ export function ItemDetailView({
             pickerFor={childPickerFor}
             onPickerFor={setChildPickerFor}
             focusId={cameFrom}
+            readOnly={!canEdit}
           />
         </Field>
       )}
@@ -897,18 +1001,25 @@ export function ItemDetailView({
           ? `Completed ${dayLabel(item.completedAt)}`
           : `Created ${dayLabel(item.createdAt)}`}
       </span>
-      <Button
-        variant={confirmingDelete ? "destructive" : "ghost"}
-        size="sm"
-        data-replay-safe
-        onClick={del}
-        disabled={pending}
-        className={confirmingDelete ? "" : "text-neutral-500 hover:text-destructive"}
-      >
-        <Trash2 />
-        {confirmingDelete ? "Confirm delete?" : "Delete"}
-        {!confirmingDelete && <Kbd className="ml-0.5">⌫</Kbd>}
-      </Button>
+      {canEdit ? (
+        <Button
+          variant={confirmingDelete ? "destructive" : "ghost"}
+          size="sm"
+          data-replay-safe
+          onClick={del}
+          disabled={pending}
+          className={confirmingDelete ? "" : "text-neutral-500 hover:text-destructive"}
+        >
+          <Trash2 />
+          {confirmingDelete ? "Confirm delete?" : "Delete"}
+          {!confirmingDelete && <Kbd className="ml-0.5">⌫</Kbd>}
+        </Button>
+      ) : (
+        <span className="inline-flex items-center gap-1 text-xs text-neutral-400">
+          {access === "comment" ? <MessageSquare className="size-3.5" /> : <Eye className="size-3.5" />}
+          {access === "comment" ? "Can comment" : "View only"}
+        </span>
+      )}
     </div>
     </>
   );

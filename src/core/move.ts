@@ -1,3 +1,4 @@
+import { requireListAccess } from "./access";
 import { createHash } from "node:crypto";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { formatItemRef } from "../lib/itemRef";
@@ -55,8 +56,10 @@ interface Planned extends Omit<MovePlan, "token"> {
 function plan(db: Db, userId: string, id: string, projectId: string): Planned {
   const item = getItem(db, userId, id);
   if (!item) throw new Error(`item not found: ${id}`);
+  requireListAccess(db, userId, item.projectId, "edit");
   const target = getProject(db, userId, projectId);
   if (!target) throw new Error(`list not found: ${projectId}`);
+  requireListAccess(db, userId, projectId, "edit");
   if (target.id === item.projectId) throw new Error(`"${item.title}" is already in that list`);
   if (target.status === "archived") throw new Error("can't move an item into an archived list");
   const source = getProject(db, userId, item.projectId);

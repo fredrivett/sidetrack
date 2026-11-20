@@ -428,6 +428,13 @@
       "when": 1795133521207,
       "tag": "0060_day_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "6",
+      "when": 1795136080072,
+      "tag": "0061_list_roles",
+      "breakpoints": true
     }
   ]
 }

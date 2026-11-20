@@ -19,7 +19,7 @@ import {
 import { CHIP, EMPTY_CHIP, Field, TextChip } from "./DialogFields";
 import { EditableText } from "./EditableText";
 import type { ProjectView } from "./Kanban";
-import { useListLabels } from "./Labels";
+import { LabelBadge, useListLabels } from "./Labels";
 import { LabelView, ListLabelsField, useLabelUsage } from "./ListLabels";
 import { ProjectIconPicker, useListIcon } from "./ProjectIconPicker";
 import { StatusBadge } from "./StatusBadge";
@@ -69,6 +69,8 @@ export function ProjectDetailDialog({
     }
   }
   const labels = useListLabels(project.id);
+  // A viewer or commenter reads the details; they change nothing.
+  const canEdit = project.access === "edit";
   // Gone once it's deleted, which goes back to the list's details, with
   // nothing there to focus.
   const label = labels.find((l) => l.id === labelId);
@@ -153,6 +155,7 @@ export function ProjectDetailDialog({
                     }
                     onDraftChange={listIcon.onDraftChange}
                     required
+                    readOnly={!canEdit}
                     className="block w-full break-words text-base leading-6 font-medium"
                     inputClassName="w-full text-base"
                   />
@@ -167,39 +170,66 @@ export function ProjectDetailDialog({
                   }
                   multiline
                   placeholder="Add summary…"
+                  readOnly={!canEdit}
                   className="block w-full whitespace-pre-wrap break-words text-sm text-neutral-600 dark:text-neutral-300"
                   inputClassName="w-full text-sm"
                 />
                 <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                  <TextChip
-                    icon={<Hash />}
-                    label="ID prefix"
-                    value={project.prefix}
-                    placeholder="e.g. HOM"
-                    validate={(next) => validatePrefix(next.toUpperCase())}
-                    onSave={savePrefix}
-                    disabled={saving}
-                    inputClassName="font-mono uppercase"
-                  >
-                    <span className="font-mono text-xs tracking-wide">{project.prefix}</span>
-                  </TextChip>
-                  <TextChip
-                    icon={<Globe />}
-                    label="Homepage"
-                    value={project.homepageUrl ?? ""}
-                    placeholder="example.com"
-                    validate={(next) =>
-                      problem(() => normalizeHomepageUrl(next), "That doesn't look like a valid URL.")
-                    }
-                    onSave={saveHomepage}
-                    href={project.homepageUrl}
-                    hrefLabel="Open homepage"
-                    disabled={saving}
-                  >
-                    <span className="max-w-48 truncate">
-                      {project.homepageUrl?.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}
-                    </span>
-                  </TextChip>
+                  {canEdit ? (
+                    <>
+                      <TextChip
+                        icon={<Hash />}
+                        label="ID prefix"
+                        value={project.prefix}
+                        placeholder="e.g. HOM"
+                        validate={(next) => validatePrefix(next.toUpperCase())}
+                        onSave={savePrefix}
+                        disabled={saving}
+                        inputClassName="font-mono uppercase"
+                      >
+                        <span className="font-mono text-xs tracking-wide">{project.prefix}</span>
+                      </TextChip>
+                      <TextChip
+                        icon={<Globe />}
+                        label="Homepage"
+                        value={project.homepageUrl ?? ""}
+                        placeholder="example.com"
+                        validate={(next) =>
+                          problem(() => normalizeHomepageUrl(next), "That doesn't look like a valid URL.")
+                        }
+                        onSave={saveHomepage}
+                        href={project.homepageUrl}
+                        hrefLabel="Open homepage"
+                        disabled={saving}
+                      >
+                        <span className="max-w-48 truncate">
+                          {project.homepageUrl?.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}
+                        </span>
+                      </TextChip>
+                    </>
+                  ) : (
+                    // Read-only: what's set, as plain chips.
+                    <>
+                      <span className={CHIP}>
+                        <Hash />
+                        <span className="font-mono text-xs tracking-wide">{project.prefix}</span>
+                      </span>
+                      {project.homepageUrl && (
+                        <a
+                          href={project.homepageUrl}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          title="Open homepage"
+                          className={CHIP}
+                        >
+                          <Globe />
+                          <span className="max-w-48 truncate">
+                            {project.homepageUrl.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}
+                          </span>
+                        </a>
+                      )}
+                    </>
+                  )}
                   {isAdmin ? (
                     <TextChip
                       icon={<GitBranch />}
@@ -258,12 +288,22 @@ export function ProjectDetailDialog({
 
               <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-4">
                 <Field label="Labels">
-                  <ListLabelsField
-                    labels={labels}
-                    usage={usage}
-                    onOpen={setLabelId}
-                    focusId={backFrom}
-                  />
+                  {canEdit ? (
+                    <ListLabelsField
+                      labels={labels}
+                      usage={usage}
+                      onOpen={setLabelId}
+                      focusId={backFrom}
+                    />
+                  ) : labels.length ? (
+                    <div className="flex flex-wrap gap-1">
+                      {labels.map((l) => (
+                        <LabelBadge key={l.id} name={l.name} emoji={l.emoji} />
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-neutral-400">No labels.</p>
+                  )}
                 </Field>
               </div>
 
@@ -271,6 +311,7 @@ export function ProjectDetailDialog({
                 <span className="text-xs text-neutral-400">
                   Created {dayLabel(project.createdAt)}
                 </span>
+                {canEdit && (
                 <Button
                   variant={confirmingDelete ? "destructive" : "ghost"}
                   size="sm"
@@ -281,6 +322,7 @@ export function ProjectDetailDialog({
                   <Trash2 />
                   {confirmingDelete ? "Confirm delete?" : "Delete"}
                 </Button>
+                )}
               </div>
             </>
           )}

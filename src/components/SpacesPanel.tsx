@@ -16,14 +16,21 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { CollaboratorView } from "@/core/members";
-import type { SpaceColor } from "@/core/schema";
+import { SPACE_ROLES, type SpaceColor, type SpaceRole } from "@/core/schema";
+import { roleName } from "@/lib/roles";
 import type { SpaceMemberView, SpaceView } from "@/core/spaces";
 import { EditableText } from "./EditableText";
 import { ProjectIcon } from "./ProjectIcon";
+import { RoleSelect } from "./RoleSelect";
 import { IconPicker } from "./ProjectIconPicker";
 import { SpaceColorPicker, spaceTint } from "./SpaceColor";
 import { runAction } from "./run-action";
 import { useTapToConfirm } from "./use-tap-to-confirm";
+
+// The roles someone can be invited with: admins are made from members.
+const INVITE_ROLES = SPACE_ROLES.filter(
+  (r): r is Exclude<SpaceRole, "admin"> => r !== "admin",
+);
 
 function displayName(m: CollaboratorView) {
   return m.displayUsername ? `@${m.displayUsername}` : (m.name ?? m.email ?? m.userId);
@@ -136,6 +143,9 @@ function SpaceCard({
   const [members, setMembers] = useState<SpaceMemberView[]>([]);
   const [suggestions, setSuggestions] = useState<CollaboratorView[]>([]);
   const [person, setPerson] = useState("");
+  // What the next invite lets them do. Admins are made from members, not
+  // invited as admins.
+  const [role, setRole] = useState<Exclude<SpaceRole, "admin">>("member");
   const [saving, start] = useTransition();
   const tap = useTapToConfirm();
 
@@ -238,7 +248,7 @@ function SpaceCard({
             e.preventDefault();
             const handle = person.trim();
             if (handle) {
-              save(() => inviteSpaceMemberAction(space.id, handle), `invite ${handle}`, () =>
+              save(() => inviteSpaceMemberAction(space.id, handle, role), `invite ${handle}`, () =>
                 setPerson(""),
               );
             }
@@ -251,6 +261,12 @@ function SpaceCard({
             placeholder="Invite by username or email"
             autoComplete="off"
             aria-label={`Invite someone to ${space.name}`}
+          />
+          <RoleSelect
+            label="What they can do"
+            value={role}
+            roles={INVITE_ROLES}
+            onChange={setRole}
           />
           <Button type="submit" size="sm" disabled={!person.trim()}>
             Invite
@@ -283,32 +299,24 @@ function SpaceCard({
                   <span className={`${BADGE} bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400`}>
                     Pending
                   </span>
-                ) : (
-                  m.role === "admin" && (
-                    <span className={`${BADGE} bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-400`}>
-                      Admin
-                    </span>
-                  )
-                )}
-                {isAdmin && m.status === "accepted" && !(m.role === "admin" && admins.length === 1) && (
-                  <button
-                    type="button"
-                    onClick={() =>
+                ) : isAdmin && !(m.role === "admin" && admins.length === 1) ? (
+                  <RoleSelect
+                    label={`What ${displayName(m)} can do`}
+                    value={m.role}
+                    roles={SPACE_ROLES}
+                    onChange={(next) =>
                       save(
-                        () =>
-                          setSpaceMemberRoleAction(
-                            space.id,
-                            m.userId,
-                            m.role === "admin" ? "member" : "admin",
-                          ),
+                        () => setSpaceMemberRoleAction(space.id, m.userId, next),
                         `change ${displayName(m)}'s role`,
                       )
                     }
-                    aria-label={`${m.role === "admin" ? "Make member" : "Make admin"}: ${displayName(m)}`}
-                    className="rounded px-1.5 py-0.5 text-xs text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900 dark:hover:bg-neutral-700 dark:hover:text-neutral-100"
-                  >
-                    {m.role === "admin" ? "Make member" : "Make admin"}
-                  </button>
+                  />
+                ) : (
+                  m.role !== "member" && (
+                    <span className={`${BADGE} ${m.role === "admin" ? "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-400" : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"}`}>
+                      {m.role === "admin" ? "Admin" : roleName(m.role)}
+                    </span>
+                  )
                 )}
                 {canRemove && (
                   <button

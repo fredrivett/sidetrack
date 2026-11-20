@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, type SQL, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { hasProjectAccess } from "./access";
+import { hasProjectAccess, requireListAccess } from "./access";
 import { users } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
@@ -215,6 +215,7 @@ export function addComment(
 ): CommentView {
   const item = getItem(db, userId, itemId);
   if (!item) throw new Error(`item not found: ${itemId}`);
+  requireListAccess(db, userId, item.projectId, "comment");
   const body = cleanBody(rawBody);
   const agent = typeof source === "object" ? source.agent : null;
   const id = nanoid(12);
@@ -256,6 +257,8 @@ export function updateComment(
   source: AuditOrigin,
 ): CommentView {
   const { comment, item } = ownComment(db, userId, id);
+  // Deleting their own words stays open to them whatever their role; editing them doesn't.
+  requireListAccess(db, userId, item.projectId, "comment");
   const body = cleanBody(rawBody);
   if (body !== comment.body) {
     db.transaction((tx) => {

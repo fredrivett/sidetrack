@@ -65,10 +65,22 @@ export type AuditEntity = (typeof AUDIT_ENTITIES)[number];
 export const MEMBERSHIP_STATUSES = ["pending", "accepted"] as const;
 export type MembershipStatus = (typeof MEMBERSHIP_STATUSES)[number];
 
-// A Space member's role. Every accepted member can see and edit every list in
+// A Space member's role. Admins and members can see and edit every list in
 // the Space; admins also manage the Space and its people (see spaces.ts).
-export const SPACE_ROLES = ["admin", "member"] as const;
+// Commenters can see its lists and comment; viewers can only see them.
+export const SPACE_ROLES = ["admin", "member", "commenter", "viewer"] as const;
 export type SpaceRole = (typeof SPACE_ROLES)[number];
+
+// A list member's role (project_members.role): editors can change anything
+// a member can; commenters can see the list and comment; viewers can only
+// see it. The owner is always an editor, and isn't a member.
+export const LIST_ROLES = ["editor", "commenter", "viewer"] as const;
+export type ListRole = (typeof LIST_ROLES)[number];
+
+// What someone can do on a list, from least to most (access.ts). Their most
+// generous route counts: a list role, a Space role, or owning it.
+export const LIST_ACCESS = ["view", "comment", "edit"] as const;
+export type ListAccess = (typeof LIST_ACCESS)[number];
 
 // A Space's colour, which tints its tray on the board. Each name is a
 // --color-space-* token in globals.css, all in the same soft tone. null = grey.
@@ -207,6 +219,7 @@ export const projectMembers = sqliteTable(
       .$type<MembershipStatus>()
       .notNull()
       .default("pending"),
+    role: text("role").$type<ListRole>().notNull().default("editor"),
     createdAt: integer("created_at")
       .notNull()
       .default(sql`(unixepoch() * 1000)`),

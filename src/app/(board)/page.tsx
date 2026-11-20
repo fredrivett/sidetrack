@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { listAccessById } from "@/core/access";
 import { AgentSessionsProvider } from "@/components/agent-sessions";
 import { CommentCountsProvider } from "@/components/comment-counts";
 import { Kanban } from "@/components/Kanban";
@@ -55,9 +56,11 @@ export default async function Home({
   // viewer's board, bare (SID) otherwise.
   const refPrefixes = projectRefPrefixes(db, userId);
   const repoSuggestions = suggestedRepositories(db, userId);
+  const access = listAccessById(db, userId);
   const projects = listProjects(db, userId).map((p) => ({
     ...p,
     isOwner: p.userId === userId,
+    access: access.get(p.id) ?? "view",
     refPrefix: refPrefixes[p.id] ?? p.prefix,
     suggestedRepository: repoSuggestions[p.id],
   }));

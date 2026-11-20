@@ -32,6 +32,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { EditableText } from "./EditableText";
 import { Markdown } from "./Markdown";
 import { runAction } from "./run-action";
+import { useListAccess } from "./list-access";
 import { MentionTextarea } from "./MentionTextarea";
 import { AvatarStack, assigneeName } from "./UserAvatar";
 
@@ -53,6 +54,8 @@ export function ItemComments({
   people: AssigneeView[];
 }) {
   const [comments, setComments] = useState<CommentView[] | null>(null);
+  // A viewer reads the comments but doesn't write them.
+  const canComment = useListAccess(item.projectId) !== "view";
   // Suggested with you last: you rarely mention yourself.
   const mentionable = [
     ...people.filter((p) => p.userId !== viewerId),
@@ -141,7 +144,7 @@ export function ItemComments({
                 comment={c}
                 people={mentionable}
                 own={
-                  c.userId === viewerId
+                  c.userId === viewerId && canComment
                     ? {
                         onEdited: (comment) =>
                           change((cur) => cur.map((x) => (x.id === comment.id ? comment : x))),
@@ -154,12 +157,16 @@ export function ItemComments({
           </ul>
         )
       )}
-      <Composer
-        itemId={item.id}
-        title={item.title}
-        people={mentionable}
-        onAdded={(comment) => change((cur) => [...cur, comment])}
-      />
+      {canComment ? (
+        <Composer
+          itemId={item.id}
+          title={item.title}
+          people={mentionable}
+          onAdded={(comment) => change((cur) => [...cur, comment])}
+        />
+      ) : (
+        <p className="text-xs text-neutral-400">You can view this list, but not comment on it.</p>
+      )}
     </div>
   );
 }

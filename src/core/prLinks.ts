@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { hasProjectAccess } from "./access";
+import { hasProjectAccess, requireListAccess } from "./access";
 import { type AuditOrigin, recordAudit } from "./audit";
 import { announceChange } from "./changes";
 import type { Db } from "./db";
@@ -154,6 +154,7 @@ export function linkItemToPr(
 ): ItemPrLink {
   const item = getItem(db, userId, itemId);
   if (!item) throw new Error(`item not found: ${itemId}`);
+  requireListAccess(db, userId, item.projectId, "edit");
   const prUrl = canonicalizePrUrl(prUrlRaw);
 
   const existing = db
@@ -209,6 +210,7 @@ export function unlinkItemFromPr(
 ): void {
   const item = getItem(db, userId, itemId);
   if (!item) throw new Error(`item not found: ${itemId}`);
+  requireListAccess(db, userId, item.projectId, "edit");
   const prUrl = canonicalizePrUrl(prUrlRaw);
 
   const existing = db
