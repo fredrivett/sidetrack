@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   useTransition,
@@ -21,6 +22,8 @@ import { formatItemRef } from "@/lib/itemRef";
 import type { Repeat } from "@/lib/repeat";
 import type { Due } from "@/lib/time";
 import { Button } from "@/components/ui/button";
+import { MentionTextarea } from "@/components/MentionTextarea";
+import { useDraft } from "@/components/use-draft";
 import { useStoredState } from "@/components/use-stored-state";
 import { Input } from "@/components/ui/input";
 import {
@@ -91,6 +94,45 @@ function AddedToast({
 
 const NO_SUB_ITEMS: string[] = [];
 
+/** What's been picked in New item. `due` is undefined until a date is picked. */
+type Picked = {
+  projectId: string;
+  parent: { projectId: string; item: ItemHint } | null;
+  labels: string[];
+  labelEmoji: Record<string, LabelEmoji>;
+  assigneeIds: string[];
+  due?: Due | null;
+  repeat: Repeat | null;
+};
+/** A setter for each field of Picked, taking a value or an update. */
+function pickers(setPicked: (update: (cur: Picked) => Picked) => void) {
+  const field =
+    <K extends keyof Picked>(name: K) =>
+    (next: Picked[K] | ((current: Picked[K]) => Picked[K])) =>
+      setPicked((cur) => ({
+        ...cur,
+        [name]: typeof next === "function" ? (next as (c: Picked[K]) => Picked[K])(cur[name]) : next,
+      }));
+  return {
+    projectId: field("projectId"),
+    parent: field("parent"),
+    labels: field("labels"),
+    labelEmoji: field("labelEmoji"),
+    assigneeIds: field("assigneeIds"),
+    repeat: field("repeat"),
+  };
+}
+
+const NOTHING_PICKED: Picked = {
+  projectId: "",
+  parent: null,
+  labels: [],
+  labelEmoji: {},
+  assigneeIds: [],
+  repeat: null,
+};
+const NO_PEOPLE: AssigneeView[] = [];
+
 export function NewItemDialog({
   open,
   onOpenChange,
@@ -118,14 +160,19 @@ export function NewItemDialog({
    */
   shownOnBoard: (item: Item, subItems: number) => boolean;
 }) {
+  // What's picked is part of the draft too, kept until it's added or the
+  // dialog's cancelled. A field left unset uses the dialog's own default.
+  const [picked, setPicked] = useStoredState("draft:new-item:picked", NOTHING_PICKED);
+  const pick = useMemo(() => pickers(setPicked), [setPicked]);
+  // The list the dialog was opened from, for when none is picked.
+  const [openedFrom, setOpenedFrom] = useState(initialProjectId ?? "");
   // The list the user chose, or the one the dialog was opened from; "" until
   // then, while Jev's suggestion (if any) stands in.
-  const [pickedProjectId, setPickedProjectId] = useState("");
+  const pickedProjectId = picked.projectId || openedFrom;
+  const setPickedProjectId = pick.projectId;
   // A parent the user accepted from a suggestion, with the list it's in.
-  const [parent, setParent] = useState<{
-    projectId: string;
-    item: ItemHint;
-  } | null>(null);
+  const parent = picked.parent;
+  const setParent = pick.parent;
   // Jev's suggestion with the draft it was made for, so it's only used while
   // the form still says the same thing.
   const [suggested, setSuggested] = useState<{
@@ -134,22 +181,28 @@ export function NewItemDialog({
   } | null>(null);
   // What's typed is kept until it's added or the dialog's cancelled, so a
   // reload (a deploy's, say) or the app closing in the background loses none.
-  const [title, setTitle] = useStoredState("new-item:title", "");
-  const [description, setDescription] = useStoredState("new-item:description", "");
-  const [labels, setLabels] = useState<string[]>([]);
+  const { value: title, set: setTitle } = useDraft("new-item:title");
+  const descriptionDraft = useDraft("new-item:description");
+  const { value: description, set: setDescription } = descriptionDraft;
+  const { labels, assigneeIds, repeat } = picked;
+  const setLabels = pick.labels;
   // The emoji for labels new to the list, held until the item creates them.
-  const [labelEmoji, setLabelEmoji] = useState<Record<string, LabelEmoji>>({});
-  const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
+  const labelEmoji = picked.labelEmoji;
+  const setLabelEmoji = pick.labelEmoji;
+  const setAssigneeIds = pick.assigneeIds;
+  const setRepeat = pick.repeat;
   const [assignOpen, setAssignOpen] = useState(false);
   const [dueOpen, setDueOpen] = useState(false);
-  const [due, setDue] = useState<Due | null>(null);
   // Worked out as it's used, so a dialog left open past the day's turnover
   // gives the next item the new day, not the one it opened on.
   const today = useToday();
   const initialDue: Due | null = dueToday && today ? { dueFrom: null, dueDate: today } : null;
-  const [repeat, setRepeat] = useState<Repeat | null>(null);
-  const [subItems, setSubItems] = useStoredState("new-item:sub-items", NO_SUB_ITEMS);
-  const [subDraft, setSubDraft] = useStoredState("new-item:sub-draft", "");
+  // Unset (undefined) until a date is picked: then the one it opened with.
+  const due = picked.due === undefined ? initialDue : picked.due;
+  const setDue = (next: Due | null) => setPicked((cur) => ({ ...cur, due: next }));
+  // The steps added so far, kept as drafts are (signing out drops them).
+  const [subItems, setSubItems] = useStoredState("draft:new-item:sub-items", NO_SUB_ITEMS);
+  const { value: subDraft, set: setSubDraft } = useDraft("new-item:sub-draft");
   // How many were added, so the same draft is asked about again.
   const [added, setAdded] = useState(0);
   // Whether anything was added in this session: Add & create more keeps the dialog
@@ -181,17 +234,13 @@ export function NewItemDialog({
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
+    // What's typed and picked was cleared when it last closed (close()),
+    // so anything still there is a draft to carry on with.
     if (open) {
-      setPickedProjectId(initialProjectId ?? "");
-      setParent(null);
+      setOpenedFrom(initialProjectId ?? "");
       setSuggested(null);
-      setLabels([]);
-      setLabelEmoji({});
-      setAssigneeIds([]);
       setAssignOpen(false);
       setDueOpen(false);
-      setDue(initialDue);
-      setRepeat(null);
       setAddedAny(false);
     }
   }
@@ -234,7 +283,7 @@ export function NewItemDialog({
   const openPicker = useCallback(() => setAssignOpen(true), []);
   const toggleMe = useCallback(
     () => setAssigneeIds((cur) => toggleAssignee(cur, viewerId)),
-    [viewerId],
+    [viewerId, setAssigneeIds],
   );
   useItemShortcuts({
     active: open && !pending && !dueOpen,
@@ -351,10 +400,15 @@ export function NewItemDialog({
       setDescription((cur) => ((cur.trim() || null) === d ? "" : cur));
       // Assignees, a due date, repeat and parent belong to the item just
       // added, like its title; the date it opened with stays for the next.
-      setAssigneeIds((cur) => (cur === who ? [] : cur));
-      setDue((cur) => (cur === du ? initialDue : cur));
-      setRepeat((cur) => (cur === r ? null : cur));
-      setParent((cur) => (cur?.item.id === p ? null : cur));
+      // Compared as JSON: each read from storage is a new copy.
+      const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+      setPicked((cur) => ({
+        ...cur,
+        assigneeIds: same(cur.assigneeIds, who) ? [] : cur.assigneeIds,
+        due: same(cur.due === undefined ? initialDue : cur.due, du) ? undefined : cur.due,
+        repeat: same(cur.repeat, r) ? null : cur.repeat,
+        parent: cur.parent?.item.id === p ? null : cur.parent,
+      }));
       // Sub-items can't be edited while it saves, so they're all this item's.
       setSubItems(NO_SUB_ITEMS);
       setSubDraft("");
@@ -370,6 +424,7 @@ export function NewItemDialog({
     setDescription("");
     setSubItems(NO_SUB_ITEMS);
     setSubDraft("");
+    setPicked(NOTHING_PICKED);
     onOpenChange(false);
   }
 
@@ -407,9 +462,10 @@ export function NewItemDialog({
                 this list.
               </p>
             )}
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
+            {/* Unstyled, like the title above; no one to mention. */}
+            <MentionTextarea
+              people={NO_PEOPLE}
+              draft={descriptionDraft}
               placeholder="Add description…"
               aria-label="Description"
               disabled={pending}

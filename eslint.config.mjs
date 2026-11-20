@@ -9,6 +9,27 @@ import { rethrowRedirectPlugin } from "./eslint-rules/rethrow-redirect.mjs";
 const AI_READ =
   "Asking an AI in a Server Action holds up every save behind it. Add an AI read in src/app/api/ai/reads.ts instead.";
 
+// Stub implementations agents leave behind (see the rules below).
+const STUB_SYNTAX = [
+  {
+    selector:
+      "ThrowStatement > NewExpression[callee.name='Error'][arguments.0.value=/not implemented|unimplemented|TODO|FIXME/i]",
+    message:
+      "Stub implementation. Finish the function or delete it — don't ship a placeholder throw.",
+  },
+  {
+    selector: "FunctionDeclaration > BlockStatement[body.length=0]",
+    message:
+      "Empty function body. Implement it or delete it — don't ship a stub.",
+  },
+  {
+    selector:
+      "MethodDefinition > FunctionExpression > BlockStatement[body.length=0]",
+    message:
+      "Empty method body. Implement it or delete it — don't ship a stub.",
+  },
+];
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -40,26 +61,7 @@ const eslintConfig = defineConfig([
         "error",
         { terms: ["todo", "fixme"], location: "anywhere" },
       ],
-      "no-restricted-syntax": [
-        "error",
-        {
-          selector:
-            "ThrowStatement > NewExpression[callee.name='Error'][arguments.0.value=/not implemented|unimplemented|TODO|FIXME/i]",
-          message:
-            "Stub implementation. Finish the function or delete it — don't ship a placeholder throw.",
-        },
-        {
-          selector: "FunctionDeclaration > BlockStatement[body.length=0]",
-          message:
-            "Empty function body. Implement it or delete it — don't ship a stub.",
-        },
-        {
-          selector:
-            "MethodDefinition > FunctionExpression > BlockStatement[body.length=0]",
-          message:
-            "Empty method body. Implement it or delete it — don't ship a stub.",
-        },
-      ],
+      "no-restricted-syntax": ["error", ...STUB_SYNTAX],
     },
   },
   // Operational CLI entrypoints log progress to the console by design.
@@ -111,6 +113,24 @@ const eslintConfig = defineConfig([
             { name: "@/core/agendaGreeting", importNames: ["writtenGreetingFor"], message: AI_READ },
             { name: "@/core/feedback", importNames: ["feedbackFollowUps"], message: AI_READ },
           ],
+        },
+      ],
+    },
+  },
+  // Drafts (AGENTS.md): writing goes in a Textarea or MentionTextarea, which
+  // take a Draft from useDraft, so it outlives a reload. A bare <textarea>
+  // would skip that; only those two may render one.
+  {
+    files: ["src/**/*.tsx"],
+    ignores: ["src/**/*.test.tsx", "src/components/ui/textarea.tsx", "src/components/MentionTextarea.tsx"],
+    rules: {
+      // One rule per name in flat config, so the stub checks come along.
+      "no-restricted-syntax": [
+        "error",
+        ...STUB_SYNTAX,
+        {
+          selector: "JSXOpeningElement[name.name='textarea']",
+          message: "Use Textarea (or MentionTextarea) with a draft from useDraft, so the text outlives a reload. See Drafts in AGENTS.md.",
         },
       ],
     },

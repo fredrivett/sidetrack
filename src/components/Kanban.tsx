@@ -57,6 +57,7 @@ import type { GetStarted } from "@/lib/getStarted";
 import { SpaceMenu } from "./SpaceMenu";
 import { saveCollapsedTrays, SpaceTray } from "./SpaceTray";
 import { useDayStart, useToday } from "./use-day-start";
+import { claimDrafts } from "./use-draft";
 import { useStoredState } from "./use-stored-state";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
 import { useSameContent } from "./use-same-content";
@@ -302,6 +303,8 @@ export function Kanban({
   }, []);
 
   const router = useRouter();
+  // Drafts left here by someone else, or for a week, go (use-draft.ts).
+  useEffect(() => claimDrafts(viewerId), [viewerId]);
   // Agents work out "today" in the viewer's timezone (list_today), so save
   // the browser's whenever it differs, e.g. after travelling. A tab left open
   // across a flight rechecks when it comes back into view.

@@ -16,6 +16,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { LoadingEllipsis } from "@/components/ui/loading-ellipsis";
 import { Textarea } from "@/components/ui/textarea";
+import { useDraft } from "@/components/use-draft";
 import {
   FEEDBACK_AREAS,
   FEEDBACK_MAX,
@@ -81,7 +82,8 @@ export function FeedbackDialog({
   about?: FeedbackAbout | null;
 }) {
   const [kind, setKind] = useState<FeedbackKind>("bug");
-  const [message, setMessage] = useState("");
+  const messageDraft = useDraft("feedback:message");
+  const message = messageDraft.value;
   const [pending, start] = useTransition();
   const messageRef = useRef<HTMLTextAreaElement>(null);
   const id = useId();
@@ -98,7 +100,6 @@ export function FeedbackDialog({
     setWasOpen(open);
     if (open) {
       setKind("bug");
-      setMessage("");
       setSent(null);
     }
   }
@@ -126,6 +127,7 @@ export function FeedbackDialog({
         "send your feedback",
       );
       if (!ok) return;
+      messageDraft.clear();
       posthog.capture("feedback_submitted", { kind, ref: filed.ref, area: about?.area, rating: about?.rating });
       // A thumbs up is a kind word, not a report to fill in: no questions,
       // and no Claude call or "Checking…" wait to find there are none.
@@ -211,8 +213,8 @@ export function FeedbackDialog({
               ref={messageRef}
               id={`${id}-message`}
               aria-label="Your feedback"
-              value={message}
-              onChange={(e) => !pending && setMessage(e.target.value)}
+              draft={messageDraft}
+              onChange={(e) => !pending && messageDraft.set(e.target.value)}
               readOnly={pending}
               aria-disabled={pending}
               aria-invalid={tooLong}
@@ -241,7 +243,10 @@ export function FeedbackDialog({
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => onOpenChange(false)}
+              onClick={() => {
+                messageDraft.clear();
+                onOpenChange(false);
+              }}
               disabled={pending}
             >
               Cancel
@@ -264,7 +269,8 @@ const TYPED_MAX = 200;
  * answers to tap or type and room for anything else; Done skips them. */
 function FollowUpForm({ sent, onDone }: { sent: Sent; onDone: () => void }) {
   const [answers, setAnswers] = useState<Record<number, string>>({});
-  const [note, setNote] = useState("");
+  const noteDraft = useDraft(`feedback:${sent.itemId}:note`);
+  const note = noteDraft.value;
   const [pending, start] = useTransition();
   const id = useId();
   const questions = sent.questions ?? [];
@@ -283,6 +289,7 @@ function FollowUpForm({ sent, onDone }: { sent: Sent; onDone: () => void }) {
         "add to your feedback",
       );
       if (!ok) return;
+      noteDraft.clear();
       posthog.capture("feedback_follow_up_added", { ref: sent.ref, answered: given.length });
       toast.success(`Thanks, that's added to your feedback`);
       onDone();
@@ -291,6 +298,7 @@ function FollowUpForm({ sent, onDone }: { sent: Sent; onDone: () => void }) {
 
   function done() {
     if (pending) return;
+    noteDraft.clear();
     toast.success("Thanks, your feedback was sent");
     onDone();
   }
@@ -370,8 +378,8 @@ function FollowUpForm({ sent, onDone }: { sent: Sent; onDone: () => void }) {
               </label>
               <Textarea
                 id={`${id}-note`}
-                value={note}
-                onChange={(e) => !pending && setNote(e.target.value)}
+                draft={noteDraft}
+                onChange={(e) => !pending && noteDraft.set(e.target.value)}
                 readOnly={pending}
                 aria-disabled={pending}
                 placeholder="Optional"

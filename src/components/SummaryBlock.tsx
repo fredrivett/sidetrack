@@ -18,6 +18,7 @@ export function SummaryBlock({
     <div className="space-y-1 pb-1.5">
       <EditableText
         value={summary}
+        draftKey={`list:${projectId}:summary`}
         onSave={(next) =>
           runAction(updateProjectAction(projectId, { summary: next }), "save the summary")
         }

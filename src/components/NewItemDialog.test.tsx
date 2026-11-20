@@ -84,6 +84,25 @@ describe("NewItemDialog", () => {
     expect(screen.getByPlaceholderText<HTMLInputElement>("Add a step…").value).toBe("");
   });
 
+  it("keeps what's picked through a reload, until it's cancelled", () => {
+    const { rerender } = render(dialog(true, false));
+    rerender(dialog(true));
+    const dueChip = () => screen.getByRole("button", { name: /^Due/ });
+    fireEvent.click(dueChip());
+    fireEvent.click(screen.getByRole("button", { name: "Tomorrow" }));
+    // The board comes back closed, then reopens New item from this tab's
+    // storage: opening mustn't reset what was picked.
+    cleanup();
+    const again = render(dialog(true, false));
+    again.rerender(dialog(true));
+    expect(dueChip().textContent).toBe("Due Tomorrow");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    cleanup();
+    const fresh = render(dialog(true, false));
+    fresh.rerender(dialog(true));
+    expect(dueChip().textContent).toBe("Due Today");
+  });
+
   it("opens with no date otherwise", () => {
     const { rerender } = render(dialog(undefined, false));
     rerender(dialog());

@@ -19,12 +19,15 @@ import {
   ResponsiveDialogDescription,
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
+import type { AssigneeView } from "@/core/members";
 import type { SpaceView } from "@/core/spaces";
 import { dedupePrefix, derivePrefix } from "@/lib/itemRef";
 import { normalizeHomepageUrl } from "@/lib/url";
 import { CHIP, EMPTY_CHIP, TextChip } from "./DialogFields";
+import { MentionTextarea } from "./MentionTextarea";
 import { IconPicker } from "./ProjectIconPicker";
 import { runAction } from "./run-action";
+import { useDraft } from "./use-draft";
 import { type EmojiChoice, UNCHOSEN, useTitleEmoji } from "./use-emoji-choice";
 import { aiRead } from "./ai-read";
 
@@ -36,6 +39,8 @@ function homepagePreview(raw: string): string | null {
     return null;
   }
 }
+
+const NO_PEOPLE: AssigneeView[] = [];
 
 export function NewProjectDialog({
   open,
@@ -54,8 +59,11 @@ export function NewProjectDialog({
   /** The Space to create the list in by default: the tray whose + opened it. */
   defaultSpaceId?: string;
 }) {
-  const [name, setName] = useState("");
-  const [summary, setSummary] = useState("");
+  // Kept until the list is created or the dialog's cancelled (useDraft).
+  const nameDraft = useDraft("new-list:name");
+  const summaryDraft = useDraft("new-list:summary");
+  const name = nameDraft.value;
+  const summary = summaryDraft.value;
   const [homepage, setHomepage] = useState("");
   // "" for no Space.
   const [spaceId, setSpaceId] = useState("");
@@ -70,8 +78,6 @@ export function NewProjectDialog({
   if (open !== wasOpen) {
     setWasOpen(open);
     if (open) {
-      setName("");
-      setSummary("");
       setHomepage("");
       setSpaceId(defaultSpaceId);
       setPicked(UNCHOSEN);
@@ -109,12 +115,19 @@ export function NewProjectDialog({
         }),
         "create the list",
       );
-      if (created) onOpenChange(false);
+      if (created) close();
     });
   }
 
+  /** Closes the dialog, dropping what's typed. */
+  function close() {
+    nameDraft.clear();
+    summaryDraft.clear();
+    onOpenChange(false);
+  }
+
   return (
-    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+    <ResponsiveDialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : close())}>
       <ResponsiveDialogContent initialFocus={nameRef}>
         <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
           <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain px-4 pt-3 pb-4">
@@ -143,16 +156,17 @@ export function NewProjectDialog({
               <input
                 ref={nameRef}
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => nameDraft.set(e.target.value)}
                 placeholder="List name, e.g. Home or Buy"
                 aria-label="Name"
                 disabled={pending}
                 className="min-w-0 flex-1 bg-transparent text-base leading-6 font-medium outline-none placeholder:text-muted-foreground disabled:opacity-50"
               />
             </div>
-            <textarea
-              value={summary}
-              onChange={(e) => setSummary(e.target.value)}
+            {/* Unstyled, like the name above; no one to mention. */}
+            <MentionTextarea
+              people={NO_PEOPLE}
+              draft={summaryDraft}
               placeholder="Add summary…"
               aria-label="Summary"
               disabled={pending}
@@ -223,7 +237,7 @@ export function NewProjectDialog({
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => onOpenChange(false)}
+              onClick={close}
               disabled={pending}
             >
               Cancel

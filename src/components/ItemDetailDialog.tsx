@@ -68,6 +68,7 @@ import { AuditEntryRow } from "./AuditDialog";
 import { PrLink } from "./PrLink";
 import { runAction } from "./run-action";
 import { EditableText } from "./EditableText";
+import { useDraft } from "./use-draft";
 import { ItemComments } from "./ItemComments";
 import { LabelBadge, LabelChips, useListLabels } from "./Labels";
 import { DueBadge } from "./DueBadge";
@@ -305,7 +306,7 @@ function Checklist({
   /** For those who can't change the list: ticks and assignees shown, not changed, and no new steps. */
   readOnly?: boolean;
 }) {
-  const [draft, setDraft] = useState("");
+  const { value: draft, set: setDraft } = useDraft(`item:${parent.id}:step`);
   const { setCompleted } = useItemChanges();
   // Adds run one after another, so lines typed quickly land in typed order.
   const queue = useRef<Promise<unknown>>(Promise.resolve());
@@ -785,6 +786,7 @@ export function ItemDetailView({
           ) : (
           <EditableText
             value={item.title}
+            draftKey={`item:${item.id}:title`}
             onSave={(next) =>
               runAction(updateItemAction(item.id, { title: next }), `rename “${item.title}”`)
             }
@@ -813,6 +815,7 @@ export function ItemDetailView({
       <div className="space-y-3 pl-8">
         <EditableText
           value={item.description ?? ""}
+          draftKey={`item:${item.id}:description`}
           onSave={(next) =>
             runAction(
               updateItemAction(item.id, { description: next || null }),

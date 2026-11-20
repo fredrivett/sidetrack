@@ -1,12 +1,11 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useState } from "react";
 import type { Item } from "@/core/schema";
-import { useStoredState } from "./use-stored-state";
+import { useHydrated, useStoredState } from "./use-stored-state";
 
 /** The item open in a dialog in this tab, kept so a reload can reopen it. */
 const SHOWN_KEY = "item-dialog";
-const noSubscribe = () => () => {};
 
 /**
  * Where an item dialog has been: the item it shows (`id`, null for none),
@@ -93,7 +92,7 @@ export function useItemDetailDialog(
   // Storage is only readable once hydrated, so restore on the first render
   // after it, during render rather than in an effect, and only then: a later
   // value is a dialog opened elsewhere on the page, already showing.
-  const hydrated = useSyncExternalStore(noSubscribe, () => true, () => false);
+  const hydrated = useHydrated();
   const [restored, setRestored] = useState(!restore);
   if (hydrated && !restored) {
     setRestored(true);

@@ -24,6 +24,7 @@ import {
 import { GitHubMark } from "@/components/GitHubMark";
 import { assigneeName, UserAvatar, type AvatarUser } from "@/components/UserAvatar";
 import { signOut } from "@/auth/client";
+import { forgetDrafts } from "./use-draft";
 import { RELEASE } from "@/lib/release";
 import { parseTheme, setTheme, THEMES, type Theme } from "@/lib/theme";
 import { useTheme } from "@/components/use-theme";
@@ -69,6 +70,7 @@ export function UserMenu({
   function onSignOut() {
     startTransition(async () => {
       await signOut();
+      forgetDrafts();
       // The next person on this device starts as someone new in PostHog.
       posthog.reset();
       router.push("/login");
