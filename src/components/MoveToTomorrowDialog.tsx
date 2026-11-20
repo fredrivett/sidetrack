@@ -42,13 +42,17 @@ export function MoveToTomorrowDialog({
   // The ones the reader keeps for today; every other one moves.
   const [staying, setStaying] = useState<Set<string>>(new Set());
   const [saving, start] = useTransition();
+  // Each offer starts with everything set to move. Reset as it opens (the
+  // caller opens it), not as it closes, so the badges don't flip on the way out.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setStaying(new Set());
+  }
   const moving = items.filter((i) => !staying.has(i.id));
 
   const change = (next: boolean) => {
-    if (saving) return;
-    // Each offer starts with everything set to move.
-    if (next) setStaying(new Set());
-    onOpenChange(next);
+    if (!saving) onOpenChange(next);
   };
   const toggle = (id: string) =>
     setStaying((s) => {
