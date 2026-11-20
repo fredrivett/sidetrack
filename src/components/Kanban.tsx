@@ -55,6 +55,7 @@ import { ShareDialog } from "./ShareDialog";
 import { SpaceMenu } from "./SpaceMenu";
 import { saveCollapsedTrays, SpaceTray } from "./SpaceTray";
 import { useDayStart, useToday } from "./use-day-start";
+import { useStoredState } from "./use-stored-state";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
 import { LabelsContext } from "./Labels";
 import { RemoveListContext, useOptimisticLists } from "./use-list-saves";
@@ -91,6 +92,11 @@ export type BoardView = (typeof BOARD_VIEWS)[number][0] | "archived";
 
 /** How many more older finished items the Done view loads at a time. */
 const DONE_PAGE = 50;
+
+const NEW_ITEM_CLOSED: { open: boolean; projectId: string | null; dueToday?: boolean } = {
+  open: false,
+  projectId: null,
+};
 
 export function Kanban({
   viewerId,
@@ -323,11 +329,8 @@ export function Kanban({
   const [audit, setAudit] = useState<{ open: boolean; projectId?: string }>({
     open: false,
   });
-  const [newItem, setNewItem] = useState<{
-    open: boolean;
-    projectId: string | null;
-    dueToday?: boolean;
-  }>({ open: false, projectId: null });
+  // Kept for this tab, so New item and its draft come back after a reload.
+  const [newItem, setNewItem] = useStoredState("new-item", NEW_ITEM_CLOSED, "session");
   // New list starts in the Space of the tray whose + opened it, else in none.
   const [newList, setNewList] = useState({ open: false, spaceId: "" });
   const [share, setShare] = useState<{
@@ -536,7 +539,7 @@ export function Kanban({
       }
       setNewItem({ open: true, projectId: projectId ?? null, dueToday });
     },
-    [projects, view],
+    [projects, view, setNewItem],
   );
 
 

@@ -25,7 +25,10 @@ beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn();
 });
 afterAll(() => vi.useRealTimers());
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+});
 
 const home = { id: "p1", name: "Home", refPrefix: "HOM", icon: null, status: "active" } as unknown as ProjectView;
 
@@ -58,6 +61,24 @@ describe("NewItemDialog", () => {
     fireEvent.change(screen.getByPlaceholderText("Add a task…"), { target: { value: "Post parcel" } });
     await act(async () => fireEvent.click(screen.getByRole("button", { name: /Add & create more/ })));
     expect(vi.mocked(addItemAction)).toHaveBeenLastCalledWith(expect.objectContaining({ dueDate: "2026-11-14" }));
+  });
+
+  it("keeps what's typed through a reload, until it's cancelled", () => {
+    render(dialog());
+    fireEvent.change(screen.getByPlaceholderText("Add a task…"), { target: { value: "Buy milk" } });
+    fireEvent.change(screen.getByPlaceholderText("Description (optional)"), { target: { value: "Oat" } });
+    fireEvent.change(screen.getByPlaceholderText("Add a step…"), { target: { value: "Check fridge" } });
+    // A reload: the page goes, and comes back with the dialog open.
+    cleanup();
+    render(dialog());
+    expect(screen.getByPlaceholderText<HTMLInputElement>("Add a task…").value).toBe("Buy milk");
+    expect(screen.getByPlaceholderText<HTMLTextAreaElement>("Description (optional)").value).toBe("Oat");
+    expect(screen.getByPlaceholderText<HTMLInputElement>("Add a step…").value).toBe("Check fridge");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    cleanup();
+    render(dialog());
+    expect(screen.getByPlaceholderText<HTMLInputElement>("Add a task…").value).toBe("");
+    expect(screen.getByPlaceholderText<HTMLInputElement>("Add a step…").value).toBe("");
   });
 
   it("opens with no date otherwise", () => {
