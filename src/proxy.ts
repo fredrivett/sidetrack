@@ -38,7 +38,9 @@ export function proxy(request: NextRequest) {
     pathname === "/manifest.webmanifest" ||
     pathname.startsWith("/icons/") ||
     pathname === "/sw.js" ||
-    pathname === "/launch"
+    pathname === "/launch" ||
+    // LatestDeploy asks which deploy is live from every page, login included.
+    pathname === "/api/version"
   ) {
     return NextResponse.next();
   }

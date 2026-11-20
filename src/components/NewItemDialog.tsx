@@ -29,6 +29,7 @@ import { formatItemRef } from "@/lib/itemRef";
 import type { Repeat } from "@/lib/repeat";
 import type { Due } from "@/lib/time";
 import { Button } from "@/components/ui/button";
+import { useStoredState } from "@/components/use-stored-state";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -121,6 +122,8 @@ function AddedToast({
   );
 }
 
+const NO_SUB_ITEMS: string[] = [];
+
 export function NewItemDialog({
   open,
   onOpenChange,
@@ -162,8 +165,10 @@ export function NewItemDialog({
     for: string;
     value: Suggestion;
   } | null>(null);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
+  // What's typed is kept until it's added or the dialog's cancelled, so a
+  // reload (a deploy's, say) or the app closing in the background loses none.
+  const [title, setTitle] = useStoredState("new-item:title", "");
+  const [description, setDescription] = useStoredState("new-item:description", "");
   const [labels, setLabels] = useState<string[]>([]);
   // The emoji for labels new to the list, held until the item creates them.
   const [labelEmoji, setLabelEmoji] = useState<Record<string, LabelEmoji>>({});
@@ -175,8 +180,8 @@ export function NewItemDialog({
   const today = useToday();
   const initialDue: Due | null = dueToday && today ? { dueFrom: null, dueDate: today } : null;
   const [repeat, setRepeat] = useState<Repeat | null>(null);
-  const [subItems, setSubItems] = useState<string[]>([]);
-  const [subDraft, setSubDraft] = useState("");
+  const [subItems, setSubItems] = useStoredState("new-item:sub-items", NO_SUB_ITEMS);
+  const [subDraft, setSubDraft] = useStoredState("new-item:sub-draft", "");
   // Remounts the repeat picker after each add, so a Custom draft goes too.
   const [added, setAdded] = useState(0);
   // Whether anything was added in this session: Add & create more keeps the dialog
@@ -212,16 +217,12 @@ export function NewItemDialog({
       setPickedProjectId(initialProjectId ?? "");
       setParent(null);
       setSuggested(null);
-      setTitle("");
-      setDescription("");
       setLabels([]);
       setLabelEmoji({});
       setAssigneeIds([]);
       setAssignOpen(false);
       setDue(initialDue);
       setRepeat(null);
-      setSubItems([]);
-      setSubDraft("");
       setAddedAny(false);
     }
   }
@@ -361,7 +362,7 @@ export function NewItemDialog({
       // A failed add keeps the form as it was, to try again.
       if (!added || session.current !== startedIn) return;
       if (!another) {
-        onOpenChange(false);
+        close();
         return;
       }
       // Stay open for the next item: clear what's per-item, keep the list
@@ -378,7 +379,7 @@ export function NewItemDialog({
       setRepeat((cur) => (cur === r ? null : cur));
       setParent((cur) => (cur?.item.id === p ? null : cur));
       // Sub-items can't be edited while it saves, so they're all this item's.
-      setSubItems([]);
+      setSubItems(NO_SUB_ITEMS);
       setSubDraft("");
       setAdded((n) => n + 1);
       setAddedAny(true);
@@ -386,8 +387,17 @@ export function NewItemDialog({
     });
   }
 
+  /** Closes the dialog, dropping what's typed. */
+  function close() {
+    setTitle("");
+    setDescription("");
+    setSubItems(NO_SUB_ITEMS);
+    setSubDraft("");
+    onOpenChange(false);
+  }
+
   return (
-    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+    <ResponsiveDialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : close())}>
       <ResponsiveDialogContent initialFocus={titleRef}>
         <form
           onSubmit={(e) => {
@@ -614,7 +624,7 @@ export function NewItemDialog({
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => onOpenChange(false)}
+              onClick={close}
             >
               {addedAny ? "Done" : "Cancel"}
             </Button>

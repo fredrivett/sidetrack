@@ -115,6 +115,24 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  // End-to-end tests (e2e/AGENTS.md). A Playwright call left without `await`
+  // races the next step and passes or fails by luck. Fixtures call `use`,
+  // which isn't React's.
+  {
+    files: ["e2e/**/*.ts"],
+    languageOptions: { parserOptions: { projectService: true } },
+    rules: {
+      "@typescript-eslint/no-floating-promises": "error",
+      "react-hooks/rules-of-hooks": "off",
+      "no-restricted-properties": [
+        "error",
+        {
+          property: "waitForTimeout",
+          message: "Wait for an outcome with a web-first assertion, such as expect(locator).toBeVisible().",
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;
