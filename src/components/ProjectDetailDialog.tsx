@@ -1,8 +1,7 @@
 "use client";
 
-import { ExternalLink, GitBranch, Sparkles, Trash2 } from "lucide-react";
+import { GitBranch, Globe, Hash, Sparkles, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
 import { updateProjectAction } from "@/app/actions";
 import { validatePrefix } from "@/lib/itemRef";
 import { normalizeRepository } from "@/lib/repository";
@@ -17,6 +16,7 @@ import {
   ResponsiveDialogTitle,
   ResponsiveDialogViews,
 } from "@/components/ui/responsive-dialog";
+import { CHIP, EMPTY_CHIP, Field, TextChip } from "./DialogFields";
 import { EditableText } from "./EditableText";
 import type { ProjectView } from "./Kanban";
 import { useListLabels } from "./Labels";
@@ -26,21 +26,14 @@ import { StatusBadge } from "./StatusBadge";
 import { runAction } from "./run-action";
 import { useListSave, useRemoveList } from "./use-list-saves";
 
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1">
-      <span className="block text-[11px] font-medium uppercase tracking-wide text-neutral-400">
-        {label}
-      </span>
-      {children}
-    </div>
-  );
+/** What's wrong with a value typed in a chip, as the server would refuse it. */
+function problem(check: () => unknown, message: string): string | null {
+  try {
+    check();
+    return null;
+  } catch {
+    return message;
+  }
 }
 
 export function ProjectDetailDialog({
@@ -98,50 +91,21 @@ export function ProjectDetailDialog({
     onOpenChange(next);
   }
 
-  // Validate/normalize client-side before the round trip so a bad prefix never
-  // hits the core (which would throw); surface the same guidance as the menu.
-  async function savePrefix(next: string) {
-    const normalized = next.trim().toUpperCase();
-    if (normalized === project.prefix) return;
-    const err = validatePrefix(normalized);
-    if (err) {
-      toast.error(err);
-      return;
-    }
-    await save(() => runAction(updateProjectAction(project.id, { prefix: normalized }), "update the prefix"));
-  }
-
-  // Check the URL here, as New list does, so a typo gets its own message and
-  // any other failure gets runAction's; the core normalizes it again.
-  async function saveHomepage(next: string) {
-    try {
-      normalizeHomepageUrl(next);
-    } catch {
-      toast.error("That doesn't look like a valid URL.");
-      return;
-    }
-    await save(() =>
-      runAction(
-        updateProjectAction(project.id, { homepageUrl: next.trim() ? next : null }),
-        "save the homepage",
-      ),
+  // Each is checked in its chip first, so a typo is turned away there;
+  // they hold because the server decides what's stored.
+  function savePrefix(next: string) {
+    void save(() =>
+      runAction(updateProjectAction(project.id, { prefix: next.toUpperCase() }), "update the prefix"),
     );
   }
-
-  // Same as the homepage: a typo gets its own message, and the save holds
-  // because the server decides the stored "owner/repo".
-  async function saveRepository(next: string) {
-    try {
-      normalizeRepository(next);
-    } catch {
-      toast.error("That doesn't look like a GitHub repository, such as owner/repo.");
-      return;
-    }
-    await save(() =>
-      runAction(
-        updateProjectAction(project.id, { repository: next.trim() ? next : null }),
-        "save the repository",
-      ),
+  function saveHomepage(next: string) {
+    void save(() =>
+      runAction(updateProjectAction(project.id, { homepageUrl: next || null }), "save the homepage"),
+    );
+  }
+  function saveRepository(next: string) {
+    void save(() =>
+      runAction(updateProjectAction(project.id, { repository: next || null }), "save the repository"),
     );
   }
 
@@ -172,7 +136,7 @@ export function ProjectDetailDialog({
             />
           ) : (
             <>
-              <div className="flex shrink-0 flex-col gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+              <div className="flex shrink-0 flex-col gap-2 border-b border-neutral-200 px-4 pt-3 pb-4 dark:border-neutral-800">
                 <div className="flex items-center gap-2">
                   <ProjectIconPicker project={project} listIcon={listIcon} size={22} />
                   <StatusBadge status={project.status} />
@@ -189,45 +153,110 @@ export function ProjectDetailDialog({
                     }
                     onDraftChange={listIcon.onDraftChange}
                     required
-                    className="block w-full break-words text-base font-semibold"
-                    inputClassName="w-full text-base font-semibold"
+                    className="block w-full break-words text-base leading-6 font-medium"
+                    inputClassName="w-full text-base"
                   />
                 </ResponsiveDialogTitle>
                 <ResponsiveDialogDescription className="sr-only">
                   List details for {project.name}
                 </ResponsiveDialogDescription>
+                <EditableText
+                  value={project.summary}
+                  onSave={(next) =>
+                    runAction(updateProjectAction(project.id, { summary: next }), "save the summary")
+                  }
+                  multiline
+                  placeholder="Add summary…"
+                  className="block w-full whitespace-pre-wrap break-words text-sm text-neutral-600 dark:text-neutral-300"
+                  inputClassName="w-full text-sm"
+                />
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <TextChip
+                    icon={<Hash />}
+                    label="ID prefix"
+                    value={project.prefix}
+                    placeholder="e.g. HOM"
+                    validate={(next) => validatePrefix(next.toUpperCase())}
+                    onSave={savePrefix}
+                    disabled={saving}
+                    inputClassName="font-mono uppercase"
+                  >
+                    <span className="font-mono text-xs tracking-wide">{project.prefix}</span>
+                  </TextChip>
+                  <TextChip
+                    icon={<Globe />}
+                    label="Homepage"
+                    value={project.homepageUrl ?? ""}
+                    placeholder="example.com"
+                    validate={(next) =>
+                      problem(() => normalizeHomepageUrl(next), "That doesn't look like a valid URL.")
+                    }
+                    onSave={saveHomepage}
+                    href={project.homepageUrl}
+                    hrefLabel="Open homepage"
+                    disabled={saving}
+                  >
+                    <span className="max-w-48 truncate">
+                      {project.homepageUrl?.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}
+                    </span>
+                  </TextChip>
+                  {isAdmin ? (
+                    <TextChip
+                      icon={<GitBranch />}
+                      label="Repository"
+                      value={project.repository ?? ""}
+                      placeholder="owner/repo"
+                      validate={(next) =>
+                        problem(
+                          () => normalizeRepository(next),
+                          "That doesn't look like a GitHub repository, such as owner/repo.",
+                        )
+                      }
+                      onSave={saveRepository}
+                      href={project.repository && `https://github.com/${project.repository}`}
+                      hrefLabel="Open on GitHub"
+                      disabled={saving}
+                      inputClassName="font-mono"
+                    >
+                      <span className="max-w-56 truncate font-mono text-xs">{project.repository}</span>
+                    </TextChip>
+                  ) : (
+                    // Only the admin sets it; anyone can follow it.
+                    project.repository && (
+                      <a
+                        href={`https://github.com/${project.repository}`}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        title="Open on GitHub"
+                        className={CHIP}
+                      >
+                        <GitBranch />
+                        <span className="max-w-56 truncate font-mono text-xs">{project.repository}</span>
+                      </a>
+                    )
+                  )}
+                  {/* Only offered, never filled in: the repository decides what an
+                      assigned agent checks out, so the admin confirms it. */}
+                  {isAdmin && !project.repository && suggested && (
+                    <button
+                      type="button"
+                      aria-disabled={saving || undefined}
+                      onClick={() => {
+                        if (!saving) saveRepository(suggested);
+                      }}
+                      title="Suggested from this list's linked pull requests"
+                      className={EMPTY_CHIP}
+                    >
+                      <Sparkles />
+                      <span className="max-w-56 truncate">
+                        Use <span className="font-mono text-xs">{suggested}</span>?
+                      </span>
+                    </button>
+                  )}
+                </div>
               </div>
 
-              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4">
-                <Field label="Summary">
-                  <EditableText
-                    value={project.summary}
-                    onSave={(next) =>
-                      runAction(updateProjectAction(project.id, { summary: next }), "save the summary")
-                    }
-                    multiline
-                    placeholder="Add a summary…"
-                    className="block w-full whitespace-pre-wrap break-words text-sm text-neutral-600 dark:text-neutral-300"
-                    inputClassName="w-full text-sm"
-                  />
-                </Field>
-
-                <Field label="ID prefix">
-                  <EditableText
-                    value={project.prefix}
-                    onSave={savePrefix}
-                    required
-                    hold
-                    className="block w-full break-words text-sm"
-                    inputClassName="w-full text-sm font-mono uppercase"
-                    renderValue={(prefix) => (
-                      <span className="inline-block rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-xs tracking-wide text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
-                        {prefix}
-                      </span>
-                    )}
-                  />
-                </Field>
-
+              <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-4">
                 <Field label="Labels">
                   <ListLabelsField
                     labels={labels}
@@ -236,101 +265,18 @@ export function ProjectDetailDialog({
                     focusId={backFrom}
                   />
                 </Field>
-
-                <Field label="Homepage">
-                  <div className="flex items-center gap-2">
-                    <EditableText
-                      value={project.homepageUrl ?? ""}
-                      onSave={saveHomepage}
-                      hold
-                      placeholder="Add homepage URL…"
-                      className="block min-w-0 flex-1 truncate text-sm text-neutral-600 dark:text-neutral-300"
-                      inputClassName="w-full text-sm"
-                    />
-                    {project.homepageUrl && (
-                      <a
-                        href={project.homepageUrl}
-                        target="_blank"
-                        rel="noreferrer noopener"
-                        title="Open homepage"
-                        className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-950/40"
-                      >
-                        <ExternalLink className="size-3.5" />
-                        Open
-                      </a>
-                    )}
-                  </div>
-                </Field>
-
-                {(isAdmin || project.repository) && (
-                  <Field label="Repository">
-                    <div className="flex items-center gap-2">
-                      {isAdmin ? (
-                        <EditableText
-                          value={project.repository ?? ""}
-                          onSave={saveRepository}
-                          hold
-                          placeholder="Add GitHub repository…"
-                          className="block min-w-0 flex-1 truncate font-mono text-sm text-neutral-600 dark:text-neutral-300"
-                          inputClassName="w-full text-sm font-mono"
-                        />
-                      ) : (
-                        <span className="block min-w-0 flex-1 truncate font-mono text-sm text-neutral-600 dark:text-neutral-300">
-                          {project.repository}
-                        </span>
-                      )}
-                      {project.repository && (
-                        <a
-                          href={`https://github.com/${project.repository}`}
-                          target="_blank"
-                          rel="noreferrer noopener"
-                          title="Open on GitHub"
-                          className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-950/40"
-                        >
-                          <GitBranch className="size-3.5" />
-                          Open
-                        </a>
-                      )}
-                    </div>
-                    {/* Only offered, never filled in: the repository decides what an
-                        assigned agent checks out, so the admin confirms it. */}
-                    {isAdmin && !project.repository && suggested && (
-                      <div className="mt-1.5 flex min-w-0 items-center gap-2">
-                        <span
-                          className="inline-flex shrink-0 items-center gap-1 text-xs text-neutral-400"
-                          title="Suggested from this list's linked pull requests"
-                        >
-                          <Sparkles className="size-3" />
-                          Suggested
-                        </span>
-                        <button
-                          type="button"
-                          aria-disabled={saving}
-                          aria-label={`Use ${suggested}`}
-                          onClick={() => {
-                            if (!saving) void saveRepository(suggested);
-                          }}
-                          title={`Use ${suggested}`}
-                          className="inline-flex min-w-0 items-center gap-1 rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-xs text-neutral-600 hover:bg-neutral-200 aria-disabled:pointer-events-none aria-disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
-                        >
-                          <GitBranch className="size-3 shrink-0" />
-                          <span className="truncate">{suggested}</span>
-                        </button>
-                      </div>
-                    )}
-                  </Field>
-                )}
               </div>
 
-              <div className="flex shrink-0 items-center justify-between border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
+              <div className="flex shrink-0 items-center justify-between border-t border-neutral-200 px-4 py-2.5 dark:border-neutral-800">
                 <span className="text-xs text-neutral-400">
                   Created {dayLabel(project.createdAt)}
                 </span>
                 <Button
-                  variant="destructive"
+                  variant={confirmingDelete ? "destructive" : "ghost"}
                   size="sm"
                   onClick={del}
                   disabled={saving}
+                  className={confirmingDelete ? "" : "text-neutral-500 hover:text-destructive"}
                 >
                   <Trash2 />
                   {confirmingDelete ? "Confirm delete?" : "Delete"}
