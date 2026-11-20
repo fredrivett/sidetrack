@@ -25,11 +25,12 @@ export function BoardSkeleton() {
   return (
     <BoardMain>
       <BoardHeader nav={<Bone className="h-7 w-[90px] rounded-md sm:w-[219px] touch:h-9 touch:w-[108px] touch:sm:w-[234px]" />}>
-        {/* List count, Activity, Account. Square on phones, like the
-            header's buttons there (BoardHeader). */}
-        <Bone className="hidden h-4 w-8 md:block" />
-        <Bone className="h-7 w-7 rounded-lg sm:w-[74px] touch:h-9 touch:w-9 touch:sm:w-[80px]" />
-        <Bone className="h-7 w-7 rounded-lg sm:w-[90px] touch:h-9 touch:w-9 touch:sm:w-[96px]" />
+        {/* Filter (with no filters on), Notifications, Account (Kanban),
+            measured. Square on phones, like the header's buttons there
+            (BoardHeader). */}
+        <Bone className="h-7 w-7 rounded-md sm:w-[98px] touch:h-9 touch:w-9 touch:sm:w-20" />
+        <Bone className="h-7 w-7 rounded-md sm:w-9 touch:h-9 touch:w-9 touch:sm:w-[42px]" />
+        <Bone className="size-7 rounded-full touch:size-9" />
       </BoardHeader>
       <BoardRail>
         <span className="sr-only" role="status">
