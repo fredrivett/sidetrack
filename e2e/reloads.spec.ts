@@ -94,3 +94,20 @@ test("saves a new time zone without reloading what's being opened", async ({ pag
   await expect.poll(() => getTimeZone(getDb().db, user.id)).toBe("Europe/London");
   expect(await page.evaluate(() => "e2eMarker" in window)).toBe(true);
 });
+
+test("reopens the item that was open after a reload, until it's closed", async ({ page, user }) => {
+  user.addList("Home", ["Water plants"]);
+  await page.goto("/board");
+  await page.getByRole("button", { name: "Water plants", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("button", { name: "Water plants" })).toBeVisible();
+
+  await page.reload();
+  await expect(dialog.getByRole("button", { name: "Water plants" })).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Water plants", exact: true })).toBeVisible();
+  await expect(dialog).toBeHidden();
+});
