@@ -19,4 +19,6 @@ export interface GetStarted {
   /** The steps still to do, front card first: default order, then Later's. */
   queue: GetStartedStep[];
   collapsed: boolean;
+  /** Handles of people who haven't accepted the user's invites yet, while share isn't done. */
+  pendingInvites: string[];
 }

@@ -10,10 +10,10 @@ import {
   setGetStartedCollapsed,
 } from "./getStarted";
 import { addItem } from "./items";
-import { inviteMember } from "./members";
+import { acceptInvite, inviteMember } from "./members";
 import { createProject } from "./projects";
 import { pushSubscriptions } from "./schema";
-import { createSpace, inviteSpaceMember } from "./spaces";
+import { acceptSpaceInvite, createSpace, inviteSpaceMember } from "./spaces";
 import { createTestDb, createTestUser } from "./test-helpers";
 
 function setup() {
@@ -58,16 +58,34 @@ describe("getGetStarted", () => {
     expect(getGetStarted(db, fred).queue).not.toContain("lists");
   });
 
-  it("ticks share once the user sends an invite, not when they receive one", () => {
+  it("ticks share once someone accepts a list invite, for both of them", () => {
     const { db, fred, alice } = setup();
-    const theirs = createProject(db, alice, { name: "Theirs" }, "web");
-    inviteMember(db, alice, theirs.id, "fred", "web");
+    const list = createProject(db, alice, { name: "Groceries" }, "web");
+    inviteMember(db, alice, list.id, "fred", "web");
+    expect(getGetStarted(db, alice).done.share).toBe(false);
+    expect(getGetStarted(db, alice).pendingInvites).toEqual(["@fred"]);
+    // Fred was invited, not inviting: nobody's waiting on him.
     expect(getGetStarted(db, fred).done.share).toBe(false);
-    expect(getGetStarted(db, alice).done.share).toBe(true);
+    expect(getGetStarted(db, fred).pendingInvites).toEqual([]);
 
-    const space = createSpace(db, fred, { name: "Household" }, "web").id;
-    inviteSpaceMember(db, fred, space, "alice", "web");
+    acceptInvite(db, fred, list.id, "web");
+    expect(getGetStarted(db, alice).done.share).toBe(true);
     expect(getGetStarted(db, fred).done.share).toBe(true);
+    expect(getGetStarted(db, alice).pendingInvites).toEqual([]);
+  });
+
+  it("ticks share once someone joins a Space, for both of them", () => {
+    const { db, fred, alice } = setup();
+    // Alone in a Space isn't sharing.
+    const space = createSpace(db, fred, { name: "Household" }, "web").id;
+    expect(getGetStarted(db, fred).done.share).toBe(false);
+    inviteSpaceMember(db, fred, space, "alice", "web");
+    expect(getGetStarted(db, fred).done.share).toBe(false);
+    expect(getGetStarted(db, fred).pendingInvites).toEqual(["@alice"]);
+
+    acceptSpaceInvite(db, alice, space, "web");
+    expect(getGetStarted(db, fred).done.share).toBe(true);
+    expect(getGetStarted(db, alice).done.share).toBe(true);
   });
 
   it("ticks agent once a key is used, and keeps it after the key is revoked", () => {

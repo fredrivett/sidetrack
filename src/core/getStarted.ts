@@ -1,12 +1,13 @@
 // The Agenda's Get started stack: a few steps that make Sidetrack part of
 // someone's day. Each step's progress is read from what the user has done
-// (their lists, the audit log, their API keys and push devices), so it can't
-// drift from the data and people who did a step before the stack existed get
-// it ticked. The one fact nothing else records, that the app was installed,
+// (their lists, who they share with, the audit log, their API keys and push
+// devices), so it can't drift from the data and people who did a step before
+// the stack existed get it ticked. The one fact nothing else records, that the app was installed,
 // is an audited `profile.installed` event. How the stack is left (which cards
 // went to the back, whether it's collapsed) is view state on the user's row.
 
-import { and, count, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, count, eq, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 import { apiKeys, users } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
 import { announceChange } from "./changes";
@@ -18,7 +19,8 @@ import {
   INSTALL_PLATFORMS,
   type InstallPlatform,
 } from "../lib/getStarted";
-import { auditLog, projects, pushSubscriptions } from "./schema";
+import { handleFor } from "./members";
+import { auditLog, projectMembers, projects, pushSubscriptions, spaceMembers } from "./schema";
 
 /** Lists a user needs before "Set up your lists" is done. */
 export const GET_STARTED_MIN_LISTS = 2;
@@ -64,21 +66,77 @@ function installedPlatforms(db: Db, userId: string): Set<InstallPlatform> {
   return new Set(rows.map((r) => r.platform as InstallPlatform));
 }
 
-/** Whether the user has ever made an audited change of one of these types. */
-function hasEvent(db: Db, userId: string, types: string[]): boolean {
-  return (
-    db
-      .select({ id: auditLog.id })
-      .from(auditLog)
-      .where(
-        and(
-          eq(auditLog.actor, userId),
-          inArray(sql<string>`json_extract(${auditLog.event}, '$.type')`, types),
-        ),
-      )
-      .limit(1)
-      .get() !== undefined
-  );
+const others = alias(spaceMembers, "others");
+
+/**
+ * Whether the user shares a list or Space with someone who has accepted, in
+ * either direction: they invited them, or were invited. Read from who's in
+ * what now, so it unticks if everyone else leaves.
+ */
+function isSharing(db: Db, userId: string): boolean {
+  const inSpace = db
+    .select({ id: spaceMembers.id })
+    .from(spaceMembers)
+    .innerJoin(
+      others,
+      and(
+        eq(others.spaceId, spaceMembers.spaceId),
+        ne(others.userId, spaceMembers.userId),
+        eq(others.status, "accepted"),
+      ),
+    )
+    .where(and(eq(spaceMembers.userId, userId), eq(spaceMembers.status, "accepted")))
+    .limit(1)
+    .get();
+  if (inSpace) return true;
+  // A list's owner is never its member, so an accepted member row is always
+  // two people: the user joined someone's list, or someone joined theirs.
+  const onList = db
+    .select({ id: projectMembers.id })
+    .from(projectMembers)
+    .innerJoin(projects, eq(projects.id, projectMembers.projectId))
+    .where(
+      and(
+        eq(projectMembers.status, "accepted"),
+        or(eq(projectMembers.userId, userId), eq(projects.userId, userId)),
+      ),
+    )
+    .limit(1)
+    .get();
+  return onList !== undefined;
+}
+
+const admins = alias(spaceMembers, "admins");
+
+/**
+ * Who hasn't yet accepted an invite to the user's lists, or to a Space they
+ * manage, as handles, oldest first.
+ */
+function pendingInvitees(db: Db, userId: string): string[] {
+  const toLists = db
+    .select({ id: users.id, username: users.username, at: projectMembers.createdAt })
+    .from(projectMembers)
+    .innerJoin(projects, eq(projects.id, projectMembers.projectId))
+    .innerJoin(users, eq(users.id, projectMembers.userId))
+    .where(and(eq(projects.userId, userId), eq(projectMembers.status, "pending")))
+    .all();
+  const toSpaces = db
+    .select({ id: users.id, username: users.username, at: spaceMembers.createdAt })
+    .from(spaceMembers)
+    .innerJoin(
+      admins,
+      and(
+        eq(admins.spaceId, spaceMembers.spaceId),
+        eq(admins.userId, userId),
+        eq(admins.role, "admin"),
+        eq(admins.status, "accepted"),
+      ),
+    )
+    .innerJoin(users, eq(users.id, spaceMembers.userId))
+    .where(eq(spaceMembers.status, "pending"))
+    .all();
+  const people = [...toLists, ...toSpaces].sort((x, y) => x.at - y.at);
+  return [...new Set(people.map((p) => handleFor(p, p.id)))];
 }
 
 /** Where the user is with each step, and which card to show first. */
@@ -121,8 +179,7 @@ export function getGetStarted(db: Db, userId: string): GetStarted {
     lists: lists >= GET_STARTED_MIN_LISTS,
     phone: installed.has("phone") || iosPush,
     computer: installed.has("computer"),
-    // Counts once the invite is sent, whether or not it's accepted.
-    share: hasEvent(db, userId, ["member.invited", "space.member.invited"]),
+    share: isSharing(db, userId),
     agent,
   };
   const saved = readSaved(db, userId);
@@ -131,7 +188,12 @@ export function getGetStarted(db: Db, userId: string): GetStarted {
     ...open.filter((step) => !saved.later.includes(step)),
     ...saved.later.filter((step) => open.includes(step)),
   ];
-  return { done, queue, collapsed: saved.collapsed };
+  return {
+    done,
+    queue,
+    collapsed: saved.collapsed,
+    pendingInvites: done.share ? [] : pendingInvitees(db, userId),
+  };
 }
 
 /**
