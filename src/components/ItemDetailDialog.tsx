@@ -634,7 +634,7 @@ export function ItemDetailView({
       return;
     }
     // Deleting the item the board's keys selected moves the selection on.
-    if (selection?.selectedId === item.id) selection.select(rowAfterDelete(item.id));
+    if (selection?.get() === item.id) selection.select(rowAfterDelete(item.id));
     changes.deleteItem(item);
     onClose();
   }

@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, type ReactNode, useContext } from "react";
+import { useSameContent } from "./use-same-content";
 
 // How many comments each item has, read by each row instead of being passed
 // down through every view. Adding or deleting a comment reloads the board, so
@@ -14,7 +15,9 @@ export function CommentCountsProvider({
   counts: Record<string, number>;
   children: ReactNode;
 }) {
-  return <CommentCountsContext value={counts}>{children}</CommentCountsContext>;
+  return (
+    <CommentCountsContext value={useSameContent(counts)}>{children}</CommentCountsContext>
+  );
 }
 
 export function useCommentCount(itemId: string): number {
