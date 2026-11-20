@@ -7,7 +7,7 @@ const signedOut = (path: string) => proxy(new NextRequest(`https://sidetrack.tes
 describe("proxy, signed out", () => {
   // Crawlers and link previews have no session: bouncing them to /login
   // loses the search listing and the social card.
-  it.each(["/robots.txt", "/sitemap.xml", "/opengraph-image", "/opengraph-image?e6d4e2ff"])(
+  it.each(["/robots.txt", "/sitemap.xml", "/opengraph-image", "/opengraph-image?e6d4e2ff", "/changelog", "/changelog/repeat.gif"])(
     "lets %s through",
     (path) => {
       const res = signedOut(path);

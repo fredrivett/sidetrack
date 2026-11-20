@@ -9,6 +9,15 @@
             "command": "pnpm lint --quiet 1>&2 || exit 2"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./node_modules/.bin/tsx scripts/changelog-approval.ts claude-post"
+          }
+        ]
       }
     ],
     "SessionEnd": [
@@ -17,6 +26,17 @@
           {
             "type": "command",
             "command": "grep -q '^### ' LEARNINGS.md && echo '⚠ Untriaged LEARNINGS.md drafts — run triage (see top of LEARNINGS.md)' || true"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./node_modules/.bin/tsx scripts/changelog-approval.ts claude-pre"
           }
         ]
       }

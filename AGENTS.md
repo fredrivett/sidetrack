@@ -185,6 +185,62 @@ commit or fail together — never write one without the other.
   inside the same statement, and cancels the user's outstanding reset links.
   Keep it in step if `audit_log` columns or the `profile.password` event change.
 
+# Changelog
+
+`/changelog` is a public feed of what's new, one entry per change a person
+using Sidetrack could notice. Entries are files in `changes/` (format in
+`changes/README.md`, checked by `src/lib/changelog.ts`). The Changelog
+workflow fails a PR unless it either carries the `no-changelog` label and
+touches no entry, or adds or updates an entry whose `pr` list has its number.
+
+- **Entry or not.** Anything a user sees or does differently gets one, from a
+  big feature to a small fix. Tests, CI, refactors, dependencies, pure visual
+  polish, analytics, session replays, logging and the landing page get
+  `no-changelog`.
+- **Follow-ups.** A PR that fixes or finishes something whose entry hasn't
+  been in the feed for long (same day or so) updates that entry, adding its
+  number to `pr`, instead of adding its own. A follow-up that adds something
+  new gets its own entry.
+- **Type.** `new`: something users couldn't do before. `fixed`: something
+  broken now works. `improved`: a visible change to something that exists.
+  `for: self-hosters` when only people running their own copy will notice.
+  `post: true` when it might be worth a longer post; say so to Fred in the
+  PR and your final message, and he decides whether to write one.
+- **Sign-off.** Fred approves every entry's wording before it's pushed. Show
+  him a rough mockup of the entry at the top of the feed (a visual artifact,
+  or a screenshot of `/changelog` from the dev server) in the thread. Then
+  the harness asks him: `git push` and `gh pr create` stop while the branch
+  has an unapproved entry (`.amp/plugins/changelog-approval.ts`, and the
+  Claude Code hooks running `scripts/changelog-approval.ts`). If he rewords
+  it, use his text exactly. Never write to the approvals record in `.git`
+  yourself. Put the approved entry and mockup in the PR body. Adding
+  `no-changelog` needs no sign-off.
+
+Writing an entry:
+
+- One sentence, from the user's side: what changed, then why it helps.
+- The why comes from what the person asked for, in the thread, PR or SDT
+  item. If none is recorded, just say what changed. Never invent one.
+- Plain and warm, like telling a friend. A little dry humour now and then,
+  when it comes out of the real reason; plain is fine most of the time.
+- Avoid: cute personification ("so your lists can take a nap"), puns and
+  emoji punchlines, hype (exclamation marks, "seamless", "powerful",
+  "intuitive", "supercharge"), corporate phrasing ("Enhanced recurrence
+  functionality…"), writing for reviewers ("Count an item's creator only
+  while…"), vague filler ("Various improvements to…").
+
+Good entries:
+
+- "Repeats can keep to a weekday or to weekends, so Monday's task stays a
+  Monday task even when you tick it off on a Wednesday." (#303)
+- "Labels can be archived or deleted from List details, which also shows how
+  many items each one is on. The one you made by accident can finally go."
+  (#297)
+- "Each list's card in No date now folds on its own, so a long No date stays
+  tidy." (#304)
+- "On phones, the command palette opens as a sheet you swipe down to close,
+  the way you'd expect it to." (#291, with its follow-ups #284 and #294)
+
 # Review
 
 PRs are reviewed automatically by **Cubic** (https://cubic.dev), an AI reviewer

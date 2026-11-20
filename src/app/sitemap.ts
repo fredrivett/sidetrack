@@ -8,5 +8,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = await appBaseUrl();
   return [
     { url: `${base}/`, changeFrequency: "weekly", priority: 1 },
+    { url: `${base}/changelog`, changeFrequency: "daily", priority: 0.5 },
   ];
 }

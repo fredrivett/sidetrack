@@ -227,6 +227,9 @@ export default async function Welcome() {
             Sidetrack is open source under AGPL-3.0.
           </span>
           <HereNow />
+          <Link href="/changelog" className="hover:text-foreground">
+            Changelog
+          </Link>
           <a href={REPO} className="flex items-center gap-1.5 hover:text-foreground">
             <GitHubMark className="size-3.5" />
             fredrivett/sidetrack
