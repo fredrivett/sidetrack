@@ -12,12 +12,12 @@ import {
   useSyncExternalStore,
   useTransition,
 } from "react";
-import { encode } from "uqr";
 import {
   recordInstallAction,
   sendGetStartedToBackAction,
   setGetStartedCollapsedAction,
 } from "@/app/actions";
+import { QrCode } from "@/components/QrCode";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -103,25 +103,6 @@ function listPeople(handles: string[]): string {
   if (handles.length <= 2) return handles.join(" and ");
   const rest = handles.length - 2;
   return `${handles.slice(0, 2).join(", ")} and ${rest === 1 ? handles[2] : `${rest} others`}`;
-}
-
-/** A QR code for `text`, drawn as SVG modules. */
-function QrCode({ text }: { text: string }) {
-  const { data, size } = encode(text, { border: 1 });
-  const path = data
-    .flatMap((row, y) => row.map((on, x) => (on ? `M${x} ${y}h1v1h-1z` : "")))
-    .join("");
-  return (
-    <svg
-      viewBox={`0 0 ${size} ${size}`}
-      role="img"
-      aria-label={`QR code for ${text}`}
-      className="size-28 rounded-md bg-white p-1"
-      shapeRendering="crispEdges"
-    >
-      <path d={path} fill="#0a0a0a" />
-    </svg>
-  );
 }
 
 /**
@@ -313,7 +294,7 @@ export function GetStartedStack({
         <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{why}</p>
         {step === "phone" && showCode && device?.platform === "computer" && (
           <div className="mt-3">
-            <QrCode text={window.location.origin} />
+            <QrCode text={window.location.origin} label={`QR code for ${window.location.origin}`} />
           </div>
         )}
         <div className="mt-3 flex flex-wrap items-center gap-2">

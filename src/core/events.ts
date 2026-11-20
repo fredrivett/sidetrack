@@ -340,7 +340,12 @@ export type AccountEvent =
   /** The app first opened in its own window on this platform (getStarted.ts). */
   | { type: "profile.installed"; userId: string; platform: InstallPlatform }
   /** Written by the audit_password_update trigger (migration 0045), not core. */
-  | { type: "profile.password"; userId: string; viaReset: boolean };
+  | { type: "profile.password"; userId: string; viaReset: boolean }
+  /** Written by the audit_two_factor_update trigger (migration 0065). */
+  | { type: "profile.two_factor"; userId: string; enabled: boolean }
+  /** Written by the audit_backup_codes_update trigger (migration 0065).
+   * `used`: one was spent signing in; otherwise a new set was generated. */
+  | { type: "profile.backup_codes"; userId: string; used: boolean };
 
 /** `lost`, or undefined when it cleaned up nothing, to keep it off the event. */
 export function accessLost(lost: AccessLost): AccessLost | undefined {
@@ -505,6 +510,8 @@ export function auditColumns(event: ChangeEvent): {
       return account("delete", "email_address", event.addressId);
     case "profile.username":
     case "profile.password":
+    case "profile.two_factor":
+    case "profile.backup_codes":
       return account("update", "profile", event.userId);
     case "profile.avatar":
       return account(event.image ? "update" : "delete", "profile", event.userId);

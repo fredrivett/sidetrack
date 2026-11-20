@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AvatarPanel } from "@/components/AvatarPanel";
 import { PasswordPanel } from "@/components/PasswordPanel";
+import { TwoFactorPanel } from "@/components/TwoFactorPanel";
 import { UsernamePanel } from "@/components/UsernamePanel";
 import { getCurrentSession } from "@/auth/session";
 import { getDb } from "@/core/db";
@@ -57,6 +58,7 @@ export default async function ProfilePage() {
           }}
         />
         <PasswordPanel email={user.email} />
+        <TwoFactorPanel email={user.email} enabled={user.twoFactorEnabled ?? false} />
       </div>
     </main>
   );
