@@ -14,7 +14,8 @@ import { assigneeName, UserAvatar } from "./UserAvatar";
 
 /**
  * The assignee choices: an "Unassigned" row that clears everyone, then every
- * candidate (project owner + accepted members) as a checkbox, so an item can
+ * person who can edit the list (owner, editors, Space admins and members)
+ * as a checkbox, so an item can
  * have several assignees. Ticking a person adds or removes just them and keeps
  * the menu open for the next; Unassigned closes it. The viewer sorts to the
  * top and carries the `I` shortcut hint (I adds or removes you).
@@ -46,11 +47,14 @@ export function AssigneeOptions({
   onAgentChange?: (keyId: string, on: boolean) => void;
 }) {
 
+  // Only people who can edit the list hold its work; someone already on it
+  // stays, to be unticked.
+  const choices = assignees.filter((a) => a.canEdit || selected.includes(a.userId));
   const ordered = viewerId
-    ? [...assignees].sort((a, b) =>
+    ? [...choices].sort((a, b) =>
         a.userId === viewerId ? -1 : b.userId === viewerId ? 1 : 0,
       )
-    : assignees;
+    : choices;
 
   return (
     <>

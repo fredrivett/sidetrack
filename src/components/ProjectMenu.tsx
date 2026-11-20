@@ -192,9 +192,11 @@ export function ProjectMenu({
   // The list's Space as the viewer sees it; undefined if they aren't in it,
   // such as an owner who left the Space their list is still in.
   const space = spaces.find((s) => s.id === spaceId);
-  // Its owner moves it between Spaces they've joined; its owner or an admin
-  // of its Space can take it out (core enforces the same).
-  const canMove = isOwner && spaces.length > 0;
+  // Its owner moves it between Spaces they can add lists to (as an admin or
+  // member); its owner or an admin of its Space can take it out (core
+  // enforces the same).
+  const targets = spaces.filter((s) => s.role === "admin" || s.role === "member");
+  const canMove = isOwner && targets.length > 0;
   const canTakeOut = spaceId !== null && (isOwner || space?.role === "admin");
   // Reaching a list through its Space, leaving the list alone changes nothing.
   const canLeave = !isOwner && !space;
@@ -337,7 +339,7 @@ export function ProjectMenu({
                   value={spaceId ?? ""}
                   onValueChange={(next: string) => next !== spaceId && moveToSpace(next)}
                 >
-                  {spaces.map((s) => (
+                  {targets.map((s) => (
                     <DropdownMenuRadioItem key={s.id} value={s.id} closeOnClick>
                       {s.icon && !s.icon.startsWith("http") && <span>{s.icon}</span>}
                       {s.name}

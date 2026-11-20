@@ -12,9 +12,10 @@ import {
 } from "./projects";
 import { type ListRole, projectMembers, projectPositions } from "./schema";
 import { listAccess, listAccessById } from "./access";
-import { addComment } from "./comments";
-import { completeItem, deleteItem, updateItem } from "./items";
+import { addComment, mentionNotice } from "./comments";
+import { completeItem, deleteItem, setItemsCollapsed, updateItem } from "./items";
 import { acceptInvite, inviteMember, listAssignees, setMemberRole } from "./members";
+import { linkItemToPr, listItemsForPr, setPrState } from "./prLinks";
 import { updateProject } from "./projects";
 import {
   acceptSpaceInvite,
@@ -138,6 +139,16 @@ describe("list roles: view, comment, edit", () => {
       expect(write, what).toThrow("you can view this list but not change it");
     }
     expect(() => addComment(db, jo, item.id, "Go Lorna", "web")).toThrow(/view this list/);
+    // Folding sub-items is how they look at it, so that's still theirs.
+    setItemsCollapsed(db, jo, [item.id], true);
+    expect(getItem(db, owner, item.id)?.collapsed).toBe(true);
+    // Their own GitHub webhook doesn't change the list's PR badges.
+    const pr = "https://github.com/o/r/pull/1";
+    linkItemToPr(db, owner, item.id, pr, "web");
+    setPrState(db, jo, pr, "merged");
+    expect(listItemsForPr(db, owner, pr).map((l) => l.prState)).toEqual([null]);
+    setPrState(db, owner, pr, "merged");
+    expect(listItemsForPr(db, owner, pr).map((l) => l.prState)).toEqual(["merged"]);
     // Nothing changed, and nothing was logged as theirs.
     expect(getItem(db, owner, item.id)).toMatchObject({ title: "Swim", completedAt: null });
     expect(listAudit(db, owner, { projectId: list.id }).filter((r) => r.actor === jo)).toHaveLength(1);
@@ -147,6 +158,9 @@ describe("list roles: view, comment, edit", () => {
     const { db, owner, jo, list, item } = setup();
     join(db, owner, jo, list.id, "commenter");
     expect(addComment(db, jo, item.id, "Go Lorna", "web").body).toBe("Go Lorna");
+    // They're on the list, so mentioning them reaches them.
+    const ask = addComment(db, owner, item.id, "@jo can you check?", "web");
+    expect(mentionNotice(db, owner, ask)?.to.map((t) => t.userId)).toEqual([jo]);
     expect(() => completeItem(db, jo, item.id, "web")).toThrow(
       "you can comment on this list but not change it",
     );
@@ -158,11 +172,14 @@ describe("list roles: view, comment, edit", () => {
     const { db, owner, jo, list, item } = setup();
     join(db, owner, jo, list.id, "editor");
     updateItem(db, owner, item.id, { assigneeIds: [jo] }, "web");
-    expect(listAssignees(db, owner, list.id).map((a) => a.userId)).toEqual([owner, jo]);
+    const canHold = () =>
+      listAssignees(db, owner, list.id).map((a) => [a.userId, a.canEdit]);
+    expect(canHold()).toEqual([[owner, true], [jo, true]]);
 
     setMemberRole(db, owner, list.id, jo, "viewer", "web");
     expect(getItem(db, owner, item.id)?.assigneeIds).toEqual([]);
-    expect(listAssignees(db, owner, list.id).map((a) => a.userId)).toEqual([owner]);
+    // Still on the list, to mention and to see, but not to assign.
+    expect(canHold()).toEqual([[owner, true], [jo, false]]);
     expect(() => updateItem(db, owner, item.id, { assigneeIds: [jo] }, "web")).toThrow(
       /only view it/,
     );
@@ -186,6 +203,8 @@ describe("list roles: view, comment, edit", () => {
     acceptSpaceInvite(db, jo, space.id, "web");
     expect(listAccessById(db, jo)).toEqual(new Map([[list.id, "view"]]));
     expect(() => completeItem(db, jo, item.id, "web")).toThrow(/view this list/);
+    const joCanHold = () => listAssignees(db, owner, list.id).find((a) => a.userId === jo)?.canEdit;
+    expect(joCanHold()).toBe(false);
     // A Space viewer doesn't add lists to it.
     const theirs = createProject(db, jo, { name: "Jo's" }, "web");
     expect(() => setProjectSpace(db, jo, theirs.id, space.id, "web")).toThrow(/admins and members/);
@@ -196,6 +215,7 @@ describe("list roles: view, comment, edit", () => {
     // Edit on the list itself outranks view through the Space.
     join(db, owner, jo, list.id, "editor");
     expect(listAccess(db, jo, list.id)).toBe("edit");
+    expect(joCanHold()).toBe(true);
     expect(completeItem(db, jo, item.id, "web").completedAt).not.toBeNull();
   });
 

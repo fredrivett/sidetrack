@@ -43,6 +43,9 @@ export interface AssigneeView {
   email: string | null;
   image: string | null;
   isOwner: boolean;
+  /** Whether they can change the list, and so hold its work. Viewers and
+   * commenters are on the list, to mention and to see, but not to assign. */
+  canEdit: boolean;
 }
 
 /** A pending invite from the invitee's perspective: which project, whose. */
@@ -571,10 +574,11 @@ export function suggestCollaborators(
 }
 
 /**
- * The users who can be assigned items on a project: the owner first, then every
- * accepted member in invite order, then the list's Space's accepted members (pending invites are excluded — they have no
- * access yet, so they can't hold work). Visible to anyone with access; empty
- * for a project the caller can't see.
+ * Everyone on a project: the owner first, then every accepted member in
+ * invite order, then the list's Space's accepted members (pending invites are
+ * excluded — they have no access yet). Each says whether they can edit the
+ * list: only those can be assigned its items. Visible to anyone with access;
+ * empty for a project the caller can't see.
  */
 export function listAssignees(
   db: Db,
@@ -595,45 +599,52 @@ export function listAssignees(
       email: owner.email,
       image: owner.image,
       isOwner: true,
+      canEdit: true,
     });
   }
 
   const rows = db
-    .select({ user: users })
+    .select({ user: users, canEdit: sql<boolean>`${projectMembers.role} = 'editor'` })
     .from(projectMembers)
     .innerJoin(users, eq(users.id, projectMembers.userId))
     .where(
       and(
         eq(projectMembers.projectId, projectId),
         eq(projectMembers.status, "accepted"),
-        eq(projectMembers.role, "editor"),
       ),
     )
     .orderBy(asc(projectMembers.createdAt))
     .all();
-  // Then the Space's accepted admins and members who aren't listed yet.
+  // Then the Space's accepted members.
   if (project.spaceId) {
     rows.push(
       ...db
-        .select({ user: users })
+        .select({
+          user: users,
+          canEdit: sql<boolean>`${spaceMembers.role} in ('admin', 'member')`,
+        })
         .from(spaceMembers)
         .innerJoin(users, eq(users.id, spaceMembers.userId))
         .where(
           and(
             eq(spaceMembers.spaceId, project.spaceId),
             eq(spaceMembers.status, "accepted"),
-            inArray(spaceMembers.role, ["admin", "member"]),
           ),
         )
         .orderBy(asc(spaceMembers.createdAt))
         .all(),
     );
   }
-  const seen = new Set(out.map((a) => a.userId));
-  for (const { user } of rows) {
-    if (seen.has(user.id)) continue;
-    seen.add(user.id);
-    out.push({
+  // Someone on the list both directly and through its Space gets the more
+  // generous of the two, as listAccess does.
+  const byId = new Map(out.map((a) => [a.userId, a]));
+  for (const { user, canEdit } of rows) {
+    const seen = byId.get(user.id);
+    if (seen) {
+      seen.canEdit ||= Boolean(canEdit);
+      continue;
+    }
+    const person: AssigneeView = {
       userId: user.id,
       username: user.username,
       displayUsername: user.displayUsername,
@@ -641,7 +652,10 @@ export function listAssignees(
       email: user.email,
       image: user.image,
       isOwner: false,
-    });
+      canEdit: Boolean(canEdit),
+    };
+    byId.set(user.id, person);
+    out.push(person);
   }
   return out;
 }

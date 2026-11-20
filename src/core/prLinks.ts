@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { hasProjectAccess, requireListAccess } from "./access";
+import { canEditProject, hasProjectAccess, requireListAccess } from "./access";
 import { type AuditOrigin, recordAudit } from "./audit";
 import { announceChange } from "./changes";
 import type { Db } from "./db";
@@ -239,13 +239,22 @@ export function unlinkItemFromPr(
 }
 
 /**
- * Record a PR's state, as GitHub reports it, on every link to it the user can
- * see. Called for each webhook delivery about the PR.
+ * Record a PR's state, as GitHub reports it, on every link to it on a list
+ * the user can edit: a viewer's webhook doesn't change what the list's
+ * people see. Called for each webhook delivery about the PR.
  */
 export function setPrState(db: Db, userId: string, prUrlRaw: string, state: PrState): void {
-  const links = listItemsForPr(db, userId, canonicalizePrUrl(prUrlRaw)).filter(
-    (l) => l.prState !== state,
-  );
+  const links = db
+    .select({ itemPrLinks })
+    .from(itemPrLinks)
+    .innerJoin(items, eq(items.id, itemPrLinks.itemId))
+    .innerJoin(projects, eq(projects.id, items.projectId))
+    .where(
+      and(eq(itemPrLinks.prUrl, canonicalizePrUrl(prUrlRaw)), canEditProject(userId)),
+    )
+    .all()
+    .map((row) => row.itemPrLinks)
+    .filter((l) => l.prState !== state);
   if (links.length === 0) return;
   // audit-exempt: mirrors the PR's state on GitHub, not a change made in
   // Sidetrack; the links and completions a delivery makes are audited.

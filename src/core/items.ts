@@ -885,7 +885,8 @@ export function setItemsCollapsed(
   for (const id of ids) {
     const item = getItem(db, userId, id);
     if (!item) throw new Error(`item not found: ${id}`);
-    requireListAccess(db, userId, item.projectId, "edit");
+    // Anyone who can see the list folds it, viewers too: it's how the list
+    // is viewed, not a change to its items.
     if (item.collapsed === collapsed) continue;
     changed.push(id);
     lists.add(item.projectId);

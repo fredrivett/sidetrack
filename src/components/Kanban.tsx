@@ -364,7 +364,7 @@ export function Kanban({
   // starts open, so a link to a list shows it.
   const trays = trayOrder.flatMap((id) =>
     id === "personal"
-      ? [{ id, name: "Personal", icon: null, color: null, admin: false }]
+      ? [{ id, name: "Personal", icon: null, color: null, admin: false, canAdd: true }]
       : spaces
           .filter((s) => s.id === id)
           .map((s) => ({
@@ -373,6 +373,8 @@ export function Kanban({
             icon: s.icon,
             color: s.color,
             admin: s.role === "admin",
+            // Space viewers and commenters can't put lists in it.
+            canAdd: s.role === "admin" || s.role === "member",
           })),
   );
   const trayOf = (p: ProjectView) =>
@@ -918,10 +920,12 @@ export function Kanban({
                       />
                     }
                     onToggle={() => setTrayCollapsed(tray.id, !collapsedTrays.has(tray.id))}
-                    onAddList={() => setNewList({ open: true, spaceId })}
+                    onAddList={tray.canAdd ? () => setNewList({ open: true, spaceId }) : undefined}
                     onOpenList={openList}
                   >
-                    {lists.length === 0 ? (
+                    {lists.length === 0 && !tray.canAdd ? (
+                      <p className="m-auto text-sm text-neutral-500">No lists in {tray.name} yet.</p>
+                    ) : lists.length === 0 ? (
                       <AddProjectButton
                         shortcut={tray.id === "personal"}
                         onClick={() => setNewList({ open: true, spaceId })}
@@ -971,7 +975,7 @@ export function Kanban({
           open={newList.open}
           onOpenChange={(open) => setNewList((s) => ({ ...s, open }))}
           takenPrefixes={projects.filter((p) => p.isOwner).map((p) => p.prefix)}
-          spaces={spaces}
+          spaces={spaces.filter((s) => s.role === "admin" || s.role === "member")}
           defaultSpaceId={newList.spaceId}
         />
 

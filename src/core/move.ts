@@ -35,7 +35,7 @@ export interface MovePlan {
   matchedLabels: { from: string; to: string; itemIds: string[] }[];
   /** Labels the list doesn't have: each created there or dropped, as chosen. */
   missingLabels: { name: string; itemIds: string[] }[];
-  /** People assigned who can't see the list, so they come off the items. */
+  /** People assigned who can't edit the list, so they come off the items. */
   unassigned: { userId: string; name: string; itemIds: string[] }[];
   /** Names this exact plan; moveItem needs it back, so a move can't skip
    * its preview, and is refused if anything above changed since. */
@@ -112,7 +112,11 @@ function plan(db: Db, userId: string, id: string, projectId: string): Planned {
     else missingLabels.push({ name, itemIds });
   }
 
-  const allowed = new Set(listAssignees(db, userId, target.id).map((a) => a.userId));
+  const allowed = new Set(
+    listAssignees(db, userId, target.id)
+      .filter((a) => a.canEdit)
+      .map((a) => a.userId),
+  );
   const unassigned = [
     ...new Set(moving.flatMap((it) => it.assigneeIds).filter((a) => !allowed.has(a))),
   ].map((a) => ({

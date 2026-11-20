@@ -48,7 +48,8 @@ export function NewProjectDialog({
   onOpenChange: (open: boolean) => void;
   /** The viewer's own lists' prefixes, to preview the new list's item IDs. */
   takenPrefixes: string[];
-  /** Spaces the viewer has joined, to create the list in one. */
+  /** Spaces to create the list in: those the viewer is an admin or member
+   * of. */
   spaces: SpaceView[];
   /** The Space to create the list in by default: the tray whose + opened it. */
   defaultSpaceId?: string;

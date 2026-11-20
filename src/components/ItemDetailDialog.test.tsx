@@ -83,6 +83,7 @@ const viewer = {
   email: "me@example.com",
   image: null,
   isOwner: true,
+  canEdit: true,
 };
 
 function renderDialog(
