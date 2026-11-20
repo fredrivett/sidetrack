@@ -4,6 +4,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Item } from "@/core/schema";
 import type { SpaceView } from "@/core/spaces";
 import { NO_FILTERS } from "@/lib/filters";
+import * as itemRef from "@/lib/itemRef";
 import { Kanban, type ProjectView } from "./Kanban";
 import * as shortcuts from "./useItemShortcuts";
 import type { GetStarted } from "@/lib/getStarted";
@@ -28,6 +29,12 @@ vi.mock("./useItemShortcuts", async (original) => {
   const actual = await original<typeof shortcuts>();
   return { ...actual, useRowSelection: vi.fn(actual.useRowSelection) };
 });
+// Rows and the palette's results work out item refs; counting the calls
+// shows when the closed palette does that work.
+vi.mock("@/lib/itemRef", async (original) => {
+  const actual = await original<typeof itemRef>();
+  return { ...actual, formatItemRef: vi.fn(actual.formatItemRef) };
+});
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
   unstable_rethrow: vi.fn(),
@@ -36,6 +43,12 @@ vi.mock("next/navigation", () => ({
 beforeAll(() => {
   // The arrow keys scroll the selected row into view; jsdom has no layout.
   Element.prototype.scrollIntoView = vi.fn();
+  // The palette's list measures itself.
+  window.ResizeObserver ??= class {
+    observe = vi.fn();
+    unobserve = vi.fn();
+    disconnect = vi.fn();
+  } as unknown as typeof ResizeObserver;
   window.IntersectionObserver = class {
     observe = vi.fn();
     disconnect = vi.fn();
@@ -178,12 +191,15 @@ describe("Kanban, re-rendering rows", () => {
     const { rerender } = render(board(work, [], { b: items }, ["i1"]));
     expect(screen.getAllByText(/^Task \d$/)).toHaveLength(3);
 
-    // Opening the Filter menu re-renders the board, not its rows.
+    // Opening the Filter menu re-renders the board, not its rows, nor the
+    // closed palette's item results.
     rowRenders.mockClear();
+    vi.mocked(itemRef.formatItemRef).mockClear();
     fireEvent.keyDown(document, { key: "f" });
     expect(screen.getByRole("menu")).toBeTruthy();
     fireEvent.keyDown(document, { key: "f" });
     expect(rowRenders).not.toHaveBeenCalled();
+    expect(itemRef.formatItemRef).not.toHaveBeenCalled();
 
     // Moving the selection re-renders only the rows it leaves and reaches.
     fireEvent.keyDown(document, { key: "ArrowDown" });
@@ -217,5 +233,14 @@ describe("Kanban, re-rendering rows", () => {
     expect(screen.queryByRole("menu")).toBeNull();
     expect(document.querySelector("[data-selected]")?.textContent).toContain("Task 1");
     expect(document.activeElement).not.toBe(assign);
+  });
+
+  it("finds an item in the palette once something is typed", () => {
+    render(board(work, [], { b: [item(1), item(2)] }));
+    fireEvent.keyDown(document, { key: "k", ctrlKey: true });
+    const search = screen.getByPlaceholderText("Search commands, lists, items…");
+    expect(screen.queryByRole("option", { name: /Task 2/ })).toBeNull();
+    fireEvent.change(search, { target: { value: "Task 2" } });
+    expect(screen.getByRole("option", { name: /Task 2/ })).toBeTruthy();
   });
 });
