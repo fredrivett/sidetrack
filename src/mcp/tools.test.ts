@@ -145,6 +145,42 @@ describe("list roles", () => {
   });
 });
 
+describe("invite_people", () => {
+  it("invites several people to a list and a Space in one go, or to none when one place fails", async () => {
+    const lorna = createTestUser(db, { username: "lorna" });
+    const jo = createTestUser(db, { username: "jo" });
+    createTestUser(db, { username: "kim" });
+    const list = createProject(db, lorna, { name: "Life" }, "web");
+    const space = createSpace(db, lorna, { name: "Home" }, "web");
+    const call = await connectAs(lorna);
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const sent = await call("invite_people", {
+        people: ["jo", "@kim"],
+        places: [{ list_id: list.id, role: "viewer" }, { space_id: space.id, role: "commenter" }],
+      });
+      expect(sent.error).toBeNull();
+      expect(sent.data).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ list_id: list.id, userId: jo, role: "viewer", status: "pending" }),
+          expect.objectContaining({ space_id: space.id, userId: jo, role: "commenter", status: "pending" }),
+        ]),
+      );
+      expect(sent.data).toHaveLength(4);
+      // Jo is already invited to Life, so this fails, and Kim isn't invited to Garden either.
+      const garden = createProject(db, lorna, { name: "Garden" }, "web");
+      const again = await call("invite_people", {
+        people: ["kim", "jo"],
+        places: [{ list_id: garden.id }, { list_id: list.id }],
+      });
+      expect(again.error).toMatch(/already pending/);
+      expect((await call("list_members", { list_id: garden.id })).data).toEqual([]);
+    } finally {
+      log.mockRestore();
+    }
+  });
+});
+
 describe("emails", () => {
   it("link invites to the app's address the request came in on", async () => {
     const fred = createTestUser(db, { username: "fred" });

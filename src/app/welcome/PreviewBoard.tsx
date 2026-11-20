@@ -762,6 +762,7 @@ export function PreviewBoard({
                 archivedCount={0}
                 onShowArchived={askToSignUp}
                 onShowActivity={() => setActivityOpen(true)}
+                onInvite={askToSignUp}
                 onTry={askToSignUp}
               />
             </BoardHeader>

@@ -263,6 +263,8 @@ export function inviteSpaceMember(
   handle: string,
   source: AuditOrigin,
   role: Exclude<SpaceRole, "admin"> = "member",
+  /** Shared by each place one invite (invitePeople) covers. */
+  inviteId?: string,
 ): SpaceMemberView {
   const { space } = requireAdmin(db, userId, spaceId, "invite people");
   if (!["member", "commenter", "viewer"].includes(role)) throw new Error(`invalid role: ${role}`);
@@ -291,6 +293,7 @@ export function inviteSpaceMember(
         membershipId: id,
         member: personAt(target),
         role,
+        ...(inviteId ? { inviteId } : {}),
       },
     });
   });

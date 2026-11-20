@@ -23,6 +23,8 @@ import {
 } from "@/components/ui/responsive-dialog";
 import { RoleSelect } from "./RoleSelect";
 import { runAction } from "./run-action";
+import { useDraft } from "./use-draft";
+import { useStoredState } from "./use-stored-state";
 import { useTapToConfirm } from "./use-tap-to-confirm";
 
 function displayName(m: CollaboratorView) {
@@ -48,9 +50,14 @@ export function ShareDialog({
 }) {
   const [members, setMembers] = useState<MemberView[]>([]);
   const [suggestions, setSuggestions] = useState<CollaboratorView[]>([]);
-  const [person, setPerson] = useState("");
-  // What the next invite lets them do; it stays as chosen between invites.
-  const [role, setRole] = useState<ListRole>("editor");
+  // Who's being invited, and as what, outlive a reload: the role is part
+  // of the draft, and stays as chosen between invites.
+  const draft = useDraft(projectId ? `share:${projectId}:person` : null);
+  const person = draft.value;
+  const [role, setRole] = useStoredState<ListRole>(
+    `draft:share:${projectId ?? ""}:role`,
+    "editor",
+  );
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   // Removing someone takes a second tap: it also takes them off their items.
@@ -68,7 +75,6 @@ export function ShareDialog({
   const [opened, setOpened] = useState({ open, projectId });
   if (opened.open !== open || opened.projectId !== projectId) {
     setOpened({ open, projectId });
-    setPerson("");
     setError(null);
     // Suggestions are for one project: an Invite left over from the last one
     // would invite that person here, so hide them until this project's load.
@@ -140,7 +146,7 @@ export function ShareDialog({
         setError(err instanceof Error ? err.message : "Couldn't send the invite.");
         return;
       }
-      if (fromForm && latestProjectId.current === projectId) setPerson("");
+      if (fromForm && latestProjectId.current === projectId) draft.clear();
       await reload(projectId);
     });
   }
@@ -177,7 +183,17 @@ export function ShareDialog({
   }
 
   return (
-    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+    // Closing drops what's typed, as cancelling does.
+    <ResponsiveDialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) {
+          draft.clear();
+          setRole("editor");
+        }
+        onOpenChange(next);
+      }}
+    >
       <ResponsiveDialogContent initialFocus={personRef}>
         <div className="flex shrink-0 flex-col gap-0.5 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
           <div className="flex items-center gap-2">
@@ -202,7 +218,7 @@ export function ShareDialog({
             <Input
               ref={personRef}
               value={person}
-              onChange={(e) => setPerson(e.target.value)}
+              onChange={(e) => draft.set(e.target.value)}
               placeholder="username or email"
               autoComplete="off"
               disabled={pending}

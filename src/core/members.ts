@@ -113,6 +113,8 @@ export function inviteMember(
   handle: string,
   source: AuditOrigin,
   role: ListRole = "editor",
+  /** Shared by each place one invite (invitePeople) covers. */
+  inviteId?: string,
 ): MemberView {
   assertListRole(role);
   const project = getProject(db, userId, projectId);
@@ -160,6 +162,7 @@ export function inviteMember(
         membershipId: id,
         member: personAt(target),
         role,
+        ...(inviteId ? { inviteId } : {}),
       },
     });
   });

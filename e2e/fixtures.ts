@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { test as base, expect } from "@playwright/test";
+import { test as base, expect, type BrowserContext } from "@playwright/test";
 import { auth } from "@/auth/better-auth";
 import { getDb } from "@/core/db";
 import { addItem } from "@/core/items";
@@ -15,6 +15,21 @@ export { expect };
 const SOURCE = "web" as const;
 const PASSWORD = "e2e-password";
 
+/** Signs `context` in with the session a sign-up or sign-in answered with,
+ * from its own client address: Better Auth rate-limits sign-ins by IP
+ * (x-forwarded-for), and parallel tests would otherwise share one. */
+async function useSession(context: BrowserContext, headers: Headers, baseURL: string) {
+  const cookies = (headers.get("set-cookie") ?? "").split(/,(?=\s*[\w.-]+=)/).map((c) => {
+    const [name, ...value] = c.split(";")[0].trim().split("=");
+    return { name, value: value.join("="), url: baseURL };
+  });
+  await context.addCookies(cookies);
+  const ip = randomUUID().replace(/\D/g, "").padEnd(6, "0");
+  await context.setExtraHTTPHeaders({
+    "x-forwarded-for": `10.${Number(ip.slice(0, 2)) % 256}.${Number(ip.slice(2, 4)) % 256}.${Number(ip.slice(4, 6)) % 256}`,
+  });
+}
+
 /** A fresh handle, so parallel tests never share a person. */
 const newHandle = () => `e2e${randomUUID().replace(/-/g, "").slice(0, 12)}`;
 
@@ -29,6 +44,14 @@ export async function createPerson() {
   return {
     id: user.id,
     username,
+    /** Signs `context` in as them, as if they'd signed in themselves. */
+    async signIn(context: BrowserContext, baseURL: string) {
+      const { headers } = await auth.api.signInEmail({
+        body: { email: `${username}@sidetrack.test`, password: PASSWORD },
+        returnHeaders: true,
+      });
+      await useSession(context, headers, baseURL);
+    },
     /** Adds a list of theirs with these items, shared with `withId` as
      * `role`, invite already accepted. */
     shareList(name: string, items: string[], withId: string, withHandle: string, role: ListRole) {
@@ -62,18 +85,8 @@ export const test = base.extend<{ user: User }>({
       body: { email, password: PASSWORD, name: "E2E User", username: handle },
       returnHeaders: true,
     });
-    // Sign-up signs in: hand its session cookie to the browser.
-    const cookies = (headers.get("set-cookie") ?? "").split(/,(?=\s*[\w.-]+=)/).map((c) => {
-      const [name, ...value] = c.split(";")[0].trim().split("=");
-      return { name, value: value.join("="), url: baseURL ?? "" };
-    });
-    await context.addCookies(cookies);
-    // Its own client address too: Better Auth rate-limits sign-ins by IP
-    // (x-forwarded-for), and parallel tests would otherwise share one.
-    const ip = randomUUID().replace(/\D/g, "").padEnd(6, "0");
-    await context.setExtraHTTPHeaders({
-      "x-forwarded-for": `10.${Number(ip.slice(0, 2)) % 256}.${Number(ip.slice(2, 4)) % 256}.${Number(ip.slice(4, 6)) % 256}`,
-    });
+    // Sign-up signs in: hand its session to the browser.
+    await useSession(context, headers, baseURL ?? "");
     const { db } = getDb();
     await use({
       id: response.user.id,
