@@ -114,11 +114,6 @@ export function CommandPalette({
     { label: "GitHub webhook", icon: <GitHubMark />, action: () => router.push("/settings/github") },
   ];
 
-  const items = lists.flatMap((list) =>
-    (itemsByProject[list.id] ?? []).map((item) => ({ item, list })),
-  );
-  const titleOf = new Map(items.map(({ item }) => [item.id, item.title]));
-
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       {/* A bottom sheet on phones, swiped down to close; a modal a quarter
@@ -186,40 +181,11 @@ export function CommandPalette({
               ))}
             </CommandGroup>
             <WhenSearching>
-              <CommandGroup heading="Items">
-                {items.map(({ item, list }) => {
-                  const ref = formatItemRef(list.refPrefix, item.number);
-                  const parent = item.parentId ? titleOf.get(item.parentId) : undefined;
-                  return (
-                    <CommandItem
-                      key={item.id}
-                      // The ref is board-unique, so it keeps duplicate titles
-                      // apart and lets "SID-12" find its item.
-                      value={`${item.title} ${ref}`}
-                      data-item-ref={ref}
-                      keywords={[list.name]}
-                      onSelect={() => run(() => onOpenItem(item))}
-                    >
-                      {item.completedAt ? (
-                        <CircleCheck className="text-muted-foreground" />
-                      ) : (
-                        <Circle className="text-muted-foreground" />
-                      )}
-                      <span className="flex min-w-0 flex-col">
-                        <span
-                          className={`truncate ${item.completedAt ? "text-muted-foreground line-through" : ""}`}
-                        >
-                          {item.title}
-                        </span>
-                        <span className="truncate text-xs text-muted-foreground">
-                          {[list.name, parent].filter(Boolean).join(" › ")}
-                        </span>
-                      </span>
-                      <CommandShortcut className="tracking-normal">{ref}</CommandShortcut>
-                    </CommandItem>
-                  );
-                })}
-              </CommandGroup>
+              <ItemResults
+                lists={lists}
+                itemsByProject={itemsByProject}
+                onOpenItem={(item) => run(() => onOpenItem(item))}
+              />
             </WhenSearching>
           </CommandList>
           {/* Keyboard hints; phones have no keyboard to hint at. */}
@@ -270,4 +236,60 @@ function ReportSearch({ onSearch }: { onSearch: (search: string) => void }) {
 function WhenSearching({ children }: { children: ReactNode }) {
   const searching = useCommandState((state) => state.search.trim() !== "");
   return searching ? children : null;
+}
+
+/**
+ * The board's items as palette results. Its own component, inside
+ * WhenSearching, so the palette works them out only while searching, not on
+ * every render of the board behind it.
+ */
+function ItemResults({
+  lists,
+  itemsByProject,
+  onOpenItem,
+}: {
+  lists: ProjectView[];
+  itemsByProject: Record<string, Item[]>;
+  onOpenItem: (item: Item) => void;
+}) {
+  const items = lists.flatMap((list) =>
+    (itemsByProject[list.id] ?? []).map((item) => ({ item, list })),
+  );
+  const titleOf = new Map(items.map(({ item }) => [item.id, item.title]));
+  return (
+    <CommandGroup heading="Items">
+      {items.map(({ item, list }) => {
+        const ref = formatItemRef(list.refPrefix, item.number);
+        const parent = item.parentId ? titleOf.get(item.parentId) : undefined;
+        return (
+          <CommandItem
+            key={item.id}
+            // The ref is board-unique, so it keeps duplicate titles
+            // apart and lets "SID-12" find its item.
+            value={`${item.title} ${ref}`}
+            data-item-ref={ref}
+            keywords={[list.name]}
+            onSelect={() => onOpenItem(item)}
+          >
+            {item.completedAt ? (
+              <CircleCheck className="text-muted-foreground" />
+            ) : (
+              <Circle className="text-muted-foreground" />
+            )}
+            <span className="flex min-w-0 flex-col">
+              <span
+                className={`truncate ${item.completedAt ? "text-muted-foreground line-through" : ""}`}
+              >
+                {item.title}
+              </span>
+              <span className="truncate text-xs text-muted-foreground">
+                {[list.name, parent].filter(Boolean).join(" › ")}
+              </span>
+            </span>
+            <CommandShortcut className="tracking-normal">{ref}</CommandShortcut>
+          </CommandItem>
+        );
+      })}
+    </CommandGroup>
+  );
 }
