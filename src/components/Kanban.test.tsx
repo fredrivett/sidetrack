@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Item } from "@/core/schema";
 import type { SpaceView } from "@/core/spaces";
@@ -193,5 +193,20 @@ describe("Kanban, re-rendering rows", () => {
     rerender(board(work, [], { b: refreshed }, ["i1"]));
     expect(screen.getByText("Task 9")).toBeTruthy();
     expect(rowRenders).toHaveBeenCalledTimes(1);
+  });
+
+  it("moves the selection on an arrow from a row's assignee button, without opening its menu", () => {
+    render(board(work, [], { b: [item(1), item(2)] }));
+    const row = document.querySelector<HTMLElement>('[data-item-row="i2"]');
+    if (!row) throw new Error("no row");
+    // The pointer reaching the row mounts its menu; closing that leaves the
+    // button focused, as Escape does.
+    fireEvent.pointerEnter(row);
+    const assign = within(row).getByRole("button", { name: "Assign" });
+    assign.focus();
+    fireEvent.keyDown(assign, { key: "ArrowDown" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.querySelector("[data-selected]")?.textContent).toContain("Task 1");
+    expect(document.activeElement).not.toBe(assign);
   });
 });
