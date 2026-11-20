@@ -38,6 +38,7 @@ import { AgendaView } from "./AgendaView";
 import { DoneView } from "./DoneView";
 import { FilterMenu } from "./FilterMenu";
 import { InvitesBanner } from "./InvitesBanner";
+import { refreshIfCurrent } from "./LatestDeploy";
 import { ItemDetailDialog } from "./ItemDetailDialog";
 import { BoardDrag } from "./BoardDrag";
 import { NewItemDialog } from "./NewItemDialog";
@@ -315,7 +316,7 @@ export function Kanban({
   useEffect(() => {
     if (!Number.isFinite(dayStart)) return;
     if (Number.isFinite(shownDay.current) && shownDay.current !== dayStart) {
-      router.refresh();
+      void refreshIfCurrent(router);
     }
     shownDay.current = dayStart;
   }, [dayStart, router]);

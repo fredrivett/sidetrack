@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+import { refreshIfCurrent } from "@/components/LatestDeploy";
 
 /** Changes this close together reload the page once, e.g. a drag's moves. */
 const SETTLE_MS = 300;
@@ -21,7 +22,8 @@ export function LiveUpdates() {
     let retry: ReturnType<typeof setTimeout> | undefined;
     function reload() {
       clearTimeout(timer);
-      timer = setTimeout(() => router.refresh(), SETTLE_MS);
+      // The stream reconnects after a deploy, to the new build.
+      timer = setTimeout(() => void refreshIfCurrent(router), SETTLE_MS);
     }
     function stop() {
       source?.close();

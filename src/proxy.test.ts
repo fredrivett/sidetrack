@@ -16,6 +16,12 @@ describe("proxy, signed out", () => {
     },
   );
 
+  // Every page asks which deploy is live; the sign-in page's redirect would
+  // read as a newer one.
+  it("lets the deploy check through", () => {
+    expect(signedOut("/api/version").headers.get("x-middleware-next")).toBe("1");
+  });
+
   it("still sends app pages to sign in", () => {
     expect(signedOut("/settings/profile").headers.get("location")).toBe(
       "https://sidetrack.test/login?next=%2Fsettings%2Fprofile",

@@ -1,19 +1,72 @@
 "use client";
 
 import { unstable_isUnrecognizedActionError, useRouter } from "next/navigation";
+import { RefreshCw } from "lucide-react";
 import { useEffect } from "react";
 import { toast } from "sonner";
+import { isEditableTarget } from "@/lib/keyboard";
+import { RELEASE } from "@/lib/release";
 
-// An installed app resumed from the background still runs the build it
-// launched with. Refreshing when it comes back into view picks up changes made
-// while it was away, and when the server is on a newer deploy, Next answers
-// the refresh with a full page load of the new build. An action that beats the
-// refresh to the server fails instead, because the new build no longer has
-// that action, and reloads.
+// An installed app resumed from the background, or a tab left open, still runs
+// the build it loaded with. When the server is on a newer deploy, Next answers
+// a refresh with a full page load of the new build, which throws away
+// whatever was open: a dialog, a half-typed item, the scroll position. So
+// background refreshes ask the server which deploy it's on first, and a page on
+// an older one stops refreshing, says so, and moves over when the user reloads
+// or when it's next hidden with nothing in progress.
 //
-// The reload keys off the server's "action not found" response header, so it
+// An action that reaches the new build fails, because the new build no longer
+// has that action, and reloads at once: the old page can't save anything. The
+// reload keys off the server's "action not found" response header, so it
 // happens however the caller handles the failed action: a toast in its own
 // catch, an unhandled rejection, or the route error boundary (app/error.tsx).
+
+let outdated = false;
+
+/**
+ * Reloads the page's data from the server, as `router.refresh()` does, unless
+ * the server is on a newer deploy or can't be reached (mid-deploy, offline):
+ * Next would answer either with a full page load.
+ */
+export async function refreshIfCurrent(router: { refresh(): void }) {
+  if (outdated) return;
+  let live: string;
+  try {
+    const response = await fetch("/api/version", { cache: "no-store" });
+    if (!response.ok) return;
+    live = await response.text();
+  } catch {
+    return;
+  }
+  if (live === RELEASE) router.refresh();
+  else if (!outdated) {
+    outdated = true;
+    toast("Sidetrack has been updated", {
+      id: "latest-deploy",
+      duration: Infinity,
+      action: {
+        label: (
+          <span className="flex items-center gap-1">
+            <RefreshCw className="size-3.5" />
+            Reload
+          </span>
+        ),
+        onClick: () => location.reload(),
+      },
+    });
+    document.addEventListener("visibilitychange", reloadIfIdle);
+  }
+}
+
+// Hidden, the reload goes unseen, but not while a dialog is open or a field
+// is being typed in: that would still be lost.
+function reloadIfIdle() {
+  if (document.visibilityState !== "hidden") return;
+  if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
+  if (isEditableTarget(document.activeElement)) return;
+  location.reload();
+}
+
 export function LatestDeploy() {
   const router = useRouter();
   useEffect(() => {
@@ -28,8 +81,9 @@ export function LatestDeploy() {
       }
       return response;
     };
+    // Picks up changes made while the page was out of view.
     function onVisible() {
-      if (document.visibilityState === "visible") router.refresh();
+      if (document.visibilityState === "visible") void refreshIfCurrent(router);
     }
     // Already reloading, so not an error worth reporting.
     function onRejection(event: PromiseRejectionEvent) {
