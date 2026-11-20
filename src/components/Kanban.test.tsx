@@ -13,6 +13,7 @@ const GET_STARTED_DONE: GetStarted = {
   done: { lists: true, phone: true, computer: true, share: true, agent: true },
   queue: [],
   collapsed: true,
+  pendingInvites: [],
 };
 
 

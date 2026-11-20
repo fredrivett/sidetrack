@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, Share2 } from "lucide-react";
+import { Check, ChevronDown, House } from "lucide-react";
 import Link from "next/link";
 import posthog from "posthog-js";
 import { unstable_rethrow } from "next/navigation";
@@ -38,7 +38,7 @@ const TITLES: Record<GetStartedStep, string> = {
   lists: "Set up your lists",
   phone: "Add Sidetrack to your Home Screen",
   computer: "Install Sidetrack on your computer",
-  share: "Share a list with someone",
+  share: "Share with someone",
   agent: "Let an agent work on your lists",
 };
 
@@ -96,6 +96,13 @@ export function InstallReporter({ done }: { done: GetStarted["done"] }) {
     return () => window.removeEventListener("appinstalled", onInstalled);
   }, [done]);
   return null;
+}
+
+/** "@a", "@a and @b", "@a, @b and 2 others". */
+function listPeople(handles: string[]): string {
+  if (handles.length <= 2) return handles.join(" and ");
+  const rest = handles.length - 2;
+  return `${handles.slice(0, 2).join(", ")} and ${rest === 1 ? handles[2] : `${rest} others`}`;
 }
 
 /** A QR code for `text`, drawn as SVG modules. */
@@ -252,25 +259,37 @@ export function GetStartedStack({
         actions = ticksItself;
         break;
       case "share":
-        why = "A household list, or a project with a friend. Their changes show up on your board as they make them.";
-        actions =
-          shareable.length === 0 ? (
-            <span className="text-xs text-muted-foreground">Make a list first.</span>
+        why =
+          state.pendingInvites.length > 0 ? (
+            <>
+              Waiting for {listPeople(state.pendingInvites)} to accept. Ticks itself once they do,
+              or share with someone else meanwhile.
+            </>
           ) : (
-            <DropdownMenu>
-              <DropdownMenuTrigger render={<Button size="sm" />}>
-                <Share2 data-icon="inline-start" />
-                Share a list
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                {shareable.map((list) => (
-                  <DropdownMenuItem key={list.id} onClick={() => onShare(list.id, list.name)}>
-                    {list.name}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            "Make a Space for your household or a project with a friend, and everyone in it sees every list in it. Their changes show up on your board as they make them."
           );
+        actions = (
+          <>
+            <Link href="/settings/spaces" className={buttonVariants({ size: "sm" })}>
+              <House data-icon="inline-start" />
+              Make a Space
+            </Link>
+            {shareable.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger render={<Button size="sm" variant="outline" />}>
+                  Share one list
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  {shareable.map((list) => (
+                    <DropdownMenuItem key={list.id} onClick={() => onShare(list.id, list.name)}>
+                      {list.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </>
+        );
         break;
       case "agent":
         why = "Connect Claude, Amp or another MCP agent, and it can add items, pick them up and tick them off.";
