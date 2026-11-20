@@ -69,7 +69,7 @@ import { EditableText } from "./EditableText";
 import { ItemComments } from "./ItemComments";
 import { LabelChips } from "./Labels";
 import { MoveToListPicker, useMoveItem } from "./MoveItem";
-import { AssigneeChip, CHIP, DueChip, EMPTY_CHIP, Field, RepeatChip } from "./ItemFields";
+import { AssigneeChip, CHIP, DueChip, EMPTY_CHIP, Field, RepeatChip } from "./DialogFields";
 import { InlineCode, Markdown } from "./Markdown";
 import { rowAfterDelete, SelectedItemContext, useItemShortcuts } from "./useItemShortcuts";
 import { useOptimisticAssignees } from "./use-optimistic-assignees";

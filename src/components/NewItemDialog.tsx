@@ -34,7 +34,7 @@ import { useCopy } from "@/components/ui/use-copy";
 import { AssigneeOptions } from "./AssigneeOptions";
 import { CreatableCombobox } from "./CreatableCombobox";
 import { useToday } from "./use-day-start";
-import { AssigneeChip, CHIP, DueChip, EMPTY_CHIP, Field, RepeatChip } from "./ItemFields";
+import { AssigneeChip, CHIP, DueChip, EMPTY_CHIP, Field, RepeatChip } from "./DialogFields";
 import { LabelChips } from "./Labels";
 import type { ProjectView } from "./Kanban";
 import { ProjectIcon } from "./ProjectIcon";

@@ -1,8 +1,7 @@
 "use client";
 
-import { useId, useRef, useState, useTransition } from "react";
-import { Boxes, ChevronDown, Plus } from "lucide-react";
-import { toast } from "sonner";
+import { useRef, useState, useTransition } from "react";
+import { Boxes, Globe, Plus } from "lucide-react";
 import { createProjectAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,7 +12,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import {
   ResponsiveDialog,
   ResponsiveDialogCloseButton,
@@ -21,31 +19,14 @@ import {
   ResponsiveDialogDescription,
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
-import { Textarea } from "@/components/ui/textarea";
 import type { SpaceView } from "@/core/spaces";
 import { dedupePrefix, derivePrefix } from "@/lib/itemRef";
 import { normalizeHomepageUrl } from "@/lib/url";
+import { CHIP, EMPTY_CHIP, TextChip } from "./DialogFields";
 import { IconPicker } from "./ProjectIconPicker";
 import { runAction } from "./run-action";
 import { type EmojiChoice, UNCHOSEN, useTitleEmoji } from "./use-emoji-choice";
 import { aiRead } from "./ai-read";
-
-function Label({
-  htmlFor,
-  children,
-}: {
-  htmlFor: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label
-      htmlFor={htmlFor}
-      className="block text-[11px] font-medium uppercase tracking-wide text-neutral-400"
-    >
-      {children}
-    </label>
-  );
-}
 
 // The homepage as it would be saved, or null while blank or not yet valid.
 function homepagePreview(raw: string): string | null {
@@ -81,7 +62,6 @@ export function NewProjectDialog({
   const [picked, setPicked] = useState<EmojiChoice>(UNCHOSEN);
   const [pending, start] = useTransition();
   const nameRef = useRef<HTMLInputElement>(null);
-  const id = useId();
 
   // Clear the form each time the dialog opens (React's render-time reset
   // pattern, avoiding a reset-in-effect).
@@ -109,15 +89,13 @@ export function NewProjectDialog({
     suggest: (next, signal) => aiRead("listIcons", { name: next, summary, homepageUrl }, signal),
     none: Boolean(homepageUrl),
   });
+  const space = spaces.find((s) => s.id === spaceId);
   const prefix = dedupePrefix(derivePrefix(trimmedName), new Set(takenPrefixes));
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
+    // The Homepage chip only takes a valid URL, so there's nothing else to check.
     if (!trimmedName) return;
-    if (homepage.trim() && !homepageUrl) {
-      toast.error("That doesn't look like a valid homepage URL.");
-      return;
-    }
     start(async () => {
       const created = await runAction(
         createProjectAction({
@@ -138,68 +116,66 @@ export function NewProjectDialog({
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent initialFocus={nameRef}>
         <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
-          <div className="flex shrink-0 items-center gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-            <ResponsiveDialogTitle>New list</ResponsiveDialogTitle>
-            <ResponsiveDialogDescription className="sr-only">
-              Create a new list.
-            </ResponsiveDialogDescription>
-            <ResponsiveDialogCloseButton className="ml-auto" />
-          </div>
-
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4">
-            <div className="space-y-1">
-              <Label htmlFor={`${id}-name`}>Name</Label>
-              <div className="flex items-center gap-2">
-                <IconPicker
-                  icon={icon.emoji}
-                  chosen={icon.chosen}
-                  homepageUrl={homepageUrl}
-                  name={trimmedName}
-                  size={20}
-                  disabled={pending}
-                  // The input's height and corners, so the two read as one row.
-                  className="size-8 rounded-lg border border-input"
-                  faded={icon.faded}
-                  suggestions={suggestions}
-                  onOpen={onOpen}
-                  onSelect={(emoji) => setPicked({ emoji, chosen: true })}
-                />
-                <Input
-                  ref={nameRef}
-                  id={`${id}-name`}
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="List name, e.g. Home or Buy"
-                  disabled={pending}
-                />
-              </div>
-              {trimmedName && (
-                <p className="text-xs text-muted-foreground">
-                  Items will be numbered {prefix}-1, {prefix}-2, …
-                </p>
-              )}
+          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain px-4 pt-3 pb-4">
+            <div className="flex min-w-0 items-center gap-1">
+              <ResponsiveDialogTitle className="text-sm font-medium text-neutral-500">
+                New list
+              </ResponsiveDialogTitle>
+              <ResponsiveDialogDescription className="sr-only">
+                Create a new list.
+              </ResponsiveDialogDescription>
+              <ResponsiveDialogCloseButton className="ml-auto" />
             </div>
-
-            {spaces.length > 0 && (
-              <div className="space-y-1">
-                <Label htmlFor={`${id}-space`}>Space</Label>
+            <div className="flex items-center gap-2">
+              <IconPicker
+                icon={icon.emoji}
+                chosen={icon.chosen}
+                homepageUrl={homepageUrl}
+                name={trimmedName}
+                size={22}
+                disabled={pending}
+                faded={icon.faded}
+                suggestions={suggestions}
+                onOpen={onOpen}
+                onSelect={(emoji) => setPicked({ emoji, chosen: true })}
+              />
+              <input
+                ref={nameRef}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="List name, e.g. Home or Buy"
+                aria-label="Name"
+                disabled={pending}
+                className="min-w-0 flex-1 bg-transparent text-base leading-6 font-medium outline-none placeholder:text-muted-foreground disabled:opacity-50"
+              />
+            </div>
+            <textarea
+              value={summary}
+              onChange={(e) => setSummary(e.target.value)}
+              placeholder="Add summary…"
+              aria-label="Summary"
+              disabled={pending}
+              rows={1}
+              className="field-sizing-content max-h-48 w-full resize-none bg-transparent text-sm text-neutral-600 outline-none placeholder:text-muted-foreground disabled:opacity-50 dark:text-neutral-300"
+            />
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              {spaces.length > 0 && (
                 <DropdownMenu>
                   <DropdownMenuTrigger
-                    render={
-                      <Button
-                        id={`${id}-space`}
-                        type="button"
-                        variant="outline"
-                        className="w-full justify-start font-normal"
-                        disabled={pending}
-                      />
-                    }
+                    aria-disabled={pending || undefined}
+                    title="Space"
+                    className={space ? CHIP : EMPTY_CHIP}
                   >
-                    <Boxes data-icon="inline-start" />
-                    {spaces.find((s) => s.id === spaceId)?.name ?? "None, just me"}
-                    <ChevronDown className="ml-auto" />
+                    {space?.icon && !space.icon.startsWith("http") ? (
+                      <span className="text-sm leading-none">{space.icon}</span>
+                    ) : (
+                      <Boxes />
+                    )}
+                    <span data-replay-safe className="max-w-48 truncate">
+                      {space ? space.name : "Just me"}
+                    </span>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-(--anchor-width)">
+                  <DropdownMenuContent align="start" className="w-56">
                     <DropdownMenuRadioGroup
                       value={spaceId}
                       onValueChange={(next: string) => setSpaceId(next)}
@@ -215,36 +191,30 @@ export function NewProjectDialog({
                     </DropdownMenuRadioGroup>
                   </DropdownMenuContent>
                 </DropdownMenu>
-                {spaceId && (
-                  <p className="text-xs text-muted-foreground">
-                    Everyone in {spaces.find((s) => s.id === spaceId)?.name} can see and edit it.
-                  </p>
-                )}
-              </div>
-            )}
-
-            <div className="space-y-1">
-              <Label htmlFor={`${id}-summary`}>Summary</Label>
-              <Textarea
-                id={`${id}-summary`}
-                value={summary}
-                onChange={(e) => setSummary(e.target.value)}
-                placeholder="What's this list for? (optional)"
-                disabled={pending}
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label htmlFor={`${id}-homepage`}>Homepage</Label>
-              <Input
-                id={`${id}-homepage`}
+              )}
+              <TextChip
+                icon={<Globe />}
+                label="Homepage"
                 value={homepage}
-                onChange={(e) => setHomepage(e.target.value)}
-                placeholder="example.com (optional)"
-                inputMode="url"
+                placeholder="example.com"
+                validate={(next) =>
+                  homepagePreview(next) ? null : "That doesn't look like a valid URL."
+                }
+                onSave={setHomepage}
                 disabled={pending}
-              />
+              >
+                <span className="max-w-48 truncate">
+                  {homepageUrl?.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}
+                </span>
+              </TextChip>
             </div>
+            {(trimmedName || space) && (
+              <p className="text-xs text-muted-foreground">
+                {trimmedName && `Items will be numbered ${prefix}-1, ${prefix}-2, …`}
+                {trimmedName && space && " "}
+                {space && `Everyone in ${space.name} can see and edit it.`}
+              </p>
+            )}
           </div>
 
           <div className="flex shrink-0 justify-end gap-2 border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
