@@ -243,9 +243,11 @@ describe("AgendaView", () => {
     expect(noDate.getByRole("heading", { level: 3, name: /Buy/ })).toBeTruthy();
     expect(noDate.getByText("Tidy flat")).toBeTruthy();
     expect(noDate.getByText("Kitchen")).toBeTruthy();
-    // A dated parent's checklist is planned with it, under its date.
-    expect(within(section(/^Next week/)).getByText("Phone plan")).toBeTruthy();
-    expect(screen.queryByText("Fred's SIM")).toBeNull();
+    // A dated parent's checklist is planned with it, under it in its section.
+    const nextWeek = within(section(/^Next week/));
+    expect(nextWeek.getByText("Phone plan")).toBeTruthy();
+    expect(nextWeek.getByLabelText(/checklist, 0 of 1 done/)).toBeTruthy();
+    expect(nextWeek.getByText("Fred's SIM")).toBeTruthy();
 
     cleanup();
     renderAgenda(items, [home, buy], false, { assignees: ["me"] });

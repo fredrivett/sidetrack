@@ -2,17 +2,14 @@
 
 import { ChevronDown } from "lucide-react";
 import { useId, useOptimistic, useState, useTransition } from "react";
-import {
-  setNoDateCollapsedAction,
-  setNoDateListFoldedAction,
-  setOverdueCollapsedAction,
-} from "@/app/actions";
+import type { Greeting } from "@/core/agendaGreeting";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { formatItemRef } from "@/lib/itemRef";
 import { nestItems } from "@/lib/itemTree";
 import { AGENDA_SECTIONS, agendaSection, type AgendaSection } from "@/lib/time";
 import { isYours, type ItemFilters, matchesFilters } from "@/lib/filters";
+import { useAgendaSaves } from "./agenda-saves";
 import { AgendaGreeting } from "./AgendaGreeting";
 import type { FeedbackAbout } from "./FeedbackDialog";
 import { ItemDetailDialog, ItemDetailView } from "./ItemDetailDialog";
@@ -24,6 +21,9 @@ import { ProjectIcon } from "./ProjectIcon";
 import { runAction } from "./run-action";
 import { useToday } from "./use-day-start";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
+
+/** What the Brief reads of a list. */
+type AgendaList = Pick<ProjectView, "id" | "name" | "icon" | "homepageUrl" | "refPrefix">;
 
 const openCount = (rows: Item[]) => rows.filter((i) => i.completedAt === null).length;
 
@@ -53,9 +53,10 @@ export function AgendaView({
   onFeedback,
   onAddForToday,
   filters,
+  preview,
 }: {
   /** Active lists in board order; archived lists stay out. */
-  projects: ProjectView[];
+  projects: AgendaList[];
   itemsByProject: Record<string, Item[]>;
   assigneesByProject: Record<string, AssigneeView[]>;
   prLinksByItem: Record<string, ItemPrLink[]>;
@@ -75,8 +76,14 @@ export function AgendaView({
   /** The greeting's "+" by the date: New item, due today. */
   onAddForToday?: () => void;
   filters: ItemFilters;
+  /**
+   * The landing page's preview: this greeting instead of asking for one, and
+   * items that don't open, since their dialog loads from the server.
+   */
+  preview?: { greeting: Greeting };
 }) {
   const today = useToday();
+  const saves = useAgendaSaves();
   // Folds at once, then saves; a failed save unfolds it again with a toast.
   const [overdueCollapsed, showOverdueCollapsed] = useOptimistic(savedCollapsed);
   const [, start] = useTransition();
@@ -85,7 +92,7 @@ export function AgendaView({
       const next = !overdueCollapsed;
       showOverdueCollapsed(next);
       await runAction(
-        setOverdueCollapsedAction(next),
+        saves.setOverdueCollapsed(next),
         next ? "collapse Overdue" : "expand Overdue",
       );
     });
@@ -96,7 +103,7 @@ export function AgendaView({
       const next = !noDateCollapsed;
       showNoDateCollapsed(next);
       await runAction(
-        setNoDateCollapsedAction(next),
+        saves.setNoDateCollapsed(next),
         next ? "collapse No date" : "expand No date",
       );
     });
@@ -107,12 +114,12 @@ export function AgendaView({
     (lists: string[], { id, folded }: { id: string; folded: boolean }) =>
       folded ? [...lists.filter((l) => l !== id), id] : lists.filter((l) => l !== id),
   );
-  const toggleList = (project: ProjectView) =>
+  const toggleList = (project: AgendaList) =>
     start(async () => {
       const folded = !foldedLists.includes(project.id);
       showListFolded({ id: project.id, folded });
       await runAction(
-        setNoDateListFoldedAction(project.id, folded),
+        saves.setNoDateListFolded(project.id, folded),
         `${folded ? "collapse" : "expand"} ${project.name}`,
       );
     });
@@ -158,11 +165,19 @@ export function AgendaView({
   // Every item, not just those shown, so an open dialog stays open whatever
   // its item becomes.
   const detail = useItemDetailDialog(all);
+  const openDetail = preview ? () => {} : detail.openDetail;
 
   const sectionOf = new Map<string, AgendaSection>();
   if (today) {
     for (const i of all) {
-      const s = agendaSection(i, i.parentId ? byId.get(i.parentId) : undefined, today);
+      const parent = i.parentId ? byId.get(i.parentId) : undefined;
+      // An undated sub-item of a dated parent is planned with it: it shows
+      // under the parent, in the parent's section.
+      const s = agendaSection(
+        !i.dueDate && parent?.dueDate ? { ...i, dueDate: parent.dueDate, dueFrom: parent.dueFrom } : i,
+        parent,
+        today,
+      );
       if (s) sectionOf.set(i.id, s);
     }
   }
@@ -172,13 +187,15 @@ export function AgendaView({
   // (isYours), as the greeting reads it.
   const canOpen = (userId: string, projectId: string) =>
     (assigneesByProject[projectId] ?? []).some((a) => a.userId === userId);
+  // A sub-item sorts by its parent's day when it has none of its own.
+  const dueOf = (i: Item) => i.dueDate ?? (i.parentId ? byId.get(i.parentId)?.dueDate : null) ?? "";
   const onAgenda = all
     .filter(
       (i) =>
         sectionOf.has(i.id) &&
         isYours(i, i.parentId ? byId.get(i.parentId) : undefined, viewerId, canOpen),
     )
-    .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""));
+    .sort((a, b) => dueOf(a).localeCompare(dueOf(b)));
   const shown = onAgenda.filter(
     (i) =>
       (filters.doneToday || i.completedAt === null) &&
@@ -213,12 +230,12 @@ export function AgendaView({
     prLinks: prLinksByItem[item.id] ?? [],
   });
 
-  const rowProps = (project: ProjectView | undefined) => ({
+  const rowProps = (project: AgendaList | undefined) => ({
     prefix: project?.refPrefix ?? "",
     assignees: project ? (assigneesByProject[project.id] ?? []) : [],
     viewerId,
     prLinksByItem,
-    onOpenDetail: detail.openDetail,
+    onOpenDetail: openDetail,
   });
 
   const renderRows = (label: AgendaSection, rows: Item[]) =>
@@ -269,7 +286,7 @@ export function AgendaView({
                     viewerId={viewerId}
                     prLinks={prLinksByItem[group.id] ?? []}
                     context={byId.get(group.parentId)?.title}
-                    onOpenDetail={() => detail.openDetail(group)}
+                    onOpenDetail={() => openDetail(group)}
                   />
                 ) : (
                   <ItemGroupView group={group} {...row} />
@@ -278,11 +295,14 @@ export function AgendaView({
             </div>
           );
         })
-      : rows.map((item) => {
+      : nestItems(rows).map((item) => {
           const project = projectOf.get(item.projectId);
           const parent = item.parentId ? byId.get(item.parentId) : undefined;
           return lightable(
             item.id,
+            item.children.length > 0 ? (
+              <ItemGroupView group={item} list={project} {...rowProps(project)} />
+            ) : (
             <ItemRow
               item={item}
               prefix={project?.refPrefix ?? ""}
@@ -291,8 +311,9 @@ export function AgendaView({
               prLinks={prLinksByItem[item.id] ?? []}
               context={parent?.title}
               list={project}
-              onOpenDetail={() => detail.openDetail(item)}
+              onOpenDetail={() => openDetail(item)}
             />
+            ),
           );
         });
 
@@ -315,7 +336,8 @@ export function AgendaView({
             onHoverItem={setLit}
             onFeedback={onFeedback}
             onAddForToday={onAddForToday}
-            onOpenItem={detail.openDetail}
+            onOpenItem={openDetail}
+            greeting={preview?.greeting}
             renderItem={(item, view) => <ItemDetailView {...detailProps(item)} {...view} />}
             onAction={(action) => {
               if (action === "lighten") {

@@ -143,9 +143,9 @@ export default async function Welcome() {
             The home for everything you get sidetracked by.
           </h1>
           <p className="mx-auto mt-5 max-w-xl text-base text-pretty text-muted-foreground sm:text-lg">
-            Every project, every person,{" "}
-            <span className="whitespace-nowrap">every agent.</span>{" "}
-            <span className="whitespace-nowrap">One board for all of it.</span>
+            Every project, person and agent on one board,{" "}
+            <span className="whitespace-nowrap">with a daily brief</span>{" "}
+            <span className="whitespace-nowrap">on where to start.</span>
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Link

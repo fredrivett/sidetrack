@@ -126,9 +126,12 @@ export function ItemGroupView({
   group,
   collapsed: given,
   shown,
+  list,
   ...row
 }: RowProps & {
   group: ItemGroup;
+  /** The list the item is on, shown on its row where lists mix (the Brief's dated sections). */
+  list?: Parameters<typeof ItemRow>[0]["list"];
   /** Shown as given rather than as stored, as the drag overlay copies its list. */
   collapsed?: boolean;
   /**
@@ -144,6 +147,7 @@ export function ItemGroupView({
   return (
     <div className="space-y-1.5">
       {rowFor(row, group, {
+        list,
         checklist:
           all.length > 0
             ? {
