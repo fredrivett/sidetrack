@@ -137,6 +137,12 @@ function demo(today: string, now: number) {
     assigneeIds: [VIEWER],
     dueDate: today,
   });
+  // Tomorrow's, which wants a head start today.
+  add("lch", 13, "Email the waitlist", {
+    labels: ["Marketing"],
+    assigneeIds: [VIEWER],
+    dueDate: addDays(today, 1),
+  });
   add("lch", 11, "Set up a waitlist", {
     labels: ["Infra"],
     assigneeIds: [VIEWER],
@@ -166,7 +172,7 @@ function demo(today: string, now: number) {
     completedAt: hoursAgo(3),
   });
   add("cho", 5, "Take the bins out", {
-    assigneeIds: [VIEWER],
+    assigneeIds: ["sam"],
     dueDate: addDays(today, 1),
     repeatEvery: 1,
     repeatUnit: "week",
@@ -263,7 +269,9 @@ function previewGreeting(items: Item[], sessions: AgentSession[], today: string)
   }
   const tomorrow = mine.filter((i) => i.dueDate === addDays(today, 1) && !i.dueFrom);
   if (tomorrow.length > 0) {
-    sentences.push(`${two(tomorrow)} ${tomorrow.length === 1 ? "is" : "are"} due tomorrow.`);
+    sentences.push(
+      `${two(tomorrow)} ${tomorrow.length === 1 ? "is" : "are"} due tomorrow, so worth a head start today.`,
+    );
   }
   const agents = mine.flatMap((i) => {
     const s = sessions.find((s) => s.itemId === i.id && s.finishedAt === null);
