@@ -12,6 +12,7 @@ import {
 import type { StartableAgent } from "@/core/agentSessions";
 import type { AgentSession, Item } from "@/core/schema";
 import { useItemSaves } from "./item-saves";
+import { useSameContent } from "./use-same-content";
 import { runAction } from "./run-action";
 import type { AgentAvatarView } from "./UserAvatar";
 
@@ -69,15 +70,17 @@ function useMinuteClock(active: boolean): number | null {
   );
 }
 
+const NO_AGENTS: StartableAgent[] = [];
+
 /**
  * Provides the sessions to the rows and dialogs. They stay current with the
  * rest of the board: agents' reports are audited, so each one reloads it
  * (LiveUpdates).
  */
 export function AgentSessionsProvider({
-  sessions,
+  sessions: sentSessions,
   viewerId,
-  startable = [],
+  startable: sentStartable = NO_AGENTS,
   startableIn = [],
   children,
 }: {
@@ -88,6 +91,8 @@ export function AgentSessionsProvider({
   startableIn?: string[];
   children: ReactNode;
 }) {
+  const sessions = useSameContent(sentSessions);
+  const startable = useSameContent(sentStartable);
   const byItem = useMemo(() => {
     const map: Record<string, AgentSession[]> = {};
     for (const s of sessions) (map[s.itemId] ??= []).push(s);

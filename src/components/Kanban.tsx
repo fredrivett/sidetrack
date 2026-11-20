@@ -57,6 +57,7 @@ import { saveCollapsedTrays, SpaceTray } from "./SpaceTray";
 import { useDayStart, useToday } from "./use-day-start";
 import { useStoredState } from "./use-stored-state";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
+import { useSameContent } from "./use-same-content";
 import { LabelsContext } from "./Labels";
 import { RemoveListContext, useOptimisticLists } from "./use-list-saves";
 import {
@@ -67,7 +68,7 @@ import {
 } from "./use-optimistic-items";
 import { assigneeName, type AvatarUser } from "./UserAvatar";
 import { UserMenu } from "./UserMenu";
-import { NAV_KEYS, SelectedItemContext, stepItemRow } from "./useItemShortcuts";
+import { createSelection, NAV_KEYS, SelectedItemContext, stepItemRow } from "./useItemShortcuts";
 
 /**
  * A list (a "project" in code) plus per-viewer display data: whether the viewer owns it (vs. it
@@ -458,11 +459,10 @@ export function Kanban({
   const [feedbackAbout, setFeedbackAbout] = useState<FeedbackAbout | null>(null);
   // The item the movement keys selected (stepItemRow), which owns the item
   // shortcuts until the pointer moves.
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const selection = useMemo(
-    () => ({ selectedId: selectedItemId, select: setSelectedItemId }),
-    [selectedItemId],
-  );
+  // The rows read these, so a refresh that sends the same ones keeps them.
+  const sameLabels = useSameContent(labelsByProject);
+  // Kept out of state, so moving it doesn't re-render the board.
+  const [selection] = useState(createSelection);
   // Items opened from the palette get their own dialog here, since the item
   // may sit in a list the current view doesn't show.
   const boardItems = shown.flatMap((p) => itemsByProject[p.id] ?? []);
@@ -612,8 +612,8 @@ export function Kanban({
       ) {
         return;
       }
-      if (e.key === "Escape" && selectedItemId) {
-        setSelectedItemId(null);
+      if (e.key === "Escape" && selection.get()) {
+        selection.select(null);
         return;
       }
       // ? is Shift+/ on most layouts, so it comes before the Shift check.
@@ -633,10 +633,10 @@ export function Kanban({
       const dir = NAV_KEYS[e.key.length === 1 ? e.key.toLowerCase() : e.key];
       // Not while a row is picked up: dnd-kit moves it with the arrows.
       if (dir && !document.querySelector('[aria-pressed="true"][aria-roledescription]')) {
-        const row = stepItemRow(selectedItemId, dir);
+        const row = stepItemRow(selection.get(), dir);
         if (!row) return;
         e.preventDefault();
-        setSelectedItemId(row.dataset.itemRow ?? null);
+        selection.select(row.dataset.itemRow ?? null);
         row.scrollIntoView({ block: "nearest", inline: "nearest" });
         return;
       }
@@ -649,24 +649,23 @@ export function Kanban({
         setInboxOpen((o) => !o);
       } else if (nextView) {
         e.preventDefault();
-        setSelectedItemId(null);
+        selection.select(null);
         switchView(nextView);
       }
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [openNewItem, switchView, feedbackEnabled, selectedItemId]);
+  }, [openNewItem, switchView, feedbackEnabled, selection]);
 
   // Moving the pointer hands the shortcuts back to the hovered item. Scrolling
   // to the selection moves rows under a still pointer without moving it.
   useEffect(() => {
-    if (!selectedItemId) return;
     function onMove(e: PointerEvent) {
-      if (e.movementX || e.movementY) setSelectedItemId(null);
+      if (e.movementX || e.movementY) selection.select(null);
     }
     document.addEventListener("pointermove", onMove);
     return () => document.removeEventListener("pointermove", onMove);
-  }, [selectedItemId]);
+  }, [selection]);
 
   // On first paint, and on coming back from Agenda or Done (which unmount
   // the rail):
@@ -717,7 +716,7 @@ export function Kanban({
     <SelectedItemContext value={selection}>
     <NotificationLevelsProvider levels={notificationLevels}>
     <ItemChangesContext value={itemChanges}>
-    <LabelsContext value={labelsByProject}>
+    <LabelsContext value={sameLabels}>
     <RemoveListContext value={removeList}>
     <BoardDrag groups={moveTargets}>
       <BoardMain>

@@ -1,15 +1,61 @@
 "use client";
 
-import { createContext, useEffect } from "react";
+import { createContext, useEffect, useSyncExternalStore } from "react";
 import { isEditableTarget, matchesShortcut } from "@/lib/keyboard";
 
-/** The item the board's arrow keys (or HJKL) selected, or null, and how to
+/**
+ * The item the board's arrow keys (or HJKL) selected, or null, and how to
  * change it. While there is one, it owns the item shortcuts rather than the
- * hovered item. Null outside the board. */
-export const SelectedItemContext = createContext<{
-  selectedId: string | null;
-  select: (id: string | null) => void;
-} | null>(null);
+ * hovered item. A store rather than a value, so moving the selection
+ * re-renders only the rows it leaves and reaches (useRowSelection), not every
+ * row on the board.
+ */
+export function createSelection() {
+  let selectedId: string | null = null;
+  const listeners = new Set<() => void>();
+  return {
+    get: () => selectedId,
+    select(id: string | null) {
+      if (id === selectedId) return;
+      selectedId = id;
+      for (const listener of listeners) listener();
+    },
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+}
+export type Selection = ReturnType<typeof createSelection>;
+
+/** The board's selection. Null outside the board. */
+export const SelectedItemContext = createContext<Selection | null>(null);
+
+const noSelection = () => () => {};
+
+/**
+ * Whether the item is the one selected, and whether it owns the item
+ * shortcuts: the selected item while there is one, else the hovered one. A
+ * row that isn't hovered only changes when it gains or loses the selection.
+ */
+export function useRowSelection(
+  selection: Selection | null,
+  itemId: string,
+  hovered: boolean,
+): { selected: boolean; owns: boolean } {
+  // 2: this item is selected; 1: another is, and this one is hovered; 0: neither.
+  const state = useSyncExternalStore(
+    selection?.subscribe ?? noSelection,
+    () => {
+      const id = selection?.get() ?? null;
+      return id === itemId ? 2 : id !== null && hovered ? 1 : 0;
+    },
+    () => 0,
+  );
+  return { selected: state === 2, owns: state === 2 || (state === 0 && hovered) };
+}
 
 /** Linear's assignment shortcuts: A opens the assignee picker, I toggles me. */
 export const OPEN_ASSIGNEE_SHORTCUT = { key: "a" } as const;

@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import type { Item } from "@/core/schema";
 import type { SpaceView } from "@/core/spaces";
 import { NO_FILTERS } from "@/lib/filters";
 import { Kanban, type ProjectView } from "./Kanban";
+import * as shortcuts from "./useItemShortcuts";
 
 // The server actions pull in server-only modules (next/cache, the DB).
 vi.mock("@/app/actions", () => ({
@@ -12,12 +14,20 @@ vi.mock("@/app/actions", () => ({
 }));
 // The Agenda's greeting; it never arrives here.
 vi.mock("./ai-read", () => ({ aiRead: vi.fn(() => new Promise(() => {})) }));
+// Each item row reads the selection once per render, and nothing else
+// does, so counting the reads counts the rows' renders.
+vi.mock("./useItemShortcuts", async (original) => {
+  const actual = await original<typeof shortcuts>();
+  return { ...actual, useRowSelection: vi.fn(actual.useRowSelection) };
+});
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
   unstable_rethrow: vi.fn(),
 }));
 
 beforeAll(() => {
+  // The arrow keys scroll the selected row into view; jsdom has no layout.
+  Element.prototype.scrollIntoView = vi.fn();
   window.IntersectionObserver = class {
     observe = vi.fn();
     disconnect = vi.fn();
@@ -48,7 +58,12 @@ const list = (
     spaceId,
   }) as unknown as ProjectView;
 
-const board = (projects: ProjectView[], spaces: SpaceView[]) => (
+const board = (
+  projects: ProjectView[],
+  spaces: SpaceView[],
+  itemsByProject: Record<string, Item[]> = { a: [], b: [] },
+  followedItemIds: string[] = [],
+) => (
   <Kanban
     viewerId="u1"
     viewer={null}
@@ -58,7 +73,7 @@ const board = (projects: ProjectView[], spaces: SpaceView[]) => (
     noDateCollapsed={false}
     noDateFoldedLists={[]}
     projects={projects}
-    itemsByProject={{ a: [], b: [] }}
+    itemsByProject={itemsByProject}
     completedSince={0}
     labelsByProject={{}}
     assigneesByProject={{}}
@@ -71,7 +86,7 @@ const board = (projects: ProjectView[], spaces: SpaceView[]) => (
     initialListId={null}
     initialItemId={null}
     notifications={[]}
-    followedItemIds={[]}
+    followedItemIds={followedItemIds}
     notificationLevels={{}}
     initialItemExtra={[]}
     filters={NO_FILTERS}
@@ -121,5 +136,62 @@ describe("Kanban, switching views", () => {
     expect(window.location.pathname).toBe("/done");
     fireEvent.keyDown(document, { key: "2" });
     expect(window.location.pathname).toBe("/board");
+  });
+});
+
+describe("Kanban, re-rendering rows", () => {
+  const item = (n: number, more: Partial<Item> = {}): Item => ({
+    id: `i${n}`,
+    projectId: "b",
+    title: `Task ${n}`,
+    description: null,
+    labels: [],
+    assigneeIds: [],
+    createdBy: null,
+    parentId: null,
+    collapsed: false,
+    dueDate: null,
+    dueFrom: null,
+    repeatEvery: null,
+    repeatUnit: null,
+    repeatOn: null,
+    position: `a${n}`,
+    number: n,
+    completedAt: null,
+    createdAt: 0,
+    ...more,
+  });
+  const work = [list("b", "Work", "active", null)];
+  const rowRenders = vi.mocked(shortcuts.useRowSelection);
+
+  it("leaves the rows alone when the board changes around them", () => {
+    const items = [1, 2, 3].map((n) => item(n));
+    const { rerender } = render(board(work, [], { b: items }, ["i1"]));
+    expect(screen.getAllByText(/^Task \d$/)).toHaveLength(3);
+
+    // Opening the Filter menu re-renders the board, not its rows.
+    rowRenders.mockClear();
+    fireEvent.keyDown(document, { key: "f" });
+    expect(screen.getByRole("menu")).toBeTruthy();
+    fireEvent.keyDown(document, { key: "f" });
+    expect(rowRenders).not.toHaveBeenCalled();
+
+    // Moving the selection re-renders only the rows it leaves and reaches.
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect(document.querySelector("[data-selected]")?.textContent).toContain("Task 1");
+    expect(rowRenders).toHaveBeenCalledTimes(1);
+    rowRenders.mockClear();
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect(document.querySelector("[data-selected]")?.textContent).toContain("Task 2");
+    expect(rowRenders).toHaveBeenCalledTimes(2);
+
+    // A refresh sends everything again as new objects: only the item that
+    // changed re-renders.
+    rowRenders.mockClear();
+    const refreshed = items.map((i) => ({ ...i, labels: [...i.labels] }));
+    refreshed[2] = { ...refreshed[2], title: "Task 9" };
+    rerender(board(work, [], { b: refreshed }, ["i1"]));
+    expect(screen.getByText("Task 9")).toBeTruthy();
+    expect(rowRenders).toHaveBeenCalledTimes(1);
   });
 });

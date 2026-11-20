@@ -21,7 +21,9 @@ import {
 import {
   useCallback,
   useContext,
+  memo,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -56,6 +58,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { useMediaQuery } from "@/components/ui/use-media-query";
 import { toggleAssignee } from "@/lib/assignees";
 import { formatItemRef } from "@/lib/itemRef";
+import { sameContent } from "@/lib/same-content";
 import { repeatOf } from "@/lib/repeat";
 import { AssigneeOptions } from "./AssigneeOptions";
 import { useCommentCount } from "./comment-counts";
@@ -67,7 +70,12 @@ import { ProjectIcon } from "./ProjectIcon";
 import { RepeatBadge } from "./RepeatBadge";
 import { useToday } from "./use-day-start";
 import { toast } from "sonner";
-import { rowAfterDelete, SelectedItemContext, useItemShortcuts } from "./useItemShortcuts";
+import {
+  rowAfterDelete,
+  SelectedItemContext,
+  useItemShortcuts,
+  useRowSelection,
+} from "./useItemShortcuts";
 import { useOptimisticAssignees } from "./use-optimistic-assignees";
 import { useItemChanges } from "./use-optimistic-items";
 import { useCopyItemRef } from "./useCopyItemRef";
@@ -94,20 +102,7 @@ export type RowChecklist = {
   onToggle: () => void;
 };
 
-export function ItemRow({
-  item,
-  prefix,
-  assignees,
-  viewerId,
-  prLinks,
-  drag,
-  checklist,
-  nestUnder,
-  parentTitle,
-  context,
-  list,
-  onOpenDetail,
-}: {
+type ItemRowProps = {
   item: Item;
   prefix: string;
   assignees: AssigneeView[];
@@ -125,7 +120,47 @@ export function ItemRow({
   /** The item's list, as the first tag, in views that don't group by list. */
   list?: { name: string; icon: string | null; homepageUrl: string | null };
   onOpenDetail: () => void;
-}) {
+};
+
+/**
+ * An item's card. Memoized on what it shows, so a board render that leaves
+ * an item as it was, such as a menu opening elsewhere or a refresh that
+ * returns the same item, skips its row. Its callbacks always reach the
+ * latest handlers its list passed, though the row itself may not re-render.
+ */
+export function ItemRow(props: ItemRowProps) {
+  const latest = useRef(props);
+  useLayoutEffect(() => {
+    latest.current = props;
+  });
+  const [handlers] = useState(() => ({
+    onOpenDetail: () => latest.current.onOpenDetail(),
+    onToggleChecklist: () => latest.current.checklist?.onToggle(),
+  }));
+  const { checklist } = props;
+  return (
+    <MemoItemRow
+      {...props}
+      onOpenDetail={handlers.onOpenDetail}
+      checklist={checklist && { ...checklist, onToggle: handlers.onToggleChecklist }}
+    />
+  );
+}
+
+function ItemRowView({
+  item,
+  prefix,
+  assignees,
+  viewerId,
+  prLinks,
+  drag,
+  checklist,
+  nestUnder,
+  parentTitle,
+  context,
+  list,
+  onOpenDetail,
+}: ItemRowProps) {
   const isDragging = drag?.isDragging ?? false;
   const [pending, start] = useTransition();
   const changes = useItemChanges();
@@ -138,9 +173,7 @@ export function ItemRow({
   // The item the arrow keys selected owns the shortcuts while there is one;
   // otherwise the hovered item does.
   const selection = useContext(SelectedItemContext);
-  const selectedId = selection?.selectedId ?? null;
-  const selected = selectedId === item.id;
-  const owns = selectedId ? selected : hovered;
+  const { selected, owns } = useRowSelection(selection, item.id, hovered);
   // ⌫ asks first: the row turns red until a second ⌫ deletes it, or it stops
   // owning the shortcuts.
   const [keyDelete, setKeyDelete] = useState(false);
@@ -656,3 +689,9 @@ function QuickDueItems({
     </MenuItem>
   ));
 }
+
+const MemoItemRow = memo(ItemRowView, (prev, next) =>
+  (Object.keys({ ...prev, ...next }) as (keyof ItemRowProps)[]).every((k) =>
+    sameContent(prev[k], next[k], 3),
+  ),
+);

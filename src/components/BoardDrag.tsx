@@ -181,6 +181,9 @@ function glideBack(incoming: Incoming, clear: () => void) {
   }
 }
 
+const MOUSE = { activationConstraint: { distance: 5 } };
+const TOUCH = { activationConstraint: { delay: 200, tolerance: 5 } };
+
 /**
  * The board's drag and drop, and its moves between lists: one drag context
  * for every list's rows, so a row can be dragged out of its list and into
@@ -231,14 +234,16 @@ export function BoardDrag({
     return there.map((c) => ({ id: c.id, data: { droppableContainer: c, value: 0 } }));
   };
 
-  const coordinateGetter: KeyboardCoordinateGetter = (event, args) =>
-    lists.get(homeOf(args.context.active) ?? "")?.coordinateGetter(event, args);
+  // The sensors' options are built once: new ones would give every row new
+  // drag listeners on each render, and re-render all of them.
+  const [keyboard] = useState(() => ({
+    coordinateGetter: ((event, args) =>
+      lists.get(homeOf(args.context.active) ?? "")?.coordinateGetter(event, args)) as KeyboardCoordinateGetter,
+  }));
   const sensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, {
-      activationConstraint: { delay: 200, tolerance: 5 },
-    }),
-    useSensor(KeyboardSensor, { coordinateGetter }),
+    useSensor(MouseSensor, MOUSE),
+    useSensor(TouchSensor, TOUCH),
+    useSensor(KeyboardSensor, keyboard),
   );
   const answer = (active: Active) => lists.get(homeOf(active) ?? "")?.announcements;
   const announcements: Announcements = {
