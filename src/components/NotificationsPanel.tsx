@@ -11,6 +11,7 @@ import {
 } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import type { PushDevice } from "@/core/push";
+import { isInstalled, isIos } from "@/lib/device";
 import { formatRelative } from "@/lib/time";
 
 // What this browser can do about push, worked out once it has loaded.
@@ -21,21 +22,6 @@ type Support =
   | { kind: "unsupported" }
   | { kind: "blocked" }
   | { kind: "ready"; endpoint: string | null };
-
-function isIos() {
-  return (
-    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-    // iPadOS reports itself as a Mac, but Macs have no touch screen.
-    (navigator.userAgent.includes("Macintosh") && navigator.maxTouchPoints > 1)
-  );
-}
-
-function isInstalled() {
-  return (
-    window.matchMedia("(display-mode: standalone)").matches ||
-    ("standalone" in navigator && navigator.standalone === true)
-  );
-}
 
 /** A name for this device to tell it apart in the list, such as "iPhone" or "Chrome on Mac". */
 function deviceLabel() {

@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `get_started` text;

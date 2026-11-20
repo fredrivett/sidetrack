@@ -11,6 +11,8 @@ import { AGENDA_SECTIONS, agendaSection, type AgendaSection } from "@/lib/time";
 import { isYours, type ItemFilters, matchesFilters } from "@/lib/filters";
 import { useAgendaSaves } from "./agenda-saves";
 import { AgendaGreeting } from "./AgendaGreeting";
+import { GetStartedStack } from "./GetStarted";
+import type { GetStarted } from "@/lib/getStarted";
 import type { FeedbackAbout } from "./FeedbackDialog";
 import { ItemDetailDialog, ItemDetailView } from "./ItemDetailDialog";
 import { ItemGroupView } from "./ItemList";
@@ -48,6 +50,7 @@ export function AgendaView({
   overdueCollapsed: savedCollapsed,
   noDateCollapsed: savedNoDateCollapsed,
   noDateFoldedLists: savedFoldedLists,
+  getStarted,
   greet,
   firstName,
   onFeedback,
@@ -67,6 +70,14 @@ export function AgendaView({
   noDateCollapsed: boolean;
   /** The lists whose cards in No date the viewer keeps folded, as saved on their account. */
   noDateFoldedLists: string[];
+  /** Where the viewer is with the Get started steps, shown above the sections. */
+  /**
+   * The Get started stack above the sections, with the lists the viewer can
+   * share; absent in the landing page's preview.
+   */
+  getStarted?: Omit<React.ComponentProps<typeof GetStartedStack>, "state"> & {
+    state: GetStarted;
+  };
   /** Whether to greet: not before the viewer's timezone is known. */
   greet: boolean;
   /** The viewer's first name, for the greeting's opening line. */
@@ -369,6 +380,8 @@ export function AgendaView({
         )}
 
         <div className="min-w-0 space-y-4">
+
+        {getStarted && <GetStartedStack {...getStarted} />}
 
         {today && shown.length === 0 && (
           <p className="py-8 text-center text-sm text-neutral-400">

@@ -58,6 +58,10 @@ export const users = sqliteTable("users", {
   // How they like the Agenda greeting (lib/greetingPrefs.ts), read leniently
   // so its shape can change without a migration. null = the defaults.
   greetingPrefs: text("greeting_prefs", { mode: "json" }),
+  // The Agenda's Get started stack as they left it (core/getStarted.ts): the
+  // cards sent to the back with Later, and whether it's collapsed. Read
+  // leniently, like greeting_prefs. null = untouched.
+  getStarted: text("get_started", { mode: "json" }),
   // Where the account falls in signup order: the instance's Nth user, kept
   // for good so it never shifts. The `users_number` trigger (migration 0051)
   // sets it in the same statement as the insert, so concurrent signups can't

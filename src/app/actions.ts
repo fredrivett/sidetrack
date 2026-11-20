@@ -118,6 +118,13 @@ import {
   setSpaceMemberRole as setSpaceMemberRoleCore,
   updateSpace as updateSpaceCore,
 } from "@/core/spaces";
+import type { GetStartedStep } from "@/lib/getStarted";
+import {
+  recordInstall as recordInstallCore,
+  sendGetStartedToBack as sendGetStartedToBackCore,
+  setGetStartedCollapsed as setGetStartedCollapsedCore,
+} from "@/core/getStarted";
+import type { InstallPlatform } from "@/core/events";
 import {
   AVATAR_MAX_BYTES,
   setOverdueCollapsed as setOverdueCollapsedCore,
@@ -720,6 +727,33 @@ export async function setOverdueCollapsedAction(collapsed: boolean) {
   const userId = await requireUserId();
   const { db } = getDb();
   setOverdueCollapsedCore(db, userId, collapsed);
+  refresh();
+}
+
+/** Send a card in the Agenda's Get started stack to the back, for the signed-in user. */
+export async function sendGetStartedToBackAction(step: GetStartedStep) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  sendGetStartedToBackCore(db, userId, step);
+  refresh();
+}
+
+/** Collapse or open the Agenda's Get started stack, for the signed-in user. */
+export async function setGetStartedCollapsedAction(collapsed: boolean) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  setGetStartedCollapsedCore(db, userId, collapsed);
+  refresh();
+}
+
+/**
+ * The app is open in its own window on this platform, or the user says
+ * they've installed it there. A no-op once recorded.
+ */
+export async function recordInstallAction(platform: InstallPlatform) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  recordInstallCore(db, userId, platform, SOURCE);
   refresh();
 }
 

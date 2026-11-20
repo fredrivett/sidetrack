@@ -307,6 +307,9 @@ export type AgentWork =
       reason: string | null;
     } & ItemAt);
 
+/** Where the app can be installed as its own app: iPhone or iPad, or a Mac. */
+export type InstallPlatform = "ios" | "macos";
+
 /** Account-level changes: no list, so only their actor reads them. */
 export type AccountEvent =
   | { type: "api_key.created" | "api_key.revoked"; keyId: string; name: string; prefix: string }
@@ -320,6 +323,8 @@ export type AccountEvent =
   | { type: "profile.username"; userId: string; from: string; to: string }
   /** `image` null: cleared. */
   | { type: "profile.avatar"; userId: string; image: string | null; uploaded?: true }
+  /** The app first opened in its own window on this platform (getStarted.ts). */
+  | { type: "profile.installed"; userId: string; platform: InstallPlatform }
   /** Written by the audit_password_update trigger (migration 0045), not core. */
   | { type: "profile.password"; userId: string; viaReset: boolean };
 
@@ -478,6 +483,8 @@ export function auditColumns(event: ChangeEvent): {
       return account("update", "profile", event.userId);
     case "profile.avatar":
       return account(event.image ? "update" : "delete", "profile", event.userId);
+    case "profile.installed":
+      return account("create", "profile", event.userId);
   }
 }
 
