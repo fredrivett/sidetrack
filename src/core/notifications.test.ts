@@ -83,7 +83,10 @@ beforeEach(() => {
   let t = Date.now();
   vi.spyOn(Date, "now").mockImplementation(() => ++t);
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 
 describe("notifications", () => {
   it("tells newly assigned people, never the person assigning", () => {
@@ -268,6 +271,10 @@ describe("notifications", () => {
   });
 
   it("reminds assignees of what's due each morning, once, and the morning after if it's still open", async () => {
+    // Before that morning's reminders: the items are made, then reminded of,
+    // whatever the real clock says.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 10, 20, 6));
     const { db, fred, alice, listId } = seed();
     subscribe(db, alice);
     await deliverNotifications(db, due());
