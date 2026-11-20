@@ -146,4 +146,6 @@ it("keeps every change in the page", async () => {
   expect(toast.error).not.toHaveBeenCalled();
   expect(router.push).not.toHaveBeenCalled();
   expect(router.replace).not.toHaveBeenCalled();
-});
+  // One long walk through the whole page: over 4s alone, so the default 5s
+  // isn't enough when the full suite shares the machine.
+}, 15_000);
