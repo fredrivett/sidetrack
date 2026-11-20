@@ -118,13 +118,12 @@ import {
   setSpaceMemberRole as setSpaceMemberRoleCore,
   updateSpace as updateSpaceCore,
 } from "@/core/spaces";
-import type { GetStartedStep } from "@/lib/getStarted";
+import type { GetStartedStep, InstallPlatform } from "@/lib/getStarted";
 import {
   recordInstall as recordInstallCore,
   sendGetStartedToBack as sendGetStartedToBackCore,
   setGetStartedCollapsed as setGetStartedCollapsedCore,
 } from "@/core/getStarted";
-import type { InstallPlatform } from "@/core/events";
 import {
   AVATAR_MAX_BYTES,
   setOverdueCollapsed as setOverdueCollapsedCore,

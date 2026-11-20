@@ -2,7 +2,7 @@
 // device, such as how to install the app. Browser-only: call these from
 // effects or event handlers, never while rendering on the server.
 
-import type { InstallPlatform } from "../core/events";
+import type { InstallPlatform } from "./getStarted";
 
 /** An iPhone, iPad or iPod, including iPadOS, which reports itself as a Mac. */
 export function isIos() {
@@ -21,13 +21,22 @@ export function isInstalled() {
   );
 }
 
-/** Which installable platform this device is, or null for any other. */
-export function installPlatform(): InstallPlatform | null {
-  if (isIos()) return "ios";
-  return /Macintosh/.test(navigator.userAgent) ? "macos" : null;
+/** An Android phone or tablet. */
+export function isAndroid() {
+  return /Android/.test(navigator.userAgent);
 }
 
-/** Whether this is Safari, whose Mac menu has File → Add to Dock. */
+/** Whether this device installs the app to a Home Screen (phone) or a computer. */
+export function installPlatform(): InstallPlatform {
+  return isIos() || isAndroid() ? "phone" : "computer";
+}
+
+/** Whether this is Firefox, which can't install the app on a computer. */
+export function isFirefox() {
+  return /Firefox\//.test(navigator.userAgent);
+}
+
+/** Whether this is Safari: on a Mac, File → Add to Dock; on iOS, Share → Add to Home Screen. */
 export function isSafari() {
   const ua = navigator.userAgent;
   return /Safari\//.test(ua) && !/Chrome\/|Chromium\/|Edg\/|Firefox\//.test(ua);

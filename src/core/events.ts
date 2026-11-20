@@ -1,4 +1,5 @@
 import type { ItemSort } from "../lib/itemSorts";
+import type { InstallPlatform } from "../lib/getStarted";
 import type { Repeat } from "../lib/repeat";
 import type { AuditAction, AuditEntity, ListRole, ProjectStatus, SpaceColor, SpaceRole } from "./schema";
 
@@ -306,9 +307,6 @@ export type AgentWork =
       agent: string;
       reason: string | null;
     } & ItemAt);
-
-/** Where the app can be installed as its own app: iPhone or iPad, or a Mac. */
-export type InstallPlatform = "ios" | "macos";
 
 /** Account-level changes: no list, so only their actor reads them. */
 export type AccountEvent =

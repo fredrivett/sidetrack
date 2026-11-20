@@ -2,8 +2,16 @@
 // the user is with them (core/getStarted.ts) and the stack that shows them.
 
 /** The steps in the order they're offered. `agent` is optional. */
-export const GET_STARTED_STEPS = ["lists", "iphone", "mac", "share", "agent"] as const;
+export const GET_STARTED_STEPS = ["lists", "phone", "computer", "share", "agent"] as const;
 export type GetStartedStep = (typeof GET_STARTED_STEPS)[number];
+
+/**
+ * Where the app can be installed as its own app: a phone or tablet's Home
+ * Screen, or a computer (Add to Dock, or Install in Chrome or Edge). Each is
+ * also the step installing there ticks.
+ */
+export const INSTALL_PLATFORMS = ["phone", "computer"] as const;
+export type InstallPlatform = (typeof INSTALL_PLATFORMS)[number];
 
 export interface GetStarted {
   /** Which steps are done. */

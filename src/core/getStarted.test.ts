@@ -42,7 +42,7 @@ describe("getGetStarted", () => {
     const { db, fred } = setup();
     const state = getGetStarted(db, fred);
     expect(Object.values(state.done).some(Boolean)).toBe(false);
-    expect(state.queue).toEqual(["lists", "iphone", "mac", "share", "agent"]);
+    expect(state.queue).toEqual(["lists", "phone", "computer", "share", "agent"]);
     expect(state.collapsed).toBe(false);
   });
 
@@ -88,60 +88,62 @@ describe("getGetStarted", () => {
     expect(getGetStarted(db, fred).done.agent).toBe(true);
   });
 
-  it("counts an iPhone or iPad push device as installed on iOS, not other devices", () => {
+  it("counts an iPhone or iPad push device as on the Home Screen, not an Android or desktop one", () => {
     const { db, fred } = setup();
     addPushDevice(db, fred, "Chrome on Mac");
-    expect(getGetStarted(db, fred).done.iphone).toBe(false);
-    expect(getGetStarted(db, fred).done.mac).toBe(false);
+    // Android sends push to the browser, installed or not.
+    addPushDevice(db, fred, "Chrome on Android");
+    expect(getGetStarted(db, fred).done.phone).toBe(false);
+    expect(getGetStarted(db, fred).done.computer).toBe(false);
     addPushDevice(db, fred, "iPad");
-    expect(getGetStarted(db, fred).done.iphone).toBe(true);
+    expect(getGetStarted(db, fred).done.phone).toBe(true);
   });
 });
 
 describe("recordInstall", () => {
   it("ticks only its platform and records it once", () => {
     const { db, fred, alice } = setup();
-    recordInstall(db, fred, "macos", "web");
-    recordInstall(db, fred, "macos", "web");
+    recordInstall(db, fred, "computer", "web");
+    recordInstall(db, fred, "computer", "web");
     const state = getGetStarted(db, fred);
-    expect(state.done.mac).toBe(true);
-    expect(state.done.iphone).toBe(false);
-    expect(getGetStarted(db, alice).done.mac).toBe(false);
+    expect(state.done.computer).toBe(true);
+    expect(state.done.phone).toBe(false);
+    expect(getGetStarted(db, alice).done.computer).toBe(false);
     const rows = listAudit(db, fred).filter((e) => e.event?.type === "profile.installed");
     expect(rows).toHaveLength(1);
-    expect(rows[0].detail).toBe("added Sidetrack to a Mac's Dock");
+    expect(rows[0].detail).toBe("installed Sidetrack on a computer");
 
-    recordInstall(db, fred, "ios", "web");
-    expect(getGetStarted(db, fred).done.iphone).toBe(true);
+    recordInstall(db, fred, "phone", "web");
+    expect(getGetStarted(db, fred).done.phone).toBe(true);
   });
 
   it("rejects anything but iOS and macOS", () => {
     const { db, fred } = setup();
-    expect(() => recordInstall(db, fred, "windows" as "ios", "web")).toThrow();
+    expect(() => recordInstall(db, fred, "windows" as "phone", "web")).toThrow();
   });
 });
 
 describe("the stack's view state", () => {
   it("puts cards sent to the back after the rest, in the order they went", () => {
     const { db, fred } = setup();
-    sendGetStartedToBack(db, fred, "iphone");
+    sendGetStartedToBack(db, fred, "phone");
     sendGetStartedToBack(db, fred, "lists");
-    expect(getGetStarted(db, fred).queue).toEqual(["mac", "share", "agent", "iphone", "lists"]);
+    expect(getGetStarted(db, fred).queue).toEqual(["computer", "share", "agent", "phone", "lists"]);
     // Sending one back again moves it behind the other.
-    sendGetStartedToBack(db, fred, "iphone");
-    expect(getGetStarted(db, fred).queue).toEqual(["mac", "share", "agent", "lists", "iphone"]);
+    sendGetStartedToBack(db, fred, "phone");
+    expect(getGetStarted(db, fred).queue).toEqual(["computer", "share", "agent", "lists", "phone"]);
     // A card that's done leaves the queue wherever it was.
-    recordInstall(db, fred, "ios", "web");
-    expect(getGetStarted(db, fred).queue).toEqual(["mac", "share", "agent", "lists"]);
+    recordInstall(db, fred, "phone", "web");
+    expect(getGetStarted(db, fred).queue).toEqual(["computer", "share", "agent", "lists"]);
   });
 
   it("keeps collapsed separately from the order", () => {
     const { db, fred } = setup();
-    sendGetStartedToBack(db, fred, "mac");
+    sendGetStartedToBack(db, fred, "computer");
     setGetStartedCollapsed(db, fred, true);
     const state = getGetStarted(db, fred);
     expect(state.collapsed).toBe(true);
-    expect(state.queue.at(-1)).toBe("mac");
+    expect(state.queue.at(-1)).toBe("computer");
   });
 
   it("reads a damaged saved state as untouched", () => {
@@ -151,7 +153,7 @@ describe("the stack's view state", () => {
       .where(eq(users.id, fred))
       .run();
     const state = getGetStarted(db, fred);
-    expect(state.queue).toEqual(["lists", "iphone", "mac", "agent", "share"]);
+    expect(state.queue).toEqual(["lists", "phone", "computer", "agent", "share"]);
     expect(state.collapsed).toBe(false);
   });
 });

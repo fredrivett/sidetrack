@@ -25,26 +25,28 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { InstallPlatform } from "@/core/events";
-import { GET_STARTED_STEPS, type GetStarted, type GetStartedStep } from "@/lib/getStarted";
-import { installPlatform, isInstalled, isSafari } from "@/lib/device";
+import {
+  GET_STARTED_STEPS,
+  type GetStarted,
+  type GetStartedStep,
+  type InstallPlatform,
+} from "@/lib/getStarted";
+import { installPlatform, isAndroid, isFirefox, isInstalled, isIos, isSafari } from "@/lib/device";
 import { runAction } from "./run-action";
 
 const TITLES: Record<GetStartedStep, string> = {
   lists: "Set up your lists",
-  iphone: "Add Sidetrack to your Home Screen",
-  mac: "Add Sidetrack to your Dock",
+  phone: "Add Sidetrack to your Home Screen",
+  computer: "Install Sidetrack on your computer",
   share: "Share a list with someone",
   agent: "Let an agent work on your lists",
 };
 
-/** The install step each platform ticks. */
-const INSTALL_STEP: Record<InstallPlatform, GetStartedStep> = { ios: "iphone", macos: "mac" };
-
 /** This device, once the browser has said; null while rendering on the server. */
 interface Device {
-  platform: InstallPlatform | null;
-  safari: boolean;
+  platform: InstallPlatform;
+  os: "ios" | "android" | "mac" | "other";
+  browser: "safari" | "firefox" | "other";
 }
 
 const noSubscribe = () => () => {};
@@ -53,23 +55,28 @@ function useDevice(): Device | null {
   // A string snapshot, so it's stable between renders; "" on the server.
   const key = useSyncExternalStore(
     noSubscribe,
-    () => `${installPlatform() ?? ""}|${isSafari() ? "safari" : ""}`,
+    () =>
+      [
+        installPlatform(),
+        isIos() ? "ios" : isAndroid() ? "android" : /Macintosh/.test(navigator.userAgent) ? "mac" : "other",
+        isSafari() ? "safari" : isFirefox() ? "firefox" : "other",
+      ].join("|"),
     () => "",
   );
   if (!key) return null;
-  const [platform, safari] = key.split("|");
-  return { platform: (platform || null) as InstallPlatform | null, safari: safari === "safari" };
+  const [platform, os, browser] = key.split("|");
+  return { platform, os, browser } as Device;
 }
 
 /**
- * Tells the server when the app is open in its own window on an iPhone, iPad
- * or Mac, which ticks that install step. A background sync: silent, and only
+ * Tells the server when the app is open in its own window, on a phone or a
+ * computer, which ticks that install step. A background sync: silent, and only
  * sent while the step isn't done.
  */
 export function InstallReporter({ done }: { done: GetStarted["done"] }) {
   useEffect(() => {
     const platform = installPlatform();
-    if (!platform || done[INSTALL_STEP[platform]] || !isInstalled()) return;
+    if (done[platform] || !isInstalled()) return;
     recordInstallAction(platform).catch((error) => {
       unstable_rethrow(error);
       // Silent: it's sent again on the next launch.
@@ -158,8 +165,8 @@ export function GetStartedStack({
   const installed = (platform: InstallPlatform) =>
     start(async () => {
       setShowCode(false);
-      showQueue({ step: INSTALL_STEP[platform], to: "done" });
-      posthog.capture("get_started_done", { step: INSTALL_STEP[platform], how: "button" });
+      showQueue({ step: platform, to: "done" });
+      posthog.capture("get_started_done", { step: platform, how: "button" });
       await runAction(recordInstallAction(platform), "save that");
     });
 
@@ -181,44 +188,59 @@ export function GetStartedStack({
           </Button>
         );
         break;
-      case "iphone":
-        if (device?.platform === "ios") {
+      case "phone": {
+        const notifications = (
+          <>
+            Then turn on notifications in{" "}
+            <Link href="/settings/notifications" className="underline underline-offset-2">
+              Settings
+            </Link>
+            .
+          </>
+        );
+        if (device?.os === "ios") {
           why = (
             <>
               So it&apos;s a tap away, and can nudge you when something&apos;s due. In Safari, tap
-              Share, then Add to Home Screen, and open Sidetrack from there. Then turn on
-              notifications in{" "}
-              <Link href="/settings/notifications" className="underline underline-offset-2">
-                Settings
-              </Link>
-              .
+              Share, then Add to Home Screen, and open Sidetrack from there. {notifications}
+            </>
+          );
+        } else if (device?.os === "android") {
+          why = (
+            <>
+              So it&apos;s a tap away, and can nudge you when something&apos;s due. In Chrome, tap
+              ⋮, then Add to Home screen or Install app, and open Sidetrack from there.{" "}
+              {notifications}
             </>
           );
         } else {
           why = showCode
-            ? "Scan this with your iPhone's camera. In Safari, tap Share, then Add to Home Screen, and open Sidetrack from there."
-            : "So it's a tap away, and can nudge you when something's due.";
+            ? "Scan this with your phone's camera. On an iPhone, tap Share in Safari, then Add to Home Screen. On Android, tap ⋮ in Chrome, then Add to Home screen."
+            : "So it's a tap away on your phone, and can nudge you when something's due.";
         }
         actions =
-          device?.platform !== "ios" && !showCode ? (
+          device?.platform === "computer" && !showCode ? (
             <Button size="sm" onClick={() => setShowCode(true)}>
               Show code
             </Button>
           ) : (
-            <Button size="sm" onClick={() => installed("ios")}>
+            <Button size="sm" onClick={() => installed("phone")}>
               I&apos;ve done it
             </Button>
           );
         break;
-      case "mac":
+      }
+      case "computer":
         why =
-          device?.platform === "macos"
-            ? device.safari
+          device?.platform === "phone" || !device
+            ? "Next time you're at your computer, open Sidetrack in Chrome or Edge and choose Install, or in Safari on a Mac choose File → Add to Dock."
+            : device.browser === "safari"
               ? "It opens in its own window, one click away. In Safari's menu bar, choose File → Add to Dock."
-              : "It opens in its own window, one click away. Choose Install in the address bar or the browser's menu, or use Safari's File → Add to Dock."
-            : "Next time you're on your Mac, open Sidetrack in Safari and choose File → Add to Dock.";
+              : device.browser === "firefox"
+                ? `Firefox can't install web apps. Open Sidetrack in Chrome or Edge and choose Install${device.os === "mac" ? ", or in Safari choose File → Add to Dock" : ""}.`
+                : "It opens in its own window, one click away. Choose Install in the address bar, or Install Sidetrack in the browser's menu.";
         actions = (
-          <Button size="sm" onClick={() => installed("macos")}>
+          <Button size="sm" onClick={() => installed("computer")}>
             I&apos;ve done it
           </Button>
         );
@@ -264,7 +286,7 @@ export function GetStartedStack({
           )}
         </div>
         <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{why}</p>
-        {step === "iphone" && showCode && device?.platform !== "ios" && (
+        {step === "phone" && showCode && device?.platform === "computer" && (
           <div className="mt-3">
             <QrCode text={window.location.origin} />
           </div>

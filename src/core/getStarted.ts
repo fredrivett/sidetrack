@@ -11,11 +11,12 @@ import { apiKeys, users } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
 import { announceChange } from "./changes";
 import type { Db } from "./db";
-import type { InstallPlatform } from "./events";
 import {
   GET_STARTED_STEPS,
   type GetStarted,
   type GetStartedStep,
+  INSTALL_PLATFORMS,
+  type InstallPlatform,
 } from "../lib/getStarted";
 import { auditLog, projects, pushSubscriptions } from "./schema";
 
@@ -86,7 +87,8 @@ export function getGetStarted(db: Db, userId: string): GetStarted {
     db.select({ n: count() }).from(projects).where(eq(projects.userId, userId)).get()?.n ?? 0;
   const installed = installedPlatforms(db, userId);
   // iOS only sends web push to an installed app, so a push subscription from
-  // an iPhone or iPad means it's installed there.
+  // an iPhone or iPad means it's on the Home Screen there. (Android sends it
+  // to the browser too, so its push devices prove nothing.)
   const iosPush =
     db
       .select({ endpoint: pushSubscriptions.endpoint })
@@ -117,8 +119,8 @@ export function getGetStarted(db: Db, userId: string): GetStarted {
 
   const done: Record<GetStartedStep, boolean> = {
     lists: lists >= GET_STARTED_MIN_LISTS,
-    iphone: installed.has("ios") || iosPush,
-    mac: installed.has("macos"),
+    phone: installed.has("phone") || iosPush,
+    computer: installed.has("computer"),
     // Counts once the invite is sent, whether or not it's accepted.
     share: hasEvent(db, userId, ["member.invited", "space.member.invited"]),
     agent,
@@ -142,7 +144,7 @@ export function recordInstall(
   platform: InstallPlatform,
   source: AuditOrigin,
 ): void {
-  if (platform !== "ios" && platform !== "macos") throw new Error("Not a platform");
+  if (!(INSTALL_PLATFORMS as readonly string[]).includes(platform)) throw new Error("Not a platform");
   // Immediate (write-locked), so two launches at once can't both record it.
   db.transaction(
     (tx) => {
