@@ -71,6 +71,7 @@ import { RepeatBadge } from "./RepeatBadge";
 import { useToday } from "./use-day-start";
 import { toast } from "sonner";
 import {
+  NAV_KEYS,
   rowAfterDelete,
   SelectedItemContext,
   useItemShortcuts,
@@ -318,6 +319,7 @@ function ItemRowView({
       .join(". "),
     disabled: pending,
     onPointerDown: (e: React.PointerEvent) => e.stopPropagation(),
+    onKeyDown: leaveArrowsToBoard,
     className:
       assigned.length || agents.length
         ? "flex rounded-full outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-400 disabled:opacity-50"
@@ -711,6 +713,21 @@ function ItemRowView({
       </ContextMenuContent>
     </ContextMenu>
   );
+}
+
+/**
+ * The board's movement keys move its selection, even from the assignees'
+ * button, which keeps focus after its menu closes: Base UI would open the
+ * menu again on an arrow, as well as the board moving on. Letting go of
+ * focus leaves the next key to the board too. Enter and Space still open it.
+ */
+function leaveArrowsToBoard(
+  e: React.KeyboardEvent<HTMLElement> & { preventBaseUIHandler?: () => void },
+) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  if (!NAV_KEYS[e.key.length === 1 ? e.key.toLowerCase() : e.key]) return;
+  e.preventBaseUIHandler?.();
+  e.currentTarget.blur();
 }
 
 /**
