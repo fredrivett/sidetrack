@@ -31,6 +31,7 @@ import {
   type SpaceRole,
   notificationSettings,
   notifications,
+  projectMembers,
   projects,
   spaceMembers,
   spaces,
@@ -692,6 +693,29 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
     ).map((sp) => [sp.id, sp.name]),
   );
 
+  // Invites still standing, pending or taken up: one revoked or declined (or
+  // left since) goes from everyone's inbox, the invitee's too.
+  const inviteIds = (type: "member.invited" | "space.member.invited") =>
+    events.flatMap((e) => (e.type === type ? [e.membershipId] : []));
+  const listInvites = inviteIds("member.invited");
+  const spaceInvites = inviteIds("space.member.invited");
+  const standing = new Set([
+    ...(listInvites.length
+      ? db
+          .select({ id: projectMembers.id })
+          .from(projectMembers)
+          .where(inArray(projectMembers.id, listInvites))
+          .all()
+      : []),
+    ...(spaceInvites.length
+      ? db
+          .select({ id: spaceMembers.id })
+          .from(spaceMembers)
+          .where(inArray(spaceMembers.id, spaceInvites))
+          .all()
+      : []),
+  ].map((m) => m.id));
+
   return rows.flatMap((r): NotificationView[] => {
     // A due reminder: the item as it is now, while they can open it.
     if (r.reason === "due-today" || r.reason === "overdue") {
@@ -813,6 +837,12 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
             },
           ];
       }
+    }
+    if (
+      (event.type === "member.invited" || event.type === "space.member.invited") &&
+      !standing.has(event.membershipId)
+    ) {
+      return [];
     }
     // What someone joined or was invited as, when it's less than editing.
     const asRole = (role: ListRole | SpaceRole | undefined): Part[] =>

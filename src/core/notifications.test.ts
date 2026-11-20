@@ -435,11 +435,15 @@ describe("notifications", () => {
     // A list in the Space: its commenters hear of a list invite; Jo, who
     // only views it through the Space, doesn't.
     setProjectSpace(db, fred, listId, space.id, "web");
-    createTestUser(db, { username: "kim", name: "Kim" });
+    const kimId = createTestUser(db, { username: "kim", name: "Kim" });
     for (const u of [bob, jo]) markNotificationsRead(db, u);
     inviteMember(db, fred, listId, "kim", "web");
     expect(unread(db, bob)).toEqual(['Fred invited @kim to "Home"']);
     expect(heard(jo)).toEqual([]);
+    // A revoked invite goes from every inbox, the invitee's too.
+    removeMember(db, fred, listId, kimId, "web");
+    expect(unread(db, bob)).toEqual([]);
+    expect(listNotifications(db, kimId).map((n) => plainText(n.parts))).toEqual([]);
     // Once out of the Space, Bob no longer sees what happened in it.
     removeSpaceMember(db, fred, space.id, bob, "web");
     expect(unread(db, bob).filter((n) => n.includes("Family"))).toEqual([]);
