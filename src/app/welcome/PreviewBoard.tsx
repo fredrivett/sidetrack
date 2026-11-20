@@ -2,8 +2,12 @@
 
 import { CircleCheck, History, SquareKanban, Sunrise } from "lucide-react";
 import { useMemo, useState } from "react";
+import type { Greeting } from "@/core/agendaGreeting";
 import type { AssigneeView } from "@/core/members";
 import type { AgentSession, Item, Label } from "@/core/schema";
+import { type AgendaSaves, AgendaSavesContext } from "@/components/agenda-saves";
+import { helloNow } from "@/components/AgendaGreeting";
+import { AgendaView } from "@/components/AgendaView";
 import { AgentSessionsProvider } from "@/components/agent-sessions";
 import { BoardHeader, BoardRail, ColumnCard } from "@/components/BoardLayout";
 import { FilterMenu } from "@/components/FilterMenu";
@@ -24,14 +28,16 @@ import {
 import { UserAvatar } from "@/components/UserAvatar";
 import { type ItemFilters, matchesFilters, NO_FILTERS, shownInGroups } from "@/lib/filters";
 import { nestItems } from "@/lib/itemTree";
-import { addDays, weekSpan } from "@/lib/time";
+import { addDays, weekday, weekSpan } from "@/lib/time";
 
-// The landing page's board: the app's own trays, columns and item rows, on
-// made-up lists kept in this component's state. Ticking, assigning, due dates,
-// dragging and folding checklists all work, through local versions of the
-// board's saves (ItemChangesContext, ItemSavesContext); nothing is sent
-// anywhere, and a reload starts it over. Opening an item's dialog, which
-// loads from the server, does nothing here.
+// The landing page's board: the app's own Brief, trays, columns and item
+// rows, on made-up lists kept in this component's state. It opens on the
+// Brief, whose greeting is written here from the lists (previewGreeting), so
+// it keeps up as they change. Ticking, assigning, due dates, dragging and
+// folding checklists and sections all work, through local versions of the
+// board's saves (ItemChangesContext, ItemSavesContext, AgendaSavesContext);
+// nothing is sent anywhere, and a reload starts it over. Opening an item's
+// dialog, which loads from the server, does nothing here.
 
 const noop = () => {};
 
@@ -61,7 +67,7 @@ type PreviewList = {
 // Each list's labels with their emoji, which the rows read from LabelsContext.
 const LABELS: Record<string, Label[]> = Object.fromEntries(
   Object.entries({
-    syn: { DSP: "🎚️", UI: "🎨", Bug: "🐛" },
+    lch: { Marketing: "✍️", Bug: "🐛", Infra: "⚙️" },
     cho: { Garden: "🌱", Cleaning: "🧽" },
     fix: { Heating: "🔥", Plumbing: "💧", Roof: "🏠" },
   }).map(([projectId, byName]) => [
@@ -78,7 +84,7 @@ const LABELS: Record<string, Label[]> = Object.fromEntries(
 );
 
 const PERSONAL: PreviewList[] = [
-  { id: "syn", name: "Synth plugin", prefix: "SYN", icon: "🎛️", assignees: [FRED] },
+  { id: "lch", name: "Launch", prefix: "LCH", icon: "🚀", assignees: [FRED] },
 ];
 const HOME: PreviewList[] = [
   { id: "cho", name: "Chores", prefix: "CHO", icon: "🧺", assignees: [FRED, SAM, JO] },
@@ -124,20 +130,31 @@ function demo(today: string, now: number) {
   const hoursAgo = (h: number) => now - h * 3_600_000;
   const thisWeek = weekSpan(today, 0, "week");
 
-  add("syn", 14, "Fix zipper noise on filter cutoff", {
-    labels: ["DSP", "Bug"],
+  // Today's one thing, and one already done today.
+  add("lch", 7, "Write the launch post", {
+    labels: ["Marketing"],
     assigneeIds: [VIEWER],
+    dueDate: today,
   });
-  const presets = add("syn", 9, "Preset browser", {
-    labels: ["UI"],
+  add("lch", 11, "Set up a waitlist", {
+    labels: ["Infra"],
+    assigneeIds: [VIEWER],
+    dueDate: today,
+    completedAt: hoursAgo(1),
+  });
+  const demoVideo = add("lch", 9, "Record the demo video", {
+    labels: ["Marketing"],
     assigneeIds: [VIEWER],
     dueDate: addDays(today, 3),
   });
-  add("syn", 10, "Search by name", { parentId: presets, completedAt: hoursAgo(20) });
-  add("syn", 15, "Favourites", { parentId: presets });
-  add("syn", 16, "Tag presets", { parentId: presets });
-  add("syn", 12, "Write the v0.3 changelog", { ...thisWeek });
-  add("syn", 11, "Port to JUCE 8", { completedAt: hoursAgo(1) });
+  add("lch", 10, "Write the script", { parentId: demoVideo, completedAt: hoursAgo(20) });
+  add("lch", 15, "Record the screen", { parentId: demoVideo });
+  add("lch", 16, "Edit and add captions", { parentId: demoVideo });
+  add("lch", 12, "Fix signup email going to spam", {
+    labels: ["Bug", "Infra"],
+    assigneeIds: [VIEWER],
+  });
+  add("lch", 14, "Submit to Product Hunt", { labels: ["Marketing"], ...thisWeek });
 
   add("cho", 3, "Water the plants", {
     assigneeIds: ["jo"],
@@ -148,7 +165,7 @@ function demo(today: string, now: number) {
     completedAt: hoursAgo(3),
   });
   add("cho", 5, "Take the bins out", {
-    assigneeIds: ["sam"],
+    assigneeIds: [VIEWER],
     dueDate: addDays(today, 1),
     repeatEvery: 1,
     repeatUnit: "week",
@@ -191,8 +208,8 @@ function demo(today: string, now: number) {
   // One agent working now, one gone quiet (idle after 15 minutes), and one
   // on the house's roof, both on the item and on its own sub-item.
   const sessions = [
-    agentSession("syn-14", "Amp", now - 60_000),
-    agentSession("syn-12", "Claude", hoursAgo(2)),
+    agentSession("lch-12", "Amp", now - 60_000),
+    agentSession("lch-14", "Claude", hoursAgo(2)),
     agentSession("fix-11", "Claude", now - 4 * 60_000),
     agentSession("fix-12", "Claude", now - 4 * 60_000),
   ];
@@ -210,6 +227,59 @@ const PEOPLE = [FRED, JO, SAM];
 const LABEL_CHOICES = Object.values(LABELS)
   .flat()
   .sort((a, b) => a.name.localeCompare(b.name));
+
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/**
+ * The Brief's greeting for the sample lists as they stand now, as the
+ * built-in templates would put it: what's on today, what slipped, what's
+ * tomorrow and what the agents have in hand, from the viewer's own open
+ * items. Written again as the visitor ticks, reassigns or redates, so it
+ * never names something already done.
+ */
+function previewGreeting(items: Item[], sessions: AgentSession[], today: string): Greeting {
+  const mine = items.filter(
+    (i) => i.parentId === null && i.completedAt === null && i.assigneeIds.includes(VIEWER),
+  );
+  const titles: Record<string, string> = {};
+  const item = (i: Item) => {
+    titles[i.id] = i.title;
+    return `{{item:${i.id}}}`;
+  };
+  // The first two, by name: "A", or "A and B".
+  const two = (list: Item[]) => list.slice(0, 2).map(item).join(" and ");
+  const sentences: string[] = [];
+  const dueToday = mine.filter((i) => i.dueDate === today && !i.dueFrom);
+  if (dueToday.length === 1) sentences.push(`${two(dueToday)} is the one for today.`);
+  else if (dueToday.length > 1) sentences.push(`${two(dueToday)} are on for today.`);
+  const late = mine.filter((i) => i.dueDate !== null && i.dueDate < today);
+  if (late.length > 0) {
+    sentences.push(
+      `${two(late)} slipped past ${late.length === 1 ? "its day" : "their days"}, so ${
+        sentences.length ? "fit it in if you can" : "that's a good place to start"
+      }.`,
+    );
+  }
+  const tomorrow = mine.filter((i) => i.dueDate === addDays(today, 1) && !i.dueFrom);
+  if (tomorrow.length > 0) {
+    sentences.push(`${two(tomorrow)} ${tomorrow.length === 1 ? "is" : "are"} due tomorrow.`);
+  }
+  const agents = mine.flatMap((i) => {
+    const s = sessions.find((s) => s.itemId === i.id && s.finishedAt === null);
+    return s ? [`${s.agentName} is on ${item(i)}`] : [];
+  });
+  if (agents.length > 0) sentences.push(`${agents.slice(0, 2).join(", and ")}.`);
+  if (sentences.length === 0) {
+    sentences.push(`Nothing pressing. Enjoy the rest of your ${WEEKDAYS[weekday(today)]}.`);
+  }
+  return {
+    hello: helloNow("Fred"),
+    text: sentences.join(" "),
+    titles,
+    others: [],
+    written: false,
+  };
+}
 
 /** One of the viewer's agents at work on an item, last heard from then. */
 function agentSession(itemId: string, agentName: string, lastActiveAt: number): AgentSession {
@@ -234,6 +304,13 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
   const [sessions, setSessions] = useState(initial.sessions);
   const [collapsedTrays, setCollapsedTrays] = useState<ReadonlySet<string>>(new Set());
   const [filters, setFilters] = useState(NO_FILTERS);
+  const [view, setView] = useState<"brief" | "board">("brief");
+  // The Brief's folds, kept here as the board keeps them on the account.
+  const [folds, setFolds] = useState({
+    overdue: false,
+    noDate: false,
+    lists: [] as string[],
+  });
 
   // Finished work needs no agent, as on the server: completing an item ends
   // the sessions on it, and on the sub-items and parent it completes with it.
@@ -312,6 +389,19 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
     };
   }, []);
 
+  const agendaSaves = useMemo<AgendaSaves>(
+    () => ({
+      setOverdueCollapsed: async (overdue) => setFolds((f) => ({ ...f, overdue })),
+      setNoDateCollapsed: async (noDate) => setFolds((f) => ({ ...f, noDate })),
+      setNoDateListFolded: async (id, folded) =>
+        setFolds((f) => ({
+          ...f,
+          lists: folded ? [...f.lists.filter((l) => l !== id), id] : f.lists.filter((l) => l !== id),
+        })),
+    }),
+    [],
+  );
+
   const toggleTray = (id: string, collapsed: boolean) =>
     setCollapsedTrays((trays) => {
       const next = new Set(trays);
@@ -343,11 +433,11 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
           <div className="flex h-[36rem] flex-col overflow-hidden rounded-2xl [&_section]:[--column-width:calc(100vw-82px)] border border-neutral-200 bg-neutral-50 text-left shadow-xl shadow-neutral-900/5 dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-black/40">
             <BoardHeader
               nav={
-                // The board's view switch (Kanban), showing the Board; the
-                // preview has no Brief or Done to switch to, so its underline
-                // stays put: on the header's bottom border, 8px of padding
-                // and the 1px border below the tabs, which stretch to the
-                // header's height when its right side wraps to two rows.
+                // The board's view switch (Kanban), between the Brief and
+                // the Board; the preview has no Done to switch to. The
+                // underline sits on the header's bottom border: 8px of
+                // padding and the 1px border below the tabs, which stretch to
+                // the header's height when its right side wraps to two rows.
                 <div className="flex min-h-7 items-stretch self-stretch text-[13px] font-medium max-[360px]:text-xs touch:min-h-9 touch:text-sm touch:max-[360px]:text-xs">
                   {(
                     [
@@ -355,13 +445,21 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
                       ["Board", SquareKanban],
                       ["Done", CircleCheck],
                     ] as const
-                  ).map(([label, Icon]) => (
-                    <span
+                  ).map(([label, Icon]) => {
+                    const to = label === "Done" ? null : (label.toLowerCase() as "brief" | "board");
+                    const Tab = to ? "button" : "span";
+                    return (
+                    <Tab
                       key={label}
-                      className={`relative flex items-center gap-1.5 whitespace-nowrap px-2 sm:px-2.5 [&_svg]:size-3.5 touch:[&_svg]:size-4 ${
-                        label === "Board"
+                      {...(to && {
+                        type: "button" as const,
+                        onClick: () => setView(to),
+                        "aria-pressed": view === to,
+                      })}
+                      className={`relative flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 outline-none focus-visible:ring-2 focus-visible:ring-neutral-300 sm:px-2.5 [&_svg]:size-3.5 touch:[&_svg]:size-4 ${
+                        view === to
                           ? "text-neutral-900 after:absolute after:inset-x-0 after:-bottom-[9px] after:h-0.5 after:rounded-full after:bg-neutral-900 dark:text-neutral-100 dark:after:bg-neutral-100"
-                          : "text-neutral-500 dark:text-neutral-400"
+                          : `text-neutral-500 dark:text-neutral-400 ${to ? "hover:text-neutral-900 dark:hover:text-neutral-100" : ""}`
                       }`}
                     >
                       <Icon aria-hidden />
@@ -372,8 +470,9 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
                       >
                         {label}
                       </span>
-                    </span>
-                  ))}
+                    </Tab>
+                    );
+                  })}
                 </div>
               }
             >
@@ -390,6 +489,34 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
               </span>
               <UserAvatar user={FRED} size={28} className="touch:size-9! touch:text-lg!" />
             </BoardHeader>
+            {view === "brief" ? (
+              <AgendaSavesContext value={agendaSaves}>
+                <AgendaView
+                  projects={[...PERSONAL, ...HOME].map((l) => ({
+                    id: l.id,
+                    name: l.name,
+                    icon: l.icon,
+                    homepageUrl: null,
+                    refPrefix: l.prefix,
+                  }))}
+                  itemsByProject={Object.fromEntries(
+                    ALL_LISTS.map((id) => [id, items.filter((i) => i.projectId === id)]),
+                  )}
+                  assigneesByProject={Object.fromEntries(
+                    [...PERSONAL, ...HOME].map((l) => [l.id, l.assignees]),
+                  )}
+                  prLinksByItem={{}}
+                  viewerId={VIEWER}
+                  overdueCollapsed={folds.overdue}
+                  noDateCollapsed={folds.noDate}
+                  noDateFoldedLists={folds.lists}
+                  greet
+                  firstName="Fred"
+                  filters={filters}
+                  preview={{ greeting: previewGreeting(items, finished, today) }}
+                />
+              </AgendaSavesContext>
+            ) : (
             <BoardRail>
               {trays.map((tray) => (
                 <SpaceTray
@@ -413,6 +540,7 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
                 </SpaceTray>
               ))}
             </BoardRail>
+            )}
           </div>
         </AgentSessionsProvider>
         </BoardDrag>

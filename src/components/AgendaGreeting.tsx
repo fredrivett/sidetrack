@@ -56,7 +56,7 @@ function Tap({
 const countdown = (s: number) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`);
 
 /** "Good morning, Fred." from the browser's clock, until the server's arrives. */
-function helloNow(firstName: string | null): string {
+export function helloNow(firstName: string | null): string {
   const hour = new Date().getHours();
   const to = firstName ? `, ${firstName}` : "";
   if (hour >= 4 && hour < 12) return `Good morning${to}.`;
@@ -105,6 +105,7 @@ export function AgendaGreeting({
   renderItem,
   onAddForToday,
   refOf,
+  greeting: fixed,
 }: {
   firstName: string | null;
   /** Items the page has, so a chip can open its item. */
@@ -120,10 +121,17 @@ export function AgendaGreeting({
   renderItem: RenderItem;
   /** The "+" by the date: New item, due today. */
   onAddForToday?: () => void;
+  /**
+   * A greeting to show instead of asking the server for one, as the landing
+   * page's preview does: never asked for again, marked read or out of date.
+   */
+  greeting?: Greeting;
 }) {
   const today = useToday();
   // Undefined while it loads; null when there's none to show.
-  const [greeting, setGreeting] = useState<Greeting | null | undefined>(undefined);
+  const [loaded, setGreeting] = useState<Greeting | null | undefined>(undefined);
+  const greeting = fixed ?? loaded;
+  const isFixed = fixed !== undefined;
   // The viewer's note for today: as each greeting brings it, then as they save it.
   const [note, setNote] = useState("");
   // Which of its dialogs is up, kept as it closes so it animates out as it was.
@@ -152,6 +160,7 @@ export function AgendaGreeting({
   };
 
   useEffect(() => {
+    if (isFixed) return;
     let live = true;
     // Background read: it never holds anything up, and a failure just
     // leaves the opening line on its own. Asking again keeps the greeting
@@ -177,7 +186,7 @@ export function AgendaGreeting({
     return () => {
       live = false;
     };
-  }, [asks]);
+  }, [asks, isFixed]);
 
   // How the items it names stand now, on the board, as the server stamps
   // them: a change (ticked off, renamed, moved, reassigned, gone) asks for
@@ -227,7 +236,7 @@ export function AgendaGreeting({
     return () => clearInterval(t);
   }, [retryAt, written]);
   useEffect(() => {
-    if (shownWith.current === null) return;
+    if (isFixed || shownWith.current === null) return;
     if (standing === shownWith.current) {
       // Changed back (an undo) before it asked: up to date again.
       const back = setTimeout(() => setChanged(false), 0);
@@ -241,9 +250,10 @@ export function AgendaGreeting({
       clearTimeout(fade);
       clearTimeout(t);
     };
-  }, [standing]);
+  }, [standing, isFixed]);
 
   useEffect(() => {
+    if (isFixed) return;
     // When it came into view; a glance of under READ_MS isn't a read (and
     // nor is React's dev-only remount).
     let shownAt = document.visibilityState === "visible" ? Date.now() : null;
@@ -260,7 +270,7 @@ export function AgendaGreeting({
       document.removeEventListener("visibilitychange", onVisibility);
       leave();
     };
-  }, []);
+  }, [isFixed]);
 
   // Only a written one goes out of date: the built-in one is always current,
   // even while the server says when to ask again.
@@ -410,14 +420,15 @@ export function AgendaGreeting({
                     </button>
                   );
                 })}
-                <Link
+                {/* Signed out, on the preview, settings would only ask to sign in. */}
+                {!isFixed && <Link
                   href="/settings/greeting"
                   aria-label="Greeting settings"
                   title="Greeting settings"
                   className="rounded-md p-1.5 text-neutral-300 outline-none hover:bg-neutral-100 hover:text-neutral-600 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:focus-visible:ring-neutral-600 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
                 >
                   <Settings className="size-3.5" />
-                </Link>
+                </Link>}
                 {greeting.trace && (
                   <button
                     type="button"
@@ -434,8 +445,9 @@ export function AgendaGreeting({
 
       {/* What they wrote about today, for the greeting to be written with:
           saved as typed, then the greeting asks to be rewritten with it.
-          Not offered when AI is off, as nothing would read it. */}
-      {greeting && !greeting.aiOff && (
+          Not offered when AI is off, as nothing would read it, nor on the
+          landing page's preview, where it can't be saved. */}
+      {greeting && !greeting.aiOff && !isFixed && (
         <div className="mt-3 flex animate-in items-baseline gap-2 fade-in duration-500">
           <NotebookPen aria-hidden className="size-3.5 shrink-0 translate-y-0.5 text-neutral-400 dark:text-neutral-500" />
           <EditableText

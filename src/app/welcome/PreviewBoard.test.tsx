@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 import { PreviewBoard } from "./PreviewBoard";
@@ -8,7 +8,8 @@ import { PreviewBoard } from "./PreviewBoard";
 // reaches the server fails for them: a toast, or a bounce to /login. Every
 // server action is a stub here that records its name, so a shared component
 // that starts saving some other way than ItemSavesContext and ItemChanges
-// fails this test with the action's name.
+// fails this test with the action's name. The Brief's greeting is written
+// in the page, so asking the server for one (a fetch) fails it too.
 const { called } = vi.hoisted(() => ({ called: [] as string[] }));
 vi.mock(
   "@/app/actions",
@@ -36,6 +37,9 @@ vi.mock("next/navigation", async (importOriginal) => ({
   useRouter: () => router,
 }));
 
+const fetched = vi.fn();
+vi.stubGlobal("fetch", fetched);
+
 beforeAll(() => {
   // A mouse, so rows open their menu on right-click.
   window.matchMedia = ((query: string) => ({
@@ -57,7 +61,10 @@ beforeAll(() => {
   };
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 /** Checked right after each change, so a leak fails naming its action. */
 const noServerCalls = () => expect(called, "server actions the preview called").toEqual([]);
@@ -67,7 +74,37 @@ const row = (title: string) =>
   screen.getByText(title).closest(".group") as HTMLElement;
 
 it("keeps every change in the page", async () => {
+  // The browser's day matches the page's, as it does for most visitors.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(Date.parse("2026-11-16T09:00:00Z"));
   render(<PreviewBoard today="2026-11-16" now={Date.parse("2026-11-16T09:00:00Z")} />);
+
+  // It opens on the Brief, whose greeting names today's item and the
+  // overdue boiler service.
+  const greeting = () => screen.getByRole("heading", { level: 2, name: /Fred\./ }).nextElementSibling as HTMLElement;
+  expect(greeting().textContent).toMatch(
+    /^Write the launch post is the one for today\. Book the boiler service slipped/,
+  );
+
+  // Fold Overdue away: it stays folded once its save settles.
+  const overdue = () => screen.getByRole("button", { name: /^Overdue/ });
+  fireEvent.click(overdue());
+  await act(async () => {});
+  noServerCalls();
+  expect(overdue().getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(overdue());
+  await act(async () => {});
+
+  // Tick the boiler service off: the greeting stops naming it.
+  const section = overdue().closest("section") as HTMLElement;
+  fireEvent.click(within(section).getByRole("checkbox"));
+  noServerCalls();
+  expect(greeting().textContent).not.toMatch(/boiler/);
+  expect(greeting().textContent).toMatch(
+    /^Write the launch post is the one for today\. Take the bins out is due tomorrow\./,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "Board" }));
 
   // Nest an item from its menu.
   fireEvent.contextMenu(row("Take the bins out"));
@@ -97,14 +134,15 @@ it("keeps every change in the page", async () => {
   expect(screen.queryByText("Email the roofers")).toBeNull();
 
   // Tick an item with an agent on it, which ends the agent's work.
-  fireEvent.click(within(row("Fix zipper noise on filter cutoff")).getByRole("checkbox"));
+  fireEvent.click(within(row("Fix signup email going to spam")).getByRole("checkbox"));
   noServerCalls();
-  const zipper = row("Fix zipper noise on filter cutoff");
-  expect(within(zipper).getByRole("checkbox").getAttribute("aria-checked")).toBe("true");
-  expect(within(zipper).getByLabelText(/Change assignees/).getAttribute("aria-label")).not.toMatch(
+  const spam = row("Fix signup email going to spam");
+  expect(within(spam).getByRole("checkbox").getAttribute("aria-checked")).toBe("true");
+  expect(within(spam).getByLabelText(/Change assignees/).getAttribute("aria-label")).not.toMatch(
     /working/,
   );
 
+  expect(fetched).not.toHaveBeenCalled();
   expect(toast.error).not.toHaveBeenCalled();
   expect(router.push).not.toHaveBeenCalled();
   expect(router.replace).not.toHaveBeenCalled();
