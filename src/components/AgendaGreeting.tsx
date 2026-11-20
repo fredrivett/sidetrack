@@ -1,12 +1,13 @@
 "use client";
 
-import { NotebookPen, Plus, RefreshCw, Settings, ThumbsDown, ThumbsUp } from "lucide-react";
+import { NotebookPen, Plus, RefreshCw, Settings, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { setAgendaReadAction, setDayNoteAction } from "@/app/actions";
 import type { Greeting } from "@/core/agendaGreeting";
 import type { Item } from "@/core/schema";
+import { DAY_TAGS, type DayTag, joinDayNote, splitDayNote } from "@/lib/dayTags";
 import { parseGreeting } from "@/lib/greeting";
 import { NOTE_MAX } from "@/lib/greetingPrefs";
 import { aiRead } from "./ai-read";
@@ -135,6 +136,14 @@ export function AgendaGreeting({
   const isFixed = fixed !== undefined;
   // The viewer's note for today: as each greeting brings it, then as they save it.
   const [note, setNote] = useState("");
+  const dayNote = splitDayNote(note);
+  // The note as last set, for saves in quick succession (taps on its tags).
+  const noteNow = useRef("");
+  // What's being typed into it, and the tags Jev thinks fit that.
+  const [typed, setTyped] = useState<string | null>(null);
+  const [suggested, setSuggested] = useState<DayTag[]>([]);
+  // The greeting is rewritten with the note once its changes stop for a moment.
+  const rewriteSoon = useRef<ReturnType<typeof setTimeout>>(undefined);
   // Which of its dialogs is up, kept as it closes so it animates out as it was.
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogList, setDialogList] = useState<"explain" | "others">("explain");
@@ -160,6 +169,55 @@ export function AgendaGreeting({
     setAsks((n) => n + 1);
   };
 
+  const notesSaving = useRef(0);
+  /**
+   * Shows `next` as today's note at once and saves it, putting the last one
+   * back if it fails; once saves stop for a moment, the greeting is
+   * rewritten with it, so a few taps in a row ask Claude once.
+   */
+  const saveNote = async (next: string) => {
+    const before = noteNow.current;
+    const show = (n: string) => {
+      noteNow.current = n;
+      setNote(n);
+    };
+    show(next);
+    clearTimeout(rewriteSoon.current);
+    notesSaving.current += 1;
+    const saved = await runAction(
+      // As the server kept it, unless it's been changed again since.
+      setDayNoteAction(next).then((kept) => noteNow.current === next && show(kept ?? "")),
+      "save your note for today",
+    );
+    notesSaving.current -= 1;
+    if (!saved) {
+      if (noteNow.current === next) show(before);
+      return false;
+    }
+    if (notesSaving.current === 0) rewriteSoon.current = setTimeout(() => askAgain(true), 1500);
+    return true;
+  };
+  const toggleTag = (tag: DayTag) => {
+    const { tags, rest } = splitDayNote(noteNow.current);
+    void saveNote(joinDayNote(tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag], rest));
+  };
+  useEffect(() => () => clearTimeout(rewriteSoon.current), []);
+
+  // Tags that fit what's being typed, asked for once typing pauses. Kept
+  // once the edit's over, to tap; a failed ask suggests nothing new.
+  useEffect(() => {
+    if (typed === null) return;
+    const stop = new AbortController();
+    const t = setTimeout(() => {
+      if (!typed.trim()) setSuggested([]);
+      else aiRead("dayTags", { text: typed }, stop.signal).then(setSuggested, () => {});
+    }, 400);
+    return () => {
+      clearTimeout(t);
+      stop.abort();
+    };
+  }, [typed]);
+
   useEffect(() => {
     if (isFixed) return;
     let live = true;
@@ -170,7 +228,11 @@ export function AgendaGreeting({
       (g) => {
         if (!live) return;
         setGreeting(g);
-        setNote(g?.note ?? "");
+        // Not over a change of the viewer's still being saved.
+        if (notesSaving.current === 0) {
+          noteNow.current = g?.note ?? "";
+          setNote(noteNow.current);
+        }
         setAsking(false);
         const at = g?.retryInMs === undefined ? null : Date.now() + g.retryInMs;
         setRetryAt(at);
@@ -451,27 +513,54 @@ export function AgendaGreeting({
       )}
 
       {/* What they wrote about today, for the greeting to be written with:
-          saved as typed, then the greeting asks to be rewritten with it.
+          tags they tap and words they type, saved as they go, then the
+          greeting asks to be rewritten with it.
           Not offered when AI is off, as nothing would read it, nor on the
           landing page's preview, where it can't be saved. */}
       {greeting && !greeting.aiOff && !isFixed && (
-        <div className="mt-3 flex animate-in items-baseline gap-2 fade-in duration-500">
-          <NotebookPen aria-hidden className="size-3.5 shrink-0 translate-y-0.5 text-neutral-400 dark:text-neutral-500" />
-          <EditableText
-            value={note}
-            placeholder="How's today looking?"
-            maxLength={NOTE_MAX}
-            onSave={async (next) => {
-              const saved = await runAction(
-                setDayNoteAction(next).then((kept) => setNote(kept ?? "")),
-                "save your note for today",
+        <div className="mt-3 animate-in fade-in duration-500">
+          <div className="flex items-baseline gap-2">
+            <NotebookPen aria-hidden className="size-3.5 shrink-0 translate-y-0.5 text-neutral-400 dark:text-neutral-500" />
+            <EditableText
+              value={dayNote.rest}
+              placeholder={dayNote.tags.length ? "Anything else?" : "How's today looking?"}
+              // What's left of the note once its tags are in.
+              maxLength={NOTE_MAX - (dayNote.tags.length ? joinDayNote(dayNote.tags, "x").length - 1 : 0)}
+              onSave={(rest) => saveNote(joinDayNote(splitDayNote(noteNow.current).tags, rest))}
+              onDraftChange={(typed) => typed !== null && setTyped(typed)}
+              renderValue={(v) => <span className="italic">&ldquo;{v}&rdquo;</span>}
+              className="min-w-0 flex-1 rounded-md text-sm text-neutral-600 outline-none hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:text-neutral-400 dark:hover:text-neutral-100 dark:focus-visible:ring-neutral-600"
+              inputClassName="min-w-0 flex-1"
+            />
+          </div>
+          {/* Quick words for the note, toggled as they're tapped; the ones
+              Jev thinks fit what was typed are marked as suggestions. */}
+          <div role="group" aria-label="How today feels" className="mt-2 flex flex-wrap gap-1.5 pl-5.5">
+            {(Object.keys(DAY_TAGS) as DayTag[]).map((tag) => {
+              const on = dayNote.tags.includes(tag);
+              const hint = !on && suggested.includes(tag);
+              return (
+                <button
+                  key={tag}
+                  type="button"
+                  aria-pressed={on}
+                  title={hint ? "Suggested from your note" : undefined}
+                  onClick={() => toggleTag(tag)}
+                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-neutral-300 touch:py-1 dark:focus-visible:ring-neutral-600 ${
+                    on
+                      ? "border-neutral-800 bg-neutral-800 text-white hover:bg-neutral-700 dark:border-neutral-200 dark:bg-neutral-200 dark:text-neutral-900 dark:hover:bg-neutral-300"
+                      : hint
+                        ? "border-neutral-400 border-dashed bg-white text-neutral-800 hover:border-neutral-500 dark:border-neutral-500 dark:bg-neutral-900 dark:text-neutral-100"
+                        : "border-neutral-200 text-neutral-500 hover:border-neutral-300 hover:text-neutral-800 dark:border-neutral-800 dark:text-neutral-400 dark:hover:border-neutral-700 dark:hover:text-neutral-100"
+                  }`}
+                >
+                  {hint && <Sparkles aria-hidden className="size-3" />}
+                  {tag}
+                  {hint && <span className="sr-only"> (suggested)</span>}
+                </button>
               );
-              if (saved) askAgain(true);
-            }}
-            renderValue={(v) => <span className="italic">&ldquo;{v}&rdquo;</span>}
-            className="min-w-0 flex-1 rounded-md text-sm text-neutral-600 outline-none hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:text-neutral-400 dark:hover:text-neutral-100 dark:focus-visible:ring-neutral-600"
-            inputClassName="min-w-0 flex-1"
-          />
+            })}
+          </div>
         </div>
       )}
 
