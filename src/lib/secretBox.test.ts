@@ -16,6 +16,9 @@ describe("secretBox", () => {
     const flipped = Buffer.from(body, "base64url");
     flipped[0] ^= 1;
     expect(() => openSecret([v, iv, flipped.toString("base64url"), tag].join("."), key, "row1")).toThrow();
+    // A tag cut short would be easier to forge.
+    const short = Buffer.from(tag, "base64url").subarray(0, 4).toString("base64url");
+    expect(() => openSecret([v, iv, body, short].join("."), key, "row1")).toThrow();
   });
 
   it("takes only a 32-byte key", () => {

@@ -7,6 +7,8 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
 const VERSION = "v1";
+/** The tag's length, fixed so a shortened tag, which would be easier to forge, is refused. */
+const TAG_BYTES = 16;
 
 /** A 32-byte key from base64 (`openssl rand -base64 32`), or null when it isn't one. */
 export function parseSecretKey(value: string): Buffer | null {
@@ -19,7 +21,7 @@ export function parseSecretKey(value: string): Buffer | null {
 /** `plain` sealed with `key` for the row `context`, as "v1.<iv>.<ciphertext>.<tag>". */
 export function sealSecret(plain: string, key: Buffer, context: string): string {
   const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const cipher = createCipheriv("aes-256-gcm", key, iv, { authTagLength: TAG_BYTES });
   cipher.setAAD(Buffer.from(context));
   const body = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
   return [VERSION, iv, body, cipher.getAuthTag()]
@@ -31,7 +33,9 @@ export function sealSecret(plain: string, key: Buffer, context: string): string 
 export function openSecret(sealed: string, key: Buffer, context: string): string {
   const [version, iv, body, tag] = sealed.split(".");
   if (version !== VERSION || !iv || body === undefined || !tag) throw new Error("not a sealed secret");
-  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(iv, "base64url"));
+  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(iv, "base64url"), {
+    authTagLength: TAG_BYTES,
+  });
   decipher.setAAD(Buffer.from(context));
   decipher.setAuthTag(Buffer.from(tag, "base64url"));
   return Buffer.concat([decipher.update(Buffer.from(body, "base64url")), decipher.final()]).toString("utf8");
