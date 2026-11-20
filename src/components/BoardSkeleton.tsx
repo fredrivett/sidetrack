@@ -24,11 +24,12 @@ const COLUMNS = [
 export function BoardSkeleton() {
   return (
     <BoardMain>
-      <BoardHeader nav={<Bone className="h-7 w-[90px] rounded-md sm:w-[219px] touch:h-9 touch:w-[96px] touch:sm:w-[234px]" />}>
-        {/* List count, Activity, Account. */}
+      <BoardHeader nav={<Bone className="h-7 w-[90px] rounded-md sm:w-[219px] touch:h-9 touch:w-[108px] touch:sm:w-[234px]" />}>
+        {/* List count, Activity, Account. Square on phones, like the
+            header's buttons there (BoardHeader). */}
         <Bone className="hidden h-4 w-8 md:block" />
-        <Bone className="h-7 w-9 rounded-lg sm:w-[74px] touch:h-9 touch:w-[42px] touch:sm:w-[80px]" />
-        <Bone className="h-7 w-9 rounded-lg sm:w-[90px] touch:h-9 touch:w-[42px] touch:sm:w-[96px]" />
+        <Bone className="h-7 w-7 rounded-lg sm:w-[74px] touch:h-9 touch:w-9 touch:sm:w-[80px]" />
+        <Bone className="h-7 w-7 rounded-lg sm:w-[90px] touch:h-9 touch:w-9 touch:sm:w-[96px]" />
       </BoardHeader>
       <BoardRail>
         <span className="sr-only" role="status">

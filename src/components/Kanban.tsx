@@ -1104,7 +1104,7 @@ function ViewTabs({ view, onSwitch }: { view: BoardView; onSwitch: (next: BoardV
                 onClick={() => onSwitch(v)}
                 // Icon and name; just the icon on phones, where the
                 // header is full.
-                className={`flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-neutral-300 sm:px-2.5 dark:focus-visible:ring-neutral-600 [&_svg]:size-3.5 touch:[&_svg]:size-4 ${
+                className={`flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-neutral-300 sm:px-2.5 dark:focus-visible:ring-neutral-600 [&_svg]:size-3.5 touch:[&_svg]:size-4 touch:max-sm:[&_svg]:size-5 ${
                   view === v
                     ? "text-neutral-900 dark:text-neutral-100"
                     : "text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"

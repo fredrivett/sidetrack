@@ -101,7 +101,7 @@ export function FilterMenu({
               <ListFilter />
               <span className="hidden sm:inline">Filter</span>
               {count > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 min-w-4 rounded-full bg-neutral-900 px-1 text-center text-[10px] leading-4 tabular-nums text-white sm:static sm:px-1.5 dark:bg-neutral-100 dark:text-neutral-900">
+                <span className="absolute -top-1.5 -right-1.5 max-sm:top-0 max-sm:right-0 min-w-4 rounded-full bg-neutral-900 px-1 text-center text-[10px] leading-4 tabular-nums text-white sm:static sm:px-1.5 dark:bg-neutral-100 dark:text-neutral-900">
                   {count}
                 </span>
               )}
