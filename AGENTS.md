@@ -13,6 +13,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
   plugin (`.amp/plugins/lint-on-edit.ts`, edited files only) both hand lint
   errors back to the agent.
 - `pnpm test` — Vitest, real `better-sqlite3` in-memory, no mocks of `src/core`
+- `pnpm test:e2e` — Playwright end-to-end tests against the production build
+  (run `pnpm build` first). Every user-facing flow gets one; see
+  `e2e/AGENTS.md` for how to write them fast and reliably.
 - `pnpm test:mutation` — Stryker over the high-stakes domain logic (`src/core`:
   audit, fractional indexing, items, projects, categories). On-demand, not CI;
   surviving mutants show where a test asserts structure but not behaviour.
