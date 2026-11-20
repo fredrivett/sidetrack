@@ -28,11 +28,11 @@ test("keeps New item's draft through a reload, until it's cancelled", async ({ p
   await page.getByRole("button", { name: "Add item to Home" }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByPlaceholder("Add a task…").fill("Book dentist");
-  await dialog.getByPlaceholder("Description (optional)").fill("Before the 30th");
+  await dialog.getByPlaceholder("Add description…").fill("Before the 30th");
 
   await page.reload();
   await expect(dialog.getByPlaceholder("Add a task…")).toHaveValue("Book dentist");
-  await expect(dialog.getByPlaceholder("Description (optional)")).toHaveValue("Before the 30th");
+  await expect(dialog.getByPlaceholder("Add description…")).toHaveValue("Before the 30th");
 
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(dialog).toBeHidden();

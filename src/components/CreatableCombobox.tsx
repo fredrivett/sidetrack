@@ -1,5 +1,6 @@
 "use client";
 
+import { Combobox as ComboboxPrimitive } from "@base-ui/react";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 import {
@@ -10,7 +11,6 @@ import {
   ComboboxItem,
   ComboboxList,
 } from "@/components/ui/combobox";
-import { cn } from "@/lib/utils";
 
 interface Option {
   value: string;
@@ -20,9 +20,10 @@ interface Option {
 }
 
 /**
- * Pick one option by typing to filter, or create one: when the typed text
- * matches no option exactly, a "Create “…”" row ends the list. `value` is an
- * option's value, or "" for none.
+ * A chip that opens a list to pick one option from, typing to filter, or to
+ * create one: when the typed text matches no option exactly, a "Create “…”"
+ * row ends the list. `value` is an option's value, or "" for none; the chip
+ * shows `children`.
  */
 export function CreatableCombobox({
   options,
@@ -30,21 +31,23 @@ export function CreatableCombobox({
   onChange,
   onCreate,
   placeholder,
-  ariaLabel,
-  muted,
-  clearable,
+  title,
+  className,
   disabled,
+  children,
 }: {
   options: Array<{ value: string; label: string }>;
   value: string;
   onChange: (value: string) => void;
   onCreate: (label: string) => void;
+  /** The search input's placeholder. */
   placeholder: string;
-  ariaLabel: string;
-  /** Show the chosen value muted, e.g. a suggestion not yet confirmed. */
-  muted?: boolean;
-  clearable?: boolean;
+  /** The chip's tooltip. */
+  title: string;
+  /** The chip's look. */
+  className: string;
   disabled?: boolean;
+  children: React.ReactNode;
 }) {
   const [query, setQuery] = useState("");
   const typed = query.trim();
@@ -72,14 +75,11 @@ export function CreatableCombobox({
       autoHighlight
       disabled={disabled}
     >
-      <ComboboxInput
-        placeholder={placeholder}
-        aria-label={ariaLabel}
-        showClear={clearable && Boolean(selected)}
-        disabled={disabled}
-        className={cn("w-full", muted && "[&_input:not(:focus)]:text-muted-foreground")}
-      />
-      <ComboboxContent>
+      <ComboboxPrimitive.Trigger title={title} className={className}>
+        {children}
+      </ComboboxPrimitive.Trigger>
+      <ComboboxContent className="w-64">
+        <ComboboxInput placeholder={placeholder} aria-label={placeholder} showTrigger={false} />
         <ComboboxEmpty>Nothing found.</ComboboxEmpty>
         <ComboboxList>
           {(item: Option) => (

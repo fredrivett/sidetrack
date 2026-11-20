@@ -306,11 +306,14 @@ export function LabelPicker({
 }
 
 /**
- * An item's labels as chips, then the picker to add more: saved labels can
- * be renamed and given an emoji in place, and new ones hold theirs in
- * `draftEmoji` until the item is saved.
+ * An item's labels as chips in a row of other chips (the item dialogs' chip
+ * bar), then a dashed chip that opens the picker to add one: "Label" while
+ * it has none, just the icon once it has some. Saved labels can be renamed
+ * and given an emoji in place, and new ones hold theirs in `draftEmoji`
+ * until the item is saved. Renders a fragment, so the chips wrap with their
+ * neighbours.
  */
-export function LabelsField({
+export function LabelChips({
   projectId,
   value,
   onChange,
@@ -318,6 +321,7 @@ export function LabelsField({
   onDraftEmoji,
   onRenamed,
   disabled,
+  chipClassName,
 }: {
   projectId: string;
   value: string[];
@@ -330,64 +334,6 @@ export function LabelsField({
    * a saved item's labels are renamed with the label. */
   onRenamed?: (from: string, to: string) => void;
   disabled?: boolean;
-}) {
-  const labels = useListLabels(projectId);
-  const remove = (name: string) => onChange(value.filter((n) => n !== name));
-  return (
-    <div className="space-y-1.5">
-      {value.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {value.map((name) => {
-            const label = labels.find((l) => l.name === name);
-            return label ? (
-              <SavedLabelChip
-                key={name}
-                label={label}
-                disabled={disabled}
-                onRemove={() => remove(name)}
-                onRenamed={onRenamed && ((to) => onRenamed(name, to))}
-              />
-            ) : (
-              <DraftLabelChip
-                key={name}
-                name={name}
-                emoji={draftEmoji[name] ?? UNCHOSEN}
-                disabled={disabled}
-                onEmoji={onDraftEmoji && ((emoji) => onDraftEmoji(name, emoji))}
-                onRemove={() => remove(name)}
-              />
-            );
-          })}
-        </div>
-      )}
-      <LabelPicker
-        projectId={projectId}
-        labels={labels}
-        selected={value}
-        disabled={disabled}
-        onAdd={(name, emoji) => onChange([...value, name], { name, emoji })}
-      />
-    </div>
-  );
-}
-
-/**
- * A saved item's labels as chips in a row of other chips (the item dialog's
- * chip bar), then a dashed chip that opens the picker to add one: "Label"
- * while it has none, just the icon once it has some. Renders a fragment, so
- * the chips wrap with their neighbours.
- */
-export function LabelChips({
-  projectId,
-  value,
-  onChange,
-  draftEmoji,
-  chipClassName,
-}: {
-  projectId: string;
-  value: string[];
-  onChange: (names: string[], added?: { name: string; emoji?: LabelEmoji }) => void;
-  draftEmoji: Record<string, LabelEmoji>;
   /** The add chip's look, matching the row's other empty chips. */
   chipClassName: string;
 }) {
@@ -402,7 +348,9 @@ export function LabelChips({
           <SavedLabelChip
             key={name}
             label={label}
+            disabled={disabled}
             onRemove={() => remove(name)}
+            onRenamed={onRenamed && ((to) => onRenamed(name, to))}
             className="rounded-full pl-2"
           />
         ) : (
@@ -411,13 +359,16 @@ export function LabelChips({
             key={name}
             name={name}
             emoji={draftEmoji[name] ?? UNCHOSEN}
+            disabled={disabled}
+            onEmoji={onDraftEmoji && ((emoji) => onDraftEmoji(name, emoji))}
             onRemove={() => remove(name)}
             className="rounded-full pl-2"
           />
         );
       })}
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={open} onOpenChange={(next) => setOpen(next && !disabled)}>
         <PopoverTrigger
+          aria-disabled={disabled || undefined}
           aria-label={value.length ? "Add a label" : undefined}
           className={chipClassName}
         >

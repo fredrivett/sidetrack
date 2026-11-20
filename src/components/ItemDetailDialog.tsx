@@ -2,7 +2,6 @@
 
 import {
   Bell,
-  CalendarDays,
   Check,
   CheckCircle2,
   ChevronRight,
@@ -13,7 +12,6 @@ import {
   GitBranch,
   IndentDecrease,
   IndentIncrease,
-  Repeat as RepeatIcon,
   Trash2,
   UserRound,
 } from "lucide-react";
@@ -42,8 +40,8 @@ import type { AgentSession, Item, ItemPrLink } from "@/core/schema";
 import { toggleAssignee } from "@/lib/assignees";
 import { formatItemRef } from "@/lib/itemRef";
 import { modifierSymbol } from "@/lib/keyboard";
-import { type Repeat, repeatOf } from "@/lib/repeat";
-import { dayLabel, type Due, formatRelative } from "@/lib/time";
+import { repeatOf } from "@/lib/repeat";
+import { dayLabel, formatRelative } from "@/lib/time";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -54,7 +52,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   ResponsiveDialog,
   ResponsiveDialogBackButton,
@@ -66,16 +63,13 @@ import {
 } from "@/components/ui/responsive-dialog";
 import { AssigneeOptions } from "./AssigneeOptions";
 import { AuditEntryRow } from "./AuditDialog";
-import { useDueLabel } from "./DueBadge";
-import { DueDatePicker } from "./DueDatePicker";
 import { PrLink } from "./PrLink";
-import { shortLabel } from "./RepeatBadge";
-import { RepeatPicker } from "./RepeatPicker";
 import { runAction } from "./run-action";
 import { EditableText } from "./EditableText";
 import { ItemComments } from "./ItemComments";
 import { LabelChips } from "./Labels";
 import { MoveToListPicker, useMoveItem } from "./MoveItem";
+import { AssigneeChip, CHIP, DueChip, EMPTY_CHIP, Field, RepeatChip } from "./ItemFields";
 import { InlineCode, Markdown } from "./Markdown";
 import { rowAfterDelete, SelectedItemContext, useItemShortcuts } from "./useItemShortcuts";
 import { useOptimisticAssignees } from "./use-optimistic-assignees";
@@ -266,121 +260,6 @@ function ThreadLink({ url, children }: { url: string; children: React.ReactNode 
       {children}
       <ExternalLink className="size-3" />
     </a>
-  );
-}
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1">
-      <span data-replay-safe className="block text-xs font-medium text-neutral-500">
-        {label}
-      </span>
-      {children}
-    </div>
-  );
-}
-
-/** A field in the dialog's chip bar, set. */
-const CHIP =
-  "inline-flex h-7 max-w-full min-w-0 shrink-0 items-center gap-1.5 rounded-full border border-input px-2.5 text-sm transition hover:bg-muted aria-disabled:pointer-events-none aria-disabled:opacity-50 data-popup-open:bg-muted touch:h-9 touch:px-3 [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-muted-foreground";
-/** A field in the chip bar with nothing set: dashed, its name in grey. */
-const EMPTY_CHIP = `${CHIP} border-dashed text-muted-foreground hover:text-foreground`;
-
-/**
- * The due date as a chip: when it's due, red once overdue and amber on the
- * day, opening the quick dates and the calendar. Picking one closes it.
- */
-function DueChip({
-  item,
-  done,
-  disabled,
-  onChange,
-  open,
-  setOpen,
-}: {
-  item: Item;
-  done: boolean;
-  disabled: boolean;
-  onChange: (due: Due | null) => void;
-  /** Open, as the D shortcut leaves it. */
-  open: boolean;
-  setOpen: (open: boolean) => void;
-}) {
-  const due = item.dueDate ? { dueDate: item.dueDate, dueFrom: item.dueFrom } : null;
-  return (
-    <Popover open={open} onOpenChange={(next) => setOpen(next && !disabled)}>
-      <PopoverTrigger aria-disabled={disabled || undefined} className={due ? CHIP : EMPTY_CHIP}>
-        <CalendarDays />
-        {due ? <DueChipLabel due={due} done={done} /> : <span data-replay-safe>Due date</span>}
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 max-w-[calc(100vw-2rem)] p-2">
-        <DueDatePicker
-          key={item.id}
-          due={due}
-          done={done}
-          disabled={disabled}
-          onChange={(next) => {
-            setOpen(false);
-            onChange(next);
-          }}
-        />
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-function DueChipLabel({ due, done }: { due: Due; done: boolean }) {
-  const { label, tone } = useDueLabel(due.dueDate, due.dueFrom, done);
-  return (
-    <span
-      data-replay-safe
-      className={
-        tone === "overdue"
-          ? "text-red-600 dark:text-red-400"
-          : tone === "today"
-            ? "text-amber-700 dark:text-amber-300"
-            : ""
-      }
-    >
-      <span className="sr-only">Due </span>
-      {label}
-    </span>
-  );
-}
-
-/** How the item repeats as a chip, opening the repeat picker. */
-function RepeatChip({
-  item,
-  disabled,
-  onChange,
-}: {
-  item: Item;
-  disabled: boolean;
-  onChange: (repeat: Repeat | null) => void;
-}) {
-  const repeat = repeatOf(item);
-  return (
-    <Popover>
-      <PopoverTrigger aria-disabled={disabled || undefined} className={repeat ? CHIP : EMPTY_CHIP}>
-        <RepeatIcon />
-        <span data-replay-safe>{repeat ? shortLabel(repeat) : "Repeat"}</span>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 max-w-[calc(100vw-2rem)] p-2">
-        <RepeatPicker
-          key={item.id}
-          repeat={repeat}
-          completedAt={item.completedAt}
-          disabled={disabled}
-          onChange={onChange}
-        />
-      </PopoverContent>
-    </Popover>
   );
 }
 
@@ -846,9 +725,10 @@ export function ItemDetailView({
         />
         <div className="flex flex-wrap items-center gap-1.5">
           <DueChip
+            key={`due:${item.id}`}
             open={dueOpen}
             setOpen={setDueOpen}
-            item={item}
+            due={item.dueDate ? { dueDate: item.dueDate, dueFrom: item.dueFrom } : null}
             done={completed}
             disabled={pending}
             onChange={(due) =>
@@ -861,7 +741,9 @@ export function ItemDetailView({
             }
           />
           <RepeatChip
-            item={item}
+            key={`repeat:${item.id}`}
+            repeat={repeatOf(item)}
+            completedAt={item.completedAt}
             disabled={pending}
             onChange={(repeat) =>
               start(async () => {
@@ -872,35 +754,21 @@ export function ItemDetailView({
               })
             }
           />
-          <DropdownMenu open={assignOpen} onOpenChange={setAssignOpen}>
-            <DropdownMenuTrigger
-              aria-disabled={pending || undefined}
-              title="Assignees (A)"
-              className={assigned.length ? CHIP : EMPTY_CHIP}
-            >
-              {assigned.length ? (
-                <>
-                  <AvatarStack users={assigned} size={18} ringClassName="ring-popover" />
-                  <span className="truncate">{assigneeNames(assigned)}</span>
-                </>
-              ) : (
-                <>
-                  <UserRound />
-                  <span data-replay-safe>Unassigned</span>
-                </>
-              )}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent data-assignee-picker align="start" className="w-56">
-              <AssigneeOptions
-                selected={assigneeIds}
-                assignees={assignees}
-                viewerId={viewerId}
-                onChange={assign}
-                agents={agentOptions}
-                onAgentChange={setAgent}
-              />
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <AssigneeChip
+            assigned={assigned}
+            disabled={pending}
+            open={assignOpen}
+            setOpen={setAssignOpen}
+          >
+            <AssigneeOptions
+              selected={assigneeIds}
+              assignees={assignees}
+              viewerId={viewerId}
+              onChange={assign}
+              agents={agentOptions}
+              onAgentChange={setAgent}
+            />
+          </AssigneeChip>
           {/* Not for an item in an archived list, which isn't a move target. */}
           {move?.groups.some((g) => g.lists.some((l) => l.id === item.projectId)) && (
             <MoveToListPicker
