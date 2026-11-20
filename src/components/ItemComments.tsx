@@ -34,6 +34,7 @@ import { Markdown } from "./Markdown";
 import { runAction } from "./run-action";
 import { useListAccess } from "./list-access";
 import { MentionTextarea } from "./MentionTextarea";
+import { useDraft } from "./use-draft";
 import { AvatarStack, assigneeName } from "./UserAvatar";
 
 /**
@@ -253,6 +254,7 @@ export function CommentCard({
               runAction(updateCommentAction(c.id, next).then(onEdited), "save the comment")
             }
             multiline
+            draftKey={`comment:${c.id}`}
             mentions={people}
             required
             maxLength={COMMENT_MAX}
@@ -284,16 +286,16 @@ function Composer({
   people: AssigneeView[];
   onAdded: (comment: CommentView) => void;
 }) {
-  const [draft, setDraft] = useState("");
+  const draft = useDraft(`item:${itemId}:comment`);
   const [saving, start] = useTransition();
-  const empty = !draft.trim();
+  const empty = !draft.value.trim();
 
   function submit() {
     if (saving || empty) return;
     start(async () => {
       await runAction(
-        addCommentAction(itemId, draft).then((comment) => {
-          setDraft("");
+        addCommentAction(itemId, draft.value).then((comment) => {
+          draft.clear();
           onAdded(comment);
         }),
         `comment on “${title}”`,
@@ -310,8 +312,7 @@ function Composer({
     >
       <MentionTextarea
         people={people}
-        value={draft}
-        onValueChange={setDraft}
+        draft={draft}
         onKeyDown={(e) => {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
             e.preventDefault();

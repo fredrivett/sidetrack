@@ -135,6 +135,30 @@ suggestions don't (rule 1). Choose how the UI shows each save with these rules:
    place it can be made: row, dialog, menu, shortcut, drag or command palette.
    Undo and bulk versions follow the single action.
 
+## Drafts
+
+Text someone is writing outlives a reload (a deploy's, a manual one, or the
+phone closing the app): it goes through `useDraft`
+(`src/components/use-draft.ts`), built on `useStoredState`, the one place
+that touches browser storage.
+
+- **Enforced:** `Textarea` and `MentionTextarea` require a `draft` from
+  `useDraft`, and a multi-line `EditableText` requires a `draftKey` (types);
+  lint bans a bare `<textarea>`. `null` opts out, for text not worth keeping;
+  say why in a comment.
+- **Key** it by what it's for, `item:<id>:comment`, so it comes back in the
+  same place. Give an edit of saved text its saved value as `base`: the
+  draft is dropped if that changes meanwhile, never put back over it.
+- **Clear it only once the save succeeds, or on cancel**, never when the
+  save starts: a save that fails (or reloads, from an outdated page) keeps
+  it.
+- Single-line `Input`s that hold writing, such as New item's title, use
+  `useDraft` too, by hand. Pickers, menus and scroll position aren't drafts.
+  Which dialog is open is kept in `sessionStorage` (`useStoredState`), not
+  as a draft.
+- Drafts belong to the signed-in user: signing out drops them, and the board
+  drops another user's and any untouched for a week (`claimDrafts`).
+
 # Boundaries
 
 ## Audit log invariant

@@ -5,11 +5,19 @@ import { useEffect, useOptimistic, useRef, useState, useTransition } from "react
 import type { AssigneeView } from "@/core/members";
 import { cn } from "@/lib/utils";
 import { MentionTextarea } from "./MentionTextarea";
+import { useDraft } from "./use-draft";
+import { useHydrated } from "./use-stored-state";
+
+/** Multi-line text is writing, so it must say where an unsaved edit is kept. */
+type DraftProps =
+  | { multiline: true; draftKey: string | null }
+  | { multiline?: false; draftKey?: string | null };
 
 export function EditableText({
   value,
   onSave,
   multiline = false,
+  draftKey = null,
   placeholder,
   required = false,
   maxLength,
@@ -20,13 +28,12 @@ export function EditableText({
   onDraftChange,
   mentions,
   readOnly = false,
-}: {
+}: DraftProps & {
   value: string;
   /** Saves the new text. Wrap the action in runAction, so a failure toasts
    * rather than throwing. Return its promise: the field shows the new text,
    * or with `hold` dims, until it settles. */
   onSave: (next: string) => Promise<unknown>;
-  multiline?: boolean;
   placeholder?: string;
   // When true, an empty value is rejected: blanking the field reverts to the
   // current value instead of saving (mirrors the core's non-empty guard).
@@ -49,11 +56,21 @@ export function EditableText({
   /** Shows the value, not editable, for someone who can't change it; nothing when empty. */
   readOnly?: boolean;
 }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
+  // "resumed" when it's an edit left unsaved by a reload, picked up again.
+  const [editing, setEditing] = useState<false | "fresh" | "resumed">(false);
   // The saved text shown ahead of the server, so the field doesn't snap back
   // to the old text while it saves; if the save fails, the old text returns.
   const [shown, showSaving] = useOptimistic(value);
+  // Kept under `draftKey` (useDraft) from the first key typed until the
+  // edit is saved or dropped, so a reload doesn't lose it.
+  const draft = useDraft(draftKey, shown);
+  const hydrated = useHydrated();
+  const [resumed, setResumed] = useState(false);
+  if (hydrated && !resumed) {
+    setResumed(true);
+    // Not for someone who can no longer change it (their role changed).
+    if (draft.value !== shown && !readOnly) setEditing("resumed");
+  }
   const [saving, startSaving] = useTransition();
   const ref = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   // Counts edits, so a save that lands after the next edit has started
@@ -64,23 +81,25 @@ export function EditableText({
   // directly. Seed draft at the moment editing starts, not via an effect.
   function startEditing() {
     edits.current += 1;
-    setDraft(shown);
-    setEditing(true);
+    draft.clear();
+    setEditing("fresh");
   }
 
   useEffect(() => {
-    if (editing && ref.current) {
-      ref.current.focus();
-      ref.current.select?.();
-    }
+    const el = ref.current;
+    if (!editing || !el) return;
+    el.focus();
+    // A resumed edit carries on where it was, rather than being typed over.
+    if (editing === "fresh") el.select?.();
+    else el.setSelectionRange(el.value.length, el.value.length);
   }, [editing]);
 
   function commit() {
     setEditing(false);
-    const trimmed = draft.trim();
+    const trimmed = draft.value.trim();
     // A required field can't be blanked — discard the edit and revert.
     if (required && !trimmed) {
-      setDraft(shown);
+      draft.clear();
       onDraftChange?.(null);
       return;
     }
@@ -88,23 +107,27 @@ export function EditableText({
       const edit = edits.current;
       startSaving(async () => {
         if (!hold) showSaving(trimmed);
-        await onSave(trimmed);
-        if (edits.current === edit) onDraftChange?.(null);
+        const saved = await onSave(trimmed);
+        if (edits.current !== edit) return;
+        onDraftChange?.(null);
+        // A failed save (runAction's false) keeps the draft, so a reload,
+        // such as the one a save from an outdated page brings, puts it back.
+        if (saved !== false) draft.clear();
       });
     } else {
-      setDraft(shown);
+      draft.clear();
       onDraftChange?.(null);
     }
   }
 
   function cancel() {
     setEditing(false);
-    setDraft(shown);
+    draft.clear();
     onDraftChange?.(null);
   }
 
   function type(next: string) {
-    setDraft(next);
+    draft.set(next);
     onDraftChange?.(next);
   }
 
@@ -134,8 +157,7 @@ export function EditableText({
       <MentionTextarea
         ref={ref as React.RefObject<HTMLTextAreaElement>}
         people={mentions ?? []}
-        value={draft}
-        onValueChange={type}
+        draft={{ ...draft, set: type }}
         onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === "Escape") cancel();
@@ -156,7 +178,7 @@ export function EditableText({
     <input
       ref={ref as React.RefObject<HTMLInputElement>}
       type="text"
-      value={draft}
+      value={draft.value}
       onChange={(e) => type(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => {

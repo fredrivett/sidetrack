@@ -165,6 +165,7 @@ export function ProjectDetailDialog({
                 </ResponsiveDialogDescription>
                 <EditableText
                   value={project.summary}
+                  draftKey={`list:${project.id}:summary`}
                   onSave={(next) =>
                     runAction(updateProjectAction(project.id, { summary: next }), "save the summary")
                   }

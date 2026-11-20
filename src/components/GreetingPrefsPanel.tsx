@@ -6,6 +6,7 @@ import { useState, useTransition } from "react";
 import { setGreetingPrefsAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { useDraft } from "@/components/use-draft";
 import {
   cleanNote,
   GREETING_LENGTHS,
@@ -27,7 +28,8 @@ const LENGTH: Record<GreetingLength, { label: string; hint: string }> = {
  */
 export function GreetingPrefsPanel({ initial }: { initial: GreetingPrefs }) {
   const [saved, setSaved] = useState(initial);
-  const [note, setNote] = useState(initial.note);
+  const noteDraft = useDraft("greeting-note", saved.note);
+  const note = noteDraft.value;
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -41,7 +43,7 @@ export function GreetingPrefsPanel({ initial }: { initial: GreetingPrefs }) {
         setSaved(kept);
         // Only when the note was what changed: a draft typed before
         // changing the length or sharing stays as typed.
-        if (next.note !== saved.note) setNote(kept.note);
+        if (next.note !== saved.note) noteDraft.clear();
         // What people choose shapes the defaults. Never the note itself.
         posthog.capture("greeting_prefs_saved", {
           length: kept.length,
@@ -100,9 +102,9 @@ export function GreetingPrefsPanel({ initial }: { initial: GreetingPrefs }) {
         </label>
         <Textarea
           id="greeting-note"
-          value={note}
+          draft={noteDraft}
           // Capped by characters, as it's kept, so an emoji counts once.
-          onChange={(e) => setNote(Array.from(e.target.value).slice(0, NOTE_MAX).join(""))}
+          onChange={(e) => noteDraft.set(Array.from(e.target.value).slice(0, NOTE_MAX).join(""))}
           placeholder="Keep it brief. Don't mention what slipped."
           aria-describedby="greeting-note-hint"
         />

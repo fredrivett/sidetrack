@@ -2,6 +2,7 @@
 
 import { type Ref, useId, useLayoutEffect, useRef, useState } from "react";
 import type { AssigneeView } from "@/core/members";
+import type { Draft } from "./use-draft";
 import { mentionQueryAt, suggestPeople } from "@/lib/mentions";
 import { assigneeName, UserAvatar } from "./UserAvatar";
 
@@ -14,8 +15,7 @@ import { assigneeName, UserAvatar } from "./UserAvatar";
  */
 export function MentionTextarea({
   people,
-  value,
-  onValueChange,
+  draft,
   maxLength,
   ref,
   onKeyDown,
@@ -25,10 +25,11 @@ export function MentionTextarea({
   /** Who can be mentioned, in the order to suggest them. None makes it a
    * plain textarea. */
   people: AssigneeView[];
-  value: string;
-  onValueChange: (next: string) => void;
+  /** Its text, from useDraft, so what's typed outlives a reload. */
+  draft: Draft;
   ref?: Ref<HTMLTextAreaElement>;
 }) {
+  const value = draft.value;
   const box = useRef<HTMLTextAreaElement | null>(null);
   // The `@…` before the caret, and which suggestion is highlighted.
   const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
@@ -93,7 +94,7 @@ export function MentionTextarea({
     else {
       caretAfter.current = caret;
       setSeen(next);
-      onValueChange(next);
+      draft.set(next);
     }
     setMention(null);
     return true;
@@ -114,7 +115,7 @@ export function MentionTextarea({
         onChange={(e) => {
           if (disabled) return;
           setSeen(e.target.value);
-          onValueChange(e.target.value);
+          draft.set(e.target.value);
           track(e.target);
         }}
         onSelect={(e) => track(e.currentTarget)}

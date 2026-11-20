@@ -21,6 +21,8 @@ import { formatItemRef } from "@/lib/itemRef";
 import type { Repeat } from "@/lib/repeat";
 import type { Due } from "@/lib/time";
 import { Button } from "@/components/ui/button";
+import { MentionTextarea } from "@/components/MentionTextarea";
+import { useDraft } from "@/components/use-draft";
 import { useStoredState } from "@/components/use-stored-state";
 import { Input } from "@/components/ui/input";
 import {
@@ -90,6 +92,7 @@ function AddedToast({
 }
 
 const NO_SUB_ITEMS: string[] = [];
+const NO_PEOPLE: AssigneeView[] = [];
 
 export function NewItemDialog({
   open,
@@ -134,8 +137,9 @@ export function NewItemDialog({
   } | null>(null);
   // What's typed is kept until it's added or the dialog's cancelled, so a
   // reload (a deploy's, say) or the app closing in the background loses none.
-  const [title, setTitle] = useStoredState("new-item:title", "");
-  const [description, setDescription] = useStoredState("new-item:description", "");
+  const { value: title, set: setTitle } = useDraft("new-item:title");
+  const descriptionDraft = useDraft("new-item:description");
+  const { value: description, set: setDescription } = descriptionDraft;
   const [labels, setLabels] = useState<string[]>([]);
   // The emoji for labels new to the list, held until the item creates them.
   const [labelEmoji, setLabelEmoji] = useState<Record<string, LabelEmoji>>({});
@@ -148,8 +152,9 @@ export function NewItemDialog({
   const today = useToday();
   const initialDue: Due | null = dueToday && today ? { dueFrom: null, dueDate: today } : null;
   const [repeat, setRepeat] = useState<Repeat | null>(null);
-  const [subItems, setSubItems] = useStoredState("new-item:sub-items", NO_SUB_ITEMS);
-  const [subDraft, setSubDraft] = useStoredState("new-item:sub-draft", "");
+  // The steps added so far, kept as drafts are (signing out drops them).
+  const [subItems, setSubItems] = useStoredState("draft:new-item:sub-items", NO_SUB_ITEMS);
+  const { value: subDraft, set: setSubDraft } = useDraft("new-item:sub-draft");
   // How many were added, so the same draft is asked about again.
   const [added, setAdded] = useState(0);
   // Whether anything was added in this session: Add & create more keeps the dialog
@@ -407,9 +412,10 @@ export function NewItemDialog({
                 this list.
               </p>
             )}
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
+            {/* Unstyled, like the title above; no one to mention. */}
+            <MentionTextarea
+              people={NO_PEOPLE}
+              draft={descriptionDraft}
               placeholder="Add description…"
               aria-label="Description"
               disabled={pending}

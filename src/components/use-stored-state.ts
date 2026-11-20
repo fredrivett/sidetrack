@@ -49,6 +49,46 @@ function write(store: Store, key: string, raw: string | null) {
   for (const l of listeners) l();
 }
 
+/** The stored value under `key`, as JSON, outside a component. */
+export function readStored(store: Store, key: string): string | null {
+  return read(store, key);
+}
+
+/** Stores `value` under `key` outside a component, or removes it for null. */
+export function writeStored(store: Store, key: string, value: unknown) {
+  write(store, key, value === null ? null : JSON.stringify(value));
+}
+
+/** Removes every value whose key starts with `prefix` and that `drop`
+ * picks, given its JSON, telling everything that shows them. */
+export function removeStored(store: Store, prefix: string, drop: (raw: string) => boolean) {
+  const keys = new Set<string>();
+  for (const id of fallback.keys()) {
+    if (id.startsWith(`${store}:${prefix}`)) keys.add(id.slice(store.length + 1));
+  }
+  try {
+    const storage = storageFor(store);
+    for (let i = 0; storage && i < storage.length; i++) {
+      const key = storage.key(i);
+      if (key?.startsWith(PREFIX + prefix)) keys.add(key.slice(PREFIX.length));
+    }
+  } catch {
+    // Unreadable storage holds nothing to remove.
+  }
+  for (const key of keys) {
+    const raw = read(store, key);
+    if (raw !== null && drop(raw)) write(store, key, null);
+  }
+}
+
+const noSubscribe = () => () => {};
+
+/** False for the server render and hydration, true after: until then the
+ * stored values aren't showing (useStoredState renders `initial`). */
+export function useHydrated(): boolean {
+  return useSyncExternalStore(noSubscribe, () => true, () => false);
+}
+
 function subscribe(onChange: () => void) {
   listeners.add(onChange);
   addEventListener("storage", onChange);
