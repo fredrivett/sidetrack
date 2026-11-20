@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { setAgendaReadAction, setDayNoteAction } from "@/app/actions";
 import type { Greeting } from "@/core/agendaGreeting";
 import type { Item } from "@/core/schema";
-import { DAY_TAGS, type DayTag, joinDayNote, splitDayNote } from "@/lib/dayTags";
+import { DAY_TAGS, type DayTag, joinDayNote, splitDayNote, toggleDayTag } from "@/lib/dayTags";
 import { parseGreeting } from "@/lib/greeting";
 import { NOTE_MAX } from "@/lib/greetingPrefs";
 import { aiRead } from "./ai-read";
@@ -190,16 +190,15 @@ export function AgendaGreeting({
       "save your note for today",
     );
     notesSaving.current -= 1;
-    if (!saved) {
-      if (noteNow.current === next) show(before);
-      return false;
-    }
+    // Even after a failure: an earlier save in the run may have landed. One
+    // that didn't change the note is answered without asking Claude.
     if (notesSaving.current === 0) rewriteSoon.current = setTimeout(() => askAgain(true), 1500);
-    return true;
+    if (!saved && noteNow.current === next) show(before);
+    return saved;
   };
   const toggleTag = (tag: DayTag) => {
-    const { tags, rest } = splitDayNote(noteNow.current);
-    void saveNote(joinDayNote(tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag], rest));
+    const next = toggleDayTag(noteNow.current, tag);
+    if (next !== null) void saveNote(next);
   };
   useEffect(() => () => clearTimeout(rewriteSoon.current), []);
 
@@ -539,14 +538,17 @@ export function AgendaGreeting({
             {(Object.keys(DAY_TAGS) as DayTag[]).map((tag) => {
               const on = dayNote.tags.includes(tag);
               const hint = !on && suggested.includes(tag);
+              // Too long a note to add it to without cutting off what was typed.
+              const full = toggleDayTag(note, tag) === null;
               return (
                 <button
                   key={tag}
                   type="button"
                   aria-pressed={on}
-                  title={hint ? "Suggested from your note" : undefined}
+                  aria-disabled={full || undefined}
+                  title={full ? "Your note is too long to add this" : hint ? "Suggested from your note" : undefined}
                   onClick={() => toggleTag(tag)}
-                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-neutral-300 touch:py-1 dark:focus-visible:ring-neutral-600 ${
+                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-neutral-300 aria-disabled:pointer-events-none aria-disabled:opacity-40 touch:py-1 dark:focus-visible:ring-neutral-600 ${
                     on
                       ? "border-neutral-800 bg-neutral-800 text-white hover:bg-neutral-700 dark:border-neutral-200 dark:bg-neutral-200 dark:text-neutral-900 dark:hover:bg-neutral-300"
                       : hint

@@ -5,6 +5,7 @@
 // someone types, Jev says which of them fit what they wrote, for the page to
 // suggest. Framework-agnostic: a plain fetch, no DB access.
 
+import { NOTE_MAX } from "./greetingPrefs";
 import { askJev, type NoulQuestion } from "./jev";
 
 /** Each tag, as shown and kept, and what it means, for Jev. In the order they're shown and kept. */
@@ -39,6 +40,18 @@ export function joinDayNote(tags: readonly DayTag[], rest: string): string {
   const head = TAGS.filter((t) => tags.includes(t)).join(", ");
   const typed = rest.trim();
   return head && typed ? `${head}${SEPARATOR}${typed}` : head || typed;
+}
+
+/**
+ * `note` with `tag` taken off, or put on; null when putting it on would
+ * take the note past NOTE_MAX, where the server would cut off what was typed.
+ */
+export function toggleDayTag(note: string, tag: DayTag): string | null {
+  const { tags, rest } = splitDayNote(note);
+  if (tags.includes(tag)) return joinDayNote(tags.filter((t) => t !== tag), rest);
+  const next = joinDayNote([...tags, tag], rest);
+  // In characters, as cleanNote counts them.
+  return Array.from(next).length > NOTE_MAX ? null : next;
 }
 
 // How likely Jev must think a tag fits before it's suggested: it's only a

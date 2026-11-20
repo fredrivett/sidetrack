@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { joinDayNote, splitDayNote, suggestDayTags } from "./dayTags";
+import { joinDayNote, splitDayNote, suggestDayTags, toggleDayTag } from "./dayTags";
 
 describe("day note tags", () => {
   it("keeps tags ahead of what was typed, in the order they're shown, and reads them back", () => {
@@ -18,6 +18,22 @@ describe("day note tags", () => {
     // A dash later in the writing stays in it.
     expect(splitDayNote("Busy — call — then gym")).toEqual({ tags: ["Busy"], rest: "call — then gym" });
     expect(splitDayNote("")).toEqual({ tags: [], rest: "" });
+  });
+});
+
+describe("toggleDayTag", () => {
+  it("adds and removes a tag, keeping what was typed", () => {
+    expect(toggleDayTag("Tired — rough night", "Busy")).toBe("Busy, Tired — rough night");
+    expect(toggleDayTag("Busy, Tired — rough night", "Busy")).toBe("Tired — rough night");
+  });
+
+  it("won't add a tag past the note's limit, counting characters as the server does", () => {
+    // "Busy — " is 7 characters, so 273 more is exactly the limit. Emoji are
+    // one character each, though two UTF-16 units.
+    expect(toggleDayTag("😴".repeat(273), "Busy")).toBe(`Busy — ${"😴".repeat(273)}`);
+    expect(toggleDayTag("😴".repeat(274), "Busy")).toBeNull();
+    // Taking one off always fits.
+    expect(toggleDayTag(`Busy — ${"😴".repeat(273)}`, "Busy")).toBe("😴".repeat(273));
   });
 });
 
