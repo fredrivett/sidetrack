@@ -1,4 +1,4 @@
-import nodemailer from "nodemailer";
+import nodemailer, { type Mail } from "nodemailer";
 
 import type { ListRole, SpaceRole } from "../core/schema";
 import { getEnv } from "./env";
@@ -341,7 +341,7 @@ export function redactSmtpUrl(smtpUrl: string): string {
 
 // Memoized transport: nodemailer pools connections, so reusing one transport
 // across sends avoids reconnecting to the catcher on every password reset.
-let smtpTransport: { url: string; transport: nodemailer.Transporter } | null =
+let smtpTransport: { url: string; transport: Mail } | null =
   null;
 
 async function sendViaSmtp(
