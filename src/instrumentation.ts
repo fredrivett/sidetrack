@@ -17,6 +17,10 @@ export async function register() {
   const { getDb } = await import("./core/db");
   const { startNotificationDelivery } = await import("./core/notifications");
   startNotificationDelivery(getDb().db);
+  // Copies connected calendars' events, when calendars are set up.
+  const { calendarConfig, startCalendarSync } = await import("./core/calendars");
+  const calendars = calendarConfig();
+  if (calendars) startCalendarSync(getDb().db, calendars);
 }
 
 // Server-side error tracking. No-op unless POSTHOG_KEY is set (see lib/posthog).

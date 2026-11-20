@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parseSecretKey } from "./secretBox";
 
 // Centralized, validated server environment. One schema is the source of truth
 // for required/optional config, validated once at boot (instrumentation.ts) so
@@ -76,6 +77,10 @@ export interface ServerEnv {
   // Web Push (VAPID) keys and contact, for push notifications. Unset turns
   // push off. The subject defaults to BETTER_AUTH_URL.
   VAPID: { publicKey: string; privateKey: string; subject: string } | undefined;
+  // The key calendar passwords are encrypted with (lib/secretBox.ts), 32
+  // bytes as base64. Unset turns calendars off. Changing it means everyone
+  // reconnects their calendars.
+  CALENDAR_SECRET_KEY: Buffer | undefined;
 }
 
 // Production-required vars are enforced only when actually running in
@@ -146,6 +151,7 @@ function schemaFor(mode: EnvMode) {
       VAPID_PUBLIC_KEY: optionalTrimmed,
       VAPID_PRIVATE_KEY: optionalTrimmed,
       VAPID_SUBJECT: optionalTrimmed,
+      CALENDAR_SECRET_KEY: optionalTrimmed,
     })
     .superRefine((env, ctx) => {
       // Half a key pair would only fail when the first push is sent.
@@ -170,6 +176,16 @@ function schemaFor(mode: EnvMode) {
           message:
             "VAPID_PUBLIC_KEY or VAPID_PRIVATE_KEY isn't a Web Push key; copy both from " +
             "`npx web-push generate-vapid-keys` whole.",
+        });
+      }
+      // A key that isn't 32 bytes would only fail when someone connects a calendar.
+      if (env.CALENDAR_SECRET_KEY && !parseSecretKey(env.CALENDAR_SECRET_KEY)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["CALENDAR_SECRET_KEY"],
+          message:
+            "CALENDAR_SECRET_KEY must be 32 bytes as base64; generate one with " +
+            "`openssl rand -base64 32`.",
         });
       }
       // Push services reject a push with no contact, and Apple rejects one
@@ -263,6 +279,7 @@ function schemaFor(mode: EnvMode) {
       TYPESAFE_API_KEY: env.TYPESAFE_API_KEY,
       ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
       FEEDBACK_LIST_ID: env.FEEDBACK_LIST_ID,
+      CALENDAR_SECRET_KEY: env.CALENDAR_SECRET_KEY ? (parseSecretKey(env.CALENDAR_SECRET_KEY) ?? undefined) : undefined,
       VAPID:
         // superRefine checked that a key pair comes with a subject.
         env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY

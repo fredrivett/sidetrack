@@ -82,7 +82,12 @@ export type SafeFetchResult = {
   body: Uint8Array;
   /** The body was longer than `maxBytes` and was cut off there. */
   truncated: boolean;
+  /** A redirect's target, when one comes back unfollowed (with `post`). */
+  location?: string;
 };
+
+/** A request with a body: a POST, or another method such as PROPFIND. */
+export type SafeFetchBody = { body: string; headers: Record<string, string>; method?: string };
 
 const MAX_REDIRECTS = 5;
 const REQUEST_TIMEOUT_MS = 5_000;
@@ -96,9 +101,11 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
  * `signal` aborts). `allowAddress` exists for tests, which serve from
  * loopback; leave it at its default.
  *
- * With `post`, it POSTs that body and headers instead, and follows no
- * redirects: a redirect comes back as its own response, so a signed request
- * is only ever sent to the URL it was signed for.
+ * With `post`, it sends that body and headers instead, as a POST or as
+ * `post.method` (CalDAV's PROPFIND and REPORT), and follows no redirects: a
+ * redirect comes back as its own response, so a signed or authenticated
+ * request is only ever sent to the URL it was made for. `timeoutMs` replaces
+ * the 5 seconds for a slow server.
  */
 export async function safeFetch(
   url: string,
@@ -106,15 +113,17 @@ export async function safeFetch(
     maxBytes,
     signal,
     post,
+    timeoutMs = REQUEST_TIMEOUT_MS,
     allowAddress = isPublicAddress,
   }: {
     maxBytes: number;
     signal?: AbortSignal;
-    post?: { body: string; headers: Record<string, string> };
+    post?: SafeFetchBody;
+    timeoutMs?: number;
     allowAddress?: (address: string) => boolean;
   },
 ): Promise<SafeFetchResult> {
-  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+  const timeout = AbortSignal.timeout(timeoutMs);
   const abort = signal ? AbortSignal.any([signal, timeout]) : timeout;
   let current = new URL(url);
   for (let hop = 0; ; hop++) {
@@ -137,8 +146,8 @@ function get(
   maxBytes: number,
   signal: AbortSignal,
   allowAddress: (address: string) => boolean,
-  post?: { body: string; headers: Record<string, string> },
-): Promise<Omit<SafeFetchResult, "url"> & { location?: string }> {
+  post?: SafeFetchBody,
+): Promise<Omit<SafeFetchResult, "url">> {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     return Promise.reject(new Error(`refused ${url.protocol} URL`));
   }
@@ -176,7 +185,7 @@ function get(
     const req = (url.protocol === "https:" ? https : http).request(
       url,
       {
-        method: post ? "POST" : "GET",
+        method: post ? (post.method ?? "POST") : "GET",
         lookup,
         signal,
         headers: post?.headers ?? {

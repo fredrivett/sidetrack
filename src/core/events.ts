@@ -318,6 +318,11 @@ export type AccountEvent =
   | { type: "github.secret.added"; webhookId: string; secretId: string; name: string; first: boolean }
   | { type: "github.secret.removed"; webhookId: string; secretId: string; name: string }
   | { type: "github.webhook.removed"; webhookId: string }
+  /** `username`: the sign-in name, such as an Apple ID email; never the password. */
+  | { type: "calendar.connected" | "calendar.disconnected"; accountId: string; username: string }
+  /** Signed in again with a new password, after the old one stopped working. */
+  | { type: "calendar.reconnected"; accountId: string; username: string }
+  | { type: "calendar.included"; accountId: string; calendarId: string; name: string; included: boolean }
   | { type: "profile.username"; userId: string; from: string; to: string }
   /** `image` null: cleared. */
   | { type: "profile.avatar"; userId: string; image: string | null; uploaded?: true }
@@ -476,6 +481,13 @@ export function auditColumns(event: ChangeEvent): {
       return account("update", "webhook", event.webhookId);
     case "github.webhook.removed":
       return account("delete", "webhook", event.webhookId);
+    case "calendar.connected":
+      return account("create", "calendar", event.accountId);
+    case "calendar.disconnected":
+      return account("delete", "calendar", event.accountId);
+    case "calendar.reconnected":
+    case "calendar.included":
+      return account("update", "calendar", event.accountId);
     case "profile.username":
     case "profile.password":
       return account("update", "profile", event.userId);

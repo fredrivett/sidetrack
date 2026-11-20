@@ -242,6 +242,12 @@ With `ANTHROPIC_API_KEY` too:
   server 2,000 a day in all; past that, and whenever a reply fails its checks,
   the built-in greeting shows instead.
 
+### Calendars
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `CALENDAR_SECRET_KEY` | unset | Turns on Settings → Calendars, and encrypts the iCloud app-specific passwords people connect with. 32 bytes as base64: `openssl rand -base64 32`. Changing it means everyone signs in to their calendars again |
+
 ### Push notifications
 
 For notifications in Settings → Notifications, including on iPhone and iPad once

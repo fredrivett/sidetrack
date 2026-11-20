@@ -56,6 +56,8 @@ export const AUDIT_ENTITIES = [
   // A comment on an item. Its rows carry the item as parentId, so they show
   // in the item's history.
   "comment",
+  // A connected calendar account; entityId is the account id, no project.
+  "calendar",
 ] as const;
 export type AuditEntity = (typeof AUDIT_ENTITIES)[number];
 
@@ -490,6 +492,87 @@ export const agentWebhooks = sqliteTable("agent_webhooks", {
   secret: text("secret").notNull(),
   createdAt: integer("created_at").notNull(),
 });
+
+export const CALENDAR_KINDS = ["icloud"] as const;
+export type CalendarKind = (typeof CALENDAR_KINDS)[number];
+
+// A calendar account someone connected (core/calendars.ts), such as their
+// iCloud over CalDAV. Its calendars and their events are theirs alone, never
+// shown to list-mates. `secret` is the app-specific password, sealed with
+// CALENDAR_SECRET_KEY (lib/secretBox.ts) for this row's id: never shown
+// back, logged or audited.
+export const calendarAccounts = sqliteTable(
+  "calendar_accounts",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<CalendarKind>().notNull(),
+    // The sign-in name, such as an Apple ID email.
+    username: text("username").notNull(),
+    secret: text("secret").notNull(),
+    // The collection holding the account's calendars, found when connecting.
+    homeUrl: text("home_url").notNull(),
+    createdAt: integer("created_at").notNull(),
+    lastSyncedAt: integer("last_synced_at"),
+    // Why the last sync failed, in words for settings; null when it worked.
+    lastError: text("last_error"),
+    // The server refused the password (revoked, say): sync stops until they reconnect.
+    needsReconnect: integer("needs_reconnect", { mode: "boolean" }).notNull().default(false),
+  },
+  (t) => [index("calendar_accounts_user").on(t.userId)],
+);
+
+// One calendar on an account, as its server lists it. Sync keeps the name,
+// colour and ctag up to date without auditing them (they're the server's,
+// not a change anyone made here); including or leaving one out is audited.
+export const calendars = sqliteTable(
+  "calendars",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id")
+      .notNull()
+      .references(() => calendarAccounts.id, { onDelete: "cascade" }),
+    remoteUrl: text("remote_url").notNull(),
+    name: text("name").notNull(),
+    color: text("color"),
+    included: integer("included", { mode: "boolean" }).notNull().default(true),
+    // The ctag its events were last fetched at, and when: they're fetched
+    // again when it changes, and daily anyway as the window moves on.
+    ctag: text("ctag"),
+    eventsFetchedAt: integer("events_fetched_at"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [uniqueIndex("calendars_account_url").on(t.accountId, t.remoteUrl)],
+);
+
+// A copy of each included calendar's events from yesterday to a fortnight
+// ahead, one row per occurrence, rebuilt by sync whenever the calendar
+// changes. A cache of the owner's own data, so not audited.
+export const calendarEvents = sqliteTable(
+  "calendar_events",
+  {
+    id: text("id").primaryKey(),
+    calendarId: text("calendar_id")
+      .notNull()
+      .references(() => calendars.id, { onDelete: "cascade" }),
+    uid: text("uid").notNull(),
+    // The repeat's original start, for a recurring event; "" otherwise.
+    recurrenceId: text("recurrence_id").notNull(),
+    title: text("title").notNull(),
+    location: text("location"),
+    // ms. For an all-day event, midnight UTC of its first day and of the day after its last.
+    start: integer("start").notNull(),
+    end: integer("end").notNull(),
+    allDay: integer("all_day", { mode: "boolean" }).notNull(),
+    // An all-day event's first and last day, YYYY-MM-DD.
+    startDay: text("start_day"),
+    endDay: text("end_day"),
+    tentative: integer("tentative", { mode: "boolean" }).notNull(),
+  },
+  (t) => [index("calendar_events_calendar_start").on(t.calendarId, t.start)],
+);
 
 // A list's labels. Items carry them by name (items.labels). The emoji is
 // optional and works like projects.icon: emojiChosen says whether someone

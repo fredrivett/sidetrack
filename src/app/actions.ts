@@ -19,6 +19,15 @@ import {
 } from "@/core/agentSessions";
 import { listAudit as listAuditCore } from "@/core/audit";
 import {
+  calendarConfig,
+  CalendarConnectError,
+  connectICloud as connectICloudCore,
+  disconnectCalendarAccount as disconnectCalendarAccountCore,
+  listCalendarAccounts as listCalendarAccountsCore,
+  setCalendarIncluded as setCalendarIncludedCore,
+  syncCalendarAccount as syncCalendarAccountCore,
+} from "@/core/calendars";
+import {
   addGithubWebhookSecret as addGithubWebhookSecretCore,
   removeGithubWebhook as removeGithubWebhookCore,
   removeGithubWebhookSecret as removeGithubWebhookSecretCore,
@@ -920,6 +929,59 @@ export async function removeGithubWebhookSecretAction(id: string) {
   const { db } = getDb();
   removeGithubWebhookSecretCore(db, userId, id, SOURCE);
   revalidatePath("/settings/github");
+}
+
+/**
+ * Connect the signed-in user's iCloud calendars. Returns the reason in
+ * words when iCloud refuses or can't be reached, since production hides a
+ * thrown error's message.
+ */
+export async function connectICloudAction(username: string, password: string): Promise<{ error: string | null }> {
+  const userId = await requireUserId();
+  const config = calendarConfig();
+  if (!config) return { error: "Calendars aren't set up on this server." };
+  const { db } = getDb();
+  try {
+    await connectICloudCore(db, userId, { username, password }, SOURCE, config);
+  } catch (error) {
+    if (error instanceof CalendarConnectError) return { error: error.message };
+    throw error;
+  }
+  revalidatePath("/settings/calendars");
+  refresh();
+  return { error: null };
+}
+
+export async function disconnectCalendarAccountAction(accountId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  disconnectCalendarAccountCore(db, userId, accountId, SOURCE);
+  revalidatePath("/settings/calendars");
+  refresh();
+}
+
+export async function setCalendarIncludedAction(calendarId: string, included: boolean) {
+  const userId = await requireUserId();
+  const config = calendarConfig();
+  const { db } = getDb();
+  if (!setCalendarIncludedCore(db, userId, calendarId, included, SOURCE)) return;
+  // Including one fetches its events now, rather than at the next sync.
+  if (included && config) {
+    const account = listCalendarAccountsCore(db, userId).find((a) => a.calendars.some((c) => c.id === calendarId));
+    if (account) await syncCalendarAccountCore(db, account.id, config);
+  }
+  revalidatePath("/settings/calendars");
+  refresh();
+}
+
+export async function syncCalendarAccountAction(accountId: string) {
+  const userId = await requireUserId();
+  const config = calendarConfig();
+  const { db } = getDb();
+  if (!config || !listCalendarAccountsCore(db, userId).some((a) => a.id === accountId)) return;
+  await syncCalendarAccountCore(db, accountId, config);
+  revalidatePath("/settings/calendars");
+  refresh();
 }
 
 export async function removeGithubWebhookAction() {
