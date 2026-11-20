@@ -318,8 +318,8 @@ export function DraggableItemList({
   /** Parents whose sub-items are hidden. */
   collapsed: ReadonlySet<string>;
   onToggleCollapsed: (id: string) => void;
-  /** Opens New item for this list, from the empty state. */
-  onAddItem: () => void;
+  /** Opens New item for this list, from the empty state; absent where the viewer can't add. */
+  onAddItem?: () => void;
 }) {
   // The order just dropped, shown until the server's refresh lands: held for
   // the whole transition, so the list can't flash back to the old order
@@ -728,6 +728,19 @@ export function DraggableItemList({
     </DragOverlay>
   );
 
+  if (rows.length === 0 && !onAddItem) {
+    return (
+      <>
+        <p
+          ref={setListRef}
+          className="rounded-lg border border-dashed border-neutral-200 bg-neutral-50 px-3 py-8 text-center text-xs text-balance text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/30 dark:text-neutral-400"
+        >
+          Nothing here yet.
+        </p>
+        {overlay}
+      </>
+    );
+  }
   if (rows.length === 0) {
     return (
       <>

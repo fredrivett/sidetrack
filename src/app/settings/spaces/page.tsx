@@ -20,8 +20,8 @@ export default async function SpacesPage() {
           <h1 className="text-lg font-semibold tracking-tight">Spaces</h1>
           <p className="text-sm text-muted-foreground">
             A space shares every list in it with everyone in it, such as a household or a
-            small team. Admins invite and remove people; everyone can see and edit the
-            lists.
+            small team. Admins invite and remove people, and choose what each can do: edit
+            the lists, or only comment on or view them.
           </p>
         </header>
         <SpacesPanel spaces={listSpaces(db, userId)} viewerId={userId} />

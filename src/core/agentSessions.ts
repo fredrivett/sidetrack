@@ -3,7 +3,7 @@ import { nanoid } from "nanoid";
 import type { AgentRequest } from "../lib/agentRequest";
 import { formatItemRef, workBranchName } from "../lib/itemRef";
 import { normalizeWebUrl } from "../lib/url";
-import { hasProjectAccess, isListAdmin } from "./access";
+import { canEditProject, hasProjectAccess, isListAdmin, requireListAccess } from "./access";
 import { apiKeys } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
@@ -52,9 +52,11 @@ function openSession(db: Db, itemId: string, agentKeyId: string) {
     .get();
 }
 
+/** An item the user can open and change: agents work only for those who could do the work themselves. */
 function itemOrThrow(db: Db, userId: string, itemId: string): Item {
   const item = getItem(db, userId, itemId);
   if (!item) throw new Error(`item not found: ${itemId}`);
+  requireListAccess(db, userId, item.projectId, "edit");
   return item;
 }
 
@@ -194,7 +196,10 @@ export function reportWork(
   rawNote: string,
   source: AgentOrigin,
 ): AgentSession {
-  const item = itemOrThrow(db, userId, itemId);
+  // An agent whose owner lost edit had its session ended, so it hears that
+  // first, as any agent without a session does.
+  const item = getItem(db, userId, itemId);
+  if (!item) throw new Error(`item not found: ${itemId}`);
   const note = cleanNote(rawNote);
   const session = openSession(db, itemId, source.agent.keyId);
   if (!session) {
@@ -202,6 +207,7 @@ export function reportWork(
       `${source.agent.name} has no open work session on "${item.title}"; call start_work first`,
     );
   }
+  requireListAccess(db, userId, item.projectId, "edit");
   const now = Date.now();
   db.transaction((tx) => {
     tx.update(agentSessions)
@@ -228,11 +234,13 @@ export function finishWork(
   input: { note?: string | null },
   source: AgentOrigin,
 ): AgentSession | null {
-  const item = itemOrThrow(db, userId, itemId);
+  const item = getItem(db, userId, itemId);
+  if (!item) throw new Error(`item not found: ${itemId}`);
   // A blank closing note is no note, so it can't stop the session closing.
   const note = input.note?.trim() ? cleanNote(input.note) : null;
   const session = openSession(db, itemId, source.agent.keyId);
   if (!session) return null;
+  requireListAccess(db, userId, item.projectId, "edit");
   const now = Date.now();
   const patch = { finishedAt: now, lastActiveAt: now, ...(note ? { note } : {}) };
   db.transaction((tx) => {
@@ -328,7 +336,7 @@ export function listStartableLists(db: Db, userId: string): string[] {
   return db
     .select()
     .from(projects)
-    .where(and(hasProjectAccess(userId), isNotNull(projects.repository)))
+    .where(and(canEditProject(userId), isNotNull(projects.repository)))
     .all()
     .filter((p) => startRefusal(db, userId, p) === null)
     .map((p) => p.id);

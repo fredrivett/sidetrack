@@ -252,8 +252,9 @@ export function deleteSpace(
 }
 
 /**
- * Invite an existing user to a Space. Admin-only. They join as a member once
- * they accept; an admin can make them an admin after that.
+ * Invite an existing user to a Space, as a member (the default), a
+ * commenter or a viewer. Admin-only. They get that role once they accept;
+ * an admin can make them an admin after that.
  */
 export function inviteSpaceMember(
   db: Db,
@@ -261,8 +262,10 @@ export function inviteSpaceMember(
   spaceId: string,
   handle: string,
   source: AuditOrigin,
+  role: Exclude<SpaceRole, "admin"> = "member",
 ): SpaceMemberView {
   const { space } = requireAdmin(db, userId, spaceId, "invite people");
+  if (!["member", "commenter", "viewer"].includes(role)) throw new Error(`invalid role: ${role}`);
   const target = findUserByHandle(db, handle);
   if (!target) throw new Error(`no account found for "${handle.trim()}"`);
   const existing = membershipOf(db, target.id, spaceId);
@@ -277,7 +280,7 @@ export function inviteSpaceMember(
   const now = Date.now();
   db.transaction((tx) => {
     tx.insert(spaceMembers)
-      .values({ id, spaceId, userId: target.id, status: "pending", role: "member", createdAt: now })
+      .values({ id, spaceId, userId: target.id, status: "pending", role, createdAt: now })
       .run();
     recordAudit(tx as unknown as Db, {
       actor: userId,
@@ -287,6 +290,7 @@ export function inviteSpaceMember(
         space: { spaceId, name: space.name },
         membershipId: id,
         member: personAt(target),
+        role,
       },
     });
   });
@@ -297,7 +301,7 @@ export function inviteSpaceMember(
     name: target.name,
     email: target.email,
     status: "pending",
-    role: "member",
+    role,
     createdAt: now,
   };
 }
@@ -419,8 +423,11 @@ export function removeSpaceMember(
 }
 
 /**
- * Make someone in a Space an admin, or a member again. Admin-only, for people
- * who've accepted. The last admin can't be made a member.
+ * Change someone's role in a Space: admin, member, commenter or viewer.
+ * Admin-only. A pending invite's role can change too, but not to admin:
+ * admins are made from people who've joined. The last admin can't be given
+ * another role. Taking edit away takes them off the Space's items and ends
+ * their agents there (revokeListAccess), on lists they can't edit another way.
  */
 export function setSpaceMemberRole(
   db: Db,
@@ -435,8 +442,9 @@ export function setSpaceMemberRole(
   }
   const { space } = requireAdmin(db, userId, spaceId, "change roles");
   const membership = membershipOf(db, targetUserId, spaceId);
-  if (membership?.status !== "accepted") {
-    throw new Error("only people who've joined the space can have their role changed");
+  if (!membership) throw new Error("they aren't in this space");
+  if (membership.status !== "accepted" && role === "admin") {
+    throw new Error("only people who've joined the space can be made an admin");
   }
   if (membership.role === role) return;
   const target = db.select().from(users).where(eq(users.id, targetUserId)).get();
@@ -445,6 +453,12 @@ export function setSpaceMemberRole(
     // As in removeSpaceMember: checked after the write, inside the transaction.
     if (adminCount(tx as unknown as Db, spaceId) === 0) {
       throw new Error("the space needs an admin: make someone else an admin first");
+    }
+    const lost = { unassigned: 0, ended: 0 };
+    for (const projectId of listIdsInSpace(tx as unknown as Db, spaceId)) {
+      const l = revokeListAccess(tx as unknown as Db, targetUserId, projectId);
+      lost.unassigned += l.unassigned;
+      lost.ended += l.ended;
     }
     recordAudit(tx as unknown as Db, {
       actor: userId,
@@ -455,6 +469,7 @@ export function setSpaceMemberRole(
         membershipId: membership.id,
         member: personAt(target ?? { id: targetUserId, username: null }),
         role,
+        lost: accessLost(lost),
       },
     });
   });
@@ -495,7 +510,11 @@ export function setProjectSpace(
         : "only the list owner can move a list into a space",
     );
   }
-  const to = spaceId ? requireMember(db, userId, spaceId).space : undefined;
+  const joined = spaceId ? requireMember(db, userId, spaceId) : undefined;
+  if (joined && joined.membership.role !== "admin" && joined.membership.role !== "member") {
+    throw new Error("only the space's admins and members can add lists to it");
+  }
+  const to = joined?.space;
   // Everyone who reached the list through the Space it's leaving; any who
   // still reach it another way keep it (revokeListAccess checks).
   const losing = from

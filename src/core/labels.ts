@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { isEmoji } from "@/lib/projectIcon";
-import { hasProjectAccess } from "./access";
+import { hasProjectAccess, requireListAccess } from "./access";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
 import type { ChangeEvent } from "./events";
@@ -121,6 +121,7 @@ export function addLabel(
     .where(and(eq(projects.id, projectId), hasProjectAccess(userId)))
     .get();
   if (!accessibleProject) throw new Error(`list not found: ${projectId}`);
+  requireListAccess(db, userId, projectId, "edit");
 
   const existing = db
     .select()
@@ -173,6 +174,7 @@ export function updateLabel(
 ): Label {
   const existing = getLabel(db, userId, id);
   if (!existing) throw new Error(`label not found: ${id}`);
+  requireListAccess(db, userId, existing.projectId, "edit");
 
   const next: Partial<Label> = {};
   const changes: Extract<ChangeEvent, { type: "label.updated" }>["changes"] = {};
@@ -319,6 +321,7 @@ export function deleteLabel(
 ): void {
   const existing = getLabel(db, userId, id);
   if (!existing) throw new Error(`label not found: ${id}`);
+  requireListAccess(db, userId, existing.projectId, "edit");
   if (labelUsage(db, userId, id)?.token !== token) {
     throw new Error("the label's items have changed since you looked: check its usage again");
   }

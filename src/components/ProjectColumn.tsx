@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronsDownUp, ChevronsUpDown, Plus } from "lucide-react";
+import { Check, ChevronsDownUp, ChevronsUpDown, Eye, MessageSquare, Plus } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { updateProjectAction } from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
@@ -156,14 +156,23 @@ export function ProjectColumn({
                 }
                 onDraftChange={listIcon.onDraftChange}
                 required
+                readOnly={project.access !== "edit"}
                 className="h-8 min-w-0 cursor-text truncate rounded-md border border-transparent px-1.5 text-base font-semibold transition-colors hover:bg-muted"
                 inputClassName="field-sizing-content h-8 min-w-0 px-1.5 py-0 text-base font-semibold"
               />
             </div>
-            {(project.status !== "active" || (!project.isOwner && !inSpace)) && (
+            {(project.status !== "active" ||
+              (!project.isOwner && !inSpace) ||
+              project.access !== "edit") && (
               <div className="flex items-center gap-1.5">
                 {project.status !== "active" && (
                   <StatusBadge status={project.status} />
+                )}
+                {project.access !== "edit" && (
+                  <span className="inline-flex items-center gap-1 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
+                    {project.access === "comment" ? <MessageSquare className="size-3" /> : <Eye className="size-3" />}
+                    {project.access === "comment" ? "Can comment" : "View only"}
+                  </span>
                 )}
                 {!project.isOwner && !inSpace && (
                   <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sky-700 dark:bg-sky-950 dark:text-sky-400">
@@ -214,6 +223,7 @@ export function ProjectColumn({
           </HeaderSlot>
           {/* 32px between its centre and the ⋯'s, as between the Space
               tray's + and ⋯, so in a tray's last list they line up. */}
+          {project.access === "edit" && (
           <button
             type="button"
             aria-label={`Add item to ${project.name}`}
@@ -223,7 +233,9 @@ export function ProjectColumn({
           >
             <Plus className="size-4" />
           </button>
+          )}
           <ProjectMenu
+            canEdit={project.access === "edit"}
             projectId={project.id}
             prevId={prevId}
             nextId={nextId}
@@ -297,7 +309,7 @@ export function ProjectColumn({
             viewerId={viewerId}
             prLinksByItem={prLinksByItem}
             onOpenDetail={detail.openDetail}
-            onAddItem={() => onAddItem(project.id)}
+            onAddItem={project.access === "edit" ? () => onAddItem(project.id) : undefined}
           />
         )}
       </div>

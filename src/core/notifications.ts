@@ -1,4 +1,5 @@
 import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { roleWords } from "../lib/roles";
 import { nanoid } from "nanoid";
 import { getEnv } from "../lib/env";
 import { formatItemRef } from "../lib/itemRef";
@@ -264,6 +265,12 @@ function rule(
         spaceId: event.space.spaceId,
       };
     }
+    case "member.role":
+      return {
+        to: as("role", [event.member.userId]),
+        groupKey: `list:${event.projectId}`,
+        projectId: event.projectId,
+      };
     case "space.member.role":
       return {
         to: as("role", [event.member.userId]),
@@ -616,7 +623,10 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
   const listIds = [
     ...new Set(
       events.flatMap((e) =>
-        e.type === "member.joined" || e.type === "list.updated" || e.type === "list.created"
+        e.type === "member.joined" ||
+        e.type === "member.role" ||
+        e.type === "list.updated" ||
+        e.type === "list.created"
           ? [e.projectId]
           : [],
       ),
@@ -780,7 +790,14 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           ...base,
           title: name,
           url: "/",
-          parts: [who, t(" invited you to "), { text: name, em: "place", quote: true }],
+          parts: [
+            who,
+            t(" invited you to "),
+            { text: name, em: "place", quote: true },
+            ...(event.role && event.role !== "editor" && event.role !== "member"
+              ? [t(` as ${roleWords(event.role)}`)]
+              : []),
+          ],
           snippet: null,
         },
       ];
@@ -800,6 +817,21 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
     }
     // Joins and roles: only while the reader is still in the list or Space,
     // by its current name.
+    if (event.type === "member.role") {
+      const list = lists.get(event.projectId);
+      if (!list) return [];
+      const place = listPart(event.projectId, list.name, list);
+      return [
+        {
+          ...base,
+          title: list.name,
+          list: place.list,
+          url: `/board?p=${encodeURIComponent(event.projectId)}`,
+          parts: [who, t(` made you ${roleWords(event.role)} of `), place],
+          snippet: null,
+        },
+      ];
+    }
     if (event.type === "member.joined" || event.type === "list.updated" || event.type === "list.created") {
       const list = lists.get(event.projectId);
       if (!list) return [];
@@ -839,7 +871,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           url: "/",
           parts:
             event.type === "space.member.role"
-              ? [who, t(event.role === "admin" ? " made you an admin of " : " made you a member of "), space]
+              ? [who, t(` made you ${roleWords(event.role)} of `), space]
               : [who, t(" joined "), space],
           snippet: null,
         },

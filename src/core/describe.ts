@@ -1,4 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
+import { roleWords } from "../lib/roles";
 import { ITEM_SORTS } from "../lib/itemSorts";
 import { repeatLabel } from "../lib/repeat";
 import { dueWord } from "../lib/time";
@@ -323,7 +324,21 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
       return [...moved, ...lostText(event.lost)];
     }
     case "member.invited":
-      return [t("invited "), person(event.member), t(" to "), list(event.listName)];
+      return [
+        t("invited "),
+        person(event.member),
+        t(" to "),
+        list(event.listName),
+        ...(event.role && event.role !== "editor" ? [t(` as ${roleWords(event.role)}`)] : []),
+      ];
+    case "member.role":
+      return [
+        t("made "),
+        person(event.member),
+        t(` ${roleWords(event.role)} of `),
+        list(event.listName),
+        ...lostText(event.lost),
+      ];
     case "member.joined":
       return [t("accepted invite to "), list(event.listName)];
     case "member.declined":
@@ -390,7 +405,13 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
         ? [t("reordered "), { text: "Personal", em: "place" }]
         : [t("reordered space "), space(event)];
     case "space.member.invited":
-      return [t("invited "), person(event.member), t(" to space "), space(event.space)];
+      return [
+        t("invited "),
+        person(event.member),
+        t(" to space "),
+        space(event.space),
+        ...(event.role && event.role !== "member" ? [t(` as ${roleWords(event.role)}`)] : []),
+      ];
     case "space.member.joined":
       return [t("accepted invite to space "), space(event.space)];
     case "space.member.declined":
@@ -408,8 +429,9 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
       return [
         t("made "),
         person(event.member),
-        t(event.role === "admin" ? " an admin of space " : " a member of space "),
+        t(` ${roleWords(event.role)} of space `),
         space(event.space),
+        ...lostText(event.lost),
       ];
     case "item.pr.linked":
       return [t("linked PR "), { text: event.prUrl, em: "item" }, t(" to "), item(event)];

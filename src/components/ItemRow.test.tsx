@@ -95,6 +95,7 @@ const viewer = {
   email: "me@example.com",
   image: null,
   isOwner: true,
+  canEdit: true,
 };
 
 const alex = {
@@ -105,6 +106,7 @@ const alex = {
   email: "alex@example.com",
   image: null,
   isOwner: false,
+  canEdit: true,
 };
 
 function renderRow(

@@ -1,6 +1,8 @@
 import nodemailer from "nodemailer";
 
+import type { ListRole, SpaceRole } from "../core/schema";
 import { getEnv } from "./env";
+import { roleWords } from "./roles";
 
 // Email delivery for auth flows. Three modes, picked by which env vars are set:
 //
@@ -146,26 +148,42 @@ export async function deliverPasswordResetEmail(
 /** What an invite is to: a list, or a Space of lists. */
 export type InviteKind = "list" | "space";
 
+/** An invite email: to whom, from whom, to what, and what they'll be able to do. */
+export interface InviteEmail {
+  to: string;
+  inviterName: string;
+  projectName: string;
+  url: string;
+  kind?: InviteKind;
+  role?: ListRole | SpaceRole;
+}
+
 // Single source of truth for the invite email's copy.
 function inviteMessage({
   inviterName,
   projectName,
   url,
   kind = "list",
+  role,
 }: {
   inviterName: string;
   projectName: string;
   url: string;
   kind?: InviteKind;
+  role?: ListRole | SpaceRole;
 }): { subject: string; text: string } {
+  // Said only when they'll see but not change it.
+  const as = role === "viewer" || role === "commenter" ? `, as ${roleWords(role)}` : "";
   return {
     subject: `${inviterName} invited you to a Sidetrack ${kind}`,
     text:
       (kind === "space"
         ? `${inviterName} invited you to join the space "${projectName}" in ` +
-          `Sidetrack, to share every list in it.`
-        : `${inviterName} invited you to collaborate on "${projectName}" in ` +
-          `Sidetrack.`) +
+          `Sidetrack, to share every list in it${as}.`
+        : as
+          ? `${inviterName} invited you to "${projectName}" in Sidetrack${as}.`
+          : `${inviterName} invited you to collaborate on "${projectName}" in ` +
+            `Sidetrack.`) +
       `\n\nOpen Sidetrack to accept: ${url}\n\nIf you weren't ` +
       "expecting this, you can ignore this email — nothing changes until you " +
       "accept.",
@@ -180,10 +198,11 @@ export async function deliverInviteEmail(
     projectName,
     url,
     kind,
-  }: { to: string; inviterName: string; projectName: string; url: string; kind?: InviteKind },
+    role,
+  }: InviteEmail,
   deps: EmailDeps,
 ): Promise<void> {
-  const { subject, text } = inviteMessage({ inviterName, projectName, url, kind });
+  const { subject, text } = inviteMessage({ inviterName, projectName, url, kind, role });
   await deliverEmail(
     {
       to,
@@ -371,13 +390,7 @@ export async function sendPasswordResetEmail(opts: {
   await deliverPasswordResetEmail(opts, liveDeps());
 }
 
-export async function sendInviteEmail(opts: {
-  to: string;
-  inviterName: string;
-  projectName: string;
-  url: string;
-  kind?: InviteKind;
-}): Promise<void> {
+export async function sendInviteEmail(opts: InviteEmail): Promise<void> {
   await deliverInviteEmail(opts, liveDeps());
 }
 
@@ -387,13 +400,7 @@ export async function sendInviteEmail(opts: {
  * invite banner is the source of truth, not the email. Both the web action and
  * the MCP tool call this after the invite is already persisted.
  */
-export async function notifyInvite(opts: {
-  to: string;
-  inviterName: string;
-  projectName: string;
-  url: string;
-  kind?: InviteKind;
-}): Promise<void> {
+export async function notifyInvite(opts: InviteEmail): Promise<void> {
   try {
     await sendInviteEmail(opts);
   } catch (err) {

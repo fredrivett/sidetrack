@@ -1,3 +1,4 @@
+import { requireListAccess } from "./access";
 import { createHash } from "node:crypto";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { formatItemRef } from "../lib/itemRef";
@@ -34,7 +35,7 @@ export interface MovePlan {
   matchedLabels: { from: string; to: string; itemIds: string[] }[];
   /** Labels the list doesn't have: each created there or dropped, as chosen. */
   missingLabels: { name: string; itemIds: string[] }[];
-  /** People assigned who can't see the list, so they come off the items. */
+  /** People assigned who can't edit the list, so they come off the items. */
   unassigned: { userId: string; name: string; itemIds: string[] }[];
   /** Names this exact plan; moveItem needs it back, so a move can't skip
    * its preview, and is refused if anything above changed since. */
@@ -55,8 +56,10 @@ interface Planned extends Omit<MovePlan, "token"> {
 function plan(db: Db, userId: string, id: string, projectId: string): Planned {
   const item = getItem(db, userId, id);
   if (!item) throw new Error(`item not found: ${id}`);
+  requireListAccess(db, userId, item.projectId, "edit");
   const target = getProject(db, userId, projectId);
   if (!target) throw new Error(`list not found: ${projectId}`);
+  requireListAccess(db, userId, projectId, "edit");
   if (target.id === item.projectId) throw new Error(`"${item.title}" is already in that list`);
   if (target.status === "archived") throw new Error("can't move an item into an archived list");
   const source = getProject(db, userId, item.projectId);
@@ -109,7 +112,11 @@ function plan(db: Db, userId: string, id: string, projectId: string): Planned {
     else missingLabels.push({ name, itemIds });
   }
 
-  const allowed = new Set(listAssignees(db, userId, target.id).map((a) => a.userId));
+  const allowed = new Set(
+    listAssignees(db, userId, target.id)
+      .filter((a) => a.canEdit)
+      .map((a) => a.userId),
+  );
   const unassigned = [
     ...new Set(moving.flatMap((it) => it.assigneeIds).filter((a) => !allowed.has(a))),
   ].map((a) => ({

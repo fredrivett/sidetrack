@@ -78,6 +78,7 @@ import {
   acceptInvite as acceptInviteCore,
   declineInvite as declineInviteCore,
   inviteMember as inviteMemberCore,
+  setMemberRole as setMemberRoleCore,
   listMembers as listMembersCore,
   listSuggestedCollaborators as listSuggestedCollaboratorsCore,
   removeMember as removeMemberCore,
@@ -101,7 +102,7 @@ import {
   removePushSubscription as removePushSubscriptionCore,
   savePushSubscription as savePushSubscriptionCore,
 } from "@/core/push";
-import type { AuditSource, NotificationLevel, ProjectStatus, SpaceColor } from "@/core/schema";
+import type { AuditSource, ListRole, NotificationLevel, ProjectStatus, SpaceColor, SpaceRole } from "@/core/schema";
 import {
   acceptSpaceInvite as acceptSpaceInviteCore,
   createSpace as createSpaceCore,
@@ -251,12 +252,12 @@ export async function listSuggestedCollaboratorsAction(projectId: string) {
   return listSuggestedCollaboratorsCore(db, userId, projectId);
 }
 
-export async function inviteMemberAction(projectId: string, person: string) {
+export async function inviteMemberAction(projectId: string, person: string, role: ListRole = "editor") {
   const session = await getCurrentSession();
   if (!session) redirect("/login");
   const userId = session.user.id;
   const { db } = getDb();
-  const member = inviteMemberCore(db, userId, projectId, person, SOURCE);
+  const member = inviteMemberCore(db, userId, projectId, person, SOURCE, role);
 
   // Notify the invitee by email, once the invite has answered: it's
   // best-effort (the in-app banner is the source of truth, so notifyInvite
@@ -268,12 +269,21 @@ export async function inviteMemberAction(projectId: string, person: string) {
       inviterName: session.user.name,
       projectName: project.name,
       url: await appBaseUrl(),
+      role,
     };
     after(() => notifyInvite(invite));
   }
 
   refresh();
   return member;
+}
+
+/** Change what a member of the list can do on it: edit, comment or only view. */
+export async function setMemberRoleAction(projectId: string, targetUserId: string, role: ListRole) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  setMemberRoleCore(db, userId, projectId, targetUserId, role, SOURCE);
+  refresh();
 }
 
 export async function removeMemberAction(projectId: string, targetUserId: string) {
@@ -344,11 +354,15 @@ export async function listSuggestedSpaceMembersAction(spaceId: string) {
   return listSuggestedSpaceMembersCore(db, userId, spaceId);
 }
 
-export async function inviteSpaceMemberAction(spaceId: string, person: string) {
+export async function inviteSpaceMemberAction(
+  spaceId: string,
+  person: string,
+  role: Exclude<SpaceRole, "admin"> = "member",
+) {
   const session = await getCurrentSession();
   if (!session) redirect("/login");
   const { db } = getDb();
-  const member = inviteSpaceMemberCore(db, session.user.id, spaceId, person, SOURCE);
+  const member = inviteSpaceMemberCore(db, session.user.id, spaceId, person, SOURCE, role);
   // Best-effort and after answering, like a list invite.
   const space = listSpacesCore(db, session.user.id).find((s) => s.id === spaceId);
   if (member.email && space) {
@@ -358,6 +372,7 @@ export async function inviteSpaceMemberAction(spaceId: string, person: string) {
       projectName: space.name,
       url: await appBaseUrl(),
       kind: "space" as const,
+      role,
     };
     after(() => notifyInvite(invite));
   }
@@ -376,7 +391,7 @@ export async function removeSpaceMemberAction(spaceId: string, targetUserId: str
 export async function setSpaceMemberRoleAction(
   spaceId: string,
   targetUserId: string,
-  role: "admin" | "member",
+  role: SpaceRole,
 ) {
   const userId = await requireUserId();
   const { db } = getDb();

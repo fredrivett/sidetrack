@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull, ne, type SQL, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { hasProjectAccess } from "./access";
+import { hasProjectAccess, listAccess } from "./access";
 import { users } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
@@ -9,6 +9,8 @@ import { getProject, nextProjectPosition } from "./projects";
 import {
   agentSessions,
   items,
+  LIST_ROLES,
+  type ListRole,
   type MembershipStatus,
   projectMembers,
   projectPositions,
@@ -24,6 +26,8 @@ export interface MemberView {
   name: string | null;
   email: string | null;
   status: MembershipStatus;
+  /** What they can do on the list. */
+  role: ListRole;
   createdAt: number;
 }
 
@@ -39,6 +43,9 @@ export interface AssigneeView {
   email: string | null;
   image: string | null;
   isOwner: boolean;
+  /** Whether they can change the list, and so hold its work. Viewers and
+   * commenters are on the list, to mention and to see, but not to assign. */
+  canEdit: boolean;
 }
 
 /** A pending invite from the invitee's perspective: which project, whose. */
@@ -105,7 +112,9 @@ export function inviteMember(
   projectId: string,
   handle: string,
   source: AuditOrigin,
+  role: ListRole = "editor",
 ): MemberView {
+  assertListRole(role);
   const project = getProject(db, userId, projectId);
   if (!project) throw new Error(`list not found: ${projectId}`);
   if (project.userId !== userId) {
@@ -139,7 +148,7 @@ export function inviteMember(
   const id = nanoid(12);
   db.transaction((tx) => {
     tx.insert(projectMembers)
-      .values({ id, projectId, userId: target.id, status: "pending" })
+      .values({ id, projectId, userId: target.id, status: "pending", role })
       .run();
     recordAudit(tx as unknown as Db, {
       actor: userId,
@@ -150,6 +159,7 @@ export function inviteMember(
         listName: project.name,
         membershipId: id,
         member: personAt(target),
+        role,
       },
     });
   });
@@ -161,8 +171,54 @@ export function inviteMember(
     name: target.name,
     email: target.email,
     status: "pending",
+    role,
     createdAt: Date.now(),
   };
+}
+
+function assertListRole(role: string): asserts role is ListRole {
+  if (!(LIST_ROLES as readonly string[]).includes(role)) throw new Error(`invalid role: ${role}`);
+}
+
+/**
+ * Change what a member, or someone invited, can do on the list: edit,
+ * comment or only view. Owner-only. Taking edit away takes them off the
+ * list's items and ends their agents there (revokeListAccess), unless the
+ * list's Space still lets them edit.
+ */
+export function setMemberRole(
+  db: Db,
+  userId: string,
+  projectId: string,
+  targetUserId: string,
+  role: ListRole,
+  source: AuditOrigin,
+): void {
+  assertListRole(role);
+  const project = getProject(db, userId, projectId);
+  if (!project) throw new Error(`list not found: ${projectId}`);
+  if (project.userId !== userId) throw new Error("only the list owner can change roles");
+  const membership = ownMembership(db, targetUserId, projectId);
+  if (!membership) throw new Error("they aren't on this list");
+  if (membership.role === role) return;
+  const target = getUserById(db, targetUserId);
+  db.transaction((tx) => {
+    tx.update(projectMembers).set({ role }).where(eq(projectMembers.id, membership.id)).run();
+    const lost = revokeListAccess(tx as unknown as Db, targetUserId, projectId);
+    recordAudit(tx as unknown as Db, {
+      actor: userId,
+      source,
+      event: {
+        type: "member.role",
+        projectId,
+        listName: project.name,
+        membershipId: membership.id,
+        member: personAt(target ?? { id: targetUserId, username: null }),
+        role,
+        lost: accessLost(lost),
+      },
+    });
+  });
 }
 
 /** Look up the caller's own membership row in a project, whatever its status. */
@@ -336,14 +392,16 @@ export function removeMember(
 }
 
 /**
- * Clean up after `userId` loses access to a project, if they have: take them
- * off its items (other assignees of a joint item stay), end their agents' open
- * sessions on it, and drop their ordering slot. Without access they can't
- * action that work, so leaving it assigned or "working" would be a lie. Does
- * nothing while they still have access another way (owner, direct member, or
- * the list's Space), so callers run it after every change that could end
- * access. Like the slot cleanup, this is a consequence of the caller's audited
- * event, not its own: the caller's audit row reports the counts.
+ * Clean up after `userId` loses access to a project, or the right to change
+ * it, if they have: take them off its items (other assignees of a joint item
+ * stay) and end their agents' open sessions on it, since only those who can
+ * change a list hold its work; and, once they can't open it at all, drop
+ * their ordering slot. Leaving work assigned or "working" to someone who
+ * can't action it would be a lie. Does nothing they still have another way
+ * (owner, direct member, or the list's Space), so callers run it after every
+ * change that could end access or lower a role. Like the slot cleanup, this
+ * is a consequence of the caller's audited event, not its own: the caller's
+ * audit row reports the counts.
  */
 // audit-exempt: runs inside the caller's audited transaction.
 export function revokeListAccess(
@@ -351,12 +409,8 @@ export function revokeListAccess(
   userId: string,
   projectId: string,
 ): AccessLost {
-  const stillHasAccess = db
-    .select({ id: projects.id })
-    .from(projects)
-    .where(and(eq(projects.id, projectId), hasProjectAccess(userId)))
-    .get();
-  if (stillHasAccess) return { unassigned: 0, ended: 0 };
+  const access = listAccess(db, userId, projectId);
+  if (access === "edit") return { unassigned: 0, ended: 0 };
   const held = db
     .select({ id: items.id, assigneeIds: items.assigneeIds })
     .from(items)
@@ -387,6 +441,8 @@ export function revokeListAccess(
       ),
     )
     .run().changes;
+  // Still on their board while they can open it.
+  if (access !== null) return { unassigned: held.length, ended };
   // No user FK to cascade the slot. Someone who never had one (a pending
   // invitee) makes this a harmless no-op.
   db.delete(projectPositions)
@@ -429,12 +485,13 @@ export function listMembers(
       name: r.user?.name ?? null,
       email: r.user?.email ?? null,
       status: r.membership.status,
+      role: r.membership.role,
       createdAt: r.membership.createdAt,
     }));
 }
 
 /** Someone the caller already collaborates with, suggested for a quick invite. */
-export type CollaboratorView = Omit<MemberView, "status" | "createdAt">;
+export type CollaboratorView = Omit<MemberView, "status" | "role" | "createdAt">;
 
 /**
  * People the owner already shares another list or a Space with (in either
@@ -517,10 +574,11 @@ export function suggestCollaborators(
 }
 
 /**
- * The users who can be assigned items on a project: the owner first, then every
- * accepted member in invite order, then the list's Space's accepted members (pending invites are excluded — they have no
- * access yet, so they can't hold work). Visible to anyone with access; empty
- * for a project the caller can't see.
+ * Everyone on a project: the owner first, then every accepted member in
+ * invite order, then the list's Space's accepted members (pending invites are
+ * excluded — they have no access yet). Each says whether they can edit the
+ * list: only those can be assigned its items. Visible to anyone with access;
+ * empty for a project the caller can't see.
  */
 export function listAssignees(
   db: Db,
@@ -541,11 +599,12 @@ export function listAssignees(
       email: owner.email,
       image: owner.image,
       isOwner: true,
+      canEdit: true,
     });
   }
 
   const rows = db
-    .select({ user: users })
+    .select({ user: users, canEdit: sql<boolean>`${projectMembers.role} = 'editor'` })
     .from(projectMembers)
     .innerJoin(users, eq(users.id, projectMembers.userId))
     .where(
@@ -556,11 +615,14 @@ export function listAssignees(
     )
     .orderBy(asc(projectMembers.createdAt))
     .all();
-  // Then the Space's accepted members, admin or not, who aren't listed yet.
+  // Then the Space's accepted members.
   if (project.spaceId) {
     rows.push(
       ...db
-        .select({ user: users })
+        .select({
+          user: users,
+          canEdit: sql<boolean>`${spaceMembers.role} in ('admin', 'member')`,
+        })
         .from(spaceMembers)
         .innerJoin(users, eq(users.id, spaceMembers.userId))
         .where(
@@ -573,11 +635,16 @@ export function listAssignees(
         .all(),
     );
   }
-  const seen = new Set(out.map((a) => a.userId));
-  for (const { user } of rows) {
-    if (seen.has(user.id)) continue;
-    seen.add(user.id);
-    out.push({
+  // Someone on the list both directly and through its Space gets the more
+  // generous of the two, as listAccess does.
+  const byId = new Map(out.map((a) => [a.userId, a]));
+  for (const { user, canEdit } of rows) {
+    const seen = byId.get(user.id);
+    if (seen) {
+      seen.canEdit ||= Boolean(canEdit);
+      continue;
+    }
+    const person: AssigneeView = {
       userId: user.id,
       username: user.username,
       displayUsername: user.displayUsername,
@@ -585,7 +652,10 @@ export function listAssignees(
       email: user.email,
       image: user.image,
       isOwner: false,
-    });
+      canEdit: Boolean(canEdit),
+    };
+    byId.set(user.id, person);
+    out.push(person);
   }
   return out;
 }

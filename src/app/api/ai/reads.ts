@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { writtenGreetingFor } from "@/core/agendaGreeting";
 import { listIconContext } from "@/core/autoEmoji";
+import { listAccessById } from "@/core/access";
 import type { Db } from "@/core/db";
 import { feedbackFollowUps } from "@/core/feedback";
 import { projectRefPrefixes } from "@/core/itemRef";
@@ -77,8 +78,10 @@ export const AI_READS = {
       let projectId = input.projectId;
       if (!projectId) {
         const titles = sampleOpenItemTitles(db, userId, 10);
+        // Only lists they can add to: not ones they view or comment on.
+        const access = listAccessById(db, userId);
         const lists = listProjects(db, userId)
-          .filter((p) => p.status === "active")
+          .filter((p) => p.status === "active" && access.get(p.id) === "edit")
           .map((p) => ({
             id: p.id,
             name: p.name,

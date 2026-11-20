@@ -6,7 +6,7 @@ import { normalizeProjectIcon } from "../lib/projectIcon";
 import { addDays, dayOf, isOnNoDate, isOnToday } from "../lib/time";
 import { normalizeRepository } from "../lib/repository";
 import { normalizeHomepageUrl } from "../lib/url";
-import { hasProjectAccess, isListAdmin, listMemberIds } from "./access";
+import { hasProjectAccess, isListAdmin, listMemberIds, requireListAccess } from "./access";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
 import type { ListChanges } from "./events";
@@ -329,10 +329,13 @@ function ensureUniquePrefix(
   return dedupePrefix(base, taken);
 }
 
-/** A Space `userId` has accepted, or a plain not-found (as spaces.ts says). */
+/**
+ * A Space `userId` has accepted, or a plain not-found (as spaces.ts says).
+ * Only its admins and members add lists to it: a list there is theirs to change.
+ */
 function joinedSpace(db: Db, userId: string, spaceId: string) {
   const space = db
-    .select({ id: spaces.id, name: spaces.name })
+    .select({ id: spaces.id, name: spaces.name, role: spaceMembers.role })
     .from(spaces)
     .innerJoin(spaceMembers, eq(spaceMembers.spaceId, spaces.id))
     .where(
@@ -344,7 +347,10 @@ function joinedSpace(db: Db, userId: string, spaceId: string) {
     )
     .get();
   if (!space) throw new Error(`space not found: ${spaceId}`);
-  return space;
+  if (space.role !== "admin" && space.role !== "member") {
+    throw new Error("only the space's admins and members can add lists to it");
+  }
+  return { id: space.id, name: space.name };
 }
 
 export function createProject(
@@ -434,6 +440,7 @@ export function updateProject(
 ): Project {
   const existing = getProject(db, userId, id);
   if (!existing) throw new Error(`list not found: ${id}`);
+  requireListAccess(db, userId, id, "edit");
   // getProject authorizes any member; the editable fields below (name, status,
   // summary, homepage) are open to members, but the prefix is owner-only and
   // the repository admin-only.

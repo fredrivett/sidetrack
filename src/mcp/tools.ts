@@ -1,3 +1,4 @@
+import { listAccessById } from "@/core/access";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
@@ -35,6 +36,7 @@ import {
   declineInvite,
   getUserName,
   inviteMember,
+  setMemberRole,
   listMembers,
   listPendingInvites,
   removeMember,
@@ -79,6 +81,9 @@ import {
   type Item,
   PROJECT_STATUSES,
   SPACE_COLORS,
+  LIST_ROLES,
+  type ListRole,
+  type SpaceRole,
   SPACE_ROLES,
 } from "@/core/schema";
 import {
@@ -308,6 +313,7 @@ async function sendInviteNotification(
   name: string,
   toEmail: string | null,
   kind: InviteKind = "list",
+  role?: ListRole | SpaceRole,
 ) {
   if (!toEmail) return;
   await notifyInvite({
@@ -316,6 +322,7 @@ async function sendInviteNotification(
     projectName: name,
     url,
     kind,
+    role,
   });
 }
 
@@ -338,15 +345,18 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "List the user's lists in board order (left to right, per their own board). Returns id, name, status, summary, summaryUpdatedAt and more. " +
         "status is active (on the board) or archived (off the board and every other view, kept for reference in the Archived view). " +
         "Archived lists are left out unless include_archived is true. " +
-        "spaceId is the Space the list is in (null for none); everyone in that Space can see and edit it. list_spaces gives each Space's name.",
+        "spaceId is the Space the list is in (null for none); everyone in that Space can see it, and its admins and members can edit it. list_spaces gives each Space's name. " +
+        "access is what the user can do on the list: edit, comment (see it and comment on its items, but change nothing else) or view (see it only). " +
+        "Never try to change a list whose access isn't edit, or comment on one whose access is view: tell the user they can't instead.",
       inputSchema: { include_archived: z.boolean().optional() },
     },
     async ({ include_archived }) => {
       const { db } = getDb();
+      const access = listAccessById(db, userId);
       return json(
-        listProjects(db, userId).filter(
-          (l) => include_archived || l.status !== "archived",
-        ),
+        listProjects(db, userId)
+          .filter((l) => include_archived || l.status !== "archived")
+          .map((l) => ({ ...l, access: access.get(l.id) ?? "view" })),
       );
     },
   );
@@ -732,7 +742,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "prefer it over adding each sub-item with parent afterwards. With completed: true they're created done too. Not with parent, since sub-items can't have their own. " +
         "due_date is the calendar day it's due, YYYY-MM-DD (no time); call list_today first if you need today's date in the user's timezone. " +
         DUE_SPAN +
-        "assignee_ids assigns it to one or more people, each the list owner (the list's userId) or an accepted member " +
+        "assignee_ids assigns it to one or more people, each the list owner (the list's userId) or an accepted member who can edit it " +
         "(user_id from list_members), or \"me\" for the user you act for; several make a joint item. " +
         "assignee_id (one id) also works, for older prompts; don't pass both. " +
         "completed: true creates it already done, in one call — use it when the user tells you about something they've finished, " +
@@ -884,7 +894,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "category (one name, or null for none) is the older single-label input, kept so older prompts work; don't pass both. " +
         "assignee_ids is everyone the item is assigned to, replacing who it had; several people make a joint item " +
         "(e.g. \"Discuss Christmas travel\" for both of them). Each entry is a user id of the list owner (the list's userId) " +
-        "or an accepted member (from list_members), or \"me\" for the user you act for. [] unassigns everyone. " +
+        "or an accepted member who can edit it (from list_members), or \"me\" for the user you act for. [] unassigns everyone. " +
         "To add or take off people while leaving everyone else, use add_assignee_ids and/or remove_assignee_ids instead " +
         "(same kinds of ids, \"me\" included): they apply to whoever is assigned when the change lands, so they never undo " +
         "someone else's change made since you last read the item. Prefer them over assignee_ids unless you mean to set the whole list. " +
@@ -1556,8 +1566,9 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       description:
         "List a list's collaborators and pending invites (the owner is not " +
         "included — it's the list's owner separately). Each row has user_id, " +
-        "username, name, email, and status (\"accepted\" or \"pending\"). Use a " +
-        "row's user_id with remove_member, or with update_item's assignee_ids.",
+        "username, name, email, status (\"accepted\" or \"pending\") and role: editor (changes " +
+        "anything a member can), commenter (sees the list and comments) or viewer (sees it only). " +
+        "Use a row's user_id with remove_member or set_member_role; only editors can be in update_item's assignee_ids.",
       inputSchema: { list_id: z.string() },
     },
     async ({ list_id }) => {
@@ -1577,18 +1588,41 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Invite an existing user to collaborate on a list (owner only). " +
         "person is a username (\"alice\" or \"@alice\") or an email. The target " +
         "must already have an account — there is no invite-by-email-to-sign-up. " +
-        "Lands a pending invite they must accept before they gain access; " +
-        "accepted members can edit everything except owner-only actions " +
-        "(delete, prefix, managing members).",
-      inputSchema: { list_id: z.string(), person: z.string().min(1) },
+        "Lands a pending invite they must accept before they gain access. " +
+        "role is what they can do once they join: editor (the default) changes everything except owner-only actions " +
+        "(delete, prefix, managing members); commenter sees the list and comments on its items; viewer only sees it. " +
+        "Use the role the user asked for; when they said to share it read-only or just so someone can see it, that's viewer.",
+      inputSchema: {
+        list_id: z.string(),
+        person: z.string().min(1),
+        role: z.enum(LIST_ROLES).optional(),
+      },
     },
-    async ({ list_id, person }) => {
+    async ({ list_id, person, role }) => {
       const { db } = getDb();
       const project = getProject(db, userId, list_id);
       if (!project) return notFound("list", list_id);
-      const member = inviteMember(db, userId, list_id, person, SOURCE);
-      await sendInviteNotification(db, ctx.baseUrl, userId, project.name, member.email);
+      const member = inviteMember(db, userId, list_id, person, SOURCE, role);
+      await sendInviteNotification(db, ctx.baseUrl, userId, project.name, member.email, "list", role);
       return json(member);
+    },
+  );
+
+  server.registerTool(
+    "set_member_role",
+    {
+      title: "Set a list member's role",
+      description:
+        "Change what a member, or someone invited, can do on a list (owner only): editor, commenter (sees the list and comments) " +
+        "or viewer (sees it only). user_id comes from list_members. Taking edit away takes them off the list's items " +
+        "and ends their agents' work there, unless the list's Space still lets them edit.",
+      inputSchema: { list_id: z.string(), user_id: z.string(), role: z.enum(LIST_ROLES) },
+    },
+    async ({ list_id, user_id, role }) => {
+      const { db } = getDb();
+      if (!getProject(db, userId, list_id)) return notFound("list", list_id);
+      setMemberRole(db, userId, list_id, user_id, role, SOURCE);
+      return json({ ok: true });
     },
   );
 
@@ -1694,7 +1728,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       title: "List Spaces",
       description:
         "List the Spaces the user has joined, in the order their board shows them. A Space is a group of people who share every list in it. " +
-        "Each has id, name, icon, color (null is grey) and the user's role: admin (manages its people and the Space itself) or member. " +
+        "Each has id, name, icon, color (null is grey) and the user's role: admin (manages its people and the Space itself), member (edits its lists), commenter (sees its lists and comments) or viewer (sees its lists only). " +
         "A list's spaceId (list_lists) says which Space it's in. Pending Space invites are in list_pending_invites.",
       inputSchema: {},
     },
@@ -1788,8 +1822,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       title: "List Space members",
       description:
         "List everyone in a Space and everyone invited to it, the user included. Each row has user_id, username, name, email, " +
-        "status (\"accepted\" or \"pending\") and role (\"admin\" or \"member\"). " +
-        "Use a row's user_id with remove_space_member or set_space_member_role, or with update_item's assignee_ids.",
+        "status (\"accepted\" or \"pending\") and role (\"admin\", \"member\", \"commenter\" or \"viewer\"). " +
+        "Use a row's user_id with remove_space_member or set_space_member_role, or, for an admin or member, with update_item's assignee_ids.",
       inputSchema: { space_id: z.string() },
     },
     async ({ space_id }) => {
@@ -1807,16 +1841,21 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       title: "Invite to a Space",
       description:
         "Invite an existing user to a Space (admins only). person is a username (\"alice\" or \"@alice\") or an email; " +
-        "they must already have an account. They join as a member once they accept, and then see and edit every list in the Space, " +
-        "so check with the user before inviting someone they didn't name.",
-      inputSchema: { space_id: z.string(), person: z.string().min(1) },
+        "they must already have an account. Once they accept they see every list in the Space, and role says what else: " +
+        "member (the default) edits them, commenter comments on their items, viewer only sees them. " +
+        "Check with the user before inviting someone they didn't name.",
+      inputSchema: {
+        space_id: z.string(),
+        person: z.string().min(1),
+        role: z.enum(["member", "commenter", "viewer"]).optional(),
+      },
     },
-    async ({ space_id, person }) => {
+    async ({ space_id, person, role }) => {
       const { db } = getDb();
       const space = listSpaces(db, userId).find((s) => s.id === space_id);
       if (!space) return notFound("space", space_id);
-      const member = inviteSpaceMember(db, userId, space_id, person, SOURCE);
-      await sendInviteNotification(db, ctx.baseUrl, userId, space.name, member.email, "space");
+      const member = inviteSpaceMember(db, userId, space_id, person, SOURCE, role);
+      await sendInviteNotification(db, ctx.baseUrl, userId, space.name, member.email, "space", role);
       return json(member);
     },
   );
@@ -1844,8 +1883,10 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Set a Space member's role",
       description:
-        "Make someone in a Space an admin, or a member again (admins only). user_id comes from list_space_members, " +
-        "and they must have accepted. All admins are equal. A Space always keeps an admin, so the last admin can't be made a member.",
+        "Change someone's role in a Space (admins only): admin (manages the Space and its people, and edits its lists), member (edits its lists), " +
+        "commenter (sees its lists and comments) or viewer (sees its lists only). user_id comes from list_space_members, " +
+        "and they must have accepted. All admins are equal. A Space always keeps an admin, so the last admin can't be given another role. " +
+        "Taking edit away takes them off the items they're assigned in the Space.",
       inputSchema: {
         space_id: z.string(),
         user_id: z.string(),

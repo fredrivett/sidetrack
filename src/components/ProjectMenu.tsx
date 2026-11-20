@@ -88,6 +88,7 @@ export function ProjectMenu({
   onAddItem,
   onShare,
   aiEnabled,
+  canEdit,
 }: {
   projectId: string;
   prevId: string | null;
@@ -110,6 +111,9 @@ export function ProjectMenu({
   onShare: (projectId: string, projectName: string) => void;
   /** Whether Jev is set up: sorting by priority asks it. */
   aiEnabled: boolean;
+  /** Whether the viewer can change the list's items. Viewers and commenters
+   * can still reorder it on their own board and follow it. */
+  canEdit: boolean;
 }) {
   // Changes to the list hold on its column until they land; deleting or
   // leaving takes it off the board at once.
@@ -188,9 +192,14 @@ export function ProjectMenu({
   // The list's Space as the viewer sees it; undefined if they aren't in it,
   // such as an owner who left the Space their list is still in.
   const space = spaces.find((s) => s.id === spaceId);
-  // Its owner moves it between Spaces they've joined; its owner or an admin
-  // of its Space can take it out (core enforces the same).
-  const canMove = isOwner && spaces.length > 0;
+  // Its owner moves it between Spaces they can add lists to (as an admin or
+  // member); its owner or an admin of its Space can take it out (core
+  // enforces the same).
+  // The list's own Space stays listed, ticked, whatever their role in it.
+  const targets = spaces.filter(
+    (s) => s.id === spaceId || s.role === "admin" || s.role === "member",
+  );
+  const canMove = isOwner && targets.some((s) => s.id !== spaceId);
   const canTakeOut = spaceId !== null && (isOwner || space?.role === "admin");
   // Reaching a list through its Space, leaving the list alone changes nothing.
   const canLeave = !isOwner && !space;
@@ -255,13 +264,15 @@ export function ProjectMenu({
           <Info />
           List details
         </DropdownMenuItem>
-        <DropdownMenuItem data-replay-safe onClick={() => onAddItem(projectId)}>
-          <Plus />
-          Add new item
-          <DropdownMenuShortcut>
-            <Kbd>C</Kbd>
-          </DropdownMenuShortcut>
-        </DropdownMenuItem>
+        {canEdit && (
+          <DropdownMenuItem data-replay-safe onClick={() => onAddItem(projectId)}>
+            <Plus />
+            Add new item
+            <DropdownMenuShortcut>
+              <Kbd>C</Kbd>
+            </DropdownMenuShortcut>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <MoveMenuItems
           prevId={prevId}
@@ -270,24 +281,28 @@ export function ProjectMenu({
           lastId={lastId}
           onMove={(ref) => run(() => reorderProjectAction(projectId, ref), `move “${name}”`)}
         />
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger data-replay-safe>
-            <ArrowDownUp />
-            Sort items by
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            {SORTS.filter(([by]) => aiEnabled || by !== "priority").map(([by, label, Icon]) => (
-              <DropdownMenuItem data-replay-safe key={by} onClick={() => sortItems(by, label.toLowerCase())}>
-                <Icon />
-                {label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-        <DropdownMenuItem data-replay-safe disabled={doneInList === 0} onClick={clearDone}>
-          <CheckCheck />
-          Tidy done items
-        </DropdownMenuItem>
+        {canEdit && (
+          <>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger data-replay-safe>
+                <ArrowDownUp />
+                Sort items by
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                {SORTS.filter(([by]) => aiEnabled || by !== "priority").map(([by, label, Icon]) => (
+                  <DropdownMenuItem data-replay-safe key={by} onClick={() => sortItems(by, label.toLowerCase())}>
+                    <Icon />
+                    {label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            <DropdownMenuItem data-replay-safe disabled={doneInList === 0} onClick={clearDone}>
+              <CheckCheck />
+              Tidy done items
+            </DropdownMenuItem>
+          </>
+        )}
         <DropdownMenuItem data-replay-safe onClick={() => onShowActivity(projectId)}>
           <History />
           Activity
@@ -297,8 +312,8 @@ export function ProjectMenu({
           parent={space ? { scope: `space:${space.id}`, name: space.name } : null}
           onChoose={(level) => save(() => saveLevel(`list:${projectId}`, level, name))}
         />
-        <DropdownMenuSeparator />
-        {status === "archived" ? (
+        {canEdit && <DropdownMenuSeparator />}
+        {!canEdit ? null : status === "archived" ? (
           <DropdownMenuItem data-replay-safe onClick={restore}>
             <ArchiveRestore />
             Restore list
@@ -327,7 +342,7 @@ export function ProjectMenu({
                   value={spaceId ?? ""}
                   onValueChange={(next: string) => next !== spaceId && moveToSpace(next)}
                 >
-                  {spaces.map((s) => (
+                  {targets.map((s) => (
                     <DropdownMenuRadioItem key={s.id} value={s.id} closeOnClick>
                       {s.icon && !s.icon.startsWith("http") && <span>{s.icon}</span>}
                       {s.name}

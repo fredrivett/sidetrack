@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, type SQL, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { hasProjectAccess } from "./access";
+import { hasProjectAccess, listAccess, requireListAccess } from "./access";
 import { users } from "./auth-schema";
 import { type AuditOrigin, recordAudit, SYSTEM_ACTOR } from "./audit";
 import { ensureLabels, type LabelEmoji, normalizeLabelNames } from "./labels";
@@ -35,6 +35,17 @@ function accessibleItemWhere(userId: string, itemId: string) {
 
 function accessibleProjectWhere(userId: string, projectId: string) {
   return and(eq(projects.id, projectId), hasProjectAccess(userId));
+}
+
+/** Throws unless `assigneeId` may be given work on the list: they can change it, not only view or comment. */
+function assertCanHoldWork(db: Db, assigneeId: string, projectId: string): void {
+  const access = listAccess(db, assigneeId, projectId);
+  if (access === "edit") return;
+  throw new Error(
+    access === null
+      ? `assignee does not have access to the list: ${assigneeId}`
+      : `assignee can't change the list, only ${access === "comment" ? "comment on" : "view"} it: ${assigneeId}`,
+  );
 }
 
 function projectAccessibleForUser(
@@ -362,11 +373,10 @@ export function addItem(
   if (!projectAccessibleForUser(db, userId, input.projectId)) {
     throw new Error(`list not found: ${input.projectId}`);
   }
+  requireListAccess(db, userId, input.projectId, "edit");
   const assigneeIds = [...new Set((input.assigneeIds ?? []).filter(Boolean))];
   for (const a of assigneeIds) {
-    if (!projectAccessibleForUser(db, a, input.projectId)) {
-      throw new Error(`assignee does not have access to the list: ${a}`);
-    }
+    assertCanHoldWork(db, a, input.projectId);
   }
   let parent: Item | null = null;
   if (input.parentId) {
@@ -524,6 +534,7 @@ export function updateItem(
 ): Item {
   const existing = getItem(db, userId, id);
   if (!existing) throw new Error(`item not found: ${id}`);
+  requireListAccess(db, userId, existing.projectId, "edit");
 
   const next: Partial<Item> = {};
   const changes: ItemChanges = {};
@@ -563,13 +574,10 @@ export function updateItem(
       (a) => !patch.removeAssigneeIds?.includes(a),
     );
     const ids = [...new Set([...base, ...(patch.addAssigneeIds ?? [])].filter(Boolean))];
-    // An assignee must have access to the project (be its owner or an accepted
-    // member). projectAccessibleForUser is exactly that predicate applied to
-    // the assignee rather than the caller.
+    // Someone newly assigned must be able to change the list (canHoldWork);
+    // anyone already on it stays, whatever their role now.
     for (const a of ids) {
-      if (!projectAccessibleForUser(db, a, existing.projectId)) {
-        throw new Error(`assignee does not have access to the list: ${a}`);
-      }
+      if (!existing.assigneeIds.includes(a)) assertCanHoldWork(db, a, existing.projectId);
     }
     // Order isn't meaningful, so the same people in another order is a no-op.
     const added = ids.filter((a) => !existing.assigneeIds.includes(a));
@@ -634,6 +642,7 @@ export function completeItem(
 ): Item {
   const existing = getItem(db, userId, id);
   if (!existing) throw new Error(`item not found: ${id}`);
+  requireListAccess(db, userId, existing.projectId, "edit");
   if (existing.completedAt !== null) return existing;
 
   // Completing never moves the item: it keeps its place in the list, and the
@@ -695,6 +704,7 @@ export function uncompleteItem(
 ): Item {
   const existing = getItem(db, userId, id);
   if (!existing) throw new Error(`item not found: ${id}`);
+  requireListAccess(db, userId, existing.projectId, "edit");
   if (existing.completedAt === null) return existing;
 
   // Reopening returns it to the same place, since completing never moved it.
@@ -833,6 +843,7 @@ export function reorderItem(
 ): Item {
   const existing = getItem(db, userId, id);
   if (!existing) throw new Error(`item not found: ${id}`);
+  requireListAccess(db, userId, existing.projectId, "edit");
   const ref = parseRef(refRaw);
   const siblings = getAllSiblings(
     db,
@@ -874,6 +885,8 @@ export function setItemsCollapsed(
   for (const id of ids) {
     const item = getItem(db, userId, id);
     if (!item) throw new Error(`item not found: ${id}`);
+    // Anyone who can see the list folds it, viewers too: it's how the list
+    // is viewed, not a change to its items.
     if (item.collapsed === collapsed) continue;
     changed.push(id);
     lists.add(item.projectId);
@@ -943,6 +956,7 @@ function projectNameOrThrow(db: Db, userId: string, projectId: string): string {
     .where(accessibleProjectWhere(userId, projectId))
     .get();
   if (!row) throw new Error(`list not found: ${projectId}`);
+  requireListAccess(db, userId, projectId, "edit");
   return row.name;
 }
 
@@ -1009,6 +1023,7 @@ export function deleteItem(
 ): void {
   const existing = getItem(db, userId, id);
   if (!existing) return;
+  requireListAccess(db, userId, existing.projectId, "edit");
   // Sub-items go with their parent. Delete and log them explicitly rather than
   // leaving it to the foreign key's cascade, so each one's history ends.
   db.transaction((tx) => {
@@ -1049,6 +1064,7 @@ export function setItemParent(
 ): Item {
   const existing = getItem(db, userId, id);
   if (!existing) throw new Error(`item not found: ${id}`);
+  requireListAccess(db, userId, existing.projectId, "edit");
   if ((parentId || null) === existing.parentId) return existing;
 
   let parent: Item | null = null;

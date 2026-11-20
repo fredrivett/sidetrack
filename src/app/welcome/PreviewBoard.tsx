@@ -49,6 +49,7 @@ const person = (userId: string, name: string, image: string | null = null): Assi
   email: null,
   image,
   isOwner: userId === VIEWER,
+  canEdit: true,
 });
 
 const VIEWER = "fredrivett";

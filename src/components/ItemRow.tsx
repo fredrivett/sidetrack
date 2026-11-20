@@ -83,6 +83,7 @@ import { useFollows } from "./follows";
 import { agentLabel, AvatarStack, assigneeNames } from "./UserAvatar";
 import { useAgentAssignment, useItemAgentSessions } from "./agent-sessions";
 import { useItemSaves } from "./item-saves";
+import { useListAccess } from "./list-access";
 import { runAction } from "./run-action";
 
 /** Drag wiring from the sortable wrapper that owns this row (see DraggableItemList). */
@@ -165,6 +166,8 @@ function ItemRowView({
   const [pending, start] = useTransition();
   const changes = useItemChanges();
   const saves = useItemSaves();
+  // A viewer or commenter sees the row, opens it and copies its ref; nothing else.
+  const canEdit = useListAccess(item.projectId) === "edit";
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
@@ -275,11 +278,11 @@ function ItemRowView({
   useItemShortcuts({
     active: owns || assignOpen,
     deferToDialog: true,
-    onOpenPicker: openPicker,
-    onAssignToMe: canAssignSelf ? toggleMe : undefined,
-    onDue: today ? openDue : undefined,
-    onToggleDone: toggleDone,
-    onDelete: keyDel,
+    onOpenPicker: canEdit ? openPicker : undefined,
+    onAssignToMe: canEdit && canAssignSelf ? toggleMe : undefined,
+    onDue: canEdit && today ? openDue : undefined,
+    onToggleDone: canEdit ? toggleDone : undefined,
+    onDelete: canEdit ? keyDel : undefined,
     // ↵ only on the selected item, not one the pointer happens to rest on.
     onOpen: selected ? onOpenDetail : undefined,
   });
@@ -307,8 +310,8 @@ function ItemRowView({
     >
       <ContextMenuTrigger
         style={{ opacity: pending ? 0.7 : 1 }}
-        {...(drag ? drag.attributes : {})}
-        {...(drag ? drag.listeners : {})}
+        {...(drag && canEdit ? drag.attributes : {})}
+        {...(drag && canEdit ? drag.listeners : {})}
         ref={drag?.setActivatorNodeRef}
         onPointerDownCapture={() => {
           draggedRef.current = false;
@@ -342,7 +345,8 @@ function ItemRowView({
           <Checkbox
             checked={completed}
             onCheckedChange={toggle}
-            aria-label={completed ? "Uncomplete" : "Complete"}
+            readOnly={!canEdit}
+            aria-label={canEdit ? (completed ? "Uncomplete" : "Complete") : completed ? "Done" : "Not done"}
           />
         </span>
 
@@ -461,6 +465,23 @@ function ItemRowView({
               show a faint add-assignee button on hover; without hover (touch)
               it's hidden rather than left as an invisible tap target taking up
               width. */}
+          {!canEdit ? (
+            // Who has it, with nothing to change.
+            (assigned.length > 0 || agents.length > 0) && (
+              <span
+                role="img"
+                aria-label={[
+                  agents.length ? `${agents.map(agentLabel).join(", ")} on it` : "",
+                  assigned.length ? `Assigned to ${assigneeNames(assigned)}` : "",
+                ]
+                  .filter(Boolean)
+                  .join(". ")}
+                className="flex"
+              >
+                <AvatarStack users={assigned} agents={agents} size={20} unfurl />
+              </span>
+            )
+          ) : (
           <DropdownMenu open={assignOpen} onOpenChange={setAssignOpen}>
             <DropdownMenuTrigger
               aria-label={[
@@ -504,10 +525,11 @@ function ItemRowView({
               />
             </DropdownMenuContent>
           </DropdownMenu>
+          )}
           {/* D's quick dates, the same as the right-click menu's Due date;
               any other day is in the dialog. No trigger: it opens from the
               shortcut, by the row's avatar. */}
-          {today && (
+          {canEdit && today && (
             <DropdownMenu open={dueOpen} onOpenChange={setDueOpen}>
               <DropdownMenuContent
                 anchor={dueAnchor}
@@ -565,6 +587,8 @@ function ItemRowView({
             </ContextMenuItem>
           )}
         </ContextMenuGroup>
+        {canEdit && (
+        <>
         <ContextMenuSeparator />
         <ContextMenuSub>
           <ContextMenuSubTrigger data-replay-safe>
@@ -648,6 +672,8 @@ function ItemRowView({
             </ContextMenuShortcut>
           )}
         </ContextMenuItem>
+        </>
+        )}
       </ContextMenuContent>
     </ContextMenu>
   );

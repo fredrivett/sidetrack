@@ -32,6 +32,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { EditableText } from "./EditableText";
 import { Markdown } from "./Markdown";
 import { runAction } from "./run-action";
+import { useListAccess } from "./list-access";
 import { MentionTextarea } from "./MentionTextarea";
 import { AvatarStack, assigneeName } from "./UserAvatar";
 
@@ -53,6 +54,8 @@ export function ItemComments({
   people: AssigneeView[];
 }) {
   const [comments, setComments] = useState<CommentView[] | null>(null);
+  // A viewer reads the comments but doesn't write them.
+  const canComment = useListAccess(item.projectId) !== "view";
   // Suggested with you last: you rarely mention yourself.
   const mentionable = [
     ...people.filter((p) => p.userId !== viewerId),
@@ -143,8 +146,12 @@ export function ItemComments({
                 own={
                   c.userId === viewerId
                     ? {
-                        onEdited: (comment) =>
-                          change((cur) => cur.map((x) => (x.id === comment.id ? comment : x))),
+                        // Someone who can no longer comment can still take
+                        // back what they wrote, but not change it.
+                        onEdited: canComment
+                          ? (comment) =>
+                              change((cur) => cur.map((x) => (x.id === comment.id ? comment : x)))
+                          : undefined,
                         onDelete: () => remove(c.id),
                       }
                     : undefined
@@ -154,19 +161,24 @@ export function ItemComments({
           </ul>
         )
       )}
-      <Composer
-        itemId={item.id}
-        title={item.title}
-        people={mentionable}
-        onAdded={(comment) => change((cur) => [...cur, comment])}
-      />
+      {canComment ? (
+        <Composer
+          itemId={item.id}
+          title={item.title}
+          people={mentionable}
+          onAdded={(comment) => change((cur) => [...cur, comment])}
+        />
+      ) : (
+        <p className="text-xs text-neutral-400">You can view this list, but not comment on it.</p>
+      )}
     </div>
   );
 }
 
 /**
  * One comment as a card: who wrote it and when, then what it says. `own`
- * makes it editable in place with a ⋯ menu to delete it, for the viewer's own
+ * gives it a ⋯ menu to delete it, and with `onEdited` makes it editable in
+ * place, for the viewer's own
  * comments on the item they're looking at. `context` goes between the header
  * and the text, such as the item a comment is on in a feed across items.
  */
@@ -181,12 +193,13 @@ export function CommentCard({
   /** Who can open its item, whose `@username` shows as a mention, and
    * who editing it suggests. */
   people?: AssigneeView[];
-  own?: { onEdited: (comment: CommentView) => void; onDelete: () => void };
+  own?: { onEdited?: (comment: CommentView) => void; onDelete: () => void };
   context?: React.ReactNode;
   /** Cut it off after a few lines, so a long comment can't fill a feed. */
   clamp?: boolean;
 }) {
   const users = c.author ? [c.author] : [];
+  const onEdited = own?.onEdited;
   const agents = c.agentName ? [{ id: c.id, name: c.agentName }] : [];
   return (
     <li className="group/comment rounded-lg bg-neutral-50 px-3 pt-2 pb-2.5 ring-1 ring-neutral-950/5 dark:bg-white/[0.03] dark:ring-white/5">
@@ -231,13 +244,13 @@ export function CommentCard({
       <div
         className={`mt-1 break-words text-sm text-neutral-700 dark:text-neutral-200 ${clamp ? "line-clamp-6" : ""}`}
       >
-        {own ? (
+        {onEdited ? (
           // Your own comments edit in place, like the description: click,
           // then ⌘Enter or click away to save.
           <EditableText
             value={c.body}
             onSave={(next) =>
-              runAction(updateCommentAction(c.id, next).then(own.onEdited), "save the comment")
+              runAction(updateCommentAction(c.id, next).then(onEdited), "save the comment")
             }
             multiline
             mentions={people}
