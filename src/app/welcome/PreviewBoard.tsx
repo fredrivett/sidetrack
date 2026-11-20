@@ -456,7 +456,7 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
                         onClick: () => setView(to),
                         "aria-pressed": view === to,
                       })}
-                      className={`relative flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 outline-none focus-visible:ring-2 focus-visible:ring-neutral-300 sm:px-2.5 [&_svg]:size-3.5 touch:[&_svg]:size-4 ${
+                      className={`relative flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 outline-none focus-visible:ring-2 focus-visible:ring-neutral-300 sm:px-2.5 [&_svg]:size-3.5 touch:[&_svg]:size-4 touch:max-sm:[&_svg]:size-5 ${
                         view === to
                           ? "text-neutral-900 after:absolute after:inset-x-0 after:-bottom-[9px] after:h-0.5 after:rounded-full after:bg-neutral-900 dark:text-neutral-100 dark:after:bg-neutral-100"
                           : `text-neutral-500 dark:text-neutral-400 ${to ? "hover:text-neutral-900 dark:hover:text-neutral-100" : ""}`
@@ -483,7 +483,7 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
                 labels={LABEL_CHOICES}
                 viewerId={VIEWER}
               />
-              <span className={buttonVariants({ variant: "outline", size: "sm" })}>
+              <span data-slot="button" className={buttonVariants({ variant: "outline", size: "sm" })}>
                 <History />
                 <span className="hidden sm:inline">Activity</span>
               </span>

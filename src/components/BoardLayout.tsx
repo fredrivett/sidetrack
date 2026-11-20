@@ -32,9 +32,18 @@ export function BoardHeader({
           {/* The name gives way to the view switch on phones. */}
           <span className={nav ? "sr-only sm:not-sr-only" : undefined}>Sidetrack</span>
         </h1>
+        {/* On phones, where the name is hidden, a rule keeps the logo from
+            reading as a fourth view. */}
+        {nav && <span aria-hidden className="h-4 w-px bg-neutral-200 sm:hidden dark:bg-neutral-800" />}
         {nav}
       </div>
-      <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 max-[360px]:gap-1 sm:gap-3">{children}</div>
+      {/* On phones the buttons are bare square icons as large as the views'
+          beside them, rather than outlined boxes that outweigh them; an open
+          menu or hover still shows its background. By element, not
+          data-slot, which the menu and tooltip triggers overwrite; the
+          preview's mock buttons are spans with data-slot="button". Icons
+          with their own size (the account fallback) keep it. */}
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 max-[360px]:gap-1 sm:gap-3 max-sm:[&_:is(button,[data-slot=button])]:aspect-square max-sm:[&_:is(button,[data-slot=button])]:border-transparent max-sm:[&_:is(button,[data-slot=button])]:px-0 max-sm:[&_:is(button,[data-slot=button]):not(:hover,[aria-expanded=true])]:bg-transparent touch:max-sm:[&_:is(button,[data-slot=button])>svg:not([class*=size-])]:size-5">{children}</div>
     </div>
   );
 }

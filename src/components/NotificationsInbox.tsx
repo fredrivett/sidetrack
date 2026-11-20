@@ -88,7 +88,9 @@ export function NotificationsInbox({
                   {unread.length > 0 && (
                     <span
                       aria-hidden
-                      className="absolute -top-1.5 -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] leading-none font-semibold text-white tabular-nums ring-2 ring-background"
+                      // On phones the button has no border, so the count
+                      // sits on the bell rather than the box's corner.
+                      className="absolute -top-1.5 -right-1.5 max-sm:top-0 max-sm:right-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] leading-none font-semibold text-white tabular-nums ring-2 ring-background"
                     >
                       {unread.length > 9 ? "9+" : unread.length}
                     </span>
