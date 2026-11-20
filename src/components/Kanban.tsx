@@ -52,6 +52,8 @@ import { ProjectColumn } from "./ProjectColumn";
 import { PullToSearch } from "./PullToSearch";
 import { runAction } from "./run-action";
 import { ShareDialog } from "./ShareDialog";
+import { InstallReporter } from "./GetStarted";
+import type { GetStarted } from "@/lib/getStarted";
 import { SpaceMenu } from "./SpaceMenu";
 import { saveCollapsedTrays, SpaceTray } from "./SpaceTray";
 import { useDayStart, useToday } from "./use-day-start";
@@ -110,6 +112,7 @@ export function Kanban({
   overdueCollapsed,
   noDateCollapsed,
   noDateFoldedLists,
+  getStarted,
   projects: serverProjects,
   itemsByProject: serverItemsByProject,
   completedSince,
@@ -144,6 +147,8 @@ export function Kanban({
   noDateCollapsed: boolean;
   /** The lists whose cards the viewer keeps folded in the Agenda's No date. */
   noDateFoldedLists: string[];
+  /** Where the viewer is with the Agenda's Get started steps. */
+  getStarted: GetStarted;
   projects: ProjectView[];
   /**
    * Every list's open items and its items finished at or after this, with
@@ -816,12 +821,19 @@ export function Kanban({
           />
         </BoardHeader>
         <InvitesBanner invites={pendingInvites} spaceInvites={pendingSpaceInvites} />
+        <InstallReporter done={getStarted.done} />
         {view === "brief" ? (
           <AgendaView
             projects={active}
             overdueCollapsed={overdueCollapsed}
             noDateCollapsed={noDateCollapsed}
             noDateFoldedLists={noDateFoldedLists}
+            getStarted={{
+              state: getStarted,
+              shareable: active.filter((p) => p.isOwner).map(({ id, name }) => ({ id, name })),
+              onShare: openShare,
+              onAddList: () => setNewList({ open: true, spaceId: "" }),
+            }}
             // Greets in the viewer's day, so waits for their browser's timezone.
             greet={timeZone !== null}
             onFeedback={

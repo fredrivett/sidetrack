@@ -6,6 +6,14 @@ import type { SpaceView } from "@/core/spaces";
 import { NO_FILTERS } from "@/lib/filters";
 import { Kanban, type ProjectView } from "./Kanban";
 import * as shortcuts from "./useItemShortcuts";
+import type { GetStarted } from "@/lib/getStarted";
+
+const GET_STARTED_DONE: GetStarted = {
+  done: { lists: true, phone: true, computer: true, share: true, agent: true },
+  queue: [],
+  collapsed: true,
+};
+
 
 // The server actions pull in server-only modules (next/cache, the DB).
 vi.mock("@/app/actions", () => ({
@@ -72,6 +80,7 @@ const board = (
     overdueCollapsed={false}
     noDateCollapsed={false}
     noDateFoldedLists={[]}
+    getStarted={GET_STARTED_DONE}
     projects={projects}
     itemsByProject={itemsByProject}
     completedSince={0}

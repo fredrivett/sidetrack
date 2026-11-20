@@ -520,6 +520,8 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
               : `changed avatar to ${event.image}`,
         ),
       ];
+    case "profile.installed":
+      return [t(event.platform === "phone" ? "added Sidetrack to a phone's Home Screen" : "installed Sidetrack on a computer")];
     case "profile.password":
       return [t(event.viaReset ? "reset password with an emailed link" : "changed password")];
   }

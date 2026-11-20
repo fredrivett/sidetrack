@@ -1,4 +1,5 @@
 import type { ItemSort } from "../lib/itemSorts";
+import type { InstallPlatform } from "../lib/getStarted";
 import type { Repeat } from "../lib/repeat";
 import type { AuditAction, AuditEntity, ListRole, ProjectStatus, SpaceColor, SpaceRole } from "./schema";
 
@@ -320,6 +321,8 @@ export type AccountEvent =
   | { type: "profile.username"; userId: string; from: string; to: string }
   /** `image` null: cleared. */
   | { type: "profile.avatar"; userId: string; image: string | null; uploaded?: true }
+  /** The app first opened in its own window on this platform (getStarted.ts). */
+  | { type: "profile.installed"; userId: string; platform: InstallPlatform }
   /** Written by the audit_password_update trigger (migration 0045), not core. */
   | { type: "profile.password"; userId: string; viaReset: boolean };
 
@@ -478,6 +481,8 @@ export function auditColumns(event: ChangeEvent): {
       return account("update", "profile", event.userId);
     case "profile.avatar":
       return account(event.image ? "update" : "delete", "profile", event.userId);
+    case "profile.installed":
+      return account("create", "profile", event.userId);
   }
 }
 
