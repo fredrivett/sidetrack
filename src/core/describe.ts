@@ -503,6 +503,16 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
       return [t("removed secret "), key(event.name), t(" from the GitHub webhook")];
     case "github.webhook.removed":
       return [t("removed the GitHub webhook")];
+    case "calendar.connected":
+      return [t("connected the iCloud calendars of "), key(event.username)];
+    case "calendar.disconnected":
+      return [t("disconnected the iCloud calendars of "), key(event.username)];
+    case "calendar.reconnected":
+      return [t("signed in again to the iCloud calendars of "), key(event.username)];
+    case "calendar.included":
+      return event.included
+        ? [t("included calendar "), key(event.name), t(" in Sidetrack")]
+        : [t("left calendar "), key(event.name), t(" out of Sidetrack")];
     case "profile.username":
       return [
         t("changed username from "),
