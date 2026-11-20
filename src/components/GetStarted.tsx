@@ -31,7 +31,19 @@ import {
   type GetStartedStep,
   type InstallPlatform,
 } from "@/lib/getStarted";
-import { installPlatform, isAndroid, isFirefox, isInstalled, isIos, isSafari } from "@/lib/device";
+import {
+  canPromptInstall,
+  installPlatform,
+  isAndroid,
+  isChrome,
+  isEdge,
+  isFirefox,
+  isInstalled,
+  isIos,
+  isSafari,
+  showInstallPrompt,
+  subscribeInstallPrompt,
+} from "@/lib/device";
 import { runAction } from "./run-action";
 
 const TITLES: Record<GetStartedStep, string> = {
@@ -45,8 +57,8 @@ const TITLES: Record<GetStartedStep, string> = {
 /** This device, once the browser has said; null while rendering on the server. */
 interface Device {
   platform: InstallPlatform;
-  os: "ios" | "android" | "mac" | "other";
-  browser: "safari" | "firefox" | "other";
+  os: "ios" | "android" | "mac" | "windows" | "other";
+  browser: "safari" | "firefox" | "edge" | "chrome" | "other";
 }
 
 const noSubscribe = () => () => {};
@@ -58,8 +70,24 @@ function useDevice(): Device | null {
     () =>
       [
         installPlatform(),
-        isIos() ? "ios" : isAndroid() ? "android" : /Macintosh/.test(navigator.userAgent) ? "mac" : "other",
-        isSafari() ? "safari" : isFirefox() ? "firefox" : "other",
+        isIos()
+          ? "ios"
+          : isAndroid()
+            ? "android"
+            : /Macintosh/.test(navigator.userAgent)
+              ? "mac"
+              : /Windows/.test(navigator.userAgent)
+                ? "windows"
+                : "other",
+        isSafari()
+          ? "safari"
+          : isFirefox()
+            ? "firefox"
+            : isEdge()
+              ? "edge"
+              : isChrome()
+                ? "chrome"
+                : "other",
       ].join("|"),
     () => "",
   );
@@ -144,6 +172,8 @@ export function GetStartedStack({
   onAddList: () => void;
 }) {
   const device = useDevice();
+  // Chrome and Edge can show their own install dialog from a button.
+  const canInstall = useSyncExternalStore(subscribeInstallPrompt, canPromptInstall, () => false);
   const [, start] = useTransition();
   const bodyId = useId();
   // Folds, sends back and ticks at once, then saves; a failed save puts it
@@ -247,17 +277,43 @@ export function GetStartedStack({
           );
         break;
       }
-      case "computer":
+      case "computer": {
+        const opensFrom =
+          device?.os === "mac"
+            ? " It then opens from your Dock, like any other app."
+            : device?.os === "windows"
+              ? " It then opens from the Start menu or your taskbar, like any other app."
+              : "";
         why =
           device?.platform === "phone" || !device
             ? "Next time you're at your computer, open Sidetrack in Chrome or Edge and choose Install, or in Safari on a Mac choose File → Add to Dock."
-            : device.browser === "safari"
-              ? "It opens in its own window, one click away. In Safari's menu bar, choose File → Add to Dock, then open Sidetrack from your Dock."
-              : device.browser === "firefox"
-                ? `Firefox can't install web apps. Open Sidetrack in Chrome or Edge and choose Install${device.os === "mac" ? ", or in Safari choose File → Add to Dock" : ""}.`
-                : "It opens in its own window, one click away. Choose Install in the address bar, or Install Sidetrack in the browser's menu.";
-        actions = ticksItself;
+            : canInstall
+              ? `It opens in its own window, one click away.${opensFrom}`
+              : device.browser === "safari"
+                ? "It opens in its own window, one click away. In Safari's menu bar, choose File → Add to Dock, then open Sidetrack from your Dock."
+                : device.browser === "firefox"
+                  ? `Firefox can't install web apps. Open Sidetrack in Chrome or Edge and choose Install${device.os === "mac" ? ", or in Safari choose File → Add to Dock" : ""}.`
+                  : device.browser === "edge"
+                    ? `It opens in its own window, one click away. Click the Install icon at the right of the address bar, or open the … menu, then Apps → Install Sidetrack.${opensFrom}`
+                    : device.browser === "chrome"
+                      ? `It opens in its own window, one click away. Click the Install icon at the right of the address bar, or open the ⋮ menu, then Cast, save and share → Install Sidetrack.${opensFrom}`
+                      : `It opens in its own window, one click away. Choose Install in the address bar, or Install Sidetrack in the browser's menu.${opensFrom}`;
+        actions =
+          device?.platform === "computer" && canInstall ? (
+            <Button
+              size="sm"
+              onClick={() => {
+                posthog.capture("get_started_install_prompt");
+                void showInstallPrompt();
+              }}
+            >
+              Install Sidetrack
+            </Button>
+          ) : (
+            ticksItself
+          );
         break;
+      }
       case "share":
         why =
           state.pendingInvites.length > 0 ? (
