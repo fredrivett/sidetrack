@@ -32,7 +32,7 @@ import { runAction } from "./run-action";
 
 const TITLES: Record<GetStartedStep, string> = {
   lists: "Set up your lists",
-  iphone: "Put Sidetrack on your iPhone",
+  iphone: "Add Sidetrack to your Home Screen",
   mac: "Add Sidetrack to your Dock",
   share: "Share a list with someone",
   agent: "Let an agent work on your lists",
