@@ -15,6 +15,8 @@ export function proxy(request: NextRequest) {
   // Same for GitHub's webhook deliveries: the route handler checks each one's
   // signature against the webhook's secret and returns 401 otherwise.
   if (pathname.startsWith("/api/github/")) return NextResponse.next();
+  // And the email-in Worker's deliveries, checked against EMAIL_IN_SECRET.
+  if (pathname.startsWith("/api/email/")) return NextResponse.next();
 
   // Password reset pages must work signed-out: /forgot-password requests the
   // email, /reset-password is where the emailed link lands (with ?token=).

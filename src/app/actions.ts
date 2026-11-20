@@ -33,6 +33,10 @@ import {
   removeGithubWebhookSecret as removeGithubWebhookSecretCore,
 } from "@/core/github";
 import {
+  createEmailAddress as createEmailAddressCore,
+  removeEmailAddress as removeEmailAddressCore,
+} from "@/core/emailIn";
+import {
   type LabelEmoji,
   addLabel as addLabelCore,
   deleteLabel as deleteLabelCore,
@@ -990,6 +994,20 @@ export async function removeGithubWebhookAction() {
   const { db } = getDb();
   removeGithubWebhookCore(db, userId, SOURCE);
   revalidatePath("/settings/github");
+}
+
+export async function createEmailAddressAction() {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  createEmailAddressCore(db, userId, SOURCE);
+  revalidatePath("/settings/email");
+}
+
+export async function removeEmailAddressAction() {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  removeEmailAddressCore(db, userId, SOURCE);
+  revalidatePath("/settings/email");
 }
 
 export async function revokeApiKeyAction(id: string) {

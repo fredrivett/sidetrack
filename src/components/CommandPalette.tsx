@@ -13,6 +13,7 @@ import {
   Keyboard,
   KeyRound,
   ListPlus,
+  Mail,
   Plus,
   UserRound,
 } from "lucide-react";
@@ -114,6 +115,7 @@ export function CommandPalette({
     { label: "Spaces", icon: <Boxes />, action: () => router.push("/settings/spaces") },
     { label: "API keys", icon: <KeyRound />, action: () => router.push("/settings/keys") },
     { label: "GitHub webhook", icon: <GitHubMark />, action: () => router.push("/settings/github") },
+    { label: "Email forwarding", icon: <Mail />, action: () => router.push("/settings/email") },
   ];
 
   return (

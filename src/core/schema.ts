@@ -53,6 +53,8 @@ export const AUDIT_ENTITIES = [
   // The user's own profile (avatar). entityId is the user id; no project.
   "profile",
   "webhook",
+  // The user's address for emailing Sidetrack (emailAddresses).
+  "email_address",
   // A comment on an item. Its rows carry the item as parentId, so they show
   // in the item's history.
   "comment",
@@ -477,6 +479,49 @@ export const githubWebhookSecrets = sqliteTable(
     lastDeliveryAt: integer("last_delivery_at"),
   },
   (t) => [index("github_webhook_secrets_webhook").on(t.webhookId)],
+);
+
+// A user's address for emailing Sidetrack: `<token>@<EMAIL_IN_DOMAIN>`.
+// Mail sent or forwarded to it lands in inboundEmails for triage. One per
+// user; replacing it makes a new token, and mail to the old one is refused.
+// Lowercase letters and digits only, since mail servers may change case.
+export const emailAddresses = sqliteTable(
+  "email_addresses",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    token: text("token").notNull(),
+    createdAt: integer("created_at").notNull(),
+    // When mail to it last arrived, to help with setup.
+    lastReceivedAt: integer("last_received_at"),
+  },
+  (t) => [
+    uniqueIndex("email_addresses_user").on(t.userId),
+    uniqueIndex("email_addresses_token").on(t.token),
+  ],
+);
+
+// Mail received at a user's address, waiting to be triaged against their
+// lists. Only the text a triage reads is kept: no HTML or attachments.
+// `messageId` is the Message-ID header, so a retried delivery is stored once.
+export const inboundEmails = sqliteTable(
+  "inbound_emails",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    messageId: text("message_id").notNull(),
+    fromAddress: text("from_address").notNull(),
+    fromName: text("from_name"),
+    subject: text("subject").notNull(),
+    text: text("text").notNull(),
+    // The Date header, when it parses; receivedAt is when Sidetrack got it.
+    sentAt: integer("sent_at"),
+    receivedAt: integer("received_at").notNull(),
+  },
+  (t) => [
+    uniqueIndex("inbound_emails_message").on(t.userId, t.messageId),
+    index("inbound_emails_user_received").on(t.userId, t.receivedAt),
+  ],
 );
 
 // An API key whose agent Sidetrack can start: assigning the agent to an item

@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, Bell, Boxes, CalendarDays, Check, CircleUserRound, History, KeyRound, Loader2, LogOut, Moon, Sun, SunMoon, Sunrise, UserRound } from "lucide-react";
+import { Archive, Bell, Boxes, CalendarDays, Check, CircleUserRound, History, KeyRound, Loader2, LogOut, Mail, Moon, Sun, SunMoon, Sunrise, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import posthog from "posthog-js";
@@ -44,6 +44,7 @@ const SETTINGS_LINKS: [href: string, label: string, Icon: ComponentType<{ classN
   ["/settings/spaces", "Spaces", Boxes],
   ["/settings/keys", "API keys", KeyRound],
   ["/settings/github", "GitHub", GitHubMark],
+  ["/settings/email", "Email forwarding", Mail],
 ];
 
 /**
