@@ -139,7 +139,7 @@ export default async function Image() {
             size={27}
             style={{ color: C.muted, marginTop: 26, lineHeight: 1.35, maxWidth: 540 }}
           >
-            Every project, every person, every agent. One board for all of it.
+            Every project, person and agent on one board, with a daily brief on where to start.
           </Words>
         </div>
       </div>
