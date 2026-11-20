@@ -89,9 +89,9 @@ export function AgendaView({
   filters: ItemFilters;
   /**
    * The landing page's preview: this greeting instead of asking for one, and
-   * items that don't open, since their dialog loads from the server.
+   * `onOpenItem` instead of an item's dialog, which loads from the server.
    */
-  preview?: { greeting: Greeting };
+  preview?: { greeting: Greeting; onOpenItem: (item: Item) => void };
 }) {
   const today = useToday();
   const saves = useAgendaSaves();
@@ -176,7 +176,7 @@ export function AgendaView({
   // Every item, not just those shown, so an open dialog stays open whatever
   // its item becomes.
   const detail = useItemDetailDialog(all);
-  const openDetail = preview ? () => {} : detail.openDetail;
+  const openDetail = preview ? preview.onOpenItem : detail.openDetail;
 
   const sectionOf = new Map<string, AgendaSection>();
   if (today) {
