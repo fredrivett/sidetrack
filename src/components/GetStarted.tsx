@@ -69,18 +69,31 @@ function useDevice(): Device | null {
 }
 
 /**
- * Tells the server when the app is open in its own window, on a phone or a
- * computer, which ticks that install step. A background sync: silent, and only
- * sent while the step isn't done.
+ * Tells the server when the app is installed on a phone or a computer, which
+ * ticks that install step: when it's open in its own window, and in Chrome
+ * and Edge the moment Install is chosen (`appinstalled`). Nobody reports it
+ * by hand. A background sync: silent, and only sent while the step isn't
+ * done. The change reaches the user's other open boards, so scanning the
+ * code and opening the app on a phone ticks the card on the computer.
  */
 export function InstallReporter({ done }: { done: GetStarted["done"] }) {
   useEffect(() => {
     const platform = installPlatform();
-    if (done[platform] || !isInstalled()) return;
-    recordInstallAction(platform).catch((error) => {
-      unstable_rethrow(error);
-      // Silent: it's sent again on the next launch.
-    });
+    if (done[platform]) return;
+    const report = (how: "opened" | "appinstalled") => {
+      posthog.capture("get_started_done", { step: platform, how });
+      recordInstallAction(platform).catch((error) => {
+        unstable_rethrow(error);
+        // Silent: it's sent again on the next launch.
+      });
+    };
+    if (isInstalled()) {
+      report("opened");
+      return;
+    }
+    const onInstalled = () => report("appinstalled");
+    window.addEventListener("appinstalled", onInstalled);
+    return () => window.removeEventListener("appinstalled", onInstalled);
   }, [done]);
   return null;
 }
@@ -162,13 +175,12 @@ export function GetStartedStack({
       posthog.capture("get_started_later", { step });
       await runAction(sendGetStartedToBackAction(step), "move that card");
     });
-  const installed = (platform: InstallPlatform) =>
-    start(async () => {
-      setShowCode(false);
-      showQueue({ step: platform, to: "done" });
-      posthog.capture("get_started_done", { step: platform, how: "button" });
-      await runAction(recordInstallAction(platform), "save that");
-    });
+
+  // The install cards have no button to tick them: the installed app reports
+  // itself (InstallReporter), so they say so instead.
+  const ticksItself = (
+    <span className="text-xs text-muted-foreground">Ticks itself once it&apos;s installed</span>
+  );
 
   const card = (step: GetStartedStep) => {
     const optional = step === "agent";
@@ -224,9 +236,7 @@ export function GetStartedStack({
               Show code
             </Button>
           ) : (
-            <Button size="sm" onClick={() => installed("phone")}>
-              I&apos;ve done it
-            </Button>
+            ticksItself
           );
         break;
       }
@@ -235,15 +245,11 @@ export function GetStartedStack({
           device?.platform === "phone" || !device
             ? "Next time you're at your computer, open Sidetrack in Chrome or Edge and choose Install, or in Safari on a Mac choose File → Add to Dock."
             : device.browser === "safari"
-              ? "It opens in its own window, one click away. In Safari's menu bar, choose File → Add to Dock."
+              ? "It opens in its own window, one click away. In Safari's menu bar, choose File → Add to Dock, then open Sidetrack from your Dock."
               : device.browser === "firefox"
                 ? `Firefox can't install web apps. Open Sidetrack in Chrome or Edge and choose Install${device.os === "mac" ? ", or in Safari choose File → Add to Dock" : ""}.`
                 : "It opens in its own window, one click away. Choose Install in the address bar, or Install Sidetrack in the browser's menu.";
-        actions = (
-          <Button size="sm" onClick={() => installed("computer")}>
-            I&apos;ve done it
-          </Button>
-        );
+        actions = ticksItself;
         break;
       case "share":
         why = "A household list, or a project with a friend. Their changes show up on your board as they make them.";
