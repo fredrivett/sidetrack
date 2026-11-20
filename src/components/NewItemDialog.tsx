@@ -1,15 +1,6 @@
 "use client";
 
-import {
-  Check,
-  ChevronDown,
-  CircleDashed,
-  Copy,
-  CornerDownRight,
-  ListPlus,
-  Plus,
-  X,
-} from "lucide-react";
+import { Check, Copy, IndentIncrease, List, ListPlus, Plus, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -25,18 +16,13 @@ import type { LabelEmoji } from "@/core/labels";
 import type { AssigneeView } from "@/core/members";
 import type { Item } from "@/core/schema";
 import { toggleAssignee } from "@/lib/assignees";
+import { cn } from "@/lib/utils";
 import { formatItemRef } from "@/lib/itemRef";
 import type { Repeat } from "@/lib/repeat";
 import type { Due } from "@/lib/time";
 import { Button } from "@/components/ui/button";
 import { useStoredState } from "@/components/use-stored-state";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Kbd } from "@/components/ui/kbd";
 import {
   ResponsiveDialog,
   ResponsiveDialogCloseButton,
@@ -44,18 +30,16 @@ import {
   ResponsiveDialogDescription,
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
-import { Textarea } from "@/components/ui/textarea";
 import { useCopy } from "@/components/ui/use-copy";
 import { AssigneeOptions } from "./AssigneeOptions";
 import { CreatableCombobox } from "./CreatableCombobox";
-import { DueDatePicker } from "./DueDatePicker";
 import { useToday } from "./use-day-start";
-import { LabelsField } from "./Labels";
+import { AssigneeChip, CHIP, DueChip, EMPTY_CHIP, Field, RepeatChip } from "./ItemFields";
+import { LabelChips } from "./Labels";
 import type { ProjectView } from "./Kanban";
-import { RepeatPicker } from "./RepeatPicker";
+import { ProjectIcon } from "./ProjectIcon";
 import { runAction } from "./run-action";
 import { useItemShortcuts } from "./useItemShortcuts";
-import { AvatarStack, assigneeNames } from "./UserAvatar";
 import { aiRead } from "./ai-read";
 
 // Wait for a pause in typing before asking Jev about the draft.
@@ -63,23 +47,6 @@ const SUGGEST_DELAY_MS = 400;
 
 type Suggestion = AiReadResult<"newItem">;
 type ItemHint = NonNullable<Suggestion["parent"]>;
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1">
-      <span className="block text-[11px] font-medium uppercase tracking-wide text-neutral-400">
-        {label}
-      </span>
-      {children}
-    </div>
-  );
-}
 
 /**
  * The toast confirming an add. The whole toast opens the item: the title's
@@ -174,6 +141,7 @@ export function NewItemDialog({
   const [labelEmoji, setLabelEmoji] = useState<Record<string, LabelEmoji>>({});
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [assignOpen, setAssignOpen] = useState(false);
+  const [dueOpen, setDueOpen] = useState(false);
   const [due, setDue] = useState<Due | null>(null);
   // Worked out as it's used, so a dialog left open past the day's turnover
   // gives the next item the new day, not the one it opened on.
@@ -182,7 +150,7 @@ export function NewItemDialog({
   const [repeat, setRepeat] = useState<Repeat | null>(null);
   const [subItems, setSubItems] = useStoredState("new-item:sub-items", NO_SUB_ITEMS);
   const [subDraft, setSubDraft] = useStoredState("new-item:sub-draft", "");
-  // Remounts the repeat picker after each add, so a Custom draft goes too.
+  // How many were added, so the same draft is asked about again.
   const [added, setAdded] = useState(0);
   // Whether anything was added in this session: Add & create more keeps the dialog
   // open so you can enter a run of items, so Cancel becomes Done.
@@ -221,6 +189,7 @@ export function NewItemDialog({
       setLabelEmoji({});
       setAssigneeIds([]);
       setAssignOpen(false);
+      setDueOpen(false);
       setDue(initialDue);
       setRepeat(null);
       setAddedAny(false);
@@ -238,6 +207,7 @@ export function NewItemDialog({
     draft.title && suggested?.for === context ? suggested.value : null;
   const projectId = fixedProjectId || suggestion?.projectId || "";
   const listSuggested = !fixedProjectId && Boolean(projectId);
+  const project = projects.find((p) => p.id === projectId);
   // Sub-items go one level deep, so an item with its own checklist can't
   // go under a parent: neither offer one nor keep one while it has steps.
   const hasChecklist = subItems.length > 0 || Boolean(subDraft.trim());
@@ -253,17 +223,18 @@ export function NewItemDialog({
   const listAssignees = assigneesByProject[projectId] ?? [];
   const assigned = listAssignees.filter((a) => assigneeIds.includes(a.userId));
   const canAssignSelf = listAssignees.some((a) => a.userId === viewerId);
-  // A and I as in the item dialog, once a list is chosen. They're ignored
-  // while typing in a field.
+  // A, I and D as in the item dialog, A and I once a list is chosen.
+  // They're ignored while typing in a field.
   const openPicker = useCallback(() => setAssignOpen(true), []);
   const toggleMe = useCallback(
     () => setAssigneeIds((cur) => toggleAssignee(cur, viewerId)),
     [viewerId],
   );
   useItemShortcuts({
-    active: open && Boolean(projectId) && !pending,
-    onOpenPicker: openPicker,
-    onAssignToMe: canAssignSelf ? toggleMe : undefined,
+    active: open && !pending && !dueOpen,
+    onOpenPicker: projectId ? openPicker : () => {},
+    onAssignToMe: projectId && canAssignSelf ? toggleMe : undefined,
+    onDue: () => setDueOpen(true),
   });
 
   // Create a list from the List field. Nobody chose its icon, so it gets
@@ -406,92 +377,115 @@ export function NewItemDialog({
           }}
           className="flex min-h-0 flex-1 flex-col"
         >
-          <div className="flex shrink-0 items-center gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-            <ResponsiveDialogTitle>New item</ResponsiveDialogTitle>
-            <ResponsiveDialogDescription className="sr-only">
-              Create a new task in a list.
-            </ResponsiveDialogDescription>
-            <ResponsiveDialogCloseButton className="ml-auto" />
-          </div>
-
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4">
-            <Field label="Title">
-              <Input
-                ref={titleRef}
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Add a task…"
-              />
-              {duplicate && (
-                <p data-item-ref={duplicate.ref} className="text-xs text-amber-700 dark:text-amber-400">
-                  Looks like {duplicate.ref} “{duplicate.title}” is already on
-                  this list.
-                </p>
-              )}
-              {parentHint && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="xs"
-                  onClick={() => setParent({ projectId, item: parentHint })}
-                  data-item-ref={parentHint.ref}
-                  className="max-w-full font-normal text-muted-foreground"
-                >
-                  <CornerDownRight data-icon="inline-start" />
-                  <span className="truncate">
-                    Add under {parentHint.ref} “{parentHint.title}”?
-                  </span>
-                </Button>
-              )}
-              {chosenParent && (
-                <p
-                  data-item-ref={chosenParent.ref}
-                  className="inline-flex h-6 max-w-full items-center gap-1 rounded-md bg-muted pr-0.5 pl-1.5 text-xs"
-                >
-                  <CornerDownRight className="size-3 shrink-0 text-muted-foreground" />
-                  <span className="truncate">
-                    Sub-item of {chosenParent.ref} “{chosenParent.title}”
-                  </span>
-                  <button
-                    type="button"
-                    aria-label="Don't add as a sub-item"
-                    onClick={() => setParent(null)}
-                    className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="size-3" />
-                  </button>
-                </p>
-              )}
-            </Field>
-
-            <Field label="Description">
-              <Textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Description (optional)"
-                disabled={pending}
-                rows={3}
-                className="resize-none text-sm"
-              />
-            </Field>
-
-            <Field label="List">
+          <div className="flex shrink-0 flex-col gap-2 border-b border-neutral-200 px-4 pt-3 pb-4 dark:border-neutral-800">
+            <div className="flex min-w-0 items-center gap-1">
+              <ResponsiveDialogTitle className="text-sm font-medium text-neutral-500">
+                New item
+              </ResponsiveDialogTitle>
+              <ResponsiveDialogDescription className="sr-only">
+                Create a new task in a list.
+              </ResponsiveDialogDescription>
+              <ResponsiveDialogCloseButton className="ml-auto" />
+            </div>
+            <input
+              ref={titleRef}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Add a task…"
+              aria-label="Title"
+              className="w-full bg-transparent text-base leading-6 font-medium outline-none placeholder:text-muted-foreground"
+            />
+            {duplicate && (
+              <p data-item-ref={duplicate.ref} className="text-xs text-amber-700 dark:text-amber-400">
+                Looks like {duplicate.ref} “{duplicate.title}” is already on
+                this list.
+              </p>
+            )}
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Add description…"
+              aria-label="Description"
+              disabled={pending}
+              rows={1}
+              className="field-sizing-content max-h-48 w-full resize-none bg-transparent text-sm text-neutral-600 outline-none placeholder:text-muted-foreground disabled:opacity-50 dark:text-neutral-300"
+            />
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              {/* First, and marked until chosen: nothing can be added without it. */}
               <CreatableCombobox
                 options={projects.map((p) => ({ value: p.id, label: p.name }))}
                 value={projectId}
                 onChange={setPickedProjectId}
                 onCreate={createList}
-                placeholder="Choose a list…"
-                ariaLabel="List"
-                // Jev's suggestion stays muted until you pick a list.
-                muted={listSuggested}
+                placeholder="Find or create a list…"
+                title={listSuggested ? "List (suggested by Jev)" : "List"}
                 disabled={pending}
+                className={
+                  !project
+                    ? cn(
+                        EMPTY_CHIP,
+                        "border-blue-500 text-blue-700 hover:text-blue-800 dark:border-blue-400/70 dark:text-blue-300 dark:hover:text-blue-200 [&_svg]:text-current",
+                      )
+                    : listSuggested
+                      ? cn(CHIP, "border-dashed text-muted-foreground")
+                      : CHIP
+                }
+              >
+                {project ? (
+                  <>
+                    <ProjectIcon
+                      icon={project.icon}
+                      homepageUrl={project.homepageUrl}
+                      name={project.name}
+                      size={16}
+                    />
+                    <span className="min-w-0 truncate">{project.name}</span>
+                  </>
+                ) : (
+                  <>
+                    <List />
+                    <span data-replay-safe>Choose a list</span>
+                  </>
+                )}
+              </CreatableCombobox>
+              <DueChip
+                due={due}
+                done={false}
+                disabled={pending}
+                onChange={setDue}
+                open={dueOpen}
+                setOpen={setDueOpen}
               />
-            </Field>
-
-            <Field label="Labels">
+              <RepeatChip
+                repeat={repeat}
+                completedAt={null}
+                disabled={pending}
+                onChange={setRepeat}
+              />
+              <AssigneeChip
+                assigned={assigned}
+                disabled={pending || !projectId}
+                open={assignOpen}
+                setOpen={(next) => setAssignOpen(next && Boolean(projectId))}
+              >
+                <AssigneeOptions
+                  selected={assigned.map((a) => a.userId)}
+                  assignees={listAssignees}
+                  viewerId={viewerId}
+                  // Ticking sets this list's people only; keep anyone
+                  // picked on another list for when you switch back.
+                  // Unassigned clears everyone.
+                  onChange={(ids) =>
+                    setAssigneeIds((cur) => [
+                      ...cur.filter((id) => !listAssignees.some((a) => a.userId === id)),
+                      ...ids,
+                    ])
+                  }
+                  onClear={() => setAssigneeIds([])}
+                />
+              </AssigneeChip>
               {/* A new label is created with the item that uses it. */}
-              <LabelsField
+              <LabelChips
                 projectId={projectId}
                 value={labels}
                 onChange={(names, added) => {
@@ -510,72 +504,46 @@ export function NewItemDialog({
                   setLabelEmoji((cur) => ({ ...cur, [name]: { emoji, chosen: true } }))
                 }
                 disabled={pending}
+                chipClassName={labels.length ? `${EMPTY_CHIP} px-2` : EMPTY_CHIP}
               />
-            </Field>
-
-            <Field label="Assignees">
-              <DropdownMenu open={assignOpen} onOpenChange={setAssignOpen}>
-                <DropdownMenuTrigger
-                  disabled={pending || !projectId}
-                  // Bordered like the form's other fields.
-                  className="flex h-8 w-full items-center gap-2 rounded-lg border border-input bg-transparent px-2.5 text-left text-sm transition-colors outline-none hover:bg-neutral-50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 dark:bg-input/30 dark:hover:bg-input/50"
+              {/* Jev's parent hint fills the dashed Parent chip; accepting it sets it. */}
+              {chosenParent ? (
+                <span
+                  data-item-ref={chosenParent.ref}
+                  title={`Sub-item of ${chosenParent.ref}`}
+                  className={`${CHIP} pr-1`}
                 >
-                  {assigned.length ? (
-                    <>
-                      <AvatarStack users={assigned} size={20} ringClassName="ring-popover" />
-                      <span className="truncate text-neutral-700 dark:text-neutral-200">
-                        {assigneeNames(assigned)}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <CircleDashed className="size-5 text-neutral-400" />
-                      <span className="text-neutral-500">Unassigned</span>
-                    </>
-                  )}
-                  <Kbd className="ml-auto">A</Kbd>
-                  <ChevronDown className="size-4 opacity-50" />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent data-assignee-picker align="start" className="w-56">
-                  <AssigneeOptions
-                    selected={assigned.map((a) => a.userId)}
-                    assignees={listAssignees}
-                    viewerId={viewerId}
-                    // Ticking sets this list's people only; keep anyone
-                    // picked on another list for when you switch back.
-                    // Unassigned clears everyone.
-                    onChange={(ids) =>
-                      setAssigneeIds((cur) => [
-                        ...cur.filter((id) => !listAssignees.some((a) => a.userId === id)),
-                        ...ids,
-                      ])
-                    }
-                    onClear={() => setAssigneeIds([])}
-                  />
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </Field>
+                  <IndentIncrease />
+                  <span className="max-w-48 truncate">{chosenParent.title}</span>
+                  <button
+                    type="button"
+                    aria-label="Don't add as a sub-item"
+                    onClick={() => setParent(null)}
+                    className="shrink-0 rounded-full p-0.5 hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                  >
+                    <X />
+                  </button>
+                </span>
+              ) : (
+                parentHint && (
+                  <button
+                    type="button"
+                    onClick={() => setParent({ projectId, item: parentHint })}
+                    data-item-ref={parentHint.ref}
+                    title={`Add under ${parentHint.ref} “${parentHint.title}”`}
+                    className={EMPTY_CHIP}
+                  >
+                    <IndentIncrease />
+                    <span className="max-w-56 truncate">
+                      Add under “{parentHint.title}”?
+                    </span>
+                  </button>
+                )
+              )}
+            </div>
+          </div>
 
-            <Field label="Due">
-              <DueDatePicker
-                key={added}
-                due={due}
-                done={false}
-                disabled={pending}
-                onChange={setDue}
-              />
-            </Field>
-
-            <Field label="Repeat">
-              <RepeatPicker
-                key={added}
-                repeat={repeat}
-                completedAt={null}
-                disabled={pending}
-                onChange={setRepeat}
-              />
-            </Field>
-
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
             <Field label="Checklist">
               <div className="space-y-1">
                 {subItems.map((sub, i) => (

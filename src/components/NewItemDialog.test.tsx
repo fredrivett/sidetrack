@@ -51,13 +51,16 @@ describe("NewItemDialog", () => {
     // Mounted closed and opened, as the board does.
     const { rerender } = render(dialog(true, false));
     rerender(dialog(true));
-    expect(screen.getByRole("button", { name: "Today" }).getAttribute("aria-pressed")).toBe("true");
+    const dueChip = () => screen.getByRole("button", { name: /^Due/ });
+    expect(dueChip().textContent).toBe("Due Today");
     // The first item goes tomorrow; the next starts from today again.
+    fireEvent.click(dueChip());
     fireEvent.click(screen.getByRole("button", { name: "Tomorrow" }));
+    expect(dueChip().textContent).toBe("Due Tomorrow");
     fireEvent.change(screen.getByPlaceholderText("Add a task…"), { target: { value: "Buy milk" } });
     await act(async () => fireEvent.click(screen.getByRole("button", { name: /Add & create more/ })));
     expect(vi.mocked(addItemAction)).toHaveBeenLastCalledWith(expect.objectContaining({ dueDate: "2026-11-15" }));
-    expect(screen.getByRole("button", { name: "Today" }).getAttribute("aria-pressed")).toBe("true");
+    expect(dueChip().textContent).toBe("Due Today");
     fireEvent.change(screen.getByPlaceholderText("Add a task…"), { target: { value: "Post parcel" } });
     await act(async () => fireEvent.click(screen.getByRole("button", { name: /Add & create more/ })));
     expect(vi.mocked(addItemAction)).toHaveBeenLastCalledWith(expect.objectContaining({ dueDate: "2026-11-14" }));
@@ -66,13 +69,13 @@ describe("NewItemDialog", () => {
   it("keeps what's typed through a reload, until it's cancelled", () => {
     render(dialog());
     fireEvent.change(screen.getByPlaceholderText("Add a task…"), { target: { value: "Buy milk" } });
-    fireEvent.change(screen.getByPlaceholderText("Description (optional)"), { target: { value: "Oat" } });
+    fireEvent.change(screen.getByPlaceholderText("Add description…"), { target: { value: "Oat" } });
     fireEvent.change(screen.getByPlaceholderText("Add a step…"), { target: { value: "Check fridge" } });
     // A reload: the page goes, and comes back with the dialog open.
     cleanup();
     render(dialog());
     expect(screen.getByPlaceholderText<HTMLInputElement>("Add a task…").value).toBe("Buy milk");
-    expect(screen.getByPlaceholderText<HTMLTextAreaElement>("Description (optional)").value).toBe("Oat");
+    expect(screen.getByPlaceholderText<HTMLTextAreaElement>("Add description…").value).toBe("Oat");
     expect(screen.getByPlaceholderText<HTMLInputElement>("Add a step…").value).toBe("Check fridge");
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     cleanup();
@@ -84,6 +87,6 @@ describe("NewItemDialog", () => {
   it("opens with no date otherwise", () => {
     const { rerender } = render(dialog(undefined, false));
     rerender(dialog());
-    expect(screen.getByRole("button", { name: "Today" }).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("button", { name: "Due date" })).toBeTruthy();
   });
 });
