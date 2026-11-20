@@ -153,9 +153,12 @@ that touches browser storage.
   save starts: a save that fails (or reloads, from an outdated page) keeps
   it.
 - Single-line `Input`s that hold writing, such as New item's title, use
-  `useDraft` too, by hand. Pickers, menus and scroll position aren't drafts.
-  Which dialog is open is kept in `sessionStorage` (`useStoredState`), not
-  as a draft.
+  `useDraft` too, by hand.
+- A form that creates something keeps what's picked in it as part of its
+  draft (`useStoredState` under a `draft:` key, cleared with the text), as
+  New item does (`Picked`). Elsewhere, pickers save at once, so they aren't
+  drafts; nor are menus or scroll position. Which dialog is open is kept in
+  `sessionStorage` (`useStoredState`).
 - Drafts belong to the signed-in user: signing out drops them, and the board
   drops another user's and any untouched for a week (`claimDrafts`).
 
