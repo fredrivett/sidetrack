@@ -6,6 +6,7 @@ import { createProject } from "./projects";
 import { createTestDb, createTestUser } from "./test-helpers";
 import * as greetingJev from "../lib/greetingJev";
 import { agendaGreetings } from "./schema";
+import { setDayNote } from "./dayNotes";
 import { acceptInvite, inviteMember, removeMember } from "./members";
 import { getGreetingPrefs, getProfile, setAgendaReadAt, setGreetingPrefs } from "./users";
 
@@ -44,6 +45,7 @@ const brief = (more: Partial<AgendaBrief> = {}): AgendaBrief => ({
   thisWeek: [],
   undated: [],
   stale: [],
+  dayNote: null,
   ...more,
 });
 
@@ -674,6 +676,43 @@ describe("greetingFor", () => {
         `{{item:${bank.id}}} is still waiting. No rush — want to {{action:triage|give it a new day}}?`,
       );
       expect(afternoon.text).not.toContain(loft.id);
+    });
+
+    it("writes it again with the reader's note for today, which Jev and Claude both read", async () => {
+      const { db, fred } = setup();
+      const { calls, impl } = fake();
+      const bodies: Array<{ url: string; body: string }> = [];
+      const spy = ((url: string, init: RequestInit) => {
+        bodies.push({ url, body: String(init.body) });
+        return impl(url, init);
+      }) as unknown as typeof fetch;
+      // Yesterday's note is yesterday's: today's greeting doesn't read it.
+      setDayNote(db, fred, "2026-11-17", "Feeling great");
+      const first = await writtenGreetingFor(db, fred, "UTC", keys, now, spy);
+      expect(first.note).toBeNull();
+      expect(first.trace?.looked.dayNote).toBe(false);
+
+      expect(setDayNote(db, fred, "2026-11-18", "  Not feeling\n well ")).toBe("Not feeling well");
+      // After the back-off's first wait, it's written again with the note.
+      const later = now + 3 * 60_000;
+      const second = await writtenGreetingFor(db, fred, "UTC", keys, later, spy);
+      expect(calls.claude).toBe(2);
+      expect(second).toMatchObject({ written: true, note: "Not feeling well" });
+      expect(second.trace?.looked.dayNote).toBe(true);
+      expect(second.trace?.moments?.map((m) => m.moment)).toContain("lighten");
+      const [jev, claude] = bodies.slice(-2);
+      expect(jev.body).toContain("Not feeling well");
+      expect(claude.url).toContain("anthropic");
+      expect(claude.body).toContain("note_for_today");
+      // Read back, with nothing new, it's the same greeting.
+      expect(await writtenGreetingFor(db, fred, "UTC", keys, later + 60_000, spy)).toEqual(second);
+      expect(calls.claude).toBe(2);
+
+      // Cleared, it's written again without it.
+      expect(setDayNote(db, fred, "2026-11-18", "   ")).toBeNull();
+      const third = await writtenGreetingFor(db, fred, "UTC", keys, later + 6 * 60_000, spy);
+      expect(calls.claude).toBe(3);
+      expect(third.note).toBeNull();
     });
 
     it("uses the template when AI is off", async () => {

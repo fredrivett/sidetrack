@@ -32,6 +32,7 @@ const brief = (more: Partial<AgendaBrief> = {}): AgendaBrief => ({
   thisWeek: [],
   undated: [],
   stale: [],
+  dayNote: null,
   ...more,
 });
 
@@ -75,6 +76,16 @@ describe("possibleMoments", () => {
     ]);
     expect(possibleMoments(brief({ ...week, partOfDay: "evening" }))).toEqual(["clear"]);
     expect(possibleMoments(brief({ ...week, dueToday: [item("a")] }))).toEqual(["plan"]);
+  });
+
+  it("offers a lighter day only with a note and something open today, before the evening", () => {
+    const tired = { dayNote: "Not feeling well" };
+    expect(possibleMoments(brief({ ...tired, dueToday: [item("a")] }))).toEqual(["plan", "lighten"]);
+    expect(possibleMoments(brief({ dueToday: [item("a")] }))).not.toContain("lighten");
+    expect(possibleMoments(brief({ ...tired, dueToday: [item("a", { completedAt: 1 })] }))).toEqual(["clear"]);
+    expect(
+      possibleMoments(brief({ ...tired, partOfDay: "evening", dueToday: [item("a")] })),
+    ).toEqual(["wind-down"]);
   });
 });
 

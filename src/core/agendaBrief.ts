@@ -11,6 +11,7 @@ import { nestItems } from "../lib/itemTree";
 import { addDays, agendaSection, dayOf, weekSpan } from "../lib/time";
 import { hasProjectAccess } from "./access";
 import type { Db } from "./db";
+import { getDayNote } from "./dayNotes";
 import { listAssignees } from "./members";
 import { listProjects } from "./projects";
 import { auditLog, type Item, items, projects } from "./schema";
@@ -89,6 +90,8 @@ export interface AgendaBrief {
   undated: BriefItem[];
   /** Undated open items nobody has touched for STALE_DAYS, oldest touch first. */
   stale: BriefItem[];
+  /** What the viewer wrote about today (dayNotes.ts), in their own words; null for none. */
+  dayNote: string | null;
 }
 
 /** Morning until noon, afternoon until 6pm, then evening until the 4am turnover. */
@@ -280,6 +283,7 @@ export function buildAgendaBrief(
       .map(brief),
     undated: undated.map(brief),
     stale: stale.map(brief),
+    dayNote: getDayNote(db, viewerId, today),
   };
 }
 

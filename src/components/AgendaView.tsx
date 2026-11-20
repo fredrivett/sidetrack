@@ -18,6 +18,7 @@ import type { FeedbackAbout } from "./FeedbackDialog";
 import { ItemDetailDialog, ItemDetailView } from "./ItemDetailDialog";
 import { ItemGroupView } from "./ItemList";
 import { ItemRow } from "./ItemRow";
+import { MoveToTomorrowDialog } from "./MoveToTomorrowDialog";
 import type { ProjectView } from "./Kanban";
 import { ProjectIcon } from "./ProjectIcon";
 import { runAction } from "./run-action";
@@ -187,6 +188,10 @@ export function AgendaView({
     (label) => [label, shown.filter((i) => sectionOf.get(i.id) === label)] as const,
   ).filter(([, rows]) => rows.length > 0);
 
+  // The greeting's lighter-day offer: today's open items, as the greeting reads them (unfiltered).
+  const [lightenOpen, setLightenOpen] = useState(false);
+  const openToday = onAgenda.filter((i) => i.completedAt === null && sectionOf.get(i.id) === "Today");
+
   const detailProject = detail.item ? projectOf.get(detail.item.projectId) : undefined;
   // What the item's details show, wherever they open.
   const detailProps = (item: Item) => ({
@@ -313,6 +318,10 @@ export function AgendaView({
             onOpenItem={detail.openDetail}
             renderItem={(item, view) => <ItemDetailView {...detailProps(item)} {...view} />}
             onAction={(action) => {
+              if (action === "lighten") {
+                setLightenOpen(true);
+                return;
+              }
               // Until there's a triage of its own: open Overdue and go to it.
               if (action !== "triage") return;
               if (overdueCollapsed) toggleOverdue();
@@ -322,6 +331,18 @@ export function AgendaView({
                 ?.scrollIntoView({ behavior: "smooth", block: "start" });
             }}
           />
+          {today && (
+            <MoveToTomorrowDialog
+              open={lightenOpen}
+              onOpenChange={setLightenOpen}
+              items={openToday}
+              today={today}
+              contextOf={(item) => {
+                const parent = item.parentId ? byId.get(item.parentId) : undefined;
+                return parent?.title ?? projectOf.get(item.projectId)?.name;
+              }}
+            />
+          )}
           </aside>
         )}
 

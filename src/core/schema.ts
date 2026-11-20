@@ -645,6 +645,24 @@ export const agendaGreetings = sqliteTable("agenda_greetings", {
   streak: integer("streak").notNull().default(0),
 });
 
+// What someone wrote about their day, such as "not feeling well" or "keen
+// to get through a lot" (dayNotes.ts), one per person per day (4am
+// turnover), which the Agenda greeting is written with. Per person and
+// seen by nobody else, so not audited, like greeting prefs.
+export const dayNotes = sqliteTable(
+  "day_notes",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // YYYY-MM-DD, the writer's day.
+    day: text("day").notNull(),
+    text: text("text").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.day] })],
+);
+
 export const meta = sqliteTable("meta", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),

@@ -17,6 +17,7 @@ export const MOMENTS = [
   "tidy",
   "wind-down",
   "clear",
+  "lighten",
 ] as const;
 export type Moment = (typeof MOMENTS)[number];
 
@@ -30,6 +31,8 @@ export const MOMENT_MEANING: Record<Moment, string> = {
   tidy: "Suggest picking up an undated item that has sat untouched for weeks. Only when today is light and nothing has slipped.",
   "wind-down": "Close the day: what's left can wait until tomorrow. No planning, no looking ahead.",
   clear: "Today is done or empty: say so warmly and briefly.",
+  lighten:
+    "The reader's note for today asks for a lighter day (unwell, tired, short on time): offer to move today's tasks to tomorrow. Only when the note says so.",
 };
 
 /** At most this many items from each moment's pool are scored or shown to Jev. */
@@ -82,10 +85,14 @@ export function possibleMoments(brief: AgendaBrief): Moment[] {
   // An evening with something open winds down; one with nothing open is clear.
   if (evening && open.length > 0) m.push("wind-down");
   if (open.length === 0) m.push("clear");
+  if (!evening && open.length > 0 && brief.dayNote) m.push("lighten");
   return m;
 }
 
-/** Which items each moment may name, POOL_CAP at most. */
+/**
+ * Which items each moment may name, POOL_CAP at most. A lighter day names
+ * none: its offer lists every one of today's, for the reader to choose.
+ */
 function pool(brief: AgendaBrief, m: Moment): BriefItem[] {
   const all =
     m === "plan" || m === "wind-down"
@@ -141,6 +148,8 @@ export function jevState(brief: AgendaBrief) {
     open_per_day_ahead: brief.ahead.slice(0, 7),
     undated_recent_or_deadline: brief.undated.slice(0, STATE_CAP).map(describe),
     undated_untouched_for_weeks: brief.stale.slice(0, STATE_CAP).map(describe),
+    // The reader's own words about today: data, like titles.
+    ...(brief.dayNote && { reader_note_for_today: brief.dayNote }),
   };
 }
 
@@ -237,7 +246,7 @@ export function pickGreeting(brief: AgendaBrief, scores: GreetingScores, most = 
     const picks = byScore(pool(brief, m))
       .filter((i) => !undated || score(i) >= UNDATED_ITEM_THRESHOLD)
       .slice(0, 2);
-    if (picks.length === 0 && m !== "heavy" && m !== "clear") {
+    if (picks.length === 0 && m !== "heavy" && m !== "clear" && m !== "lighten") {
       why.set(m, `No item scored ${UNDATED_ITEM_THRESHOLD} or more to name`);
       continue;
     }
