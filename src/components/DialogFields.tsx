@@ -17,9 +17,10 @@ import { RepeatPicker } from "./RepeatPicker";
 import { AvatarStack, assigneeNames } from "./UserAvatar";
 
 /**
- * The fields the item dialogs share: a section label, and the chips under
- * the title that show and set an item's due date, repeat and assignees,
- * whether it's saved (ItemDetailDialog) or still a draft (NewItemDialog).
+ * What the item and list dialogs share: a section label, the chip styles,
+ * and the chips under the title that show and set an item's due date,
+ * repeat and assignees, whether it's saved (ItemDetailDialog) or still a
+ * draft (NewItemDialog).
  */
 
 export function Field({
