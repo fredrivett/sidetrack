@@ -69,7 +69,16 @@ export function useDayStart(): number {
  */
 export function useToday(): string | null {
   const start = useDayStart();
-  return Number.isFinite(start) ? dayOf(start) : null;
+  return Number.isFinite(start) ? dayOfStart(start) : null;
+}
+
+// Every row asks, all with the same start, so work each day out once (one
+// entry a day the page stays open).
+const days = new Map<number, string>();
+function dayOfStart(start: number): string {
+  let day = days.get(start);
+  if (day === undefined) days.set(start, (day = dayOf(start)));
+  return day;
 }
 
 type Guess = {
