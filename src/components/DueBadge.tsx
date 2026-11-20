@@ -53,3 +53,11 @@ export function DueBadge({
     </span>
   );
 }
+
+/** When something's due, inside a sentence: "due this weekend", "due 21 Nov". */
+export function DueText({ due, from }: { due: string; from: string | null }) {
+  const { today } = useLabelDay();
+  const { label } = useDueLabel(due, from, true);
+  const word = today && dueWord(due, today, from);
+  return <>{word ? word.toLowerCase() : label}</>;
+}

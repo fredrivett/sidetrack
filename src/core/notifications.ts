@@ -4,13 +4,14 @@ import { getEnv } from "../lib/env";
 import { formatItemRef } from "../lib/itemRef";
 import { getPostHog } from "../lib/posthog";
 import { isEmoji } from "../lib/projectIcon";
+import { dayOf } from "../lib/time";
 import { type PushMessage, sendPush } from "../lib/push";
 import { hasProjectAccess, listMemberIds } from "./access";
 import { users } from "./auth-schema";
 import { onChanges } from "./changes";
 import type { Db } from "./db";
 import { SYSTEM_ACTOR } from "./audit";
-import { dueText, type Part, plainText } from "./describe";
+import { duePart, type Part, plainText } from "./describe";
 import { autoFollow, followersOf } from "./follows";
 import type { ChangeEvent, ItemAt } from "./events";
 import { isLooking } from "./presence";
@@ -734,7 +735,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           if (r.reason === "unassigned") return say([who, t(" took you off "), item]);
           if (r.reason === "activity") return say([who, t(" edited "), item]);
           return event.changes.due?.dueDate
-            ? say([who, t(" set "), item, t(` due ${dueText(event.changes.due)}`)])
+            ? say([who, t(" set "), item, t(" due "), duePart({ ...event.changes.due, dueDate: event.changes.due.dueDate })])
             : say([who, t(" cleared the due date on "), item]);
         case "item.completed":
           return say([who, t(" completed "), item]);
@@ -968,6 +969,16 @@ export async function deliverNotifications(db: Db, now = Date.now()): Promise<nu
     byGroup.set(key, [...(byGroup.get(key) ?? []), r]);
   }
   const vapid = getEnv().VAPID;
+  // Each recipient's day, so a push says when things are due in words.
+  const recipients = [...new Set(rows.map((r) => r.userId))];
+  const zones = new Map(
+    db
+      .select({ id: users.id, timeZone: users.timeZone })
+      .from(users)
+      .where(inArray(users.id, recipients))
+      .all()
+      .map((u) => [u.id, u.timeZone ?? "UTC"]),
+  );
   const seen: string[] = [];
   const pushes: Array<{ userId: string; message: PushMessage }> = [];
   for (const group of byGroup.values()) {
@@ -981,7 +992,8 @@ export async function deliverNotifications(db: Db, now = Date.now()): Promise<nu
     seen.push(...undone);
     const views = describe(db, userId, kept);
     if (views.length === 0 || views[views.length - 1].createdAt <= now - PUSH_FRESH_MS) continue;
-    pushes.push({ userId, message: { ...summarise(views), tag: group[0].groupKey } });
+    const today = dayOf(now, zones.get(userId) ?? "UTC");
+    pushes.push({ userId, message: { ...summarise(views, today), tag: group[0].groupKey } });
   }
   if (seen.length) {
     // audit-exempt: read state on derived rows, seen by nobody else.
@@ -1040,7 +1052,7 @@ function cancelUndone(group: Row[]): { kept: Row[]; undone: string[] } {
 }
 
 /** One push for a group's notifications: its sentence, or a summary of several. */
-function summarise(views: NotificationView[]): Omit<PushMessage, "tag"> {
+function summarise(views: NotificationView[], today: string): Omit<PushMessage, "tag"> {
   const last = views[views.length - 1];
   // A due reminder leads with the item, quoted so it stays apart from the
   // "from Sidetrack" iOS adds to the title.
@@ -1056,7 +1068,7 @@ function summarise(views: NotificationView[]): Omit<PushMessage, "tag"> {
   if (views.length === 1) {
     return {
       title: last.title,
-      body: plainText(last.parts) + (last.snippet ? `: ${last.snippet}` : ""),
+      body: plainText(last.parts, today) + (last.snippet ? `: ${last.snippet}` : ""),
       url: last.url,
     };
   }
