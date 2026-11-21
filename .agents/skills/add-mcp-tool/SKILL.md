@@ -61,7 +61,13 @@ asserts the audit row was written is incomplete.
    for an error, that nothing changed in the DB. Don't repeat core
    behaviour there that the core tests already cover.
 
-5. **Verify.** Run `pnpm test` and `pnpm lint`. Both must pass before the
+5. **Capability map.** If the tool does what a Server Action does, point
+   that action at it in `src/mcp/capabilities.test.ts` (replacing any
+   exemption). Adding a Server Action means doing this too: give it a tool,
+   or exempt it only for one of the reasons in `src/mcp/AGENTS.md`
+   ("Capabilities").
+
+6. **Verify.** Run `pnpm test` and `pnpm lint`. Both must pass before the
    tool is considered shipped.
 
 ## Anti-patterns

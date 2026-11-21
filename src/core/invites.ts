@@ -2,9 +2,18 @@ import { nanoid } from "nanoid";
 import type { AuditOrigin } from "./audit";
 import type { Db } from "./db";
 import { eq } from "drizzle-orm";
-import { findUserByHandle, inviteMember, type MemberView } from "./members";
+import {
+  type CollaboratorView,
+  findUserByHandle,
+  getUserById,
+  inviteMember,
+  listCollaborators,
+  listMembers,
+  type MemberView,
+} from "./members";
+import { getProject } from "./projects";
 import { projects, spaces, type ListRole, type SpaceRole } from "./schema";
-import { inviteSpaceMember, type SpaceMemberView } from "./spaces";
+import { inviteSpaceMember, listSpaceMembers, type SpaceMemberView } from "./spaces";
 
 /** A place one invite covers, and what the people invited can do there. */
 export type InvitePlace =
@@ -73,4 +82,65 @@ export function invitePeople(
     return { ...p, name: row?.name ?? "" };
   });
   return { sent, places: named };
+}
+
+/** How someone can open a place: through the list itself or its Space. */
+export type PlaceAccess = {
+  via: "list" | "space";
+  role: ListRole | SpaceRole | "owner";
+  pending: boolean;
+};
+
+export type CollaboratorAccess = CollaboratorView & { access: PlaceAccess[] };
+
+/**
+ * Who `userId` could mean by a name, and whether they can open `place`:
+ * everyone they share a list or a Space with, plus anyone already in the
+ * place (invites included), each with every way they get in there; [] when
+ * they can't. canInvite says whether `userId` may invite people there.
+ * Undefined when `userId` can't open the place.
+ */
+export function collaboratorAccess(
+  db: Db,
+  userId: string,
+  place: { kind: "list" | "space"; id: string },
+): { canInvite: boolean; people: CollaboratorAccess[] } | undefined {
+  const access = new Map<string, PlaceAccess[]>();
+  const known = new Map<string, CollaboratorView>();
+  const add = (p: CollaboratorView, a: PlaceAccess) => {
+    const { userId: id, username, displayUsername, name, email } = p;
+    const person = { userId: id, username, displayUsername, name, email };
+    known.set(id, person);
+    access.set(person.userId, [...(access.get(person.userId) ?? []), a]);
+  };
+  const fromSpace = (spaceId: string) => {
+    for (const m of listSpaceMembers(db, userId, spaceId)) {
+      add(m, { via: "space", role: m.role, pending: m.status === "pending" });
+    }
+  };
+  let canInvite: boolean;
+  if (place.kind === "list") {
+    const project = getProject(db, userId, place.id);
+    if (!project) return undefined;
+    canInvite = project.userId === userId;
+    const owner = getUserById(db, project.userId);
+    if (owner) add({ ...owner, userId: owner.id }, { via: "list", role: "owner", pending: false });
+    for (const m of listMembers(db, userId, place.id)) {
+      add(m, { via: "list", role: m.role, pending: m.status === "pending" });
+    }
+    if (project.spaceId) fromSpace(project.spaceId);
+  } else {
+    const self = listSpaceMembers(db, userId, place.id).find((m) => m.userId === userId);
+    if (self?.status !== "accepted") return undefined;
+    canInvite = self.role === "admin";
+    fromSpace(place.id);
+  }
+  for (const person of listCollaborators(db, userId)) {
+    if (!known.has(person.userId)) known.set(person.userId, person);
+  }
+  known.delete(userId);
+  const people = [...known.values()]
+    .sort((a, b) => (a.username ?? "").localeCompare(b.username ?? ""))
+    .map((p) => ({ ...p, access: access.get(p.userId) ?? [] }));
+  return { canInvite, people };
 }

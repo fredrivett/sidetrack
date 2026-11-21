@@ -27,7 +27,8 @@ import { buildServer } from "./server";
 // TYPESAFE_API_KEY, so add_item skips its AI duplicate check.
 const ctx = vi.hoisted(() => ({ db: null as unknown }));
 vi.mock("@/core/db", () => ({ getDb: () => ({ db: ctx.db }) }));
-vi.mock("@/lib/env", () => ({ getEnv: () => ({}) }));
+const env = vi.hoisted(() => ({ values: {} as Record<string, unknown> }));
+vi.mock("@/lib/env", () => ({ getEnv: () => env.values }));
 // Agent webhooks are the network edge: record what would be sent instead.
 const agentRequests = vi.hoisted(() => ({ send: vi.fn() }));
 vi.mock("@/lib/agentRequest", () => ({ sendAgentRequest: agentRequests.send }));
@@ -38,6 +39,7 @@ let db: Db;
 const AGENT = { keyId: "key-1", name: "Test agent" };
 
 beforeEach(() => {
+  env.values = {};
   agentRequests.send.mockReset().mockResolvedValue(undefined);
   db = createTestDb().db;
   ctx.db = db;
@@ -615,6 +617,84 @@ describe("search_done, labels and notifications", () => {
     expect(refused.error).toMatch(/no change was made/);
     const cleared = await call("set_notification_level", { scope: `list:${mine.id}`, level: null });
     expect(cleared.data).toEqual({ levels: {} });
+  });
+});
+
+describe("feedback and collaborators", () => {
+  it("files feedback under the user's name, saying which agent sent it, and adds to it once", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const jane = createTestUser(db, { username: "jane" });
+    const inbox = createProject(db, fred, { name: "Feedback" }, "web");
+    const call = await connectAs(jane);
+
+    const off = await call("send_feedback", { kind: "bug", message: "Board is blank" });
+    expect(off.error).toMatch(/doesn't take feedback/);
+
+    env.values = { FEEDBACK_LIST_ID: inbox.id };
+    const sent = await call("send_feedback", { kind: "bug", message: "Board is blank\nAfter a reload" });
+    expect(sent.data).toEqual({ itemId: expect.any(String), ref: "FEE-1" });
+    const itemId = sent.data.itemId as string;
+    const item = getItem(db, fred, itemId);
+    expect(item).toMatchObject({ title: "Board is blank", labels: ["Bug", "Feedback"], createdBy: jane });
+    expect(item?.description).toContain("From @jane · via Test agent");
+    // Jane can add to it, but still can't open it.
+    expect(getItem(db, jane, itemId)).toBeUndefined();
+
+    const added = await call("add_to_feedback", { item_id: itemId, note: "Only on Safari" });
+    expect(added.data).toEqual({ ok: true });
+    expect(getItem(db, fred, itemId)?.description).toMatch(/\*\*Follow-up\*\*\n\nOnly on Safari\n\n---\nFrom @jane/);
+    const again = await call("add_to_feedback", { item_id: itemId, note: "And Chrome" });
+    expect(again.error).toMatch(/already added.*no change was made/);
+  });
+
+  it("lists who the user shares with, and with a place how each can open it", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const ann = createTestUser(db, { username: "ann" });
+    const samLee = createTestUser(db, { username: "samlee" });
+    const samKing = createTestUser(db, { username: "samking" });
+    createTestUser(db, { username: "pat" });
+    const stranger = createTestUser(db, { username: "stranger" });
+    const work = createSpace(db, fred, { name: "Work" }, "web");
+    inviteSpaceMember(db, fred, work.id, "samlee", "web");
+    acceptSpaceInvite(db, samLee, work.id, "web");
+    const home = createProject(db, fred, { name: "Home", spaceId: work.id }, "web");
+    inviteMember(db, fred, home.id, "ann", "web", "viewer");
+    acceptInvite(db, ann, home.id, "web");
+    inviteMember(db, fred, home.id, "pat", "web");
+    const garden = createProject(db, fred, { name: "Garden" }, "web");
+    inviteMember(db, fred, garden.id, "samking", "web");
+    acceptInvite(db, samKing, garden.id, "web");
+    const call = await connectAs(fred);
+    const byName = (r: { data: unknown }) =>
+      Object.fromEntries(
+        ((r.data as { people: { username: string; access: unknown }[] }).people).map((p) => [p.username, p.access]),
+      );
+
+    // Everyone fred shares with; pat hasn't accepted, so isn't one yet.
+    const everyone = (await call("list_collaborators")).data as unknown as { username: string }[];
+    expect(everyone.map((p) => p.username)).toEqual(["ann", "samking", "samlee"]);
+
+    // For Home: Sam Lee is in through Work, Sam King can't open it yet, and
+    // pat's invite is still pending.
+    const forHome = await call("list_collaborators", { list_id: home.id });
+    expect(forHome.data.canInvite).toBe(true);
+    expect(byName(forHome)).toEqual({
+      ann: [{ via: "list", role: "viewer", pending: false }],
+      pat: [{ via: "list", role: "editor", pending: true }],
+      samking: [],
+      samlee: [{ via: "space", role: "member", pending: false }],
+    });
+    expect(byName(await call("list_collaborators", { space_id: work.id }))).toMatchObject({
+      ann: [],
+      samlee: [{ via: "space", role: "member", pending: false }],
+    });
+
+    // ann can see who's on Home but can't invite; a stranger learns nothing.
+    const asAnn = await (await connectAs(ann))("list_collaborators", { list_id: home.id });
+    expect(asAnn.data.canInvite).toBe(false);
+    expect(byName(asAnn).fred).toEqual([{ via: "list", role: "owner", pending: false }]);
+    const asStranger = await (await connectAs(stranger))("list_collaborators", { list_id: home.id });
+    expect(asStranger.error).toMatch(/not found/);
   });
 });
 
