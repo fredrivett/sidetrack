@@ -87,8 +87,8 @@ importers:
         specifier: 16.4.6
         version: 16.4.6(@babel/core@7.29.0)(@playwright/test@1.65.1)(@types/node@20.19.41)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       nodemailer:
-        specifier: ^8.0.10
-        version: 8.0.10
+        specifier: ^10.1.4
+        version: 10.1.4
       posthog-js:
         specifier: ^1.382.0
         version: 1.382.0
@@ -156,9 +156,6 @@ importers:
       '@types/node':
         specifier: ^20
         version: 20.19.41
-      '@types/nodemailer':
-        specifier: ^8.0.0
-        version: 8.0.0
       '@types/react':
         specifier: ^19
         version: 19.2.14
@@ -2150,9 +2147,6 @@ packages:
 
   '@types/node@20.19.43':
     resolution: {integrity: sha512-6oYBAi5ikg4Pl+kGsoYtawUMBT2zZMCvPNF7pVLnHZfd1zf38DRiWn/gT01RYCdUqkv7Fhr+C9ot4/tb+2sVvA==}
-
-  '@types/nodemailer@8.0.0':
-    resolution: {integrity: sha512-fyf8jWULsCo0d0BuoQ75i6IeoHs47qcqxWc7yUdUcV0pOZGjUTTOvwdG1PRXUDqN/8A64yQdQdnA2pZgcdi+cA==}
 
   '@types/react-dom@19.2.3':
     resolution: {integrity: sha512-jp2L/eY6fn+KgVVQAOqYItbF0VY/YApe5Mz2F0aykSO8gx31bYCZyvSeYxCHKvzHG5eZjc+zyaS5BrBWya2+kQ==}
@@ -4579,9 +4573,9 @@ packages:
     resolution: {integrity: sha512-zAPCKqMcnqs2nGy6nlkm7JduFseiBJy3EXHGLh+8pFR+TxGCBxxiEN21+UROU5CKwX/f4TlUcYjiM+vs/tsyxw==}
     engines: {node: '>=18'}
 
-  nodemailer@8.0.10:
-    resolution: {integrity: sha512-BLFuSth7QtHOkBzyqTehWWyub0NTRDuK2Q2SQfnGLsrJnzyU+Yeh4WpV1eZGuARFj1xQJHIdnTuJZLP+b9R1GQ==}
-    engines: {node: '>=6.0.0'}
+  nodemailer@10.1.4:
+    resolution: {integrity: sha512-EsMnOR2oRv4LGnWvHgcVYkkQ4O2j8KO4WTw6l+PHR4sOXo8SAgIraxtEnGDmotjbhv0hDsu3IuDIFZm8iXwO4A==}
+    engines: {node: '>=20.0.0'}
 
   npm-run-path@4.0.1:
     resolution: {integrity: sha512-S48WzZW777zhNIrn7gxOlISNAqi9ZC/uQFnRdbeIHhZhCA6UqpkOT8T1G7BvfdgP4Er8gF4sUbaS0i7QvIfCWw==}
@@ -7560,10 +7554,6 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
-  '@types/nodemailer@8.0.0':
-    dependencies:
-      '@types/node': 20.19.41
-
   '@types/react-dom@19.2.3(@types/react@19.2.14)':
     dependencies:
       '@types/react': 19.2.14
@@ -10252,7 +10242,7 @@ snapshots:
 
   node-releases@2.0.64: {}
 
-  nodemailer@8.0.10: {}
+  nodemailer@10.1.4: {}
 
   npm-run-path@4.0.1:
     dependencies:
