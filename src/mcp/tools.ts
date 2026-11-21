@@ -3,11 +3,17 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   type AgentOrigin,
+  endAgentSession,
   finishWork,
   listOpenAgentSessions,
+  listStartableAgents,
+  listStartableLists,
   reportWork,
+  requestWork,
   startWork,
+  stopRequest,
 } from "@/core/agentSessions";
+import { sendAgentRequest } from "@/lib/agentRequest";
 import { type AuditOrigin, listAudit } from "@/core/audit";
 import {
   autoNewListIcon,
@@ -1431,6 +1437,99 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       } catch (e) {
         return errorText(`${(e as Error).message} — no change was made.`);
       }
+    },
+  );
+
+  // Assigning agents: what the board's assignee picker does for the user's
+  // own agents, with the same rules (core's requestWork and stopRequest).
+  server.registerTool(
+    "list_agents",
+    {
+      title: "List agents",
+      description:
+        "The user's agents that Sidetrack can start: API keys set (in Settings → API keys) to start work when assigned. " +
+        "Returns { agents, listIds }: agents are { keyId, name }, and listIds are the lists the user can start them on, " +
+        "the ones they're admin of (owner of a personal list, or admin of its Space) that have a repository. " +
+        "Pass an agent's keyId to assign_agent or unassign_agent.",
+      inputSchema: {},
+    },
+    async () => {
+      const { db } = getDb();
+      return json({
+        agents: listStartableAgents(db, userId),
+        listIds: listStartableLists(db, userId),
+      });
+    },
+  );
+
+  server.registerTool(
+    "assign_agent",
+    {
+      title: "Assign agent",
+      description:
+        "Assign one of the user's agents (agent_key_id from list_agents) to an item, as the board's assignee picker does: " +
+        "Sidetrack asks the agent's webhook to start work on it in the list's repository, and the agent shows on the item at once. " +
+        "Only the list's admin can, and only on a list with a repository; refused for a completed item. " +
+        "People's assignments are left alone. Assigning an agent already on the item changes nothing. " +
+        "If its webhook can't be reached, the agent comes off again and this returns an error. " +
+        "Returns the agent's session. item_id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
+      inputSchema: { item_id: z.string(), agent_key_id: z.string() },
+    },
+    async ({ item_id, agent_key_id }) => {
+      const { db } = getDb();
+      const { item, error } = resolveItemArg(db, userId, item_id);
+      if (error) return error;
+      let started;
+      try {
+        started = requestWork(db, userId, item.id, agent_key_id, SOURCE);
+      } catch (e) {
+        return errorText(`${(e as Error).message} — no change was made.`);
+      }
+      if (started.request) {
+        try {
+          await sendAgentRequest(started.request);
+        } catch (e) {
+          const reason = (e as Error).message;
+          endAgentSession(db, userId, started.session.id, SOURCE, reason);
+          return errorText(`${reason}, so the agent wasn't started.`);
+        }
+      }
+      return json(started.session);
+    },
+  );
+
+  server.registerTool(
+    "unassign_agent",
+    {
+      title: "Unassign agent",
+      description:
+        "Take one of the user's agents (agent_key_id, as in the item's `agents` from get_item) off an item, as unassigning it on the board does: " +
+        "Sidetrack tells the agent's webhook to stop, then ends its session there. Works whether or not the user is the list's admin. " +
+        "If the webhook can't be reached, the agent stays on the item and this returns an error, so you can try again. " +
+        "Returns { stopped: true }, or { stopped: false } (a no-op) when that agent wasn't on the item. " +
+        "item_id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
+      inputSchema: { item_id: z.string(), agent_key_id: z.string() },
+    },
+    async ({ item_id, agent_key_id }) => {
+      const { db } = getDb();
+      const { item, error } = resolveItemArg(db, userId, item_id);
+      if (error) return error;
+      let found;
+      try {
+        found = stopRequest(db, userId, item.id, agent_key_id);
+      } catch (e) {
+        return errorText(`${(e as Error).message} — no change was made.`);
+      }
+      if (!found) return json({ stopped: false });
+      if (found.request) {
+        try {
+          await sendAgentRequest(found.request);
+        } catch (e) {
+          return errorText(`${(e as Error).message}, so the agent is still on the item.`);
+        }
+      }
+      endAgentSession(db, userId, found.session.id, SOURCE);
+      return json({ stopped: true });
     },
   );
 

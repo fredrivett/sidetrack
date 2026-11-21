@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { listOpenAgentSessions } from "@/core/agentSessions";
+import { setAgentWebhook } from "@/core/agentWebhooks";
+import { createApiKey } from "@/core/api-keys";
 import { listAudit } from "@/core/audit";
 import { addItem, completeItem, getItem, listItems } from "@/core/items";
 import { listLabels } from "@/core/labels";
 import { acceptInvite, inviteMember } from "@/core/members";
-import { createProject, getProject, listProjects } from "@/core/projects";
+import { createProject, getProject, listProjects, updateProject } from "@/core/projects";
 import {
   acceptSpaceInvite,
   createSpace,
@@ -24,6 +27,9 @@ import { buildServer } from "./server";
 const ctx = vi.hoisted(() => ({ db: null as unknown }));
 vi.mock("@/core/db", () => ({ getDb: () => ({ db: ctx.db }) }));
 vi.mock("@/lib/env", () => ({ getEnv: () => ({}) }));
+// Agent webhooks are the network edge: record what would be sent instead.
+const agentRequests = vi.hoisted(() => ({ send: vi.fn() }));
+vi.mock("@/lib/agentRequest", () => ({ sendAgentRequest: agentRequests.send }));
 
 type Db = ReturnType<typeof createTestDb>["db"];
 let db: Db;
@@ -31,6 +37,7 @@ let db: Db;
 const AGENT = { keyId: "key-1", name: "Test agent" };
 
 beforeEach(() => {
+  agentRequests.send.mockReset().mockResolvedValue(undefined);
   db = createTestDb().db;
   ctx.db = db;
 });
@@ -644,5 +651,85 @@ describe("move_item", () => {
     });
     expect(error).toBe(`list not found: ${bobs.id}`);
     expect(getItem(db, fred, item.id)?.projectId).toBe(eng.id);
+  });
+});
+
+describe("assign_agent and unassign_agent", () => {
+  // bob's Amp key, set to start work, and a Space list with a repository
+  // that fred owns and bob is an admin of; lorna is a plain member.
+  function seedSpace() {
+    const fred = createTestUser(db, { username: "fred" });
+    const bob = createTestUser(db, { username: "bob" });
+    const lorna = createTestUser(db, { username: "lorna" });
+    const space = createSpace(db, fred, { name: "Work" }, "web");
+    for (const [who, name] of [[bob, "bob"], [lorna, "lorna"]] as const) {
+      inviteSpaceMember(db, fred, space.id, name, "web");
+      acceptSpaceInvite(db, who, space.id, "web");
+    }
+    setSpaceMemberRole(db, fred, space.id, bob, "admin", "web");
+    const list = createProject(db, fred, { name: "Sidetrack", spaceId: space.id }, "web");
+    updateProject(db, fred, list.id, { repository: "fredrivett/sidetrack" }, "web");
+    const item = addItem(db, fred, { projectId: list.id, title: "Ship it" }, "web");
+    const amp = createApiKey(db, bob, "Amp", "web").record.id;
+    setAgentWebhook(db, bob, amp, "https://hooks.example.com/amp", "web");
+    const lornas = createApiKey(db, lorna, "Lorna's Amp", "web").record.id;
+    setAgentWebhook(db, lorna, lornas, "https://hooks.example.com/lorna", "web");
+    return { bob, lorna, list, item, amp, lornas };
+  }
+
+  it("lets a Space admin start and stop their agent on its list, as the picker does", async () => {
+    const { bob, list, item, amp } = seedSpace();
+    const call = await connectAs(bob);
+    expect((await call("list_agents")).data).toEqual({
+      agents: [{ keyId: amp, name: "Amp" }],
+      listIds: [list.id],
+    });
+
+    const assigned = await call("assign_agent", { item_id: "SID-1", agent_key_id: amp });
+    expect(assigned.error).toBeNull();
+    expect(assigned.data).toMatchObject({ itemId: item.id, agentKeyId: amp, finishedAt: null });
+    expect(agentRequests.send).toHaveBeenLastCalledWith(
+      expect.objectContaining({ body: expect.objectContaining({ type: "start", ref: "SID-1" }) }),
+    );
+    expect(listAudit(db, bob)[0]).toMatchObject({
+      source: "mcp",
+      agentKeyId: AGENT.keyId,
+      detail: 'asked Amp to work on "Ship it"',
+    });
+
+    expect((await call("unassign_agent", { item_id: "SID-1", agent_key_id: amp })).data).toEqual({
+      stopped: true,
+    });
+    expect(agentRequests.send).toHaveBeenLastCalledWith(
+      expect.objectContaining({ body: expect.objectContaining({ type: "stop" }) }),
+    );
+    expect(listOpenAgentSessions(db, bob, item.id)).toEqual([]);
+    expect((await call("unassign_agent", { item_id: "SID-1", agent_key_id: amp })).data).toEqual({
+      stopped: false,
+    });
+  });
+
+  it("refuses a member who isn't the list's admin, changing nothing", async () => {
+    const { lorna, item, amp, lornas } = seedSpace();
+    const call = await connectAs(lorna);
+    expect((await call("list_agents")).data).toEqual({
+      agents: [{ keyId: lornas, name: "Lorna's Amp" }],
+      listIds: [],
+    });
+    for (const key of [lornas, amp]) {
+      const { error } = await call("assign_agent", { item_id: "SID-1", agent_key_id: key });
+      expect(error).toMatch(/only the list's admin.*no change was made/);
+    }
+    expect(agentRequests.send).not.toHaveBeenCalled();
+    expect(listOpenAgentSessions(db, lorna, item.id)).toEqual([]);
+  });
+
+  it("takes the agent off again when its webhook can't be reached", async () => {
+    const { bob, item, amp } = seedSpace();
+    agentRequests.send.mockRejectedValueOnce(new Error("the agent's webhook answered 500"));
+    const call = await connectAs(bob);
+    const { error } = await call("assign_agent", { item_id: "SID-1", agent_key_id: amp });
+    expect(error).toBe("the agent's webhook answered 500, so the agent wasn't started.");
+    expect(listOpenAgentSessions(db, bob, item.id)).toEqual([]);
   });
 });
