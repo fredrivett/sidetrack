@@ -12,7 +12,6 @@ import { aiRead } from "./ai-read";
 import type { Greeting } from "@/core/agendaGreeting";
 import type { FeedbackAbout } from "./FeedbackDialog";
 import type { Item } from "@/core/schema";
-import { type ItemFilters, NO_FILTERS } from "@/lib/filters";
 import { AgendaView } from "./AgendaView";
 import type { ProjectView } from "./Kanban";
 
@@ -100,7 +99,6 @@ function renderAgenda(
   items: Item[],
   projects = [home],
   overdueCollapsed = false,
-  filters: Partial<ItemFilters> = {},
   greet = false,
   onFeedback?: (about: FeedbackAbout) => void,
 ) {
@@ -119,7 +117,6 @@ function renderAgenda(
       greet={greet}
       firstName="Fred"
       onFeedback={onFeedback}
-      filters={{ ...NO_FILTERS, ...filters }}
     />,
   );
 }
@@ -186,37 +183,7 @@ describe("AgendaView", () => {
     }
   });
 
-  it("narrows every section to the header's filters", () => {
-    const mixed = () => [
-      item("today, mine", "2026-11-14", { assigneeIds: ["me"] }),
-      item("late, theirs", "2026-11-10", { assigneeIds: ["them"] }),
-      item("late, nobody's", "2026-11-11"),
-      item("next week, ours", "2026-11-18", { assigneeIds: ["them", "me"] }),
-      item("today, done", "2026-11-14", doneOn(14)),
-      item("no date", null, { labels: ["errand"] }),
-    ];
-    renderAgenda(mixed(), [home], false, { assignees: ["me"] });
-    expect(screen.getByText("today, mine")).toBeTruthy();
-    // A joint item shows for either of its people.
-    expect(screen.getByText("next week, ours")).toBeTruthy();
-    expect(screen.queryByText("late, theirs")).toBeNull();
-    expect(screen.queryByRole("heading", { level: 2, name: /No date/ })).toBeNull();
-    cleanup();
-
-    renderAgenda(mixed(), [home], false, { labels: ["errand"] });
-    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
-    expect(screen.getByText("no date")).toBeTruthy();
-    cleanup();
-
-    // Done today off, and only what's late.
-    renderAgenda(mixed(), [home], false, { doneToday: false, due: ["overdue", "today"] });
-    expect(screen.getByText("today, mine")).toBeTruthy();
-    expect(screen.getByText("late, nobody's")).toBeTruthy();
-    expect(screen.queryByText("today, done")).toBeNull();
-    expect(screen.queryByText("next week, ours")).toBeNull();
-  });
-
-  it("shows only what's the viewer's or nobody's, whatever the filters", () => {
+  it("shows only what's the viewer's or nobody's", () => {
     const theirs = item("Their launch", null, { assigneeIds: ["them"] });
     renderAgenda([
       item("Mine", "2026-11-14", { assigneeIds: ["me"] }),
@@ -235,11 +202,6 @@ describe("AgendaView", () => {
     // Only theirs: nothing to do, not a filter hiding things.
     renderAgenda([item("Theirs", "2026-11-14", { assigneeIds: ["them"] })]);
     expect(screen.getByText("Nothing to do.")).toBeTruthy();
-    cleanup();
-
-    // Picking them in the header doesn't bring their items back.
-    renderAgenda([item("Theirs", "2026-11-14", { assigneeIds: ["them"] })], [home], false, { assignees: ["them"] });
-    expect(screen.queryByText("Theirs")).toBeNull();
     expect(screen.getByText("Nothing to do.")).toBeTruthy();
   });
 
@@ -267,13 +229,6 @@ describe("AgendaView", () => {
     expect(nextWeek.getByText("Phone plan")).toBeTruthy();
     expect(nextWeek.getByLabelText(/checklist, 0 of 1 done/)).toBeTruthy();
     expect(nextWeek.getByText("Fred's SIM")).toBeTruthy();
-
-    cleanup();
-    renderAgenda(items, [home, buy], false, { assignees: ["me"] });
-    expect(screen.queryByRole("heading", { level: 3, name: /Buy/ })).toBeNull();
-    // Its parent is filtered out, so only the sub-item's row shows, naming it.
-    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
-    expect(screen.getByText("Kitchen").closest("button")?.textContent).toContain("Tidy flat");
   });
 
   it("folds an undated checklist away as stored on the item, and saves a toggle", () => {
@@ -440,7 +395,7 @@ describe("AgendaView", () => {
       ],
     } satisfies Greeting);
     const onFeedback = vi.fn();
-    renderAgenda([late, bins, loft], [home], true, {}, true, onFeedback);
+    renderAgenda([late, bins, loft], [home], true, true, onFeedback);
     const greeting = await screen.findByText(/^Since Friday/);
     expect(screen.getByRole("heading", { level: 2, name: "Good afternoon, Fred." })).toBeTruthy();
     expect(greeting.textContent).toBe(
@@ -508,7 +463,6 @@ describe("AgendaView", () => {
         noDateFoldedLists={[]}
         greet
         firstName="Fred"
-        filters={NO_FILTERS}
       />
     );
     const { rerender } = render(board([late, bins]));
@@ -571,7 +525,6 @@ describe("AgendaView", () => {
         noDateFoldedLists={[]}
         greet
         firstName="Fred"
-        filters={NO_FILTERS}
       />
     );
     const { rerender } = render(board([late]));
@@ -601,7 +554,7 @@ describe("AgendaView", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
     vi.setSystemTime(new Date(2026, 10, 14, 12));
     try {
-      renderAgenda([late], [home], false, {}, true);
+      renderAgenda([late], [home], false, true);
       await act(async () => {});
       expect(screen.getByText("One thing slipped.")).toBeTruthy();
       expect(screen.queryByText("Out of date")).toBeNull();
@@ -650,7 +603,6 @@ describe("AgendaView", () => {
         greet
         firstName="Fred"
         onAddForToday={onAddForToday}
-        filters={NO_FILTERS}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Add for today" }));
@@ -685,7 +637,7 @@ describe("AgendaView", () => {
         model: null,
       },
     });
-    renderAgenda([late, paid], [home], false, {}, true, vi.fn());
+    renderAgenda([late, paid], [home], false, true, vi.fn());
     await screen.findByText(/slipped\./);
     // The built-in greeting has no thumbs, but still explains itself.
     expect(screen.queryByRole("button", { name: "Good greeting" })).toBeNull();
@@ -720,7 +672,7 @@ describe("AgendaView", () => {
 
   it("keeps the opening line and drops the placeholder if the greeting can't load", async () => {
     vi.mocked(aiRead).mockRejectedValueOnce(new Error("offline"));
-    const { container } = renderAgenda([], [home], false, {}, true);
+    const { container } = renderAgenda([], [home], false, true);
     expect(container.querySelector(".animate-pulse")).toBeTruthy();
     await vi.waitFor(() => expect(container.querySelector(".animate-pulse")).toBeNull());
     expect(screen.getByRole("heading", { level: 2, name: /^Good / })).toBeTruthy();
@@ -728,11 +680,11 @@ describe("AgendaView", () => {
 
   it("counts the greeting read when the viewer leaves it, not at a glance", () => {
     vi.mocked(setAgendaReadAction).mockClear();
-    renderAgenda([], [home], false, {}, true);
+    renderAgenda([], [home], false, true);
     cleanup();
     expect(vi.mocked(setAgendaReadAction)).not.toHaveBeenCalled();
 
-    renderAgenda([], [home], false, {}, true);
+    renderAgenda([], [home], false, true);
     vi.setSystemTime(Date.now() + 5000);
     cleanup();
     expect(vi.mocked(setAgendaReadAction)).toHaveBeenCalledTimes(1);
@@ -749,7 +701,7 @@ describe("AgendaView", () => {
       others: [],
       written: false,
     });
-    const { rerender } = renderAgenda([], [home], false, {}, true);
+    const { rerender } = renderAgenda([], [home], false, true);
     await screen.findByText("Since Friday you've finished four.");
     // The template's, so no thumbs: they rate Claude's.
     expect(screen.queryByRole("button", { name: "Good greeting" })).toBeNull();
@@ -771,7 +723,6 @@ describe("AgendaView", () => {
         noDateFoldedLists={[]}
         greet
         firstName="Fred"
-        filters={NO_FILTERS}
       />,
     );
     expect(screen.getByText("Since Friday you've finished four.")).toBeTruthy();
@@ -779,14 +730,8 @@ describe("AgendaView", () => {
     vi.setSystemTime(new Date(2026, 10, 14, 12));
   });
 
-  it("says when there's nothing to do, and when the filters hide everything", () => {
+  it("says when there's nothing to do", () => {
     renderAgenda([item("done", "2026-11-14", doneOn(13))]);
     expect(screen.getByText("Nothing to do.")).toBeTruthy();
-    cleanup();
-
-    renderAgenda([item("mine", "2026-11-20", { assigneeIds: ["me"] })], [home], false, {
-      unassigned: true,
-    });
-    expect(screen.getByText("Nothing here for your filters.")).toBeTruthy();
   });
 });

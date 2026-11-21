@@ -27,13 +27,13 @@ import type { PendingSpaceInviteView, SpaceView } from "@/core/spaces";
 import { type ItemFilters, matchesFilters } from "@/lib/filters";
 import { isEditableTarget, matchesShortcut } from "@/lib/keyboard";
 import { LOCALE_COOKIE } from "@/lib/time";
-import { CircleCheck, MessageSquarePlus, SquareKanban, Sunrise } from "lucide-react";
+import { MessageSquarePlus, SquareKanban, Sunrise } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AddProjectButton } from "./AddProjectButton";
 import { AuditDialog } from "./AuditDialog";
-import { BoardHeader, HeaderRule, BoardMain, BoardRail } from "./BoardLayout";
+import { BoardHeader, BoardMain, BoardRail, MenuViewTitle } from "./BoardLayout";
 import { CommandPalette } from "./CommandPalette";
 import { AgendaView } from "./AgendaView";
 import { DoneView } from "./DoneView";
@@ -95,14 +95,13 @@ export type ProjectView = Project & {
   suggestedRepository?: string;
 };
 
-/** The header's views, each at its own path (/brief, /board, /done); / opens the Brief. */
+/** The header's views, each at its own path (/brief, /board); / opens the Brief. */
 const BOARD_VIEWS = [
   ["brief", "Brief", Sunrise],
   ["board", "Board", SquareKanban],
-  ["done", "Done", CircleCheck],
 ] as const;
-/** The switch's views, plus Archived, which the account menu opens. */
-export type BoardView = (typeof BOARD_VIEWS)[number][0] | "archived";
+/** The switch's views, plus Done and Archived, which the account menu opens (/done, /archived). */
+export type BoardView = (typeof BOARD_VIEWS)[number][0] | "done" | "archived";
 
 /** How many more older finished items the Done view loads at a time. */
 const DONE_PAGE = 50;
@@ -673,7 +672,8 @@ export function Kanban({
 
   // Global shortcuts: ⌘K / Ctrl+K toggles the command palette, even from a
   // field. Then Linear-style bare keys: / → palette, C → new item, ⇧C → new
-  // list, F → Filter, N → notifications, 1–3 → the header's views, ! → Send
+  // list, F → Filter (where the filters apply: the board's columns), N →
+  // notifications, 1–2 → the header's views, ! → Send
   // feedback (where it's on), ? → the list of shortcuts (ShortcutsDialog,
   // which lists any new one too). Those are skipped while typing in a field,
   // and when a command modifier is held so we don't shadow ⌘C / Ctrl+C copy.
@@ -741,7 +741,7 @@ export function Kanban({
         return;
       }
       const nextView = BOARD_VIEWS[Number(e.key) - 1]?.[0];
-      if (matchesShortcut(e, { key: "f" })) {
+      if (matchesShortcut(e, { key: "f" }) && filtersApply(chosenView.get())) {
         e.preventDefault();
         setFilterOpen((o) => !o);
       } else if (matchesShortcut(e, { key: "n" })) {
@@ -755,7 +755,7 @@ export function Kanban({
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [openNewItem, switchView, feedbackEnabled, selection]);
+  }, [openNewItem, switchView, feedbackEnabled, selection, chosenView]);
 
   // Moving the pointer hands the shortcuts back to the hovered item. Scrolling
   // to the selection moves rows under a still pointer without moving it.
@@ -831,15 +831,17 @@ export function Kanban({
         <BoardHeader
           nav={<ViewTabs view={view} chosen={chosenView} onSwitch={switchView} />}
         >
-          <FilterMenu
-            open={filterOpen}
-            onOpenChange={setFilterOpen}
-            filters={shownFilters}
-            onChange={changeFilters}
-            people={people}
-            labels={labelChoices}
-            viewerId={viewerId}
-          />
+          {filtersApply(view) && (
+            <FilterMenu
+              open={filterOpen}
+              onOpenChange={setFilterOpen}
+              filters={shownFilters}
+              onChange={changeFilters}
+              people={people}
+              labels={labelChoices}
+              viewerId={viewerId}
+            />
+          )}
           {feedbackEnabled && (
             <Tooltip>
               <TooltipTrigger
@@ -897,10 +899,10 @@ export function Kanban({
               );
             }}
           />
-          <HeaderRule />
           <UserMenu
             user={viewer}
             archivedCount={archived.length}
+            onShowDone={() => switchView("done")}
             onShowArchived={() => switchView("archived")}
             onShowActivity={() => setAudit({ open: true })}
             onInvite={() => setInviting(true)}
@@ -941,34 +943,30 @@ export function Kanban({
             assigneesByProject={assigneesByProject}
             prLinksByItem={prLinksByItem}
             viewerId={viewerId}
-            filters={shownFilters}
           />
         ) : view === "done" ? (
-          <DoneView
-            projects={active}
-            itemsByProject={itemsByProject}
-            assigneesByProject={assigneesByProject}
-            prLinksByItem={prLinksByItem}
-            viewerId={viewerId}
-            filters={shownFilters}
-            since={older?.since ?? completedSince}
-            more={older?.more ?? true}
-            loading={loadingDone}
-            failed={doneFailed}
-            onLoadMore={loadMoreDone}
-            onRetry={retryDone}
-          />
+          // Opened from the account menu, like Archived lists.
+          <>
+            <MenuViewTitle title="Done items" onBack={() => switchView("board")} />
+            <DoneView
+              projects={active}
+              itemsByProject={itemsByProject}
+              assigneesByProject={assigneesByProject}
+              prLinksByItem={prLinksByItem}
+              viewerId={viewerId}
+              since={older?.since ?? completedSince}
+              more={older?.more ?? true}
+              loading={loadingDone}
+              failed={doneFailed}
+              onLoadMore={loadMoreDone}
+              onRetry={retryDone}
+            />
+          </>
         ) : view === "archived" ? (
           // The one place archived lists and their items show. No rail ref:
-          // ?p= follows the board's lists only. None of the switch's views is
-          // on, so a title says where this is.
+          // ?p= follows the board's lists only.
           <>
-            <div className="flex items-center justify-between gap-2 px-3 pt-3 sm:px-4">
-              <h2 className="text-sm font-semibold">Archived lists</h2>
-              <Button variant="outline" size="sm" onClick={() => switchView("board")}>
-                Back to board
-              </Button>
-            </div>
+            <MenuViewTitle title="Archived lists" onBack={() => switchView("board")} />
             <BoardRail>
               {archived.length === 0 ? (
                 <div className="m-auto text-sm text-neutral-500">
@@ -1155,6 +1153,15 @@ export function Kanban({
   );
 }
 
+/**
+ * Whether the header's filters apply to a view: the board's columns, and
+ * Archived's, which are the same. The Brief already shows only the viewer's
+ * own, grouped by when it's due, and Done is a record of everything finished.
+ */
+function filtersApply(view: BoardView) {
+  return view === "board" || view === "archived";
+}
+
 /** The view the tabs show, for useSyncExternalStore. */
 function chosenStore(initial: BoardView) {
   let chosen = initial;
@@ -1175,7 +1182,7 @@ function chosenStore(initial: BoardView) {
 }
 
 /**
- * The Brief, Board and Done switch, with an underline under the current view
+ * The Brief and Board switch, with an underline under the current view
  * that slides to the next. Its own component so measuring the underline
  * re-renders only the tabs, not the board under them.
  */

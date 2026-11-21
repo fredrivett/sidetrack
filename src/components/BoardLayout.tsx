@@ -1,5 +1,6 @@
 import type { ComponentProps, ReactNode, Ref } from "react";
 import { LogoMark } from "@/components/LogoMark";
+import { Button } from "@/components/ui/button";
 
 // The board's frame, shared by the live board (Kanban, ProjectColumn) and its
 // loading skeleton (BoardSkeleton), so the skeleton the app launches into
@@ -11,8 +12,8 @@ export function BoardMain({ children }: { children: ReactNode }) {
 }
 
 /**
- * The top bar: logo and title on the left, then `nav` (the Brief, Board
- * and Done switch), and `children` on the right.
+ * The top bar: logo and title on the left, then `nav` (the Brief and Board
+ * switch), and `children` on the right.
  */
 export function BoardHeader({
   nav,
@@ -33,7 +34,7 @@ export function BoardHeader({
           <span className={nav ? "sr-only sm:not-sr-only" : undefined}>Sidetrack</span>
         </h1>
         {/* On phones, where the name is hidden, a rule keeps the logo from
-            reading as a fourth view. */}
+            reading as a third view. */}
         {nav && <span aria-hidden className="h-4 w-px bg-neutral-200 sm:hidden dark:bg-neutral-800" />}
         {nav}
       </div>
@@ -43,22 +44,32 @@ export function BoardHeader({
           data-slot, which the menu and tooltip triggers overwrite; the
           preview's mock buttons are spans with data-slot="button". Icons
           with their own size (the account fallback) keep it.
+          With a mouse, the buttons are tighter (6px padding, no gap), so
+          their icons sit 12px apart; touch keeps the larger targets.
           The account avatar, always last, fills its box where the icons
-          beside it have padding round them, so it gets that padding (6px,
-          8px on touch) again as margin, to look as far from its neighbour
-          as they are from each other. */}
-      <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 max-[360px]:gap-1 sm:gap-1 max-sm:[&>:last-child]:ml-1.5 touch:max-sm:[&>:last-child]:ml-2 max-sm:[&_:is(button,[data-slot=button])]:aspect-square max-sm:[&_:is(button,[data-slot=button])]:border-transparent max-sm:[&_:is(button,[data-slot=button])]:px-0 max-sm:[&_:is(button,[data-slot=button]):not(:hover,[aria-expanded=true])]:bg-transparent touch:max-sm:[&_:is(button,[data-slot=button])>svg:not([class*=size-])]:size-5">{children}</div>
+          beside it have padding round them, so it gets that space again as
+          margin, to look as far from its neighbour as they are from each
+          other: the padding plus the buttons' 1px border (6px + 1px, 12px +
+          1px on a touch screen's wider header; a touch phone's square
+          36px button centres its 20px icon 8px in). */}
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 max-[360px]:gap-1 sm:gap-0 touch:sm:gap-1 [&>:last-child]:ml-[7px] touch:[&>:last-child]:ml-2 touch:sm:[&>:last-child]:ml-[13px] sm:[&>:is(button,[data-slot=button]):not(:last-child)]:px-1.5 touch:sm:[&>:is(button,[data-slot=button]):not(:last-child)]:px-3 max-sm:[&_:is(button,[data-slot=button])]:aspect-square max-sm:[&_:is(button,[data-slot=button])]:border-transparent max-sm:[&_:is(button,[data-slot=button])]:px-0 max-sm:[&_:is(button,[data-slot=button]):not(:hover,[aria-expanded=true])]:bg-transparent touch:max-sm:[&_:is(button,[data-slot=button])>svg:not([class*=size-])]:size-5">{children}</div>
     </div>
   );
 }
 
 /**
- * The hairline between the header's quiet icons and the account avatar,
- * which keeps the avatar from reading as one more of them. Not on phones,
- * where the avatar's margin does that (BoardHeader).
+ * The title of a view the account menu opens (Done, Archived lists), where
+ * neither of the switch's views is on, so it says where this is and leads back.
  */
-export function HeaderRule() {
-  return <span aria-hidden className="mx-1.5 h-4 w-px shrink-0 bg-neutral-200 max-sm:hidden dark:bg-neutral-800" />;
+export function MenuViewTitle({ title, onBack }: { title: string; onBack: () => void }) {
+  return (
+    <div className="flex items-center justify-between gap-2 px-3 pt-3 sm:px-4">
+      <h2 className="text-sm font-semibold">{title}</h2>
+      <Button variant="outline" size="sm" onClick={onBack}>
+        Back to board
+      </Button>
+    </div>
+  );
 }
 
 /** The horizontally scrolling row of project columns. */

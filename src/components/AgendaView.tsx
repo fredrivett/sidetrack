@@ -9,7 +9,7 @@ import type { Item, ItemPrLink } from "@/core/schema";
 import { formatItemRef } from "@/lib/itemRef";
 import { nestItems } from "@/lib/itemTree";
 import { AGENDA_SECTIONS, agendaSection, type AgendaSection, weekday } from "@/lib/time";
-import { isYours, type ItemFilters, matchesFilters } from "@/lib/filters";
+import { isYours } from "@/lib/filters";
 import { useAgendaSaves } from "./agenda-saves";
 import { AgendaGreeting } from "./AgendaGreeting";
 import { GetStartedStack } from "./GetStarted";
@@ -74,7 +74,8 @@ function Fold({ id, collapsed, children }: { id: string; collapsed: boolean; chi
  * list order; No date groups its items by list, an undated parent with its
  * undated sub-items under it. Overdue sits in a faint red card the viewer can
  * fold away, which stays folded on every device until they open it again.
- * The header's filters narrow it. A greeting reads the board for the
+ * The header's filters don't apply: it's already only the viewer's, by when
+ * it's due, and its greeting reads all of it. A greeting reads the board for the
  * viewer (AgendaGreeting): a sticky column on the left on a wide screen,
  * above the sections on a narrow one.
  */
@@ -92,7 +93,6 @@ export function AgendaView({
   firstName,
   onFeedback,
   onAddForToday,
-  filters,
   preview,
 }: {
   /** Active lists in board order; archived lists stay out. */
@@ -123,7 +123,6 @@ export function AgendaView({
   onFeedback?: (about: FeedbackAbout) => void;
   /** The greeting's "+" by the date: New item, due today. */
   onAddForToday?: () => void;
-  filters: ItemFilters;
   /**
    * The landing page's preview: this greeting instead of asking for one, and
    * `onOpenItem` instead of an item's dialog, which loads from the server.
@@ -236,16 +235,11 @@ export function AgendaView({
         isYours(i, i.parentId ? byId.get(i.parentId) : undefined, viewerId, canOpen),
     )
     .sort((a, b) => dueOf(a).localeCompare(dueOf(b)));
-  const shown = onAgenda.filter(
-    (i) =>
-      (filters.doneToday || i.completedAt === null) &&
-      matchesFilters(i, i.parentId ? byId.get(i.parentId) : undefined, filters, today),
-  );
   const sections = AGENDA_SECTIONS.map(
-    (label) => [label, shown.filter((i) => sectionOf.get(i.id) === label)] as const,
+    (label) => [label, onAgenda.filter((i) => sectionOf.get(i.id) === label)] as const,
   ).filter(([, rows]) => rows.length > 0);
 
-  // The greeting's lighter-day offer: today's open items, as the greeting reads them (unfiltered).
+  // The greeting's lighter-day offer: today's open items, as the greeting reads them.
   const [lightenOpen, setLightenOpen] = useState(false);
   const openToday = onAgenda.filter((i) => i.completedAt === null && sectionOf.get(i.id) === "Today");
 
@@ -438,10 +432,8 @@ export function AgendaView({
 
         {getStarted && <GetStartedStack {...getStarted} />}
 
-        {today && shown.length === 0 && (
-          <p className="py-8 text-center text-sm text-neutral-400">
-            {onAgenda.length === 0 ? "Nothing to do." : "Nothing here for your filters."}
-          </p>
+        {today && onAgenda.length === 0 && (
+          <p className="py-8 text-center text-sm text-neutral-400">Nothing to do.</p>
         )}
 
         {sections.map(([label, rows]) =>
