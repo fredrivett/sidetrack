@@ -144,12 +144,14 @@ describe("AgendaView", () => {
 
     expect(
       screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent?.replace(/\d+$/, "")),
-    ).toEqual(["Overdue", "Today", "This week", "Next week", "Later", "No date"]);
+    ).toEqual(["Overdue", "Today", "Tomorrow", "This week", "Next week", "Later", "No date"]);
     const rows: Array<[RegExp, string[]]> = [
       [/^Overdue/, ["Call the bank"]],
       [/^Today/, ["Bins"]],
+      // Due tomorrow alone; a span ending tomorrow isn't.
+      [/^Tomorrow/, ["Sunday walk"]],
       // Sunday ends this week; a span under way stays here to its last day.
-      [/^This week/, ["Sunday walk", "Book boiler service", "Clean car"]],
+      [/^This week/, ["Book boiler service", "Clean car"]],
       [/^Next week/, ["Monday standup", "Pay rent", "Plan trip"]],
       [/^Later/, ["Dentist"]],
       [/^No date/, ["Sort garage"]],
