@@ -348,27 +348,49 @@ export function GetStartedStack({
         break;
     }
     return (
-      <div className="relative z-10 rounded-xl border border-border bg-background p-3 shadow-sm">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-medium">{TITLES[step]}</h3>
-          {optional && (
-            <span className="rounded border border-border px-1.5 text-[11px] text-muted-foreground">
-              Optional
-            </span>
-          )}
+      <div className="relative z-10 flex flex-col gap-3 rounded-xl border border-border bg-background p-3 shadow-sm sm:flex-row sm:gap-4">
+        {/* Charcoal on white paper for light mode, chalk on black for dark: each
+            blends its paper into the card. Lazy, so the hidden one isn't fetched
+            until it's shown. Keyed by step so a new step never shows the last
+            step's drawing while its own loads. */}
+        <div key={step} aria-hidden="true" className="aspect-[4/3] w-48 shrink-0 self-center sm:w-44 sm:self-start">
+          {/* eslint-disable-next-line @next/next/no-img-element -- small static WebP, no resizing needed */}
+          <img
+            src={`/get-started/${step}-light.webp`}
+            alt=""
+            loading="lazy"
+            className="size-full rounded-lg mix-blend-multiply dark:hidden"
+          />
+          {/* eslint-disable-next-line @next/next/no-img-element -- as above */}
+          <img
+            src={`/get-started/${step}-dark.webp`}
+            alt=""
+            loading="lazy"
+            className="hidden size-full rounded-lg mix-blend-screen dark:block"
+          />
         </div>
-        <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{why}</p>
-        {step === "phone" && showCode && device?.platform === "computer" && (
-          <div className="mt-3">
-            <QrCode text={window.location.origin} label={`QR code for ${window.location.origin}`} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-medium">{TITLES[step]}</h3>
+            {optional && (
+              <span className="rounded border border-border px-1.5 text-[11px] text-muted-foreground">
+                Optional
+              </span>
+            )}
           </div>
-        )}
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {actions}
-          {laterButton}
-          <span className="ml-auto text-xs text-muted-foreground">
-            {order.length > 1 ? `${order.length - 1} more` : "Last one"}
-          </span>
+          <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{why}</p>
+          {step === "phone" && showCode && device?.platform === "computer" && (
+            <div className="mt-3">
+              <QrCode text={window.location.origin} label={`QR code for ${window.location.origin}`} />
+            </div>
+          )}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {actions}
+            {laterButton}
+            <span className="ml-auto text-xs text-muted-foreground">
+              {order.length > 1 ? `${order.length - 1} more` : "Last one"}
+            </span>
+          </div>
         </div>
       </div>
     );
