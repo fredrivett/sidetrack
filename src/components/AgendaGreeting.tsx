@@ -562,28 +562,67 @@ export function AgendaGreeting({
           Not offered when AI is off, as nothing would read it, nor on the
           landing page's preview, where it can't be saved. */}
       {greeting && !greeting.aiOff && !isFixed && (
-        <div className="mt-3 animate-in fade-in duration-500">
-          <button
-            type="button"
-            onClick={() => setNoteOpen((open) => !open)}
-            aria-expanded={noteOpen}
-            aria-controls={noteId}
-            className="flex w-full min-w-0 items-center gap-2 rounded-md py-0.5 text-left text-sm text-neutral-600 outline-none hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:text-neutral-400 dark:hover:text-neutral-100 dark:focus-visible:ring-neutral-600"
-          >
-            <NotebookPen aria-hidden className="size-3.5 shrink-0 text-neutral-400 dark:text-neutral-500" />
-            <span className="shrink-0">How&apos;s today looking?</span>
-            {/* Folded, what they said shows beside it, so it's still in view. */}
-            {!noteOpen && note && (
-              <span className="min-w-0 truncate italic text-neutral-400 dark:text-neutral-500">{note}</span>
+        // A warm panel: its header folds it, shows the note when shut, and
+        // holds Save and Discard while there's something to save.
+        <div className="mt-3 animate-in rounded-xl bg-stone-100 px-3 py-2.5 fade-in duration-500 dark:bg-stone-800/50">
+          {/* One fixed-height row in every state, so the buttons appearing don't move anything. */}
+          <div className="flex h-6 items-center gap-2 touch:h-8">
+            <button
+              type="button"
+              onClick={() => setNoteOpen((open) => !open)}
+              aria-expanded={noteOpen}
+              aria-controls={noteId}
+              className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-md text-left text-sm text-neutral-600 outline-none hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-stone-300 dark:text-neutral-400 dark:hover:text-neutral-100 dark:focus-visible:ring-stone-600"
+            >
+              <NotebookPen aria-hidden className="size-3.5 shrink-0 text-stone-400 dark:text-stone-500" />
+              <span className="shrink-0">How&apos;s today looking?</span>
+              {/* Shut, the note shows beside it: its moods as badges, then what was written. */}
+              {!noteOpen && dayNote.tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="shrink-0 rounded-full border border-stone-200 bg-white px-1.5 text-[11px] leading-4 text-neutral-600 dark:border-stone-700 dark:bg-neutral-900 dark:text-neutral-300"
+                >
+                  {tag}
+                </span>
+              ))}
+              {!noteOpen && dayNote.rest && (
+                <span className="min-w-0 truncate italic text-neutral-400 dark:text-neutral-500">{dayNote.rest}</span>
+              )}
+              {!noteOpen && unsaved && (
+                <span className="shrink-0 text-xs text-amber-700 dark:text-amber-400">Not saved</span>
+              )}
+              {!(noteOpen && (unsaved || savingNote)) && (
+                <ChevronDown
+                  aria-hidden
+                  className={`ml-auto size-3.5 shrink-0 transition-transform duration-300 ease-out motion-reduce:transition-none ${noteOpen ? "rotate-180" : ""}`}
+                />
+              )}
+            </button>
+            {/* Open with something to save: Save and Discard take the chevron's place. */}
+            {noteOpen && (unsaved || savingNote) && (
+              <div className="flex shrink-0 items-center gap-1">
+                <Button
+                  size="xs"
+                  variant="outline"
+                  onClick={cancelNote}
+                  aria-disabled={savingNote || undefined}
+                  // Its edge shows on the tint, so it reads the same size as Save.
+                  className="border-stone-300 bg-transparent aria-disabled:pointer-events-none aria-disabled:opacity-60 dark:border-stone-700 dark:bg-transparent"
+                >
+                  Discard
+                </Button>
+                <Button
+                  size="xs"
+                  onClick={submitNote}
+                  aria-disabled={savingNote || undefined}
+                  className="aria-disabled:pointer-events-none aria-disabled:opacity-60"
+                >
+                  <Check aria-hidden />
+                  {savingNote ? "Saving…" : "Save"}
+                </Button>
+              </div>
             )}
-            {!noteOpen && unsaved && (
-              <span className="shrink-0 text-xs text-amber-700 dark:text-amber-400">Not saved</span>
-            )}
-            <ChevronDown
-              aria-hidden
-              className={`ml-auto size-3.5 shrink-0 transition-transform duration-300 ease-out motion-reduce:transition-none ${noteOpen ? "rotate-180" : ""}`}
-            />
-          </button>
+          </div>
           {/* Rows 0fr to 1fr animates to the content's height; folded, it's inert. */}
           <div
             id={noteId}
@@ -594,7 +633,7 @@ export function AgendaGreeting({
           >
             {/* -mx-1 px-1 and pb-1 leave room for the focus rings. */}
             <div className="-mx-1 min-h-0 overflow-hidden">
-              <div className="px-1 pt-2 pb-1 pl-6.5">
+              <div className="px-1 pt-2.5 pb-1">
                 <Textarea
                   draft={noteDraft}
                   aria-label="How's today looking?"
@@ -618,11 +657,11 @@ export function AgendaGreeting({
                     }
                     if (e.key === "Escape") cancelNote();
                   }}
-                  className={`min-h-14 resize-none text-sm transition-opacity ${savingNote ? "opacity-60" : ""}`}
+                  className={`min-h-14 resize-none border-transparent bg-white text-sm transition-opacity dark:bg-neutral-950 ${savingNote ? "opacity-60" : ""}`}
                 />
                 {/* Quick words for the note, toggled as they're tapped; the ones
                     Jev thinks fit what was typed are marked as suggestions. */}
-                <div role="group" aria-label="How today feels" className="mt-2 flex flex-wrap gap-1.5">
+                <div role="group" aria-label="How today feels" className="mt-2.5 flex flex-wrap gap-1.5">
                   {(Object.keys(DAY_TAGS) as DayTag[]).map((tag) => {
                     const on = tagsShown.includes(tag);
                     const hint = !on && suggested.includes(tag);
@@ -638,10 +677,11 @@ export function AgendaGreeting({
                         onClick={() => toggleTag(tag)}
                         className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-neutral-300 aria-disabled:pointer-events-none aria-disabled:opacity-40 touch:py-1 dark:focus-visible:ring-neutral-600 ${
                           on
-                            ? "border-neutral-800 bg-neutral-800 text-white hover:bg-neutral-700 dark:border-neutral-200 dark:bg-neutral-200 dark:text-neutral-900 dark:hover:bg-neutral-300"
+                            ? // Picked: a stone fill, so Save stays the one solid thing in the panel.
+                            "border-stone-400 bg-stone-200 text-stone-900 hover:bg-stone-300/70 dark:border-stone-500 dark:bg-stone-700 dark:text-stone-50 dark:hover:bg-stone-600"
                             : hint
-                              ? "border-neutral-400 border-dashed bg-white text-neutral-800 hover:border-neutral-500 dark:border-neutral-500 dark:bg-neutral-900 dark:text-neutral-100"
-                              : "border-neutral-200 text-neutral-500 hover:border-neutral-300 hover:text-neutral-800 dark:border-neutral-800 dark:text-neutral-400 dark:hover:border-neutral-700 dark:hover:text-neutral-100"
+                              ? "border-stone-400 border-dashed bg-white text-neutral-800 hover:border-stone-500 dark:border-stone-500 dark:bg-neutral-900 dark:text-neutral-100"
+                              : "border-stone-200 bg-white text-neutral-500 hover:border-stone-300 hover:text-neutral-800 dark:border-stone-800 dark:bg-neutral-900 dark:text-neutral-400 dark:hover:border-stone-700 dark:hover:text-neutral-100"
                         }`}
                       >
                         {hint && <Sparkles aria-hidden className="size-3" />}
@@ -650,39 +690,6 @@ export function AgendaGreeting({
                       </button>
                     );
                   })}
-                </div>
-                {/* Slides down only when there's something to save or drop:
-                    nothing is saved until Save is pressed. Rows 0fr to 1fr
-                    animates to its height; hidden, it's inert. */}
-                <div
-                  inert={!(unsaved || savingNote)}
-                  className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none ${
-                    unsaved || savingNote ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
-                  }`}
-                >
-                  {/* -mx-1 px-1 and pb-1 leave room for the focus rings. */}
-                  <div className="-mx-1 min-h-0 overflow-hidden">
-                    <div className="flex items-center gap-2 px-1 pt-3 pb-1">
-                      <Button
-                        size="sm"
-                        onClick={submitNote}
-                        aria-disabled={savingNote || undefined}
-                        className="aria-disabled:pointer-events-none aria-disabled:opacity-60"
-                      >
-                        <Check aria-hidden />
-                        {savingNote ? "Saving…" : "Save"}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={cancelNote}
-                        aria-disabled={savingNote || undefined}
-                        className="aria-disabled:pointer-events-none aria-disabled:opacity-60"
-                      >
-                        Discard
-                      </Button>
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
