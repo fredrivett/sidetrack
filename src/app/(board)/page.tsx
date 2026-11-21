@@ -24,7 +24,8 @@ import { listPendingSources } from "@/core/sources";
 import { listPendingSpaceInvites, listSpaces, listTrays } from "@/core/spaces";
 import { COLLAPSED_TRAYS_COOKIE, parseCollapsedTrays } from "@/components/SpaceTray";
 import { getGetStarted } from "@/core/getStarted";
-import { getBoardFilters, getNoDateCollapsed, getNoDateFoldedLists, getOverdueCollapsed, getProfile, getTimeZone } from "@/core/users";
+import { loadPosts, postsToShow } from "@/lib/changelog";
+import { getSeenPosts, getBoardFilters, getNoDateCollapsed, getNoDateFoldedLists, getOverdueCollapsed, getProfile, getTimeZone } from "@/core/users";
 import { getEnv } from "@/lib/env";
 import { cookieLocale, dayOf, LOCALE_COOKIE, startOfDayIn, startOfWeekIn, weekStartBound } from "@/lib/time";
 import { ServerTodayProvider } from "@/components/use-day-start";
@@ -146,6 +147,7 @@ export default async function Home({
             noDateCollapsed={getNoDateCollapsed(db, userId)}
             noDateFoldedLists={getNoDateFoldedLists(db, userId)}
             getStarted={getGetStarted(db, userId, { push: Boolean(getEnv().VAPID) })}
+            posts={postsToShow(loadPosts(), getSeenPosts(db, userId), new Date().toISOString().slice(0, 10))}
             // From the path (/brief, /board, …), which the proxy passes as ?view=.
             initialView={
               view === "board" || view === "done" || view === "archived" || view === "check-ins" ? view : "brief"

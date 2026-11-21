@@ -31,6 +31,12 @@ export type ChangelogEntry = z.infer<typeof entrySchema> & { file: string };
 
 /** Parses one entry file. Throws with the file name and what's wrong. */
 export function parseEntry(file: string, source: string): ChangelogEntry {
+  const [fields, text] = frontMatter(file, source);
+  return { ...check(file, entrySchema, { ...fields, text }), file };
+}
+
+/** A file's front matter fields and the text after them. */
+function frontMatter(file: string, source: string): [Record<string, unknown>, string] {
   const match = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(source.replace(/\r\n/g, "\n"));
   if (!match) throw new Error(`${file}: needs front matter between --- lines, then the text`);
   const fields: Record<string, unknown> = {};
@@ -41,12 +47,16 @@ export function parseEntry(file: string, source: string): ChangelogEntry {
     if (!kv) throw new Error(`${file}: can't read front matter line "${line}"`);
     fields[kv[1]] = value(kv[1], kv[2]);
   }
-  const result = entrySchema.safeParse({ ...fields, text: match[2].trim() });
+  return [fields, match[2].trim()];
+}
+
+function check<T>(file: string, schema: z.ZodType<T>, input: unknown): T {
+  const result = schema.safeParse(input);
   if (!result.success) {
-    const problems = result.error.issues.map((i) => `${i.path.join(".") || "entry"}: ${i.message}`);
+    const problems = result.error.issues.map((i) => `${i.path.join(".") || "file"}: ${i.message}`);
     throw new Error(`${file}: ${problems.join("; ")}`);
   }
-  return { ...result.data, file };
+  return result.data;
 }
 
 function value(key: string, raw: string): unknown {
@@ -70,6 +80,70 @@ export function loadEntries(dir = CHANGES_DIR): ChangelogEntry[] {
   }
   return entries
     .sort((a, b) => b.date.localeCompare(a.date) || Math.max(...b.pr) - Math.max(...a.pr));
+}
+
+// Small posts: a few short paragraphs about one notable change, in Fred's
+// words, with a drawing in the Get started style. The Brief stacks the ones
+// the viewer hasn't seen; /changelog shows them all on its timeline.
+
+export const POSTS_DIR = join(process.cwd(), "posts");
+
+/** How long a post stays on the Brief after its date, unless dismissed. */
+export const POST_SHOWS_FOR_DAYS = 30;
+
+const postSchema = z
+  .object({
+    date: entrySchema.shape.date,
+    title: z.string().min(1).max(80, "keep the title short"),
+    image: z.string().regex(/^[a-z0-9-]+$/, "image is the drawing's name in public/posts/").optional(),
+    body: z.string().min(1, "the post has no text").max(900, "keep the post short"),
+  })
+  .strict();
+
+export type ChangelogPost = z.infer<typeof postSchema> & {
+  /** The file's name without .md, which also names it when dismissed. */
+  slug: string;
+  /** The body's paragraphs, split at blank lines. */
+  paragraphs: string[];
+};
+
+/** Parses one post file. Throws with the file name and what's wrong. */
+export function parsePost(file: string, source: string): ChangelogPost {
+  const [fields, body] = frontMatter(file, source);
+  const post = check(file, postSchema, { ...fields, body });
+  return {
+    ...post,
+    slug: file.replace(/\.md$/, ""),
+    paragraphs: post.body.split(/\n\s*\n/).map((p) => p.replace(/\s*\n\s*/g, " ").trim()),
+  };
+}
+
+/** Every post, newest first. */
+export function loadPosts(dir = POSTS_DIR): ChangelogPost[] {
+  if (!existsSync(dir)) return [];
+  const posts = readdirSync(dir)
+    .filter((f) => f.endsWith(".md") && f !== "README.md")
+    .map((f) => parsePost(f, readFileSync(join(dir, f), "utf8")));
+  for (const p of posts) {
+    for (const theme of ["light", "dark"]) {
+      if (p.image && !existsSync(join(process.cwd(), "public", "posts", `${p.image}-${theme}.webp`))) {
+        throw new Error(`${p.slug}.md: public/posts/${p.image}-${theme}.webp is missing`);
+      }
+    }
+  }
+  return posts.sort((a, b) => b.date.localeCompare(a.date) || b.slug.localeCompare(a.slug));
+}
+
+/**
+ * The posts the Brief stacks, newest first: those under POST_SHOWS_FOR_DAYS
+ * old on `today` (YYYY-MM-DD) that the viewer hasn't read or dismissed.
+ */
+export function postsToShow(posts: ChangelogPost[], seen: string[], today: string): ChangelogPost[] {
+  const now = Date.parse(`${today}T00:00:00Z`);
+  return posts.filter((p) => {
+    const age = (now - Date.parse(`${p.date}T00:00:00Z`)) / 86_400_000;
+    return age >= 0 && age < POST_SHOWS_FOR_DAYS && !seen.includes(p.slug);
+  });
 }
 
 /**

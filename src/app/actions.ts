@@ -154,6 +154,7 @@ import {
 import {
   AVATAR_MAX_BYTES,
   setOverdueCollapsed as setOverdueCollapsedCore,
+  markPostSeen as markPostSeenCore,
   setNoDateCollapsed as setNoDateCollapsedCore,
   setNoDateListFolded as setNoDateListFoldedCore,
   setAgendaReadAt as setAgendaReadAtCore,
@@ -919,6 +920,14 @@ export async function setOverdueCollapsedAction(collapsed: boolean) {
   const userId = await requireUserId();
   const { db } = getDb();
   setOverdueCollapsedCore(db, userId, collapsed);
+  refresh();
+}
+
+/** Mark a changelog post read or dismissed, for the signed-in user's Brief. */
+export async function markPostSeenAction(slug: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  markPostSeenCore(db, userId, slug);
   refresh();
 }
 

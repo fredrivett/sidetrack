@@ -44,6 +44,7 @@ import { ItemDetailDialog } from "./ItemDetailDialog";
 import { BoardDrag } from "./BoardDrag";
 import { NewItemDialog } from "./NewItemDialog";
 import { NotificationsInbox } from "./NotificationsInbox";
+import { PostsMenu, PostsProvider } from "./PostCard";
 import { FollowsProvider } from "./follows";
 import { ShortcutsDialog } from "./ShortcutsDialog";
 import { NotificationLevelsProvider, saveLevel } from "./notification-levels";
@@ -78,6 +79,7 @@ import {
 } from "./use-optimistic-items";
 import { defaultItemSaves, type ItemSaves, ItemSavesContext } from "./item-saves";
 import { assigneeName, type AvatarUser } from "./UserAvatar";
+import type { ChangelogPost } from "@/lib/changelog";
 import { UserMenu } from "./UserMenu";
 import { createSelection, NAV_KEYS, SelectedItemContext, stepItemRow } from "./useItemShortcuts";
 
@@ -131,6 +133,7 @@ export function Kanban({
   noDateCollapsed,
   noDateFoldedLists,
   getStarted,
+  posts = [],
   projects: serverProjects,
   itemsByProject: serverItemsByProject,
   completedSince,
@@ -175,6 +178,11 @@ export function Kanban({
   noDateFoldedLists: string[];
   /** Where the viewer is with the Agenda's Get started steps. */
   getStarted: GetStarted;
+  /**
+   * The changelog posts the viewer hasn't seen (postsToShow): a card in the
+   * Brief's sidebar, a menu in the header on phones.
+   */
+  posts?: ChangelogPost[];
   projects: ProjectView[];
   /**
    * Every list's open items and its items finished at or after this, with
@@ -835,6 +843,7 @@ export function Kanban({
     <FollowsProvider followedItemIds={shownFollowed}>
     <SelectedItemContext value={selection}>
     <NotificationLevelsProvider levels={notificationLevels}>
+    <PostsProvider posts={posts}>
     <ItemChangesContext value={itemChanges}>
     <ItemSavesContext value={itemSaves}>
     <LabelsContext value={sameLabels}>
@@ -881,6 +890,7 @@ export function Kanban({
               </TooltipContent>
             </Tooltip>
           )}
+          <PostsMenu className="min-[900px]:hidden" />
           <NotificationsInbox
             open={inboxOpen}
             onOpenChange={setInboxOpen}
@@ -1177,6 +1187,7 @@ export function Kanban({
     </LabelsContext>
     </ItemSavesContext>
     </ItemChangesContext>
+    </PostsProvider>
     </NotificationLevelsProvider>
     </SelectedItemContext>
     </FollowsProvider>

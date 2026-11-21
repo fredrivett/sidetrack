@@ -26,9 +26,9 @@ export default function (amp: PluginAPI) {
 			let answer: Record<string, string> | undefined
 			try {
 				answer = await ctx.ui.confirm({
-					title: 'Approve changelog entry?',
-					message: `${e.type} · ${e.pr.map((n) => `#${n}`).join(' ')} · changes/${e.file}\nIt appears on /changelog once this merges. Reword it here if you like.`,
-					fields: [{ name: 'text', label: 'Entry', value: e.text, multiline: true }],
+					title: 'Approve changelog text?',
+					message: `${e.type}${e.pr.length ? ` · ${e.pr.map((n) => `#${n}`).join(' ')}` : ''} · ${e.file}\nIt appears on /changelog once this merges. Reword it here if you like.`,
+					fields: [{ name: 'text', label: e.type === 'post' ? 'Post (title, then text)' : 'Entry', value: e.text, multiline: true }],
 					confirmButtonText: 'Approve',
 					requireHuman: true,
 				})
@@ -36,20 +36,20 @@ export default function (amp: PluginAPI) {
 				if (!amp.helpers.isPluginUINotAvailableError(error as Error)) throw error
 				return {
 					action: 'reject-and-continue',
-					message: `Blocked: changes/${e.file} needs Fred's approval and no one can answer here. Ask him in the thread.`,
+					message: `Blocked: ${e.file} needs Fred's approval and no one can answer here. Ask him in the thread.`,
 				}
 			}
 			if (!answer) {
 				return {
 					action: 'reject-and-continue',
-					message: `Blocked: Fred didn't approve changes/${e.file}. Ask him how he'd like it worded, or whether it needs an entry at all.`,
+					message: `Blocked: Fred didn't approve ${e.file}. Ask him how he'd like it worded, or whether it needs an entry at all.`,
 				}
 			}
 			const text = answer.text.trim()
 			if (text === e.text) {
 				await ctx.$`cd ${root} && ./node_modules/.bin/tsx ${script} approve ${e.hash}`
 			} else {
-				reworded.push(`changes/${e.file}: ${text}`)
+				reworded.push(`${e.file}: ${text}`)
 			}
 		}
 		if (reworded.length) {

@@ -239,8 +239,16 @@ touches no entry, or adds or updates an entry whose `pr` list has its number.
 - **Type.** `new`: something users couldn't do before. `fixed`: something
   broken now works. `improved`: a visible change to something that exists.
   `for: self-hosters` when only people running their own copy will notice.
-  `post: true` when it might be worth a longer post; say so to Fred in the
-  PR and your final message, and he decides whether to write one.
+  `post: true` for a notable feature or improvement, one worth a small post.
+- **Posts.** A PR that sets `post: true` also drafts a small post about it
+  and shows it to Fred with the entry; he approves, rewords or writes it
+  himself. The why comes from what he said when he asked for the change,
+  never invented. Small posts, not entries, are what the in-app widget shows
+  people. Illustrate them like the Get started cards
+  (`public/get-started/`, #373): one drawing per post, charcoal on white for
+  light mode and chalk on black for dark, traced from the same shared camera,
+  blended into the card with no box. Read that PR's thread for how the
+  drawings were made before making one.
 - **Sign-off.** Fred approves every entry's wording before it's pushed. Show
   him a rough mockup of the entry at the top of the feed (a visual artifact,
   or a screenshot of `/changelog` from the dev server) in the thread. Then

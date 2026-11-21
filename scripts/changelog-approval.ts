@@ -14,7 +14,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
-import { parseEntry, type ChangelogEntry } from "../src/lib/changelog";
+import { parseEntry, parsePost } from "../src/lib/changelog";
 
 const GATED = /\b(git\s+push|gh\s+pr\s+create)\b/;
 
@@ -25,9 +25,10 @@ const approved = () => {
   return new Set(existsSync(path) ? readFileSync(path, "utf8").split("\n").filter(Boolean) : []);
 };
 
-type Pending = ChangelogEntry & { hash: string };
+/** An entry or post awaiting approval, in the shape the plugin's dialog shows. */
+type Pending = { file: string; type: string; pr: number[]; text: string; hash: string };
 
-/** Entries the branch's commits add or change, not yet approved. */
+/** Entries and posts the branch's commits add or change, not yet approved. */
 function pending(): Pending[] {
   let base: string;
   try {
@@ -36,13 +37,18 @@ function pending(): Pending[] {
     return [];
   }
   const done = approved();
-  return git("diff", "--name-only", "--diff-filter=AMR", `${base}...HEAD`, "--", "changes/")
+  return git("diff", "--name-only", "--diff-filter=AMR", `${base}...HEAD`, "--", "changes/", "posts/")
     .split("\n")
     .filter((f) => f.endsWith(".md") && !f.endsWith("README.md"))
-    .map((f) => {
+    .map((f): Pending => {
       const source = git("show", `HEAD:${f}`);
       const hash = createHash("sha256").update(source).digest("hex").slice(0, 16);
-      return { ...parseEntry(f.slice("changes/".length), source), hash };
+      if (f.startsWith("posts/")) {
+        const post = parsePost(f.slice("posts/".length), source);
+        return { file: f, type: "post", pr: [], text: `${post.title}\n\n${post.body}`, hash };
+      }
+      const { file, type, pr, text } = parseEntry(f.slice("changes/".length), source);
+      return { file: `changes/${file}`, type, pr, text, hash };
     })
     .filter((e) => !done.has(e.hash));
 }
@@ -51,7 +57,7 @@ const approve = (hashes: string[]) => {
   if (hashes.length) appendFileSync(store(), hashes.map((h) => `${h}\n`).join(""));
 };
 
-const describe = (e: ChangelogEntry) =>
+const describe = (e: Pending) =>
   `${e.file} (${e.type}, ${e.pr.map((n) => `#${n}`).join(" ")}): ${e.text}`;
 
 const mode = process.argv[2];
@@ -69,7 +75,7 @@ if (mode === "pending") {
           hookSpecificOutput: {
             hookEventName: "PreToolUse",
             permissionDecision: "ask",
-            permissionDecisionReason: `Approve these changelog entries before they're pushed:\n${entries.map(describe).join("\n")}`,
+            permissionDecisionReason: `Approve this changelog text before they're pushed:\n${entries.map(describe).join("\n")}`,
           },
         }),
       );

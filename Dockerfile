@@ -93,8 +93,9 @@ COPY --from=builder /native/file-uri-to-path ./node_modules/file-uri-to-path
 # Drizzle migrations are read at runtime by core/migrate.ts.
 COPY --from=builder /app/src/core/migrations ./src/core/migrations
 
-# /changelog reads its entries at runtime (src/lib/changelog.ts).
+# /changelog and the Brief read entries and posts at runtime (src/lib/changelog.ts).
 COPY --from=builder /app/changes ./changes
+COPY --from=builder /app/posts ./posts
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh && mkdir -p /data /data/backups

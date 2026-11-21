@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import type { ChangelogEntry } from "@/lib/changelog";
+import type { ChangelogEntry, ChangelogPost } from "@/lib/changelog";
+import { PostBody, PostDrawing } from "./PostCard";
 import { cn } from "@/lib/utils";
 
 const REPO = "https://github.com/fredrivett/sidetrack";
@@ -25,11 +26,15 @@ const dayLabel = (date: string) =>
     timeZone: "UTC",
   });
 
-/** The changelog's entries, by day, newest first, with a self-hosters filter. */
-export function ChangelogFeed({ entries }: { entries: ChangelogEntry[] }) {
+/**
+ * The changelog's posts and entries, by day, newest first, with a
+ * self-hosters filter (which leaves out posts). A day's post comes first.
+ */
+export function ChangelogFeed({ entries, posts }: { entries: ChangelogEntry[]; posts: ChangelogPost[] }) {
   const [selfHosters, setSelfHosters] = useState(false);
   const shown = selfHosters ? entries.filter((e) => e.for === "self-hosters") : entries;
-  const days = [...new Set(shown.map((e) => e.date))];
+  const shownPosts = selfHosters ? [] : posts;
+  const days = [...new Set([...shownPosts, ...shown].map((e) => e.date))].sort().reverse();
 
   return (
     <div>
@@ -64,7 +69,9 @@ export function ChangelogFeed({ entries }: { entries: ChangelogEntry[] }) {
           node on the rail, labelled above them. */}
       {days.map((day) => {
         const dayEntries = shown.filter((e) => e.date === day);
-        const count = `${dayEntries.length} ${dayEntries.length === 1 ? "change" : "changes"}`;
+        const count = dayEntries.length
+          ? `${dayEntries.length} ${dayEntries.length === 1 ? "change" : "changes"}`
+          : "";
         return (
           <section key={day} className="sm:grid sm:grid-cols-[7.5rem_1fr] sm:gap-6">
             <h2 className={cn(RAIL, "pb-3 sm:ml-0 sm:border-0 sm:pl-0 sm:pt-0.5")}>
@@ -78,6 +85,23 @@ export function ChangelogFeed({ entries }: { entries: ChangelogEntry[] }) {
               <span className="ml-2 text-xs text-muted-foreground sm:ml-0 sm:block">{count}</span>
             </h2>
             <ol className={cn(RAIL, "pb-6")}>
+              {shownPosts
+                .filter((p) => p.date === day)
+                .map((p) => (
+                  <li key={p.slug} className="relative pb-6">
+                    <span
+                      aria-hidden
+                      // A bigger ring than an entry's, in the text colour, so it
+                      // doesn't read as a second day on phones.
+                      className="absolute -left-[26.5px] top-[5px] size-3 rounded-full border-2 border-foreground bg-neutral-50 dark:bg-neutral-950"
+                    />
+                    <article className="rounded-xl border border-border bg-background p-4 shadow-sm">
+                      {p.image && <PostDrawing image={p.image} className="mb-3 w-full max-w-72" />}
+                      <h3 className="text-base font-semibold tracking-tight">{p.title}</h3>
+                      <PostBody post={p} className="mt-2 text-sm" />
+                    </article>
+                  </li>
+                ))}
               {dayEntries.map((e) => (
                 <li key={e.file} className={cn("relative pb-5 text-sm last:pb-2", TYPE_CLASS[e.type])}>
                   <span

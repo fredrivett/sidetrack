@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `seen_posts` text;

@@ -13,6 +13,7 @@ import { isYours } from "@/lib/filters";
 import { useAgendaSaves } from "./agenda-saves";
 import { AgendaGreeting } from "./AgendaGreeting";
 import { GetStartedStack } from "./GetStarted";
+import { PostStack } from "./PostCard";
 import type { GetStarted } from "@/lib/getStarted";
 import type { FeedbackAbout } from "./FeedbackDialog";
 import { ItemDetailDialog, ItemDetailView } from "./ItemDetailDialog";
@@ -425,6 +426,7 @@ export function AgendaView({
               }}
             />
           )}
+          <PostStack className="mt-8 hidden min-[900px]:block" />
           </aside>
         )}
 

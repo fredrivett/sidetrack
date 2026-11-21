@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { createTestDb, createTestUser } from "./test-helpers";
 import { NO_FILTERS } from "../lib/filters";
 import {
+  getSeenPosts,
+  markPostSeen,
   getNoDateFoldedLists,
   getOverdueCollapsed,
   getBoardFilters,
@@ -91,6 +93,26 @@ describe("Agenda's No date list folds", () => {
     // A saved value of the wrong shape reads as nothing folded.
     db.update(users).set({ noDateFoldedLists: { home: true } }).where(eq(users.id, me)).run();
     expect(getNoDateFoldedLists(db, me)).toEqual([]);
+    expect(listAudit(db, me, {})).toHaveLength(0);
+  });
+});
+
+describe("seen changelog posts", () => {
+  it("are kept per user, once each, refuse anything that isn't a slug, and aren't audited", () => {
+    const { db } = createTestDb();
+    const me = createTestUser(db);
+    const other = createTestUser(db);
+    expect(getSeenPosts(db, me)).toEqual([]);
+    markPostSeen(db, me, "brief");
+    markPostSeen(db, me, "repeats");
+    markPostSeen(db, me, "brief");
+    expect(getSeenPosts(db, me)).toEqual(["repeats", "brief"]);
+    expect(getSeenPosts(db, other)).toEqual([]);
+    expect(() => markPostSeen(db, me, "../brief")).toThrow();
+    expect(() => markPostSeen(db, me, "x".repeat(101))).toThrow();
+    // A saved value of the wrong shape reads as nothing seen.
+    db.update(users).set({ seenPosts: { brief: true } }).where(eq(users.id, me)).run();
+    expect(getSeenPosts(db, me)).toEqual([]);
     expect(listAudit(db, me, {})).toHaveLength(0);
   });
 });
