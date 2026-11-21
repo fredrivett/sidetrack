@@ -10,6 +10,7 @@ import {
   useOptimistic,
   useRef,
   useState,
+  useSyncExternalStore,
   useTransition,
 } from "react";
 import type { AssigneeView, PendingInviteView } from "@/core/members";
@@ -32,7 +33,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AddProjectButton } from "./AddProjectButton";
 import { AuditDialog } from "./AuditDialog";
-import { BoardHeader, BoardMain, BoardRail } from "./BoardLayout";
+import { BoardHeader, HeaderRule, BoardMain, BoardRail } from "./BoardLayout";
 import { CommandPalette } from "./CommandPalette";
 import { AgendaView } from "./AgendaView";
 import { DoneView } from "./DoneView";
@@ -52,6 +53,7 @@ import { ProjectColumn } from "./ProjectColumn";
 import { PullToSearch } from "./PullToSearch";
 import { runAction } from "./run-action";
 import { ShareDialog } from "./ShareDialog";
+import { InviteDialog } from "./InviteDialog";
 import { InstallReporter } from "./GetStarted";
 import type { GetStarted } from "@/lib/getStarted";
 import { SpaceMenu } from "./SpaceMenu";
@@ -83,6 +85,8 @@ export type ProjectView = Project & {
   isOwner: boolean;
   /** What the viewer can do on it: edit, comment or only view. */
   access: ListAccess;
+  /** Whose items the viewer sees, when they see only someone's (\`Lorna\`); null for the whole list. */
+  onlyItemsOf: string | null;
   refPrefix: string;
   /** Offered to the admin while the list has no repository: see suggestedRepositories. */
   suggestedRepository?: string;
@@ -105,6 +109,12 @@ const NEW_ITEM_CLOSED: { open: boolean; projectId: string | null; dueToday?: boo
   projectId: null,
 };
 
+const SHARE_CLOSED: { open: boolean; projectId: string | null; projectName: string } = {
+  open: false,
+  projectId: null,
+  projectName: "",
+};
+
 export function Kanban({
   viewerId,
   viewer,
@@ -124,6 +134,7 @@ export function Kanban({
   spaces,
   trayOrder,
   pendingSpaceInvites,
+  pendingPhotos,
   initialCollapsedTrays,
   initialListId,
   initialItemId,
@@ -168,6 +179,8 @@ export function Kanban({
   /** The trays' ids in the viewer's order: "personal" and their Spaces. */
   trayOrder: string[];
   pendingSpaceInvites: PendingSpaceInviteView[];
+  /** Photos an agent read, waiting to be reviewed and added. */
+  pendingPhotos: Array<{ id: string; agentName: string | null }>;
   /** Trays ("personal" or Space ids) this browser has collapsed, from its cookie. */
   initialCollapsedTrays: string[];
   /** From `?p=`, the list the board opens centred on. */
@@ -287,6 +300,10 @@ export function Kanban({
   const [itemsByProject, itemChanges] = useOptimisticItems(allItemsByProject, applyToOlder);
   const [projects, removeList] = useOptimisticLists(serverProjects);
   const [view, setView] = useState<BoardView>(initialView);
+  // The view asked for, which the tabs show at once while the view itself
+  // renders in the background (switchView). Kept outside React state so
+  // that first frame re-renders the tabs alone, not the whole board.
+  const [chosenView] = useState(() => chosenStore(initialView));
   // The page shows the filters as soon as they're picked; saving them is so
   // the next visit, on any device, opens the same way. A save that fails
   // says so, and leaves them as picked on this page.
@@ -295,12 +312,25 @@ export function Kanban({
     setFilters(next);
     void runAction(setBoardFiltersAction(next), "save your filters");
   }
-  const switchView = useCallback((next: BoardView) => {
-    setView(next);
+  const switchView = useCallback(
+    (next: BoardView) => {
+      chosenView.set(next);
+      // The tabs' frame paints first, then the view renders in one go. Not
+      // a transition: rendering in slices between frames took the board
+      // half as long again. The latest choice, so pressing 1 then 2 quickly
+      // doesn't render the Brief in between.
+      requestAnimationFrame(() => setTimeout(() => setView(chosenView.get())));
+    },
+    [chosenView],
+  );
+  // The path follows once the view is on screen: Next answers replaceState
+  // with a transition of its own, which would hold up the view's.
+  useEffect(() => {
     const url = new URL(window.location.href);
-    url.pathname = `/${next}`;
+    if (url.pathname === `/${view}`) return;
+    url.pathname = `/${view}`;
     window.history.replaceState(null, "", url.toString());
-  }, []);
+  }, [view]);
 
   const router = useRouter();
   // Drafts left here by someone else, or for a week, go (use-draft.ts).
@@ -348,11 +378,10 @@ export function Kanban({
   const [newItem, setNewItem] = useStoredState("new-item", NEW_ITEM_CLOSED, "session");
   // New list starts in the Space of the tray whose + opened it, else in none.
   const [newList, setNewList] = useState({ open: false, spaceId: "" });
-  const [share, setShare] = useState<{
-    open: boolean;
-    projectId: string | null;
-    projectName: string;
-  }>({ open: false, projectId: null, projectName: "" });
+  // Kept for this tab, so Invite people and its draft come back after a reload.
+  const [inviting, setInviting] = useStoredState("inviting", false, "session");
+  // Kept for this tab, so Share and its draft come back after a reload.
+  const [share, setShare] = useStoredState("share", SHARE_CLOSED, "session");
 
   // Active lists are on the board, in the viewer's order. Archived lists, and
   // their items, show only in the Archived view, in the same order. Each
@@ -421,6 +450,15 @@ export function Kanban({
           .map((t) => ({ ...t, lists: movable.filter((p) => trayByList[p.id] === t.id) }))
           .filter((t) => t.lists.length > 0);
   const moveTargets = movable.length > 1 ? moveGroups : null;
+  // Where the viewer can invite people: the lists they own, on their trays
+  // (one group without Spaces), and the Spaces they're an admin of.
+  const owned = active.filter((p) => p.isOwner);
+  const inviteGroups =
+    spaces.length === 0
+      ? [{ id: "personal", name: "Lists", icon: null, admin: false, lists: owned }]
+      : trays
+          .map((t) => ({ ...t, lists: owned.filter((p) => trayByList[p.id] === t.id) }))
+          .filter((t) => t.admin || t.lists.length > 0);
   // Everyone who can hold work on the board's lists, to filter by: viewers
   // and commenters are never assigned. Someone filtered by who has since
   // left every list no longer narrows anything.
@@ -546,7 +584,7 @@ export function Kanban({
   const openShare = useCallback(
     (projectId: string, projectName: string) =>
       setShare({ open: true, projectId, projectName }),
-    [],
+    [setShare],
   );
 
   // Open the new-item dialog with the caller's list (a list's ⋯ menu), or
@@ -750,7 +788,7 @@ export function Kanban({
     <BoardDrag groups={moveTargets}>
       <BoardMain>
         <BoardHeader
-          nav={<ViewTabs view={view} onSwitch={switchView} />}
+          nav={<ViewTabs view={view} chosen={chosenView} onSwitch={switchView} />}
         >
           <FilterMenu
             open={filterOpen}
@@ -766,8 +804,9 @@ export function Kanban({
               <TooltipTrigger
                 render={
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
+                    className="text-muted-foreground"
                     aria-label="Send feedback"
                     aria-keyshortcuts="!"
                     onClick={() => {
@@ -817,14 +856,20 @@ export function Kanban({
               );
             }}
           />
+          <HeaderRule />
           <UserMenu
             user={viewer}
             archivedCount={archived.length}
             onShowArchived={() => switchView("archived")}
             onShowActivity={() => setAudit({ open: true })}
+            onInvite={() => setInviting(true)}
           />
         </BoardHeader>
-        <InvitesBanner invites={pendingInvites} spaceInvites={pendingSpaceInvites} />
+        <InvitesBanner
+          invites={pendingInvites}
+          spaceInvites={pendingSpaceInvites}
+          photos={pendingPhotos}
+        />
         <InstallReporter done={getStarted.done} />
         {view === "brief" ? (
           <AgendaView
@@ -1050,6 +1095,11 @@ export function Kanban({
           projectId={share.projectId}
           projectName={share.projectName}
         />
+        <InviteDialog
+          open={inviting}
+          onOpenChange={setInviting}
+          groups={inviteGroups}
+        />
       </BoardMain>
     </BoardDrag>
     </RemoveListContext>
@@ -1062,12 +1112,44 @@ export function Kanban({
   );
 }
 
+/** The view the tabs show, for useSyncExternalStore. */
+function chosenStore(initial: BoardView) {
+  let chosen = initial;
+  const listeners = new Set<() => void>();
+  return {
+    get: () => chosen,
+    set(next: BoardView) {
+      chosen = next;
+      for (const listener of listeners) listener();
+    },
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+}
+
 /**
  * The Brief, Board and Done switch, with an underline under the current view
  * that slides to the next. Its own component so measuring the underline
  * re-renders only the tabs, not the board under them.
  */
-function ViewTabs({ view, onSwitch }: { view: BoardView; onSwitch: (next: BoardView) => void }) {
+function ViewTabs({
+  view: shownView,
+  chosen,
+  onSwitch,
+}: {
+  /** The view on screen. */
+  view: BoardView;
+  chosen: ReturnType<typeof chosenStore>;
+  onSwitch: (next: BoardView) => void;
+}) {
+  // The tabs, and their underline, go to the view asked for at once, busy
+  // while the view itself catches up. Dimming the view instead cost more
+  // than the switch: restyling all of it, then a frame per step of the fade.
+  const view = useSyncExternalStore(chosen.subscribe, chosen.get, chosen.get);
   // The view switch's underline sits on the header's bottom border under the
   // current view, and slides to the next one. Measured, since the tabs differ
   // in width and the header's height depends on what's beside them.
@@ -1105,9 +1187,12 @@ function ViewTabs({ view, onSwitch }: { view: BoardView; onSwitch: (next: BoardV
       ref={viewTabs}
       role="group"
       aria-label="View"
-      // Tabs, as tall as the header's buttons beside them: 28px, 36px
-      // on touch.
-      className="relative flex h-7 items-stretch text-[13px] font-medium max-[360px]:text-xs touch:h-9 touch:text-sm touch:max-[360px]:text-xs"
+      aria-busy={view !== shownView || undefined}
+      // Tabs that fill the header top to bottom, through its padding
+      // (-my-2 against its py-2), so they click anywhere above the
+      // underline: at least the header's buttons beside them (28px, 36px
+      // on touch) plus that padding, taller when the header wraps.
+      className="relative -my-2 flex min-h-11 self-stretch text-[13px] font-medium max-[360px]:text-xs touch:min-h-13 touch:text-sm touch:max-[360px]:text-xs"
     >
       {BOARD_VIEWS.map(([v, label, Icon], i) => (
         <Tooltip key={v}>

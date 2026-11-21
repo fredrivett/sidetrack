@@ -1,21 +1,25 @@
 "use client";
 
-import { NotebookPen, Plus, RefreshCw, Settings, ThumbsDown, ThumbsUp } from "lucide-react";
+import { Check, ChevronDown, NotebookPen, Plus, RefreshCw, Settings, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { setAgendaReadAction, setDayNoteAction } from "@/app/actions";
 import type { Greeting } from "@/core/agendaGreeting";
 import type { Item } from "@/core/schema";
+import { DAY_TAGS, type DayTag, joinDayNote, splitDayNote, toggleDayTag } from "@/lib/dayTags";
 import { parseGreeting } from "@/lib/greeting";
 import { NOTE_MAX } from "@/lib/greetingPrefs";
 import { aiRead } from "./ai-read";
-import { EditableText } from "./EditableText";
 import type { FeedbackAbout } from "./FeedbackDialog";
 import { GreetingDialog, type RenderItem } from "./GreetingDialog";
 import { runAction } from "./run-action";
 import { Struck } from "./Struck";
 import { useToday } from "./use-day-start";
+import { useDraft } from "./use-draft";
+import { useStoredState } from "./use-stored-state";
 
 const READ_MS = 2000;
 
@@ -135,6 +139,14 @@ export function AgendaGreeting({
   const isFixed = fixed !== undefined;
   // The viewer's note for today: as each greeting brings it, then as they save it.
   const [note, setNote] = useState("");
+  const dayNote = splitDayNote(note);
+  // The note as last set, for saves in quick succession (taps on its tags).
+  const noteNow = useRef("");
+  // What's being typed into it, and the tags Jev thinks fit that.
+  const [typed, setTyped] = useState<string | null>(null);
+  const [suggested, setSuggested] = useState<DayTag[]>([]);
+  // The greeting is rewritten with the note once its changes stop for a moment.
+  const rewriteSoon = useRef<ReturnType<typeof setTimeout>>(undefined);
   // Which of its dialogs is up, kept as it closes so it animates out as it was.
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogList, setDialogList] = useState<"explain" | "others">("explain");
@@ -160,6 +172,96 @@ export function AgendaGreeting({
     setAsks((n) => n + 1);
   };
 
+  const notesSaving = useRef(0);
+  // Held while a save is in flight: the server cleans the note up, and its
+  // saved text is what the box's draft is kept against.
+  const [savingNote, setSavingNote] = useState(false);
+  /**
+   * Shows `next` as today's note at once and saves it, putting the last one
+   * back if it fails; once saves stop for a moment, the greeting is
+   * rewritten with it, so a few taps in a row ask Claude once.
+   */
+  const saveNote = async (next: string) => {
+    const before = noteNow.current;
+    const show = (n: string) => {
+      noteNow.current = n;
+      setNote(n);
+    };
+    show(next);
+    clearTimeout(rewriteSoon.current);
+    notesSaving.current += 1;
+    setSavingNote(true);
+    const saved = await runAction(
+      // As the server kept it, unless it's been changed again since.
+      setDayNoteAction(next).then((kept) => noteNow.current === next && show(kept ?? "")),
+      "save your note for today",
+    );
+    notesSaving.current -= 1;
+    setSavingNote(notesSaving.current > 0);
+    // Even after a failure: an earlier save in the run may have landed. One
+    // that didn't change the note is answered without asking Claude.
+    if (notesSaving.current === 0) rewriteSoon.current = setTimeout(() => askAgain(true), 1500);
+    if (!saved && noteNow.current === next) show(before);
+    return saved;
+  };
+  useEffect(() => () => clearTimeout(rewriteSoon.current), []);
+
+  // The check-in folds away under its heading, as each person leaves it.
+  const [noteOpen, setNoteOpen] = useStoredState("greeting:note-open", true);
+  const noteId = useId();
+  // What's typed, kept through a reload until it's saved; per day, so
+  // yesterday's unsaved words don't turn up today.
+  const noteDraft = useDraft(today ? `day:${today}:note` : null, dayNote.rest);
+  // Chips picked but not saved yet, kept with the typed text as the draft;
+  // null while they're as saved.
+  const [pickedTags, setPickedTags] = useStoredState<DayTag[] | null>(
+    today ? `draft:day:${today}:note-tags` : "draft:day:note-tags",
+    null,
+  );
+  const tagsShown = pickedTags ?? dayNote.tags;
+  const sameTags = (a: readonly DayTag[], b: readonly DayTag[]) =>
+    a.length === b.length && a.every((t) => b.includes(t));
+  // Something to save: typing or chips that differ from the saved note.
+  const unsaved = noteDraft.value.trim() !== dayNote.rest || !sameTags(tagsShown, dayNote.tags);
+  /** Saves the chips and the text together, as one submit. */
+  const submitNote = () => {
+    if (notesSaving.current > 0 || !unsaved) return;
+    void saveNote(joinDayNote(tagsShown, noteDraft.value)).then((saved) => {
+      // A failed save keeps the draft (see "Drafts" in AGENTS.md).
+      if (!saved) return;
+      noteDraft.clear();
+      setPickedTags(null);
+    });
+  };
+  /** Drops what's not saved, text and chips. */
+  const cancelNote = () => {
+    noteDraft.clear();
+    setPickedTags(null);
+  };
+  /** Marks `tag` on or off; it's saved with the text by Save. */
+  const toggleTag = (tag: DayTag) => {
+    if (notesSaving.current > 0) return;
+    const next = toggleDayTag(joinDayNote(tagsShown, noteDraft.value), tag);
+    if (next === null) return;
+    const tags = splitDayNote(next).tags;
+    setPickedTags(sameTags(tags, dayNote.tags) ? null : tags);
+  };
+
+  // Tags that fit what's being typed, asked for once typing pauses. Kept
+  // once the edit's over, to tap; a failed ask suggests nothing new.
+  useEffect(() => {
+    if (typed === null) return;
+    const stop = new AbortController();
+    const t = setTimeout(() => {
+      if (!typed.trim()) setSuggested([]);
+      else aiRead("dayTags", { text: typed }, stop.signal).then(setSuggested, () => {});
+    }, 400);
+    return () => {
+      clearTimeout(t);
+      stop.abort();
+    };
+  }, [typed]);
+
   useEffect(() => {
     if (isFixed) return;
     let live = true;
@@ -170,7 +272,11 @@ export function AgendaGreeting({
       (g) => {
         if (!live) return;
         setGreeting(g);
-        setNote(g?.note ?? "");
+        // Not over a change of the viewer's still being saved.
+        if (notesSaving.current === 0) {
+          noteNow.current = g?.note ?? "";
+          setNote(noteNow.current);
+        }
         setAsking(false);
         const at = g?.retryInMs === undefined ? null : Date.now() + g.retryInMs;
         setRetryAt(at);
@@ -451,27 +557,143 @@ export function AgendaGreeting({
       )}
 
       {/* What they wrote about today, for the greeting to be written with:
-          saved as typed, then the greeting asks to be rewritten with it.
+          tags they tap and words they type, saved as they go, then the
+          greeting asks to be rewritten with it.
           Not offered when AI is off, as nothing would read it, nor on the
           landing page's preview, where it can't be saved. */}
       {greeting && !greeting.aiOff && !isFixed && (
-        <div className="mt-3 flex animate-in items-baseline gap-2 fade-in duration-500">
-          <NotebookPen aria-hidden className="size-3.5 shrink-0 translate-y-0.5 text-neutral-400 dark:text-neutral-500" />
-          <EditableText
-            value={note}
-            placeholder="How's today looking?"
-            maxLength={NOTE_MAX}
-            onSave={async (next) => {
-              const saved = await runAction(
-                setDayNoteAction(next).then((kept) => setNote(kept ?? "")),
-                "save your note for today",
-              );
-              if (saved) askAgain(true);
-            }}
-            renderValue={(v) => <span className="italic">&ldquo;{v}&rdquo;</span>}
-            className="min-w-0 flex-1 rounded-md text-sm text-neutral-600 outline-none hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:text-neutral-400 dark:hover:text-neutral-100 dark:focus-visible:ring-neutral-600"
-            inputClassName="min-w-0 flex-1"
-          />
+        // A warm panel: its header folds it, shows the note when shut, and
+        // holds Save and Discard while there's something to save.
+        <div className="mt-3 animate-in rounded-xl bg-stone-100 px-3 py-2.5 fade-in duration-500 dark:bg-stone-800/50">
+          {/* One fixed-height row in every state, so the buttons appearing don't move anything. */}
+          <div className="flex h-6 items-center gap-2 touch:h-8">
+            <button
+              type="button"
+              onClick={() => setNoteOpen((open) => !open)}
+              aria-expanded={noteOpen}
+              aria-controls={noteId}
+              className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-md text-left text-sm text-neutral-600 outline-none hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-stone-300 dark:text-neutral-400 dark:hover:text-neutral-100 dark:focus-visible:ring-stone-600"
+            >
+              <NotebookPen aria-hidden className="size-3.5 shrink-0 text-stone-400 dark:text-stone-500" />
+              <span className="shrink-0">How&apos;s today looking?</span>
+              {/* Shut, the note shows beside it: its moods as badges, then what was written. */}
+              {!noteOpen && dayNote.tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="shrink-0 rounded-full border border-stone-200 bg-white px-1.5 text-[11px] leading-4 text-neutral-600 dark:border-stone-700 dark:bg-neutral-900 dark:text-neutral-300"
+                >
+                  {tag}
+                </span>
+              ))}
+              {!noteOpen && dayNote.rest && (
+                <span className="min-w-0 truncate italic text-neutral-400 dark:text-neutral-500">{dayNote.rest}</span>
+              )}
+              {!noteOpen && unsaved && (
+                <span className="shrink-0 text-xs text-amber-700 dark:text-amber-400">Not saved</span>
+              )}
+              {!(noteOpen && (unsaved || savingNote)) && (
+                <ChevronDown
+                  aria-hidden
+                  className={`ml-auto size-3.5 shrink-0 transition-transform duration-300 ease-out motion-reduce:transition-none ${noteOpen ? "rotate-180" : ""}`}
+                />
+              )}
+            </button>
+            {/* Open with something to save: Save and Discard take the chevron's place. */}
+            {noteOpen && (unsaved || savingNote) && (
+              <div className="flex shrink-0 items-center gap-1">
+                <Button
+                  size="xs"
+                  variant="outline"
+                  onClick={cancelNote}
+                  aria-disabled={savingNote || undefined}
+                  // Its edge shows on the tint, so it reads the same size as Save.
+                  className="border-stone-300 bg-transparent aria-disabled:pointer-events-none aria-disabled:opacity-60 dark:border-stone-700 dark:bg-transparent"
+                >
+                  Discard
+                </Button>
+                <Button
+                  size="xs"
+                  onClick={submitNote}
+                  aria-disabled={savingNote || undefined}
+                  className="aria-disabled:pointer-events-none aria-disabled:opacity-60"
+                >
+                  <Check aria-hidden />
+                  {savingNote ? "Saving…" : "Save"}
+                </Button>
+              </div>
+            )}
+          </div>
+          {/* Rows 0fr to 1fr animates to the content's height; folded, it's inert. */}
+          <div
+            id={noteId}
+            inert={!noteOpen}
+            className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none ${
+              noteOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+            }`}
+          >
+            {/* -mx-1 px-1 and pb-1 leave room for the focus rings. */}
+            <div className="-mx-1 min-h-0 overflow-hidden">
+              <div className="px-1 pt-2.5 pb-1">
+                <Textarea
+                  draft={noteDraft}
+                  aria-label="How's today looking?"
+                  placeholder={tagsShown.length ? "Anything else?" : "A few words about today, if you like"}
+                  rows={2}
+                  // What's left of the note once its tags are in.
+                  maxLength={NOTE_MAX - (tagsShown.length ? joinDayNote(tagsShown, "x").length - 1 : 0)}
+                  readOnly={savingNote}
+                  aria-busy={savingNote || undefined}
+                  onChange={(e) => {
+                    // Kept as one line, as the server keeps it, so a pasted break isn't lost on save.
+                    const text = e.target.value.replace(/\s*\n\s*/g, " ");
+                    noteDraft.set(text);
+                    setTyped(text);
+                  }}
+                  onKeyDown={(e) => {
+                    // Enter saves, as Save does; the note is one line, so it wraps rather than breaks.
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      submitNote();
+                    }
+                    if (e.key === "Escape") cancelNote();
+                  }}
+                  className={`min-h-14 resize-none border-transparent bg-white text-sm transition-opacity dark:bg-neutral-950 ${savingNote ? "opacity-60" : ""}`}
+                />
+                {/* Quick words for the note, toggled as they're tapped; the ones
+                    Jev thinks fit what was typed are marked as suggestions. */}
+                <div role="group" aria-label="How today feels" className="mt-2.5 flex flex-wrap gap-1.5">
+                  {(Object.keys(DAY_TAGS) as DayTag[]).map((tag) => {
+                    const on = tagsShown.includes(tag);
+                    const hint = !on && suggested.includes(tag);
+                    // Too long a note to add it to without cutting off what was typed.
+                    const full = toggleDayTag(joinDayNote(tagsShown, noteDraft.value), tag) === null;
+                    return (
+                      <button
+                        key={tag}
+                        type="button"
+                        aria-pressed={on}
+                        aria-disabled={full || savingNote || undefined}
+                        title={full ? "Your note is too long to add this" : hint ? "Suggested from your note" : undefined}
+                        onClick={() => toggleTag(tag)}
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-neutral-300 aria-disabled:pointer-events-none aria-disabled:opacity-40 touch:py-1 dark:focus-visible:ring-neutral-600 ${
+                          on
+                            ? // Picked: a stone fill, so Save stays the one solid thing in the panel.
+                            "border-stone-400 bg-stone-200 text-stone-900 hover:bg-stone-300/70 dark:border-stone-500 dark:bg-stone-700 dark:text-stone-50 dark:hover:bg-stone-600"
+                            : hint
+                              ? "border-stone-400 border-dashed bg-white text-neutral-800 hover:border-stone-500 dark:border-stone-500 dark:bg-neutral-900 dark:text-neutral-100"
+                              : "border-stone-200 bg-white text-neutral-500 hover:border-stone-300 hover:text-neutral-800 dark:border-stone-800 dark:bg-neutral-900 dark:text-neutral-400 dark:hover:border-stone-700 dark:hover:text-neutral-100"
+                        }`}
+                      >
+                        {hint && <Sparkles aria-hidden className="size-3" />}
+                        {tag}
+                        {hint && <span className="sr-only"> (suggested)</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

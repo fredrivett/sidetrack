@@ -15,6 +15,10 @@ export function proxy(request: NextRequest) {
   // Same for GitHub's webhook deliveries: the route handler checks each one's
   // signature against the webhook's secret and returns 401 otherwise.
   if (pathname.startsWith("/api/github/")) return NextResponse.next();
+  // And the email-in Worker's deliveries, checked against EMAIL_IN_SECRET.
+  if (pathname.startsWith("/api/email/")) return NextResponse.next();
+  // And a photo an agent uploads to its one-time URL, whose token is checked.
+  if (pathname.startsWith("/api/sources/upload/")) return NextResponse.next();
 
   // Password reset pages must work signed-out: /forgot-password requests the
   // email, /reset-password is where the emailed link lands (with ?token=).
@@ -82,11 +86,15 @@ export function proxy(request: NextRequest) {
 
   // Each view has its own path, served by the one board page (app/(board)) so
   // switching views in the browser (Kanban's switchView) never remounts it.
+  // The view also goes in a request header for the page's loading.tsx, which
+  // gets no searchParams, so its skeleton is the view that's opening.
   if (VIEWS.includes(pathname.slice(1))) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     url.searchParams.set("view", pathname.slice(1));
-    return NextResponse.rewrite(url);
+    const headers = new Headers(request.headers);
+    headers.set("x-board-view", pathname.slice(1));
+    return NextResponse.rewrite(url, { request: { headers } });
   }
   // / opens the Brief; links from before views had paths (?view=, or ?p=
   // for a list on the board) open the view they meant.

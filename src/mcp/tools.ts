@@ -3,11 +3,17 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   type AgentOrigin,
+  endAgentSession,
   finishWork,
   listOpenAgentSessions,
+  listStartableAgents,
+  listStartableLists,
   reportWork,
+  requestWork,
   startWork,
+  stopRequest,
 } from "@/core/agentSessions";
+import { sendAgentRequest } from "@/lib/agentRequest";
 import { type AuditOrigin, listAudit } from "@/core/audit";
 import {
   autoNewListIcon,
@@ -16,19 +22,39 @@ import {
   withAutoListIcon,
 } from "@/core/autoEmoji";
 import { itemPriorities } from "@/core/autoPriority";
-import { addComment, listComments, mentionNotice } from "@/core/comments";
+import {
+  addComment,
+  deleteComment,
+  getComment,
+  listComments,
+  listRecentComments,
+  mentionNotice,
+  updateComment,
+} from "@/core/comments";
+import { plainText } from "@/core/describe";
+import { addFeedbackFollowUp, submitFeedback } from "@/core/feedback";
+import { setFollowing } from "@/core/follows";
+import { FEEDBACK_KINDS } from "@/lib/feedback";
+import {
+  listNotificationLevels,
+  listNotifications,
+  markNotificationsRead,
+  setNotificationLevel,
+} from "@/core/notifications";
 import {
   addLabel,
   deleteLabel,
   getLabel,
   labelUsage,
   type LabelUsage,
+  listLabelUsage,
   listLabels,
   updateLabel,
 } from "@/core/labels";
 import { moveItem, previewMoveItem } from "@/core/move";
 import { getDb } from "@/core/db";
 import { getTimeZone } from "@/core/users";
+import { addFromSource, discardSource, getItemSource, getSource, proposeFromPhoto } from "@/core/sources";
 import { nestItems } from "@/lib/itemTree";
 import { projectRefPrefixes, resolveItemRef } from "@/core/itemRef";
 import {
@@ -37,6 +63,7 @@ import {
   getUserName,
   inviteMember,
   setMemberRole,
+  listCollaborators,
   listMembers,
   listPendingInvites,
   removeMember,
@@ -46,6 +73,7 @@ import {
   completeItem,
   deleteItem,
   getItem,
+  listDoneBefore,
   listItems,
   listSubItems,
   ITEM_SORTS,
@@ -83,6 +111,7 @@ import {
   SPACE_COLORS,
   LIST_ROLES,
   type ListRole,
+  NOTIFICATION_LEVELS,
   type SpaceRole,
   SPACE_ROLES,
 } from "@/core/schema";
@@ -104,6 +133,7 @@ import {
   updateSpace,
 } from "@/core/spaces";
 import { type InviteKind, notifyInvite, notifyMentions } from "@/lib/email";
+import { collaboratorAccess, invitePeople, type InvitePlace } from "@/core/invites";
 import { getEnv } from "@/lib/env";
 import { formatItemRef, workPrTitle } from "@/lib/itemRef";
 import { checkDraftItem } from "@/lib/itemSuggest";
@@ -147,6 +177,7 @@ const Repeat = z.object({
   every: z.number().int().min(1).max(MAX_REPEAT_EVERY),
   unit: z.enum(REPEAT_UNITS),
   on: z.enum(REPEAT_ONS).nullable().optional(),
+  day: z.number().int().min(1).max(31).nullable().optional(),
 });
 const ListPosRef = z
   .string()
@@ -166,14 +197,15 @@ function forAgent(value: unknown, timeZone: string): unknown {
   if (value && Object.getPrototypeOf(value) === Object.prototype) {
     let obj = value as Record<string, unknown>;
     // An item's repeat rule goes out as one `repeat` field, the shape
-    // add_item and update_item take: { every, unit, on? }, or null. A finished
+    // add_item and update_item take: { every, unit, on?, day? }, or null. A finished
     // repeating item also says the day it comes back (the web's "Next: Tue").
     if ("repeatUnit" in obj && "repeatEvery" in obj) {
-      const { repeatEvery, repeatUnit, repeatOn, ...rest } = obj;
+      const { repeatEvery, repeatUnit, repeatOn, repeatDay, ...rest } = obj;
       const repeat = repeatOf({
         repeatEvery: repeatEvery as number | null,
         repeatUnit: repeatUnit as RepeatUnit | null,
         repeatOn: repeatOn as RepeatOn | null | undefined,
+        repeatDay: repeatDay as number | null | undefined,
       });
       obj = { ...rest, repeat };
       if (repeat && typeof obj.completedAt === "number") {
@@ -242,6 +274,11 @@ function resolveItemArg(db: Db, userId: string, raw: string) {
     };
   }
   return { item: null, error: notFound("item", raw) };
+}
+
+/** Where an item came from, for get_item. */
+function photoOf(source: { sourceId: string; createdAt: number } | null) {
+  return source && { source_id: source.sourceId, created_at: new Date(source.createdAt).toISOString() };
 }
 
 function errorText(text: string) {
@@ -314,6 +351,7 @@ async function sendInviteNotification(
   toEmail: string | null,
   kind: InviteKind = "list",
   role?: ListRole | SpaceRole,
+  onlyMine?: boolean,
 ) {
   if (!toEmail) return;
   await notifyInvite({
@@ -323,6 +361,7 @@ async function sendInviteNotification(
     url,
     kind,
     role,
+    onlyMine,
   });
 }
 
@@ -367,7 +406,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       title: "Get list",
       description:
         "Fetch a list with its items in position order. Pass include_completed: true to also return completed items. Works for archived lists too. " +
-        "A repeating item carries `repeat` ({ every, unit, on? }); a finished one also carries `comesBack`, the day it reopens. ",
+        "A repeating item carries `repeat` ({ every, unit, on?, day? }); a finished one also carries `comesBack`, the day it reopens. ",
       inputSchema: {
         id: z.string(),
         include_completed: z.boolean().optional(),
@@ -403,7 +442,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "- Do not show completed items in the tree.\n" +
         "- A task is a box-drawing branch, e.g. `├── Write the docs`.\n" +
         "- An item's sub-items (its checklist, in `children`) nest one level beneath it, e.g. `│   ├── Kitchen`.\n" +
-        "- A repeating item carries `repeat` ({ every, unit, on? }); a finished one also carries `comesBack`, the day it reopens. Mark a repeating item with its rule, e.g. `├── Water plants (every 3 days)` or `├── Clean the car (every 2 weeks on weekends)`.",
+        "- A repeating item carries `repeat` ({ every, unit, on?, day? }); a finished one also carries `comesBack`, the day it reopens. Mark a repeating item with its rule, e.g. `├── Water plants (every 3 days)` or `├── Clean the car (every 2 weeks on weekends)`.",
       inputSchema: {
         include_completed: z.boolean().optional(),
         include_archived: z.boolean().optional(),
@@ -434,14 +473,14 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "items due in a span that has started (dueFrom on or before today, e.g. due this week from Monday), " +
         "plus items finished today, which the user sees crossed out. Overdue items come first, then by board order. " +
         "The user sees them under Overdue (dueDate before today), Today (due today alone) and This week (a span under way); " +
-        "their Brief also shows what's due later, under This week, Next week and Later, which this tool leaves out. " +
+        "their Brief also shows what's due later, under Tomorrow, This week, Next week and Later, which this tool leaves out. " +
         "Returns { today, timeZone, items }, plus a note when the timezone is a UTC fallback. today is the user's current day (YYYY-MM-DD) in timeZone, which their browser reports; " +
         "the day turns over at 4am, so at 1am it's still the day before. Use today to work out dates like tomorrow for due_date. " +
         "Each item carries its ref, listName and, for a sub-item, parentTitle. " +
         "Items carry assigneeIds, everyone they're assigned to; a joint item has several. " +
         "filter narrows to items assigned to the user, alone or jointly with others (mine), " +
         "assigned only to other people (theirs), or to nobody (unassigned). Every item falls under exactly one of the three.\n" +
-        "A repeating item carries `repeat` ({ every, unit, on? }); a finished one also carries `comesBack`, the day it reopens. " +
+        "A repeating item carries `repeat` ({ every, unit, on?, day? }); a finished one also carries `comesBack`, the day it reopens. " +
         "Show the user the items as a list with the list name, anything overdue marked, repeating ones with their rule, " +
         "and finished ones crossed out (a finished repeating one with the day it comes back), as on their screen.",
       inputSchema: { filter: Whose.optional() },
@@ -492,7 +531,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Items carry assigneeIds, everyone they're assigned to; a joint item has several. " +
         "filter narrows to items assigned to the user, alone or jointly with others (mine), " +
         "assigned only to other people (theirs), or to nobody (unassigned), as in list_today.\n" +
-        "A repeating item carries `repeat` ({ every, unit, on? }); a finished one also carries `comesBack`, the day it reopens. " +
+        "A repeating item carries `repeat` ({ every, unit, on?, day? }); a finished one also carries `comesBack`, the day it reopens. " +
         "Show the user the items grouped under each list name, sub-items indented, repeating ones with their rule, finished ones crossed out, as on their screen. " +
         "To give an item a date, call update_item with due_date.",
       inputSchema: { filter: Whose.optional() },
@@ -630,6 +669,22 @@ export function registerTools(server: McpServer, ctx: McpContext) {
   );
 
   server.registerTool(
+    "clear_done",
+    {
+      title: "Clear done items",
+      description:
+        "Move a list's finished items into Done now, as the list's Clear done does, instead of when the day turns over. " +
+        "They stay finished and searchable (search_done); only where the board shows them changes. Returns the list.",
+      inputSchema: { id: z.string() },
+    },
+    async ({ id }) => {
+      const { db } = getDb();
+      if (!getProject(db, userId, id)) return notFound("list", id);
+      return json(updateProject(db, userId, id, { doneClearedAt: Date.now() }, SOURCE));
+    },
+  );
+
+  server.registerTool(
     "reorder_list",
     {
       title: "Reorder list",
@@ -670,9 +725,10 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Fetch a single item by reference — its title, description, labels (names; see list_labels for their emoji), assignees (assigneeIds, user ids; empty when unassigned) and completion state, " +
         "plus its sub-items (its checklist) as `children`, finished ones included. A sub-item has a parentId. " +
         "Use this to answer a question about one item without pulling its whole list. " +
-        "A repeating item carries `repeat` ({ every, unit, on? }); a finished one also carries `comesBack`, the day it reopens. " +
+        "A repeating item carries `repeat` ({ every, unit, on?, day? }); a finished one also carries `comesBack`, the day it reopens. " +
         "`agents` lists the agents working on it now (open start_work sessions: agentName, threadUrl, note, lastActiveAt); " +
         "check it before starting work so you don't duplicate another agent's. " +
+        "`fromPhoto` is set when it was added from a photo with add_from_photo: { source_id, created_at }. " +
         "`comments` is its discussion, oldest first: each has body (Markdown), author (name, displayUsername), agentName when an agent wrote it for that person, createdAt and editedAt. " +
         "Read them before working on the item: they often hold decisions and context the description doesn't. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id; the result carries its display `ref`.",
@@ -690,6 +746,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         children: withRefs(prefix, children),
         agents: listOpenAgentSessions(db, userId, item.id),
         comments: listComments(db, userId, item.id),
+        fromPhoto: photoOf(getItemSource(db, userId, item.id)),
       });
     },
   );
@@ -728,6 +785,83 @@ export function registerTools(server: McpServer, ctx: McpContext) {
   );
 
   server.registerTool(
+    "update_comment",
+    {
+      title: "Edit comment",
+      description:
+        "Rewrite a comment the user wrote, or an agent wrote for them: body replaces its text (Markdown) and it shows as edited. " +
+        "id is the comment's id, from get_item's comments or list_recent_comments. Only the comment's author can edit it. " +
+        "Anyone the new text @mentions who the old text didn't is emailed it, as with add_comment. " +
+        `Max ${COMMENT_MAX} characters. Returns the comment.`,
+      inputSchema: { id: z.string(), body: z.string().min(1) },
+    },
+    async ({ id, body }) => {
+      const { db } = getDb();
+      const before = getComment(db, userId, id)?.body;
+      let comment;
+      try {
+        comment = updateComment(db, userId, id, body, SOURCE);
+      } catch (e) {
+        return errorText(`${(e as Error).message} — no change was made.`);
+      }
+      const notice = mentionNotice(db, userId, comment, before);
+      if (notice) {
+        await notifyMentions(notice, ctx.baseUrl);
+      }
+      return json(comment);
+    },
+  );
+
+  server.registerTool(
+    "delete_comment",
+    {
+      title: "Delete comment",
+      description:
+        "Delete a comment the user wrote, or an agent wrote for them, from its item. Only the comment's author can. " +
+        "Its words are gone for good, though the activity log keeps that it was deleted and by which agent, " +
+        "so delete only what the user asked you to, and edit with update_comment when they only want it corrected. " +
+        "id is the comment's id, from get_item's comments or list_recent_comments. Returns { deleted: true }.",
+      inputSchema: { id: z.string() },
+    },
+    async ({ id }) => {
+      const { db } = getDb();
+      try {
+        deleteComment(db, userId, id, SOURCE);
+      } catch (e) {
+        return errorText(`${(e as Error).message} — no change was made.`);
+      }
+      return json({ deleted: true });
+    },
+  );
+
+  server.registerTool(
+    "list_recent_comments",
+    {
+      title: "List recent comments",
+      description:
+        "The newest comments across the items the user can open, newest first, to catch up on discussion without opening each item. " +
+        "list_id narrows to one list. limit is how many (default 50, max 500). " +
+        "Each is a comment as in get_item (body, author, agentName, createdAt, editedAt) plus `item`: the item it's on, with its id, title, ref and completedAt. " +
+        "Show each with its item's ref and title, who wrote it and when.",
+      inputSchema: {
+        list_id: z.string().optional(),
+        limit: z.number().int().min(1).max(500).optional(),
+      },
+    },
+    async ({ list_id, limit }) => {
+      const { db } = getDb();
+      if (list_id && !getProject(db, userId, list_id)) return notFound("list", list_id);
+      const refs = projectRefPrefixes(db, userId);
+      return json(
+        listRecentComments(db, userId, { projectId: list_id, limit }).map((c) => ({
+          ...c,
+          item: { ...c.item, ref: formatItemRef(refs[c.item.projectId] ?? "", c.item.number) },
+        })),
+      );
+    },
+  );
+
+  server.registerTool(
     "add_item",
     {
       title: "Add item",
@@ -747,7 +881,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "assignee_id (one id) also works, for older prompts; don't pass both. " +
         "completed: true creates it already done, in one call — use it when the user tells you about something they've finished, " +
         "instead of add_item then complete_item. " +
-        "repeat makes a task come round again: { every, unit, on? } with unit day, week or month, e.g. { every: 3, unit: \"day\" } for every 3 days. " +
+        "repeat makes a task come round again: { every, unit, on?, day? } with unit day, week or month, e.g. { every: 3, unit: \"day\" } for every 3 days. " +
         "The next due date counts from the day it was last completed, not a fixed calendar: completing it leaves it crossed out for the rest of the day, " +
         "then on the day `every` units after the day it was done it reopens as the same item (same ref), due that day. " +
         "Its due date is only for this time: it comes back due on that one day, whatever it was due before. " +
@@ -756,6 +890,10 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "It then comes back on the first of those days from the day `every` units after it was done, or that weekend from its Saturday, " +
         "so { every: 2, unit: \"week\", on: \"weekend\" } done three days late on a Wednesday is due the weekend after the Wednesday two weeks on. " +
         "A month later keeps the day of the month, or the month's last day when that's shorter. " +
+        "To keep a monthly task to a fixed day of the month instead, set day (1 to 31, not with on), " +
+        "when the user names one (\"on the 1st of every month\", \"rent on the 28th\"): it then comes back on the next of that day after it's done, " +
+        "however early or late, then `every` - 1 months on, so { every: 1, unit: \"month\", day: 1 } done on 21 November is due 1 December. " +
+        "A month without that day (29 to 31) uses its last day. " +
         "position defaults to end (the bottom of the list, or of the parent's sub-items); top|end|after:<item>|before:<item> are also valid, " +
         "where <item> is a short ref (e.g. \"HOM-12\") or an id of a sibling (same list, same parent). " +
         "Returns { created, items } where items is every incomplete item in the list in position order " +
@@ -885,6 +1023,140 @@ export function registerTools(server: McpServer, ctx: McpContext) {
   );
 
   server.registerTool(
+    "add_from_photo",
+    {
+      title: "Add these to Sidetrack",
+      description:
+        "When the user shares a photo of a list (a notebook page, a whiteboard, a note on the fridge) and wants it in Sidetrack, " +
+        "read it yourself and propose a line per item; nothing goes on the board until the user reviews the lines in the app, where they can change any of them. " +
+        "So don't stop to ask: make your best reading and let the review catch the rest. Before proposing, get_list or list_all_items to match lines to items that already exist. " +
+        "Reading a page: a struck-through line is done; an underlined heading with lines under it is a task with those lines as its sub-items (parent: the heading's index); " +
+        "a heading such as \"Buy\" over a group may name a list instead, so file its lines there (or label them, e.g. labels: [\"buy\"]). Skip doodles. " +
+        "A line made to stand out (circled, boxed, starred, arrowed) matters more: give it a near due date, today or in the next few days, unless the user has told you what their marks mean; " +
+        "follow what they've told you over this (e.g. their \">\" might mean it's already in Sidetrack, so match it). " +
+        "Each line: title (as written, spelling fixed), list_id, and optionally parent (index of an earlier line, for a sub-item), " +
+        "parent_item (ref of an existing task to add it under), done, due_date, labels, repeat ({ every, unit, on?, day? } as in add_item, for \"every Sunday\" and the like), " +
+        "assignee_ids (\"me\" for the user, or people on the list), and match: the ref of an existing item this line is. " +
+        "A matched line changes that item if the page says something new: done: true ticks it off, due_date, repeat and assignee_ids replace its own, labels are added; " +
+        "leave them out to leave it as it is (it still links to the photo). " +
+        "region is where the line is on the photo, so the user sees the handwriting next to each line: { x, y, w, h } as fractions (0 to 1) of the photo's width and height from its top-left, " +
+        "the box around the words as if level, and angle: degrees it's turned clockwise about its centre, for a line written on a slant. " +
+        "Skip struck-through lines that aren't in Sidetrack yet, unless they're steps in a checklist (keep those as done so its count is right). " +
+        "note is shown above the lines: say anything the user should check, e.g. a word you couldn't read or what you took a mark to mean. They can't reply to it, so don't ask questions there. " +
+        "Returns { source_id, upload, review_url }: then upload the photo with the command in upload.curl (a PUT of the image file: JPEG, PNG or WebP, at most 15 MB, within an hour; " +
+        "convert HEIC first). Never put the photo's bytes in a tool call. Then give the user review_url, where they check the lines against the photo and add them.",
+      inputSchema: {
+        note: z.string().optional(),
+        lines: z
+          .array(
+            z.object({
+              title: z.string().min(1),
+              list_id: z.string(),
+              parent: z.number().int().min(0).optional(),
+              parent_item: z.string().optional(),
+              match: z.string().optional(),
+              done: z.boolean().optional(),
+              due_date: DueDate.optional(),
+              labels: z.array(z.string()).optional(),
+              repeat: Repeat.optional(),
+              assignee_ids: z.array(z.string().min(1)).optional(),
+              region: z
+                .object({
+                  x: z.number(),
+                  y: z.number(),
+                  w: z.number(),
+                  h: z.number(),
+                  angle: z.number().optional(),
+                })
+                .optional(),
+            }),
+          )
+          .min(1),
+      },
+    },
+    async ({ note, lines }) => {
+      const { db } = getDb();
+      const proposed = [];
+      for (const line of lines) {
+        const resolve = (ref: string | undefined) => (ref ? resolveItemArg(db, userId, ref) : null);
+        const parentItem = resolve(line.parent_item);
+        if (parentItem?.error) return parentItem.error;
+        const match = resolve(line.match);
+        if (match?.error) return match.error;
+        proposed.push({
+          title: line.title,
+          projectId: line.list_id,
+          parent: line.parent,
+          parentItemId: parentItem?.item.id,
+          matchItemId: match?.item.id,
+          done: line.done,
+          dueDate: line.due_date,
+          labels: line.labels,
+          repeat: line.repeat,
+          assigneeIds: line.assignee_ids?.map((a) => (a === "me" ? userId : a)),
+          region: line.region,
+        });
+      }
+      let proposal: ReturnType<typeof proposeFromPhoto>;
+      try {
+        proposal = proposeFromPhoto(db, userId, { note, lines: proposed }, ctx.agent.name);
+      } catch (e) {
+        return errorText(`${e instanceof Error ? e.message : String(e)} — nothing was saved.`);
+      }
+      const url = `${ctx.baseUrl}/api/sources/upload/${proposal.uploadToken}`;
+      return json({
+        source_id: proposal.sourceId,
+        upload: {
+          method: "PUT",
+          url,
+          curl: `curl --fail-with-body -T <path-to-photo> '${url}'`,
+          expires_at: new Date(proposal.expiresAt).toISOString(),
+        },
+        review_url: `${ctx.baseUrl}/sources/${proposal.sourceId}`,
+      });
+    },
+  );
+
+  server.registerTool(
+    "add_photo_lines",
+    {
+      title: "Add a photo's lines",
+      description:
+        "Add every line proposed with add_from_photo to the board as proposed, without the user reviewing them in the app: " +
+        "only when the user tells you to (e.g. \"just add them\"); otherwise give them the review_url. " +
+        "To change a line first, discard_photo and propose again. The photo must be uploaded. " +
+        "Returns { added, updated, completed, skipped }.",
+      inputSchema: { source_id: z.string() },
+    },
+    async ({ source_id }) => {
+      const { db } = getDb();
+      const found = getSource(db, userId, source_id);
+      if (!found) return notFound("photo", source_id);
+      try {
+        const reviews = found.lines.map((line) => ({ id: line.id, add: true }));
+        return json(addFromSource(db, userId, source_id, reviews, SOURCE));
+      } catch (e) {
+        return errorText(`${e instanceof Error ? e.message : String(e)} — nothing was added.`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "discard_photo",
+    {
+      title: "Discard a photo",
+      description:
+        "Drop a photo proposed with add_from_photo that hasn't been added, with its lines, e.g. to propose them again after reading it wrong. " +
+        "Nothing on the board changes. Returns { discarded }, false when it was already added or discarded.",
+      inputSchema: { source_id: z.string() },
+    },
+    async ({ source_id }) => {
+      const { db } = getDb();
+      return json({ discarded: discardSource(db, userId, source_id) });
+    },
+  );
+
+  server.registerTool(
     "update_item",
     {
       title: "Update item",
@@ -905,7 +1177,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         DUE_SPAN +
         "Passing due_date without due_from makes it due that day alone. due_from without due_date changes when the span starts and keeps its due_date; " +
         "due_from: null makes it due on its due_date alone. " +
-        "repeat sets how often a task comes round again, { every, unit, on? } (see add_item); pass null to stop it repeating. " +
+        "repeat sets how often a task comes round again, { every, unit, on?, day? } (see add_item); pass null to stop it repeating. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id. " +
         "Returns { updated, items } where items is every incomplete item in the item's list in position order " +
         "(so a completed item is in updated but not items).\n" +
@@ -1006,7 +1278,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Mark an item as completed. It keeps its place in the list: the user sees it crossed out for the rest of the day " +
         "(the day turns over at 4am their time), then it moves to the list's Done section. " +
         "Completing an item with sub-items also completes its open sub-items; completing a parent's last open sub-item completes the parent too. " +
-        "A repeating item (one with a repeat rule) reopens by itself on its next due date: `every` units after the day it was completed (then its rule's next weekday or weekend, if it has `on`). " +
+        "A repeating item (one with a repeat rule) reopens by itself on its next due date: `every` units after the day it was completed (then its rule's next weekday or weekend, if it has `on`), or, with `day`, the next of that day of the month. " +
         "The result then carries `comesBack`, that day (YYYY-MM-DD); tell the user when it'll be back. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: { id: z.string() },
@@ -1325,12 +1597,22 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "List a list's labels: each has an id, a name (what items carry in `labels`) and an optional emoji. " +
         "Show a label as its emoji then its name, e.g. \"🐛 bug\". emojiChosen is true when someone chose the emoji (or chose none); " +
         "otherwise it's suggested for the name and follows renames. " +
-        "A label with archivedAt set is archived: it stays on the items that have it, but don't offer it for new ones.",
-      inputSchema: { list_id: z.string() },
+        "A label with archivedAt set is archived: it stays on the items that have it, but don't offer it for new ones. " +
+        "With include_usage, each label also has usage: { active, done }, how many open and done items it's on, as List details shows; " +
+        "use it to find labels nobody uses before tidying them up.",
+      inputSchema: { list_id: z.string(), include_usage: z.boolean().optional() },
     },
-    async ({ list_id }) => {
+    async ({ list_id, include_usage }) => {
       const { db } = getDb();
-      return json(listLabels(db, userId, list_id));
+      const labels = listLabels(db, userId, list_id);
+      if (!include_usage) return json(labels);
+      const usage = listLabelUsage(db, userId, list_id);
+      return json(
+        labels.map((l) => ({
+          ...l,
+          usage: { active: usage[l.id]?.active.length ?? 0, done: usage[l.id]?.done.length ?? 0 },
+        })),
+      );
     },
   );
 
@@ -1424,6 +1706,235 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       } catch (e) {
         return errorText(`${(e as Error).message} — no change was made.`);
       }
+    },
+  );
+
+  // Assigning agents: what the board's assignee picker does for the user's
+  // own agents, with the same rules (core's requestWork and stopRequest).
+  server.registerTool(
+    "list_agents",
+    {
+      title: "List agents",
+      description:
+        "The user's agents that Sidetrack can start: API keys set (in Settings → API keys) to start work when assigned. " +
+        "Returns { agents, listIds }: agents are { keyId, name }, and listIds are the lists the user can start them on, " +
+        "the ones they're admin of (owner of a personal list, or admin of its Space) that have a repository. " +
+        "Pass an agent's keyId to assign_agent or unassign_agent.",
+      inputSchema: {},
+    },
+    async () => {
+      const { db } = getDb();
+      return json({
+        agents: listStartableAgents(db, userId),
+        listIds: listStartableLists(db, userId),
+      });
+    },
+  );
+
+  server.registerTool(
+    "assign_agent",
+    {
+      title: "Assign agent",
+      description:
+        "Assign one of the user's agents (agent_key_id from list_agents) to an item, as the board's assignee picker does: " +
+        "Sidetrack asks the agent's webhook to start work on it in the list's repository, and the agent shows on the item at once. " +
+        "Only the list's admin can, and only on a list with a repository; refused for a completed item. " +
+        "People's assignments are left alone. Assigning an agent already on the item changes nothing. " +
+        "If its webhook can't be reached, the agent comes off again and this returns an error. " +
+        "Returns the agent's session. item_id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
+      inputSchema: { item_id: z.string(), agent_key_id: z.string() },
+    },
+    async ({ item_id, agent_key_id }) => {
+      const { db } = getDb();
+      const { item, error } = resolveItemArg(db, userId, item_id);
+      if (error) return error;
+      let started;
+      try {
+        started = requestWork(db, userId, item.id, agent_key_id, SOURCE);
+      } catch (e) {
+        return errorText(`${(e as Error).message} — no change was made.`);
+      }
+      if (started.request) {
+        try {
+          await sendAgentRequest(started.request);
+        } catch (e) {
+          const reason = (e as Error).message;
+          endAgentSession(db, userId, started.session.id, SOURCE, reason);
+          return errorText(`${reason}, so the agent wasn't started.`);
+        }
+      }
+      return json(started.session);
+    },
+  );
+
+  server.registerTool(
+    "unassign_agent",
+    {
+      title: "Unassign agent",
+      description:
+        "Take one of the user's agents (agent_key_id, as in the item's `agents` from get_item) off an item, as unassigning it on the board does: " +
+        "Sidetrack tells the agent's webhook to stop, then ends its session there. Works whether or not the user is the list's admin. " +
+        "If the webhook can't be reached, the agent stays on the item and this returns an error, so you can try again. " +
+        "Returns { stopped: true }, or { stopped: false } (a no-op) when that agent wasn't on the item. " +
+        "item_id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
+      inputSchema: { item_id: z.string(), agent_key_id: z.string() },
+    },
+    async ({ item_id, agent_key_id }) => {
+      const { db } = getDb();
+      const { item, error } = resolveItemArg(db, userId, item_id);
+      if (error) return error;
+      let found;
+      try {
+        found = stopRequest(db, userId, item.id, agent_key_id);
+      } catch (e) {
+        return errorText(`${(e as Error).message} — no change was made.`);
+      }
+      if (!found) return json({ stopped: false });
+      if (found.request) {
+        try {
+          await sendAgentRequest(found.request);
+        } catch (e) {
+          return errorText(`${(e as Error).message}, so the agent is still on the item.`);
+        }
+      }
+      endAgentSession(db, userId, found.session.id, SOURCE);
+      return json({ stopped: true });
+    },
+  );
+
+  server.registerTool(
+    "search_done",
+    {
+      title: "Search done items",
+      description:
+        "Items the user finished, across their lists that aren't archived, newest first: for questions like \"when did I last do X?\". " +
+        "query keeps only those whose title contains it or whose ref it is (e.g. \"HOM-12\"). " +
+        "before (epoch ms, default now) and limit (default 50, max 200) page back: pass the previous result's `since` as before for older ones. " +
+        "Returns { items, since, more }: items each with its ref, listName and completedAt, plus the rest of its group (its parent and their sub-items) " +
+        "so checklists are whole; more is true when older ones remain. Show each with its list name and when it was finished.",
+      inputSchema: {
+        query: z.string().optional(),
+        before: z.number().int().nonnegative().optional(),
+        limit: z.number().int().min(1).max(200).optional(),
+      },
+    },
+    async ({ query, before, limit }) => {
+      const { db } = getDb();
+      const found = listDoneBefore(db, userId, {
+        before: before ?? Date.now(),
+        limit: limit ?? 50,
+        query,
+      });
+      const refs = projectRefPrefixes(db, userId);
+      const names = new Map(listProjects(db, userId).map((p) => [p.id, p.name]));
+      return json({
+        ...found,
+        items: found.items.map((it) => ({
+          ...it,
+          ref: formatItemRef(refs[it.projectId] ?? "", it.number),
+          listName: names.get(it.projectId) ?? null,
+        })),
+      });
+    },
+  );
+
+  // Notifications are the user's own: following, levels and read state are
+  // per person and seen by nobody else, so core doesn't audit them.
+  server.registerTool(
+    "follow_item",
+    {
+      title: "Follow or unfollow item",
+      description:
+        "Follow an item (following: true) so the user hears about its activity, or unfollow it (false) so they stop. " +
+        "People follow items they create, are assigned to, comment on or are mentioned on automatically; an unfollow sticks, " +
+        "and following a parent covers its sub-items. Use it when the user asks to be kept posted on an item, or to stop hearing about one. " +
+        "item_id accepts the item's short ref (e.g. \"ENG-42\") or its internal id. Returns { following }.",
+      inputSchema: { item_id: z.string(), following: z.boolean() },
+    },
+    async ({ item_id, following }) => {
+      const { db } = getDb();
+      const { item, error } = resolveItemArg(db, userId, item_id);
+      if (error) return error;
+      setFollowing(db, userId, item.id, following);
+      return json({ following });
+    },
+  );
+
+  server.registerTool(
+    "list_notifications",
+    {
+      title: "List notifications",
+      description:
+        "The user's notifications inbox, newest first: everything unseen, then their latest seen ones. " +
+        "Each has id, text (the sentence, as the inbox shows it), snippet (a quoted comment or note, or null), title (the list or Space), " +
+        "itemRef when it's about an item, when (relative, e.g. \"5 minutes ago\"; show that, not createdAt), readAt (null when unseen) and agentName when an agent made the change. " +
+        "levels is how much they hear about each scope they've set (see set_notification_level). " +
+        "Show the unseen ones first, then mark them seen with mark_notifications_read only if the user asks.",
+      inputSchema: {},
+    },
+    async () => {
+      const { db } = getDb();
+      const today = dayOf(Date.now(), getTimeZone(db, userId) ?? "UTC");
+      return json({
+        notifications: listNotifications(db, userId).map((n) => ({
+          id: n.id,
+          reason: n.reason,
+          text: plainText(n.parts, today),
+          snippet: n.snippet,
+          title: n.title,
+          ...(n.itemRef ? { itemRef: n.itemRef } : {}),
+          when: formatRelativeLong(n.createdAt),
+          createdAt: n.createdAt,
+          readAt: n.readAt,
+          agentName: n.agentName,
+        })),
+        levels: listNotificationLevels(db, userId),
+      });
+    },
+  );
+
+  server.registerTool(
+    "mark_notifications_read",
+    {
+      title: "Mark notifications seen",
+      description:
+        "Mark the user's notifications seen: ids (from list_notifications) for those, or leave ids out for all of them. " +
+        "Do it only when the user asks. Returns { ok: true }.",
+      inputSchema: { ids: z.array(z.string().min(1)).optional() },
+    },
+    async ({ ids }) => {
+      const { db } = getDb();
+      markNotificationsRead(db, userId, ids);
+      return json({ ok: true });
+    },
+  );
+
+  server.registerTool(
+    "set_notification_level",
+    {
+      title: "Set notification level",
+      description:
+        "Set how much the user hears about a scope, as in Settings → Notifications. scope is \"all\" (everything), " +
+        "\"space:<space id>\" or \"list:<list id>\" for one they're in (the most specific one set wins), " +
+        "\"reminders\" for due reminders, or \"agents\" for what isn't a person's doing (other people's agents, GitHub, Sidetrack itself). " +
+        "level is all (push everything), default (push what's aimed at them or what they follow; the rest goes to the inbox only) " +
+        "or mine (only what's aimed at them); null goes back to what the scope inherits. " +
+        "For reminders, all pushes them, default keeps them to the inbox and mine turns them off; " +
+        "for agents, all hears them like people's changes, default keeps them to the inbox and mine keeps only what's aimed at the user. " +
+        "Change it only when the user asks, and tell them what they'll now hear. Returns { levels }, every scope they've set.",
+      inputSchema: {
+        scope: z.string().min(1),
+        level: z.enum(NOTIFICATION_LEVELS).nullable(),
+      },
+    },
+    async ({ scope, level }) => {
+      const { db } = getDb();
+      try {
+        setNotificationLevel(db, userId, scope, level);
+      } catch (e) {
+        return errorText(`${(e as Error).message} — no change was made.`);
+      }
+      return json({ levels: listNotificationLevels(db, userId) });
     },
   );
 
@@ -1529,6 +2040,55 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     },
   );
 
+  // Feedback goes to the deployment's feedback list (FEEDBACK_LIST_ID), which
+  // the user usually can't open: they can add to it, never read it.
+  server.registerTool(
+    "send_feedback",
+    {
+      title: "Send feedback",
+      description:
+        "Send feedback about Sidetrack itself to the people who run it, as the app's Send feedback does: a bug, an idea, or other. " +
+        "Use it when the user asks you to report a problem or suggest something, in their words; " +
+        "say what they were doing and what happened, and send it only once they've agreed to what it says. " +
+        "message is Markdown; its first line becomes the title. It's filed under the user's name, noting that you sent it. " +
+        "The user can't open it afterwards, so tell them its ref. Within 30 minutes, add_to_feedback can add to it once. " +
+        "At most 5 an hour. Returns { itemId, ref }.",
+      inputSchema: { kind: z.enum(FEEDBACK_KINDS), message: z.string().min(1) },
+    },
+    async ({ kind, message }) => {
+      const listId = getEnv().FEEDBACK_LIST_ID;
+      if (!listId) return errorText("This Sidetrack doesn't take feedback — no change was made.");
+      const { db } = getDb();
+      try {
+        return json(submitFeedback(db, userId, { listId, kind, message }, SOURCE));
+      } catch (e) {
+        return errorText(`${(e as Error).message} — no change was made.`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "add_to_feedback",
+    {
+      title: "Add to feedback",
+      description:
+        "Add more to feedback the user sent in the last 30 minutes, as a Follow-up section: something they remembered, or an answer. " +
+        "Once per piece of feedback. item_id is the itemId send_feedback returned (not its ref, which the user can't open). Returns { ok: true }.",
+      inputSchema: { item_id: z.string().min(1), note: z.string().min(1) },
+    },
+    async ({ item_id, note }) => {
+      const listId = getEnv().FEEDBACK_LIST_ID;
+      if (!listId) return errorText("This Sidetrack doesn't take feedback — no change was made.");
+      const { db } = getDb();
+      try {
+        addFeedbackFollowUp(db, userId, { listId, itemId: item_id, answers: [], note }, SOURCE);
+      } catch (e) {
+        return errorText(`${(e as Error).message} — no change was made.`);
+      }
+      return json({ ok: true });
+    },
+  );
+
   server.registerTool(
     "list_audit",
     {
@@ -1581,6 +2141,39 @@ export function registerTools(server: McpServer, ctx: McpContext) {
   );
 
   server.registerTool(
+    "list_collaborators",
+    {
+      title: "List collaborators",
+      description:
+        "The people the user shares a list or a Space with (owners and accepted members; pending invites don't count), " +
+        "each with userId, username, displayUsername, name and email. Use it to work out who the user means by a name " +
+        "(\"share it with Sam\"): if more than one person matches, ask which. Someone not listed can still be invited by username or email. " +
+        "Pass list_id or space_id (at most one) when the user wants someone in a place, such as sharing an item, which means its list. " +
+        "Then it returns { canInvite, people }: people also includes anyone already in that place, invites included, and each has access, " +
+        "every way they can open it: { via: list or space, role, pending }. A list's owner has role owner; via space means they get in through the list's Space. " +
+        "access [] means they can't open it yet: invite them (invite_member, invite_space_member or invite_people) if canInvite, " +
+        "else tell the user who can (the list's owner, or a Space admin). If they're already in, say so instead of inviting them again; " +
+        "pending means invited but not accepted yet; a viewer or commenter who needs more can have their role raised (set_member_role or set_space_member_role).",
+      inputSchema: {
+        list_id: z.string().min(1).optional(),
+        space_id: z.string().min(1).optional(),
+      },
+    },
+    async ({ list_id, space_id }) => {
+      const { db } = getDb();
+      if (list_id && space_id) return errorText("Pass list_id or space_id, not both.");
+      if (!list_id && !space_id) return json(listCollaborators(db, userId));
+      const found = collaboratorAccess(
+        db,
+        userId,
+        list_id ? { kind: "list", id: list_id } : { kind: "space", id: space_id ?? "" },
+      );
+      if (!found) return list_id ? notFound("list", list_id) : notFound("space", space_id ?? "");
+      return json(found);
+    },
+  );
+
+  server.registerTool(
     "invite_member",
     {
       title: "Invite a member",
@@ -1591,19 +2184,24 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Lands a pending invite they must accept before they gain access. " +
         "role is what they can do once they join: editor (the default) changes everything except owner-only actions " +
         "(delete, prefix, managing members); commenter sees the list and comments on its items; viewer only sees it. " +
-        "Use the role the user asked for; when they said to share it read-only or just so someone can see it, that's viewer.",
+        "Use the role the user asked for; when they said to share it read-only or just so someone can see it, that's viewer. " +
+        "only_mine (viewer or commenter) shows them only the items assigned to the user, as for an accountability partner.",
       inputSchema: {
         list_id: z.string(),
         person: z.string().min(1),
         role: z.enum(LIST_ROLES).optional(),
+        only_mine: z
+          .boolean()
+          .optional()
+          .describe("Viewers and commenters only: they see just the items assigned to you (the user), not the rest of the list."),
       },
     },
-    async ({ list_id, person, role }) => {
+    async ({ list_id, person, role, only_mine }) => {
       const { db } = getDb();
       const project = getProject(db, userId, list_id);
       if (!project) return notFound("list", list_id);
-      const member = inviteMember(db, userId, list_id, person, SOURCE, role);
-      await sendInviteNotification(db, ctx.baseUrl, userId, project.name, member.email, "list", role);
+      const member = inviteMember(db, userId, list_id, person, SOURCE, role, { onlyMine: only_mine });
+      await sendInviteNotification(db, ctx.baseUrl, userId, project.name, member.email, "list", role, only_mine);
       return json(member);
     },
   );
@@ -1615,13 +2213,22 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       description:
         "Change what a member, or someone invited, can do on a list (owner only): editor, commenter (sees the list and comments) " +
         "or viewer (sees it only). user_id comes from list_members. Taking edit away takes them off the list's items " +
-        "and ends their agents' work there, unless the list's Space still lets them edit.",
-      inputSchema: { list_id: z.string(), user_id: z.string(), role: z.enum(LIST_ROLES) },
+        "and ends their agents' work there, unless the list's Space still lets them edit. " +
+        "only_mine turns showing them only the user's items on or off; leave it out to keep it as it is. Editors always see everything.",
+      inputSchema: {
+        list_id: z.string(),
+        user_id: z.string(),
+        role: z.enum(LIST_ROLES),
+        only_mine: z
+          .boolean()
+          .optional()
+          .describe("Viewers and commenters only: they see just the items assigned to you (the user), not the rest of the list."),
+      },
     },
-    async ({ list_id, user_id, role }) => {
+    async ({ list_id, user_id, role, only_mine }) => {
       const { db } = getDb();
       if (!getProject(db, userId, list_id)) return notFound("list", list_id);
-      setMemberRole(db, userId, list_id, user_id, role, SOURCE);
+      setMemberRole(db, userId, list_id, user_id, role, SOURCE, only_mine);
       return json({ ok: true });
     },
   );
@@ -1836,6 +2443,67 @@ export function registerTools(server: McpServer, ctx: McpContext) {
   );
 
   server.registerTool(
+    "invite_people",
+    {
+      title: "Invite people to several places",
+      description:
+        "Invite one or more existing users to several lists and Spaces at once, each place with its own role, " +
+        "as one invite: all of it lands or none does. people are usernames (\"alice\" or \"@alice\") or emails. " +
+        "Each place is a list_id (owner only; role editor, commenter or viewer) or a space_id (admins only; " +
+        "role member, commenter or viewer). Each invitee gets one push and one email naming every place; " +
+        "people already in a place hear only of that place. Use it instead of invite_member / invite_space_member " +
+        "when the user names more than one place or person. A place's only_mine (viewer or commenter) shows them only the user's items there. " +
+        "Check with the user before inviting someone they didn't name.",
+      inputSchema: {
+        people: z.array(z.string().min(1)).min(1),
+        places: z
+          .array(
+            z.union([
+              z.object({ list_id: z.string(), role: z.enum(LIST_ROLES).optional(), only_mine: z.boolean().optional() }),
+              z.object({
+                space_id: z.string(),
+                role: z.enum(["member", "commenter", "viewer"]).optional(),
+                only_mine: z.boolean().optional(),
+              }),
+            ]),
+          )
+          .min(1),
+      },
+    },
+    async ({ people, places }) => {
+      const { db } = getDb();
+      const spaces = listSpaces(db, userId);
+      const resolved: InvitePlace[] = [];
+      for (const p of places) {
+        if ("list_id" in p) {
+          if (!getProject(db, userId, p.list_id)) return notFound("list", p.list_id);
+          resolved.push({ kind: "list", id: p.list_id, role: p.role ?? "editor", onlyMine: p.only_mine });
+        } else {
+          if (!spaces.some((s) => s.id === p.space_id)) return notFound("space", p.space_id);
+          resolved.push({ kind: "space", id: p.space_id, role: p.role ?? "member", onlyMine: p.only_mine });
+        }
+      }
+      const { sent, places: invited } = invitePeople(db, userId, { people, places: resolved }, SOURCE);
+      const named = invited.map(({ name, kind, role, onlyMine }) => ({ name, kind, role, onlyMine }));
+      const inviterName = getUserName(db, userId) ?? "Someone";
+      const emails = new Set(sent.flatMap((s) => (s.member.email ? [s.member.email] : [])));
+      for (const to of emails) {
+        await notifyInvite({
+          to,
+          inviterName,
+          projectName: named[0].name,
+          url: ctx.baseUrl,
+          kind: named[0].kind,
+          role: named[0].role,
+          onlyMine: named[0].onlyMine,
+          places: named,
+        });
+      }
+      return json(sent.map((s) => ({ [s.kind === "list" ? "list_id" : "space_id"]: s.placeId, ...s.member })));
+    },
+  );
+
+  server.registerTool(
     "invite_space_member",
     {
       title: "Invite to a Space",
@@ -1843,19 +2511,24 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Invite an existing user to a Space (admins only). person is a username (\"alice\" or \"@alice\") or an email; " +
         "they must already have an account. Once they accept they see every list in the Space, and role says what else: " +
         "member (the default) edits them, commenter comments on their items, viewer only sees them. " +
+        "only_mine (viewer or commenter) shows them only the items assigned to the user. " +
         "Check with the user before inviting someone they didn't name.",
       inputSchema: {
         space_id: z.string(),
         person: z.string().min(1),
         role: z.enum(["member", "commenter", "viewer"]).optional(),
+        only_mine: z
+          .boolean()
+          .optional()
+          .describe("Viewers and commenters only: they see just the items assigned to you (the user), not the rest of the list."),
       },
     },
-    async ({ space_id, person, role }) => {
+    async ({ space_id, person, role, only_mine }) => {
       const { db } = getDb();
       const space = listSpaces(db, userId).find((s) => s.id === space_id);
       if (!space) return notFound("space", space_id);
-      const member = inviteSpaceMember(db, userId, space_id, person, SOURCE, role);
-      await sendInviteNotification(db, ctx.baseUrl, userId, space.name, member.email, "space", role);
+      const member = inviteSpaceMember(db, userId, space_id, person, SOURCE, role, { onlyMine: only_mine });
+      await sendInviteNotification(db, ctx.baseUrl, userId, space.name, member.email, "space", role, only_mine);
       return json(member);
     },
   );
@@ -1886,17 +2559,22 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Change someone's role in a Space (admins only): admin (manages the Space and its people, and edits its lists), member (edits its lists), " +
         "commenter (sees its lists and comments) or viewer (sees its lists only). user_id comes from list_space_members, " +
         "and they must have accepted. All admins are equal. A Space always keeps an admin, so the last admin can't be given another role. " +
-        "Taking edit away takes them off the items they're assigned in the Space.",
+        "Taking edit away takes them off the items they're assigned in the Space. " +
+        "only_mine turns showing them only the user's items on or off; leave it out to keep it as it is. Admins and members always see everything.",
       inputSchema: {
         space_id: z.string(),
         user_id: z.string(),
         role: z.enum(SPACE_ROLES),
+        only_mine: z
+          .boolean()
+          .optional()
+          .describe("Viewers and commenters only: they see just the items assigned to you (the user), not the rest of the list."),
       },
     },
-    async ({ space_id, user_id, role }) => {
+    async ({ space_id, user_id, role, only_mine }) => {
       const { db } = getDb();
       if (!isJoined(db, space_id)) return notFound("space", space_id);
-      setSpaceMemberRole(db, userId, space_id, user_id, role, SOURCE);
+      setSpaceMemberRole(db, userId, space_id, user_id, role, SOURCE, only_mine);
       return json({ ok: true });
     },
   );

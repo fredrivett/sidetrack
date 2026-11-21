@@ -9,6 +9,10 @@ const ARMED_MS = 4000;
 export const ARMED_MENU_ITEM =
   "bg-destructive! text-white! focus:bg-destructive! focus:text-white! *:[svg]:text-white!";
 
+/** The armed look for a destructive button, filled red. */
+export const ARMED_BUTTON =
+  "bg-destructive! text-white! hover:bg-destructive/90! dark:bg-destructive! dark:hover:bg-destructive/90!";
+
 /**
  * Tap-to-confirm for destructive actions: the first tap arms the button,
  * which then says "Confirm …?", and a second tap runs it. It disarms after a

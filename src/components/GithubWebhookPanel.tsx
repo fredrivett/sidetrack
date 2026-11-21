@@ -2,7 +2,7 @@
 
 import { ArrowUpRight, Plus, Webhook } from "lucide-react";
 import { unstable_rethrow, useRouter } from "next/navigation";
-import { useState, useSyncExternalStore, useTransition } from "react";
+import { useState, useTransition } from "react";
 import {
   addGithubWebhookSecretAction,
   removeGithubWebhookAction,
@@ -12,9 +12,9 @@ import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
 import { Input } from "@/components/ui/input";
 import type { GithubWebhookView } from "@/core/github";
-import { formatRelative } from "@/lib/time";
 import { GitHubMark } from "./GitHubMark";
-import { useTapToConfirm } from "./use-tap-to-confirm";
+import { RelativeTime } from "./RelativeTime";
+import { ARMED_BUTTON, useTapToConfirm } from "./use-tap-to-confirm";
 
 /** A labelled value to paste into GitHub's form, with a copy button. */
 function CopyField({ label, value }: { label: string; value: string }) {
@@ -28,28 +28,6 @@ function CopyField({ label, value }: { label: string; value: string }) {
         <CopyButton value={value} aria-label={`Copy ${label.toLowerCase()}`} />
       </div>
     </div>
-  );
-}
-
-/** The armed look for a destructive button, filled red. */
-const ARMED =
-  "bg-destructive! text-white! hover:bg-destructive/90! dark:bg-destructive! dark:hover:bg-destructive/90!";
-
-const noSubscribe = () => () => {};
-
-/**
- * A time as "3d ago", with the full local date on hover. Relative text renders
- * the same on the server as in the browser; the full date depends on the
- * viewer's timezone, so the title is only added once in the browser.
- */
-function Time({ ts }: { ts: number | null }) {
-  const inBrowser = useSyncExternalStore(noSubscribe, () => true, () => false);
-  if (ts === null) return "never";
-  const date = new Date(ts);
-  return (
-    <time dateTime={date.toISOString()} title={inBrowser ? date.toLocaleString() : undefined}>
-      {formatRelative(ts)}
-    </time>
   );
 }
 
@@ -127,21 +105,22 @@ export function GithubWebhookPanel({
 
   if (!webhook || !payloadUrl) {
     return (
-      <section className="space-y-3">
+      <section className="space-y-3 rounded-lg border border-border p-4">
+        <h2 className="text-sm font-medium">Set up</h2>
         <p className="text-sm text-muted-foreground">
           Name a first secret, say for the repository it&apos;s for, to get a
           payload URL and secret. Then add them to a repository under Settings →
           Webhooks on GitHub.
         </p>
         {addForm}
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       </section>
     );
   }
 
   return (
     <div className="space-y-6">
-      <section className="space-y-3">
+      <section className="space-y-3 rounded-lg border border-border p-4">
         <h2 className="text-sm font-medium">Add it to a repository</h2>
         <p className="text-sm text-muted-foreground">
           On GitHub, open the repository&apos;s Settings → Webhooks → Add webhook,
@@ -193,7 +172,7 @@ export function GithubWebhookPanel({
         )}
       </section>
 
-      <section className="space-y-3">
+      <section className="space-y-3 rounded-lg border border-border p-4">
         <h2 className="text-sm font-medium">Secrets</h2>
         <p className="text-sm text-muted-foreground">
           GitHub&apos;s deliveries are accepted when signed with any of these. Give
@@ -211,7 +190,7 @@ export function GithubWebhookPanel({
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium">{s.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    Created <Time ts={s.createdAt} /> · last delivery <Time ts={s.lastDeliveryAt} />
+                    Created <RelativeTime ts={s.createdAt} /> · last delivery <RelativeTime ts={s.lastDeliveryAt} />
                   </p>
                 </div>
                 <Button
@@ -219,7 +198,7 @@ export function GithubWebhookPanel({
                   size="sm"
                   disabled={pending}
                   onClick={() => tap.confirm(() => removeSecret(s.id), s.id)}
-                  className={tap.isArmed(s.id) ? ARMED : undefined}
+                  className={tap.isArmed(s.id) ? ARMED_BUTTON : undefined}
                 >
                   {tap.isArmed(s.id) ? "Confirm?" : "Remove"}
                 </Button>
@@ -236,11 +215,11 @@ export function GithubWebhookPanel({
           size="sm"
           disabled={pending}
           onClick={() => tap.confirm(remove, "remove")}
-          className={tap.isArmed("remove") ? ARMED : undefined}
+          className={tap.isArmed("remove") ? ARMED_BUTTON : undefined}
         >
           {tap.isArmed("remove") ? "Confirm remove?" : "Remove webhook"}
         </Button>
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       </section>
     </div>
   );

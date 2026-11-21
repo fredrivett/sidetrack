@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { Check } from "lucide-react";
 import { unstable_rethrow, useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -28,6 +28,9 @@ export function UsernamePanel({ initial }: { initial: string }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [value, setValue] = useState(initial);
+  // Save and Cancel go once the value is back to what's saved, so focus
+  // returns here rather than falling to the page.
+  const inputRef = useRef<HTMLInputElement>(null);
   // Async availability result, tagged with the handle it was checked for so a
   // stale result is never shown against a newer input. `result` captures the
   // errored case explicitly so it's distinguishable from "still in flight" —
@@ -97,6 +100,7 @@ export function UsernamePanel({ initial }: { initial: string }) {
         return;
       }
       toast.success("Username updated");
+      inputRef.current?.focus();
       router.refresh();
     });
   }
@@ -117,6 +121,7 @@ export function UsernamePanel({ initial }: { initial: string }) {
         Username
       </label>
       <Input
+        ref={inputRef}
         id="username"
         name="username"
         autoComplete="username"
@@ -162,10 +167,29 @@ export function UsernamePanel({ initial }: { initial: string }) {
           {error}
         </p>
       )}
-      <Button type="button" size="sm" onClick={onSave} disabled={!canSave}>
-        <Check data-icon="inline-start" />
-        {pending ? "Saving…" : "Save"}
-      </Button>
+      {/* Only once there's something to save, so an untouched field has no
+          grey button that looks broken. */}
+      {!identical && (
+        <div className="flex gap-2">
+          <Button type="button" size="sm" onClick={onSave} disabled={!canSave}>
+            <Check data-icon="inline-start" />
+            {pending ? "Saving…" : "Save"}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={pending}
+            onClick={() => {
+              setValue(initial);
+              setError(null);
+              inputRef.current?.focus();
+            }}
+          >
+            Cancel
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

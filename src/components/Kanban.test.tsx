@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { Item } from "@/core/schema";
 import type { SpaceView } from "@/core/spaces";
 import { NO_FILTERS } from "@/lib/filters";
@@ -10,9 +10,10 @@ import * as shortcuts from "./useItemShortcuts";
 import type { GetStarted } from "@/lib/getStarted";
 
 const GET_STARTED_DONE: GetStarted = {
-  done: { lists: true, phone: true, computer: true, share: true, agent: true },
+  done: { lists: true, secure: true, phone: true, computer: true, share: true, agent: true },
   queue: [],
   collapsed: true,
+  pendingInvites: [],
 };
 
 
@@ -104,6 +105,7 @@ const board = (
     spaces={spaces}
     trayOrder={["personal", ...spaces.map((s) => s.id)]}
     pendingSpaceInvites={[]}
+    pendingPhotos={[]}
     initialCollapsedTrays={[]}
     initialListId={null}
     initialItemId={null}
@@ -127,7 +129,7 @@ describe.each([
       c.getAttribute("data-project-id"),
     );
 
-  it("shows only in the Archived view", () => {
+  it("shows only in the Archived view", async () => {
     render(
       board(
         [list("a", "Home", "archived", spaceId), list("b", "Work", "active", spaceId)],
@@ -140,24 +142,42 @@ describe.each([
     fireEvent.pointerDown(account);
     fireEvent.click(account);
     fireEvent.click(screen.getByRole("menuitem", { name: "Archived lists (1)" }));
-    expect(screen.getByRole("heading", { name: "Archived lists" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Archived lists" })).toBeTruthy();
     expect(columns()).toEqual(["a"]);
 
     fireEvent.click(screen.getByRole("button", { name: "Back to board" }));
-    expect(columns()).toEqual(["b"]);
+    await waitFor(() => expect(columns()).toEqual(["b"]));
   });
 });
 
 describe("Kanban, switching views", () => {
-  it("puts each view at its own path, Brief on 1 and Board on 2, keeping the query", () => {
+  it("puts each view at its own path, Brief on 1 and Board on 2, keeping the query", async () => {
     window.history.replaceState(null, "", "/board?x=1");
     render(board([list("b", "Work", "active", null)], []));
+    const path = () => window.location.pathname + window.location.search;
     fireEvent.keyDown(document, { key: "1" });
-    expect(window.location.pathname + window.location.search).toBe("/brief?x=1");
+    await waitFor(() => expect(path()).toBe("/brief?x=1"));
     fireEvent.keyDown(document, { key: "3" });
-    expect(window.location.pathname).toBe("/done");
+    await waitFor(() => expect(path()).toBe("/done?x=1"));
     fireEvent.keyDown(document, { key: "2" });
-    expect(window.location.pathname).toBe("/board");
+    await waitFor(() => expect(path()).toBe("/board?x=1"));
+  });
+});
+
+describe("Kanban, the view switch", () => {
+  it("shows the view asked for in the tabs at once, then only the last of quick presses", async () => {
+    window.history.replaceState(null, "", "/board");
+    render(board([list("b", "Work", "active", null)], []));
+    const views = screen.getByRole("group", { name: "View" });
+    const tab = (name: string) => within(views).getByRole("button", { name });
+    fireEvent.keyDown(document, { key: "1" });
+    expect(tab("Brief").getAttribute("aria-pressed")).toBe("true");
+    expect(views.getAttribute("aria-busy")).toBe("true");
+    fireEvent.keyDown(document, { key: "3" });
+    expect(tab("Done").getAttribute("aria-pressed")).toBe("true");
+    await waitFor(() => expect(window.location.pathname).toBe("/done"));
+    expect(views.hasAttribute("aria-busy")).toBe(false);
+    expect(document.querySelector("[data-project-id]")).toBeNull();
   });
 });
 
@@ -177,6 +197,7 @@ describe("Kanban, re-rendering rows", () => {
     repeatEvery: null,
     repeatUnit: null,
     repeatOn: null,
+    repeatDay: null,
     position: `a${n}`,
     number: n,
     completedAt: null,
@@ -218,6 +239,35 @@ describe("Kanban, re-rendering rows", () => {
     rerender(board(work, [], { b: refreshed }, ["i1"]));
     expect(screen.getByText("Task 9")).toBeTruthy();
     expect(rowRenders).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a list's rows mounted as it grows long enough to render only some", () => {
+    // jsdom has no layout: give the column and its rows a height, so the
+    // long list has rows in view and rows out of it.
+    const column = vi
+      .spyOn(HTMLElement.prototype, "clientHeight", "get")
+      .mockImplementation(function (this: HTMLElement) {
+        return this.matches("[data-column-scroll]") ? 800 : 0;
+      });
+    const row52 = vi
+      .spyOn(HTMLElement.prototype, "offsetHeight", "get")
+      .mockImplementation(function (this: HTMLElement) {
+        return this.matches("[data-list-index]") ? 52 : 0;
+      });
+    onTestFinished(() => {
+      column.mockRestore();
+      row52.mockRestore();
+    });
+    const items = Array.from({ length: 60 }, (_, i) => item(i + 1));
+    const { rerender } = render(board(work, [], { b: items.slice(0, 59) }));
+    expect(document.querySelectorAll("[data-item-row]")).toHaveLength(59);
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    const row = document.querySelector('[data-item-row="i1"]');
+    expect(row?.hasAttribute("data-selected")).toBe(true);
+
+    rerender(board(work, [], { b: items }));
+    expect(document.querySelectorAll("[data-item-row]").length).toBeLessThan(60);
+    expect(document.querySelector('[data-item-row="i1"]')).toBe(row);
   });
 
   it("moves the selection on an arrow from a row's assignee button, without opening its menu", () => {

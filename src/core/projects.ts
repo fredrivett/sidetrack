@@ -6,7 +6,7 @@ import { normalizeProjectIcon } from "../lib/projectIcon";
 import { addDays, dayOf, isOnNoDate, isOnToday } from "../lib/time";
 import { normalizeRepository } from "../lib/repository";
 import { normalizeHomepageUrl } from "../lib/url";
-import { hasProjectAccess, isListAdmin, listMemberIds, requireListAccess } from "./access";
+import { hasItemAccess, hasProjectAccess, isListAdmin, listMemberIds, requireListAccess } from "./access";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
 import type { ListChanges } from "./events";
@@ -168,7 +168,7 @@ export function sampleOpenItemTitles(
     .innerJoin(projects, eq(projects.id, items.projectId))
     .where(
       and(
-        hasProjectAccess(userId),
+        hasItemAccess(userId),
         eq(projects.status, "active"),
         isNull(items.completedAt),
       ),
@@ -201,7 +201,7 @@ function activeItemsForDay(
     .innerJoin(projects, eq(projects.id, items.projectId))
     .where(
       and(
-        hasProjectAccess(userId),
+        hasItemAccess(userId),
         eq(projects.status, "active"),
         or(
           isNull(items.completedAt),

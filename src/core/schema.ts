@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   type AnySQLiteColumn,
+  blob,
   index,
   integer,
   primaryKey,
@@ -8,7 +9,7 @@ import {
   text,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
-import type { RepeatOn, RepeatUnit } from "../lib/repeat";
+import type { Repeat, RepeatOn, RepeatUnit } from "../lib/repeat";
 import type { StoredGreeting } from "./agendaGreeting";
 import { apiKeys, users } from "./auth-schema";
 import type { ChangeEvent } from "./events";
@@ -53,11 +54,15 @@ export const AUDIT_ENTITIES = [
   // The user's own profile (avatar). entityId is the user id; no project.
   "profile",
   "webhook",
+  // The user's address for emailing Sidetrack (emailAddresses).
+  "email_address",
   // A comment on an item. Its rows carry the item as parentId, so they show
   // in the item's history.
   "comment",
   // A connected calendar account; entityId is the account id, no project.
   "calendar",
+  // A photo of a page whose lines were added (sources); no project.
+  "source",
 ] as const;
 export type AuditEntity = (typeof AUDIT_ENTITIES)[number];
 
@@ -132,6 +137,11 @@ export const spaceMembers = sqliteTable(
       .notNull()
       .default("pending"),
     role: text("role").$type<SpaceRole>().notNull().default("member"),
+    // Set when this membership shows only part of the list: the item groups
+    // (an item with its sub-items) assigned to this user, usually whoever
+    // invited them ("only my tasks"). Null shows everything. Only viewers
+    // and commenters are limited; see hasItemAccess in access.ts.
+    onlyAssignedTo: text("only_assigned_to"),
     // Where the Space sits among this member's own trays on their board, as a
     // fractional index, so reordering moves it only for whoever did it. Set
     // to the end when they create or join it. Null for memberships from
@@ -222,6 +232,11 @@ export const projectMembers = sqliteTable(
       .notNull()
       .default("pending"),
     role: text("role").$type<ListRole>().notNull().default("editor"),
+    // Set when this membership shows only part of the list: the item groups
+    // (an item with its sub-items) assigned to this user, usually whoever
+    // invited them ("only my tasks"). Null shows everything. Only viewers
+    // and commenters are limited; see hasItemAccess in access.ts.
+    onlyAssignedTo: text("only_assigned_to"),
     createdAt: integer("created_at")
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
@@ -314,6 +329,9 @@ export const items = sqliteTable(
     // The days a weekly or monthly rule keeps to ("on weekends", "on
     // Saturdays"); null for any day, and always for a daily rule.
     repeatOn: text("repeat_on").$type<RepeatOn>(),
+    // The day of the month (1 to 31) a monthly rule keeps to ("on the 1st"),
+    // whenever it's done; null otherwise, and always alongside repeat_on.
+    repeatDay: integer("repeat_day"),
     completedAt: integer("completed_at"),
     createdAt: integer("created_at")
       .notNull()
@@ -478,6 +496,127 @@ export const githubWebhookSecrets = sqliteTable(
   },
   (t) => [index("github_webhook_secrets_webhook").on(t.webhookId)],
 );
+
+// A user's address for emailing Sidetrack: `<token>@<EMAIL_IN_DOMAIN>`.
+// Mail sent or forwarded to it lands in inboundEmails for triage. One per
+// user; replacing it makes a new token, and mail to the old one is refused.
+// Lowercase letters and digits only, since mail servers may change case.
+export const emailAddresses = sqliteTable(
+  "email_addresses",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    token: text("token").notNull(),
+    createdAt: integer("created_at").notNull(),
+    // When mail to it last arrived, to help with setup.
+    lastReceivedAt: integer("last_received_at"),
+  },
+  (t) => [
+    uniqueIndex("email_addresses_user").on(t.userId),
+    uniqueIndex("email_addresses_token").on(t.token),
+  ],
+);
+
+// Mail received at a user's address, waiting to be triaged against their
+// lists. Only the text a triage reads is kept: no HTML or attachments.
+// `messageId` is the Message-ID header, so a retried delivery is stored once.
+export const inboundEmails = sqliteTable(
+  "inbound_emails",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    messageId: text("message_id").notNull(),
+    fromAddress: text("from_address").notNull(),
+    fromName: text("from_name"),
+    subject: text("subject").notNull(),
+    text: text("text").notNull(),
+    // The Date header, when it parses; receivedAt is when Sidetrack got it.
+    sentAt: integer("sent_at"),
+    receivedAt: integer("received_at").notNull(),
+  },
+  (t) => [
+    uniqueIndex("inbound_emails_message").on(t.userId, t.messageId),
+    index("inbound_emails_user_received").on(t.userId, t.receivedAt),
+  ],
+);
+
+// Something captured to add to Sidetrack: for now, a photo of a handwritten
+// page that an agent read. It holds the photo and the lines the agent
+// proposed (sourceLines); nothing reaches the board until its owner reviews
+// them and adds them. The photo is kept in the DB, like avatars, so the daily
+// backup covers it, and stays after review so each item can show where on
+// the page it came from. Seen only by its owner.
+//
+// An agent can't send a photo in a tool call (it would have to write out
+// every byte), so the photo arrives separately: the agent proposes the lines,
+// gets a one-time upload URL, and PUTs the file to it. Until then `data` is
+// null; `uploadTokenHash` is the URL's token, hashed like an API key.
+export const sources = sqliteTable(
+  "sources",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    kind: text("kind").$type<SourceKind>().notNull(),
+    contentType: text("content_type"),
+    data: blob("data", { mode: "buffer" }),
+    uploadTokenHash: text("upload_token_hash"),
+    uploadExpiresAt: integer("upload_expires_at"),
+    // What the agent wants the reviewer to know, e.g. a line it couldn't read.
+    note: text("note"),
+    // The API key name of the agent that read it, for the review screen.
+    agentName: text("agent_name"),
+    createdAt: integer("created_at").notNull(),
+    // When every line was added or skipped, or the whole thing discarded.
+    reviewedAt: integer("reviewed_at"),
+  },
+  (t) => [index("sources_user_created").on(t.userId, t.createdAt)],
+);
+
+// One line an agent read off a source, proposed as an item. `region` is where
+// it sits on the photo, as fractions of its width and height, so the review
+// screen and the item can highlight it. A line either adds a new item (in
+// `projectId`, under `parentLineId`'s item or `parentItemId`) or stands for an
+// item that already exists (`matchItemId`), which it can change or tick off;
+// then its fields are the changes proposed, and empty ones leave it be. `itemId` is
+// the item it added or matched once added.
+export const sourceLines = sqliteTable(
+  "source_lines",
+  {
+    id: text("id").primaryKey(),
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    ord: integer("ord").notNull(),
+    title: text("title").notNull(),
+    projectId: text("project_id").notNull(),
+    parentLineId: text("parent_line_id"),
+    parentItemId: text("parent_item_id"),
+    matchItemId: text("match_item_id"),
+    done: integer("done", { mode: "boolean" }).notNull().default(false),
+    dueDate: text("due_date"),
+    labels: text("labels", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
+    repeat: text("repeat", { mode: "json" }).$type<Repeat>(),
+    assigneeIds: text("assignee_ids", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
+    region: text("region", { mode: "json" }).$type<SourceRegion>(),
+    status: text("status").$type<SourceLineStatus>().notNull().default("pending"),
+    itemId: text("item_id"),
+  },
+  (t) => [
+    index("source_lines_source").on(t.sourceId, t.ord),
+    index("source_lines_item").on(t.itemId),
+  ],
+);
+
+export const SOURCE_KINDS = ["photo"] as const;
+export type SourceKind = (typeof SOURCE_KINDS)[number];
+export const SOURCE_LINE_STATUSES = ["pending", "added", "skipped"] as const;
+export type SourceLineStatus = (typeof SOURCE_LINE_STATUSES)[number];
+/**
+ * Where a line sits on its photo: its box before turning, each a fraction (0
+ * to 1) of the photo's size, and `angle`, the degrees it's turned clockwise
+ * about its centre, for a line written on a slant.
+ */
+export type SourceRegion = { x: number; y: number; w: number; h: number; angle?: number };
 
 // An API key whose agent Sidetrack can start: assigning the agent to an item
 // posts to `url` (say, an Amp plugin's webhook), signed with `secret` so the
@@ -819,6 +958,8 @@ export type NewProjectMember = typeof projectMembers.$inferInsert;
 export type ProjectPosition = typeof projectPositions.$inferSelect;
 export type NewProjectPosition = typeof projectPositions.$inferInsert;
 export type Item = typeof items.$inferSelect;
+export type Source = typeof sources.$inferSelect;
+export type SourceLine = typeof sourceLines.$inferSelect;
 export type NewItem = typeof items.$inferInsert;
 export type Label = typeof labels.$inferSelect;
 export type NewLabel = typeof labels.$inferInsert;

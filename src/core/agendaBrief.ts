@@ -9,7 +9,7 @@ import { isYours } from "../lib/filters";
 import { formatItemRef } from "../lib/itemRef";
 import { nestItems } from "../lib/itemTree";
 import { addDays, agendaSection, dayOf, weekSpan } from "../lib/time";
-import { hasProjectAccess } from "./access";
+import { hasItemAccess } from "./access";
 import type { Db } from "./db";
 import { getDayNote } from "./dayNotes";
 import { listAssignees } from "./members";
@@ -84,7 +84,7 @@ export interface AgendaBrief {
   overdue: BriefItem[];
   /** Open single-day items per day, from tomorrow to the end of next week. */
   ahead: Array<{ day: string; open: number }>;
-  /** The Agenda's This week, open items only: spans under way, and days still to come. */
+  /** Open items due this week after today: spans under way, and days still to come (the Agenda's Tomorrow and This week). */
   thisWeek: BriefItem[];
   /** Undated open items with a reason to come up: recent or deadline-ish. */
   undated: BriefItem[];
@@ -134,7 +134,7 @@ export function buildAgendaBrief(
     .innerJoin(projects, eq(projects.id, items.projectId))
     .where(
       and(
-        hasProjectAccess(viewerId),
+        hasItemAccess(viewerId),
         eq(projects.status, "active"),
         or(isNull(items.completedAt), gte(items.completedAt, doneFrom)),
       ),
@@ -257,7 +257,12 @@ export function buildAgendaBrief(
     )
     .slice(0, CANDIDATE_CAP);
 
-  const weekOpen = open.filter((i) => sectionOf(i) === "This week");
+  // The Agenda's This week, and its Tomorrow unless that's next week (on a Sunday).
+  const sunday = weekSpan(today, 0, "week").dueDate;
+  const weekOpen = open.filter((i) => {
+    const s = sectionOf(i);
+    return s === "This week" || (s === "Tomorrow" && (i.dueDate ?? "") <= sunday);
+  });
   const weekIds = new Set(weekOpen.map((i) => i.id));
 
   return {

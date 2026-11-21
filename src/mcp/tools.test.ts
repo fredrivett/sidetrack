@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { listOpenAgentSessions } from "@/core/agentSessions";
+import { setAgentWebhook } from "@/core/agentWebhooks";
+import { createApiKey } from "@/core/api-keys";
 import { listAudit } from "@/core/audit";
+import { addComment, listComments } from "@/core/comments";
 import { addItem, completeItem, getItem, listItems } from "@/core/items";
 import { listLabels } from "@/core/labels";
 import { acceptInvite, inviteMember } from "@/core/members";
-import { createProject, getProject, listProjects } from "@/core/projects";
+import { createProject, getProject, listProjects, updateProject } from "@/core/projects";
 import {
   acceptSpaceInvite,
   createSpace,
@@ -14,6 +18,8 @@ import {
   listTrays,
   setSpaceMemberRole,
 } from "@/core/spaces";
+import { sources } from "@/core/schema";
+import { getSource, listPendingSources, receiveSourcePhoto } from "@/core/sources";
 import { createTestDb, createTestUser } from "@/core/test-helpers";
 import { setTimeZone } from "@/core/users";
 import { buildServer } from "./server";
@@ -23,7 +29,11 @@ import { buildServer } from "./server";
 // TYPESAFE_API_KEY, so add_item skips its AI duplicate check.
 const ctx = vi.hoisted(() => ({ db: null as unknown }));
 vi.mock("@/core/db", () => ({ getDb: () => ({ db: ctx.db }) }));
-vi.mock("@/lib/env", () => ({ getEnv: () => ({}) }));
+const env = vi.hoisted(() => ({ values: {} as Record<string, unknown> }));
+vi.mock("@/lib/env", () => ({ getEnv: () => env.values }));
+// Agent webhooks are the network edge: record what would be sent instead.
+const agentRequests = vi.hoisted(() => ({ send: vi.fn() }));
+vi.mock("@/lib/agentRequest", () => ({ sendAgentRequest: agentRequests.send }));
 
 type Db = ReturnType<typeof createTestDb>["db"];
 let db: Db;
@@ -31,6 +41,8 @@ let db: Db;
 const AGENT = { keyId: "key-1", name: "Test agent" };
 
 beforeEach(() => {
+  env.values = {};
+  agentRequests.send.mockReset().mockResolvedValue(undefined);
   db = createTestDb().db;
   ctx.db = db;
 });
@@ -106,6 +118,23 @@ describe("tool output", () => {
     expect(done.data).toMatchObject({ repeat: { every: 2, unit: "day" }, comesBack: "2026-11-18" });
   });
 
+  it("takes and gives a monthly rule's day of the month", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const list = createProject(db, fred, { name: "Home" }, "web");
+    const call = await connectAs(fred);
+    const added = await call("add_item", {
+      list_id: list.id,
+      title: "Pay rent",
+      repeat: { every: 1, unit: "month", day: 1 },
+    });
+    expect((added.data.created as Record<string, unknown>).repeat).toEqual({ every: 1, unit: "month", day: 1 });
+    expect(added.data.created).not.toHaveProperty("repeatDay");
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-21T12:00:00Z"));
+    expect((await call("complete_item", { id: "HOM-1" })).data.comesBack).toBe("2026-12-01");
+  });
+
   it("counts the return day in UTC when the user's zone isn't known", async () => {
     const fred = createTestUser(db, { username: "fred" });
     const list = createProject(db, fred, { name: "Home" }, "web");
@@ -142,6 +171,68 @@ describe("list roles", () => {
 
     expect((await asLorna("set_member_role", { list_id: list.id, user_id: jo, role: "editor" })).error).toBeNull();
     expect((await asJo("complete_item", { id: "LIF-1" })).error).toBeNull();
+  });
+});
+
+describe("invite_people", () => {
+  it("invites several people to a list and a Space in one go, or to none when one place fails", async () => {
+    const lorna = createTestUser(db, { username: "lorna" });
+    const jo = createTestUser(db, { username: "jo" });
+    createTestUser(db, { username: "kim" });
+    const list = createProject(db, lorna, { name: "Life" }, "web");
+    const space = createSpace(db, lorna, { name: "Home" }, "web");
+    const call = await connectAs(lorna);
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const sent = await call("invite_people", {
+        people: ["jo", "@kim"],
+        places: [{ list_id: list.id, role: "viewer" }, { space_id: space.id, role: "commenter" }],
+      });
+      expect(sent.error).toBeNull();
+      expect(sent.data).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ list_id: list.id, userId: jo, role: "viewer", status: "pending" }),
+          expect.objectContaining({ space_id: space.id, userId: jo, role: "commenter", status: "pending" }),
+        ]),
+      );
+      expect(sent.data).toHaveLength(4);
+      // Jo is already invited to Life, so this fails, and Kim isn't invited to Garden either.
+      const garden = createProject(db, lorna, { name: "Garden" }, "web");
+      const again = await call("invite_people", {
+        people: ["kim", "jo"],
+        places: [{ list_id: garden.id }, { list_id: list.id }],
+      });
+      expect(again.error).toMatch(/already pending/);
+      expect((await call("list_members", { list_id: garden.id })).data).toEqual([]);
+    } finally {
+      log.mockRestore();
+    }
+  });
+});
+
+describe("only_mine", () => {
+  it("lets an agent share a list so someone sees only the user's items", async () => {
+    const lorna = createTestUser(db, { username: "lorna" });
+    const jo = createTestUser(db, { username: "jo" });
+    const list = createProject(db, lorna, { name: "Week" }, "web");
+    addItem(db, lorna, { projectId: list.id, title: "Swim", assigneeIds: [lorna] }, "web");
+    addItem(db, lorna, { projectId: list.id, title: "Hidden" }, "web");
+    const call = await connectAs(lorna);
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const editor = await call("invite_member", { list_id: list.id, person: "jo", role: "editor", only_mine: true });
+      expect(editor.error).toMatch(/viewers and commenters/);
+      const sent = await call("invite_member", { list_id: list.id, person: "jo", role: "viewer", only_mine: true });
+      expect(sent.data).toEqual(expect.objectContaining({ onlyAssignedTo: lorna }));
+      acceptInvite(db, jo, list.id, "web");
+      expect(listItems(db, jo, list.id).map((i) => i.title)).toEqual(["Swim"]);
+      // Turned off, they see it all; left out, it stays as it was.
+      await call("set_member_role", { list_id: list.id, user_id: jo, role: "commenter", only_mine: false });
+      await call("set_member_role", { list_id: list.id, user_id: jo, role: "viewer" });
+      expect(listItems(db, jo, list.id)).toHaveLength(2);
+    } finally {
+      log.mockRestore();
+    }
   });
 });
 
@@ -458,6 +549,183 @@ describe("comments", () => {
   });
 });
 
+describe("comment edits and deletes", () => {
+  it("edits and deletes the user's own comment, audited as the agent, and refuses anyone else's", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const bob = createTestUser(db, { username: "bob" });
+    const list = createProject(db, fred, { name: "Home" }, "web");
+    inviteMember(db, fred, list.id, "bob", "web");
+    acceptInvite(db, bob, list.id, "web");
+    const item = addItem(db, fred, { projectId: list.id, title: "Fix tap" }, "web");
+    const bobs = addComment(db, bob, item.id, "Bob's note", "web");
+    const fredCall = await connectAs(fred);
+    const mine = (await fredCall("add_comment", { item_id: "HOM-1", body: "Ordered the washr" })).data;
+
+    const edited = await fredCall("update_comment", { id: mine.id, body: "Ordered the washer" });
+    expect(edited.data).toMatchObject({ body: "Ordered the washer", editedAt: expect.any(Number) });
+
+    for (const tool of ["update_comment", "delete_comment"]) {
+      const { error } = await fredCall(tool, { id: bobs.id, body: "Hijacked" });
+      expect(error).toMatch(/only a comment's author.*no change was made/);
+    }
+    expect(listComments(db, fred, item.id).map((c) => c.body)).toEqual([
+      "Bob's note",
+      "Ordered the washer",
+    ]);
+
+    expect((await fredCall("delete_comment", { id: mine.id })).data).toEqual({ deleted: true });
+    expect(listComments(db, fred, item.id).map((c) => c.body)).toEqual(["Bob's note"]);
+    // The deletion itself stays in the log, saying which agent did it.
+    expect(listAudit(db, fred)[0]).toMatchObject({
+      source: "mcp",
+      agentKeyId: AGENT.keyId,
+      agentName: AGENT.name,
+      detail: 'deleted a comment on "Fix tap"',
+    });
+
+    const recent = await (await connectAs(bob))("list_recent_comments", { list_id: list.id });
+    expect(recent.data).toEqual([
+      expect.objectContaining({ body: "Bob's note", item: expect.objectContaining({ ref: "HOM-1" }) }),
+    ]);
+  });
+});
+
+describe("search_done, labels and notifications", () => {
+  it("finds finished items across lists by title or ref, with their ref and list", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const home = createProject(db, fred, { name: "Home" }, "web");
+    const work = createProject(db, fred, { name: "Work" }, "web");
+    const tap = addItem(db, fred, { projectId: home.id, title: "Fix tap" }, "web");
+    addItem(db, fred, { projectId: home.id, title: "Fix fence" }, "web");
+    const deck = addItem(db, fred, { projectId: work.id, title: "Fix the deck" }, "web");
+    completeItem(db, fred, tap.id, "web");
+    completeItem(db, fred, deck.id, "web");
+    const call = await connectAs(fred);
+
+    const fixes = (await call("search_done", { query: "fix" })).data.items as Record<string, unknown>[];
+    // The open "Fix fence" isn't done, so it's left out.
+    expect(fixes.map((it) => [it.ref, it.listName]).sort()).toEqual([
+      ["HOM-1", "Home"],
+      ["WOR-1", "Work"],
+    ]);
+    const byRef = (await call("search_done", { query: "wor-1" })).data.items as Record<string, unknown>[];
+    expect(byRef.map((it) => it.title)).toEqual(["Fix the deck"]);
+  });
+
+  it("counts each label's open and done items only when asked", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const list = createProject(db, fred, { name: "Home" }, "web");
+    addItem(db, fred, { projectId: list.id, title: "A", labels: ["bug"] }, "web");
+    const b = addItem(db, fred, { projectId: list.id, title: "B", labels: ["bug", "chore"] }, "web");
+    completeItem(db, fred, b.id, "web");
+    addItem(db, fred, { projectId: list.id, title: "C", labels: ["idea"] }, "web");
+    const call = await connectAs(fred);
+
+    const plain = (await call("list_labels", { list_id: list.id })).data as unknown as object[];
+    expect(plain[0]).not.toHaveProperty("usage");
+    const counted = (await call("list_labels", { list_id: list.id, include_usage: true }))
+      .data as unknown as { name: string; usage: unknown }[];
+    expect(Object.fromEntries(counted.map((l) => [l.name, l.usage]))).toEqual({
+      bug: { active: 1, done: 1 },
+      chore: { active: 0, done: 1 },
+      idea: { active: 1, done: 0 },
+    });
+  });
+
+  it("sets notification levels for scopes the user is in, and refuses others", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const bob = createTestUser(db, { username: "bob" });
+    const mine = createProject(db, fred, { name: "Home" }, "web");
+    const bobs = createProject(db, bob, { name: "Secret" }, "web");
+    const call = await connectAs(fred);
+
+    const set = await call("set_notification_level", { scope: `list:${mine.id}`, level: "mine" });
+    expect(set.data).toEqual({ levels: { [`list:${mine.id}`]: "mine" } });
+    const refused = await call("set_notification_level", { scope: `list:${bobs.id}`, level: "all" });
+    expect(refused.error).toMatch(/no change was made/);
+    const cleared = await call("set_notification_level", { scope: `list:${mine.id}`, level: null });
+    expect(cleared.data).toEqual({ levels: {} });
+  });
+});
+
+describe("feedback and collaborators", () => {
+  it("files feedback under the user's name, saying which agent sent it, and adds to it once", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const jane = createTestUser(db, { username: "jane" });
+    const inbox = createProject(db, fred, { name: "Feedback" }, "web");
+    const call = await connectAs(jane);
+
+    const off = await call("send_feedback", { kind: "bug", message: "Board is blank" });
+    expect(off.error).toMatch(/doesn't take feedback/);
+
+    env.values = { FEEDBACK_LIST_ID: inbox.id };
+    const sent = await call("send_feedback", { kind: "bug", message: "Board is blank\nAfter a reload" });
+    expect(sent.data).toEqual({ itemId: expect.any(String), ref: "FEE-1" });
+    const itemId = sent.data.itemId as string;
+    const item = getItem(db, fred, itemId);
+    expect(item).toMatchObject({ title: "Board is blank", labels: ["Bug", "Feedback"], createdBy: jane });
+    expect(item?.description).toContain("From @jane · via Test agent");
+    // Jane can add to it, but still can't open it.
+    expect(getItem(db, jane, itemId)).toBeUndefined();
+
+    const added = await call("add_to_feedback", { item_id: itemId, note: "Only on Safari" });
+    expect(added.data).toEqual({ ok: true });
+    expect(getItem(db, fred, itemId)?.description).toMatch(/\*\*Follow-up\*\*\n\nOnly on Safari\n\n---\nFrom @jane/);
+    const again = await call("add_to_feedback", { item_id: itemId, note: "And Chrome" });
+    expect(again.error).toMatch(/already added.*no change was made/);
+  });
+
+  it("lists who the user shares with, and with a place how each can open it", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const ann = createTestUser(db, { username: "ann" });
+    const samLee = createTestUser(db, { username: "samlee" });
+    const samKing = createTestUser(db, { username: "samking" });
+    createTestUser(db, { username: "pat" });
+    const stranger = createTestUser(db, { username: "stranger" });
+    const work = createSpace(db, fred, { name: "Work" }, "web");
+    inviteSpaceMember(db, fred, work.id, "samlee", "web");
+    acceptSpaceInvite(db, samLee, work.id, "web");
+    const home = createProject(db, fred, { name: "Home", spaceId: work.id }, "web");
+    inviteMember(db, fred, home.id, "ann", "web", "viewer");
+    acceptInvite(db, ann, home.id, "web");
+    inviteMember(db, fred, home.id, "pat", "web");
+    const garden = createProject(db, fred, { name: "Garden" }, "web");
+    inviteMember(db, fred, garden.id, "samking", "web");
+    acceptInvite(db, samKing, garden.id, "web");
+    const call = await connectAs(fred);
+    const byName = (r: { data: unknown }) =>
+      Object.fromEntries(
+        ((r.data as { people: { username: string; access: unknown }[] }).people).map((p) => [p.username, p.access]),
+      );
+
+    // Everyone fred shares with; pat hasn't accepted, so isn't one yet.
+    const everyone = (await call("list_collaborators")).data as unknown as { username: string }[];
+    expect(everyone.map((p) => p.username)).toEqual(["ann", "samking", "samlee"]);
+
+    // For Home: Sam Lee is in through Work, Sam King can't open it yet, and
+    // pat's invite is still pending.
+    const forHome = await call("list_collaborators", { list_id: home.id });
+    expect(forHome.data.canInvite).toBe(true);
+    expect(byName(forHome)).toEqual({
+      ann: [{ via: "list", role: "viewer", pending: false }],
+      pat: [{ via: "list", role: "editor", pending: true }],
+      samking: [],
+      samlee: [{ via: "space", role: "member", pending: false }],
+    });
+    expect(byName(await call("list_collaborators", { space_id: work.id }))).toMatchObject({
+      ann: [],
+      samlee: [{ via: "space", role: "member", pending: false }],
+    });
+
+    // ann can see who's on Home but can't invite; a stranger learns nothing.
+    const asAnn = await (await connectAs(ann))("list_collaborators", { list_id: home.id });
+    expect(asAnn.data.canInvite).toBe(false);
+    expect(byName(asAnn).fred).toEqual([{ via: "list", role: "owner", pending: false }]);
+    const asStranger = await (await connectAs(stranger))("list_collaborators", { list_id: home.id });
+    expect(asStranger.error).toMatch(/not found/);
+  });
+});
+
 describe("delete_label", () => {
   it("previews the items it's on, then deletes only with the token, as the agent", async () => {
     const fred = createTestUser(db, { username: "fred" });
@@ -591,5 +859,176 @@ describe("move_item", () => {
     });
     expect(error).toBe(`list not found: ${bobs.id}`);
     expect(getItem(db, fred, item.id)?.projectId).toBe(eng.id);
+  });
+});
+
+describe("assign_agent and unassign_agent", () => {
+  // bob's Amp key, set to start work, and a Space list with a repository
+  // that fred owns and bob is an admin of; lorna is a plain member.
+  function seedSpace() {
+    const fred = createTestUser(db, { username: "fred" });
+    const bob = createTestUser(db, { username: "bob" });
+    const lorna = createTestUser(db, { username: "lorna" });
+    const space = createSpace(db, fred, { name: "Work" }, "web");
+    for (const [who, name] of [[bob, "bob"], [lorna, "lorna"]] as const) {
+      inviteSpaceMember(db, fred, space.id, name, "web");
+      acceptSpaceInvite(db, who, space.id, "web");
+    }
+    setSpaceMemberRole(db, fred, space.id, bob, "admin", "web");
+    const list = createProject(db, fred, { name: "Sidetrack", spaceId: space.id }, "web");
+    updateProject(db, fred, list.id, { repository: "fredrivett/sidetrack" }, "web");
+    const item = addItem(db, fred, { projectId: list.id, title: "Ship it" }, "web");
+    const amp = createApiKey(db, bob, "Amp", "web").record.id;
+    setAgentWebhook(db, bob, amp, "https://hooks.example.com/amp", "web");
+    const lornas = createApiKey(db, lorna, "Lorna's Amp", "web").record.id;
+    setAgentWebhook(db, lorna, lornas, "https://hooks.example.com/lorna", "web");
+    return { bob, lorna, list, item, amp, lornas };
+  }
+
+  it("lets a Space admin start and stop their agent on its list, as the picker does", async () => {
+    const { bob, list, item, amp } = seedSpace();
+    const call = await connectAs(bob);
+    expect((await call("list_agents")).data).toEqual({
+      agents: [{ keyId: amp, name: "Amp" }],
+      listIds: [list.id],
+    });
+
+    const assigned = await call("assign_agent", { item_id: "SID-1", agent_key_id: amp });
+    expect(assigned.error).toBeNull();
+    expect(assigned.data).toMatchObject({ itemId: item.id, agentKeyId: amp, finishedAt: null });
+    expect(agentRequests.send).toHaveBeenLastCalledWith(
+      expect.objectContaining({ body: expect.objectContaining({ type: "start", ref: "SID-1" }) }),
+    );
+    expect(listAudit(db, bob)[0]).toMatchObject({
+      source: "mcp",
+      agentKeyId: AGENT.keyId,
+      detail: 'asked Amp to work on "Ship it"',
+    });
+
+    expect((await call("unassign_agent", { item_id: "SID-1", agent_key_id: amp })).data).toEqual({
+      stopped: true,
+    });
+    expect(agentRequests.send).toHaveBeenLastCalledWith(
+      expect.objectContaining({ body: expect.objectContaining({ type: "stop" }) }),
+    );
+    expect(listOpenAgentSessions(db, bob, item.id)).toEqual([]);
+    expect((await call("unassign_agent", { item_id: "SID-1", agent_key_id: amp })).data).toEqual({
+      stopped: false,
+    });
+  });
+
+  it("refuses a member who isn't the list's admin, changing nothing", async () => {
+    const { lorna, item, amp, lornas } = seedSpace();
+    const call = await connectAs(lorna);
+    expect((await call("list_agents")).data).toEqual({
+      agents: [{ keyId: lornas, name: "Lorna's Amp" }],
+      listIds: [],
+    });
+    for (const key of [lornas, amp]) {
+      const { error } = await call("assign_agent", { item_id: "SID-1", agent_key_id: key });
+      expect(error).toMatch(/only the list's admin.*no change was made/);
+    }
+    expect(agentRequests.send).not.toHaveBeenCalled();
+    expect(listOpenAgentSessions(db, lorna, item.id)).toEqual([]);
+  });
+
+  it("takes the agent off again when its webhook can't be reached", async () => {
+    const { bob, item, amp } = seedSpace();
+    agentRequests.send.mockRejectedValueOnce(new Error("the agent's webhook answered 500"));
+    const call = await connectAs(bob);
+    const { error } = await call("assign_agent", { item_id: "SID-1", agent_key_id: amp });
+    expect(error).toBe("the agent's webhook answered 500, so the agent wasn't started.");
+    expect(listOpenAgentSessions(db, bob, item.id)).toEqual([]);
+  });
+});
+
+describe("add_from_photo", () => {
+  it("proposes lines against items found by ref, for review, with a one-time upload URL", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const life = createProject(db, fred, { name: "Life" }, "web");
+    const plan = addItem(db, fred, { projectId: life.id, title: "Change phone plan" }, "web");
+    const call = await connectAs(fred);
+    const { data: planOut } = await call("get_item", { id: plan.id });
+    const auditBefore = listAudit(db, fred, { limit: 500 }).length;
+
+    const { error, data } = await call("add_from_photo", {
+      lines: [
+        { title: "Change phone plan", list_id: life.id, match: planOut.ref, done: true },
+        { title: "Lorna's SIM", list_id: life.id, parent_item: planOut.ref },
+        { title: "Tidy up flat", list_id: life.id, region: { x: 0.1, y: 0.2, w: 0.5, h: 0.05 } },
+        { title: "Hoover", list_id: life.id, parent: 2 },
+      ],
+    });
+    expect(error).toBeNull();
+    const id = data.source_id as string;
+    expect(data.review_url).toBe(`http://localhost:3000/sources/${id}`);
+    expect((data.upload as { url: string }).url).toMatch(
+      /^http:\/\/localhost:3000\/api\/sources\/upload\/[\w-]{20,}$/,
+    );
+    const source = getSource(db, fred, id);
+    expect(source?.agentName).toBe(AGENT.name);
+    expect(source?.lines.map((l) => [l.title, l.matchItemId, l.parentItemId, l.done])).toEqual([
+      ["Change phone plan", plan.id, null, true],
+      ["Lorna's SIM", null, plan.id, false],
+      ["Tidy up flat", null, null, false],
+      ["Hoover", null, null, false],
+    ]);
+    expect(source?.lines[3].parentLineId).toBe(source?.lines[2].id);
+    // A proposal changes nothing on the board, so it isn't in the log yet.
+    expect(listItems(db, fred, life.id)).toHaveLength(1);
+    expect(listAudit(db, fred, { limit: 500 })).toHaveLength(auditBefore);
+  });
+
+  it("saves nothing when one line is wrong, and says which", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const life = createProject(db, fred, { name: "Life" }, "web");
+    const call = await connectAs(fred);
+
+    const bad = await call("add_from_photo", {
+      lines: [
+        { title: "Tidy up flat", list_id: life.id },
+        { title: "Hoover", list_id: life.id, parent: 5 },
+      ],
+    });
+    expect(bad.error).toMatch(/line 1: parent must be the index of an earlier line.*nothing was saved/);
+    const unknown = await call("add_from_photo", {
+      lines: [{ title: "Order coffee", list_id: life.id, match: "LIF-99" }],
+    });
+    expect(unknown.error).not.toBeNull();
+    expect(listPendingSources(db, fred)).toEqual([]);
+    expect(db.select().from(sources).all()).toEqual([]);
+  });
+
+  it("adds the lines when the user says so, linking each item to the photo, or discards them", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const life = createProject(db, fred, { name: "Life" }, "web");
+    const call = await connectAs(fred);
+    const propose = async (title: string) => {
+      const { data } = await call("add_from_photo", { lines: [{ title, list_id: life.id }] });
+      return data as { source_id: string; upload: { url: string } };
+    };
+    const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+
+    const kept = await propose("Plant jasmine");
+    // Not before the photo is there to link to.
+    expect((await call("add_photo_lines", { source_id: kept.source_id })).error).toMatch(/hasn't been uploaded/);
+    receiveSourcePhoto(db, kept.upload.url.split("/").at(-1) ?? "", PNG);
+    expect((await call("add_photo_lines", { source_id: kept.source_id })).data).toEqual({
+      added: 1,
+      updated: 0,
+      completed: 0,
+      skipped: 0,
+    });
+    const [item] = listItems(db, fred, life.id);
+    expect(item.title).toBe("Plant jasmine");
+    expect((await call("get_item", { id: item.id })).data.fromPhoto).toMatchObject({ source_id: kept.source_id });
+    expect(listAudit(db, fred)[0]).toMatchObject({ source: "mcp", agentKeyId: AGENT.keyId });
+    expect((await call("add_photo_lines", { source_id: kept.source_id })).error).toMatch(/already been added/);
+    expect((await call("discard_photo", { source_id: kept.source_id })).data).toEqual({ discarded: false });
+
+    const dropped = await propose("Descale kettle");
+    expect((await call("discard_photo", { source_id: dropped.source_id })).data).toEqual({ discarded: true });
+    expect(getSource(db, fred, dropped.source_id)).toBeNull();
+    expect(listItems(db, fred, life.id)).toHaveLength(1);
   });
 });

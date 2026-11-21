@@ -449,6 +449,41 @@
       "when": 1795162779864,
       "tag": "0063_calendars",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "6",
+      "when": 1795168997969,
+      "tag": "0064_email_forwarding",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "6",
+      "when": 1795184491015,
+      "tag": "0065_two_factor",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "6",
+      "when": 1795227723358,
+      "tag": "0066_repeat_day",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "6",
+      "when": 1795230455238,
+      "tag": "0067_only_assigned_to",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "6",
+      "when": 1795274648790,
+      "tag": "0068_source_photos",
+      "breakpoints": true
     }
   ]
 }

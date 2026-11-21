@@ -1,7 +1,10 @@
 import { eq } from "drizzle-orm";
-import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { AwsClient } from "aws4fetch";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { sealBackup } from "../lib/backupSeal";
 import { getEnv } from "../lib/env";
+import { getPostHog } from "../lib/posthog";
 import { getDb } from "./db";
 import { meta } from "./schema";
 
@@ -45,15 +48,41 @@ function prune(dir: string): void {
   }
 }
 
+/**
+ * Sends a backup off the server, sealed (lib/backupSeal.ts), when
+ * BACKUP_UPLOAD is set. Each upload gets its own name and nothing is ever
+ * deleted or replaced, so the bucket can refuse both (a bucket lock): a
+ * break-in here then can't destroy the backups. The bucket expires old ones.
+ */
+async function upload(path: string, now: Date): Promise<void> {
+  const config = getEnv().BACKUP_UPLOAD;
+  if (!config) return;
+  const client = new AwsClient({
+    accessKeyId: config.accessKeyId,
+    secretAccessKey: config.secretAccessKey,
+    service: "s3",
+    region: "auto",
+  });
+  const name = `sidetrack-${now.toISOString().replace(/[:.]/g, "-")}.db.gz.enc`;
+  const response = await client.fetch(`${config.endpoint}/${config.bucket}/${name}`, {
+    method: "PUT",
+    body: new Uint8Array(sealBackup(readFileSync(path), config.key)),
+  });
+  if (!response.ok) {
+    throw new Error(`uploading ${name} failed: ${response.status} ${await response.text()}`);
+  }
+}
+
 export async function runBackup(): Promise<string> {
   const dir = backupDir();
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  const date = new Date().toISOString().slice(0, 10);
-  const dest = join(dir, `sidetrack-${date}.db`);
+  const now = new Date();
+  const dest = join(dir, `sidetrack-${now.toISOString().slice(0, 10)}.db`);
   const { sqlite } = getDb();
   await sqlite.backup(dest);
-  writeLastBackupAt(Date.now());
+  writeLastBackupAt(now.getTime());
   prune(dir);
+  await upload(dest, now);
   return dest;
 }
 
@@ -65,7 +94,10 @@ async function tick(): Promise<void> {
       console.log(`[backup] wrote ${path}`);
     }
   } catch (err) {
+    // Reported, not only logged: a backup that quietly stopped is found out
+    // only when it's needed.
     console.error("[backup] failed:", err);
+    getPostHog()?.captureException(err);
   }
 }
 

@@ -261,6 +261,10 @@ const TABLE_AUDIT: Record<string, "audited" | `exempt: ${string}`> = {
   agent_webhooks: "audited",
   comments: "audited",
   github_webhooks: "audited",
+  email_addresses: "audited",
+  inbound_emails: "exempt: received mail awaiting triage, seen only by its owner; acting on it is audited",
+  sources: "exempt: a photo and its proposed lines awaiting review, seen only by its owner; adding them is audited",
+  source_lines: "exempt: lines proposed from a photo, seen only by its owner; adding them is audited",
   github_webhook_secrets: "audited",
   users: "audited",
   avatars: "audited",
@@ -278,7 +282,11 @@ const TABLE_AUDIT: Record<string, "audited" | `exempt: ${string}`> = {
   notifications: "exempt: derived from the audit row written with it; read state is the reader's own",
   // Password changes and resets, by a trigger (migration 0021).
   accounts: "audited",
-  verifications: "exempt: Better Auth one-time tokens (password reset)",
+  // Two-factor sign-in turned on or off, and backup codes, by triggers on
+  // users and two_factors (migration 0065); setup and removal of the row
+  // itself go with the users change they make.
+  two_factors: "audited",
+  verifications: "exempt: Better Auth one-time tokens (password reset, two-factor sign-in, trusted devices)",
 };
 
 describe("change events", () => {

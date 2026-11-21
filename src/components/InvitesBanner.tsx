@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useTransition } from "react";
 import {
   acceptInviteAction,
@@ -13,24 +14,43 @@ import { Button } from "@/components/ui/button";
 import { runAction } from "./run-action";
 
 /**
- * A strip of pending invites shown above the board, to lists and to Spaces.
+ * A strip of pending invites shown above the board, to lists and to Spaces,
+ * and photos an agent read that are waiting to be added (each links to its
+ * review).
  * Each can be accepted (the list, or the Space's lists, join your board) or
  * declined (the invite is dropped). Renders nothing when there are none.
  */
 export function InvitesBanner({
   invites,
   spaceInvites,
+  photos = [],
 }: {
   invites: PendingInviteView[];
   spaceInvites: PendingSpaceInviteView[];
+  photos?: Array<{ id: string; agentName: string | null }>;
 }) {
   // While one answer saves, the buttons dim and ignore presses but keep
   // focus (aria-disabled, not disabled), as the board's other holds do.
   const [pending, start] = useTransition();
-  if (invites.length === 0 && spaceInvites.length === 0) return null;
+  if (invites.length === 0 && spaceInvites.length === 0 && photos.length === 0) return null;
 
   return (
     <div className="shrink-0 space-y-2 border-b border-amber-200 bg-amber-50 px-4 py-2 dark:border-amber-900 dark:bg-amber-950/40">
+      {photos.map((photo) => (
+        <div key={photo.id} className="flex items-center justify-between gap-3 text-sm">
+          <span className="min-w-0 truncate text-amber-900 dark:text-amber-200">
+            {photo.agentName ? (
+              <span className="font-medium">{photo.agentName}</span>
+            ) : (
+              "An agent"
+            )}{" "}
+            read a photo for you to add
+          </span>
+          <Button size="sm" render={<Link href={`/sources/${photo.id}`} />} nativeButton={false}>
+            Review
+          </Button>
+        </div>
+      ))}
       {spaceInvites.map((invite) => (
         <div key={invite.spaceId} className="flex items-center justify-between gap-3 text-sm">
           <span className="min-w-0 truncate text-amber-900 dark:text-amber-200">

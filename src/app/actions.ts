@@ -33,6 +33,10 @@ import {
   removeGithubWebhookSecret as removeGithubWebhookSecretCore,
 } from "@/core/github";
 import {
+  createEmailAddress as createEmailAddressCore,
+  removeEmailAddress as removeEmailAddressCore,
+} from "@/core/emailIn";
+import {
   type LabelEmoji,
   addLabel as addLabelCore,
   deleteLabel as deleteLabelCore,
@@ -52,6 +56,7 @@ import {
   deleteComment as deleteCommentCore,
   getComment as getCommentCore,
   listComments as listCommentsCore,
+  listMentionable as listMentionableCore,
   listRecentComments as listRecentCommentsCore,
   mentionNotice as mentionNoticeCore,
   updateComment as updateCommentCore,
@@ -112,6 +117,7 @@ import {
   savePushSubscription as savePushSubscriptionCore,
 } from "@/core/push";
 import type { AuditSource, ListRole, NotificationLevel, ProjectStatus, SpaceColor, SpaceRole } from "@/core/schema";
+import { invitePeople as invitePeopleCore, type InvitePlace } from "@/core/invites";
 import {
   acceptSpaceInvite as acceptSpaceInviteCore,
   createSpace as createSpaceCore,
@@ -148,6 +154,12 @@ import {
   setUsername as setUsernameCore,
 } from "@/core/users";
 import { setDayNote as setDayNoteCore } from "@/core/dayNotes";
+import {
+  addFromSource as addFromSourceCore,
+  discardSource as discardSourceCore,
+  getItemSource as getItemSourceCore,
+  type LineReview,
+} from "@/core/sources";
 import { getCurrentSession, requireUserId } from "@/auth/session";
 import { sendAgentRequest } from "@/lib/agentRequest";
 import { notifyInvite, notifyMentions } from "@/lib/email";
@@ -267,12 +279,18 @@ export async function listSuggestedCollaboratorsAction(projectId: string) {
   return listSuggestedCollaboratorsCore(db, userId, projectId);
 }
 
-export async function inviteMemberAction(projectId: string, person: string, role: ListRole = "editor") {
+export async function inviteMemberAction(
+  projectId: string,
+  person: string,
+  role: ListRole = "editor",
+  /** They'll see only the items assigned to you. */
+  onlyMine = false,
+) {
   const session = await getCurrentSession();
   if (!session) redirect("/login");
   const userId = session.user.id;
   const { db } = getDb();
-  const member = inviteMemberCore(db, userId, projectId, person, SOURCE, role);
+  const member = inviteMemberCore(db, userId, projectId, person, SOURCE, role, { onlyMine });
 
   // Notify the invitee by email, once the invite has answered: it's
   // best-effort (the in-app banner is the source of truth, so notifyInvite
@@ -285,6 +303,7 @@ export async function inviteMemberAction(projectId: string, person: string, role
       projectName: project.name,
       url: await appBaseUrl(),
       role,
+      onlyMine,
     };
     after(() => notifyInvite(invite));
   }
@@ -293,11 +312,47 @@ export async function inviteMemberAction(projectId: string, person: string, role
   return member;
 }
 
-/** Change what a member of the list can do on it: edit, comment or only view. */
-export async function setMemberRoleAction(projectId: string, targetUserId: string, role: ListRole) {
+/**
+ * Invite several people to several lists and Spaces at once, each place
+ * with its own role. All or nothing; each person gets one email naming
+ * every place.
+ */
+export async function invitePeopleAction(people: string[], places: InvitePlace[]) {
+  const session = await getCurrentSession();
+  if (!session) redirect("/login");
+  const userId = session.user.id;
+  const { db } = getDb();
+  const { sent, places: named } = invitePeopleCore(db, userId, { people, places }, SOURCE);
+
+  // One email each, best-effort and after answering, like a single invite.
+  const url = await appBaseUrl();
+  const emails = new Map(sent.flatMap((s) => (s.member.email ? [[s.member.userId, s.member.email]] : [])));
+  for (const to of emails.values()) {
+    const invite = {
+      to,
+      inviterName: session.user.name,
+      projectName: named[0]?.name ?? "",
+      url,
+      kind: named[0]?.kind,
+      role: named[0]?.role,
+      places: named.map(({ name, kind, role, onlyMine }) => ({ name, kind, role, onlyMine })),
+    };
+    after(() => notifyInvite(invite));
+  }
+  refresh();
+  return sent.length;
+}
+
+/** Change what a member of the list can do on it, and whether they see only your items. */
+export async function setMemberRoleAction(
+  projectId: string,
+  targetUserId: string,
+  role: ListRole,
+  onlyMine?: boolean,
+) {
   const userId = await requireUserId();
   const { db } = getDb();
-  setMemberRoleCore(db, userId, projectId, targetUserId, role, SOURCE);
+  setMemberRoleCore(db, userId, projectId, targetUserId, role, SOURCE, onlyMine);
   refresh();
 }
 
@@ -373,11 +428,13 @@ export async function inviteSpaceMemberAction(
   spaceId: string,
   person: string,
   role: Exclude<SpaceRole, "admin"> = "member",
+  /** They'll see only the items assigned to you. */
+  onlyMine = false,
 ) {
   const session = await getCurrentSession();
   if (!session) redirect("/login");
   const { db } = getDb();
-  const member = inviteSpaceMemberCore(db, session.user.id, spaceId, person, SOURCE, role);
+  const member = inviteSpaceMemberCore(db, session.user.id, spaceId, person, SOURCE, role, { onlyMine });
   // Best-effort and after answering, like a list invite.
   const space = listSpacesCore(db, session.user.id).find((s) => s.id === spaceId);
   if (member.email && space) {
@@ -388,6 +445,7 @@ export async function inviteSpaceMemberAction(
       url: await appBaseUrl(),
       kind: "space" as const,
       role,
+      onlyMine,
     };
     after(() => notifyInvite(invite));
   }
@@ -407,10 +465,11 @@ export async function setSpaceMemberRoleAction(
   spaceId: string,
   targetUserId: string,
   role: SpaceRole,
+  onlyMine?: boolean,
 ) {
   const userId = await requireUserId();
   const { db } = getDb();
-  setSpaceMemberRoleCore(db, userId, spaceId, targetUserId, role, SOURCE);
+  setSpaceMemberRoleCore(db, userId, spaceId, targetUserId, role, SOURCE, onlyMine);
   refresh();
 }
 
@@ -662,10 +721,39 @@ export async function deleteItemAction(id: string) {
   refresh();
 }
 
+/** Add a photo's reviewed lines to the board (the review screen's Add). */
+export async function addFromSourceAction(sourceId: string, reviews: LineReview[]) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const result = addFromSourceCore(db, userId, sourceId, reviews, SOURCE);
+  refresh();
+  return result;
+}
+
+/** Drop a photo that hasn't been added. */
+export async function discardSourceAction(sourceId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  discardSourceCore(db, userId, sourceId);
+  refresh();
+}
+
+/** The photo an item was added from, and where on it, for the item's dialog. */
+export async function getItemSourceAction(itemId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  return getItemSourceCore(db, userId, itemId);
+}
+
+/** An item's comments, and who a comment on it can mention: one read, as
+ * Next runs a page's actions one at a time. */
 export async function listCommentsAction(itemId: string) {
   const userId = await requireUserId();
   const { db } = getDb();
-  return listCommentsCore(db, userId, itemId);
+  return {
+    comments: listCommentsCore(db, userId, itemId),
+    mentionable: listMentionableCore(db, userId, itemId),
+  };
 }
 
 export async function listRecentCommentsAction(opts: {
@@ -990,6 +1078,20 @@ export async function removeGithubWebhookAction() {
   const { db } = getDb();
   removeGithubWebhookCore(db, userId, SOURCE);
   revalidatePath("/settings/github");
+}
+
+export async function createEmailAddressAction() {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  createEmailAddressCore(db, userId, SOURCE);
+  revalidatePath("/settings/email");
+}
+
+export async function removeEmailAddressAction() {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  removeEmailAddressCore(db, userId, SOURCE);
+  revalidatePath("/settings/email");
 }
 
 export async function revokeApiKeyAction(id: string) {

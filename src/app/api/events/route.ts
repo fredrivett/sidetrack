@@ -6,10 +6,18 @@ import { markLooking } from "@/core/presence";
 const HEARTBEAT_MS = 25_000;
 const MAX_STREAM_MS = 10 * 60_000;
 
+// On SIGTERM, Next stops taking requests and exits once the open ones finish,
+// which a stream never does: end them all, so a deploy's old server exits as
+// soon as its last save does instead of when Railway kills it. Browsers
+// reconnect to the new one (LiveUpdates).
+const shutdown = new AbortController();
+process.once("SIGTERM", () => shutdown.abort());
+
 /**
- * Live updates: a Server-Sent Events stream that sends a bare `change` event
- * whenever something the viewer sees changes (see watchChanges). It carries
- * no data, so a page that hears one reloads what it shows (LiveUpdates).
+ * Live updates: a Server-Sent Events stream that sends an event whenever
+ * something the viewer sees changes (see watchChanges). It carries only the
+ * change's number (changeSeq), so a page that hears a number newer than the
+ * one it was rendered with reloads what it shows (LiveUpdates).
  */
 export async function GET(request: Request) {
   const session = await getCurrentSession();
@@ -19,7 +27,7 @@ export async function GET(request: Request) {
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       const send = (chunk: string) => controller.enqueue(encoder.encode(chunk));
-      const unwatch = watchChanges(getDb().db, session.user.id, () => send("data: change\n\n"));
+      const unwatch = watchChanges(getDb().db, session.user.id, (seq) => send(`data: ${seq}\n\n`));
       // The board holds this open only while it's on screen, so while it's
       // open, notifications go to the inbox without a push.
       const away = markLooking(session.user.id);
@@ -28,16 +36,19 @@ export async function GET(request: Request) {
       // A proxy can hold the stream open after the browser has gone, so it
       // never hears the disconnect: end each stream in time, and the browser
       // reconnects.
-      const expiry = setTimeout(() => {
+      const end = () => {
         stop();
         controller.close();
-      }, MAX_STREAM_MS);
+      };
+      const expiry = setTimeout(end, MAX_STREAM_MS);
       stop = () => {
         clearInterval(heartbeat);
         clearTimeout(expiry);
+        shutdown.signal.removeEventListener("abort", end);
         unwatch();
         away();
       };
+      shutdown.signal.addEventListener("abort", end);
       request.signal.addEventListener("abort", () => stop());
       // The browser may have gone during the session lookup, before the
       // listener above: then it never fires.

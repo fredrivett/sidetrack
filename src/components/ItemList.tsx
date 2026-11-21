@@ -25,14 +25,18 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS, getEventCoordinates } from "@dnd-kit/utilities";
+import { defaultRangeExtractor, type Range, useVirtualizer } from "@tanstack/react-virtual";
 import { Plus } from "lucide-react";
 import {
   type ReactNode,
+  useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useOptimistic,
   useRef,
   useState,
+  useSyncExternalStore,
   useTransition,
 } from "react";
 import type { AssigneeView } from "@/core/members";
@@ -45,6 +49,99 @@ import { useMoveItem } from "./MoveItem";
 import { Button } from "./ui/button";
 import { runAction } from "./run-action";
 import { useCollapsedItems } from "./use-collapsed-items";
+import { SelectedItemContext } from "./useItemShortcuts";
+
+/** A list this long renders only the rows near its column's view (useVirtualRows). */
+const VIRTUAL_FROM = 60;
+const noSubscribe = () => () => {};
+
+/**
+ * The rows of a long list to render: those in or near its column's view,
+ * plus any that must stay mounted (`keep`, such as the row being dragged,
+ * and the `selected` row with its neighbours),
+ * each with the space to leave above it for the rows skipped. The skipped
+ * rows count at their measured height, or an estimate until they've shown,
+ * so the column scrolls as if they were all there. A list shorter than
+ * VIRTUAL_FROM renders every row, in the same elements, so a list that grows
+ * or shrinks past it keeps its rows mounted.
+ */
+function useVirtualRows(
+  listEl: { readonly current: HTMLElement | null },
+  ids: string[],
+  keep: ReadonlySet<string>,
+  selected: string | null,
+) {
+  const enabled = ids.length >= VIRTUAL_FROM;
+  // Where the list starts in its column's scroll, below the list's summary:
+  // measured when the column's contents change size or a part of them comes
+  // or goes, such as the summary (and when the observer starts, which
+  // reports every element at once).
+  const [scrollMargin, setScrollMargin] = useState(0);
+  useLayoutEffect(() => {
+    const list = listEl.current;
+    const scroller = list?.closest<HTMLElement>("[data-column-scroll]");
+    if (!enabled || !list || !scroller) return;
+    const resized = new ResizeObserver(() =>
+      setScrollMargin(
+        list.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop,
+      ),
+    );
+    const observeChildren = () => {
+      resized.disconnect();
+      for (const child of scroller.children) resized.observe(child);
+    };
+    observeChildren();
+    const changed = new MutationObserver(observeChildren);
+    changed.observe(scroller, { childList: true });
+    return () => {
+      changed.disconnect();
+      resized.disconnect();
+    };
+  }, [enabled, listEl]);
+  // The selected row's neighbours too, which the up and down keys go to
+  // (stepItemRow) when it's scrolled out of view.
+  const at = selected === null ? -1 : ids.indexOf(selected);
+  const kept = [
+    ...ids.flatMap((id, i) => (keep.has(id) ? [i] : [])),
+    ...(at === -1 ? [] : [at - 1, at, at + 1].filter((i) => i >= 0 && i < ids.length)),
+  ];
+  // The app doesn't use the React Compiler, which is what this warns about.
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const virtualizer = useVirtualizer({
+    count: ids.length,
+    enabled,
+    getScrollElement: () => listEl.current?.closest<HTMLElement>("[data-column-scroll]") ?? null,
+    // A column's height until it's measured, so the server's page, and the
+    // render that turns this on, have the rows at the top instead of none.
+    initialRect: { width: 0, height: 800 },
+    // About a row with a chip under its title; rows are measured as they
+    // render, so this only shapes the scrollbar until they have.
+    estimateSize: () => 52,
+    // space-y-1.5, which the rendered rows keep as margins.
+    gap: 6,
+    overscan: 10,
+    scrollMargin,
+    getItemKey: (i) => ids[i],
+    rangeExtractor: (range: Range) =>
+      [...new Set([...defaultRangeExtractor(range), ...kept])].sort((a, b) => a - b),
+  });
+  if (!enabled) {
+    return { rows: ids.map((_, i) => ({ index: i, above: i ? 6 : 0 })), below: 0 };
+  }
+  const shown = virtualizer.getVirtualItems();
+  const last = shown.at(-1);
+  return {
+    measure: virtualizer.measureElement,
+    rows: shown.map((v, i) => ({
+      index: v.index,
+      // The rows skipped above this one, and the gap before it.
+      above: v.start - (i === 0 ? scrollMargin : shown[i - 1].end),
+    })),
+    // The rows skipped below, keeping the list its full height even with no
+    // row in range, so the column never shrinks under its scroll position.
+    below: virtualizer.getTotalSize() - (last ? last.end - scrollMargin : 0),
+  };
+}
 
 /** A top-level item with its sub-items, in list order. */
 export type ItemGroup = Item & { children: Item[] };
@@ -66,9 +163,9 @@ const INDENT = 36;
 // every sub-item but the last, the line carrying on down to the next one.
 // Row maths: the gap between rows is 6px (space-y-1.5), and a row's first line
 // is centred 19px into it (1px border + 8px padding + half a 20px line).
-const BRANCH =
+export const BRANCH =
   "relative before:absolute before:-top-1.5 before:-left-5 before:h-[25px] before:w-5 before:rounded-bl-lg before:border-b-2 before:border-l-2 before:border-neutral-200 dark:before:border-neutral-700";
-const TRUNK =
+export const TRUNK =
   "after:absolute after:top-0 after:-bottom-1.5 after:-left-5 after:border-l-2 after:border-neutral-200 dark:after:border-neutral-700";
 
 function rowFor(
@@ -235,9 +332,18 @@ function Sortable({
   data,
   dim,
   pending,
+  at,
+  of,
   children,
 }: {
   id: string;
+  /**
+   * Its place among the list's rows, counting from 1, and how many there
+   * are: a long list renders only some of them (useVirtualRows), so a
+   * screen reader can't count them itself.
+   */
+  at: number;
+  of: number;
   /** Where it's shown and whose it is (see BoardDrag). */
   data: { projectId: string; home: string; row: true; parentId: string | null };
   /** Another row of its list is being dragged. */
@@ -258,8 +364,12 @@ function Sortable({
   return (
     <div
       ref={setNodeRef}
+      role="listitem"
+      aria-posinset={at}
+      aria-setsize={of}
       data-row-id={id}
-      aria-disabled={pending || undefined}
+      // Waiting, it's aria-disabled on the row itself, through dnd-kit's
+      // attributes (useSortable's `disabled`).
       className={pending ? "pointer-events-none" : undefined}
       style={{
         // Translate, not Transform: rows differ in height, and a scale would
@@ -382,6 +492,30 @@ export function DraggableItemList({
     (f) =>
       (enteringIds.has(f.item.id) || !shown || shown.has(f.item.id)) &&
       (f.parentId === null || (!folded(f.parentId) && f.parentId !== carried)),
+  );
+  // Rows that stay rendered in a long list wherever it's scrolled: the one
+  // being dragged, which dnd-kit needs, those on their way in, and the
+  // selected one, which the movement keys start from.
+  // Only a long list holding the selection follows it, so moving the
+  // selection still re-renders just the rows it leaves and reaches.
+  const visibleIds = visible.map((f) => f.item.id);
+  const selection = useContext(SelectedItemContext);
+  const selected = useSyncExternalStore(
+    selection?.subscribe ?? noSubscribe,
+    () => {
+      const id = selection?.get() ?? null;
+      return id !== null && visibleIds.length >= VIRTUAL_FROM && visibleIds.includes(id)
+        ? id
+        : null;
+    },
+    () => null,
+  );
+  const listEl = useRef<HTMLDivElement | null>(null);
+  const virtual = useVirtualRows(
+    listEl,
+    visibleIds,
+    new Set([...enteringIds, ...(activeId ? [activeId] : [])]),
+    selected,
   );
   const treeRows: TreeRow[] = visible.map((f) => ({
     id: f.item.id,
@@ -684,6 +818,14 @@ export function DraggableItemList({
     id: `list:${projectId}`,
     data: { projectId },
   });
+  // Stable, so dnd-kit keeps observing the list for the length of a drag.
+  const setListEl = useCallback(
+    (el: HTMLDivElement | null) => {
+      setListRef(el);
+      listEl.current = el;
+    },
+    [setListRef],
+  );
 
   const active = activeId ? own.get(activeId) : undefined;
   // How far in the dragged card sits: the depth it would land at, or its own
@@ -813,82 +955,100 @@ export function DraggableItemList({
     ]),
   );
 
+  // A row, as dnd-kit's sortable item.
+  const rowView = (f: Flat, index: number) => {
+    const { item } = f;
+    const isActive = item.id === activeId;
+    const isEntering = enteringIds.has(item.id);
+    // A row from another list shows its own ref and people.
+    const rp = isEntering && entering ? entering.row : row;
+    const children = childrenOf(item.id);
+    const node = (drag: RowDrag) => {
+      if (f.parentId) {
+        return rowFor(rp, item, {
+          drag,
+          parentTitle: byId.get(f.parentId)?.item.title,
+        });
+      }
+      // A plain task can become a sub-item of the task just above it.
+      const prev = above.get(item.id);
+      const canNest = children.length === 0 && prev !== undefined && !isEntering;
+      return rowFor(rp, item, {
+        drag,
+        nestUnder: canNest ? { id: prev.id, title: prev.title } : undefined,
+        checklist:
+          children.length > 0
+            ? {
+                ...progress(children),
+                expanded: !folded(item.id),
+                onToggle: () => onToggleCollapsed(item.id),
+              }
+            : undefined,
+      });
+    };
+    return (
+      <Sortable
+        key={item.id}
+        id={item.id}
+        data={{
+          projectId,
+          home: isEntering && entering ? entering.from : projectId,
+          row: true,
+          parentId: f.parentId,
+        }}
+        dim={activeId !== null && !away}
+        pending={isEntering && entering?.dropped === true}
+        at={index + 1}
+        of={visible.length}
+      >
+        {(drag) => {
+          // The dragged row stays in the list as the drop placeholder,
+          // indented to the depth it would land at.
+          const depth = isActive
+            ? (projection?.depth ?? (f.parentId ? 1 : 0))
+            : f.parentId
+              ? 1
+              : 0;
+          // The same elements at every depth, so a row that's nested or
+          // moved out keeps its DOM node, and keyboard focus with it.
+          return (
+            <div className={depth ? "ml-4 pl-5" : undefined}>
+              <div
+                className={`in-[.dnd-landing]:*:invisible ${treeLines.get(item.id) ?? ""}`}
+              >
+                {node(drag)}
+              </div>
+            </div>
+          );
+        }}
+      </Sortable>
+    );
+  };
+
   // The overlay sits in the same place in every branch, so it stays mounted
   // (and keeps its drop animation) when the list empties mid-drag.
   return (
     <>
-      <div ref={setListRef}>
+      <div ref={setListEl}>
         <SortableContext
           items={visible.map((f) => f.item.id)}
           strategy={entering ? placed : verticalListSortingStrategy}
         >
-          <div className="space-y-1.5">
-            {visible.map((f) => {
-              const { item } = f;
-              const isActive = item.id === activeId;
-              const isEntering = enteringIds.has(item.id);
-              // A row from another list shows its own ref and people.
-              const rp = isEntering && entering ? entering.row : row;
-              const children = childrenOf(item.id);
-              const node = (drag: RowDrag) => {
-                if (f.parentId) {
-                  return rowFor(rp, item, {
-                    drag,
-                    parentTitle: byId.get(f.parentId)?.item.title,
-                  });
-                }
-                // A plain task can become a sub-item of the task just above it.
-                const prev = above.get(item.id);
-                const canNest = children.length === 0 && prev !== undefined && !isEntering;
-                return rowFor(rp, item, {
-                  drag,
-                  nestUnder: canNest ? { id: prev.id, title: prev.title } : undefined,
-                  checklist:
-                    children.length > 0
-                      ? {
-                          ...progress(children),
-                          expanded: !folded(item.id),
-                          onToggle: () => onToggleCollapsed(item.id),
-                        }
-                      : undefined,
-                });
-              };
-              return (
-                <Sortable
-                  key={item.id}
-                  id={item.id}
-                  data={{
-                    projectId,
-                    home: isEntering && entering ? entering.from : projectId,
-                    row: true,
-                    parentId: f.parentId,
-                  }}
-                  dim={activeId !== null && !away}
-                  pending={isEntering && entering?.dropped === true}
-                >
-                  {(drag) => {
-                    // The dragged row stays in the list as the drop placeholder,
-                    // indented to the depth it would land at.
-                    const depth = isActive
-                      ? (projection?.depth ?? (f.parentId ? 1 : 0))
-                      : f.parentId
-                        ? 1
-                        : 0;
-                    // The same elements at every depth, so a row that's nested or
-                    // moved out keeps its DOM node, and keyboard focus with it.
-                    return (
-                      <div className={depth ? "ml-4 pl-5" : undefined}>
-                        <div
-                          className={`in-[.dnd-landing]:*:invisible ${treeLines.get(item.id) ?? ""}`}
-                        >
-                          {node(drag)}
-                        </div>
-                      </div>
-                    );
-                  }}
-                </Sortable>
-              );
-            })}
+          {/* flow-root: the first row's margin, the space of the rows above
+              it, stays inside; collapsing through, it would move the list's
+              own top, which is where the rows are measured from. */}
+          <div role="list" className="flow-root" style={{ paddingBottom: virtual.below }}>
+            {virtual.rows.map(({ index, above }) => (
+              <div
+                key={visible[index].item.id}
+                ref={virtual.measure}
+                data-index={index}
+                data-list-index={index}
+                style={{ marginTop: above }}
+              >
+                {rowView(visible[index], index)}
+              </div>
+            ))}
           </div>
         </SortableContext>
       </div>

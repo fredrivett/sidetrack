@@ -1,8 +1,8 @@
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { getPostHog } from "../lib/posthog";
-import { hasProjectAccess } from "./access";
+import { hasItemAccess, hasProjectAccess, hasWholeListAccess } from "./access";
 import type { Db } from "./db";
-import { projectMembers, projects, spaceMembers } from "./schema";
+import { items, projectMembers, projects, spaceMembers } from "./schema";
 
 /**
  * Live updates. Every committed change is announced here, and each open page
@@ -17,17 +17,40 @@ import { projectMembers, projects, spaceMembers } from "./schema";
 export interface Change {
   actor: string;
   projectId: string | null;
+  /** The item it was about, if any: someone shown only part of the list hears only of theirs. */
+  itemId?: string;
+  /** Not for someone shown only part of the list, such as a label's change. */
+  wholeOnly?: true;
 }
 
-type Listener = (changes: Change[]) => void;
+/** A batch of changes, and the number of the last one in it (see changeSeq). */
+type Listener = (changes: Change[], seq: number) => void;
 
 declare global {
-  var __sidetrackChanges: { listeners: Set<Listener>; pending: Change[] } | undefined;
+  var __sidetrackChanges:
+    | { listeners: Set<Listener>; pending: Change[]; seq: number }
+    | undefined;
 }
 
 // On globalThis, like the DB, so Server Actions, MCP tools, and the events
-// route share one, whichever bundle loaded this module.
-const bus = (globalThis.__sidetrackChanges ??= { listeners: new Set(), pending: [] });
+// route share one, whichever bundle loaded this module. Numbering starts at
+// the time the server started, so a restarted server's numbers are higher
+// than any its predecessor gave out.
+const bus = (globalThis.__sidetrackChanges ??= {
+  listeners: new Set(),
+  pending: [],
+  seq: Date.now(),
+});
+
+/**
+ * The number of the latest change. Each change gets the next one as it's
+ * made, before its transaction commits, and nothing else runs in between: so
+ * a page that reads this before it reads its data shows every change up to
+ * it, and needs no reload for the events of those changes (LiveUpdates).
+ */
+export function changeSeq(): number {
+  return bus.seq;
+}
 
 /**
  * Announce a change once the synchronous work in progress has finished, and
@@ -37,13 +60,15 @@ const bus = (globalThis.__sidetrackChanges ??= { listeners: new Set(), pending: 
  * nothing new.
  */
 export function announceChange(change: Change): void {
+  bus.seq++;
   if (bus.pending.push(change) > 1) return;
   setImmediate(() => {
     const changes = bus.pending.splice(0);
+    const seq = bus.seq;
     for (const listener of bus.listeners) {
       // A throw here would be uncaught and stop the server.
       try {
-        listener(changes);
+        listener(changes, seq);
       } catch (error) {
         getPostHog()?.captureException(error);
       }
@@ -64,24 +89,57 @@ export function onChanges(listener: Listener): () => void {
  * their own changes, changes to a list they can see or are invited to, and
  * account and Space changes by the people they share lists or a Space with,
  * whose names and avatars show on those lists (Space changes have no list). A list they have just lost, deleted or
- * removed from, counts too, so it leaves their board. Returns the
- * unsubscribe function.
+ * removed from, counts too, so it leaves their board. onChange gets the
+ * batch's number (changeSeq). Returns the unsubscribe function.
  */
-export function watchChanges(db: Db, userId: string, onChange: () => void): () => void {
+export function watchChanges(
+  db: Db,
+  userId: string,
+  onChange: (seq: number) => void,
+): () => void {
   let before = audience(db, userId);
-  const listener: Listener = (changes) => {
+  let beforeItems = visibleItems(db, userId, before.partial);
+  const listener: Listener = (changes, seq) => {
     const after = audience(db, userId);
+    const partial = (id: string) => before.partial.has(id) || after.partial.has(id);
+    // Re-read what they can see only when this batch touched a list they
+    // see part of, or which lists those are changed: most batches don't.
+    const same =
+      before.partial.size === after.partial.size && [...after.partial].every((id) => before.partial.has(id));
+    const afterItems =
+      same && !changes.some((c) => c.projectId !== null && partial(c.projectId))
+        ? beforeItems
+        : visibleItems(db, userId, after.partial);
     const affected = changes.some(
-      ({ actor, projectId }) =>
+      ({ actor, projectId, itemId, wholeOnly }) =>
         actor === userId ||
         (projectId === null
           ? before.people.has(actor) || after.people.has(actor)
-          : before.lists.has(projectId) || after.lists.has(projectId)),
+          : (before.lists.has(projectId) || after.lists.has(projectId)) &&
+            // On a list they see only part of, only an item they could see
+            // before or can now: one leaving their board still reloads it.
+            (!partial(projectId) ||
+              (!wholeOnly && (!itemId || beforeItems.has(itemId) || afterItems.has(itemId))))),
     );
     before = after;
-    if (affected) onChange();
+    beforeItems = afterItems;
+    if (affected) onChange(seq);
   };
   return onChanges(listener);
+}
+
+/** The items userId can see on the lists they see only part of. */
+function visibleItems(db: Db, userId: string, partial: Set<string>): Set<string> {
+  if (partial.size === 0) return new Set();
+  return new Set(
+    db
+      .select({ id: items.id })
+      .from(items)
+      .innerJoin(projects, eq(projects.id, items.projectId))
+      .where(and(inArray(items.projectId, [...partial]), hasItemAccess(userId)))
+      .all()
+      .map((i) => i.id),
+  );
 }
 
 /** The lists whose changes userId sees, and the people they share them or a
@@ -136,7 +194,15 @@ function audience(db: Db, userId: string) {
         )
         .all()
     : [];
+  // Lists they see only part of.
+  const partial = db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(and(hasProjectAccess(userId), sql`not (${hasWholeListAccess(userId)})`))
+    .all()
+    .map((p) => p.id);
   return {
+    partial: new Set(partial),
     lists: new Set([...ids, ...invites.map((i) => i.projectId)]),
     people: new Set([
       ...shown.map((p) => p.owner),

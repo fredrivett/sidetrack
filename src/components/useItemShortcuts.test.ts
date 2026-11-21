@@ -40,6 +40,28 @@ describe("stepItemRow", () => {
     expect(step("a4", "left")).toBe("a4");
   });
 
+  // A long list renders only the rows near its view, each wrapped with its
+  // place in the list (useVirtualRows in ItemList).
+  it("goes by place in a long list that renders only some of its rows", () => {
+    const rendered = (list: string, at: number[]) =>
+      `<section data-project-id="${list}">${at
+        .map((i) => `<div data-list-index="${i}"><div data-item-row="${list}${i}"></div></div>`)
+        .join("")}</section>`;
+    document.body.innerHTML = rendered("a", [50, 51, 52]) + rendered("b", [0, 1, 2, 51]);
+    expect(step("a51", "left")).toBe("a51");
+    expect(step("a51", "right")).toBe("b51");
+    expect(step("a51", "down")).toBe("a52");
+
+    // Scrolled elsewhere, b hasn't rendered place 51: its row level with a51.
+    document.body.innerHTML = rendered("a", [50, 51, 52]) + rendered("b", [0, 1, 2]);
+    const at = (id: string, top: number) =>
+      (document.querySelector(`[data-item-row="${id}"]`) as HTMLElement).getBoundingClientRect = () =>
+        ({ top, bottom: top + 40 }) as DOMRect;
+    at("a51", 50);
+    [0, 1, 2].forEach((i) => at(`b${i}`, i * 50));
+    expect(step("a51", "right")).toBe("b1");
+  });
+
   it("skips lists without items", () => {
     board({ a: 2, b: 0, c: 2 });
     expect(step("a2", "right")).toBe("c2");

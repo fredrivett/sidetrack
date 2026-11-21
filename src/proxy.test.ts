@@ -54,6 +54,10 @@ describe("proxy, signed in", () => {
     const res = signedIn(path);
     expect(res.headers.get("location")).toBeNull();
     expect(res.headers.get("x-middleware-rewrite")).toBe(target);
+    // And tells its loading.tsx which view's skeleton to show.
+    expect(res.headers.get("x-middleware-request-x-board-view")).toBe(
+      new URL(path, "https://sidetrack.test").pathname.slice(1),
+    );
   });
 
   // Links from notifications and bookmarks made before views had paths.

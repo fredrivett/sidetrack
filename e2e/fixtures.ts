@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { test as base, expect } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { test as base, expect, type BrowserContext } from "@playwright/test";
 import { auth } from "@/auth/better-auth";
 import { getDb } from "@/core/db";
 import { addItem } from "@/core/items";
 import { acceptInvite, inviteMember } from "@/core/members";
 import { createProject } from "@/core/projects";
+import { proposeFromPhoto, receiveSourcePhoto, type ProposedLine } from "@/core/sources";
+import { createSpace, setProjectSpace } from "@/core/spaces";
 import type { ListRole } from "@/core/schema";
 
 export { expect };
@@ -14,6 +17,21 @@ export { expect };
 // code, rather than through HTTP: faster, and clear of sign-up rate limits.
 const SOURCE = "web" as const;
 const PASSWORD = "e2e-password";
+
+/** Signs `context` in with the session a sign-up or sign-in answered with,
+ * from its own client address: Better Auth rate-limits sign-ins by IP
+ * (x-forwarded-for), and parallel tests would otherwise share one. */
+async function useSession(context: BrowserContext, headers: Headers, baseURL: string) {
+  const cookies = (headers.get("set-cookie") ?? "").split(/,(?=\s*[\w.-]+=)/).map((c) => {
+    const [name, ...value] = c.split(";")[0].trim().split("=");
+    return { name, value: value.join("="), url: baseURL };
+  });
+  await context.addCookies(cookies);
+  const ip = randomUUID().replace(/\D/g, "").padEnd(6, "0");
+  await context.setExtraHTTPHeaders({
+    "x-forwarded-for": `10.${Number(ip.slice(0, 2)) % 256}.${Number(ip.slice(2, 4)) % 256}.${Number(ip.slice(4, 6)) % 256}`,
+  });
+}
 
 /** A fresh handle, so parallel tests never share a person. */
 const newHandle = () => `e2e${randomUUID().replace(/-/g, "").slice(0, 12)}`;
@@ -29,6 +47,14 @@ export async function createPerson() {
   return {
     id: user.id,
     username,
+    /** Signs `context` in as them, as if they'd signed in themselves. */
+    async signIn(context: BrowserContext, baseURL: string) {
+      const { headers } = await auth.api.signInEmail({
+        body: { email: `${username}@sidetrack.test`, password: PASSWORD },
+        returnHeaders: true,
+      });
+      await useSession(context, headers, baseURL);
+    },
     /** Adds a list of theirs with these items, shared with `withId` as
      * `role`, invite already accepted. */
     shareList(name: string, items: string[], withId: string, withHandle: string, role: ListRole) {
@@ -48,6 +74,12 @@ export type User = {
   password: string;
   /** Adds a list with these items, as if the user had made it. */
   addList(name: string, items?: string[]): { id: string };
+  /** Adds an item to one of their lists, assigned to these people. */
+  addItem(listId: string, title: string, assigneeIds?: string[]): void;
+  /** Adds a Space of theirs, with these lists of theirs in it. */
+  addSpace(name: string, listIds?: string[]): { id: string };
+  /** A photo an agent read these lines off, uploaded and waiting for review. */
+  addPhoto(lines: ProposedLine[]): { id: string };
 };
 
 /**
@@ -62,18 +94,8 @@ export const test = base.extend<{ user: User }>({
       body: { email, password: PASSWORD, name: "E2E User", username: handle },
       returnHeaders: true,
     });
-    // Sign-up signs in: hand its session cookie to the browser.
-    const cookies = (headers.get("set-cookie") ?? "").split(/,(?=\s*[\w.-]+=)/).map((c) => {
-      const [name, ...value] = c.split(";")[0].trim().split("=");
-      return { name, value: value.join("="), url: baseURL ?? "" };
-    });
-    await context.addCookies(cookies);
-    // Its own client address too: Better Auth rate-limits sign-ins by IP
-    // (x-forwarded-for), and parallel tests would otherwise share one.
-    const ip = randomUUID().replace(/\D/g, "").padEnd(6, "0");
-    await context.setExtraHTTPHeaders({
-      "x-forwarded-for": `10.${Number(ip.slice(0, 2)) % 256}.${Number(ip.slice(2, 4)) % 256}.${Number(ip.slice(4, 6)) % 256}`,
-    });
+    // Sign-up signs in: hand its session to the browser.
+    await useSession(context, headers, baseURL ?? "");
     const { db } = getDb();
     await use({
       id: response.user.id,
@@ -84,6 +106,19 @@ export const test = base.extend<{ user: User }>({
         const project = createProject(db, response.user.id, { name }, SOURCE);
         for (const title of items) addItem(db, response.user.id, { projectId: project.id, title }, SOURCE);
         return { id: project.id };
+      },
+      addItem(listId, title, assigneeIds = []) {
+        addItem(db, response.user.id, { projectId: listId, title, assigneeIds }, SOURCE);
+      },
+      addSpace(name, listIds = []) {
+        const space = createSpace(db, response.user.id, { name }, SOURCE);
+        for (const id of listIds) setProjectSpace(db, response.user.id, id, space.id, SOURCE);
+        return { id: space.id };
+      },
+      addPhoto(lines) {
+        const { sourceId, uploadToken } = proposeFromPhoto(db, response.user.id, { lines }, "Claude Code");
+        receiveSourcePhoto(db, uploadToken, readFileSync("public/apple-touch-icon.png"));
+        return { id: sourceId };
       },
     });
   },

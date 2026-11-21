@@ -131,6 +131,8 @@ export function submitFeedback(
   const footer = [
     [
       `From ${reporter?.username ? `@${reporter.username}` : (reporter?.name ?? "a deleted user")}`,
+      // Sent by an agent for them: say which, since it may have worded it.
+      typeof source === "object" && `via ${source.agent.name}`,
       page && `on \`${page}\``,
       release && `build [${release.slice(0, 7)}](${COMMIT_URL}${release})`,
     ],

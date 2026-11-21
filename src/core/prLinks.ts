@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { canEditProject, hasProjectAccess, requireListAccess } from "./access";
+import { canEditProject, hasItemAccess, requireListAccess } from "./access";
 import { type AuditOrigin, recordAudit } from "./audit";
 import { announceChange } from "./changes";
 import type { Db } from "./db";
@@ -60,7 +60,7 @@ export function listAllPrLinks(db: Db, userId: string): ItemPrLink[] {
     .from(itemPrLinks)
     .innerJoin(items, eq(items.id, itemPrLinks.itemId))
     .innerJoin(projects, eq(projects.id, items.projectId))
-    .where(hasProjectAccess(userId))
+    .where(hasItemAccess(userId))
     .orderBy(asc(itemPrLinks.createdAt))
     .all()
     .map((row) => row.itemPrLinks);
@@ -76,7 +76,7 @@ export function listPrLinksForItem(
     .from(itemPrLinks)
     .innerJoin(items, eq(items.id, itemPrLinks.itemId))
     .innerJoin(projects, eq(projects.id, items.projectId))
-    .where(and(eq(itemPrLinks.itemId, itemId), hasProjectAccess(userId)))
+    .where(and(eq(itemPrLinks.itemId, itemId), hasItemAccess(userId)))
     .orderBy(asc(itemPrLinks.createdAt))
     .all()
     .map((row) => row.itemPrLinks);
@@ -92,7 +92,7 @@ export function listItemsForPr(
     .from(itemPrLinks)
     .innerJoin(items, eq(items.id, itemPrLinks.itemId))
     .innerJoin(projects, eq(projects.id, items.projectId))
-    .where(and(eq(itemPrLinks.prUrl, prUrl), hasProjectAccess(userId)))
+    .where(and(eq(itemPrLinks.prUrl, prUrl), hasItemAccess(userId)))
     .all()
     .map((row) => row.itemPrLinks);
 }
@@ -123,7 +123,7 @@ export function suggestedRepositories(db: Db, userId: string): Record<string, st
     .from(itemPrLinks)
     .innerJoin(items, eq(items.id, itemPrLinks.itemId))
     .innerJoin(projects, eq(projects.id, items.projectId))
-    .where(and(isNull(projects.repository), hasProjectAccess(userId)))
+    .where(and(isNull(projects.repository), hasItemAccess(userId)))
     .all();
   const counts = new Map<string, Map<string, number>>();
   for (const { projectId, prUrl } of rows) {
@@ -263,10 +263,10 @@ export function setPrState(db: Db, userId: string, prUrlRaw: string, state: PrSt
     .where(inArray(itemPrLinks.id, links.map((l) => l.id)))
     .run();
   // Not audited, so announce it here: the PR badge shows on the board.
-  const lists = db
-    .selectDistinct({ projectId: items.projectId })
+  const linked = db
+    .selectDistinct({ id: items.id, projectId: items.projectId })
     .from(items)
     .where(inArray(items.id, links.map((l) => l.itemId)))
     .all();
-  for (const { projectId } of lists) announceChange({ actor: userId, projectId });
+  for (const { id, projectId } of linked) announceChange({ actor: userId, projectId, itemId: id });
 }

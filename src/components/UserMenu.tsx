@@ -1,10 +1,10 @@
 "use client";
 
-import { Archive, Bell, Boxes, CalendarDays, Check, CircleUserRound, History, KeyRound, Loader2, LogOut, Moon, Sun, SunMoon, Sunrise, UserRound } from "lucide-react";
+import { Archive, Check, CircleUserRound, History, Loader2, LogOut, Moon, Sun, SunMoon, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import posthog from "posthog-js";
-import { useTransition, type ComponentType } from "react";
+import { useTransition } from "react";
 import { useCopy } from "@/components/ui/use-copy";
 import {
   DropdownMenu,
@@ -21,7 +21,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { GitHubMark } from "@/components/GitHubMark";
+import { SETTINGS_PAGES } from "@/components/settings-pages";
 import { assigneeName, UserAvatar, type AvatarUser } from "@/components/UserAvatar";
 import { signOut } from "@/auth/client";
 import { forgetDrafts } from "./use-draft";
@@ -35,26 +35,18 @@ const THEME_OPTIONS: Record<Theme, { label: string; Icon: typeof Sun }> = {
   dark: { label: "Dark", Icon: Moon },
 };
 
-/** The settings pages, in the menu's Settings group. */
-const SETTINGS_LINKS: [href: string, label: string, Icon: ComponentType<{ className?: string }>][] = [
-  ["/settings/profile", "Profile", UserRound],
-  ["/settings/notifications", "Notifications", Bell],
-  ["/settings/greeting", "Brief greeting", Sunrise],
-  ["/settings/calendars", "Calendars", CalendarDays],
-  ["/settings/spaces", "Spaces", Boxes],
-  ["/settings/keys", "API keys", KeyRound],
-  ["/settings/github", "GitHub", GitHubMark],
-];
 
 /**
- * The avatar's menu: who's signed in, settings and theme, Activity and
- * Archived lists, sign out and the build.
+ * The avatar's menu: who's signed in, settings and theme, inviting people,
+ * Activity and Archived lists, sign out and the build.
  */
 export function UserMenu({
   user,
   archivedCount,
   onShowArchived,
   onShowActivity,
+  onTry,
+  onInvite,
 }: {
   user: AvatarUser | null;
   /** How many lists are archived, for the Archived lists item. */
@@ -63,6 +55,13 @@ export function UserMenu({
   onShowArchived: () => void;
   /** Opens Activity for the whole board. */
   onShowActivity: () => void;
+  /**
+   * The landing page's preview: what settings, Archived lists and Sign out
+   * do instead, as there's no account to open them on.
+   */
+  onTry?: () => void;
+  /** Opens Invite people, for several lists and Spaces at once. */
+  onInvite: () => void;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -126,17 +125,24 @@ export function UserMenu({
         )}
         <DropdownMenuGroup>
           <DropdownMenuLabel className="px-2.5">Settings</DropdownMenuLabel>
-          {SETTINGS_LINKS.map(([href, label, Icon]) => (
-            <DropdownMenuItem
-              key={href}
-              render={
-                <Link href={href}>
-                  <Icon />
-                  {label}
-                </Link>
-              }
-            />
-          ))}
+          {SETTINGS_PAGES.map(({ href, label, Icon }) =>
+            onTry ? (
+              <DropdownMenuItem key={href} onClick={onTry}>
+                <Icon />
+                {label}
+              </DropdownMenuItem>
+            ) : (
+              <DropdownMenuItem
+                key={href}
+                render={
+                  <Link href={href}>
+                    <Icon />
+                    {label}
+                  </Link>
+                }
+              />
+            ),
+          )}
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>
               <ThemeIcon />
@@ -165,18 +171,27 @@ export function UserMenu({
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
+          <DropdownMenuItem onClick={onInvite}>
+            <UserPlus />
+            Invite people…
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={onShowActivity}>
             <History />
             Activity
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={onShowArchived}>
+          <DropdownMenuItem onClick={onTry ?? onShowArchived}>
             <Archive />
             Archived lists{archivedCount > 0 ? ` (${archivedCount})` : ""}
           </DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        {/* Stays open so "Signing out…" shows until the redirect to /login. */}
-        <DropdownMenuItem closeOnClick={false} onClick={onSignOut} disabled={pending}>
+        {/* Stays open so "Signing out…" shows until the redirect to /login;
+            the preview's closes, for its toast. */}
+        <DropdownMenuItem
+          closeOnClick={!!onTry}
+          onClick={onTry ?? onSignOut}
+          disabled={pending}
+        >
           {pending ? <Loader2 className="animate-spin" /> : <LogOut />}
           {pending ? "Signing out…" : "Sign out"}
         </DropdownMenuItem>

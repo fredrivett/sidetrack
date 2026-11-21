@@ -3,7 +3,9 @@ services:
     # `predev` migrates ./data/sidetrack.db and seeds the demo user on a fresh DB.
     # BETTER_AUTH_URL pins Better Auth to the portal origin so auth POSTs
     # through the portal proxy pass its origin check.
-    command: BETTER_AUTH_URL="$PUBLIC_URL" pnpm dev --port "$PORT"
+    # An EMAIL_IN_SECRET without EMAIL_IN_DOMAIN (one kept in Amp for deploying
+    # workers/email-in) would stop the server starting, so it's dropped here.
+    command: '[ -n "$EMAIL_IN_DOMAIN" ] || unset EMAIL_IN_SECRET; BETTER_AUTH_URL="$PUBLIC_URL" pnpm dev --port "$PORT"'
     portal:
       title: Sidetrack
       description: Log in as demo@sidetrack.local / sidetrack-demo.

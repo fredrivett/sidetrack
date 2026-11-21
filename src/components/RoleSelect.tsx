@@ -3,17 +3,23 @@
 import { ChevronDown } from "lucide-react";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { ListRole, SpaceRole } from "@/core/schema";
 import { roleHint, roleName } from "@/lib/roles";
 
+/** Roles that can be limited to someone's items: they see, but don't change, the list. */
+const LIMITABLE = new Set<string>(["viewer", "commenter"]);
+
 /**
  * Picks a list or Space role: the role's name on the trigger, and in the
- * menu each choice with what it lets someone do.
+ * menu each choice with what it lets someone do. With `onlyMine`, a viewer
+ * or commenter can also be shown only the items assigned to you.
  */
 export function RoleSelect<R extends ListRole | SpaceRole>({
   label,
@@ -22,6 +28,7 @@ export function RoleSelect<R extends ListRole | SpaceRole>({
   scope,
   disabled,
   onChange,
+  onlyMine,
 }: {
   label: string;
   value: R;
@@ -30,7 +37,13 @@ export function RoleSelect<R extends ListRole | SpaceRole>({
   scope: "list" | "space";
   disabled?: boolean;
   onChange: (role: R) => void;
+  /** Whether they see only your items, and how to change it; leave out where
+   * it can't apply. `someoneElse` names the person whose items they see
+   * instead, when another admin limited them: ticking yours switches it to
+   * you, unticking theirs shows them everything. */
+  onlyMine?: { value: boolean; someoneElse?: string; onChange: (onlyMine: boolean) => void };
 }) {
+  const limitable = onlyMine && LIMITABLE.has(value);
   return (
     // aria-disabled rather than disabled while saving, so the trigger keeps
     // keyboard focus; it just won't open.
@@ -41,6 +54,7 @@ export function RoleSelect<R extends ListRole | SpaceRole>({
         className="flex h-7 shrink-0 items-center gap-0.5 rounded-md border border-neutral-200 px-2 text-xs whitespace-nowrap transition hover:bg-accent aria-disabled:opacity-50 dark:border-neutral-800"
       >
         {roleName(value)}
+        {limitable && (onlyMine.value ? ", my items" : onlyMine.someoneElse ? `, ${onlyMine.someoneElse}’s items` : "")}
         <ChevronDown className="size-3 opacity-50" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64">
@@ -57,6 +71,31 @@ export function RoleSelect<R extends ListRole | SpaceRole>({
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
+        {limitable && (
+          <>
+            <DropdownMenuSeparator />
+            {onlyMine.someoneElse && !onlyMine.value && (
+              <DropdownMenuCheckboxItem checked onCheckedChange={(on) => !on && onlyMine.onChange(false)} className="items-start">
+                <span className="flex flex-col">
+                  <span>Only {onlyMine.someoneElse}’s items</span>
+                  <span className="text-xs text-neutral-500">Untick to show them everything {scope === "list" ? "on it" : "in it"}</span>
+                </span>
+              </DropdownMenuCheckboxItem>
+            )}
+            <DropdownMenuCheckboxItem
+              checked={onlyMine.value}
+              onCheckedChange={(on) => on !== onlyMine.value && onlyMine.onChange(on)}
+              className="items-start"
+            >
+              <span className="flex flex-col">
+                <span>Only my items</span>
+                <span className="text-xs text-neutral-500">
+                  Sees just what’s assigned to you, nothing else {scope === "list" ? "on it" : "in it"}
+                </span>
+              </span>
+            </DropdownMenuCheckboxItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

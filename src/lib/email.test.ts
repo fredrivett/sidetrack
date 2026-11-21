@@ -220,9 +220,44 @@ describe("deliverInviteEmail", () => {
       return smtp.calls[0].message.text;
     };
     expect(await text("viewer")).toContain('"Engineering" in Sidetrack, as a viewer.');
+    expect(
+      await (async () => {
+        const smtp = smtpStub();
+        await deliverInviteEmail(
+          { ...INVITE, role: "viewer", onlyMine: true },
+          { env: { ...noEnv, SMTP_URL: "smtp://localhost:1025" }, fetchFn: fetchStub({}).fn, log: () => {}, sendSmtp: smtp.fn },
+        );
+        return smtp.calls[0].message.text;
+      })(),
+    ).toContain(`"Engineering" in Sidetrack, as a viewer of ${INVITE.inviterName}'s items.`);
     expect(await text("commenter")).toContain("as a commenter.");
     expect(await text("editor")).toContain('collaborate on "Engineering"');
     expect(await text("editor")).not.toContain(" as ");
+  });
+
+  it("names every place one invite covers, and what they'll do in each", async () => {
+    const smtp = smtpStub();
+    await deliverInviteEmail(
+      {
+        ...INVITE,
+        places: [
+          { name: "Home", kind: "list", role: "editor" },
+          { name: "Health", kind: "list", role: "viewer" },
+          { name: "Family", kind: "space", role: "commenter" },
+        ],
+      },
+      {
+        env: { ...noEnv, SMTP_URL: "smtp://localhost:1025" },
+        fetchFn: fetchStub({}).fn,
+        log: () => {},
+        sendSmtp: smtp.fn,
+      },
+    );
+    const { subject, text } = smtp.calls[0].message;
+    expect(subject).toBe(`${INVITE.inviterName} invited you to Sidetrack`);
+    expect(text).toContain(
+      `invited you to "Home", "Health" (as a viewer) and "Family" (a space, as a commenter) in Sidetrack.`,
+    );
   });
 
   it("labels a Resend rejection as the invite email", async () => {

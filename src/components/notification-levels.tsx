@@ -23,7 +23,7 @@ export const LEVELS: Array<{ level: NotificationLevel; label: string; hint: stri
   {
     level: "default",
     label: "Default",
-    hint: "Notifications for what's for you and items you follow. Other activity waits in the inbox.",
+    hint: "Notifications for what's for you, items you follow, and who's invited or joins. Other activity waits in the inbox.",
   },
   {
     level: "mine",

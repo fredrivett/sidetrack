@@ -24,7 +24,7 @@ export type ResolveItemResult =
  * Resolve `(projectId, number)` to an item, or null if no such number: the
  * item there now, or one that had that ref before it moved to another list
  * (item_ref_aliases). The item is returned only if the viewer can still see
- * where it is now.
+ * where it is now, and see the item itself.
  */
 function itemByNumber(
   db: Db,
@@ -37,7 +37,9 @@ function itemByNumber(
     .from(items)
     .where(and(eq(items.projectId, projectId), eq(items.number, number)))
     .get()?.items;
-  if (here) return here;
+  // Only one they can see: a membership limited to someone's items
+  // mustn't find the rest by number.
+  if (here) return getItem(db, userId, here.id) ?? null;
   const alias = db
     .select({ itemId: itemRefAliases.itemId })
     .from(itemRefAliases)
