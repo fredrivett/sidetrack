@@ -22,6 +22,7 @@ import {
 import { localDate, localDay, spanDates } from "@/lib/time";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
+import { cn } from "@/lib/utils";
 import { Kbd } from "@/components/ui/kbd";
 import {
   DropdownMenu,
@@ -90,13 +91,18 @@ export function FilterMenu({
           render={
             // Just the icon on phones, where the header is full, with the
             // count on its corner, so it's no wider than its neighbours.
+            // Quiet, like the header's other icons, until a filter is on:
+            // then it's filled, as the board is showing less than it has.
             <Button
               ref={button}
-              variant="outline"
+              variant="ghost"
               size="sm"
               aria-label={count > 0 ? `Filter (${count} on)` : "Filter"}
               aria-keyshortcuts={onOpenChange && "F"}
-              className="relative"
+              className={cn(
+                "relative",
+                count > 0 ? "bg-muted text-foreground dark:bg-muted/50" : "text-muted-foreground",
+              )}
             >
               <ListFilter />
               <span className="hidden sm:inline">Filter</span>

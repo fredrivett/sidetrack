@@ -47,9 +47,18 @@ export function BoardHeader({
           beside it have padding round them, so it gets that padding (6px,
           8px on touch) again as margin, to look as far from its neighbour
           as they are from each other. */}
-      <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 max-[360px]:gap-1 sm:gap-3 max-sm:[&>:last-child]:ml-1.5 touch:max-sm:[&>:last-child]:ml-2 max-sm:[&_:is(button,[data-slot=button])]:aspect-square max-sm:[&_:is(button,[data-slot=button])]:border-transparent max-sm:[&_:is(button,[data-slot=button])]:px-0 max-sm:[&_:is(button,[data-slot=button]):not(:hover,[aria-expanded=true])]:bg-transparent touch:max-sm:[&_:is(button,[data-slot=button])>svg:not([class*=size-])]:size-5">{children}</div>
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 max-[360px]:gap-1 sm:gap-1 max-sm:[&>:last-child]:ml-1.5 touch:max-sm:[&>:last-child]:ml-2 max-sm:[&_:is(button,[data-slot=button])]:aspect-square max-sm:[&_:is(button,[data-slot=button])]:border-transparent max-sm:[&_:is(button,[data-slot=button])]:px-0 max-sm:[&_:is(button,[data-slot=button]):not(:hover,[aria-expanded=true])]:bg-transparent touch:max-sm:[&_:is(button,[data-slot=button])>svg:not([class*=size-])]:size-5">{children}</div>
     </div>
   );
+}
+
+/**
+ * The hairline between the header's quiet icons and the account avatar,
+ * which keeps the avatar from reading as one more of them. Not on phones,
+ * where the avatar's margin does that (BoardHeader).
+ */
+export function HeaderRule() {
+  return <span aria-hidden className="mx-1.5 h-4 w-px shrink-0 bg-neutral-200 max-sm:hidden dark:bg-neutral-800" />;
 }
 
 /** The horizontally scrolling row of project columns. */
