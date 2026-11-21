@@ -7,9 +7,13 @@ import { projects, spaces, type ListRole, type SpaceRole } from "./schema";
 import { inviteSpaceMember, type SpaceMemberView } from "./spaces";
 
 /** A place one invite covers, and what the people invited can do there. */
-export type InvitePlace =
+export type InvitePlace = (
   | { kind: "list"; id: string; role: ListRole }
-  | { kind: "space"; id: string; role: Exclude<SpaceRole, "admin"> };
+  | { kind: "space"; id: string; role: Exclude<SpaceRole, "admin"> }
+) & {
+  /** They'll see only the items assigned to whoever's inviting them. */
+  onlyMine?: boolean;
+};
 
 /** Who was invited where: one per person and place. */
 export type SentInvite =
@@ -54,12 +58,12 @@ export function invitePeople(
           ? {
               kind: "list",
               placeId: place.id,
-              member: inviteMember(tx as unknown as Db, userId, place.id, person, source, place.role, inviteId),
+              member: inviteMember(tx as unknown as Db, userId, place.id, person, source, place.role, { inviteId, onlyMine: place.onlyMine }),
             }
           : {
               kind: "space",
               placeId: place.id,
-              member: inviteSpaceMember(tx as unknown as Db, userId, place.id, person, source, place.role, inviteId),
+              member: inviteSpaceMember(tx as unknown as Db, userId, place.id, person, source, place.role, { inviteId, onlyMine: place.onlyMine }),
             },
       ),
     ),

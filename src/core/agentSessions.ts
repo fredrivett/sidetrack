@@ -3,7 +3,7 @@ import { nanoid } from "nanoid";
 import type { AgentRequest } from "../lib/agentRequest";
 import { formatItemRef, workBranchName } from "../lib/itemRef";
 import { normalizeWebUrl } from "../lib/url";
-import { canEditProject, hasProjectAccess, isListAdmin, requireListAccess } from "./access";
+import { canEditProject, hasItemAccess, isListAdmin, requireListAccess } from "./access";
 import { apiKeys } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
@@ -77,7 +77,7 @@ export function listAllAgentSessions(db: Db, userId: string): AgentSession[] {
     .innerJoin(items, eq(items.id, agentSessions.itemId))
     .innerJoin(projects, eq(projects.id, items.projectId))
     .where(
-      and(hasProjectAccess(userId), or(isNull(agentSessions.finishedAt), latestFinished)),
+      and(hasItemAccess(userId), or(isNull(agentSessions.finishedAt), latestFinished)),
     )
     .orderBy(asc(agentSessions.startedAt))
     .all()

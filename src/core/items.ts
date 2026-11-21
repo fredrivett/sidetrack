@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, type SQL, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { hasProjectAccess, listAccess, requireListAccess } from "./access";
+import { hasItemAccess, hasProjectAccess, listAccess, requireListAccess } from "./access";
 import { users } from "./auth-schema";
 import { type AuditOrigin, recordAudit, SYSTEM_ACTOR } from "./audit";
 import { ensureLabels, type LabelEmoji, normalizeLabelNames } from "./labels";
@@ -30,7 +30,7 @@ import { agentSessions, type Item, items, projects } from "./schema";
 // string drop the id filter and match an arbitrary accessible item. The only
 // caller always has an id, so require it and always filter on it.
 function accessibleItemWhere(userId: string, itemId: string) {
-  return and(hasProjectAccess(userId), eq(items.id, itemId));
+  return and(hasItemAccess(userId), eq(items.id, itemId));
 }
 
 function accessibleProjectWhere(userId: string, projectId: string) {
@@ -76,7 +76,7 @@ export function listItems(
 ): Item[] {
   const baseConds = [
     eq(items.projectId, projectId),
-    hasProjectAccess(userId),
+    hasItemAccess(userId),
   ];
   if (!opts.includeCompleted) baseConds.push(isNull(items.completedAt));
   else if (opts.completedSince !== undefined) {
@@ -115,7 +115,7 @@ export function listDoneBefore(
   const query = opts.query?.trim().toLowerCase();
   // A ref, optionally qualified ("alice/SID-12"), by its list's prefix.
   const ref = query ? /^(?:.*\/)?([a-z]+)-(\d+)$/.exec(query) : null;
-  const inLists = and(hasProjectAccess(userId), ne(projects.status, "archived"));
+  const inLists = and(hasItemAccess(userId), ne(projects.status, "archived"));
   const finished = (...where: SQL[]) =>
     and(
       inLists,
@@ -268,7 +268,7 @@ export function listSubItems(db: Db, userId: string, parentId: string): Item[] {
     .select({ items })
     .from(items)
     .innerJoin(projects, eq(projects.id, items.projectId))
-    .where(and(eq(items.parentId, parentId), hasProjectAccess(userId)))
+    .where(and(eq(items.parentId, parentId), hasItemAccess(userId)))
     .orderBy(asc(items.position), asc(items.id))
     .all()
     .map((row) => row.items);
@@ -774,7 +774,7 @@ export function reopenDueRepeats(
     .innerJoin(projects, eq(projects.id, items.projectId))
     .where(
       and(
-        hasProjectAccess(userId),
+        hasItemAccess(userId),
         ne(projects.status, "archived"),
         isNotNull(items.repeatUnit),
         isNotNull(items.completedAt),
@@ -896,23 +896,21 @@ export function setItemsCollapsed(
   collapsed: boolean,
 ): void {
   // The items that change, and the lists they're on.
-  const changed: string[] = [];
-  const lists = new Set<string>();
+  const changed: Array<{ id: string; projectId: string }> = [];
   for (const id of ids) {
     const item = getItem(db, userId, id);
     if (!item) throw new Error(`item not found: ${id}`);
     // Anyone who can see the list folds it, viewers too: it's how the list
     // is viewed, not a change to its items.
     if (item.collapsed === collapsed) continue;
-    changed.push(id);
-    lists.add(item.projectId);
+    changed.push({ id, projectId: item.projectId });
   }
   if (changed.length === 0) return;
   // audit-exempt: collapsing is how the list is viewed, not a change to the
   // item, so it stays out of the item's history and the activity feed.
-  db.update(items).set({ collapsed }).where(inArray(items.id, changed)).run();
+  db.update(items).set({ collapsed }).where(inArray(items.id, changed.map((c) => c.id))).run();
   // Unaudited, so announced here: everyone with the list open sees it fold.
-  for (const projectId of lists) announceChange({ actor: userId, projectId });
+  for (const { id, projectId } of changed) announceChange({ actor: userId, projectId, itemId: id });
 }
 
 export { ITEM_SORTS, type ItemSort } from "../lib/itemSorts";

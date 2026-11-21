@@ -53,6 +53,8 @@ export interface SpaceMemberView {
   email: string | null;
   status: MembershipStatus;
   role: SpaceRole;
+  /** Set when they see only the items assigned to this user ("only my tasks"). */
+  onlyAssignedTo: string | null;
   createdAt: number;
 }
 
@@ -263,11 +265,19 @@ export function inviteSpaceMember(
   handle: string,
   source: AuditOrigin,
   role: Exclude<SpaceRole, "admin"> = "member",
-  /** Shared by each place one invite (invitePeople) covers. */
-  inviteId?: string,
+  opts: {
+    /** Shared by each place one invite (invitePeople) covers. */
+    inviteId?: string;
+    /** They'll see only the items assigned to the inviter ("only my tasks"). */
+    onlyMine?: boolean;
+  } = {},
 ): SpaceMemberView {
   const { space } = requireAdmin(db, userId, spaceId, "invite people");
   if (!["member", "commenter", "viewer"].includes(role)) throw new Error(`invalid role: ${role}`);
+  const { inviteId, onlyMine } = opts;
+  if (onlyMine && role === "member") {
+    throw new Error("only viewers and commenters can be shown just your items");
+  }
   const target = findUserByHandle(db, handle);
   if (!target) throw new Error(`no account found for "${handle.trim()}"`);
   const existing = membershipOf(db, target.id, spaceId);
@@ -282,7 +292,15 @@ export function inviteSpaceMember(
   const now = Date.now();
   db.transaction((tx) => {
     tx.insert(spaceMembers)
-      .values({ id, spaceId, userId: target.id, status: "pending", role, createdAt: now })
+      .values({
+        id,
+        spaceId,
+        userId: target.id,
+        status: "pending",
+        role,
+        createdAt: now,
+        onlyAssignedTo: onlyMine ? userId : null,
+      })
       .run();
     recordAudit(tx as unknown as Db, {
       actor: userId,
@@ -294,6 +312,7 @@ export function inviteSpaceMember(
         member: personAt(target),
         role,
         ...(inviteId ? { inviteId } : {}),
+        ...(onlyMine ? { onlyAssignedTo: personAt(tx.select().from(users).where(eq(users.id, userId)).get() ?? { id: userId, username: null }) } : {}),
       },
     });
   });
@@ -305,6 +324,7 @@ export function inviteSpaceMember(
     email: target.email,
     status: "pending",
     role,
+    onlyAssignedTo: onlyMine ? userId : null,
     createdAt: now,
   };
 }
@@ -341,6 +361,9 @@ export function acceptSpaceInvite(
         space: { spaceId, name: spaceName(db, spaceId) },
         membershipId: membership.id,
         role: membership.role,
+        ...(membership.onlyAssignedTo
+          ? { onlyAssignedTo: personAt(tx.select().from(users).where(eq(users.id, membership.onlyAssignedTo)).get() ?? { id: membership.onlyAssignedTo, username: null }) }
+          : {}),
       },
     });
   });
@@ -440,9 +463,15 @@ export function setSpaceMemberRole(
   targetUserId: string,
   role: SpaceRole,
   source: AuditOrigin,
+  /** Whether they see only the caller's items; left as it is when undefined. */
+  onlyMine?: boolean,
 ): void {
   if (!(SPACE_ROLES as readonly string[]).includes(role)) {
     throw new Error(`invalid role: ${role}`);
+  }
+  const whole = role === "member" || role === "admin";
+  if (onlyMine && whole) {
+    throw new Error("only viewers and commenters can be shown just your items");
   }
   const { space } = requireAdmin(db, userId, spaceId, "change roles");
   const membership = membershipOf(db, targetUserId, spaceId);
@@ -450,10 +479,22 @@ export function setSpaceMemberRole(
   if (membership.status !== "accepted" && role === "admin") {
     throw new Error("only people who've joined the space can be made an admin");
   }
-  if (membership.role === role) return;
+  // Members and admins see every list whole: an edit (a sort, a move)
+  // reaches items they couldn't otherwise see.
+  const limitedTo = whole
+    ? null
+    : onlyMine === undefined
+      ? membership.onlyAssignedTo
+      : onlyMine
+        ? userId
+        : null;
+  if (membership.role === role && membership.onlyAssignedTo === limitedTo) return;
   const target = db.select().from(users).where(eq(users.id, targetUserId)).get();
   db.transaction((tx) => {
-    tx.update(spaceMembers).set({ role }).where(eq(spaceMembers.id, membership.id)).run();
+    tx.update(spaceMembers)
+      .set({ role, onlyAssignedTo: limitedTo })
+      .where(eq(spaceMembers.id, membership.id))
+      .run();
     // As in removeSpaceMember: checked after the write, inside the transaction.
     if (adminCount(tx as unknown as Db, spaceId) === 0) {
       throw new Error("the space needs an admin: make someone else an admin first");
@@ -474,6 +515,8 @@ export function setSpaceMemberRole(
         member: personAt(target ?? { id: targetUserId, username: null }),
         role,
         lost: accessLost(lost),
+        ...(limitedTo ? { onlyAssignedTo: personAt(tx.select().from(users).where(eq(users.id, limitedTo)).get() ?? { id: limitedTo, username: null }) } : {}),
+        ...(membership.onlyAssignedTo && !limitedTo ? { seesAll: true as const } : {}),
       },
     });
   });
@@ -700,6 +743,7 @@ export function listSpaceMembers(
       email: user?.email ?? null,
       status: membership.status,
       role: membership.role,
+      onlyAssignedTo: membership.onlyAssignedTo,
       createdAt: membership.createdAt,
     }));
 }

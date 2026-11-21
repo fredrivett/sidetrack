@@ -84,6 +84,8 @@ export type ProjectView = Project & {
   isOwner: boolean;
   /** What the viewer can do on it: edit, comment or only view. */
   access: ListAccess;
+  /** Whose items the viewer sees, when they see only someone's (\`Lorna\`); null for the whole list. */
+  onlyItemsOf: string | null;
   refPrefix: string;
   /** Offered to the admin while the list has no repository: see suggestedRepositories. */
   suggestedRepository?: string;

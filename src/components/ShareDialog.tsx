@@ -58,6 +58,7 @@ export function ShareDialog({
     `draft:share:${projectId ?? ""}:role`,
     "editor",
   );
+  const [onlyMine, setOnlyMine] = useStoredState(`draft:share:${projectId ?? ""}:only-mine`, false);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   // Removing someone takes a second tap: it also takes them off their items.
@@ -139,7 +140,7 @@ export function ShareDialog({
     setError(null);
     start(async () => {
       try {
-        await inviteMemberAction(projectId, handle, role);
+        await inviteMemberAction(projectId, handle, role, role !== "editor" && onlyMine);
       } catch (err) {
         unstable_rethrow(err);
         if (latestProjectId.current !== projectId) return;
@@ -151,12 +152,12 @@ export function ShareDialog({
     });
   }
 
-  function changeRole(targetUserId: string, next: ListRole) {
+  function changeRole(targetUserId: string, next: ListRole, onlyMine?: boolean) {
     if (!projectId) return;
     setError(null);
     start(async () => {
       try {
-        await setMemberRoleAction(projectId, targetUserId, next);
+        await setMemberRoleAction(projectId, targetUserId, next, onlyMine);
       } catch (err) {
         unstable_rethrow(err);
         if (latestProjectId.current !== projectId) return;
@@ -190,6 +191,7 @@ export function ShareDialog({
         if (!next) {
           draft.clear();
           setRole("editor");
+          setOnlyMine(false);
         }
         onOpenChange(next);
       }}
@@ -230,6 +232,7 @@ export function ShareDialog({
               scope="list"
               disabled={pending}
               onChange={setRole}
+              onlyMine={{ value: onlyMine, onChange: setOnlyMine }}
             />
             <Button type="submit" size="sm" disabled={!person.trim() || pending}>
               <UserPlus data-icon="inline-start" />
@@ -275,6 +278,10 @@ export function ShareDialog({
               scope="list"
                       disabled={pending}
                       onChange={(next) => changeRole(m.userId, next)}
+                      onlyMine={{
+                        value: m.onlyAssignedTo !== null,
+                        onChange: (on) => changeRole(m.userId, m.role, on),
+                      }}
                     />
                     <button
                       type="button"

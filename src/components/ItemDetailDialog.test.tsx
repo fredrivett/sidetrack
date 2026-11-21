@@ -11,7 +11,7 @@ import { ItemDetailDialog } from "./ItemDetailDialog";
 vi.mock("@/app/actions", () => ({
   addItemAction: vi.fn(),
   listAuditAction: vi.fn(),
-  listCommentsAction: vi.fn(async () => []),
+  listCommentsAction: vi.fn(async () => ({ comments: [], mentionable: [] })),
   addCommentAction: vi.fn(),
   updateCommentAction: vi.fn(),
   deleteCommentAction: vi.fn(),

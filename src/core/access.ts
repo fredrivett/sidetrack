@@ -1,6 +1,8 @@
-import { and, eq, or, sql } from "drizzle-orm";
+import { and, eq, inArray, or, type SQL, sql } from "drizzle-orm";
+import { users } from "./auth-schema";
 import type { Db } from "./db";
 import {
+  items,
   type ListAccess,
   type ListRole,
   type Project,
@@ -83,6 +85,87 @@ function projectAccessAtLeast(userId: string, access: ListAccess) {
     sql`exists (select 1 from ${projectMembers} where ${projectMembers.projectId} = ${projects.id} and ${projectMembers.userId} = ${userId} and ${projectMembers.status} = 'accepted' and ${projectMembers.role} in (${inList(LIST_ROLES_FOR[access])}))`,
     sql`exists (select 1 from ${spaceMembers} where ${spaceMembers.spaceId} = ${projects.spaceId} and ${spaceMembers.userId} = ${userId} and ${spaceMembers.status} = 'accepted' and ${spaceMembers.role} in (${inList(SPACE_ROLES_FOR[access])}))`,
   );
+}
+
+/**
+ * As hasProjectAccess, for one item: `items` and `projects` must be in
+ * scope. A membership limited to someone's items (`only_assigned_to`) opens
+ * only the item groups assigned to them: an item with its sub-items, whole,
+ * when that person is on any of them. Any other route in opens every item,
+ * so the most generous route still counts. Use it wherever an item, or
+ * something about one (its comments, history, counts), is read.
+ */
+export function hasItemAccess(userId: string) {
+  // The item's group: its parent's, for a sub-item.
+  const group = sql`coalesce(${items.parentId}, ${items.id})`;
+  const sees = (limitedTo: SQL) =>
+    sql`(${limitedTo} is null or exists (select 1 from items g, json_each(g.assignee_ids) a where (g.id = ${group} or g.parent_id = ${group}) and a.value = ${limitedTo}))`;
+  return or(
+    eq(projects.userId, userId),
+    sql`exists (select 1 from ${projectMembers} pm where pm.project_id = ${projects.id} and pm.user_id = ${userId} and pm.status = 'accepted' and ${sees(sql`pm.only_assigned_to`)})`,
+    sql`exists (select 1 from ${spaceMembers} sm where sm.space_id = ${projects.spaceId} and sm.user_id = ${userId} and sm.status = 'accepted' and ${sees(sql`sm.only_assigned_to`)})`,
+  );
+}
+
+/**
+ * Whether `userId` can see the item now. Once it's deleted there's nothing
+ * left to check its assignees on, so only those who see its whole list can.
+ */
+export function canSeeItem(db: Db, userId: string, itemId: string, projectId: string): boolean {
+  const here = db
+    .select({ id: items.id })
+    .from(items)
+    .innerJoin(projects, eq(projects.id, items.projectId))
+    .where(and(eq(items.id, itemId), hasItemAccess(userId)))
+    .get();
+  if (here) return true;
+  const exists = db.select({ id: items.id }).from(items).where(eq(items.id, itemId)).get();
+  if (exists) return false;
+  return !!db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(and(eq(projects.id, projectId), hasWholeListAccess(userId)))
+    .get();
+}
+
+/** As hasProjectAccess, for those who see every item on it: no route in limited to someone's items. */
+export function hasWholeListAccess(userId: string) {
+  return or(
+    eq(projects.userId, userId),
+    sql`exists (select 1 from ${projectMembers} pm where pm.project_id = ${projects.id} and pm.user_id = ${userId} and pm.status = 'accepted' and pm.only_assigned_to is null)`,
+    sql`exists (select 1 from ${spaceMembers} sm where sm.space_id = ${projects.spaceId} and sm.user_id = ${userId} and sm.status = 'accepted' and sm.only_assigned_to is null)`,
+  );
+}
+
+/**
+ * The lists `userId` sees only part of, by list id, each with whose items
+ * they see (a name for the badge: \`@lorna\`). Lists they see whole are left out.
+ */
+export function limitedListsById(db: Db, userId: string): Map<string, string> {
+  const rows = db
+    .select({
+      id: projects.id,
+      // Spelled out: in a select field drizzle leaves columns unqualified,
+      // and a bare "id" here would be the member row's.
+      limitedTo: sql<string>`coalesce(
+        (select pm.only_assigned_to from ${projectMembers} pm where pm.project_id = "projects"."id" and pm.user_id = ${userId} and pm.status = 'accepted'),
+        (select sm.only_assigned_to from ${spaceMembers} sm where sm.space_id = "projects"."space_id" and sm.user_id = ${userId} and sm.status = 'accepted')
+      )`,
+    })
+    .from(projects)
+    .where(and(hasProjectAccess(userId), sql`not (${hasWholeListAccess(userId)})`))
+    .all();
+  const names = new Map(
+    rows.length
+      ? db
+          .select({ id: users.id, username: users.username, name: users.name })
+          .from(users)
+          .where(inArray(users.id, [...new Set(rows.map((r) => r.limitedTo))]))
+          .all()
+          .map((u) => [u.id, u.name || (u.username ? `@${u.username}` : "someone")])
+      : [],
+  );
+  return new Map(rows.map((r) => [r.id, names.get(r.limitedTo) ?? "someone"]));
 }
 
 /** What `userId` can do on each list they can open, by list id. */

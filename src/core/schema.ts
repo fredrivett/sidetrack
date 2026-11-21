@@ -134,6 +134,11 @@ export const spaceMembers = sqliteTable(
       .notNull()
       .default("pending"),
     role: text("role").$type<SpaceRole>().notNull().default("member"),
+    // Set when this membership shows only part of the list: the item groups
+    // (an item with its sub-items) assigned to this user, usually whoever
+    // invited them ("only my tasks"). Null shows everything. Only viewers
+    // and commenters are limited; see hasItemAccess in access.ts.
+    onlyAssignedTo: text("only_assigned_to"),
     // Where the Space sits among this member's own trays on their board, as a
     // fractional index, so reordering moves it only for whoever did it. Set
     // to the end when they create or join it. Null for memberships from
@@ -224,6 +229,11 @@ export const projectMembers = sqliteTable(
       .notNull()
       .default("pending"),
     role: text("role").$type<ListRole>().notNull().default("editor"),
+    // Set when this membership shows only part of the list: the item groups
+    // (an item with its sub-items) assigned to this user, usually whoever
+    // invited them ("only my tasks"). Null shows everything. Only viewers
+    // and commenters are limited; see hasItemAccess in access.ts.
+    onlyAssignedTo: text("only_assigned_to"),
     createdAt: integer("created_at")
       .notNull()
       .default(sql`(unixepoch() * 1000)`),

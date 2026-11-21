@@ -220,6 +220,16 @@ describe("deliverInviteEmail", () => {
       return smtp.calls[0].message.text;
     };
     expect(await text("viewer")).toContain('"Engineering" in Sidetrack, as a viewer.');
+    expect(
+      await (async () => {
+        const smtp = smtpStub();
+        await deliverInviteEmail(
+          { ...INVITE, role: "viewer", onlyMine: true },
+          { env: { ...noEnv, SMTP_URL: "smtp://localhost:1025" }, fetchFn: fetchStub({}).fn, log: () => {}, sendSmtp: smtp.fn },
+        );
+        return smtp.calls[0].message.text;
+      })(),
+    ).toContain(`"Engineering" in Sidetrack, as a viewer of ${INVITE.inviterName}'s items.`);
     expect(await text("commenter")).toContain("as a commenter.");
     expect(await text("editor")).toContain('collaborate on "Engineering"');
     expect(await text("editor")).not.toContain(" as ");

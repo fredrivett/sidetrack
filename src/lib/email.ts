@@ -156,8 +156,10 @@ export interface InviteEmail {
   url: string;
   kind?: InviteKind;
   role?: ListRole | SpaceRole;
+  /** They'll see only the items assigned to the inviter. */
+  onlyMine?: boolean;
   /** Every place, when one invite covered several; projectName is unused then. */
-  places?: Array<{ name: string; kind: InviteKind; role: ListRole | SpaceRole }>;
+  places?: Array<{ name: string; kind: InviteKind; role: ListRole | SpaceRole; onlyMine?: boolean }>;
 }
 
 // Single source of truth for the invite email's copy.
@@ -167,15 +169,19 @@ function inviteMessage({
   url,
   kind = "list",
   role,
+  onlyMine,
   places,
 }: Omit<InviteEmail, "to">): { subject: string; text: string } {
-  // Said only when they'll see but not change it.
-  const asWords = (r?: ListRole | SpaceRole) =>
-    r === "viewer" || r === "commenter" ? `as ${roleWords(r)}` : "";
-  const as = asWords(role) && `, ${asWords(role)}`;
+  // Said only when they'll see but not change it, with whose items when
+  // it's only the inviter's.
+  const asWords = (r?: ListRole | SpaceRole, mine?: boolean) =>
+    r === "viewer" || r === "commenter"
+      ? `as ${roleWords(r)}${mine ? ` of ${inviterName}'s items` : ""}`
+      : "";
+  const as = asWords(role, onlyMine) && `, ${asWords(role, onlyMine)}`;
   const several = places && places.length > 1;
   const named = places?.map((p) => {
-    const how = [p.kind === "space" ? "a space" : "", asWords(p.role)].filter(Boolean).join(", ");
+    const how = [p.kind === "space" ? "a space" : "", asWords(p.role, p.onlyMine)].filter(Boolean).join(", ");
     return `"${p.name}"${how ? ` (${how})` : ""}`;
   });
   return {
@@ -208,11 +214,12 @@ export async function deliverInviteEmail(
     url,
     kind,
     role,
+    onlyMine,
     places,
   }: InviteEmail,
   deps: EmailDeps,
 ): Promise<void> {
-  const { subject, text } = inviteMessage({ inviterName, projectName, url, kind, role, places });
+  const { subject, text } = inviteMessage({ inviterName, projectName, url, kind, role, onlyMine, places });
   await deliverEmail(
     {
       to,

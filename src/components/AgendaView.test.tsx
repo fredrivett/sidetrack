@@ -30,7 +30,7 @@ vi.mock("@/app/actions", () => ({
   setNoDateListFoldedAction: vi.fn(),
   setAgendaReadAction: vi.fn(),
   // The item dialog reads its comments when it opens, and its history when expanded.
-  listCommentsAction: vi.fn(async () => []),
+  listCommentsAction: vi.fn(async () => ({ comments: [], mentionable: [] })),
   listAuditAction: vi.fn(async () => []),
 }));
 // The greeting is the only AI read here.

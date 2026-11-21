@@ -51,15 +51,18 @@ export function ItemComments({
 }: {
   item: Item;
   viewerId: string;
-  /** Who can open the item: who a comment can mention. */
+  /** Everyone on the item's list; a comment can mention those of them who can see the item. */
   people: AssigneeView[];
 }) {
   const [comments, setComments] = useState<CommentView[] | null>(null);
+  // Who of `people` can see this item, loaded with its comments: someone
+  // shown only part of the list isn't offered for an item outside it.
+  const [canSee, setCanSee] = useState<string[]>([]);
   // A viewer reads the comments but doesn't write them.
   const canComment = useListAccess(item.projectId) !== "view";
   // Suggested with you last: you rarely mention yourself.
   const mentionable = [
-    ...people.filter((p) => p.userId !== viewerId),
+    ...people.filter((p) => p.userId !== viewerId && canSee.includes(p.userId)),
     ...people.filter((p) => p.userId === viewerId),
   ];
   const [failed, setFailed] = useState(false);
@@ -81,8 +84,10 @@ export function ItemComments({
     startLoad(async () => {
       const loaded = await runAction(
         listCommentsAction(item.id).then(
-          (rows) => {
-            if (!stale && seen === changes.current) setComments(rows);
+          ({ comments: rows, mentionable }) => {
+            if (stale) return;
+            setCanSee(mentionable);
+            if (seen === changes.current) setComments(rows);
           },
           // Once the dialog has moved on, a failed load is moot, but a
           // signed-out session's redirect to /login still goes through.
