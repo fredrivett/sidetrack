@@ -6,7 +6,7 @@ import { type AuditOrigin, recordAudit, SYSTEM_ACTOR } from "./audit";
 import { ensureLabels, type LabelEmoji, normalizeLabelNames } from "./labels";
 import { announceChange } from "./changes";
 import type { Db } from "./db";
-import type { ChangeEvent, ItemChanges, PersonAt } from "./events";
+import type { ChangeEvent, ItemChanges, PersonAt, SourceAt } from "./events";
 import { getTimeZone } from "./users";
 import {
   MAX_REPEAT_EVERY,
@@ -237,7 +237,7 @@ function assertDue(
 // A repeat rule is a whole number of days, weeks or months, and a weekly or
 // monthly one may keep to a weekday or weekends, or a monthly one to a day
 // of the month; null clears it.
-function assertRepeat(repeat: Repeat | null): Repeat | null {
+export function assertRepeat(repeat: Repeat | null): Repeat | null {
   if (!repeat) return null;
   const { every, unit, on, day } = repeat;
   if (!(REPEAT_UNITS as readonly string[]).includes(unit)) {
@@ -372,6 +372,8 @@ export function addItem(
     repeat?: Repeat | null;
     /** Titles of sub-items to create under it, in order, in the same transaction. */
     subItems?: string[];
+    /** The source it was added from, such as a photo of a page, for its history. */
+    from?: SourceAt;
   },
   source: AuditOrigin,
   /** Internal: a line added with its parent, by the parent's addItem. */
@@ -455,6 +457,7 @@ export function addItem(
         assignees: assigneeIds.map((a) => personAt(tx as unknown as Db, a)),
         repeat,
         ...(withParent ? { withParent: true as const } : {}),
+        ...(input.from ? { from: input.from } : {}),
       },
     });
     // Created done: log the completion as its own row, as completeItem does,
@@ -463,7 +466,14 @@ export function addItem(
       recordAudit(tx as unknown as Db, {
         actor: userId,
         source,
-        event: { type: "item.completed", itemId: id, title, projectId: input.projectId, added: true },
+        event: {
+          type: "item.completed",
+          itemId: id,
+          title,
+          projectId: input.projectId,
+          added: true,
+          ...(input.from ? { from: input.from } : {}),
+        },
       });
     }
     // A done sub-item doesn't contradict a finished parent; only an open one does.
@@ -541,6 +551,8 @@ export function updateItem(
     repeat?: Repeat | null;
   },
   source: AuditOrigin,
+  /** The source the change came from, such as a photo of a page. */
+  from?: SourceAt,
 ): Item {
   const existing = getItem(db, userId, id);
   if (!existing) throw new Error(`item not found: ${id}`);
@@ -643,6 +655,7 @@ export function updateItem(
         title: existing.title,
         projectId: existing.projectId,
         changes,
+        ...(from && { from }),
       },
     });
   });
@@ -655,6 +668,8 @@ export function completeItem(
   userId: string,
   id: string,
   source: AuditOrigin,
+  /** The source it was ticked off from, such as a crossed-out line on a photo. */
+  from?: SourceAt,
 ): Item {
   const existing = getItem(db, userId, id);
   if (!existing) throw new Error(`item not found: ${id}`);
@@ -705,6 +720,7 @@ export function completeItem(
                   as: it === parent ? ("last-sub-item" as const) : ("parent" as const),
                 },
               }),
+          ...(it === existing && from ? { from } : {}),
         },
       });
     }

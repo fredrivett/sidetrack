@@ -54,6 +54,7 @@ import {
 import { moveItem, previewMoveItem } from "@/core/move";
 import { getDb } from "@/core/db";
 import { getTimeZone } from "@/core/users";
+import { addFromSource, discardSource, getItemSource, getSource, proposeFromPhoto } from "@/core/sources";
 import { nestItems } from "@/lib/itemTree";
 import { projectRefPrefixes, resolveItemRef } from "@/core/itemRef";
 import {
@@ -273,6 +274,11 @@ function resolveItemArg(db: Db, userId: string, raw: string) {
     };
   }
   return { item: null, error: notFound("item", raw) };
+}
+
+/** Where an item came from, for get_item. */
+function photoOf(source: { sourceId: string; createdAt: number } | null) {
+  return source && { source_id: source.sourceId, created_at: new Date(source.createdAt).toISOString() };
 }
 
 function errorText(text: string) {
@@ -722,6 +728,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "A repeating item carries `repeat` ({ every, unit, on?, day? }); a finished one also carries `comesBack`, the day it reopens. " +
         "`agents` lists the agents working on it now (open start_work sessions: agentName, threadUrl, note, lastActiveAt); " +
         "check it before starting work so you don't duplicate another agent's. " +
+        "`fromPhoto` is set when it was added from a photo with add_from_photo: { source_id, created_at }. " +
         "`comments` is its discussion, oldest first: each has body (Markdown), author (name, displayUsername), agentName when an agent wrote it for that person, createdAt and editedAt. " +
         "Read them before working on the item: they often hold decisions and context the description doesn't. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id; the result carries its display `ref`.",
@@ -739,6 +746,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         children: withRefs(prefix, children),
         agents: listOpenAgentSessions(db, userId, item.id),
         comments: listComments(db, userId, item.id),
+        fromPhoto: photoOf(getItemSource(db, userId, item.id)),
       });
     },
   );
@@ -1011,6 +1019,140 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           },
         }),
       });
+    },
+  );
+
+  server.registerTool(
+    "add_from_photo",
+    {
+      title: "Add these to Sidetrack",
+      description:
+        "When the user shares a photo of a list (a notebook page, a whiteboard, a note on the fridge) and wants it in Sidetrack, " +
+        "read it yourself and propose a line per item; nothing goes on the board until the user reviews the lines in the app, where they can change any of them. " +
+        "So don't stop to ask: make your best reading and let the review catch the rest. Before proposing, get_list or list_all_items to match lines to items that already exist. " +
+        "Reading a page: a struck-through line is done; an underlined heading with lines under it is a task with those lines as its sub-items (parent: the heading's index); " +
+        "a heading such as \"Buy\" over a group may name a list instead, so file its lines there (or label them, e.g. labels: [\"buy\"]). Skip doodles. " +
+        "A line made to stand out (circled, boxed, starred, arrowed) matters more: give it a near due date, today or in the next few days, unless the user has told you what their marks mean; " +
+        "follow what they've told you over this (e.g. their \">\" might mean it's already in Sidetrack, so match it). " +
+        "Each line: title (as written, spelling fixed), list_id, and optionally parent (index of an earlier line, for a sub-item), " +
+        "parent_item (ref of an existing task to add it under), done, due_date, labels, repeat ({ every, unit, on?, day? } as in add_item, for \"every Sunday\" and the like), " +
+        "assignee_ids (\"me\" for the user, or people on the list), and match: the ref of an existing item this line is. " +
+        "A matched line changes that item if the page says something new: done: true ticks it off, due_date, repeat and assignee_ids replace its own, labels are added; " +
+        "leave them out to leave it as it is (it still links to the photo). " +
+        "region is where the line is on the photo, so the user sees the handwriting next to each line: { x, y, w, h } as fractions (0 to 1) of the photo's width and height from its top-left, " +
+        "the box around the words as if level, and angle: degrees it's turned clockwise about its centre, for a line written on a slant. " +
+        "Skip struck-through lines that aren't in Sidetrack yet, unless they're steps in a checklist (keep those as done so its count is right). " +
+        "note is shown above the lines: say anything the user should check, e.g. a word you couldn't read or what you took a mark to mean. They can't reply to it, so don't ask questions there. " +
+        "Returns { source_id, upload, review_url }: then upload the photo with the command in upload.curl (a PUT of the image file: JPEG, PNG or WebP, at most 15 MB, within an hour; " +
+        "convert HEIC first). Never put the photo's bytes in a tool call. Then give the user review_url, where they check the lines against the photo and add them.",
+      inputSchema: {
+        note: z.string().optional(),
+        lines: z
+          .array(
+            z.object({
+              title: z.string().min(1),
+              list_id: z.string(),
+              parent: z.number().int().min(0).optional(),
+              parent_item: z.string().optional(),
+              match: z.string().optional(),
+              done: z.boolean().optional(),
+              due_date: DueDate.optional(),
+              labels: z.array(z.string()).optional(),
+              repeat: Repeat.optional(),
+              assignee_ids: z.array(z.string().min(1)).optional(),
+              region: z
+                .object({
+                  x: z.number(),
+                  y: z.number(),
+                  w: z.number(),
+                  h: z.number(),
+                  angle: z.number().optional(),
+                })
+                .optional(),
+            }),
+          )
+          .min(1),
+      },
+    },
+    async ({ note, lines }) => {
+      const { db } = getDb();
+      const proposed = [];
+      for (const line of lines) {
+        const resolve = (ref: string | undefined) => (ref ? resolveItemArg(db, userId, ref) : null);
+        const parentItem = resolve(line.parent_item);
+        if (parentItem?.error) return parentItem.error;
+        const match = resolve(line.match);
+        if (match?.error) return match.error;
+        proposed.push({
+          title: line.title,
+          projectId: line.list_id,
+          parent: line.parent,
+          parentItemId: parentItem?.item.id,
+          matchItemId: match?.item.id,
+          done: line.done,
+          dueDate: line.due_date,
+          labels: line.labels,
+          repeat: line.repeat,
+          assigneeIds: line.assignee_ids?.map((a) => (a === "me" ? userId : a)),
+          region: line.region,
+        });
+      }
+      let proposal: ReturnType<typeof proposeFromPhoto>;
+      try {
+        proposal = proposeFromPhoto(db, userId, { note, lines: proposed }, ctx.agent.name);
+      } catch (e) {
+        return errorText(`${e instanceof Error ? e.message : String(e)} — nothing was saved.`);
+      }
+      const url = `${ctx.baseUrl}/api/sources/upload/${proposal.uploadToken}`;
+      return json({
+        source_id: proposal.sourceId,
+        upload: {
+          method: "PUT",
+          url,
+          curl: `curl --fail-with-body -T <path-to-photo> '${url}'`,
+          expires_at: new Date(proposal.expiresAt).toISOString(),
+        },
+        review_url: `${ctx.baseUrl}/sources/${proposal.sourceId}`,
+      });
+    },
+  );
+
+  server.registerTool(
+    "add_photo_lines",
+    {
+      title: "Add a photo's lines",
+      description:
+        "Add every line proposed with add_from_photo to the board as proposed, without the user reviewing them in the app: " +
+        "only when the user tells you to (e.g. \"just add them\"); otherwise give them the review_url. " +
+        "To change a line first, discard_photo and propose again. The photo must be uploaded. " +
+        "Returns { added, updated, completed, skipped }.",
+      inputSchema: { source_id: z.string() },
+    },
+    async ({ source_id }) => {
+      const { db } = getDb();
+      const found = getSource(db, userId, source_id);
+      if (!found) return notFound("photo", source_id);
+      try {
+        const reviews = found.lines.map((line) => ({ id: line.id, add: true }));
+        return json(addFromSource(db, userId, source_id, reviews, SOURCE));
+      } catch (e) {
+        return errorText(`${e instanceof Error ? e.message : String(e)} — nothing was added.`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "discard_photo",
+    {
+      title: "Discard a photo",
+      description:
+        "Drop a photo proposed with add_from_photo that hasn't been added, with its lines, e.g. to propose them again after reading it wrong. " +
+        "Nothing on the board changes. Returns { discarded }, false when it was already added or discarded.",
+      inputSchema: { source_id: z.string() },
+    },
+    async ({ source_id }) => {
+      const { db } = getDb();
+      return json({ discarded: discardSource(db, userId, source_id) });
     },
   );
 

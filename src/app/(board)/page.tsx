@@ -20,6 +20,7 @@ import { listFollowedItemIds } from "@/core/follows";
 import { listAssignees, listPendingInvites } from "@/core/members";
 import { listAllPrLinks, suggestedRepositories } from "@/core/prLinks";
 import { listProjects } from "@/core/projects";
+import { listPendingSources } from "@/core/sources";
 import { listPendingSpaceInvites, listSpaces, listTrays } from "@/core/spaces";
 import { COLLAPSED_TRAYS_COOKIE, parseCollapsedTrays } from "@/components/SpaceTray";
 import { getGetStarted } from "@/core/getStarted";
@@ -137,6 +138,7 @@ export default async function Home({
             spaces={listSpaces(db, userId)}
             trayOrder={listTrays(db, userId)}
             pendingSpaceInvites={listPendingSpaceInvites(db, userId)}
+            pendingPhotos={listPendingSources(db, userId)}
             initialListId={typeof p === "string" ? p : null}
             initialItemId={typeof item === "string" ? item : null}
           // A push can link to an item not loaded with the board.

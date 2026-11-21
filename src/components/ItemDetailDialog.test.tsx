@@ -12,6 +12,7 @@ vi.mock("@/app/actions", () => ({
   addItemAction: vi.fn(),
   listAuditAction: vi.fn(),
   listCommentsAction: vi.fn(async () => ({ comments: [], mentionable: [] })),
+  getItemSourceAction: vi.fn(async () => null),
   addCommentAction: vi.fn(),
   updateCommentAction: vi.fn(),
   deleteCommentAction: vi.fn(),

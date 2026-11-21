@@ -163,9 +163,9 @@ const INDENT = 36;
 // every sub-item but the last, the line carrying on down to the next one.
 // Row maths: the gap between rows is 6px (space-y-1.5), and a row's first line
 // is centred 19px into it (1px border + 8px padding + half a 20px line).
-const BRANCH =
+export const BRANCH =
   "relative before:absolute before:-top-1.5 before:-left-5 before:h-[25px] before:w-5 before:rounded-bl-lg before:border-b-2 before:border-l-2 before:border-neutral-200 dark:before:border-neutral-700";
-const TRUNK =
+export const TRUNK =
   "after:absolute after:top-0 after:-bottom-1.5 after:-left-5 after:border-l-2 after:border-neutral-200 dark:after:border-neutral-700";
 
 function rowFor(

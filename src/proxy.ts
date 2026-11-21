@@ -17,6 +17,8 @@ export function proxy(request: NextRequest) {
   if (pathname.startsWith("/api/github/")) return NextResponse.next();
   // And the email-in Worker's deliveries, checked against EMAIL_IN_SECRET.
   if (pathname.startsWith("/api/email/")) return NextResponse.next();
+  // And a photo an agent uploads to its one-time URL, whose token is checked.
+  if (pathname.startsWith("/api/sources/upload/")) return NextResponse.next();
 
   // Password reset pages must work signed-out: /forgot-password requests the
   // email, /reset-password is where the emailed link lands (with ?token=).

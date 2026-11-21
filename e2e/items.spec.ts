@@ -1,4 +1,6 @@
 import type { Page } from "@playwright/test";
+import { getDb } from "@/core/db";
+import { listItems } from "@/core/items";
 import { expect, test } from "./fixtures";
 
 /** An item's title on the board, which opens it. */
@@ -59,4 +61,36 @@ test("deletes an item from its right-click menu", async ({ page, user }) => {
   await page.reload();
   await expect(row(page, "Refill salt")).toBeVisible();
   await expect(row(page, "Water plants")).toBeHidden();
+});
+
+test("adds what an agent read off a photo, after review", async ({ page, user }) => {
+  const home = user.addList("Home", ["Water plants"]);
+  const [water] = listItems(getDb().db, user.id, home.id);
+  user.addPhoto([
+    { title: "Water plants", projectId: home.id, matchItemId: water.id, done: true },
+    { title: "Descale coffee machine", projectId: home.id },
+    { title: "Plant jasmine", projectId: home.id },
+  ]);
+  await page.goto("/board");
+  // The board notes the list in view (?p=) with replaceState, which cancels
+  // a link followed at the same moment; wait for it.
+  await expect(page).toHaveURL(/[?&]p=/);
+  await page.getByRole("button", { name: "Review" }).click();
+  await expect(page.getByRole("heading", { name: "Add these to Sidetrack" })).toBeVisible();
+  await page.getByRole("button", { name: "Leave out “Plant jasmine”" }).click();
+  await page.getByRole("button", { name: "Add 1, tick off 1" }).click();
+  await expect(page.getByRole("heading", { name: "Add these to Sidetrack" })).toBeHidden();
+  // Saved, not only shown.
+  await page.goto("/board");
+  await expect(row(page, "Descale coffee machine")).toBeVisible();
+  await expect(row(page, "Plant jasmine")).toBeHidden();
+  await expect(
+    page
+      .locator("[data-item-row]")
+      .filter({ has: row(page, "Water plants") })
+      .getByRole("checkbox", { name: "Complete" }),
+  ).toBeChecked();
+  // The item keeps the photo it came from.
+  await row(page, "Descale coffee machine").click();
+  await expect(page.getByRole("dialog").getByText(/^From a photo/)).toBeVisible();
 });

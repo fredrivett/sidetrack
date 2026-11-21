@@ -32,6 +32,7 @@ import {
 } from "react";
 import {
   addItemAction,
+  getItemSourceAction,
   listAuditAction,
   updateItemAction,
 } from "@/app/actions";
@@ -66,6 +67,7 @@ import {
 import { AssigneeOptions } from "./AssigneeOptions";
 import { AuditEntryRow } from "./AuditDialog";
 import { PrLink } from "./PrLink";
+import { SourcePhoto } from "./SourcePhoto";
 import { runAction } from "./run-action";
 import { EditableText } from "./EditableText";
 import { useDraft } from "./use-draft";
@@ -998,6 +1000,8 @@ export function ItemDetailView({
         </Field>
       )}
 
+      <ItemSource itemId={item.id} />
+
       <Field label="Comments">
         <ItemComments key={item.id} item={item} viewerId={viewerId} people={assignees} />
       </Field>
@@ -1032,5 +1036,37 @@ export function ItemDetailView({
       )}
     </div>
     </>
+  );
+}
+
+/**
+ * The photo of a page an item was added from, whole, with its line
+ * highlighted. Nothing for an item that wasn't added from one.
+ */
+function ItemSource({ itemId }: { itemId: string }) {
+  // Keyed by item, so moving to another item never shows this one's photo.
+  const [loaded, setLoaded] = useState<{
+    itemId: string;
+    source: Awaited<ReturnType<typeof getItemSourceAction>>;
+  } | null>(null);
+  useEffect(() => {
+    let stale = false;
+    // Only an extra: if it doesn't load, the item reads the same without it.
+    getItemSourceAction(itemId).then(
+      (source) => !stale && setLoaded({ itemId, source }),
+      (error) => unstable_rethrow(error),
+    );
+    return () => {
+      stale = true;
+    };
+  }, [itemId]);
+  const source = loaded?.itemId === itemId ? loaded.source : null;
+  if (!source) return null;
+  return (
+    <Field label={`From a photo · ${dayLabel(source.createdAt)}`}>
+      <a href={`/api/sources/${source.sourceId}/photo`} target="_blank" rel="noreferrer" className="block">
+        <SourcePhoto sourceId={source.sourceId} highlight={source.region} />
+      </a>
+    </Field>
   );
 }

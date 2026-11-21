@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   type AnySQLiteColumn,
+  blob,
   index,
   integer,
   primaryKey,
@@ -8,7 +9,7 @@ import {
   text,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
-import type { RepeatOn, RepeatUnit } from "../lib/repeat";
+import type { Repeat, RepeatOn, RepeatUnit } from "../lib/repeat";
 import type { StoredGreeting } from "./agendaGreeting";
 import { apiKeys, users } from "./auth-schema";
 import type { ChangeEvent } from "./events";
@@ -60,6 +61,8 @@ export const AUDIT_ENTITIES = [
   "comment",
   // A connected calendar account; entityId is the account id, no project.
   "calendar",
+  // A photo of a page whose lines were added (sources); no project.
+  "source",
 ] as const;
 export type AuditEntity = (typeof AUDIT_ENTITIES)[number];
 
@@ -537,6 +540,84 @@ export const inboundEmails = sqliteTable(
   ],
 );
 
+// Something captured to add to Sidetrack: for now, a photo of a handwritten
+// page that an agent read. It holds the photo and the lines the agent
+// proposed (sourceLines); nothing reaches the board until its owner reviews
+// them and adds them. The photo is kept in the DB, like avatars, so the daily
+// backup covers it, and stays after review so each item can show where on
+// the page it came from. Seen only by its owner.
+//
+// An agent can't send a photo in a tool call (it would have to write out
+// every byte), so the photo arrives separately: the agent proposes the lines,
+// gets a one-time upload URL, and PUTs the file to it. Until then `data` is
+// null; `uploadTokenHash` is the URL's token, hashed like an API key.
+export const sources = sqliteTable(
+  "sources",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    kind: text("kind").$type<SourceKind>().notNull(),
+    contentType: text("content_type"),
+    data: blob("data", { mode: "buffer" }),
+    uploadTokenHash: text("upload_token_hash"),
+    uploadExpiresAt: integer("upload_expires_at"),
+    // What the agent wants the reviewer to know, e.g. a line it couldn't read.
+    note: text("note"),
+    // The API key name of the agent that read it, for the review screen.
+    agentName: text("agent_name"),
+    createdAt: integer("created_at").notNull(),
+    // When every line was added or skipped, or the whole thing discarded.
+    reviewedAt: integer("reviewed_at"),
+  },
+  (t) => [index("sources_user_created").on(t.userId, t.createdAt)],
+);
+
+// One line an agent read off a source, proposed as an item. `region` is where
+// it sits on the photo, as fractions of its width and height, so the review
+// screen and the item can highlight it. A line either adds a new item (in
+// `projectId`, under `parentLineId`'s item or `parentItemId`) or stands for an
+// item that already exists (`matchItemId`), which it can change or tick off;
+// then its fields are the changes proposed, and empty ones leave it be. `itemId` is
+// the item it added or matched once added.
+export const sourceLines = sqliteTable(
+  "source_lines",
+  {
+    id: text("id").primaryKey(),
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    ord: integer("ord").notNull(),
+    title: text("title").notNull(),
+    projectId: text("project_id").notNull(),
+    parentLineId: text("parent_line_id"),
+    parentItemId: text("parent_item_id"),
+    matchItemId: text("match_item_id"),
+    done: integer("done", { mode: "boolean" }).notNull().default(false),
+    dueDate: text("due_date"),
+    labels: text("labels", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
+    repeat: text("repeat", { mode: "json" }).$type<Repeat>(),
+    assigneeIds: text("assignee_ids", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
+    region: text("region", { mode: "json" }).$type<SourceRegion>(),
+    status: text("status").$type<SourceLineStatus>().notNull().default("pending"),
+    itemId: text("item_id"),
+  },
+  (t) => [
+    index("source_lines_source").on(t.sourceId, t.ord),
+    index("source_lines_item").on(t.itemId),
+  ],
+);
+
+export const SOURCE_KINDS = ["photo"] as const;
+export type SourceKind = (typeof SOURCE_KINDS)[number];
+export const SOURCE_LINE_STATUSES = ["pending", "added", "skipped"] as const;
+export type SourceLineStatus = (typeof SOURCE_LINE_STATUSES)[number];
+/**
+ * Where a line sits on its photo: its box before turning, each a fraction (0
+ * to 1) of the photo's size, and `angle`, the degrees it's turned clockwise
+ * about its centre, for a line written on a slant.
+ */
+export type SourceRegion = { x: number; y: number; w: number; h: number; angle?: number };
+
 // An API key whose agent Sidetrack can start: assigning the agent to an item
 // posts to `url` (say, an Amp plugin's webhook), signed with `secret` so the
 // receiver knows the request came from here. One per key, gone with the key.
@@ -877,6 +958,8 @@ export type NewProjectMember = typeof projectMembers.$inferInsert;
 export type ProjectPosition = typeof projectPositions.$inferSelect;
 export type NewProjectPosition = typeof projectPositions.$inferInsert;
 export type Item = typeof items.$inferSelect;
+export type Source = typeof sources.$inferSelect;
+export type SourceLine = typeof sourceLines.$inferSelect;
 export type NewItem = typeof items.$inferInsert;
 export type Label = typeof labels.$inferSelect;
 export type NewLabel = typeof labels.$inferInsert;
