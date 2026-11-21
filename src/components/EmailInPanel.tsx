@@ -42,9 +42,9 @@ export function EmailInPanel({
       <section className="space-y-3">
         <Button disabled={pending} onClick={() => run(createEmailAddressAction)}>
           <Mail data-icon="inline-start" />
-          {pending ? "…" : "Get an address"}
+          {pending ? "Getting an address…" : "Get an address"}
         </Button>
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       </section>
     );
   }
@@ -88,7 +88,7 @@ export function EmailInPanel({
           {tap.isArmed("remove") ? "Confirm turn off?" : "Turn off"}
         </Button>
       </section>
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     </div>
   );
 }

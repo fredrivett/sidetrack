@@ -134,7 +134,7 @@ export function GithubWebhookPanel({
           Webhooks on GitHub.
         </p>
         {addForm}
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       </section>
     );
   }
@@ -240,7 +240,7 @@ export function GithubWebhookPanel({
         >
           {tap.isArmed("remove") ? "Confirm remove?" : "Remove webhook"}
         </Button>
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       </section>
     </div>
   );

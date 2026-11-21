@@ -81,7 +81,7 @@ function ConnectForm({ username: known, onDone }: { username?: string; onDone?: 
       <Button type="submit" aria-disabled={pending} disabled={!username.trim() || !password.trim()}>
         {pending ? "Signing in…" : known ? "Sign in again" : "Connect iCloud"}
       </Button>
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     </form>
   );
 }
@@ -180,7 +180,7 @@ function Account({ account }: { account: CalendarAccountView }) {
           ))}
         </ul>
       )}
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     </section>
   );
 }
