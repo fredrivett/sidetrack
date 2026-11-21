@@ -332,6 +332,13 @@ export const items = sqliteTable(
     // The day of the month (1 to 31) a monthly rule keeps to ("on the 1st"),
     // whenever it's done; null otherwise, and always alongside repeat_on.
     repeatDay: integer("repeat_day"),
+    // A smart due date, in the person's words ("before our next trip"), or
+    // null for a date someone set. Its due date is worked out from its
+    // matches (item_smart_matches, core/smartDue.ts): the earliest one's
+    // start, smart_lead days before. No matches: no date, waiting for one.
+    smartRule: text("smart_rule"),
+    // Days before the earliest match it's due: 0 on the day. Set with smart_rule.
+    smartLead: integer("smart_lead"),
     completedAt: integer("completed_at"),
     createdAt: integer("created_at")
       .notNull()
@@ -342,6 +349,27 @@ export const items = sqliteTable(
     index("items_parent").on(t.parentId),
     uniqueIndex("items_project_number").on(t.projectId, t.number),
   ],
+);
+
+// The items a smart due date hangs off (items.smart_rule): "Lisbon flights"
+// for "before our next trip". `removed` is someone saying it isn't one, which
+// keeps it from being matched again. Goes with either item.
+export const itemSmartMatches = sqliteTable(
+  "item_smart_matches",
+  {
+    itemId: text("item_id")
+      .notNull()
+      .references(() => items.id, { onDelete: "cascade" }),
+    anchorId: text("anchor_id")
+      .notNull()
+      .references(() => items.id, { onDelete: "cascade" }),
+    // Why it fits the rule, in a few words ("a trip"); null when someone
+    // picked it themselves.
+    reason: text("reason"),
+    removed: integer("removed", { mode: "boolean" }).notNull().default(false),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.itemId, t.anchorId] }), index("item_smart_matches_anchor").on(t.anchorId)],
 );
 
 // The refs an item had in lists it has since moved out of, so `OLD-12` keeps

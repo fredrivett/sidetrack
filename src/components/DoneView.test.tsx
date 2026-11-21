@@ -47,6 +47,8 @@ const item = (title: string, more: Partial<Item> = {}): Item => ({
   repeatUnit: null,
   repeatOn: null,
   repeatDay: null,
+  smartRule: null,
+  smartLead: null,
   position: `a${n}`,
   number: n,
   completedAt: null,

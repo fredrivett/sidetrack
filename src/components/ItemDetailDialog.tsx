@@ -69,8 +69,9 @@ import { EditableText } from "./EditableText";
 import { useDraft } from "./use-draft";
 import { ItemComments } from "./ItemComments";
 import { LabelBadge, LabelChips, useListLabels } from "./Labels";
-import { DueBadge } from "./DueBadge";
+import { DueBadge, WaitingBadge } from "./DueBadge";
 import { RepeatBadge } from "./RepeatBadge";
+import { SmartDuePanel } from "./SmartDuePanel";
 import { useListAccess } from "./list-access";
 import { MoveToListPicker, useMoveItem } from "./MoveItem";
 import { AssigneeChip, CHIP, DueChip, EMPTY_CHIP, Field, RepeatChip } from "./DialogFields";
@@ -487,7 +488,11 @@ function ReadOnlyFields({
       )}
       {any && (
         <div className="flex flex-wrap items-center gap-1.5">
-          {item.dueDate && <DueBadge due={item.dueDate} from={item.dueFrom} done={done} />}
+          {item.dueDate ? (
+            <DueBadge due={item.dueDate} from={item.dueFrom} done={done} smart={item.smartRule} />
+          ) : (
+            item.smartRule && <WaitingBadge rule={item.smartRule} />
+          )}
           {repeat && <RepeatBadge repeat={repeat} completedAt={item.completedAt} />}
           {assigned.length > 0 && (
             <span className="inline-flex items-center gap-1.5 text-xs text-neutral-500">
@@ -845,12 +850,21 @@ export function ItemDetailView({
                 );
               })
             }
+            smart={
+              repeatOf(item)
+                ? undefined
+                : {
+                    rule: item.smartRule,
+                    panel: (onPlain) => <SmartDuePanel item={item} disabled={pending} onPlain={onPlain} />,
+                  }
+            }
           />
           <RepeatChip
             key={`repeat:${item.id}`}
             repeat={repeatOf(item)}
             completedAt={item.completedAt}
-            disabled={pending}
+            // A smart due date can't repeat yet (core/smartDue.ts).
+            disabled={pending || item.smartRule !== null}
             onChange={(repeat) =>
               start(async () => {
                 await runAction(

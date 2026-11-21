@@ -82,6 +82,8 @@ const item: Item = {
   repeatUnit: null,
   repeatOn: null,
   repeatDay: null,
+  smartRule: null,
+  smartLead: null,
   position: "a0",
   number: 42,
   completedAt: null,

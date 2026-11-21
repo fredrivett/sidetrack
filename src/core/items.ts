@@ -19,7 +19,8 @@ import {
 import { dayOf, isDay, sameDue } from "../lib/time";
 import { ITEM_SORTS, type ItemSort } from "../lib/itemSorts";
 import { parseRef, resolvePosition } from "./fracidx";
-import { agentSessions, type Item, items, projects } from "./schema";
+import { agentSessions, type Item, itemSmartMatches, items, projects } from "./schema";
+import { recalibrate, smartDependents } from "./smartDue";
 
 // Items are accessed transitively through their project. Every read joins the
 // projects table so a user only ever sees items in projects they have access
@@ -328,6 +329,9 @@ function reopenParentIfDone(
       forSubItem: true,
     },
   });
+  // Open again: its own smart date may have moved while done, and smart
+  // dates can hang off it again.
+  recalibrate(tx, [parent.id]);
 }
 
 // Human-readable label for an assignee in an audit detail: their `@username`,
@@ -671,6 +675,12 @@ export function updateItem(
       Object.assign(next, d);
       changes.due = d;
     }
+    // A date someone sets is theirs: it stops being worked out for them.
+    if (existing.smartRule !== null) {
+      next.smartRule = null;
+      next.smartLead = null;
+      changes.smart = null;
+    }
   }
   if (patch.repeat !== undefined) {
     const r = assertRepeat(patch.repeat);
@@ -681,6 +691,9 @@ export function updateItem(
       r?.on !== was?.on ||
       r?.day !== was?.day
     ) {
+      if (r && existing.smartRule !== null && next.smartRule !== null) {
+        throw new Error("an item with a smart due date can't repeat yet");
+      }
       next.repeatEvery = r?.every ?? null;
       next.repeatUnit = r?.unit ?? null;
       next.repeatOn = r?.on ?? null;
@@ -695,6 +708,9 @@ export function updateItem(
       ensureLabels(tx as unknown as Db, existing.projectId, next.labels, patch.labelEmoji);
     }
     tx.update(items).set(next).where(eq(items.id, id)).run();
+    if (changes.smart === null) {
+      tx.delete(itemSmartMatches).where(eq(itemSmartMatches.itemId, id)).run();
+    }
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
@@ -707,6 +723,7 @@ export function updateItem(
         ...(from && { from }),
       },
     });
+    if (changes.due) recalibrate(tx as unknown as Db, [id]);
   });
 
   return getItemOrThrow(db, userId, id);
@@ -746,7 +763,8 @@ export function completeItem(
       childrenOf(tx as unknown as Db, parent.id).every(
         (c) => c.id === id || c.completedAt !== null,
       );
-    for (const it of [existing, ...openChildren, ...(parentDone ? [parent] : [])]) {
+    const done = [existing, ...openChildren, ...(parentDone ? [parent] : [])];
+    for (const it of done) {
       tx.update(items).set({ completedAt: now }).where(eq(items.id, it.id)).run();
       // Finished work needs no agent: end any open sessions with the item.
       const ended = tx
@@ -776,6 +794,8 @@ export function completeItem(
         },
       });
     }
+    // Done, they're no longer what smart dates hang off.
+    recalibrate(tx as unknown as Db, done.map((it) => it.id));
   });
   // The agents shown working on it stop, which its row doesn't show: open
   // boards reload rather than read the row (Change.rows).
@@ -799,7 +819,6 @@ export function uncompleteItem(
   // under a parent in Done. Reopening a parent leaves its sub-items as they are.
   const parent = existing.parentId ? getItem(db, userId, existing.parentId) : undefined;
   db.transaction((tx) => {
-    if (parent) reopenParentIfDone(tx as unknown as Db, userId, parent, source);
     tx.update(items)
       .set({ completedAt: null })
       .where(eq(items.id, id))
@@ -814,6 +833,12 @@ export function uncompleteItem(
         projectId: existing.projectId,
       },
     });
+    // After it's open, so smart dates hanging off both it and the parent
+    // are worked out once, with both open.
+    if (parent) reopenParentIfDone(tx as unknown as Db, userId, parent, source);
+    // Open again, its own smart date may have moved while it was done, and
+    // smart dates can hang off it again (its parent's: reopenParentIfDone).
+    recalibrate(tx as unknown as Db, [id]);
   });
   return getItemOrThrow(db, userId, id);
 }
@@ -916,6 +941,9 @@ export function reopenDueRepeats(
       if (parent) {
         reopenParentIfDone(tx as unknown as Db, SYSTEM_ACTOR, parent, "system");
       }
+      // Open and due again, smart dates can hang off them again.
+      // Its own smart date and its sub-items' may have moved while done.
+      recalibrate(tx as unknown as Db, [it.id, ...childrenOf(tx as unknown as Db, it.id).map((c) => c.id)]);
     });
   }
   return reopened;
@@ -1115,6 +1143,9 @@ export function deleteItem(
   // leaving it to the foreign key's cascade, so each one's history ends.
   db.transaction((tx) => {
     const children = childrenOf(tx as unknown as Db, id);
+    const gone = [...children, existing].map((it) => it.id);
+    // Smart dates that hang off them, worked out again once they're gone.
+    const dependents = smartDependents(tx as unknown as Db, gone);
     for (const it of [...children, existing]) {
       tx.delete(items).where(eq(items.id, it.id)).run();
       recordAudit(tx as unknown as Db, {
@@ -1130,6 +1161,7 @@ export function deleteItem(
         },
       });
     }
+    recalibrate(tx as unknown as Db, dependents);
   });
 }
 

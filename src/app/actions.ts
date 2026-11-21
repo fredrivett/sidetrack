@@ -65,6 +65,13 @@ import {
 import { changeSeq } from "@/core/changes";
 import { type Db, getDb } from "@/core/db";
 import {
+  addSmartMatch as addSmartMatchCore,
+  findSmartCandidates as findSmartCandidatesCore,
+  getSmartDue as getSmartDueCore,
+  removeSmartMatch as removeSmartMatchCore,
+  setSmartRule as setSmartRuleCore,
+} from "@/core/smartDue";
+import {
   addFeedbackFollowUp as addFeedbackFollowUpCore,
   submitFeedback as submitFeedbackCore,
 } from "@/core/feedback";
@@ -625,6 +632,44 @@ export async function addSubItemAction(parentId: string, title: string) {
   const from = changeSeq();
   const it = addItemCore(db, userId, { projectId: parent.projectId, title, parentId }, SOURCE);
   return savedRows(db, userId, from, [it.id, parentId]);
+}
+
+/** Give an item a smart due date, change its rule or lead, or (null) make it plain again. */
+export async function setSmartRuleAction(id: string, rule: { rule: string; lead: number } | null) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const it = setSmartRuleCore(db, userId, id, rule, SOURCE);
+  refresh();
+  return it;
+}
+
+export async function getSmartDueAction(id: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  return getSmartDueCore(db, userId, id);
+}
+
+export async function findSmartCandidatesAction(id: string, query: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  return findSmartCandidatesCore(db, userId, id, query);
+}
+
+export async function addSmartMatchAction(id: string, anchorId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const it = addSmartMatchCore(db, userId, id, anchorId, null, SOURCE);
+  refresh();
+  return it;
+}
+
+/** Say a match isn't one: it stops counting and isn't matched again. */
+export async function removeSmartMatchAction(id: string, anchorId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const it = removeSmartMatchCore(db, userId, id, anchorId, SOURCE);
+  refresh();
+  return it;
 }
 
 export async function completeItemAction(id: string) {
