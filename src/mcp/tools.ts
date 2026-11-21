@@ -16,13 +16,30 @@ import {
   withAutoListIcon,
 } from "@/core/autoEmoji";
 import { itemPriorities } from "@/core/autoPriority";
-import { addComment, listComments, mentionNotice } from "@/core/comments";
+import {
+  addComment,
+  deleteComment,
+  getComment,
+  listComments,
+  listRecentComments,
+  mentionNotice,
+  updateComment,
+} from "@/core/comments";
+import { plainText } from "@/core/describe";
+import { setFollowing } from "@/core/follows";
+import {
+  listNotificationLevels,
+  listNotifications,
+  markNotificationsRead,
+  setNotificationLevel,
+} from "@/core/notifications";
 import {
   addLabel,
   deleteLabel,
   getLabel,
   labelUsage,
   type LabelUsage,
+  listLabelUsage,
   listLabels,
   updateLabel,
 } from "@/core/labels";
@@ -46,6 +63,7 @@ import {
   completeItem,
   deleteItem,
   getItem,
+  listDoneBefore,
   listItems,
   listSubItems,
   ITEM_SORTS,
@@ -83,6 +101,7 @@ import {
   SPACE_COLORS,
   LIST_ROLES,
   type ListRole,
+  NOTIFICATION_LEVELS,
   type SpaceRole,
   SPACE_ROLES,
 } from "@/core/schema";
@@ -633,6 +652,22 @@ export function registerTools(server: McpServer, ctx: McpContext) {
   );
 
   server.registerTool(
+    "clear_done",
+    {
+      title: "Clear done items",
+      description:
+        "Move a list's finished items into Done now, as the list's Clear done does, instead of when the day turns over. " +
+        "They stay finished and searchable (search_done); only where the board shows them changes. Returns the list.",
+      inputSchema: { id: z.string() },
+    },
+    async ({ id }) => {
+      const { db } = getDb();
+      if (!getProject(db, userId, id)) return notFound("list", id);
+      return json(updateProject(db, userId, id, { doneClearedAt: Date.now() }, SOURCE));
+    },
+  );
+
+  server.registerTool(
     "reorder_list",
     {
       title: "Reorder list",
@@ -727,6 +762,83 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         await notifyMentions(notice, ctx.baseUrl);
       }
       return json(comment);
+    },
+  );
+
+  server.registerTool(
+    "update_comment",
+    {
+      title: "Edit comment",
+      description:
+        "Rewrite a comment the user wrote, or an agent wrote for them: body replaces its text (Markdown) and it shows as edited. " +
+        "id is the comment's id, from get_item's comments or list_recent_comments. Only the comment's author can edit it. " +
+        "Anyone the new text @mentions who the old text didn't is emailed it, as with add_comment. " +
+        `Max ${COMMENT_MAX} characters. Returns the comment.`,
+      inputSchema: { id: z.string(), body: z.string().min(1) },
+    },
+    async ({ id, body }) => {
+      const { db } = getDb();
+      const before = getComment(db, userId, id)?.body;
+      let comment;
+      try {
+        comment = updateComment(db, userId, id, body, SOURCE);
+      } catch (e) {
+        return errorText(`${(e as Error).message} — no change was made.`);
+      }
+      const notice = mentionNotice(db, userId, comment, before);
+      if (notice) {
+        await notifyMentions(notice, ctx.baseUrl);
+      }
+      return json(comment);
+    },
+  );
+
+  server.registerTool(
+    "delete_comment",
+    {
+      title: "Delete comment",
+      description:
+        "Delete a comment the user wrote, or an agent wrote for them, from its item. Only the comment's author can. " +
+        "Its words are gone for good, though the activity log keeps that it was deleted and by which agent, " +
+        "so delete only what the user asked you to, and edit with update_comment when they only want it corrected. " +
+        "id is the comment's id, from get_item's comments or list_recent_comments. Returns { deleted: true }.",
+      inputSchema: { id: z.string() },
+    },
+    async ({ id }) => {
+      const { db } = getDb();
+      try {
+        deleteComment(db, userId, id, SOURCE);
+      } catch (e) {
+        return errorText(`${(e as Error).message} — no change was made.`);
+      }
+      return json({ deleted: true });
+    },
+  );
+
+  server.registerTool(
+    "list_recent_comments",
+    {
+      title: "List recent comments",
+      description:
+        "The newest comments across the items the user can open, newest first, to catch up on discussion without opening each item. " +
+        "list_id narrows to one list. limit is how many (default 50, max 500). " +
+        "Each is a comment as in get_item (body, author, agentName, createdAt, editedAt) plus `item`: the item it's on, with its id, title, ref and completedAt. " +
+        "Show each with its item's ref and title, who wrote it and when.",
+      inputSchema: {
+        list_id: z.string().optional(),
+        limit: z.number().int().min(1).max(500).optional(),
+      },
+    },
+    async ({ list_id, limit }) => {
+      const { db } = getDb();
+      if (list_id && !getProject(db, userId, list_id)) return notFound("list", list_id);
+      const refs = projectRefPrefixes(db, userId);
+      return json(
+        listRecentComments(db, userId, { projectId: list_id, limit }).map((c) => ({
+          ...c,
+          item: { ...c.item, ref: formatItemRef(refs[c.item.projectId] ?? "", c.item.number) },
+        })),
+      );
     },
   );
 
@@ -1332,12 +1444,22 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "List a list's labels: each has an id, a name (what items carry in `labels`) and an optional emoji. " +
         "Show a label as its emoji then its name, e.g. \"🐛 bug\". emojiChosen is true when someone chose the emoji (or chose none); " +
         "otherwise it's suggested for the name and follows renames. " +
-        "A label with archivedAt set is archived: it stays on the items that have it, but don't offer it for new ones.",
-      inputSchema: { list_id: z.string() },
+        "A label with archivedAt set is archived: it stays on the items that have it, but don't offer it for new ones. " +
+        "With include_usage, each label also has usage: { active, done }, how many open and done items it's on, as List details shows; " +
+        "use it to find labels nobody uses before tidying them up.",
+      inputSchema: { list_id: z.string(), include_usage: z.boolean().optional() },
     },
-    async ({ list_id }) => {
+    async ({ list_id, include_usage }) => {
       const { db } = getDb();
-      return json(listLabels(db, userId, list_id));
+      const labels = listLabels(db, userId, list_id);
+      if (!include_usage) return json(labels);
+      const usage = listLabelUsage(db, userId, list_id);
+      return json(
+        labels.map((l) => ({
+          ...l,
+          usage: { active: usage[l.id]?.active.length ?? 0, done: usage[l.id]?.done.length ?? 0 },
+        })),
+      );
     },
   );
 
@@ -1431,6 +1553,142 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       } catch (e) {
         return errorText(`${(e as Error).message} — no change was made.`);
       }
+    },
+  );
+
+  server.registerTool(
+    "search_done",
+    {
+      title: "Search done items",
+      description:
+        "Items the user finished, across their lists that aren't archived, newest first: for questions like \"when did I last do X?\". " +
+        "query keeps only those whose title contains it or whose ref it is (e.g. \"HOM-12\"). " +
+        "before (epoch ms, default now) and limit (default 50, max 200) page back: pass the previous result's `since` as before for older ones. " +
+        "Returns { items, since, more }: items each with its ref, listName and completedAt, plus the rest of its group (its parent and their sub-items) " +
+        "so checklists are whole; more is true when older ones remain. Show each with its list name and when it was finished.",
+      inputSchema: {
+        query: z.string().optional(),
+        before: z.number().int().nonnegative().optional(),
+        limit: z.number().int().min(1).max(200).optional(),
+      },
+    },
+    async ({ query, before, limit }) => {
+      const { db } = getDb();
+      const found = listDoneBefore(db, userId, {
+        before: before ?? Date.now(),
+        limit: limit ?? 50,
+        query,
+      });
+      const refs = projectRefPrefixes(db, userId);
+      const names = new Map(listProjects(db, userId).map((p) => [p.id, p.name]));
+      return json({
+        ...found,
+        items: found.items.map((it) => ({
+          ...it,
+          ref: formatItemRef(refs[it.projectId] ?? "", it.number),
+          listName: names.get(it.projectId) ?? null,
+        })),
+      });
+    },
+  );
+
+  // Notifications are the user's own: following, levels and read state are
+  // per person and seen by nobody else, so core doesn't audit them.
+  server.registerTool(
+    "follow_item",
+    {
+      title: "Follow or unfollow item",
+      description:
+        "Follow an item (following: true) so the user hears about its activity, or unfollow it (false) so they stop. " +
+        "People follow items they create, are assigned to, comment on or are mentioned on automatically; an unfollow sticks, " +
+        "and following a parent covers its sub-items. Use it when the user asks to be kept posted on an item, or to stop hearing about one. " +
+        "item_id accepts the item's short ref (e.g. \"ENG-42\") or its internal id. Returns { following }.",
+      inputSchema: { item_id: z.string(), following: z.boolean() },
+    },
+    async ({ item_id, following }) => {
+      const { db } = getDb();
+      const { item, error } = resolveItemArg(db, userId, item_id);
+      if (error) return error;
+      setFollowing(db, userId, item.id, following);
+      return json({ following });
+    },
+  );
+
+  server.registerTool(
+    "list_notifications",
+    {
+      title: "List notifications",
+      description:
+        "The user's notifications inbox, newest first: everything unseen, then their latest seen ones. " +
+        "Each has id, text (the sentence, as the inbox shows it), snippet (a quoted comment or note, or null), title (the list or Space), " +
+        "itemRef when it's about an item, when (relative, e.g. \"5 minutes ago\"; show that, not createdAt), readAt (null when unseen) and agentName when an agent made the change. " +
+        "levels is how much they hear about each scope they've set (see set_notification_level). " +
+        "Show the unseen ones first, then mark them seen with mark_notifications_read only if the user asks.",
+      inputSchema: {},
+    },
+    async () => {
+      const { db } = getDb();
+      const today = dayOf(Date.now(), getTimeZone(db, userId) ?? "UTC");
+      return json({
+        notifications: listNotifications(db, userId).map((n) => ({
+          id: n.id,
+          reason: n.reason,
+          text: plainText(n.parts, today),
+          snippet: n.snippet,
+          title: n.title,
+          ...(n.itemRef ? { itemRef: n.itemRef } : {}),
+          when: formatRelativeLong(n.createdAt),
+          createdAt: n.createdAt,
+          readAt: n.readAt,
+          agentName: n.agentName,
+        })),
+        levels: listNotificationLevels(db, userId),
+      });
+    },
+  );
+
+  server.registerTool(
+    "mark_notifications_read",
+    {
+      title: "Mark notifications seen",
+      description:
+        "Mark the user's notifications seen: ids (from list_notifications) for those, or leave ids out for all of them. " +
+        "Do it only when the user asks. Returns { ok: true }.",
+      inputSchema: { ids: z.array(z.string().min(1)).optional() },
+    },
+    async ({ ids }) => {
+      const { db } = getDb();
+      markNotificationsRead(db, userId, ids);
+      return json({ ok: true });
+    },
+  );
+
+  server.registerTool(
+    "set_notification_level",
+    {
+      title: "Set notification level",
+      description:
+        "Set how much the user hears about a scope, as in Settings → Notifications. scope is \"all\" (everything), " +
+        "\"space:<space id>\" or \"list:<list id>\" for one they're in (the most specific one set wins), " +
+        "\"reminders\" for due reminders, or \"agents\" for what isn't a person's doing (other people's agents, GitHub, Sidetrack itself). " +
+        "level is all (push everything), default (push what's aimed at them or what they follow; the rest goes to the inbox only) " +
+        "or mine (only what's aimed at them); null goes back to what the scope inherits. " +
+        "For reminders, all pushes them, default keeps them to the inbox and mine turns them off; " +
+        "for agents, all hears them like people's changes, default keeps them to the inbox and mine keeps only what's aimed at the user. " +
+        "Change it only when the user asks, and tell them what they'll now hear. Returns { levels }, every scope they've set.",
+      inputSchema: {
+        scope: z.string().min(1),
+        level: z.enum(NOTIFICATION_LEVELS).nullable(),
+      },
+    },
+    async ({ scope, level }) => {
+      const { db } = getDb();
+      try {
+        setNotificationLevel(db, userId, scope, level);
+      } catch (e) {
+        return errorText(`${(e as Error).message} — no change was made.`);
+      }
+      return json({ levels: listNotificationLevels(db, userId) });
     },
   );
 
