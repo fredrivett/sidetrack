@@ -145,14 +145,15 @@ describe("AgendaView", () => {
 
     expect(
       screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent?.replace(/\d+$/, "")),
-    ).toEqual(["Overdue", "Today", "Tomorrow", "This week", "Next week", "Later", "No date"]);
+    ).toEqual(["Overdue", "Today", "Tomorrow", "This weekend", "Next week", "Later", "No date"]);
     const rows: Array<[RegExp, string[]]> = [
       [/^Overdue/, ["Call the bank"]],
       [/^Today/, ["Bins"]],
       // Due tomorrow alone; a span ending tomorrow isn't.
       [/^Tomorrow/, ["Sunday walk"]],
       // Sunday ends this week; a span under way stays here to its last day.
-      [/^This week/, ["Book boiler service", "Clean car"]],
+      // It's Saturday, so what's left of the week is the weekend.
+      [/^This weekend/, ["Book boiler service", "Clean car"]],
       [/^Next week/, ["Monday standup", "Pay rent", "Plan trip"]],
       [/^Later/, ["Dentist"]],
       [/^No date/, ["Sort garage"]],
@@ -168,6 +169,18 @@ describe("AgendaView", () => {
     );
     expect(screen.queryByText("Old chore")).toBeNull();
     expect(screen.queryByText("Old idea")).toBeNull();
+  });
+
+  it("calls the rest of the week This week on a weekday", () => {
+    vi.setSystemTime(new Date(2026, 10, 13, 12));
+    try {
+      renderAgenda([item("Clean car", "2026-11-15", { dueFrom: "2026-11-14" })]);
+      expect(screen.getByRole("heading", { level: 2, name: /^This week/ }).textContent).toBe(
+        "This week1",
+      );
+    } finally {
+      vi.setSystemTime(new Date(2026, 10, 14, 12));
+    }
   });
 
   it("narrows every section to the header's filters", () => {

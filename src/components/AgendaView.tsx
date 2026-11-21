@@ -8,7 +8,7 @@ import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { formatItemRef } from "@/lib/itemRef";
 import { nestItems } from "@/lib/itemTree";
-import { AGENDA_SECTIONS, agendaSection, type AgendaSection } from "@/lib/time";
+import { AGENDA_SECTIONS, agendaSection, type AgendaSection, weekday } from "@/lib/time";
 import { isYours, type ItemFilters, matchesFilters } from "@/lib/filters";
 import { useAgendaSaves } from "./agenda-saves";
 import { AgendaGreeting } from "./AgendaGreeting";
@@ -67,9 +67,10 @@ function Fold({ id, collapsed, children }: { id: string; collapsed: boolean; chi
 
 /**
  * One scroll across every active list, from what's late to what has no date:
- * Overdue, Today, Tomorrow, This week, Next week, Later, then No date (see
- * agendaSection). Every open item assigned to the viewer or to nobody is on
- * it (isYours), and items finished today stay crossed out in place. Dated sections run by due day, ties keeping board and
+ * Overdue, Today, Tomorrow, This week (This weekend on a Saturday or
+ * Sunday), Next week, Later, then No date (see agendaSection). Every open
+ * item assigned to the viewer or to nobody is on it (isYours), and items
+ * finished today stay crossed out in place. Dated sections run by due day, ties keeping board and
  * list order; No date groups its items by list, an undated parent with its
  * undated sub-items under it. Overdue sits in a faint red card the viewer can
  * fold away, which stays folded on every device until they open it again.
@@ -493,7 +494,8 @@ export function AgendaView({
             <section key={label} className="space-y-1.5">
               {/* Quiet section labels. Counts are what's left. */}
               <h2 className="flex items-center gap-1.5 px-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                {label}
+                {/* At the weekend, what's left of the week is the weekend. */}
+                {label === "This week" && today && weekday(today) % 6 === 0 ? "This weekend" : label}
                 <span className="tabular-nums text-neutral-400 dark:text-neutral-500">
                   {openCount(rows)}
                 </span>
