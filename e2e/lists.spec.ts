@@ -119,15 +119,22 @@ test("moves through a long list with the keys and reorders it by dragging", asyn
   await expect(row("Task 36")).toHaveAttribute("aria-posinset", "35");
 });
 
-test("switches between the Brief, the board and Done", async ({ page, user }) => {
+test("switches between the Brief and the board, with Done in the account menu", async ({ page, user }) => {
   user.addList("Home", ["Water plants"]);
   await page.goto("/");
   await expect(page).toHaveURL(/\/brief$/);
+  const filter = page.getByRole("button", { name: "Filter" });
+  await expect(filter).toHaveCount(0);
   const views = page.getByRole("group", { name: "View" });
   await views.getByRole("button", { name: "Board" }).click();
   await expect(page).toHaveURL(/\/board/);
   await expect(page.getByRole("button", { name: "Water plants", exact: true })).toBeVisible();
-  await views.getByRole("button", { name: "Done" }).click();
+  await expect(filter).toBeVisible();
+  await page.getByRole("button", { name: "Account" }).click();
+  await page.getByRole("menuitem", { name: "Done items" }).click();
   await expect(page).toHaveURL(/\/done/);
-  await expect(views.getByRole("button", { name: "Done" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("heading", { name: "Done items" })).toBeVisible();
+  await expect(filter).toHaveCount(0);
+  await page.getByRole("button", { name: "Back to board" }).click();
+  await expect(page).toHaveURL(/\/board/);
 });

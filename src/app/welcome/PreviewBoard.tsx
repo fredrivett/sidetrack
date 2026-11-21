@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleCheck, History, SquareKanban, Sunrise } from "lucide-react";
+import { History, SquareKanban, Sunrise } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -15,7 +15,7 @@ import { helloNow } from "@/components/AgendaGreeting";
 import { AgendaView } from "@/components/AgendaView";
 import { AgentSessionsProvider } from "@/components/agent-sessions";
 import { AuditDialog } from "@/components/AuditDialog";
-import { BoardHeader, BoardRail, HeaderRule, ColumnCard } from "@/components/BoardLayout";
+import { BoardHeader, BoardRail, ColumnCard, MenuViewTitle } from "@/components/BoardLayout";
 import { cn } from "@/lib/utils";
 import { DoneView } from "@/components/DoneView";
 import { FilterMenu } from "@/components/FilterMenu";
@@ -718,7 +718,6 @@ export function PreviewBoard({
                     [
                       ["Brief", Sunrise],
                       ["Board", SquareKanban],
-                      ["Done", CircleCheck],
                     ] as const
                   ).map(([label, Icon]) => {
                     const to = label.toLowerCase() as typeof view;
@@ -748,13 +747,16 @@ export function PreviewBoard({
                 </div>
               }
             >
-              <FilterMenu
-                filters={filters}
-                onChange={setFilters}
-                people={PEOPLE}
-                labels={LABEL_CHOICES}
-                viewerId={VIEWER}
-              />
+              {/* On the board only, as on the real one (Kanban's filtersApply). */}
+              {view === "board" && (
+                <FilterMenu
+                  filters={filters}
+                  onChange={setFilters}
+                  people={PEOPLE}
+                  labels={LABEL_CHOICES}
+                  viewerId={VIEWER}
+                />
+              )}
               <button
                 type="button"
                 onClick={() => setActivityOpen(true)}
@@ -763,10 +765,10 @@ export function PreviewBoard({
                 <History />
                 <span className="hidden sm:inline">Activity</span>
               </button>
-              <HeaderRule />
               <UserMenu
                 user={FRED}
                 archivedCount={0}
+                onShowDone={() => setView("done")}
                 onShowArchived={askToSignUp}
                 onShowActivity={() => setActivityOpen(true)}
                 onInvite={askToSignUp}
@@ -786,7 +788,6 @@ export function PreviewBoard({
                   noDateFoldedLists={folds.lists}
                   greet
                   firstName="Fred"
-                  filters={filters}
                   preview={{
                     greeting: previewGreeting(items, finished, today),
                     onOpenItem: askToSignUp,
@@ -794,22 +795,24 @@ export function PreviewBoard({
                 />
               </AgendaSavesContext>
             ) : view === "done" ? (
-              <DoneView
-                projects={LISTS}
-                itemsByProject={itemsByProject}
-                assigneesByProject={assigneesByProject}
-                prLinksByItem={{}}
-                viewerId={VIEWER}
-                filters={filters}
-                // Everything finished is here: there's no more to load.
-                since={0}
-                more={false}
-                loading={false}
-                failed={false}
-                onLoadMore={noop}
-                onRetry={noop}
-                onOpenItem={askToSignUp}
-              />
+              <>
+                <MenuViewTitle title="Done items" onBack={() => setView("board")} />
+                <DoneView
+                  projects={LISTS}
+                  itemsByProject={itemsByProject}
+                  assigneesByProject={assigneesByProject}
+                  prLinksByItem={{}}
+                  viewerId={VIEWER}
+                  // Everything finished is here: there's no more to load.
+                  since={0}
+                  more={false}
+                  loading={false}
+                  failed={false}
+                  onLoadMore={noop}
+                  onRetry={noop}
+                  onOpenItem={askToSignUp}
+                />
+              </>
             ) : (
             <BoardRail>
               {trays.map((tray) => (

@@ -155,16 +155,51 @@ describe.each([
 });
 
 describe("Kanban, switching views", () => {
-  it("puts each view at its own path, Brief on 1 and Board on 2, keeping the query", async () => {
+  const openAccountMenu = () => {
+    const account = screen.getByRole("button", { name: "Account" });
+    fireEvent.pointerDown(account);
+    fireEvent.click(account);
+  };
+
+  it("puts each view at its own path, Brief on 1 and Board on 2, Done in the account menu, keeping the query", async () => {
     window.history.replaceState(null, "", "/board?x=1");
     render(board([list("b", "Work", "active", null)], []));
     const path = () => window.location.pathname + window.location.search;
     fireEvent.keyDown(document, { key: "1" });
     await waitFor(() => expect(path()).toBe("/brief?x=1"));
+    // 3 isn't a view any more.
     fireEvent.keyDown(document, { key: "3" });
+    expect(screen.getByRole("group", { name: "View" }).hasAttribute("aria-busy")).toBe(false);
+    openAccountMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Done items" }));
     await waitFor(() => expect(path()).toBe("/done?x=1"));
+    expect(screen.getByRole("heading", { name: "Done items" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Back to board" }));
+    await waitFor(() => expect(path()).toBe("/board?x=1"));
     fireEvent.keyDown(document, { key: "2" });
     await waitFor(() => expect(path()).toBe("/board?x=1"));
+  });
+
+  it("offers the filters on the board's columns only", async () => {
+    window.history.replaceState(null, "", "/board");
+    render(board([list("a", "Home", "archived", null), list("b", "Work", "active", null)], []));
+    const filter = () => screen.queryByRole("button", { name: "Filter" });
+    expect(filter()).toBeTruthy();
+
+    fireEvent.keyDown(document, { key: "1" });
+    await waitFor(() => expect(filter()).toBeNull());
+    fireEvent.keyDown(document, { key: "f" });
+    expect(screen.queryByRole("menu")).toBeNull();
+
+    openAccountMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Done items" }));
+    await screen.findByRole("heading", { name: "Done items" });
+    expect(filter()).toBeNull();
+
+    openAccountMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Archived lists (1)" }));
+    await screen.findByRole("heading", { name: "Archived lists" });
+    expect(filter()).toBeTruthy();
   });
 });
 
@@ -174,12 +209,11 @@ describe("Kanban, the view switch", () => {
     render(board([list("b", "Work", "active", null)], []));
     const views = screen.getByRole("group", { name: "View" });
     const tab = (name: string) => within(views).getByRole("button", { name });
+    fireEvent.keyDown(document, { key: "2" });
     fireEvent.keyDown(document, { key: "1" });
     expect(tab("Brief").getAttribute("aria-pressed")).toBe("true");
     expect(views.getAttribute("aria-busy")).toBe("true");
-    fireEvent.keyDown(document, { key: "3" });
-    expect(tab("Done").getAttribute("aria-pressed")).toBe("true");
-    await waitFor(() => expect(window.location.pathname).toBe("/done"));
+    await waitFor(() => expect(window.location.pathname).toBe("/brief"));
     expect(views.hasAttribute("aria-busy")).toBe(false);
     expect(document.querySelector("[data-project-id]")).toBeNull();
   });

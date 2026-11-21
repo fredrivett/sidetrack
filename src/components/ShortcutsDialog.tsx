@@ -29,7 +29,6 @@ const SECTIONS: Array<{ title: string; shortcuts: Array<[string, string[]]> }> =
       ["Notifications", ["N"]],
       ["Go to Brief", ["1"]],
       ["Go to Board", ["2"]],
-      ["Go to Done", ["3"]],
       ["Select item above or below", ["↑", "↓"]],
       ["Select in the next list", ["←", "→"]],
       ["…or, Vim-style", ["H", "J", "K", "L"]],

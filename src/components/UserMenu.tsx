@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, Check, CircleUserRound, History, Loader2, LogOut, Moon, Sun, SunMoon, UserPlus } from "lucide-react";
+import { Archive, Check, CircleCheck, CircleUserRound, History, Loader2, LogOut, Moon, Sun, SunMoon, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import posthog from "posthog-js";
@@ -38,11 +38,12 @@ const THEME_OPTIONS: Record<Theme, { label: string; Icon: typeof Sun }> = {
 
 /**
  * The avatar's menu: who's signed in, settings and theme, inviting people,
- * Activity and Archived lists, sign out and the build.
+ * Activity, Done and Archived lists, sign out and the build.
  */
 export function UserMenu({
   user,
   archivedCount,
+  onShowDone,
   onShowArchived,
   onShowActivity,
   onTry,
@@ -51,6 +52,8 @@ export function UserMenu({
   user: AvatarUser | null;
   /** How many lists are archived, for the Archived lists item. */
   archivedCount: number;
+  /** Opens the Done view: everything finished, newest first. */
+  onShowDone: () => void;
   /** Opens the Archived lists view. */
   onShowArchived: () => void;
   /** Opens Activity for the whole board. */
@@ -178,6 +181,10 @@ export function UserMenu({
           <DropdownMenuItem onClick={onShowActivity}>
             <History />
             Activity
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onShowDone}>
+            <CircleCheck />
+            Done items
           </DropdownMenuItem>
           <DropdownMenuItem onClick={onTry ?? onShowArchived}>
             <Archive />

@@ -2,7 +2,6 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Item } from "@/core/schema";
-import { NO_FILTERS } from "@/lib/filters";
 import { DoneView } from "./DoneView";
 import type { ProjectView } from "./Kanban";
 
@@ -78,7 +77,6 @@ describe("DoneView", () => {
         assigneesByProject={{}}
         prLinksByItem={{}}
         viewerId="me"
-        filters={NO_FILTERS}
         since={at(10, 0)}
         more={false}
         loading={false}
@@ -118,7 +116,6 @@ describe("DoneView", () => {
         assigneesByProject={{}}
         prLinksByItem={{}}
         viewerId="me"
-        filters={NO_FILTERS}
         since={0}
         more
         loading={false}
