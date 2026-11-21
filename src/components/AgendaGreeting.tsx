@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, NotebookPen, Plus, RefreshCw, Settings, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
+import { Check, ChevronDown, NotebookPen, Plus, RefreshCw, Settings, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -651,24 +651,39 @@ export function AgendaGreeting({
                     );
                   })}
                 </div>
-                {/* Only when there's something to save: nothing is saved until it's pressed. */}
-                {(unsaved || savingNote) && (
-                  <div className="mt-2.5 flex items-center gap-1">
-                    <Button
-                      size="xs"
-                      onClick={submitNote}
-                      aria-disabled={savingNote || undefined}
-                      className="aria-disabled:pointer-events-none aria-disabled:opacity-60"
-                    >
-                      {savingNote ? "Saving…" : "Save"}
-                    </Button>
-                    {!savingNote && (
-                      <Button size="xs" variant="ghost" onClick={cancelNote}>
+                {/* Slides down only when there's something to save or drop:
+                    nothing is saved until Save is pressed. Rows 0fr to 1fr
+                    animates to its height; hidden, it's inert. */}
+                <div
+                  inert={!(unsaved || savingNote)}
+                  className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none ${
+                    unsaved || savingNote ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+                  }`}
+                >
+                  {/* -mx-1 px-1 and pb-1 leave room for the focus rings. */}
+                  <div className="-mx-1 min-h-0 overflow-hidden">
+                    <div className="flex items-center gap-2 px-1 pt-3 pb-1">
+                      <Button
+                        size="sm"
+                        onClick={submitNote}
+                        aria-disabled={savingNote || undefined}
+                        className="aria-disabled:pointer-events-none aria-disabled:opacity-60"
+                      >
+                        <Check aria-hidden />
+                        {savingNote ? "Saving…" : "Save"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={cancelNote}
+                        aria-disabled={savingNote || undefined}
+                        className="aria-disabled:pointer-events-none aria-disabled:opacity-60"
+                      >
                         Discard
                       </Button>
-                    )}
+                    </div>
                   </div>
-                )}
+                </div>
               </div>
             </div>
           </div>
