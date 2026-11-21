@@ -445,6 +445,7 @@ export function isOnNoDate(
 export const AGENDA_SECTIONS = [
   "Overdue",
   "Today",
+  "Tomorrow",
   "This week",
   "Next week",
   "Later",
@@ -456,8 +457,8 @@ export type AgendaSection = (typeof AGENDA_SECTIONS)[number];
  * Which section of the Agenda view an item shows in on `today`, or null when
  * it's off it. Every open item is on it, and so is one finished today, crossed
  * out in place. A dated item goes under Overdue once its last day has passed;
- * one due today alone under Today; otherwise by the week it starts in, so a
- * span under way ("this week") is under This week to its last day. An
+ * one due today alone under Today, tomorrow alone under Tomorrow; otherwise by
+ * the week it starts in, so a span under way ("this week") is under This week to its last day. An
  * undated item goes under No date, except a sub-item of a dated parent, which
  * is planned with its parent (see isOnNoDate).
  */
@@ -471,6 +472,7 @@ export function agendaSection(
   if (item.completedAt !== null && dayOf(item.completedAt, timeZone) !== today) return null;
   if (item.dueDate < today) return "Overdue";
   if (!item.dueFrom && item.dueDate === today) return "Today";
+  if (!item.dueFrom && item.dueDate === addDays(today, 1)) return "Tomorrow";
   const start = item.dueFrom ?? item.dueDate;
   const sunday = weekSpan(today, 0, "week").dueDate;
   if (start <= sunday) return "This week";

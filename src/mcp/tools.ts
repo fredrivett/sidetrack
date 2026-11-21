@@ -437,7 +437,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "items due in a span that has started (dueFrom on or before today, e.g. due this week from Monday), " +
         "plus items finished today, which the user sees crossed out. Overdue items come first, then by board order. " +
         "The user sees them under Overdue (dueDate before today), Today (due today alone) and This week (a span under way); " +
-        "their Brief also shows what's due later, under This week, Next week and Later, which this tool leaves out. " +
+        "their Brief also shows what's due later, under Tomorrow, This week, Next week and Later, which this tool leaves out. " +
         "Returns { today, timeZone, items }, plus a note when the timezone is a UTC fallback. today is the user's current day (YYYY-MM-DD) in timeZone, which their browser reports; " +
         "the day turns over at 4am, so at 1am it's still the day before. Use today to work out dates like tomorrow for due_date. " +
         "Each item carries its ref, listName and, for a sub-item, parentTitle. " +

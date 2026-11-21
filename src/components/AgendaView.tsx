@@ -31,7 +31,7 @@ const openCount = (rows: Item[]) => rows.filter((i) => i.completedAt === null).l
 
 /**
  * One scroll across every active list, from what's late to what has no date:
- * Overdue, Today, This week, Next week, Later, then No date (see
+ * Overdue, Today, Tomorrow, This week, Next week, Later, then No date (see
  * agendaSection). Every open item assigned to the viewer or to nobody is on
  * it (isYours), and items finished today stay crossed out in place. Dated sections run by due day, ties keeping board and
  * list order; No date groups its items by list, an undated parent with its
