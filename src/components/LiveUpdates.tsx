@@ -32,7 +32,16 @@ export interface LiveRows {
  * altered items whose rows show all of it reads just the rows the board
  * doesn't hold as new (`rows.asOf`); anything else reloads the page.
  */
-export function LiveUpdates({ seq, rows }: { seq: number; rows?: LiveRows }) {
+export function LiveUpdates({
+  seq,
+  rows,
+  refreshAt = null,
+}: {
+  seq: number;
+  rows?: LiveRows;
+  /** When something shown turns over without any change announcing it (someone's day, at their 4am). */
+  refreshAt?: number | null;
+}) {
   const router = useRouter();
   const rendered = useRef(seq);
   const live = useRef(rows);
@@ -40,6 +49,13 @@ export function LiveUpdates({ seq, rows }: { seq: number; rows?: LiveRows }) {
     rendered.current = seq;
     live.current = rows;
   }, [seq, rows]);
+  // A list shown for someone's today or week changes when their day turns
+  // over, which no change announces: reload then, a moment after.
+  useEffect(() => {
+    if (refreshAt === null || !Number.isFinite(refreshAt)) return;
+    const timer = setTimeout(() => void refreshIfCurrent(router), Math.max(refreshAt - Date.now(), 0) + 1000);
+    return () => clearTimeout(timer);
+  }, [refreshAt, router]);
   useEffect(() => {
     let source: EventSource | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;

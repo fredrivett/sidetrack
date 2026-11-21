@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { roleWords } from "../lib/roles";
+import { roleWords, whoseWords } from "../lib/roles";
 import { nanoid } from "nanoid";
 import { getEnv } from "../lib/env";
 import { formatItemRef } from "../lib/itemRef";
@@ -27,6 +27,7 @@ import {
   NOTIFICATION_REASONS,
   type NotificationLevel,
   type ListRole,
+  type OnlyWithin,
   type NotificationReason,
   type SpaceRole,
   notificationSettings,
@@ -875,9 +876,9 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
     // What someone joined or was invited as, when it's less than editing.
     // and whose items they see, when it's only someone's.
     const whose = (only: PersonAt) => (only.userId === r.userId ? "your" : `${only.name}'s`);
-    const asRole = (role: ListRole | SpaceRole | undefined, only?: PersonAt): Part[] =>
+    const asRole = (role: ListRole | SpaceRole | undefined, only?: PersonAt, within?: OnlyWithin): Part[] =>
       role && role !== "editor" && role !== "member"
-        ? [t(` as ${roleWords(role)}${only ? ` of ${whose(only)} items` : ""}`)]
+        ? [t(` as ${roleWords(role)}${only ? ` of ${whoseWords(whose(only), within)}` : ""}`)]
         : [];
     // Someone else invited: told to those already in the list or Space, by
     // its current name, while they still are.
@@ -906,7 +907,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
             { text: event.member.name, em: "person" },
             t(" to "),
             place,
-            ...asRole(event.role, event.onlyAssignedTo),
+            ...asRole(event.role, event.onlyAssignedTo, event.onlyWithin),
           ],
           snippet: null,
         },
@@ -927,7 +928,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
             who,
             t(" invited you to "),
             { text: name, em: "place", quote: true },
-            ...asRole(event.role, event.onlyAssignedTo),
+            ...asRole(event.role, event.onlyAssignedTo, event.onlyWithin),
           ],
           snippet: null,
         },
@@ -962,7 +963,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
             who,
             t(` made you ${roleWords(event.role)} of `),
             place,
-            ...(event.onlyAssignedTo ? [t(`, seeing only ${whose(event.onlyAssignedTo)} items`)] : []),
+            ...(event.onlyAssignedTo ? [t(`, seeing only ${whoseWords(whose(event.onlyAssignedTo), event.onlyWithin)}`)] : []),
             ...(event.seesAll ? [t(", seeing all of it")] : []),
           ],
           snippet: null,
@@ -984,7 +985,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
             ? list.space
               ? [who, t(" added "), place, t(" to "), { text: list.space, em: "place", quote: true }]
               : [who, t(" added "), place]
-            : [person, t(" joined "), place, ...(event.type === "member.joined" ? asRole(event.role, event.onlyAssignedTo) : [])];
+            : [person, t(" joined "), place, ...(event.type === "member.joined" ? asRole(event.role, event.onlyAssignedTo, event.onlyWithin) : [])];
       return [
         {
           ...base,
@@ -1012,10 +1013,10 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
                   who,
                   t(` made you ${roleWords(event.role)} of `),
                   space,
-                  ...(event.onlyAssignedTo ? [t(`, seeing only ${whose(event.onlyAssignedTo)} items`)] : []),
+                  ...(event.onlyAssignedTo ? [t(`, seeing only ${whoseWords(whose(event.onlyAssignedTo), event.onlyWithin)}`)] : []),
                   ...(event.seesAll ? [t(", seeing all of it")] : []),
                 ]
-              : [person, t(" joined "), space, ...asRole(event.role, event.onlyAssignedTo)],
+              : [person, t(" joined "), space, ...asRole(event.role, event.onlyAssignedTo, event.onlyWithin)],
           snippet: null,
         },
       ];

@@ -1,5 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
-import { roleWords } from "../lib/roles";
+import { roleWords, whoseWords } from "../lib/roles";
 import { ITEM_SORTS } from "../lib/itemSorts";
 import { repeatLabel } from "../lib/repeat";
 import { dueWord } from "../lib/time";
@@ -8,7 +8,7 @@ import { users } from "./auth-schema";
 import type { Db } from "./db";
 import { hasProjectAccess } from "./access";
 import type { AccessLost, AnchorAt, ChangeEvent, DueAt, ItemAt, ListChanges, PersonAt, SpaceAt } from "./events";
-import { items, projects, spaceMembers, spaces } from "./schema";
+import { items, type OnlyWithin, projects, spaceMembers, spaces } from "./schema";
 
 // Turns change events (core/events.ts) into sentences. Activity, an item's
 // history and MCP's list_audit all read events through here, so they say
@@ -229,8 +229,8 @@ function listChanges(c: ListChanges): string[] {
   ].filter((p): p is string => Boolean(p));
 }
 
-/** Whose items a role covers, when it's only someone's. */
-const onlyOf = (only?: PersonAt) => (only ? ` of ${only.name}'s items` : "");
+/** Whose items a role covers, when it's only someone's, and how much of their days. */
+const onlyOf = (only?: PersonAt, within?: OnlyWithin) => (only ? ` of ${whoseWords(`${only.name}'s`, within)}` : "");
 
 /**
  * `event` as `names`' reader may have it: a smart due date's match in a list
@@ -426,7 +426,7 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
         person(event.member),
         t(" to "),
         list(event.listName),
-        ...(event.role && event.role !== "editor" ? [t(` as ${roleWords(event.role)}${onlyOf(event.onlyAssignedTo)}`)] : []),
+        ...(event.role && event.role !== "editor" ? [t(` as ${roleWords(event.role)}${onlyOf(event.onlyAssignedTo, event.onlyWithin)}`)] : []),
       ];
     case "member.role":
       return [
@@ -434,7 +434,7 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
         person(event.member),
         t(` ${roleWords(event.role)} of `),
         list(event.listName),
-        ...(event.onlyAssignedTo ? [t(`, seeing only ${event.onlyAssignedTo.name}'s items`)] : []),
+        ...(event.onlyAssignedTo ? [t(`, seeing only ${whoseWords(`${event.onlyAssignedTo.name}'s`, event.onlyWithin)}`)] : []),
         ...(event.seesAll ? [t(", seeing all of it")] : []),
         ...lostText(event.lost),
       ];
@@ -442,7 +442,7 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
       return [
         t("accepted invite to "),
         list(event.listName),
-        ...(event.role && event.role !== "editor" ? [t(` as ${roleWords(event.role)}${onlyOf(event.onlyAssignedTo)}`)] : []),
+        ...(event.role && event.role !== "editor" ? [t(` as ${roleWords(event.role)}${onlyOf(event.onlyAssignedTo, event.onlyWithin)}`)] : []),
       ];
     case "member.declined":
       return [t("declined invite to "), list(event.listName)];
@@ -513,13 +513,13 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
         person(event.member),
         t(" to space "),
         space(event.space),
-        ...(event.role && event.role !== "member" ? [t(` as ${roleWords(event.role)}${onlyOf(event.onlyAssignedTo)}`)] : []),
+        ...(event.role && event.role !== "member" ? [t(` as ${roleWords(event.role)}${onlyOf(event.onlyAssignedTo, event.onlyWithin)}`)] : []),
       ];
     case "space.member.joined":
       return [
         t("accepted invite to space "),
         space(event.space),
-        ...(event.role && event.role !== "member" ? [t(` as ${roleWords(event.role)}${onlyOf(event.onlyAssignedTo)}`)] : []),
+        ...(event.role && event.role !== "member" ? [t(` as ${roleWords(event.role)}${onlyOf(event.onlyAssignedTo, event.onlyWithin)}`)] : []),
       ];
     case "space.member.declined":
       return [t("declined invite to space "), space(event.space)];
@@ -538,7 +538,7 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
         person(event.member),
         t(` ${roleWords(event.role)} of space `),
         space(event.space),
-        ...(event.onlyAssignedTo ? [t(`, seeing only ${event.onlyAssignedTo.name}'s items`)] : []),
+        ...(event.onlyAssignedTo ? [t(`, seeing only ${whoseWords(`${event.onlyAssignedTo.name}'s`, event.onlyWithin)}`)] : []),
         ...(event.seesAll ? [t(", seeing all of it")] : []),
         ...lostText(event.lost),
       ];

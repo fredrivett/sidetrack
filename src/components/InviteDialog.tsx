@@ -9,7 +9,6 @@ import type { InvitePlace } from "@/core/invites";
 import { LIST_ROLES, SPACE_ROLES, type ListRole, type SpaceRole } from "@/core/schema";
 import { roleName } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   ResponsiveDialog,
@@ -18,15 +17,13 @@ import {
   ResponsiveDialogDescription,
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
-import { ProjectIcon } from "./ProjectIcon";
+import { PlacePicker, placeKey as key, type PlaceGroup } from "./PlacePicker";
 import { RoleSelect } from "./RoleSelect";
 import { useDraft } from "./use-draft";
 import { useStoredState } from "./use-stored-state";
 
 type InviteSpaceRole = Exclude<SpaceRole, "admin">;
 const SPACE_INVITE_ROLES = SPACE_ROLES.filter((r): r is InviteSpaceRole => r !== "admin");
-
-const key = (p: { kind: string; id: string }) => `${p.kind}:${p.id}`;
 
 /** Who's added and what's chosen: part of the draft, so a reload keeps it. */
 type Picked = {
@@ -39,22 +36,6 @@ type Picked = {
   onlyMine?: string[];
 };
 const NOTHING_PICKED: Picked = { people: [], places: [], listRoles: {}, spaceRoles: {} };
-
-/** A list the viewer owns, as the dialog shows it. */
-type InviteList = { id: string; name: string; icon: string | null; homepageUrl: string | null };
-
-// A tree line from a Space's checkbox down to each of its lists, bending into
-// it, as sub-items hang off their parent on the board (ItemList's BRANCH and
-// TRUNK). Row maths: lists sit 28px in (pl-7) and 2px apart (space-y-0.5,
-// mt-0.5); a row is 40px tall with its checkbox's centre 16px in (px-2 plus
-// half of 16px). So the line runs 13px left of a row, and bends into its
-// middle from the gap above; the first list's reaches up into the Space's
-// row to 4px under its checkbox (which ends 12px above the row's foot), so
-// the line hangs off it whether or not the row is shaded.
-const BRANCH =
-  "relative before:absolute before:-left-[13px] before:w-[13px] before:rounded-bl-lg before:border-b-2 before:border-l-2 before:border-neutral-200 dark:before:border-neutral-700";
-const TRUNK =
-  "after:absolute after:top-0 after:-bottom-0.5 after:-left-[13px] after:border-l-2 after:border-neutral-200 dark:after:border-neutral-700";
 
 /** "Home", "Home and Life", "Home, Life and 2 more". */
 function namesOf(names: string[]): string {
@@ -75,12 +56,8 @@ export function InviteDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /**
-   * Where they can be invited, grouped as on the board: each Space with the
-   * viewer's own lists in it, then Personal. An `admin` Space can be invited
-   * to whole; any other group only heads its lists.
-   */
-  groups: { id: string; name: string; icon: string | null; admin: boolean; lists: InviteList[] }[];
+  /** Where they can be invited, grouped as on the board. */
+  groups: PlaceGroup[];
 }) {
   const draft = useDraft("invite:people");
   const person = draft.value;
@@ -172,83 +149,31 @@ export function InviteDialog({
     });
   }
 
-  /** One place to tick: a Space (its group's heading) or a list in it. */
-  const row = ({
-    kind,
-    id,
-    name,
-    icon,
-    homepageUrl = null,
-    select,
-    covered,
-    tree = "",
-  }: {
-    kind: "space" | "list";
-    id: string;
-    name: string;
-    icon: string | null;
-    homepageUrl?: string | null;
-    select: React.ReactNode;
-    /** Unticked, what they'd get here anyway from its Space being ticked. */
-    covered?: string;
-    /** The tree line's classes, for a list under its Space. */
-    tree?: string;
-  }) => {
+  /** What follows a ticked place: what they can do there. */
+  const roleSelect = (kind: "space" | "list", id: string, name: string) => {
     const k = key({ kind, id });
-    const on = picked.has(k);
-    return (
-      <li
-        key={k}
-        data-on={on || undefined}
-        className={`${tree} flex min-h-10 items-center justify-between gap-2 rounded-lg px-2 py-1 hover:bg-neutral-100 data-on:bg-neutral-100 dark:hover:bg-neutral-800/70 dark:data-on:bg-neutral-800/70`}
-      >
-        <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 self-stretch text-sm">
-          <Checkbox
-            checked={on}
-            onCheckedChange={(checked) => !pending && toggle(k, checked)}
-            aria-disabled={pending || undefined}
-            aria-label={`Invite to ${name}`}
-          />
-          <ProjectIcon icon={icon} homepageUrl={homepageUrl} name={name} size={16} />
-          <span className={`truncate ${kind === "space" ? "font-medium" : ""}`}>{name}</span>
-          {kind === "space" && (
-            <span className="shrink-0 text-xs text-neutral-500">Whole Space</span>
-          )}
-        </label>
-        {on ? (
-          select
-        ) : covered ? (
-          <span className="shrink-0 px-2 text-xs text-neutral-500">{covered} via Space</span>
-        ) : null}
-      </li>
+    return kind === "space" ? (
+      <RoleSelect
+        label={`What they can do in ${name}`}
+        value={spaceRoles[id] ?? "member"}
+        roles={SPACE_INVITE_ROLES}
+        scope="space"
+        disabled={pending}
+        onChange={(r) => setKept((c) => ({ ...c, spaceRoles: { ...c.spaceRoles, [id]: r } }))}
+        onlyMine={{ value: mine.has(k), onChange: (on) => setMine(k, on) }}
+      />
+    ) : (
+      <RoleSelect
+        label={`What they can do on ${name}`}
+        value={listRoles[id] ?? "editor"}
+        roles={LIST_ROLES}
+        scope="list"
+        disabled={pending}
+        onChange={(r) => setKept((c) => ({ ...c, listRoles: { ...c.listRoles, [id]: r } }))}
+        onlyMine={{ value: mine.has(k), onChange: (on) => setMine(k, on) }}
+      />
     );
   };
-
-  const listRow = (l: InviteList, covered: string | undefined, tree: string) =>
-    row({
-      kind: "list",
-      ...l,
-      covered,
-      tree,
-      select: (
-        <RoleSelect
-          label={`What they can do on ${l.name}`}
-          value={listRoles[l.id] ?? "editor"}
-          roles={LIST_ROLES}
-          scope="list"
-          disabled={pending}
-          onChange={(r) => setKept((c) => ({ ...c, listRoles: { ...c.listRoles, [l.id]: r } }))}
-          onlyMine={{
-            value: mine.has(key({ kind: "list", id: l.id })),
-            onChange: (on) => setMine(key({ kind: "list", id: l.id }), on),
-          }}
-        />
-      ),
-    });
-
-  const nothingToShare = groups.every((g) => !g.admin && g.lists.length === 0);
-  // Without Spaces, the lists are one group with nothing to head it.
-  const flat = groups.length === 1 && !groups[0].admin;
 
   return (
     // It stays open while it saves, so a failure shows where they're looking.
@@ -319,63 +244,28 @@ export function InviteDialog({
             />
           </div>
 
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-2 py-3">
-            {nothingToShare && (
-              <p className="py-6 text-center text-xs text-neutral-500">
-                You can invite people to lists you own and Spaces you’re an admin of.
-              </p>
-            )}
-            {!nothingToShare &&
-              groups.map((g) => {
-                const spaceOn = g.admin && picked.has(key({ kind: "space", id: g.id }));
-                const covered = spaceOn ? roleName(spaceRoles[g.id] ?? "member") : undefined;
-                return (
-                  <section key={g.id} aria-label={flat ? undefined : g.name}>
-                    {flat ? null : g.admin ? (
-                      <ul>
-                        {row({
-                          kind: "space",
-                          id: g.id,
-                          name: g.name,
-                          icon: g.icon,
-                          select: (
-                            <RoleSelect
-                              label={`What they can do in ${g.name}`}
-                              value={spaceRoles[g.id] ?? "member"}
-                              roles={SPACE_INVITE_ROLES}
-                              scope="space"
-                              disabled={pending}
-                              onChange={(r) =>
-                                setKept((c) => ({ ...c, spaceRoles: { ...c.spaceRoles, [g.id]: r } }))
-                              }
-                              onlyMine={{
-                                value: mine.has(key({ kind: "space", id: g.id })),
-                                onChange: (on) => setMine(key({ kind: "space", id: g.id }), on),
-                              }}
-                            />
-                          ),
-                        })}
-                      </ul>
-                    ) : (
-                      <h3 className="px-2 pb-1 text-xs font-medium text-neutral-500">{g.name}</h3>
-                    )}
-                    {g.lists.length > 0 && (
-                      // A Space's lists hang off it on a tree line, so they read as its.
-                      <ul className={g.admin ? "mt-0.5 space-y-0.5 pl-7" : "space-y-0.5"}>
-                        {g.lists.map((l, i) =>
-                          listRow(
-                            l,
-                            covered,
-                            g.admin
-                              ? `${BRANCH} ${i === 0 ? "before:-top-2.5 before:h-[31px]" : "before:-top-0.5 before:h-[23px]"} ${i < g.lists.length - 1 ? TRUNK : ""}`
-                              : "",
-                          ),
-                        )}
-                      </ul>
-                    )}
-                  </section>
-                );
-              })}
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-3">
+            <PlacePicker
+              groups={groups}
+              picked={picked}
+              onToggle={toggle}
+              disabled={pending}
+              label={(name) => `Invite to ${name}`}
+              empty="You can invite people to lists you own and Spaces you’re an admin of."
+              trailing={(p, { on, spaceOn }) => {
+                if (on) return roleSelect(p.kind, p.id, p.name);
+                // Unticked, what they'd get here anyway from its Space being ticked.
+                if (spaceOn) {
+                  const space = groups.find((g) => g.lists.some((l) => l.id === p.id));
+                  return (
+                    <span className="shrink-0 px-2 text-xs text-neutral-500">
+                      {roleName(spaceRoles[space?.id ?? ""] ?? "member")} via Space
+                    </span>
+                  );
+                }
+                return null;
+              }}
+            />
           </div>
 
           <div className="flex shrink-0 items-center gap-3 border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">

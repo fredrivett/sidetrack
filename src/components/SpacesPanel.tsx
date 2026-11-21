@@ -332,6 +332,7 @@ function SpaceCard({
                             `change what ${displayName(m)} sees`,
                           ),
                       }}
+                      within={m.onlyWithin}
                     />
                   ) : (
                     m.role !== "member" && (
@@ -360,6 +361,7 @@ function SpaceCard({
                           `change what ${displayName(m)} sees`,
                         ),
                     }}
+                    within={m.onlyWithin}
                   />
                 ) : (
                   m.role !== "member" && (

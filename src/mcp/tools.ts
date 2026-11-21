@@ -111,6 +111,8 @@ import {
   PROJECT_STATUSES,
   SPACE_COLORS,
   LIST_ROLES,
+  ONLY_WITHIN,
+  type OnlyWithin,
   type ListRole,
   NOTIFICATION_LEVELS,
   type SpaceRole,
@@ -353,6 +355,7 @@ async function sendInviteNotification(
   kind: InviteKind = "list",
   role?: ListRole | SpaceRole,
   onlyMine?: boolean,
+  within?: OnlyWithin | null,
 ) {
   if (!toEmail) return;
   await notifyInvite({
@@ -363,6 +366,7 @@ async function sendInviteNotification(
     kind,
     role,
     onlyMine,
+    within,
   });
 }
 
@@ -2282,14 +2286,15 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           .boolean()
           .optional()
           .describe("Viewers and commenters only: they see just the items assigned to you (the user), not the rest of the list."),
+        only_within: z.enum(ONLY_WITHIN).nullable().optional().describe("With only_mine: today or week shows them only those of your items in your today (due today, overdue, or finished today) or your week (Monday to Sunday), by your clock; null shows every day. Leave it out to keep it as it is."),
       },
     },
-    async ({ list_id, person, role, only_mine }) => {
+    async ({ list_id, person, role, only_mine, only_within }) => {
       const { db } = getDb();
       const project = getProject(db, userId, list_id);
       if (!project) return notFound("list", list_id);
-      const member = inviteMember(db, userId, list_id, person, SOURCE, role, { onlyMine: only_mine });
-      await sendInviteNotification(db, ctx.baseUrl, userId, project.name, member.email, "list", role, only_mine);
+      const member = inviteMember(db, userId, list_id, person, SOURCE, role, { onlyMine: only_mine, within: only_within });
+      await sendInviteNotification(db, ctx.baseUrl, userId, project.name, member.email, "list", role, only_mine, only_within);
       return json(member);
     },
   );
@@ -2311,12 +2316,13 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           .boolean()
           .optional()
           .describe("Viewers and commenters only: they see just the items assigned to you (the user), not the rest of the list."),
+        only_within: z.enum(ONLY_WITHIN).nullable().optional().describe("With only_mine: today or week shows them only those of your items in your today (due today, overdue, or finished today) or your week (Monday to Sunday), by your clock; null shows every day. Leave it out to keep it as it is."),
       },
     },
-    async ({ list_id, user_id, role, only_mine }) => {
+    async ({ list_id, user_id, role, only_mine, only_within }) => {
       const { db } = getDb();
       if (!getProject(db, userId, list_id)) return notFound("list", list_id);
-      setMemberRole(db, userId, list_id, user_id, role, SOURCE, only_mine);
+      setMemberRole(db, userId, list_id, user_id, role, SOURCE, only_mine, only_within);
       return json({ ok: true });
     },
   );
@@ -2540,18 +2546,24 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Each place is a list_id (owner only; role editor, commenter or viewer) or a space_id (admins only; " +
         "role member, commenter or viewer). Each invitee gets one push and one email naming every place; " +
         "people already in a place hear only of that place. Use it instead of invite_member / invite_space_member " +
-        "when the user names more than one place or person. A place's only_mine (viewer or commenter) shows them only the user's items there. " +
+        "when the user names more than one place or person. A place's only_mine (viewer or commenter) shows them only the user's items there, and its only_within (today or week) only those in the user's today or week. " +
         "Check with the user before inviting someone they didn't name.",
       inputSchema: {
         people: z.array(z.string().min(1)).min(1),
         places: z
           .array(
             z.union([
-              z.object({ list_id: z.string(), role: z.enum(LIST_ROLES).optional(), only_mine: z.boolean().optional() }),
+              z.object({
+                list_id: z.string(),
+                role: z.enum(LIST_ROLES).optional(),
+                only_mine: z.boolean().optional(),
+                only_within: z.enum(ONLY_WITHIN).nullable().optional(),
+              }),
               z.object({
                 space_id: z.string(),
                 role: z.enum(["member", "commenter", "viewer"]).optional(),
                 only_mine: z.boolean().optional(),
+                only_within: z.enum(ONLY_WITHIN).nullable().optional(),
               }),
             ]),
           )
@@ -2565,14 +2577,14 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       for (const p of places) {
         if ("list_id" in p) {
           if (!getProject(db, userId, p.list_id)) return notFound("list", p.list_id);
-          resolved.push({ kind: "list", id: p.list_id, role: p.role ?? "editor", onlyMine: p.only_mine });
+          resolved.push({ kind: "list", id: p.list_id, role: p.role ?? "editor", onlyMine: p.only_mine, within: p.only_within });
         } else {
           if (!spaces.some((s) => s.id === p.space_id)) return notFound("space", p.space_id);
-          resolved.push({ kind: "space", id: p.space_id, role: p.role ?? "member", onlyMine: p.only_mine });
+          resolved.push({ kind: "space", id: p.space_id, role: p.role ?? "member", onlyMine: p.only_mine, within: p.only_within });
         }
       }
       const { sent, places: invited } = invitePeople(db, userId, { people, places: resolved }, SOURCE);
-      const named = invited.map(({ name, kind, role, onlyMine }) => ({ name, kind, role, onlyMine }));
+      const named = invited.map(({ name, kind, role, onlyMine, within }) => ({ name, kind, role, onlyMine, within }));
       const inviterName = getUserName(db, userId) ?? "Someone";
       const emails = new Set(sent.flatMap((s) => (s.member.email ? [s.member.email] : [])));
       for (const to of emails) {
@@ -2584,6 +2596,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           kind: named[0].kind,
           role: named[0].role,
           onlyMine: named[0].onlyMine,
+          within: named[0].within,
           places: named,
         });
       }
@@ -2609,14 +2622,15 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           .boolean()
           .optional()
           .describe("Viewers and commenters only: they see just the items assigned to you (the user), not the rest of the list."),
+        only_within: z.enum(ONLY_WITHIN).nullable().optional().describe("With only_mine: today or week shows them only those of your items in your today (due today, overdue, or finished today) or your week (Monday to Sunday), by your clock; null shows every day. Leave it out to keep it as it is."),
       },
     },
-    async ({ space_id, person, role, only_mine }) => {
+    async ({ space_id, person, role, only_mine, only_within }) => {
       const { db } = getDb();
       const space = listSpaces(db, userId).find((s) => s.id === space_id);
       if (!space) return notFound("space", space_id);
-      const member = inviteSpaceMember(db, userId, space_id, person, SOURCE, role, { onlyMine: only_mine });
-      await sendInviteNotification(db, ctx.baseUrl, userId, space.name, member.email, "space", role, only_mine);
+      const member = inviteSpaceMember(db, userId, space_id, person, SOURCE, role, { onlyMine: only_mine, within: only_within });
+      await sendInviteNotification(db, ctx.baseUrl, userId, space.name, member.email, "space", role, only_mine, only_within);
       return json(member);
     },
   );
@@ -2657,12 +2671,13 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           .boolean()
           .optional()
           .describe("Viewers and commenters only: they see just the items assigned to you (the user), not the rest of the list."),
+        only_within: z.enum(ONLY_WITHIN).nullable().optional().describe("With only_mine: today or week shows them only those of your items in your today (due today, overdue, or finished today) or your week (Monday to Sunday), by your clock; null shows every day. Leave it out to keep it as it is."),
       },
     },
-    async ({ space_id, user_id, role, only_mine }) => {
+    async ({ space_id, user_id, role, only_mine, only_within }) => {
       const { db } = getDb();
       if (!isJoined(db, space_id)) return notFound("space", space_id);
-      setSpaceMemberRole(db, userId, space_id, user_id, role, SOURCE, only_mine);
+      setSpaceMemberRole(db, userId, space_id, user_id, role, SOURCE, only_mine, only_within);
       return json({ ok: true });
     },
   );

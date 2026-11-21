@@ -161,15 +161,17 @@ describe("Kanban, switching views", () => {
     fireEvent.click(account);
   };
 
-  it("puts each view at its own path, Brief on 1 and Board on 2, Done in the account menu, keeping the query", async () => {
+  it("puts each view at its own path, Brief on 1, Board on 2 and Check-ins on 3, Done in the account menu, keeping the query", async () => {
     window.history.replaceState(null, "", "/board?x=1");
     render(board([list("b", "Work", "active", null)], []));
     const path = () => window.location.pathname + window.location.search;
     fireEvent.keyDown(document, { key: "1" });
     await waitFor(() => expect(path()).toBe("/brief?x=1"));
-    // 3 isn't a view any more.
+    // 3 is Check-ins, after Brief and Board; Done isn't a view any more.
     fireEvent.keyDown(document, { key: "3" });
-    expect(screen.getByRole("group", { name: "View" }).hasAttribute("aria-busy")).toBe(false);
+    await waitFor(() => expect(path()).toBe("/check-ins?x=1"));
+    fireEvent.keyDown(document, { key: "4" });
+    expect(path()).toBe("/check-ins?x=1");
     openAccountMenu();
     fireEvent.click(screen.getByRole("menuitem", { name: "Done items" }));
     await waitFor(() => expect(path()).toBe("/done?x=1"));

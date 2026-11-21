@@ -1,6 +1,8 @@
 import { eq } from "drizzle-orm";
+import { users } from "./auth-schema";
+import { setDayNote, sharedDayNote } from "./dayNotes";
 import { nanoid } from "nanoid";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { listAudit } from "./audit";
 import { addLabel, listLabels, updateLabel } from "./labels";
 import { createTestDb, createTestUser } from "./test-helpers";
@@ -305,7 +307,7 @@ describe("a membership shown only someone's items", () => {
   }
 
   it("shows Jo only Lorna's item groups, by every read", () => {
-    const { db, fred, jo, vic, list, party, errand, swim } = setup();
+    const { db, lorna, fred, jo, vic, list, party, errand, swim } = setup();
     const ids = [party.id, errand.id, swim.id];
     // The control: someone shown the whole list reads all of it.
     for (const whole of [fred, vic]) expect(everything(db, whole, list.id, ids)).toContain("SECRET");
@@ -320,7 +322,7 @@ describe("a membership shown only someone's items", () => {
     expect(rows).toHaveLength(listNotifications(db, jo).length);
     expect(Object.keys(countCommentsByItem(db, vic))).toEqual([party.id]);
     expect(listItems(db, jo, list.id).map((i) => i.title).sort()).toEqual(["Garden", "Mow", "Pack towel", "Swim"]);
-    expect([...limitedListsById(db, jo)]).toEqual([[list.id, "Lorna"]]);
+    expect([...limitedListsById(db, jo)]).toEqual([[list.id, { personId: lorna, username: "lorna", name: "Lorna", image: null, within: null, day: null, turnsAt: null }]]);
     expect(limitedListsById(db, vic).size).toBe(0);
     // Nor can she act on what she can't see.
     expect(() => addComment(db, jo, party.id, "hi", "web")).toThrow(/not found/);
@@ -419,5 +421,149 @@ describe("a membership shown only someone's items", () => {
     expect(everything(db, kim, home.id, [mine.id, hidden.id])).not.toContain("SECRET");
     expect(getItem(db, kim, mine.id)?.title).toBe("Mine");
     expect(getItem(db, fred, mine.id)).toBeUndefined();
+  });
+});
+
+describe("a membership shown only someone's today or week", () => {
+  // Thursday 19 November 2026, 10am in London.
+  const THU = Date.parse("2026-11-19T10:00:00Z");
+  afterEach(() => vi.useRealTimers());
+
+  function setup(within: "today" | "week", timeZone = "Europe/London") {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(THU);
+    const { db } = createTestDb();
+    const lorna = createTestUser(db, { username: "lorna", name: "Lorna" });
+    const fred = createTestUser(db, { username: "fred", name: "Fred" });
+    const jo = createTestUser(db, { username: "jo", name: "Jo" });
+    db.update(users).set({ timeZone }).where(eq(users.id, lorna)).run();
+    const list = createProject(db, lorna, { name: "Week" }, "web");
+    inviteMember(db, lorna, list.id, "fred", "web", "editor");
+    acceptInvite(db, fred, list.id, "web");
+    inviteMember(db, lorna, list.id, "jo", "web", "viewer", { onlyMine: true, within });
+    acceptInvite(db, jo, list.id, "web");
+    const mine = (title: string, dueDate?: string, dueFrom?: string) =>
+      addItem(db, lorna, { projectId: list.id, title, assigneeIds: [lorna], dueDate, dueFrom }, "web");
+    mine("Due today", "2026-11-19");
+    mine("Overdue", "2026-11-17");
+    mine("Tomorrow", "2026-11-20");
+    mine("Next Monday", "2026-11-23");
+    mine("Sunday", "2026-11-22");
+    mine("This week span", "2026-11-20", "2026-11-16");
+    mine("No date");
+    completeItem(db, lorna, mine("Done early", "2026-11-21").id, "web");
+    addItem(db, fred, { projectId: list.id, title: "Fred's today", assigneeIds: [fred], dueDate: "2026-11-19" }, "web");
+    // An undated item of hers with one line due today shows whole.
+    const tidy = addItem(db, lorna, { projectId: list.id, title: "Tidy", assigneeIds: [lorna], subItems: ["Kitchen"] }, "web");
+    updateItem(db, lorna, listSubItems(db, lorna, tidy.id)[0].id, { dueDate: "2026-11-19" }, "web");
+    // Finished yesterday, Wednesday.
+    vi.setSystemTime(THU - 86_400_000);
+    completeItem(db, lorna, mine("Done yesterday", "2026-11-18").id, "web");
+    vi.setSystemTime(THU);
+    const seen = () => listItems(db, jo, list.id, { includeCompleted: true }).map((i) => i.title).sort();
+    return { db, lorna, jo, list, seen };
+  }
+
+  it("shows today's: due, overdue, a span that's begun, and done today, by her clock", () => {
+    const { seen } = setup("today");
+    expect(seen()).toEqual(["Done early", "Due today", "Kitchen", "Overdue", "This week span", "Tidy"]);
+    // 3:59am on Friday in London is still her Thursday; at 4am it's Friday.
+    vi.setSystemTime(Date.parse("2026-11-20T03:59:00Z"));
+    expect(seen()).toContain("Done early");
+    vi.setSystemTime(Date.parse("2026-11-20T04:00:00Z"));
+    expect(seen()).toEqual(["Due today", "Kitchen", "Overdue", "This week span", "Tidy", "Tomorrow"]);
+  });
+
+  it("goes by her time zone, not the server's or Jo's", () => {
+    // 5am UTC on Friday, already Friday by the server, is still Thursday
+    // midnight (before her 4am) in New York.
+    const { seen } = setup("today", "America/New_York");
+    vi.setSystemTime(Date.parse("2026-11-20T05:00:00Z"));
+    expect(seen()).toContain("Due today");
+    expect(seen()).not.toContain("Tomorrow");
+  });
+
+  it("shows this week's, Monday to Sunday, and done this week", () => {
+    const { db, lorna, jo, list, seen } = setup("week");
+    expect([...limitedListsById(db, jo)]).toEqual([
+      // Her next 4am, in London, when what Jo's shown changes.
+      [list.id, { personId: lorna, username: "lorna", name: "Lorna", image: null, within: "week", day: "2026-11-16", turnsAt: Date.parse("2026-11-20T04:00:00Z") }],
+    ]);
+    expect(seen()).toEqual([
+      "Done early", "Done yesterday", "Due today", "Kitchen", "Overdue", "Sunday", "This week span", "Tidy", "Tomorrow",
+    ]);
+  });
+
+  it("says it's her day or week when Jo's invited, joins and is changed", () => {
+    const { db, lorna, jo, list } = setup("today");
+    const said = (u: string) => listNotifications(db, u).map((n) => plainText(n.parts));
+    expect(said(jo)).toContain('Lorna invited you to "Week" as a viewer of @lorna\'s day');
+    expect(said(lorna)).toContain('Jo joined "Week" as a viewer of your day');
+    setMemberRole(db, lorna, list.id, jo, "viewer", "web", undefined, "week");
+    expect(listAudit(db, lorna, { projectId: list.id }).map((e) => e.detail)).toContainEqual(
+      expect.stringMatching(/seeing only @lorna's week/),
+    );
+  });
+
+  it("shows her note's words or mood only as she chose, for her today, once Kim's joined", () => {
+    const { db, lorna, jo } = setup("today");
+    const kim = createTestUser(db, { username: "kim" });
+    const home = createProject(db, lorna, { name: "Home" }, "web");
+    inviteMember(db, lorna, home.id, "kim", "web", "viewer", { onlyMine: true, within: "today", shareMood: true });
+    // Jo has her day, but not her note: nothing of it.
+    setDayNote(db, lorna, "2026-11-18", "Unwell — yesterday's");
+    setDayNote(db, lorna, "2026-11-19", "Tired, Busy — long day at work");
+    expect(sharedDayNote(db, jo, lorna)).toEqual({ note: null, mood: [] });
+    // Kim's invite is pending until she accepts.
+    expect(sharedDayNote(db, kim, lorna)).toEqual({ note: null, mood: [] });
+    acceptInvite(db, kim, home.id, "web");
+    expect(sharedDayNote(db, kim, lorna)).toEqual({ note: null, mood: ["Busy", "Tired"] });
+    // A share that allows more wins.
+    const away = createProject(db, lorna, { name: "Away" }, "web");
+    inviteMember(db, lorna, away.id, "kim", "web", "viewer", { onlyMine: true, within: "week", shareNote: true });
+    acceptInvite(db, kim, away.id, "web");
+    expect(sharedDayNote(db, kim, lorna)).toEqual({ note: "long day at work", mood: ["Busy", "Tired"] });
+    // Only while it's a day share: kept to her items for all time, it stops.
+    setMemberRole(db, lorna, away.id, kim, "viewer", "web", undefined, null);
+    setMemberRole(db, lorna, home.id, kim, "viewer", "web", undefined, null);
+    expect(sharedDayNote(db, kim, lorna)).toEqual({ note: null, mood: [] });
+  });
+
+  it("stops showing her note once the day share ends, even when another day share is set later", () => {
+    const { db, lorna, jo } = setup("today");
+    const sam = createTestUser(db, { username: "sam" });
+    setDayNote(db, lorna, "2026-11-19", "Tired — private words");
+    const home = createProject(db, lorna, { name: "Home" }, "web");
+    inviteMember(db, lorna, home.id, "jo", "web", "viewer", { onlyMine: true, within: "today", shareNote: true, shareMood: true });
+    acceptInvite(db, jo, home.id, "web");
+    expect(sharedDayNote(db, jo, lorna).note).toBe("private words");
+    // Kept to her items for all time, then her week again: not opted in again.
+    setMemberRole(db, lorna, home.id, jo, "viewer", "web", undefined, null);
+    setMemberRole(db, lorna, home.id, jo, "viewer", "web", undefined, "week");
+    expect(sharedDayNote(db, jo, lorna)).toEqual({ note: null, mood: [] });
+
+    // In a Space, another admin can't revive it, nor take it over as theirs.
+    const space = createSpace(db, lorna, { name: "Fam" }, "web");
+    inviteSpaceMember(db, lorna, space.id, "sam", "web", "member");
+    acceptSpaceInvite(db, sam, space.id, "web");
+    setSpaceMemberRole(db, lorna, space.id, sam, "admin", "web");
+    inviteSpaceMember(db, lorna, space.id, "jo", "web", "commenter", { onlyMine: true, within: "today", shareNote: true });
+    acceptSpaceInvite(db, jo, space.id, "web");
+    expect(sharedDayNote(db, jo, lorna).note).toBe("private words");
+    setSpaceMemberRole(db, sam, space.id, jo, "commenter", "web", true);
+    setDayNote(db, sam, "2026-11-19", "Sam's own words");
+    expect(sharedDayNote(db, jo, lorna)).toEqual({ note: null, mood: [] });
+    expect(sharedDayNote(db, jo, sam)).toEqual({ note: null, mood: [] });
+  });
+
+  it("is kept with a role change, cleared with the limit, and needs one", () => {
+    const { db, lorna, jo, list, seen } = setup("today");
+    setMemberRole(db, lorna, list.id, jo, "commenter", "web");
+    expect(seen()).not.toContain("Tomorrow");
+    setMemberRole(db, lorna, list.id, jo, "commenter", "web", undefined, "week");
+    expect(seen()).toContain("Tomorrow");
+    setMemberRole(db, lorna, list.id, jo, "commenter", "web", false);
+    expect(seen()).toContain("No date");
+    expect(() => setMemberRole(db, lorna, list.id, jo, "commenter", "web", undefined, "today")).toThrow(/just your items/);
   });
 });

@@ -128,7 +128,7 @@ import {
   removePushSubscription as removePushSubscriptionCore,
   savePushSubscription as savePushSubscriptionCore,
 } from "@/core/push";
-import type { AuditSource, ListRole, NotificationLevel, ProjectStatus, SpaceColor, SpaceRole } from "@/core/schema";
+import type { AuditSource, ListRole, NotificationLevel, OnlyWithin, ProjectStatus, SpaceColor, SpaceRole } from "@/core/schema";
 import { invitePeople as invitePeopleCore, type InvitePlace } from "@/core/invites";
 import {
   acceptSpaceInvite as acceptSpaceInviteCore,
@@ -310,12 +310,14 @@ export async function inviteMemberAction(
   role: ListRole = "editor",
   /** They'll see only the items assigned to you. */
   onlyMine = false,
+  /** With onlyMine, only those in your today or week. */
+  within: OnlyWithin | null = null,
 ) {
   const session = await getCurrentSession();
   if (!session) redirect("/login");
   const userId = session.user.id;
   const { db } = getDb();
-  const member = inviteMemberCore(db, userId, projectId, person, SOURCE, role, { onlyMine });
+  const member = inviteMemberCore(db, userId, projectId, person, SOURCE, role, { onlyMine, within });
 
   // Notify the invitee by email, once the invite has answered: it's
   // best-effort (the in-app banner is the source of truth, so notifyInvite
@@ -329,6 +331,7 @@ export async function inviteMemberAction(
       url: await appBaseUrl(),
       role,
       onlyMine,
+      within,
     };
     after(() => notifyInvite(invite));
   }
@@ -360,7 +363,7 @@ export async function invitePeopleAction(people: string[], places: InvitePlace[]
       url,
       kind: named[0]?.kind,
       role: named[0]?.role,
-      places: named.map(({ name, kind, role, onlyMine }) => ({ name, kind, role, onlyMine })),
+      places: named.map(({ name, kind, role, onlyMine, within }) => ({ name, kind, role, onlyMine, within })),
     };
     after(() => notifyInvite(invite));
   }
@@ -374,10 +377,11 @@ export async function setMemberRoleAction(
   targetUserId: string,
   role: ListRole,
   onlyMine?: boolean,
+  within?: OnlyWithin | null,
 ) {
   const userId = await requireUserId();
   const { db } = getDb();
-  setMemberRoleCore(db, userId, projectId, targetUserId, role, SOURCE, onlyMine);
+  setMemberRoleCore(db, userId, projectId, targetUserId, role, SOURCE, onlyMine, within);
   refresh();
 }
 
@@ -455,11 +459,13 @@ export async function inviteSpaceMemberAction(
   role: Exclude<SpaceRole, "admin"> = "member",
   /** They'll see only the items assigned to you. */
   onlyMine = false,
+  /** With onlyMine, only those in your today or week. */
+  within: OnlyWithin | null = null,
 ) {
   const session = await getCurrentSession();
   if (!session) redirect("/login");
   const { db } = getDb();
-  const member = inviteSpaceMemberCore(db, session.user.id, spaceId, person, SOURCE, role, { onlyMine });
+  const member = inviteSpaceMemberCore(db, session.user.id, spaceId, person, SOURCE, role, { onlyMine, within });
   // Best-effort and after answering, like a list invite.
   const space = listSpacesCore(db, session.user.id).find((s) => s.id === spaceId);
   if (member.email && space) {
@@ -471,6 +477,7 @@ export async function inviteSpaceMemberAction(
       kind: "space" as const,
       role,
       onlyMine,
+      within,
     };
     after(() => notifyInvite(invite));
   }
@@ -491,10 +498,11 @@ export async function setSpaceMemberRoleAction(
   targetUserId: string,
   role: SpaceRole,
   onlyMine?: boolean,
+  within?: OnlyWithin | null,
 ) {
   const userId = await requireUserId();
   const { db } = getDb();
-  setSpaceMemberRoleCore(db, userId, spaceId, targetUserId, role, SOURCE, onlyMine);
+  setSpaceMemberRoleCore(db, userId, spaceId, targetUserId, role, SOURCE, onlyMine, within);
   refresh();
 }
 

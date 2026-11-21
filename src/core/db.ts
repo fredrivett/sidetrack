@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { getEnv } from "../lib/env";
+import { registerDbFunctions } from "./db-functions";
 import * as appSchema from "./schema";
 import * as authSchema from "./auth-schema";
 
@@ -30,6 +31,7 @@ function createDb() {
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("foreign_keys = ON");
   sqlite.pragma("synchronous = NORMAL");
+  registerDbFunctions(sqlite);
   return { sqlite, db: drizzle(sqlite, { schema }) };
 }
 
