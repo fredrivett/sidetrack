@@ -18,6 +18,12 @@ export interface ItemAt {
   title: string;
 }
 
+/** The captured thing an item was added from, such as a photo of a page. */
+export interface SourceAt {
+  sourceId: string;
+  kind: "photo";
+}
+
 /** A person as they were labelled when the change happened, for once they're gone. */
 export interface PersonAt {
   userId: string;
@@ -81,8 +87,16 @@ export type ChangeEvent =
       repeat: Repeat | null;
       /** Added as one of its parent's lines, in the same go as the parent. */
       withParent?: true;
+      /** Added from a source, such as a photo of a page, after review. */
+      from?: SourceAt;
     } & ItemAt)
-  | ({ type: "item.updated"; projectId: string; changes: ItemChanges } & ItemAt)
+  | ({
+      type: "item.updated";
+      projectId: string;
+      changes: ItemChanges;
+      /** Changed from a source, such as a photo of a page, after review. */
+      from?: SourceAt;
+    } & ItemAt)
   | ({
       type: "item.completed";
       projectId: string;
@@ -93,6 +107,8 @@ export type ChangeEvent =
       with?: ItemAt & { as: "last-sub-item" | "parent" };
       /** Logged as already done when it was added. */
       added?: true;
+      /** Ticked off from a source, such as a crossed-out line on a photo. */
+      from?: SourceAt;
     } & ItemAt)
   | ({
       type: "item.reopened";
@@ -354,6 +370,17 @@ export type AccountEvent =
   /** `replaced`: a new address for a user who had one; the old one stops working. */
   | { type: "email.address.created"; addressId: string; replaced: boolean }
   | { type: "email.address.removed"; addressId: string }
+  /** A photo's reviewed lines went on the board; each item's own row says it too. */
+  | {
+      type: "source.added";
+      sourceId: string;
+      kind: "photo";
+      added: number;
+      /** Existing items the photo changed, such as a new due date. */
+      updated?: number;
+      completed: number;
+      skipped: number;
+    }
   | { type: "profile.username"; userId: string; from: string; to: string }
   /** `image` null: cleared. */
   | { type: "profile.avatar"; userId: string; image: string | null; uploaded?: true }
@@ -528,6 +555,8 @@ export function auditColumns(event: ChangeEvent): {
       return account(event.replaced ? "update" : "create", "email_address", event.addressId);
     case "email.address.removed":
       return account("delete", "email_address", event.addressId);
+    case "source.added":
+      return account("create", "source", event.sourceId);
     case "profile.username":
     case "profile.password":
     case "profile.two_factor":

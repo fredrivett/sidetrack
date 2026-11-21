@@ -119,6 +119,9 @@ const ACTIONS: Record<string, string | Exempt> = {
   sendTestPushAction: { exempt: "view", note: "checks push on the user's own devices" },
   startAgentAction: "assign_agent",
   stopAgentAction: "unassign_agent",
+  addFromSourceAction: "add_photo_lines",
+  discardSourceAction: "discard_photo",
+  getItemSourceAction: "get_item",
 };
 
 function serverActions(): string[] {

@@ -154,6 +154,12 @@ import {
   setUsername as setUsernameCore,
 } from "@/core/users";
 import { setDayNote as setDayNoteCore } from "@/core/dayNotes";
+import {
+  addFromSource as addFromSourceCore,
+  discardSource as discardSourceCore,
+  getItemSource as getItemSourceCore,
+  type LineReview,
+} from "@/core/sources";
 import { getCurrentSession, requireUserId } from "@/auth/session";
 import { sendAgentRequest } from "@/lib/agentRequest";
 import { notifyInvite, notifyMentions } from "@/lib/email";
@@ -713,6 +719,30 @@ export async function deleteItemAction(id: string) {
   const { db } = getDb();
   deleteItemCore(db, userId, id, SOURCE);
   refresh();
+}
+
+/** Add a photo's reviewed lines to the board (the review screen's Add). */
+export async function addFromSourceAction(sourceId: string, reviews: LineReview[]) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const result = addFromSourceCore(db, userId, sourceId, reviews, SOURCE);
+  refresh();
+  return result;
+}
+
+/** Drop a photo that hasn't been added. */
+export async function discardSourceAction(sourceId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  discardSourceCore(db, userId, sourceId);
+  refresh();
+}
+
+/** The photo an item was added from, and where on it, for the item's dialog. */
+export async function getItemSourceAction(itemId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  return getItemSourceCore(db, userId, itemId);
 }
 
 /** An item's comments, and who a comment on it can mention: one read, as

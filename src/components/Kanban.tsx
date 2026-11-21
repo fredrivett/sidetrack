@@ -134,6 +134,7 @@ export function Kanban({
   spaces,
   trayOrder,
   pendingSpaceInvites,
+  pendingPhotos,
   initialCollapsedTrays,
   initialListId,
   initialItemId,
@@ -178,6 +179,8 @@ export function Kanban({
   /** The trays' ids in the viewer's order: "personal" and their Spaces. */
   trayOrder: string[];
   pendingSpaceInvites: PendingSpaceInviteView[];
+  /** Photos an agent read, waiting to be reviewed and added. */
+  pendingPhotos: Array<{ id: string; agentName: string | null }>;
   /** Trays ("personal" or Space ids) this browser has collapsed, from its cookie. */
   initialCollapsedTrays: string[];
   /** From `?p=`, the list the board opens centred on. */
@@ -862,7 +865,11 @@ export function Kanban({
             onInvite={() => setInviting(true)}
           />
         </BoardHeader>
-        <InvitesBanner invites={pendingInvites} spaceInvites={pendingSpaceInvites} />
+        <InvitesBanner
+          invites={pendingInvites}
+          spaceInvites={pendingSpaceInvites}
+          photos={pendingPhotos}
+        />
         <InstallReporter done={getStarted.done} />
         {view === "brief" ? (
           <AgendaView

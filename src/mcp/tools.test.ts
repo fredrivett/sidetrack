@@ -18,6 +18,8 @@ import {
   listTrays,
   setSpaceMemberRole,
 } from "@/core/spaces";
+import { sources } from "@/core/schema";
+import { getSource, listPendingSources, receiveSourcePhoto } from "@/core/sources";
 import { createTestDb, createTestUser } from "@/core/test-helpers";
 import { setTimeZone } from "@/core/users";
 import { buildServer } from "./server";
@@ -937,5 +939,96 @@ describe("assign_agent and unassign_agent", () => {
     const { error } = await call("assign_agent", { item_id: "SID-1", agent_key_id: amp });
     expect(error).toBe("the agent's webhook answered 500, so the agent wasn't started.");
     expect(listOpenAgentSessions(db, bob, item.id)).toEqual([]);
+  });
+});
+
+describe("add_from_photo", () => {
+  it("proposes lines against items found by ref, for review, with a one-time upload URL", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const life = createProject(db, fred, { name: "Life" }, "web");
+    const plan = addItem(db, fred, { projectId: life.id, title: "Change phone plan" }, "web");
+    const call = await connectAs(fred);
+    const { data: planOut } = await call("get_item", { id: plan.id });
+    const auditBefore = listAudit(db, fred, { limit: 500 }).length;
+
+    const { error, data } = await call("add_from_photo", {
+      lines: [
+        { title: "Change phone plan", list_id: life.id, match: planOut.ref, done: true },
+        { title: "Lorna's SIM", list_id: life.id, parent_item: planOut.ref },
+        { title: "Tidy up flat", list_id: life.id, region: { x: 0.1, y: 0.2, w: 0.5, h: 0.05 } },
+        { title: "Hoover", list_id: life.id, parent: 2 },
+      ],
+    });
+    expect(error).toBeNull();
+    const id = data.source_id as string;
+    expect(data.review_url).toBe(`http://localhost:3000/sources/${id}`);
+    expect((data.upload as { url: string }).url).toMatch(
+      /^http:\/\/localhost:3000\/api\/sources\/upload\/[\w-]{20,}$/,
+    );
+    const source = getSource(db, fred, id);
+    expect(source?.agentName).toBe(AGENT.name);
+    expect(source?.lines.map((l) => [l.title, l.matchItemId, l.parentItemId, l.done])).toEqual([
+      ["Change phone plan", plan.id, null, true],
+      ["Lorna's SIM", null, plan.id, false],
+      ["Tidy up flat", null, null, false],
+      ["Hoover", null, null, false],
+    ]);
+    expect(source?.lines[3].parentLineId).toBe(source?.lines[2].id);
+    // A proposal changes nothing on the board, so it isn't in the log yet.
+    expect(listItems(db, fred, life.id)).toHaveLength(1);
+    expect(listAudit(db, fred, { limit: 500 })).toHaveLength(auditBefore);
+  });
+
+  it("saves nothing when one line is wrong, and says which", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const life = createProject(db, fred, { name: "Life" }, "web");
+    const call = await connectAs(fred);
+
+    const bad = await call("add_from_photo", {
+      lines: [
+        { title: "Tidy up flat", list_id: life.id },
+        { title: "Hoover", list_id: life.id, parent: 5 },
+      ],
+    });
+    expect(bad.error).toMatch(/line 1: parent must be the index of an earlier line.*nothing was saved/);
+    const unknown = await call("add_from_photo", {
+      lines: [{ title: "Order coffee", list_id: life.id, match: "LIF-99" }],
+    });
+    expect(unknown.error).not.toBeNull();
+    expect(listPendingSources(db, fred)).toEqual([]);
+    expect(db.select().from(sources).all()).toEqual([]);
+  });
+
+  it("adds the lines when the user says so, linking each item to the photo, or discards them", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const life = createProject(db, fred, { name: "Life" }, "web");
+    const call = await connectAs(fred);
+    const propose = async (title: string) => {
+      const { data } = await call("add_from_photo", { lines: [{ title, list_id: life.id }] });
+      return data as { source_id: string; upload: { url: string } };
+    };
+    const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+
+    const kept = await propose("Plant jasmine");
+    // Not before the photo is there to link to.
+    expect((await call("add_photo_lines", { source_id: kept.source_id })).error).toMatch(/hasn't been uploaded/);
+    receiveSourcePhoto(db, kept.upload.url.split("/").at(-1) ?? "", PNG);
+    expect((await call("add_photo_lines", { source_id: kept.source_id })).data).toEqual({
+      added: 1,
+      updated: 0,
+      completed: 0,
+      skipped: 0,
+    });
+    const [item] = listItems(db, fred, life.id);
+    expect(item.title).toBe("Plant jasmine");
+    expect((await call("get_item", { id: item.id })).data.fromPhoto).toMatchObject({ source_id: kept.source_id });
+    expect(listAudit(db, fred)[0]).toMatchObject({ source: "mcp", agentKeyId: AGENT.keyId });
+    expect((await call("add_photo_lines", { source_id: kept.source_id })).error).toMatch(/already been added/);
+    expect((await call("discard_photo", { source_id: kept.source_id })).data).toEqual({ discarded: false });
+
+    const dropped = await propose("Descale kettle");
+    expect((await call("discard_photo", { source_id: dropped.source_id })).data).toEqual({ discarded: true });
+    expect(getSource(db, fred, dropped.source_id)).toBeNull();
+    expect(listItems(db, fred, life.id)).toHaveLength(1);
   });
 });

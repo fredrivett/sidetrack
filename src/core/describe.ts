@@ -231,6 +231,7 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
       if (event.labels.length) parts.push(t(`, labelled ${event.labels.join(", ")}`));
       if (event.assignees.length) parts.push(t(", assigned to "), ...people(names, event.assignees));
       if (event.repeat) parts.push(t(`, repeats ${repeatLabel(event.repeat).replace("Every", "every")}`));
+      if (event.from) parts.push(t(" from a photo"));
       return parts;
     }
     case "item.updated": {
@@ -267,14 +268,18 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
         subject,
         t(": "),
         ...changes.flatMap((p, i) => (i ? [t(", "), ...p] : p)),
+        ...(event.from ? [t(" from a photo")] : []),
       ];
     }
-    case "item.completed":
-      return !event.with
+    case "item.completed": {
+      const parts: Part[] = !event.with
         ? [t("completed "), item(event)]
         : event.with.as === "last-sub-item"
           ? [t("completed "), item(event), t(" with its last sub-item, "), item(event.with)]
           : [t("completed "), item(event), t(" with "), item(event.with)];
+      if (event.from) parts.push(t(" from a photo"));
+      return parts;
+    }
     case "item.reopened": {
       const parts: Part[] = [t("reopened "), item(event)];
       if (event.forSubItem) parts.push(t(" for an open sub-item"));
@@ -546,6 +551,15 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
         : [t("set up an email forwarding address")];
     case "email.address.removed":
       return [t("turned off email forwarding")];
+    case "source.added": {
+      const did = [
+        event.added && `added ${event.added} item${event.added === 1 ? "" : "s"}`,
+        event.updated && `updated ${event.updated}`,
+        event.completed && `ticked off ${event.completed}`,
+      ].filter(Boolean);
+      const said = did.length > 1 ? `${did.slice(0, -1).join(", ")} and ${did.at(-1)}` : did[0];
+      return [t(`${said || "added nothing"} from a photo of a page`)];
+    }
     case "profile.username":
       return [
         t("changed username from "),

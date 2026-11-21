@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { test as base, expect, type BrowserContext } from "@playwright/test";
 import { auth } from "@/auth/better-auth";
 import { getDb } from "@/core/db";
 import { addItem } from "@/core/items";
 import { acceptInvite, inviteMember } from "@/core/members";
 import { createProject } from "@/core/projects";
+import { proposeFromPhoto, receiveSourcePhoto, type ProposedLine } from "@/core/sources";
 import { createSpace, setProjectSpace } from "@/core/spaces";
 import type { ListRole } from "@/core/schema";
 
@@ -76,6 +78,8 @@ export type User = {
   addItem(listId: string, title: string, assigneeIds?: string[]): void;
   /** Adds a Space of theirs, with these lists of theirs in it. */
   addSpace(name: string, listIds?: string[]): { id: string };
+  /** A photo an agent read these lines off, uploaded and waiting for review. */
+  addPhoto(lines: ProposedLine[]): { id: string };
 };
 
 /**
@@ -110,6 +114,11 @@ export const test = base.extend<{ user: User }>({
         const space = createSpace(db, response.user.id, { name }, SOURCE);
         for (const id of listIds) setProjectSpace(db, response.user.id, id, space.id, SOURCE);
         return { id: space.id };
+      },
+      addPhoto(lines) {
+        const { sourceId, uploadToken } = proposeFromPhoto(db, response.user.id, { lines }, "Claude Code");
+        receiveSourcePhoto(db, uploadToken, readFileSync("public/apple-touch-icon.png"));
+        return { id: sourceId };
       },
     });
   },

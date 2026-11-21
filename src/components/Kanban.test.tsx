@@ -105,6 +105,7 @@ const board = (
     spaces={spaces}
     trayOrder={["personal", ...spaces.map((s) => s.id)]}
     pendingSpaceInvites={[]}
+    pendingPhotos={[]}
     initialCollapsedTrays={[]}
     initialListId={null}
     initialItemId={null}
