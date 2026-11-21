@@ -2,7 +2,8 @@
 // the user is with them (core/getStarted.ts) and the stack that shows them.
 
 /** The steps in the order they're offered. `agent` is optional. */
-export const GET_STARTED_STEPS = ["lists", "phone", "computer", "share", "agent"] as const;
+// `secure` comes late, once there's something to protect.
+export const GET_STARTED_STEPS = ["lists", "phone", "computer", "share", "secure", "agent"] as const;
 export type GetStartedStep = (typeof GET_STARTED_STEPS)[number];
 
 /**

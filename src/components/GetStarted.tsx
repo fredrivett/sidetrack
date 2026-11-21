@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, House } from "lucide-react";
+import { Check, ChevronDown, House, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import posthog from "posthog-js";
 import { unstable_rethrow } from "next/navigation";
@@ -12,12 +12,12 @@ import {
   useSyncExternalStore,
   useTransition,
 } from "react";
-import { encode } from "uqr";
 import {
   recordInstallAction,
   sendGetStartedToBackAction,
   setGetStartedCollapsedAction,
 } from "@/app/actions";
+import { QrCode } from "@/components/QrCode";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -48,6 +48,7 @@ import { runAction } from "./run-action";
 
 const TITLES: Record<GetStartedStep, string> = {
   lists: "Set up your lists",
+  secure: "Secure your account",
   phone: "Add Sidetrack to your Home Screen",
   computer: "Install Sidetrack on your computer",
   share: "Share with someone",
@@ -133,25 +134,6 @@ function listPeople(handles: string[]): string {
   return `${handles.slice(0, 2).join(", ")} and ${rest === 1 ? handles[2] : `${rest} others`}`;
 }
 
-/** A QR code for `text`, drawn as SVG modules. */
-function QrCode({ text }: { text: string }) {
-  const { data, size } = encode(text, { border: 1 });
-  const path = data
-    .flatMap((row, y) => row.map((on, x) => (on ? `M${x} ${y}h1v1h-1z` : "")))
-    .join("");
-  return (
-    <svg
-      viewBox={`0 0 ${size} ${size}`}
-      role="img"
-      aria-label={`QR code for ${text}`}
-      className="size-28 rounded-md bg-white p-1"
-      shapeRendering="crispEdges"
-    >
-      <path d={path} fill="#0a0a0a" />
-    </svg>
-  );
-}
-
 /**
  * The Agenda's Get started stack: one card at a time for the next step,
  * the next two peeking out behind it, and every step listed underneath,
@@ -235,6 +217,15 @@ export function GetStartedStack({
           <Button size="sm" onClick={onAddList}>
             Add a list
           </Button>
+        );
+        break;
+      case "secure":
+        why = "Turn on two-factor sign-in, so signing in also asks for a code from an authenticator app. Your password alone won't get anyone in.";
+        actions = (
+          <Link href="/settings/profile?setup=two-factor" className={buttonVariants({ size: "sm" })}>
+            <ShieldCheck data-icon="inline-start" />
+            Set up two-factor
+          </Link>
         );
         break;
       case "phone": {
@@ -369,7 +360,7 @@ export function GetStartedStack({
         <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{why}</p>
         {step === "phone" && showCode && device?.platform === "computer" && (
           <div className="mt-3">
-            <QrCode text={window.location.origin} />
+            <QrCode text={window.location.origin} label={`QR code for ${window.location.origin}`} />
           </div>
         )}
         <div className="mt-3 flex flex-wrap items-center gap-2">

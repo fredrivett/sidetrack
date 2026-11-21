@@ -10,7 +10,7 @@ import * as shortcuts from "./useItemShortcuts";
 import type { GetStarted } from "@/lib/getStarted";
 
 const GET_STARTED_DONE: GetStarted = {
-  done: { lists: true, phone: true, computer: true, share: true, agent: true },
+  done: { lists: true, secure: true, phone: true, computer: true, share: true, agent: true },
   queue: [],
   collapsed: true,
   pendingInvites: [],

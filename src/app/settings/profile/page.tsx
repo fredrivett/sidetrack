@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AvatarPanel } from "@/components/AvatarPanel";
 import { PasswordPanel } from "@/components/PasswordPanel";
+import { TwoFactorPanel } from "@/components/TwoFactorPanel";
 import { UsernamePanel } from "@/components/UsernamePanel";
 import { getCurrentSession } from "@/auth/session";
 import { getDb } from "@/core/db";
@@ -11,9 +12,15 @@ import { foundingBatch } from "@/lib/founding";
 
 export const dynamic = "force-dynamic";
 
-export default async function ProfilePage() {
+export default async function ProfilePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ setup?: string | string[] }>;
+}) {
   const session = await getCurrentSession();
   if (!session) redirect("/login");
+  // Get started's "Secure your account" card opens two-factor setup here.
+  const { setup } = await searchParams;
 
   // The username plugin adds these to the user object (returned: true).
   const user = session.user as typeof session.user & {
@@ -57,6 +64,11 @@ export default async function ProfilePage() {
           }}
         />
         <PasswordPanel email={user.email} />
+        <TwoFactorPanel
+          email={user.email}
+          enabled={user.twoFactorEnabled ?? false}
+          startSetup={setup === "two-factor"}
+        />
       </div>
     </main>
   );

@@ -42,8 +42,18 @@ describe("getGetStarted", () => {
     const { db, fred } = setup();
     const state = getGetStarted(db, fred);
     expect(Object.values(state.done).some(Boolean)).toBe(false);
-    expect(state.queue).toEqual(["lists", "phone", "computer", "share", "agent"]);
+    expect(state.queue).toEqual(["lists", "phone", "computer", "share", "secure", "agent"]);
     expect(state.collapsed).toBe(false);
+  });
+
+  it("ticks securing the account while two-factor sign-in is on", () => {
+    const { db, fred } = setup();
+    expect(getGetStarted(db, fred).done.secure).toBe(false);
+    db.update(users).set({ twoFactorEnabled: true }).where(eq(users.id, fred)).run();
+    expect(getGetStarted(db, fred).done.secure).toBe(true);
+    expect(getGetStarted(db, fred).queue).not.toContain("secure");
+    db.update(users).set({ twoFactorEnabled: false }).where(eq(users.id, fred)).run();
+    expect(getGetStarted(db, fred).done.secure).toBe(false);
   });
 
   it("counts lists the user owns, from two", () => {
@@ -146,13 +156,13 @@ describe("the stack's view state", () => {
     const { db, fred } = setup();
     sendGetStartedToBack(db, fred, "phone");
     sendGetStartedToBack(db, fred, "lists");
-    expect(getGetStarted(db, fred).queue).toEqual(["computer", "share", "agent", "phone", "lists"]);
+    expect(getGetStarted(db, fred).queue).toEqual(["computer", "share", "secure", "agent", "phone", "lists"]);
     // Sending one back again moves it behind the other.
     sendGetStartedToBack(db, fred, "phone");
-    expect(getGetStarted(db, fred).queue).toEqual(["computer", "share", "agent", "lists", "phone"]);
+    expect(getGetStarted(db, fred).queue).toEqual(["computer", "share", "secure", "agent", "lists", "phone"]);
     // A card that's done leaves the queue wherever it was.
     recordInstall(db, fred, "phone", "web");
-    expect(getGetStarted(db, fred).queue).toEqual(["computer", "share", "agent", "lists"]);
+    expect(getGetStarted(db, fred).queue).toEqual(["computer", "share", "secure", "agent", "lists"]);
   });
 
   it("keeps collapsed separately from the order", () => {
@@ -171,7 +181,7 @@ describe("the stack's view state", () => {
       .where(eq(users.id, fred))
       .run();
     const state = getGetStarted(db, fred);
-    expect(state.queue).toEqual(["lists", "phone", "computer", "agent", "share"]);
+    expect(state.queue).toEqual(["lists", "phone", "computer", "secure", "agent", "share"]);
     expect(state.collapsed).toBe(false);
   });
 });
