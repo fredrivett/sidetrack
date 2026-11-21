@@ -10,6 +10,7 @@ import {
   useOptimistic,
   useRef,
   useState,
+  useSyncExternalStore,
   useTransition,
 } from "react";
 import type { AssigneeView, PendingInviteView } from "@/core/members";
@@ -296,6 +297,10 @@ export function Kanban({
   const [itemsByProject, itemChanges] = useOptimisticItems(allItemsByProject, applyToOlder);
   const [projects, removeList] = useOptimisticLists(serverProjects);
   const [view, setView] = useState<BoardView>(initialView);
+  // The view asked for, which the tabs show at once while the view itself
+  // renders in the background (switchView). Kept outside React state so
+  // that first frame re-renders the tabs alone, not the whole board.
+  const [chosenView] = useState(() => chosenStore(initialView));
   // The page shows the filters as soon as they're picked; saving them is so
   // the next visit, on any device, opens the same way. A save that fails
   // says so, and leaves them as picked on this page.
@@ -304,12 +309,25 @@ export function Kanban({
     setFilters(next);
     void runAction(setBoardFiltersAction(next), "save your filters");
   }
-  const switchView = useCallback((next: BoardView) => {
-    setView(next);
+  const switchView = useCallback(
+    (next: BoardView) => {
+      chosenView.set(next);
+      // The tabs' frame paints first, then the view renders in one go. Not
+      // a transition: rendering in slices between frames took the board
+      // half as long again. The latest choice, so pressing 1 then 2 quickly
+      // doesn't render the Brief in between.
+      requestAnimationFrame(() => setTimeout(() => setView(chosenView.get())));
+    },
+    [chosenView],
+  );
+  // The path follows once the view is on screen: Next answers replaceState
+  // with a transition of its own, which would hold up the view's.
+  useEffect(() => {
     const url = new URL(window.location.href);
-    url.pathname = `/${next}`;
+    if (url.pathname === `/${view}`) return;
+    url.pathname = `/${view}`;
     window.history.replaceState(null, "", url.toString());
-  }, []);
+  }, [view]);
 
   const router = useRouter();
   // Drafts left here by someone else, or for a week, go (use-draft.ts).
@@ -767,7 +785,7 @@ export function Kanban({
     <BoardDrag groups={moveTargets}>
       <BoardMain>
         <BoardHeader
-          nav={<ViewTabs view={view} onSwitch={switchView} />}
+          nav={<ViewTabs view={view} chosen={chosenView} onSwitch={switchView} />}
         >
           <FilterMenu
             open={filterOpen}
@@ -1087,12 +1105,44 @@ export function Kanban({
   );
 }
 
+/** The view the tabs show, for useSyncExternalStore. */
+function chosenStore(initial: BoardView) {
+  let chosen = initial;
+  const listeners = new Set<() => void>();
+  return {
+    get: () => chosen,
+    set(next: BoardView) {
+      chosen = next;
+      for (const listener of listeners) listener();
+    },
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+}
+
 /**
  * The Brief, Board and Done switch, with an underline under the current view
  * that slides to the next. Its own component so measuring the underline
  * re-renders only the tabs, not the board under them.
  */
-function ViewTabs({ view, onSwitch }: { view: BoardView; onSwitch: (next: BoardView) => void }) {
+function ViewTabs({
+  view: shownView,
+  chosen,
+  onSwitch,
+}: {
+  /** The view on screen. */
+  view: BoardView;
+  chosen: ReturnType<typeof chosenStore>;
+  onSwitch: (next: BoardView) => void;
+}) {
+  // The tabs, and their underline, go to the view asked for at once, busy
+  // while the view itself catches up. Dimming the view instead cost more
+  // than the switch: restyling all of it, then a frame per step of the fade.
+  const view = useSyncExternalStore(chosen.subscribe, chosen.get, chosen.get);
   // The view switch's underline sits on the header's bottom border under the
   // current view, and slides to the next one. Measured, since the tabs differ
   // in width and the header's height depends on what's beside them.
@@ -1130,6 +1180,7 @@ function ViewTabs({ view, onSwitch }: { view: BoardView; onSwitch: (next: BoardV
       ref={viewTabs}
       role="group"
       aria-label="View"
+      aria-busy={view !== shownView || undefined}
       // Tabs that fill the header top to bottom, through its padding
       // (-my-2 against its py-2), so they click anywhere above the
       // underline: at least the header's buttons beside them (28px, 36px

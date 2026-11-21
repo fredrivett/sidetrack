@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { Item } from "@/core/schema";
 import type { SpaceView } from "@/core/spaces";
@@ -128,7 +128,7 @@ describe.each([
       c.getAttribute("data-project-id"),
     );
 
-  it("shows only in the Archived view", () => {
+  it("shows only in the Archived view", async () => {
     render(
       board(
         [list("a", "Home", "archived", spaceId), list("b", "Work", "active", spaceId)],
@@ -141,24 +141,42 @@ describe.each([
     fireEvent.pointerDown(account);
     fireEvent.click(account);
     fireEvent.click(screen.getByRole("menuitem", { name: "Archived lists (1)" }));
-    expect(screen.getByRole("heading", { name: "Archived lists" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Archived lists" })).toBeTruthy();
     expect(columns()).toEqual(["a"]);
 
     fireEvent.click(screen.getByRole("button", { name: "Back to board" }));
-    expect(columns()).toEqual(["b"]);
+    await waitFor(() => expect(columns()).toEqual(["b"]));
   });
 });
 
 describe("Kanban, switching views", () => {
-  it("puts each view at its own path, Brief on 1 and Board on 2, keeping the query", () => {
+  it("puts each view at its own path, Brief on 1 and Board on 2, keeping the query", async () => {
     window.history.replaceState(null, "", "/board?x=1");
     render(board([list("b", "Work", "active", null)], []));
+    const path = () => window.location.pathname + window.location.search;
     fireEvent.keyDown(document, { key: "1" });
-    expect(window.location.pathname + window.location.search).toBe("/brief?x=1");
+    await waitFor(() => expect(path()).toBe("/brief?x=1"));
     fireEvent.keyDown(document, { key: "3" });
-    expect(window.location.pathname).toBe("/done");
+    await waitFor(() => expect(path()).toBe("/done?x=1"));
     fireEvent.keyDown(document, { key: "2" });
-    expect(window.location.pathname).toBe("/board");
+    await waitFor(() => expect(path()).toBe("/board?x=1"));
+  });
+});
+
+describe("Kanban, the view switch", () => {
+  it("shows the view asked for in the tabs at once, then only the last of quick presses", async () => {
+    window.history.replaceState(null, "", "/board");
+    render(board([list("b", "Work", "active", null)], []));
+    const views = screen.getByRole("group", { name: "View" });
+    const tab = (name: string) => within(views).getByRole("button", { name });
+    fireEvent.keyDown(document, { key: "1" });
+    expect(tab("Brief").getAttribute("aria-pressed")).toBe("true");
+    expect(views.getAttribute("aria-busy")).toBe("true");
+    fireEvent.keyDown(document, { key: "3" });
+    expect(tab("Done").getAttribute("aria-pressed")).toBe("true");
+    await waitFor(() => expect(window.location.pathname).toBe("/done"));
+    expect(views.hasAttribute("aria-busy")).toBe(false);
+    expect(document.querySelector("[data-project-id]")).toBeNull();
   });
 });
 

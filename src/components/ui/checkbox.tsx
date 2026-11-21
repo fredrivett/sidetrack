@@ -22,13 +22,16 @@ function Checkbox({ className, ...props }: CheckboxPrimitive.Root.Props) {
       )}
       {...props}
     >
-      <CheckboxPrimitive.Indicator
-        keepMounted
+      {/* Always there, shown by the root's data-checked: a plain span, not
+          CheckboxPrimitive.Indicator, which watches for an exit animation on
+          every unticked box as it mounts (getAnimations, then a re-render),
+          a cost each board row paid on every view switch. */}
+      <span
         data-slot="checkbox-indicator"
-        className="grid place-content-center opacity-0 transition-opacity group-hover/checkbox:opacity-70 data-checked:opacity-100 [&>svg]:size-2.5"
+        className="grid place-content-center opacity-0 transition-opacity group-hover/checkbox:opacity-70 group-data-checked/checkbox:opacity-100 [&>svg]:size-2.5"
       >
         <CheckIcon strokeWidth={3.5} />
-      </CheckboxPrimitive.Indicator>
+      </span>
       {/* A haptic tick on iPhone, which has no vibrate API: iOS 18+ plays one
           only when the user's own tap toggles a native switch (earlier iOS
           just toggles it silently). So an invisible switch is the 32px hit
