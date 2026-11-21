@@ -86,7 +86,7 @@ export function findUserByHandle(db: Db, raw: string) {
     .get();
 }
 
-function getUserById(db: Db, id: string) {
+export function getUserById(db: Db, id: string) {
   return db.select().from(users).where(eq(users.id, id)).get();
 }
 
@@ -566,6 +566,11 @@ export function listSuggestedCollaborators(
   )`;
 
   return suggestCollaborators(db, userId, onThisProject);
+}
+
+/** Everyone `userId` shares a list or a Space with (see suggestCollaborators). */
+export function listCollaborators(db: Db, userId: string): CollaboratorView[] {
+  return suggestCollaborators(db, userId, sql`(select null where 0)`);
 }
 
 /**

@@ -32,7 +32,9 @@ import {
   updateComment,
 } from "@/core/comments";
 import { plainText } from "@/core/describe";
+import { addFeedbackFollowUp, submitFeedback } from "@/core/feedback";
 import { setFollowing } from "@/core/follows";
+import { FEEDBACK_KINDS } from "@/lib/feedback";
 import {
   listNotificationLevels,
   listNotifications,
@@ -60,6 +62,7 @@ import {
   getUserName,
   inviteMember,
   setMemberRole,
+  listCollaborators,
   listMembers,
   listPendingInvites,
   removeMember,
@@ -129,7 +132,7 @@ import {
   updateSpace,
 } from "@/core/spaces";
 import { type InviteKind, notifyInvite, notifyMentions } from "@/lib/email";
-import { invitePeople, type InvitePlace } from "@/core/invites";
+import { collaboratorAccess, invitePeople, type InvitePlace } from "@/core/invites";
 import { getEnv } from "@/lib/env";
 import { formatItemRef, workPrTitle } from "@/lib/itemRef";
 import { checkDraftItem } from "@/lib/itemSuggest";
@@ -1895,6 +1898,55 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     },
   );
 
+  // Feedback goes to the deployment's feedback list (FEEDBACK_LIST_ID), which
+  // the user usually can't open: they can add to it, never read it.
+  server.registerTool(
+    "send_feedback",
+    {
+      title: "Send feedback",
+      description:
+        "Send feedback about Sidetrack itself to the people who run it, as the app's Send feedback does: a bug, an idea, or other. " +
+        "Use it when the user asks you to report a problem or suggest something, in their words; " +
+        "say what they were doing and what happened, and send it only once they've agreed to what it says. " +
+        "message is Markdown; its first line becomes the title. It's filed under the user's name, noting that you sent it. " +
+        "The user can't open it afterwards, so tell them its ref. Within 30 minutes, add_to_feedback can add to it once. " +
+        "At most 5 an hour. Returns { itemId, ref }.",
+      inputSchema: { kind: z.enum(FEEDBACK_KINDS), message: z.string().min(1) },
+    },
+    async ({ kind, message }) => {
+      const listId = getEnv().FEEDBACK_LIST_ID;
+      if (!listId) return errorText("This Sidetrack doesn't take feedback — no change was made.");
+      const { db } = getDb();
+      try {
+        return json(submitFeedback(db, userId, { listId, kind, message }, SOURCE));
+      } catch (e) {
+        return errorText(`${(e as Error).message} — no change was made.`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "add_to_feedback",
+    {
+      title: "Add to feedback",
+      description:
+        "Add more to feedback the user sent in the last 30 minutes, as a Follow-up section: something they remembered, or an answer. " +
+        "Once per piece of feedback. item_id is the itemId send_feedback returned (not its ref, which the user can't open). Returns { ok: true }.",
+      inputSchema: { item_id: z.string().min(1), note: z.string().min(1) },
+    },
+    async ({ item_id, note }) => {
+      const listId = getEnv().FEEDBACK_LIST_ID;
+      if (!listId) return errorText("This Sidetrack doesn't take feedback — no change was made.");
+      const { db } = getDb();
+      try {
+        addFeedbackFollowUp(db, userId, { listId, itemId: item_id, answers: [], note }, SOURCE);
+      } catch (e) {
+        return errorText(`${(e as Error).message} — no change was made.`);
+      }
+      return json({ ok: true });
+    },
+  );
+
   server.registerTool(
     "list_audit",
     {
@@ -1943,6 +1995,39 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         return notFound("list", list_id);
       }
       return json(listMembers(db, userId, list_id));
+    },
+  );
+
+  server.registerTool(
+    "list_collaborators",
+    {
+      title: "List collaborators",
+      description:
+        "The people the user shares a list or a Space with (owners and accepted members; pending invites don't count), " +
+        "each with userId, username, displayUsername, name and email. Use it to work out who the user means by a name " +
+        "(\"share it with Sam\"): if more than one person matches, ask which. Someone not listed can still be invited by username or email. " +
+        "Pass list_id or space_id (at most one) when the user wants someone in a place, such as sharing an item, which means its list. " +
+        "Then it returns { canInvite, people }: people also includes anyone already in that place, invites included, and each has access, " +
+        "every way they can open it: { via: list or space, role, pending }. A list's owner has role owner; via space means they get in through the list's Space. " +
+        "access [] means they can't open it yet: invite them (invite_member, invite_space_member or invite_people) if canInvite, " +
+        "else tell the user who can (the list's owner, or a Space admin). If they're already in, say so instead of inviting them again; " +
+        "pending means invited but not accepted yet; a viewer or commenter who needs more can have their role raised (set_member_role or set_space_member_role).",
+      inputSchema: {
+        list_id: z.string().min(1).optional(),
+        space_id: z.string().min(1).optional(),
+      },
+    },
+    async ({ list_id, space_id }) => {
+      const { db } = getDb();
+      if (list_id && space_id) return errorText("Pass list_id or space_id, not both.");
+      if (!list_id && !space_id) return json(listCollaborators(db, userId));
+      const found = collaboratorAccess(
+        db,
+        userId,
+        list_id ? { kind: "list", id: list_id } : { kind: "space", id: space_id ?? "" },
+      );
+      if (!found) return list_id ? notFound("list", list_id) : notFound("space", space_id ?? "");
+      return json(found);
     },
   );
 
