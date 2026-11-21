@@ -1,8 +1,8 @@
 import nodemailer, { type Mail } from "nodemailer";
 
-import type { ListRole, SpaceRole } from "../core/schema";
+import type { ListRole, OnlyWithin, SpaceRole } from "../core/schema";
 import { getEnv } from "./env";
-import { roleWords } from "./roles";
+import { roleWords, whoseWords } from "./roles";
 
 // Email delivery for auth flows. Three modes, picked by which env vars are set:
 //
@@ -158,8 +158,16 @@ export interface InviteEmail {
   role?: ListRole | SpaceRole;
   /** They'll see only the items assigned to the inviter. */
   onlyMine?: boolean;
+  /** With onlyMine, only the inviter's today or week. */
+  within?: OnlyWithin | null;
   /** Every place, when one invite covered several; projectName is unused then. */
-  places?: Array<{ name: string; kind: InviteKind; role: ListRole | SpaceRole; onlyMine?: boolean }>;
+  places?: Array<{
+    name: string;
+    kind: InviteKind;
+    role: ListRole | SpaceRole;
+    onlyMine?: boolean;
+    within?: OnlyWithin | null;
+  }>;
 }
 
 // Single source of truth for the invite email's copy.
@@ -170,18 +178,19 @@ function inviteMessage({
   kind = "list",
   role,
   onlyMine,
+  within,
   places,
 }: Omit<InviteEmail, "to">): { subject: string; text: string } {
   // Said only when they'll see but not change it, with whose items when
   // it's only the inviter's.
-  const asWords = (r?: ListRole | SpaceRole, mine?: boolean) =>
+  const asWords = (r?: ListRole | SpaceRole, mine?: boolean, w?: OnlyWithin | null) =>
     r === "viewer" || r === "commenter"
-      ? `as ${roleWords(r)}${mine ? ` of ${inviterName}'s items` : ""}`
+      ? `as ${roleWords(r)}${mine ? ` of ${whoseWords(`${inviterName}'s`, w)}` : ""}`
       : "";
-  const as = asWords(role, onlyMine) && `, ${asWords(role, onlyMine)}`;
+  const as = asWords(role, onlyMine, within) && `, ${asWords(role, onlyMine, within)}`;
   const several = places && places.length > 1;
   const named = places?.map((p) => {
-    const how = [p.kind === "space" ? "a space" : "", asWords(p.role, p.onlyMine)].filter(Boolean).join(", ");
+    const how = [p.kind === "space" ? "a space" : "", asWords(p.role, p.onlyMine, p.within)].filter(Boolean).join(", ");
     return `"${p.name}"${how ? ` (${how})` : ""}`;
   });
   return {
@@ -215,11 +224,12 @@ export async function deliverInviteEmail(
     kind,
     role,
     onlyMine,
+    within,
     places,
   }: InviteEmail,
   deps: EmailDeps,
 ): Promise<void> {
-  const { subject, text } = inviteMessage({ inviterName, projectName, url, kind, role, onlyMine, places });
+  const { subject, text } = inviteMessage({ inviterName, projectName, url, kind, role, onlyMine, within, places });
   await deliverEmail(
     {
       to,

@@ -115,7 +115,7 @@ export function proxy(request: NextRequest) {
   return NextResponse.next();
 }
 
-const VIEWS = ["brief", "board", "done", "archived"];
+const VIEWS = ["brief", "board", "done", "check-ins", "archived"];
 
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],

@@ -10,8 +10,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { ListRole, SpaceRole } from "@/core/schema";
-import { roleHint, roleName } from "@/lib/roles";
+import type { ListRole, OnlyWithin, SpaceRole } from "@/core/schema";
+import { roleHint, roleName, whoseWords } from "@/lib/roles";
 
 /** Roles that can be limited to someone's items: they see, but don't change, the list. */
 const LIMITABLE = new Set<string>(["viewer", "commenter"]);
@@ -29,6 +29,7 @@ export function RoleSelect<R extends ListRole | SpaceRole>({
   disabled,
   onChange,
   onlyMine,
+  within,
 }: {
   label: string;
   value: R;
@@ -42,8 +43,11 @@ export function RoleSelect<R extends ListRole | SpaceRole>({
    * instead, when another admin limited them: ticking yours switches it to
    * you, unticking theirs shows them everything. */
   onlyMine?: { value: boolean; someoneElse?: string; onChange: (onlyMine: boolean) => void };
+  /** With a limit, how much of their days it shows: set from Share my day. */
+  within?: OnlyWithin | null;
 }) {
   const limitable = onlyMine && LIMITABLE.has(value);
+  const whose = limitable && (onlyMine.value ? "my" : onlyMine.someoneElse ? `${onlyMine.someoneElse}’s` : null);
   return (
     // aria-disabled rather than disabled while saving, so the trigger keeps
     // keyboard focus; it just won't open.
@@ -54,7 +58,7 @@ export function RoleSelect<R extends ListRole | SpaceRole>({
         className="flex h-7 shrink-0 items-center gap-0.5 rounded-md border border-neutral-200 px-2 text-xs whitespace-nowrap transition hover:bg-accent aria-disabled:opacity-50 dark:border-neutral-800"
       >
         {roleName(value)}
-        {limitable && (onlyMine.value ? ", my items" : onlyMine.someoneElse ? `, ${onlyMine.someoneElse}’s items` : "")}
+        {whose && `, ${whoseWords(whose, within)}`}
         <ChevronDown className="size-3 opacity-50" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64">

@@ -1,10 +1,13 @@
 import { and, eq, inArray, or, type SQL, sql } from "drizzle-orm";
 import { users } from "./auth-schema";
 import type { Db } from "./db";
+import { validZone } from "./db-functions";
+import { dayOf, nextDayStartIn, startOfWeekIn } from "../lib/time";
 import {
   items,
   type ListAccess,
   type ListRole,
+  type OnlyWithin,
   type Project,
   projectMembers,
   projects,
@@ -98,13 +101,29 @@ function projectAccessAtLeast(userId: string, access: ListAccess) {
 export function hasItemAccess(userId: string) {
   // The item's group: its parent's, for a sub-item.
   const group = sql`coalesce(${items.parentId}, ${items.id})`;
-  const sees = (limitedTo: SQL) =>
-    sql`(${limitedTo} is null or exists (select 1 from items g, json_each(g.assignee_ids) a where (g.id = ${group} or g.parent_id = ${group}) and a.value = ${limitedTo}))`;
+  const sees = (limitedTo: SQL, within: SQL) =>
+    sql`(${limitedTo} is null or (exists (select 1 from items g, json_each(g.assignee_ids) a where (g.id = ${group} or g.parent_id = ${group}) and a.value = ${limitedTo}) and ${inWindow(group, limitedTo, within)}))`;
   return or(
     eq(projects.userId, userId),
-    sql`exists (select 1 from ${projectMembers} pm where pm.project_id = ${projects.id} and pm.user_id = ${userId} and pm.status = 'accepted' and ${sees(sql`pm.only_assigned_to`)})`,
-    sql`exists (select 1 from ${spaceMembers} sm where sm.space_id = ${projects.spaceId} and sm.user_id = ${userId} and sm.status = 'accepted' and ${sees(sql`sm.only_assigned_to`)})`,
+    sql`exists (select 1 from ${projectMembers} pm where pm.project_id = ${projects.id} and pm.user_id = ${userId} and pm.status = 'accepted' and ${sees(sql`pm.only_assigned_to`, sql`pm.only_within`)})`,
+    sql`exists (select 1 from ${spaceMembers} sm where sm.space_id = ${projects.spaceId} and sm.user_id = ${userId} and sm.status = 'accepted' and ${sees(sql`sm.only_assigned_to`, sql`sm.only_within`)})`,
   );
+}
+
+/**
+ * Whether an item group falls in a membership's window (`only_within`) of
+ * `person`'s days, by their clock (st_today, from db-functions.ts): some item
+ * in it, with a due date, that's still open and due by the window's end
+ * (overdue counts, or it'd hide by slipping; a span counts from its first
+ * day), or that was finished within it. No window is every day.
+ */
+function inWindow(group: SQL, person: SQL, within: SQL) {
+  const tz = sql`(select ${users.timeZone} from ${users} where ${users.id} = ${person})`;
+  const today = sql`st_today(${tz})`;
+  const monday = sql`st_week_start(${tz})`;
+  const lands = (from: SQL, to: SQL) =>
+    sql`((w.completed_at is null and coalesce(w.due_from, w.due_date) <= ${to}) or (w.completed_at is not null and st_day(w.completed_at, ${tz}) between ${from} and ${to}))`;
+  return sql`(${within} is null or exists (select 1 from items w where (w.id = ${group} or w.parent_id = ${group}) and w.due_date is not null and (case ${within} when 'today' then ${lands(today, today)} else ${lands(monday, sql`date(${monday}, '+6 days')`)} end)))`;
 }
 
 /**
@@ -139,9 +158,26 @@ export function hasWholeListAccess(userId: string) {
 
 /**
  * The lists `userId` sees only part of, by list id, each with whose items
- * they see (a name for the badge: \`@lorna\`). Lists they see whole are left out.
+ * they see (a name for the badge: \`@lorna\`), how much of their days, and
+ * with that, when their day next turns over and what's shown changes.
+ * Lists they see whole are left out.
  */
-export function limitedListsById(db: Db, userId: string): Map<string, string> {
+export function limitedListsById(
+  db: Db,
+  userId: string,
+): Map<
+  string,
+  {
+    personId: string;
+    username: string | null;
+    name: string;
+    image: string | null;
+    within: OnlyWithin | null;
+    /** Their day (YYYY-MM-DD) the window counts from, with turnsAt when it moves on. */
+    day: string | null;
+    turnsAt: number | null;
+  }
+> {
   const rows = db
     .select({
       id: projects.id,
@@ -151,6 +187,11 @@ export function limitedListsById(db: Db, userId: string): Map<string, string> {
         (select pm.only_assigned_to from ${projectMembers} pm where pm.project_id = "projects"."id" and pm.user_id = ${userId} and pm.status = 'accepted'),
         (select sm.only_assigned_to from ${spaceMembers} sm where sm.space_id = "projects"."space_id" and sm.user_id = ${userId} and sm.status = 'accepted')
       )`,
+      // From the same membership as limitedTo.
+      within: sql<OnlyWithin | null>`coalesce(
+        (select case when pm.only_assigned_to is null then null else coalesce(pm.only_within, '') end from ${projectMembers} pm where pm.project_id = "projects"."id" and pm.user_id = ${userId} and pm.status = 'accepted'),
+        (select sm.only_within from ${spaceMembers} sm where sm.space_id = "projects"."space_id" and sm.user_id = ${userId} and sm.status = 'accepted')
+      )`,
     })
     .from(projects)
     .where(and(hasProjectAccess(userId), sql`not (${hasWholeListAccess(userId)})`))
@@ -158,14 +199,33 @@ export function limitedListsById(db: Db, userId: string): Map<string, string> {
   const names = new Map(
     rows.length
       ? db
-          .select({ id: users.id, username: users.username, name: users.name })
+          .select({ id: users.id, username: users.username, name: users.name, image: users.image, timeZone: users.timeZone })
           .from(users)
           .where(inArray(users.id, [...new Set(rows.map((r) => r.limitedTo))]))
           .all()
-          .map((u) => [u.id, u.name || (u.username ? `@${u.username}` : "someone")])
+          .map((u) => [u.id, u])
       : [],
   );
-  return new Map(rows.map((r) => [r.id, names.get(r.limitedTo) ?? "someone"]));
+  return new Map(
+    rows.map((r) => {
+      const person = names.get(r.limitedTo);
+      const within = r.within || null;
+      return [
+        r.id,
+        {
+          personId: r.limitedTo,
+          username: person?.username ?? null,
+          name: person?.name || (person?.username ? `@${person.username}` : "someone"),
+          image: person?.image ?? null,
+          within,
+          // st_today's zone: theirs, else UTC.
+          // Today, or the Monday a week share starts from.
+          day: within ? dayOf(within === "week" ? startOfWeekIn(validZone(person?.timeZone)) : Date.now(), validZone(person?.timeZone)) : null,
+          turnsAt: within ? nextDayStartIn(validZone(person?.timeZone)) : null,
+        },
+      ];
+    }),
+  );
 }
 
 /** What `userId` can do on each list they can open, by list id. */

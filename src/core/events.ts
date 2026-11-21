@@ -1,7 +1,7 @@
 import type { ItemSort } from "../lib/itemSorts";
 import type { InstallPlatform } from "../lib/getStarted";
 import type { Repeat } from "../lib/repeat";
-import type { AuditAction, AuditEntity, ListRole, ProjectStatus, SpaceColor, SpaceRole } from "./schema";
+import type { AuditAction, AuditEntity, ListRole, OnlyWithin, ProjectStatus, SpaceColor, SpaceRole } from "./schema";
 
 // Change events: what a change did, as data. The function making a change
 // records one with recordAudit, in the change's transaction, and it's stored
@@ -208,6 +208,11 @@ export type ChangeEvent =
       inviteId?: string;
       /** Set when they'll see only the items assigned to this person. */
       onlyAssignedTo?: PersonAt;
+      /** With onlyAssignedTo, only their today or week. */
+      onlyWithin?: OnlyWithin;
+      /** With onlyWithin, they also see the inviter's day note's words, or mood. */
+      shareNote?: true;
+      shareMood?: true;
     }
   /** The list's owner changed what a member can do on it. */
   | {
@@ -220,6 +225,8 @@ export type ChangeEvent =
       lost?: AccessLost;
       /** Set when they now see only the items assigned to this person. */
       onlyAssignedTo?: PersonAt;
+      /** With onlyAssignedTo, only their today or week. */
+      onlyWithin?: OnlyWithin;
       /** Set when they saw only someone's items and now see all of them. */
       seesAll?: true;
     }
@@ -232,6 +239,8 @@ export type ChangeEvent =
       role?: ListRole;
       /** Set when they joined to see only the items assigned to this person. */
       onlyAssignedTo?: PersonAt;
+      /** With onlyAssignedTo, only their today or week. */
+      onlyWithin?: OnlyWithin;
     }
   | {
       type: "member.removed";
@@ -302,6 +311,11 @@ export type ChangeEvent =
       inviteId?: string;
       /** Set when they'll see only the items assigned to this person. */
       onlyAssignedTo?: PersonAt;
+      /** With onlyAssignedTo, only their today or week. */
+      onlyWithin?: OnlyWithin;
+      /** With onlyWithin, they also see the inviter's day note's words, or mood. */
+      shareNote?: true;
+      shareMood?: true;
     }
   | {
       type: "space.member.joined" | "space.member.declined";
@@ -311,6 +325,8 @@ export type ChangeEvent =
       role?: SpaceRole;
       /** Set when they joined to see only the items assigned to this person. */
       onlyAssignedTo?: PersonAt;
+      /** With onlyAssignedTo, only their today or week. */
+      onlyWithin?: OnlyWithin;
     }
   | {
       type: "space.member.removed";
@@ -329,6 +345,8 @@ export type ChangeEvent =
       lost?: AccessLost;
       /** Set when they now see only the items assigned to this person. */
       onlyAssignedTo?: PersonAt;
+      /** With onlyAssignedTo, only their today or week. */
+      onlyWithin?: OnlyWithin;
       /** Set when they saw only someone's items and now see all of them. */
       seesAll?: true;
     }

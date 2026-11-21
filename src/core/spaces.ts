@@ -8,6 +8,7 @@ import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
 import { accessLost, type ChangeEvent, type MemberExit } from "./events";
 import {
+  assertWithin,
   type CollaboratorView,
   findUserByHandle,
   handleFor,
@@ -17,6 +18,7 @@ import {
 } from "./members";
 import {
   type MembershipStatus,
+  type OnlyWithin,
   projects,
   SPACE_COLORS,
   SPACE_ROLES,
@@ -55,6 +57,8 @@ export interface SpaceMemberView {
   role: SpaceRole;
   /** Set when they see only the items assigned to this user ("only my tasks"). */
   onlyAssignedTo: string | null;
+  /** With onlyAssignedTo, only their today or week; null is every day. */
+  onlyWithin: OnlyWithin | null;
   createdAt: number;
 }
 
@@ -270,11 +274,17 @@ export function inviteSpaceMember(
     inviteId?: string;
     /** They'll see only the items assigned to the inviter ("only my tasks"). */
     onlyMine?: boolean;
+    /** With onlyMine, only those in the inviter's today or week. */
+    within?: OnlyWithin | null;
+    /** With within, whether they also see your day note's words and mood (its tags). */
+    shareNote?: boolean;
+    shareMood?: boolean;
   } = {},
 ): SpaceMemberView {
   const { space } = requireAdmin(db, userId, spaceId, "invite people");
   if (!["member", "commenter", "viewer"].includes(role)) throw new Error(`invalid role: ${role}`);
   const { inviteId, onlyMine } = opts;
+  const within = assertWithin(onlyMine, opts.within);
   if (onlyMine && role === "member") {
     throw new Error("only viewers and commenters can be shown just your items");
   }
@@ -300,6 +310,9 @@ export function inviteSpaceMember(
         role,
         createdAt: now,
         onlyAssignedTo: onlyMine ? userId : null,
+        onlyWithin: within,
+        shareNote: !!within && !!opts.shareNote,
+        shareMood: !!within && !!opts.shareMood,
       })
       .run();
     recordAudit(tx as unknown as Db, {
@@ -313,6 +326,9 @@ export function inviteSpaceMember(
         role,
         ...(inviteId ? { inviteId } : {}),
         ...(onlyMine ? { onlyAssignedTo: personAt(tx.select().from(users).where(eq(users.id, userId)).get() ?? { id: userId, username: null }) } : {}),
+        ...(within ? { onlyWithin: within } : {}),
+        ...(within && opts.shareNote ? { shareNote: true as const } : {}),
+        ...(within && opts.shareMood ? { shareMood: true as const } : {}),
       },
     });
   });
@@ -325,6 +341,7 @@ export function inviteSpaceMember(
     status: "pending",
     role,
     onlyAssignedTo: onlyMine ? userId : null,
+    onlyWithin: within,
     createdAt: now,
   };
 }
@@ -364,6 +381,7 @@ export function acceptSpaceInvite(
         ...(membership.onlyAssignedTo
           ? { onlyAssignedTo: personAt(tx.select().from(users).where(eq(users.id, membership.onlyAssignedTo)).get() ?? { id: membership.onlyAssignedTo, username: null }) }
           : {}),
+        ...(membership.onlyWithin ? { onlyWithin: membership.onlyWithin } : {}),
       },
     });
   });
@@ -465,6 +483,8 @@ export function setSpaceMemberRole(
   source: AuditOrigin,
   /** Whether they see only the caller's items; left as it is when undefined. */
   onlyMine?: boolean,
+  /** With a limit, only the caller's today or week; left as it is when undefined. */
+  within?: OnlyWithin | null,
 ): void {
   if (!(SPACE_ROLES as readonly string[]).includes(role)) {
     throw new Error(`invalid role: ${role}`);
@@ -488,11 +508,16 @@ export function setSpaceMemberRole(
       : onlyMine
         ? userId
         : null;
-  if (membership.role === role && membership.onlyAssignedTo === limitedTo) return;
+  const window = within === undefined ? (limitedTo ? membership.onlyWithin : null) : assertWithin(!!limitedTo, within);
+  if (membership.role === role && membership.onlyAssignedTo === limitedTo && membership.onlyWithin === window) return;
+  const keepsNote = window !== null && limitedTo === membership.onlyAssignedTo;
   const target = db.select().from(users).where(eq(users.id, targetUserId)).get();
   db.transaction((tx) => {
     tx.update(spaceMembers)
-      .set({ role, onlyAssignedTo: limitedTo })
+      // Their note and mood go with the day share they were chosen for:
+      // a share no longer of that person's day, or of no day, drops them,
+      // and setting a window again doesn't bring them back.
+      .set({ role, onlyAssignedTo: limitedTo, onlyWithin: window, ...(keepsNote ? {} : { shareNote: false, shareMood: false }) })
       .where(eq(spaceMembers.id, membership.id))
       .run();
     // As in removeSpaceMember: checked after the write, inside the transaction.
@@ -516,6 +541,7 @@ export function setSpaceMemberRole(
         role,
         lost: accessLost(lost),
         ...(limitedTo ? { onlyAssignedTo: personAt(tx.select().from(users).where(eq(users.id, limitedTo)).get() ?? { id: limitedTo, username: null }) } : {}),
+        ...(window ? { onlyWithin: window } : {}),
         ...(membership.onlyAssignedTo && !limitedTo ? { seesAll: true as const } : {}),
       },
     });
@@ -744,6 +770,7 @@ export function listSpaceMembers(
       status: membership.status,
       role: membership.role,
       onlyAssignedTo: membership.onlyAssignedTo,
+      onlyWithin: membership.onlyWithin,
       createdAt: membership.createdAt,
     }));
 }

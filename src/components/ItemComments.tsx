@@ -35,7 +35,8 @@ import { runAction } from "./run-action";
 import { useListAccess } from "./list-access";
 import { MentionTextarea } from "./MentionTextarea";
 import { useDraft } from "./use-draft";
-import { AvatarStack, assigneeName } from "./UserAvatar";
+import { AvatarStack, assigneeName, assigneeNames } from "./UserAvatar";
+import { mentionedPeople } from "@/lib/mentions";
 
 /**
  * The item's comments, oldest first, with a box to add one. Loaded when the
@@ -72,6 +73,16 @@ export function ItemComments({
   const [shown, hide] = useOptimistic(comments, (cur, id: string) =>
     cur ? cur.filter((c) => c.id !== id) : cur,
   );
+  // Who took part here, by commenting or being mentioned, but can no longer
+  // see the item: its assignment, or the day it's shown for, moved on.
+  const gone = shown
+    ? people.filter(
+        (p) =>
+          p.userId !== viewerId &&
+          !canSee.includes(p.userId) &&
+          shown.some((c) => c.userId === p.userId || mentionedPeople(c.body, [p]).length > 0),
+      )
+    : [];
   const [, startLoad] = useTransition();
   // Counts the changes made here. A read that started before one is dropped,
   // so it can't put back what the change undid; the change's own refresh
@@ -166,6 +177,11 @@ export function ItemComments({
             ))}
           </ul>
         )
+      )}
+      {gone.length > 0 && (
+        <p className="text-xs text-neutral-500">
+          {assigneeNames(gone)} can’t see this item any more, so won’t see new comments.
+        </p>
       )}
       {canComment ? (
         <Composer

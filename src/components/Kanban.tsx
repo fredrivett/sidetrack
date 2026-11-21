@@ -21,13 +21,13 @@ import {
   setBoardFiltersAction,
   setTimeZoneAction,
 } from "@/app/actions";
-import type { Item, ItemPrLink, Label, ListAccess, NotificationLevel, Project } from "@/core/schema";
+import type { Item, ItemPrLink, Label, ListAccess, NotificationLevel, OnlyWithin, Project } from "@/core/schema";
 import type { NotificationView } from "@/core/notifications";
 import type { PendingSpaceInviteView, SpaceView } from "@/core/spaces";
 import { type ItemFilters, matchesFilters } from "@/lib/filters";
 import { isEditableTarget, matchesShortcut } from "@/lib/keyboard";
 import { LOCALE_COOKIE } from "@/lib/time";
-import { MessageSquarePlus, SquareKanban, Sunrise } from "lucide-react";
+import { HeartHandshake, MessageSquarePlus, SquareKanban, Sunrise } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -53,7 +53,9 @@ import { ProjectColumn } from "./ProjectColumn";
 import { PullToSearch } from "./PullToSearch";
 import { runAction } from "./run-action";
 import { ShareDialog } from "./ShareDialog";
+import { CheckInsView, type CheckIn } from "./CheckInsView";
 import { InviteDialog } from "./InviteDialog";
+import { ShareDayDialog } from "./ShareDayDialog";
 import { InstallReporter } from "./GetStarted";
 import type { GetStarted } from "@/lib/getStarted";
 import { SpaceMenu } from "./SpaceMenu";
@@ -89,7 +91,7 @@ export type ProjectView = Project & {
   /** What the viewer can do on it: edit, comment or only view. */
   access: ListAccess;
   /** Whose items the viewer sees, when they see only someone's (\`Lorna\`); null for the whole list. */
-  onlyItemsOf: string | null;
+  onlyItemsOf: { name: string; within: OnlyWithin | null } | null;
   refPrefix: string;
   /** Offered to the admin while the list has no repository: see suggestedRepositories. */
   suggestedRepository?: string;
@@ -99,9 +101,12 @@ export type ProjectView = Project & {
 const BOARD_VIEWS = [
   ["brief", "Brief", Sunrise],
   ["board", "Board", SquareKanban],
+  ["check-ins", "Check-ins", HeartHandshake],
 ] as const;
 /** The switch's views, plus Done and Archived, which the account menu opens (/done, /archived). */
 export type BoardView = (typeof BOARD_VIEWS)[number][0] | "done" | "archived";
+
+const NO_CHECK_INS: CheckIn[] = [];
 
 /** How many more older finished items the Done view loads at a time. */
 const DONE_PAGE = 50;
@@ -137,6 +142,8 @@ export function Kanban({
   trayOrder,
   pendingSpaceInvites,
   pendingPhotos,
+  checkIns = NO_CHECK_INS,
+  refreshAt = null,
   initialCollapsedTrays,
   initialListId,
   initialItemId,
@@ -150,6 +157,10 @@ export function Kanban({
   seq,
 }: {
   viewerId: string;
+  /** The days people share with the viewer: their lists stay off the board. */
+  checkIns?: CheckIn[];
+  /** When a day shown here turns over (the sharer's 4am), to reload then. */
+  refreshAt?: number | null;
   /** The viewer's own display fields, for the avatar on the Account button. */
   viewer: AvatarUser | null;
   /** The timezone saved for the viewer, kept in step with their browser. */
@@ -421,6 +432,8 @@ export function Kanban({
   const [newList, setNewList] = useState({ open: false, spaceId: "" });
   // Kept for this tab, so Invite people and its draft come back after a reload.
   const [inviting, setInviting] = useStoredState("inviting", false, "session");
+  // Share my day: open with who it's for, "" for nobody yet.
+  const [sharingDay, setSharingDay] = useStoredState<string | null>("sharing-day", null, "session");
   // Kept for this tab, so Share and its draft come back after a reload.
   const [share, setShare] = useStoredState("share", SHARE_CLOSED, "session");
 
@@ -813,7 +826,9 @@ export function Kanban({
 
   // Kept the same across refreshes that don't change it, like the labels.
   const accessByProject = useSameContent(
-    Object.fromEntries(projects.map((p) => [p.id, p.access])),
+    Object.fromEntries(
+      [...projects, ...checkIns.flatMap((c) => c.lists)].map((p) => [p.id, p.access]),
+    ),
   );
 
   return (
@@ -826,7 +841,7 @@ export function Kanban({
     <ListAccessContext value={accessByProject}>
     <RemoveListContext value={removeList}>
     <BoardDrag groups={moveTargets}>
-      <LiveUpdates seq={seq} rows={liveRows} />
+      <LiveUpdates seq={seq} rows={liveRows} refreshAt={refreshAt} />
       <BoardMain>
         <BoardHeader
           nav={<ViewTabs view={view} chosen={chosenView} onSwitch={switchView} />}
@@ -943,6 +958,15 @@ export function Kanban({
             assigneesByProject={assigneesByProject}
             prLinksByItem={prLinksByItem}
             viewerId={viewerId}
+          />
+        ) : view === "check-ins" ? (
+          <CheckInsView
+            checkIns={checkIns}
+            itemsByProject={itemsByProject}
+            assigneesByProject={assigneesByProject}
+            prLinksByItem={prLinksByItem}
+            viewerId={viewerId}
+            onShareDay={(person) => setSharingDay(person ?? "")}
           />
         ) : view === "done" ? (
           // Opened from the account menu, like Archived lists.
@@ -1138,6 +1162,12 @@ export function Kanban({
         <InviteDialog
           open={inviting}
           onOpenChange={setInviting}
+          groups={inviteGroups}
+        />
+        <ShareDayDialog
+          open={sharingDay !== null}
+          person={sharingDay || null}
+          onOpenChange={(open) => !open && setSharingDay(null)}
           groups={inviteGroups}
         />
       </BoardMain>

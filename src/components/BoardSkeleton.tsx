@@ -182,7 +182,7 @@ export function BoardSkeleton({ view }: { view: BoardView }) {
         <Bone className="h-7 w-7 rounded-md touch:h-9 touch:w-9 touch:sm:w-[42px]" />
         <Bone className="size-7 rounded-full touch:size-9" />
       </BoardHeader>
-      {view === "brief" || view === "done" ? (
+      {view === "brief" || view === "done" || view === "check-ins" ? (
         <>
           <span className="sr-only" role="status">
             {view === "brief" ? "Loading your Brief…" : "Loading what's done…"}

@@ -282,6 +282,7 @@ export function ShareDialog({
                         value: m.onlyAssignedTo !== null,
                         onChange: (on) => changeRole(m.userId, m.role, on),
                       }}
+                      within={m.onlyWithin}
                     />
                     <button
                       type="button"

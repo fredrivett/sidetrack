@@ -264,6 +264,10 @@ describe("only_mine", () => {
       await call("set_member_role", { list_id: list.id, user_id: jo, role: "commenter", only_mine: false });
       await call("set_member_role", { list_id: list.id, user_id: jo, role: "viewer" });
       expect(listItems(db, jo, list.id)).toHaveLength(2);
+      // Only her today: Swim has no date, so it goes.
+      expect((await call("set_member_role", { list_id: list.id, user_id: jo, role: "viewer", only_within: "today" })).error).toMatch(/just your items/);
+      await call("set_member_role", { list_id: list.id, user_id: jo, role: "viewer", only_mine: true, only_within: "today" });
+      expect(listItems(db, jo, list.id)).toEqual([]);
     } finally {
       log.mockRestore();
     }

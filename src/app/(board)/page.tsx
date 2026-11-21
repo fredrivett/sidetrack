@@ -10,6 +10,7 @@ import {
 } from "@/core/agentSessions";
 import { changeSeq } from "@/core/changes";
 import { countCommentsByItem } from "@/core/comments";
+import { sharedDayNote } from "@/core/dayNotes";
 import { listLabels } from "@/core/labels";
 import { getDb } from "@/core/db";
 import { projectRefPrefixes } from "@/core/itemRef";
@@ -30,6 +31,7 @@ import { ServerTodayProvider } from "@/components/use-day-start";
 import type { ItemPrLink } from "@/core/schema";
 import { requireUserId } from "@/auth/session";
 import { PostHogIdentify } from "@/components/PostHogIdentify";
+import type { CheckIn } from "@/components/CheckInsView";
 
 export const dynamic = "force-dynamic";
 
@@ -62,7 +64,7 @@ export default async function Home({
   const repoSuggestions = suggestedRepositories(db, userId);
   const access = listAccessById(db, userId);
   const limited = limitedListsById(db, userId);
-  const projects = listProjects(db, userId).map((p) => ({
+  const allProjects = listProjects(db, userId).map((p) => ({
     ...p,
     isOwner: p.userId === userId,
     access: access.get(p.id) ?? "view",
@@ -70,6 +72,27 @@ export default async function Home({
     refPrefix: refPrefixes[p.id] ?? p.prefix,
     suggestedRepository: repoSuggestions[p.id],
   }));
+  // Lists shown for someone's today or week follow their day, on Check-ins,
+  // rather than sit on this board.
+  const shownForDay = (id: string) => Boolean(limited.get(id)?.within);
+  const projects = allProjects.filter((p) => !shownForDay(p.id));
+  const checkIns = new Map<string, CheckIn>();
+  for (const p of allProjects) {
+    const l = limited.get(p.id);
+    if (!l?.within || p.status !== "active") continue;
+    const c = checkIns.get(l.personId) ?? {
+      personId: l.personId,
+      username: l.username,
+      name: l.name,
+      image: l.image,
+      within: l.within,
+      day: l.day ?? "",
+      ...sharedDayNote(db, userId, l.personId),
+      lists: [],
+    };
+    c.lists.push(p);
+    checkIns.set(l.personId, c);
+  }
   const pendingInvites = listPendingInvites(db, userId);
   // Finished items stay on the board until their week is over (in each
   // list's Done), so leave older ones out. The browser trims to its own week
@@ -80,7 +103,7 @@ export default async function Home({
   const serverToday = timeZone ? todayIn(timeZone) : null;
   const cookieStore = await cookies();
   const itemsByProject = Object.fromEntries(
-    projects.map((p) => [
+    allProjects.map((p) => [
       p.id,
       listItems(db, userId, p.id, { includeCompleted: true, completedSince }),
     ]),
@@ -90,7 +113,7 @@ export default async function Home({
   );
   // Who each project's items can be assigned to: its owner + accepted members.
   const assigneesByProject = Object.fromEntries(
-    projects.map((p) => [p.id, listAssignees(db, userId, p.id)]),
+    allProjects.map((p) => [p.id, listAssignees(db, userId, p.id)]),
   );
   const prLinksByItem: Record<string, ItemPrLink[]> = {};
   for (const link of listAllPrLinks(db, userId)) {
@@ -125,7 +148,7 @@ export default async function Home({
             getStarted={getGetStarted(db, userId, { push: Boolean(getEnv().VAPID) })}
             // From the path (/brief, /board, …), which the proxy passes as ?view=.
             initialView={
-              view === "board" || view === "done" || view === "archived" ? view : "brief"
+              view === "board" || view === "done" || view === "archived" || view === "check-ins" ? view : "brief"
             }
             projects={projects}
             itemsByProject={itemsByProject}
@@ -138,6 +161,9 @@ export default async function Home({
             trayOrder={listTrays(db, userId)}
             pendingSpaceInvites={listPendingSpaceInvites(db, userId)}
             pendingPhotos={listPendingSources(db, userId)}
+            checkIns={[...checkIns.values()]}
+            // Someone's day it shows only part of turns over: what's on it changes.
+            refreshAt={Math.min(...[...limited.values()].map((l) => l.turnsAt ?? Infinity)) || null}
             initialListId={typeof p === "string" ? p : null}
             initialItemId={typeof item === "string" ? item : null}
           // A push can link to an item not loaded with the board.

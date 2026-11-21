@@ -57,6 +57,15 @@ describe("LiveUpdates", () => {
     expect(refreshIfCurrent).not.toHaveBeenCalled();
   });
 
+  it("reloads once someone's day it shows turns over, which no change announces", () => {
+    vi.setSystemTime(Date.parse("2026-11-20T03:00:00Z"));
+    render(<LiveUpdates seq={10} refreshAt={Date.parse("2026-11-20T04:00:00Z")} />);
+    vi.advanceTimersByTime(60 * 60 * 1000 - 1);
+    expect(refreshIfCurrent).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(2000);
+    expect(refreshIfCurrent).toHaveBeenCalledOnce();
+  });
+
   it("always reloads as the stream opens, for the changes it missed", () => {
     render(<LiveUpdates seq={10} />);
     stream.onopen?.();

@@ -137,3 +137,36 @@ test("shares a Space so someone sees only your items", async ({ page, user, brow
   await expect(joPage.getByText("Someone else's errand")).toHaveCount(0);
   await context.close();
 });
+
+test("shares your day, which shows on their Check-ins, not their board", async ({ page, user, browser, baseURL }) => {
+  const list = user.addList("Week");
+  user.addItem(list.id, "Overdue swim", [user.id], "2020-01-06");
+  user.addItem(list.id, "Next year's trip", [user.id], "2099-01-05");
+  user.setDayNote("Tired — swim first, then the rest");
+  const jo = await createPerson();
+  await page.goto("/check-ins");
+  await page.getByRole("button", { name: "Share my day" }).click();
+  const dialog = page.getByRole("dialog", { name: "Share my day" });
+  await dialog.getByLabel("Who to share your day with").fill(jo.username);
+  await dialog.getByRole("checkbox", { name: "Share from Week" }).click();
+  await dialog.getByRole("checkbox", { name: /How today feels/ }).click();
+  await dialog.getByRole("button", { name: "Share my day" }).click();
+  await expect(dialog).toHaveCount(0);
+
+  const context = await browser.newContext();
+  await jo.signIn(context, baseURL ?? "");
+  const joPage = await context.newPage();
+  await joPage.goto("/brief");
+  await joPage.getByRole("button", { name: "Accept" }).click();
+  await joPage.goto("/board");
+  await expect(joPage.getByText("No lists yet")).toBeVisible();
+  await joPage.goto("/check-ins");
+  const day = joPage.getByRole("region", { name: "E2E User’s day" });
+  await expect(day.getByText("Overdue swim")).toBeVisible();
+  await expect(day.getByText("0 of 1 done")).toBeVisible();
+  // The mood she chose to share, not the words she didn't.
+  await expect(day.getByRole("list", { name: "How today feels" }).getByText("Tired")).toBeVisible();
+  await expect(day.getByText("swim first")).toHaveCount(0);
+  await expect(joPage.getByText("Next year's trip")).toHaveCount(0);
+  await context.close();
+});

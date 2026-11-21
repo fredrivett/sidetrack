@@ -14,6 +14,11 @@ import type { StoredGreeting } from "./agendaGreeting";
 import { apiKeys, users } from "./auth-schema";
 import type { ChangeEvent } from "./events";
 
+/** How far a membership limited to someone's items reaches in time, by
+ * that person's clock: their today, or their week. */
+export const ONLY_WITHIN = ["today", "week"] as const;
+export type OnlyWithin = (typeof ONLY_WITHIN)[number];
+
 // A list's lifecycle (a "project" in code; "list" to people and agents).
 // active lists are on the board; archived lists leave it, and every other
 // view, for the Archived view, keeping their items until they're restored.
@@ -142,6 +147,13 @@ export const spaceMembers = sqliteTable(
     // invited them ("only my tasks"). Null shows everything. Only viewers
     // and commenters are limited; see hasItemAccess in access.ts.
     onlyAssignedTo: text("only_assigned_to"),
+    // With onlyAssignedTo, only that person's items in this stretch of their
+    // own days: "today" or "week" (Monday to Sunday). Null is every day.
+    onlyWithin: text("only_within", { enum: ONLY_WITHIN }),
+    // With onlyWithin, whether they also see that person's day note (the
+    // words) and mood (its tags, dayTags.ts) on Check-ins. Off unless chosen.
+    shareNote: integer("share_note", { mode: "boolean" }).notNull().default(false),
+    shareMood: integer("share_mood", { mode: "boolean" }).notNull().default(false),
     // Where the Space sits among this member's own trays on their board, as a
     // fractional index, so reordering moves it only for whoever did it. Set
     // to the end when they create or join it. Null for memberships from
@@ -237,6 +249,13 @@ export const projectMembers = sqliteTable(
     // invited them ("only my tasks"). Null shows everything. Only viewers
     // and commenters are limited; see hasItemAccess in access.ts.
     onlyAssignedTo: text("only_assigned_to"),
+    // With onlyAssignedTo, only that person's items in this stretch of their
+    // own days: "today" or "week" (Monday to Sunday). Null is every day.
+    onlyWithin: text("only_within", { enum: ONLY_WITHIN }),
+    // With onlyWithin, whether they also see that person's day note (the
+    // words) and mood (its tags, dayTags.ts) on Check-ins. Off unless chosen.
+    shareNote: integer("share_note", { mode: "boolean" }).notNull().default(false),
+    shareMood: integer("share_mood", { mode: "boolean" }).notNull().default(false),
     createdAt: integer("created_at")
       .notNull()
       .default(sql`(unixepoch() * 1000)`),

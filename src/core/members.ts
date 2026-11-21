@@ -12,6 +12,8 @@ import {
   LIST_ROLES,
   type ListRole,
   type MembershipStatus,
+  ONLY_WITHIN,
+  type OnlyWithin,
   projectMembers,
   projectPositions,
   projects,
@@ -30,6 +32,8 @@ export interface MemberView {
   role: ListRole;
   /** Set when they see only the items assigned to this user ("only my tasks"). */
   onlyAssignedTo: string | null;
+  /** With onlyAssignedTo, only their today or week; null is every day. */
+  onlyWithin: OnlyWithin | null;
   createdAt: number;
 }
 
@@ -120,10 +124,16 @@ export function inviteMember(
     inviteId?: string;
     /** They'll see only the items assigned to the inviter ("only my tasks"). */
     onlyMine?: boolean;
+    /** With onlyMine, only those in the inviter's today or week. */
+    within?: OnlyWithin | null;
+    /** With within, whether they also see your day note's words and mood (its tags). */
+    shareNote?: boolean;
+    shareMood?: boolean;
   } = {},
 ): MemberView {
   assertListRole(role);
   const { inviteId, onlyMine } = opts;
+  const within = assertWithin(onlyMine, opts.within);
   if (onlyMine && role === "editor") {
     throw new Error("only viewers and commenters can be shown just your items");
   }
@@ -167,6 +177,9 @@ export function inviteMember(
         status: "pending",
         role,
         onlyAssignedTo: onlyMine ? userId : null,
+        onlyWithin: within,
+        shareNote: !!within && !!opts.shareNote,
+        shareMood: !!within && !!opts.shareMood,
       })
       .run();
     recordAudit(tx as unknown as Db, {
@@ -181,6 +194,9 @@ export function inviteMember(
         role,
         ...(inviteId ? { inviteId } : {}),
         ...(onlyMine ? { onlyAssignedTo: personAt(getUserById(tx as unknown as Db, userId) ?? { id: userId, username: null }) } : {}),
+        ...(within ? { onlyWithin: within } : {}),
+        ...(within && opts.shareNote ? { shareNote: true as const } : {}),
+        ...(within && opts.shareMood ? { shareMood: true as const } : {}),
       },
     });
   });
@@ -194,8 +210,17 @@ export function inviteMember(
     status: "pending",
     role,
     onlyAssignedTo: onlyMine ? userId : null,
+    onlyWithin: within,
     createdAt: Date.now(),
   };
+}
+
+/** The window to store: only with a limit to someone's items, and a known one. */
+export function assertWithin(limited: boolean | undefined, within: OnlyWithin | null | undefined): OnlyWithin | null {
+  if (!within) return null;
+  if (!(ONLY_WITHIN as readonly string[]).includes(within)) throw new Error(`invalid window: ${within}`);
+  if (!limited) throw new Error("only someone shown just your items can be shown just your today or week");
+  return within;
 }
 
 function assertListRole(role: string): asserts role is ListRole {
@@ -205,7 +230,8 @@ function assertListRole(role: string): asserts role is ListRole {
 /**
  * Change what a member, or someone invited, can do on the list: edit,
  * comment or only view, and with `onlyMine`, whether they see only the
- * owner's items (left as it is when undefined). Owner-only. Taking edit
+ * owner's items, and with `within`, only those in the owner's today or week
+ * (each left as it is when undefined). Owner-only. Taking edit
  * away takes them off the list's items and ends their agents there
  * (revokeListAccess), unless the list's Space still lets them edit.
  */
@@ -217,6 +243,7 @@ export function setMemberRole(
   role: ListRole,
   source: AuditOrigin,
   onlyMine?: boolean,
+  within?: OnlyWithin | null,
 ): void {
   assertListRole(role);
   if (onlyMine && role === "editor") {
@@ -237,11 +264,16 @@ export function setMemberRole(
         : onlyMine
           ? userId
           : null;
-  if (membership.role === role && membership.onlyAssignedTo === limitedTo) return;
+  const window = within === undefined ? (limitedTo ? membership.onlyWithin : null) : assertWithin(!!limitedTo, within);
+  if (membership.role === role && membership.onlyAssignedTo === limitedTo && membership.onlyWithin === window) return;
+  const keepsNote = window !== null && limitedTo === membership.onlyAssignedTo;
   const target = getUserById(db, targetUserId);
   db.transaction((tx) => {
     tx.update(projectMembers)
-      .set({ role, onlyAssignedTo: limitedTo })
+      // Their note and mood go with the day share they were chosen for:
+      // a share no longer of that person's day, or of no day, drops them,
+      // and setting a window again doesn't bring them back.
+      .set({ role, onlyAssignedTo: limitedTo, onlyWithin: window, ...(keepsNote ? {} : { shareNote: false, shareMood: false }) })
       .where(eq(projectMembers.id, membership.id))
       .run();
     const lost = revokeListAccess(tx as unknown as Db, targetUserId, projectId);
@@ -257,6 +289,7 @@ export function setMemberRole(
         role,
         lost: accessLost(lost),
         ...(limitedTo ? { onlyAssignedTo: personAt(getUserById(tx as unknown as Db, limitedTo) ?? { id: limitedTo, username: null }) } : {}),
+        ...(window ? { onlyWithin: window } : {}),
         ...(membership.onlyAssignedTo && !limitedTo ? { seesAll: true as const } : {}),
       },
     });
@@ -343,6 +376,7 @@ export function acceptInvite(
         ...(membership.onlyAssignedTo
           ? { onlyAssignedTo: personAt(getUserById(tx as unknown as Db, membership.onlyAssignedTo) ?? { id: membership.onlyAssignedTo, username: null }) }
           : {}),
+        ...(membership.onlyWithin ? { onlyWithin: membership.onlyWithin } : {}),
       },
     });
   });
@@ -533,12 +567,13 @@ export function listMembers(
       status: r.membership.status,
       role: r.membership.role,
       onlyAssignedTo: r.membership.onlyAssignedTo,
+      onlyWithin: r.membership.onlyWithin,
       createdAt: r.membership.createdAt,
     }));
 }
 
 /** Someone the caller already collaborates with, suggested for a quick invite. */
-export type CollaboratorView = Omit<MemberView, "status" | "role" | "onlyAssignedTo" | "createdAt">;
+export type CollaboratorView = Omit<MemberView, "status" | "role" | "onlyAssignedTo" | "onlyWithin" | "createdAt">;
 
 /**
  * People the owner already shares another list or a Space with (in either
