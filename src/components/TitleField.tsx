@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useRef, useState } from "react";
 import type { PlacedPart, TitleField as Field } from "@/lib/titleParts";
-import { struckRanges } from "@/lib/titleParts";
 import { cn } from "@/lib/utils";
 import { Struck } from "./Struck";
 
@@ -81,6 +80,7 @@ export function TitleField({
   onTitle,
   parts,
   saved,
+  struck,
   onKeep,
   onDrop,
   disabled,
@@ -91,6 +91,8 @@ export function TitleField({
   parts: ShownPart[];
   /** The title it adds as. */
   saved: string;
+  /** The spans of `title` it adds without, to strike. */
+  struck: Array<[number, number]>;
   /** Keeps a part's words in the title (or takes them out again). */
   onKeep: (part: ShownPart) => void;
   /** Stops a part setting its field; its words stay. */
@@ -99,7 +101,8 @@ export function TitleField({
 }) {
   const [scroll, setScroll] = useState(0);
   const [caret, setCaret] = useState<number | null>(null);
-  const struck = struckRanges(title, saved);
+  const panelId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
   const at = caret == null ? undefined : parts.find((p) => caret >= p.start && caret <= p.end);
   const staying = parts.filter((p) => p.shown === "stays" && p.field !== "filler" && !p.kept);
   const track = (e: React.SyntheticEvent<HTMLInputElement>) => {
@@ -155,13 +158,29 @@ export function TitleField({
           }}
           onSelect={track}
           onScroll={track}
-          onBlur={() => setCaret(null)}
+          // Tabbing on to the part's choices keeps them; anywhere else drops them.
+          onBlur={(e) => {
+            if (!panelRef.current?.contains(e.relatedTarget)) setCaret(null);
+          }}
+          aria-describedby={panelId}
           placeholder="Add a task…"
           aria-label="Title"
           className="relative w-full bg-transparent text-base leading-6 font-medium text-transparent caret-foreground outline-none placeholder:text-muted-foreground selection:bg-blue-500/30 selection:text-transparent"
         />
       </div>
-      {/* One panel: what it adds as, then, while the caret's in a part, that part. */}
+      {/* One panel: what it adds as, then, while the caret's in a part, that
+          part. Always there, as the title's description, so screen readers
+          hear it change. */}
+      <div
+        id={panelId}
+        ref={panelRef}
+        aria-live="polite"
+        onBlur={(e) => {
+          if (e.relatedTarget !== inputRef.current && !e.currentTarget.contains(e.relatedTarget)) {
+            setCaret(null);
+          }
+        }}
+      >
       {(saved !== title.trim() || staying.length > 0 || at) && (
         <div className="grid gap-1 rounded-lg bg-muted px-2.5 py-1.5 text-xs text-muted-foreground">
           {saved !== title.trim() ? (
@@ -205,6 +224,7 @@ export function TitleField({
           )}
         </div>
       )}
+      </div>
     </>
   );
 }

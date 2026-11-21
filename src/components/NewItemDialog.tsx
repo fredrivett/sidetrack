@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
 import { formatItemRef } from "@/lib/itemRef";
 import type { Repeat } from "@/lib/repeat";
 import { type Due, dueLabel, parseDue, sameDue } from "@/lib/time";
-import { placeParts, ruleParts, type TitlePart, trimTitle } from "@/lib/titleParts";
+import { cutTitle, placeParts, ruleParts, type TitlePart } from "@/lib/titleParts";
 import { Button } from "@/components/ui/button";
 import { MentionTextarea } from "@/components/MentionTextarea";
 import { useDraft } from "@/components/use-draft";
@@ -201,12 +201,14 @@ export function NewItemDialog({
   // A parent the user accepted from a suggestion, with the list it's in.
   const parent = picked.parent;
   const setParent = pick.parent;
-  // Jev's latest suggestion, with the list and adds it was asked for. It
-  // stands while more is typed, until the next answer replaces it, so the
-  // fields it fills don't blink empty at each key; another list or another
-  // item starts afresh.
+  // Jev's latest suggestion, with the list and adds it was asked for and
+  // the draft it was asked about. It's shown while more is typed, until the
+  // next answer replaces it, so the fields it fills don't blink empty at
+  // each key; another list or another item starts afresh. Only an answer
+  // for the draft as it is now is added with it (`fresh`).
   const [suggested, setSuggested] = useState<{
     for: string;
+    draft: string;
     value: Suggestion;
   } | null>(null);
   // What's typed is kept until it's added or the dialog's cancelled, so a
@@ -282,6 +284,7 @@ export function NewItemDialog({
   const context = JSON.stringify([draft, scope]);
   const suggestion =
     draft.title && suggested?.for === scope ? suggested.value : null;
+  const fresh = Boolean(suggestion) && suggested?.draft === context;
   // What Jev fills in, until they clear its suggestions for this item.
   const prefill = picked.noSuggestions ? null : suggestion;
   // A suggested list counts only if it's one they can add to here.
@@ -309,7 +312,8 @@ export function NewItemDialog({
   const chosenParent =
     !hasChecklist && parent?.projectId === projectId ? parent.item : null;
   // Hints about items on a list they can't add to are no use here.
-  const hints = projectId ? suggestion : null;
+  // Warnings about the draft are only for the draft they were made for.
+  const hints = projectId && fresh ? suggestion : null;
   const duplicate = hints?.duplicate ?? null;
   const parentHint =
     !hasChecklist && !chosenParent && hints?.parent?.id !== duplicate?.id
@@ -369,7 +373,7 @@ export function NewItemDialog({
   const titleWho = [...new Set(agreeing.flatMap((p) => (p.field === "who" ? [p.userId] : [])))];
   const titleLabels = agreeing.flatMap((p) => (p.field === "label" ? [p.label] : []));
   // The title it adds as: without the parts taken out, and what joined them.
-  const saved = trimTitle(title, shownParts.filter((p) => p.shown === "out"));
+  const { saved, struck } = cutTitle(title, shownParts.filter((p) => p.shown === "out"));
 
   const suggestedDue = prefill?.due && today ? parseDue(prefill.due, today) : null;
   const dueUnset = picked.due === undefined && !initialDue;
@@ -404,6 +408,9 @@ export function NewItemDialog({
   const canAssignSelf = editors.some((a) => a.userId === viewerId);
   const anySuggested =
     listSuggested || dueSuggested || repeatSuggested || labelsSuggested || assigneesSuggested;
+  // A list Jev suggested for what was typed before waits for the answer
+  // about what's typed now: it decides where the item goes.
+  const canAdd = Boolean(title.trim()) && Boolean(projectId) && !pending && !(listSuggested && !fresh);
   // Keeping a part's words in the title, and stopping it setting its field.
   function keepPart(part: ShownPart) {
     const k = partKey(part);
@@ -451,9 +458,12 @@ export function NewItemDialog({
         stale.signal,
       ).then(
         (value) => {
-          if (!stale.signal.aborted) setSuggested({ for: scope, value });
+          if (!stale.signal.aborted) setSuggested({ for: scope, draft: context, value });
         },
-        () => {},
+        // An answer that can't be had leaves nothing to stand in for it.
+        () => {
+          if (!stale.signal.aborted) setSuggested(null);
+        },
       );
     }, SUGGEST_DELAY_MS);
     return () => {
@@ -479,14 +489,16 @@ export function NewItemDialog({
     // What's typed, and the title it adds as.
     const raw = title.trim();
     const t = saved;
-    if (!raw || !projectId || pending) return;
+    if (!canAdd) return;
     const d = description.trim() || null;
-    const ls = labels;
+    // A suggestion for what was typed before is shown, but not added.
+    const ls =
+      labelsSuggested && !fresh ? labels.filter((l) => l !== suggestedLabel || titleLabels.includes(l)) : labels;
     const emoji = labelEmoji;
     const was = picked;
-    const ids = assigned.map((a) => a.userId);
-    const du = due;
-    const r = repeat;
+    const ids = assigneesSuggested && !fresh ? [] : assigned.map((a) => a.userId);
+    const du = dueSuggested && !fresh ? null : due;
+    const r = repeatSuggested && !fresh ? null : repeat;
     const p = chosenParent?.id ?? null;
     // A sub-item still in its input counts, so it isn't lost to the click.
     const subs = [...subItems, subDraft.trim()].filter(Boolean);
@@ -599,6 +611,7 @@ export function NewItemDialog({
               onTitle={setTitle}
               parts={shownParts}
               saved={saved}
+              struck={struck}
               onKeep={keepPart}
               onDrop={dropPart}
               disabled={pending}
@@ -711,9 +724,11 @@ export function NewItemDialog({
                   const off = shownParts.filter(
                     (p) => p.field === "label" && labels.includes(p.label) && !names.includes(p.label),
                   );
+                  // Labels only the title sets stay the title's, not picks.
+                  const onlyTitle = titleLabels.filter((l) => !baseLabels.includes(l));
                   setPicked((cur) => ({
                     ...cur,
-                    labels: names,
+                    labels: names.filter((n) => !onlyTitle.includes(n)),
                     titleDropped: off.length
                       ? [...(cur.titleDropped ?? []), ...off.map(partKey)]
                       : cur.titleDropped,
@@ -726,7 +741,7 @@ export function NewItemDialog({
                 draftEmoji={labelEmoji}
                 // The label is renamed on the server; keep this item's name for it in step.
                 onRenamed={(from, to) =>
-                  setLabels((cur = labels) => cur.map((n) => (n === from ? to : n)))
+                  setLabels((cur = baseLabels) => cur.map((n) => (n === from ? to : n)))
                 }
                 onDraftEmoji={(name, emoji) =>
                   setLabelEmoji((cur) => ({ ...cur, [name]: { emoji, chosen: true } }))
@@ -842,12 +857,12 @@ export function NewItemDialog({
               variant="secondary"
               size="sm"
               onClick={() => add(true)}
-              disabled={!title.trim() || !projectId || pending}
+              disabled={!canAdd}
             >
               <ListPlus data-icon="inline-start" />
               {pending && addingAnother ? "Adding…" : "Add & create more"}
             </Button>
-            <Button type="submit" size="sm" disabled={!title.trim() || !projectId || pending}>
+            <Button type="submit" size="sm" disabled={!canAdd}>
               <Plus data-icon="inline-start" />
               {pending && !addingAnother ? "Adding…" : "Add item"}
             </Button>

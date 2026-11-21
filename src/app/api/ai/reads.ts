@@ -39,9 +39,11 @@ function read<I extends z.ZodType, R>(
   return { input, run };
 }
 
-/** Someone who can do a task, as the AI reads them. */
+/** Someone who can do a task, as the AI reads them: by name, never by email. */
 function personName(p: AssigneeView, viewerId: string): string {
-  return [p.name || p.displayUsername || p.username || p.email, p.userId === viewerId && "(the person writing this task)"]
+  // Never their email: it isn't the AI's to read.
+  const name = p.name || p.displayUsername || p.username || "Someone with no name";
+  return [name, p.userId === viewerId && "(the person writing this task)"]
     .filter(Boolean)
     .join(" ");
 }

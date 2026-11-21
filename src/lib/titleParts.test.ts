@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { placeParts, ruleParts, struckRanges, type TitlePart, trimTitle } from "./titleParts";
+import { cutTitle, placeParts, ruleParts, type TitlePart } from "./titleParts";
 
 const due = (text: string, remove = true): TitlePart => ({
   field: "due",
@@ -8,11 +8,14 @@ const due = (text: string, remove = true): TitlePart => ({
   remove,
 });
 const repeat = (text: string): TitlePart => ({ field: "repeat", repeat: { every: 1, unit: "week", on: "mon" }, text, remove: true });
-const saved = (title: string, parts: TitlePart[]) =>
-  trimTitle(title, placeParts(title, parts).filter((p) => p.remove));
-const struck = (title: string, s: string) => struckRanges(title, s).map(([a, b]) => title.slice(a, b));
+const cut = (title: string, parts: TitlePart[]) =>
+  cutTitle(title, placeParts(title, parts).filter((p) => p.remove));
+const saved = (title: string, parts: TitlePart[]) => cut(title, parts).saved;
+const struck = (title: string, parts: TitlePart[]) =>
+  cut(title, parts).struck.map(([a, b]) => title.slice(a, b));
+const who = (text: string): TitlePart => ({ field: "who", userId: "sam", text, remove: true });
 
-describe("trimTitle", () => {
+describe("cutTitle", () => {
   it("takes out each part with the words that bring it in or join it", () => {
     expect(saved("put the bins out tomorrow and every monday", [due("tomorrow"), repeat("every monday")])).toBe(
       "put the bins out",
@@ -56,21 +59,24 @@ describe("ruleParts", () => {
   });
 });
 
-describe("struckRanges", () => {
-  it("strikes what the saved title lost, joining words and separators included", () => {
-    expect(struck("put the bins out tomorrow and every monday", "put the bins out")).toEqual([
-      "tomorrow",
-      "and",
-      "every",
-      "monday",
+describe("cutTitle's strikes", () => {
+  it("strike exactly what the saved title lost, joining words and separators included", () => {
+    expect(struck("put the bins out tomorrow and every monday", [due("tomorrow"), repeat("every monday")])).toEqual([
+      "tomorrow and every monday",
     ]);
-    expect(struck("Tomorrow: call the bank", "Call the bank")).toEqual(["Tomorrow:"]);
-    expect(struck("Mow the lawn every other weekend, starting today", "Mow the lawn")).toEqual([
-      "every",
-      "other",
-      "weekend,",
-      "starting",
-      "today",
-    ]);
+    expect(struck("Tomorrow: call the bank", [due("Tomorrow")])).toEqual(["Tomorrow:"]);
+    // A word that comes twice: the cut one is struck, not the first one.
+    const portal = "Book the room on Friday on the portal";
+    expect(saved(portal, [due("Friday")])).toBe("Book the room on the portal");
+    expect(struck(portal, [due("Friday")])).toEqual(["on Friday"]);
+  });
+});
+
+describe("placing a part", () => {
+  it("only finds whole words, never inside another word or a possessive", () => {
+    expect(saved("Buy lemons Mon", [due("Mon")])).toBe("Buy lemons");
+    expect(saved("Fix Samsung tv, Sam", [who("Sam")])).toBe("Fix Samsung tv");
+    expect(saved("Plan Friday's talk by Friday", [due("Friday")])).toBe("Plan Friday's talk");
+    expect(saved("Today's todo: email Sue today", [due("today")])).toBe("Today's todo: email Sue");
   });
 });

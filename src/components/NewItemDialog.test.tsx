@@ -214,4 +214,28 @@ describe("NewItemDialog", () => {
     vi.mocked(aiRead).mockReset();
     vi.mocked(aiRead).mockImplementation(() => new Promise(() => {}));
   });
+
+  it("doesn't add a suggestion made for what was typed before", async () => {
+    vi.mocked(aiRead).mockResolvedValueOnce({
+      projectId: "p1",
+      duplicate: null,
+      parent: null,
+      due: "friday",
+      repeat: null,
+      label: null,
+      assigneeId: null,
+      titleParts: [],
+    });
+    render(dialog());
+    const title = () => screen.getByPlaceholderText<HTMLInputElement>("Add a task…");
+    fireEvent.change(title(), { target: { value: "Pay rent friday" } });
+    await act(() => new Promise((r) => setTimeout(r, 500)));
+    expect(screen.getByRole("button", { name: /^Due/ }).textContent).toMatch(/Fri/);
+    // Edited and added before Jev answers about the new text.
+    fireEvent.change(title(), { target: { value: "Pay rent" } });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: /Add item/ })));
+    expect(vi.mocked(addItemAction)).toHaveBeenLastCalledWith(
+      expect.objectContaining({ title: "Pay rent", dueDate: null }),
+    );
+  });
 });

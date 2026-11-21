@@ -12,7 +12,7 @@
 import { WRITER_MODEL } from "./greetingWriter";
 import { MAX_REPEAT_EVERY, REPEAT_ONS, type Repeat, type RepeatOn } from "./repeat";
 import { addDays, isDay, weekday } from "./time";
-import type { TitleField, TitlePart } from "./titleParts";
+import { findWhole, type TitleField, type TitlePart } from "./titleParts";
 
 const ENDPOINT = "https://api.anthropic.com/v1/messages";
 const FIELDS: Array<Exclude<TitleField, "filler">> = ["due", "repeat", "who", "label", "list"];
@@ -32,7 +32,6 @@ Fields, each with its "value":
 - due: when the task should be done. One day "YYYY-MM-DD", or a span "YYYY-MM-DD/YYYY-MM-DD" for a week or weekend (weeks run Monday to Sunday). Weekdays and dates look ahead from today; today's weekday means next week's unless it says "this". "Before the weekend" is the Friday before it.
 - repeat: how often it happens again. "<every> <day|week|month>", then optionally " on <mon|tue|wed|thu|fri|sat|sun|weekend>" for a weekly or monthly one, or " day <1-31>" for a monthly one on a day of the month. Every year is "12 month"; every other week is "2 week".
 - who: who should do it, one of "people". Their id.
-- label: one of "labels". Its name.
 - label: one of "labels", only when the title names it, such as "Errands - pick up parcel". Its name.
 - list: one of "lists", only when the title starts with its exact name followed by ":" or "-". Its id.
 
@@ -94,7 +93,7 @@ export function checkParts(raw: unknown, title: string, ctx: TitleContext): Titl
   for (const p of list) {
     const text = typeof p?.text === "string" ? p.text.trim() : "";
     const value = typeof p?.value === "string" ? p.value.trim() : "";
-    if (!text || !lower.includes(text.toLowerCase()) || typeof p.remove !== "boolean") continue;
+    if (!text || findWhole(lower, text.toLowerCase()) < 0 || typeof p.remove !== "boolean") continue;
     const remove = p.remove as boolean;
     if (p.field === "due") {
       const [from, to] = value.split("/");

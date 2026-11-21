@@ -52,10 +52,31 @@ export function ruleParts(
   return out;
 }
 
+// A letter or digit, which a part must not run into: "Mon" isn't in "lemons".
+const WORD = /[\p{L}\p{N}]/u;
+
 /**
- * Where each part sits in `title`: its first place not taken by an earlier
- * part, matched without case. Earlier parts win, so pass the rules' first.
- * A part no longer in the title (typing moved on) is left out.
+ * Where `text` (lower case) next stands as whole words in `lower`, from
+ * `from`: not inside a longer word, nor a possessive ("Friday's" isn't
+ * "Friday"). -1 when it doesn't.
+ */
+export function findWhole(lower: string, text: string, from = 0): number {
+  for (let start = lower.indexOf(text, from); start >= 0; start = lower.indexOf(text, start + 1)) {
+    const end = start + text.length;
+    const before = lower[start - 1] ?? "";
+    const after = lower.slice(end, end + 2);
+    const joinsBefore = WORD.test(text[0]) && WORD.test(before);
+    const joinsAfter =
+      WORD.test(text[text.length - 1]) && (WORD.test(after[0] ?? "") || /^['’]\p{L}/u.test(after));
+    if (!joinsBefore && !joinsAfter) return start;
+  }
+  return -1;
+}
+
+/**
+ * Where each part sits in `title`: its first place as whole words not taken
+ * by an earlier part, matched without case. Earlier parts win, so pass the
+ * rules' first. A part no longer in the title (typing moved on) is left out.
  */
 export function placeParts(title: string, parts: TitlePart[]): PlacedPart[] {
   const lower = title.toLowerCase();
@@ -63,15 +84,12 @@ export function placeParts(title: string, parts: TitlePart[]): PlacedPart[] {
   for (const part of parts) {
     const text = part.text.toLowerCase();
     if (!text.trim()) continue;
-    for (let from = 0; ; ) {
-      const start = lower.indexOf(text, from);
-      if (start < 0) break;
+    for (let start = findWhole(lower, text); start >= 0; start = findWhole(lower, text, start + 1)) {
       const end = start + text.length;
       if (!placed.some((p) => start < p.end && end > p.start)) {
         placed.push({ ...part, start, end });
         break;
       }
-      from = start + 1;
     }
   }
   return placed.sort((a, b) => a.start - b.start);
@@ -79,72 +97,83 @@ export function placeParts(title: string, parts: TitlePart[]): PlacedPart[] {
 
 // What joins a part to the rest: taken out with it.
 const JOIN = String.raw`(?:,|;|:|&|-|–|—|\band\b|\bthen\b)`;
+const JOIN_ONLY = new RegExp(String.raw`^\s*${JOIN}?\s*$`, "i");
+const JOIN_START = new RegExp(String.raw`^\s*${JOIN}?\s*`, "i");
+const JOIN_END = new RegExp(String.raw`\s*${JOIN}?\s*$`, "i");
 // Words that bring in a date or a repeat, taken out with it.
 const LEAD = /\b(?:by|on|due|starting|from|until|before)\s+$/i;
-const GAP = "\u0000";
 
 /**
- * The spans of `title` taken out with `parts`: each with the word that
- * brings in a date or repeat, as in "by Friday".
+ * `title` without `parts` (the ones to take out), the words that bring a
+ * date or repeat in ("by Friday") and the words joining them to the rest:
+ * `saved`, the title it adds as, starting with a capital when its start was
+ * taken out, and `struck`, the spans of `title` taken out, for the dialog to
+ * strike where they're typed. Both come from the same cut, so they agree.
+ * The title as it is when nothing would be left.
  */
-export function removedSpans(title: string, parts: PlacedPart[]): Array<[number, number]> {
-  return parts.map((p) => {
+export function cutTitle(
+  title: string,
+  parts: PlacedPart[],
+): { saved: string; struck: Array<[number, number]> } {
+  const out = new Array<boolean>(title.length).fill(false);
+  const cut = (s: number, e: number) => out.fill(true, s, e);
+  for (const p of parts) {
     const lead = p.field === "due" || p.field === "repeat" ? LEAD.exec(title.slice(0, p.start)) : null;
-    return [lead ? lead.index : p.start, p.end];
-  });
-}
-
-/**
- * `title` without `parts` (the ones to take out) and the words joining them
- * to the rest, starting with a capital when its start was taken out. The
- * title as it is when nothing would be left.
- */
-export function trimTitle(title: string, parts: PlacedPart[]): string {
-  const cuts = removedSpans(title, parts).sort((a, b) => a[0] - b[0]);
-  if (cuts.length === 0) return title.trim();
-  let out = "";
-  let at = 0;
-  for (const [s, e] of cuts) {
-    if (s >= at) out += `${title.slice(at, s)} ${GAP} `;
-    at = Math.max(at, e);
+    cut(lead ? lead.index : p.start, p.end);
   }
-  out += title.slice(at);
-  const trimmed = out
-    // "tomorrow and every monday" is one gap.
-    .replace(new RegExp(String.raw`${GAP}(?:\s*${JOIN}?\s*${GAP})+`, "gi"), GAP)
-    .replace(new RegExp(String.raw`\s*${JOIN}?\s*${GAP}\s*$`, "i"), "")
-    .replace(new RegExp(String.raw`^\s*${GAP}\s*${JOIN}?\s*`, "i"), "")
-    .replaceAll(GAP, " ")
-    .replace(/\s+([,;.!?])/g, "$1")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-  if (!trimmed) return title.trim();
-  const fromStart = !title.slice(0, cuts[0][0]).trim();
-  return fromStart ? trimmed[0].toUpperCase() + trimmed.slice(1) : trimmed;
-}
-
-/**
- * The words of `title` that aren't in `saved`, the title it adds as, so the
- * dialog can strike them where they're typed: what was taken out with the
- * parts, joining words and punctuation included. Words are matched in
- * order, ignoring case (a capital may have moved) and the punctuation next
- * to them.
- */
-export function struckRanges(title: string, saved: string): Array<[number, number]> {
-  const bare = (w: string) => w.toLowerCase().replace(/^[^\p{L}\p{N}@#]+|[^\p{L}\p{N}]+$/gu, "");
-  const kept = saved.split(/\s+/).filter(Boolean).map(bare);
-  const out: Array<[number, number]> = [];
-  let k = 0;
-  for (const m of title.matchAll(/\S+/g)) {
-    if (k < kept.length && bare(m[0]) === kept[k]) {
-      // "out:" keeps "out" but loses its colon.
-      const trail = /[^\p{L}\p{N}]+$/u.exec(m[0]);
-      const savedWord = saved.split(/\s+/).filter(Boolean)[k];
-      if (trail && !savedWord.endsWith(trail[0])) out.push([m.index + trail.index, m.index + m[0].length]);
-      k++;
-    } else {
-      out.push([m.index, m.index + m[0].length]);
+  const unchanged = { saved: title.trim(), struck: [] };
+  if (!out.includes(true)) return unchanged;
+  // The runs of title left between the cuts.
+  const runs = () => {
+    const found: Array<[number, number]> = [];
+    for (let i = 0; i < title.length; ) {
+      if (out[i]) {
+        i++;
+        continue;
+      }
+      let j = i;
+      while (j < title.length && !out[j]) j++;
+      found.push([i, j]);
+      i = j;
     }
+    return found;
+  };
+  // "tomorrow and every monday": what only joins two cuts goes with them.
+  for (const [s, e] of runs()) {
+    if (s > 0 && e < title.length && JOIN_ONLY.test(title.slice(s, e))) cut(s, e);
   }
-  return out;
+  // As does a join between a cut and the start or end of what's left.
+  const left = runs().filter(([s, e]) => title.slice(s, e).trim());
+  if (left.length === 0) return unchanged;
+  const [fs, fe] = left[0];
+  // Both always match, if only the empty string.
+  if (fs > 0) cut(fs, fs + (JOIN_START.exec(title.slice(fs, fe))?.[0].length ?? 0));
+  const [ls, le] = left[left.length - 1];
+  if (le < title.length) {
+    cut(ls + (JOIN_END.exec(title.slice(ls, le))?.index ?? le - ls), le);
+  }
+
+  let saved = "";
+  for (let i = 0; i < title.length; i++) {
+    if (!out[i]) saved += title[i];
+    else if (i === 0 || !out[i - 1]) saved += " ";
+  }
+  saved = saved.replace(/\s+([,;.!?])/g, "$1").replace(/\s{2,}/g, " ").trim();
+  if (!saved) return unchanged;
+  const firstWord = title.search(/\S/);
+  if (out[firstWord]) saved = saved[0].toUpperCase() + saved.slice(1);
+  const spans: Array<[number, number]> = [];
+  for (let i = 0; i < title.length; ) {
+    if (!out[i] || /\s/.test(title[i])) {
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j < title.length && out[j]) j++;
+    let k = j;
+    while (k > i && /\s/.test(title[k - 1])) k--;
+    spans.push([i, k]);
+    i = j;
+  }
+  return { saved, struck: spans };
 }
