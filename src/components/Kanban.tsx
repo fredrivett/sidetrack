@@ -427,6 +427,15 @@ export function Kanban({
           .map((t) => ({ ...t, lists: movable.filter((p) => trayByList[p.id] === t.id) }))
           .filter((t) => t.lists.length > 0);
   const moveTargets = movable.length > 1 ? moveGroups : null;
+  // Where the viewer can invite people: the lists they own, on their trays
+  // (one group without Spaces), and the Spaces they're an admin of.
+  const owned = active.filter((p) => p.isOwner);
+  const inviteGroups =
+    spaces.length === 0
+      ? [{ id: "personal", name: "Lists", icon: null, admin: false, lists: owned }]
+      : trays
+          .map((t) => ({ ...t, lists: owned.filter((p) => trayByList[p.id] === t.id) }))
+          .filter((t) => t.admin || t.lists.length > 0);
   // Everyone who can hold work on the board's lists, to filter by: viewers
   // and commenters are never assigned. Someone filtered by who has since
   // left every list no longer narrows anything.
@@ -1060,8 +1069,7 @@ export function Kanban({
         <InviteDialog
           open={inviting}
           onOpenChange={setInviting}
-          spaces={spaces.filter((s) => s.role === "admin").map(({ id, name }) => ({ id, name }))}
-          lists={active.filter((p) => p.isOwner).map(({ id, name }) => ({ id, name }))}
+          groups={inviteGroups}
         />
       </BoardMain>
     </BoardDrag>
