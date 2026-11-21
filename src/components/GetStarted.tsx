@@ -284,8 +284,10 @@ export function GetStartedStack({
     return (
       <div className="relative z-10 flex flex-col gap-3 rounded-xl border border-border bg-background p-3 shadow-sm sm:flex-row sm:gap-4">
         {/* Charcoal on white paper for light mode, chalk on black for dark: each
-            blends its paper into the card. Lazy, so the hidden one never loads. */}
-        <div aria-hidden="true" className="aspect-[4/3] w-48 shrink-0 self-center sm:w-44 sm:self-start">
+            blends its paper into the card. Lazy, so the hidden one isn't fetched
+            until it's shown. Keyed by step so a new step never shows the last
+            step's drawing while its own loads. */}
+        <div key={step} aria-hidden="true" className="aspect-[4/3] w-48 shrink-0 self-center sm:w-44 sm:self-start">
           {/* eslint-disable-next-line @next/next/no-img-element -- small static WebP, no resizing needed */}
           <img
             src={`/get-started/${step}-light.webp`}
