@@ -59,6 +59,7 @@ const ACTIONS: Record<string, string | Exempt> = {
   sendFeedbackAction: "send_feedback",
   addFeedbackFollowUpAction: "add_to_feedback",
   addItemAction: "add_item",
+  addSubItemAction: "add_item",
   updateItemAction: "update_item",
   completeItemAction: "complete_item",
   uncompleteItemAction: "uncomplete_item",

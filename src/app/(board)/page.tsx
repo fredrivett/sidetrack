@@ -3,7 +3,6 @@ import { limitedListsById, listAccessById } from "@/core/access";
 import { AgentSessionsProvider } from "@/components/agent-sessions";
 import { CommentCountsProvider } from "@/components/comment-counts";
 import { Kanban } from "@/components/Kanban";
-import { LiveUpdates } from "@/components/LiveUpdates";
 import {
   listAllAgentSessions,
   listStartableAgents,
@@ -157,9 +156,9 @@ export default async function Home({
             filters={getBoardFilters(db, userId)}
             aiEnabled={Boolean(getEnv().TYPESAFE_API_KEY)}
             feedbackEnabled={Boolean(getEnv().FEEDBACK_LIST_ID)}
+            seq={seq}
           />
         </CommentCountsProvider>
-        <LiveUpdates seq={seq} />
         <PostHogIdentify userId={userId} username={viewer?.displayUsername ?? null} />
       </AgentSessionsProvider>
     </ServerTodayProvider>

@@ -431,7 +431,7 @@ export function DraggableItemList({
   /** Opens New item for this list, from the empty state; absent where the viewer can't add. */
   onAddItem?: () => void;
 }) {
-  // The order just dropped, shown until the server's refresh lands: held for
+  // The order just dropped, shown until the saved rows land: held for
   // the whole transition, so the list can't flash back to the old order
   // between the action returning and the new order rendering.
   const [full, setFull] = useOptimistic(flatten(groups));

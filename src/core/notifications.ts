@@ -328,9 +328,9 @@ export function writeNotifications(
     agent: string | null;
     event: ChangeEvent;
   },
-): void {
+): string[] {
   const r = rule(db, change.event, change.actor);
-  if (!r) return;
+  if (!r) return [];
   // One each, for the strongest reason (NOTIFICATION_REASONS is in order).
   const strength = (reason: NotificationReason) => NOTIFICATION_REASONS.indexOf(reason);
   const best = new Map<string, NotificationReason>();
@@ -386,8 +386,9 @@ export function writeNotifications(
       },
     ];
   });
-  if (rows.length === 0) return;
+  if (rows.length === 0) return [];
   db.insert(notifications).values(rows).run();
+  return rows.map((n) => n.userId);
 }
 
 /** How directly a reason concerns its recipient. */

@@ -4,7 +4,7 @@ import { hasItemAccess, hasProjectAccess, listAccess, requireListAccess } from "
 import { users } from "./auth-schema";
 import { type AuditOrigin, recordAudit, SYSTEM_ACTOR } from "./audit";
 import { ensureLabels, type LabelEmoji, normalizeLabelNames } from "./labels";
-import { announceChange } from "./changes";
+import { announceChange, changeSeq } from "./changes";
 import type { Db } from "./db";
 import type { ChangeEvent, ItemChanges, PersonAt, SourceAt } from "./events";
 import { getTimeZone } from "./users";
@@ -505,6 +505,55 @@ export function getItemWithSubItems(db: Db, userId: string, id: string): Item[] 
   return item ? [item, ...childrenOf(db, item.id)] : [];
 }
 
+/**
+ * Rows a save or a live update hands the board instead of reloading it: the
+ * items as of change number `seq`, and the ids it asked for that `userId`
+ * can't see, deleted or out of their reach. `seq` is read before the rows,
+ * so the rows show at least every change up to it (changeSeq).
+ */
+export interface Saved {
+  seq: number;
+  items: Item[];
+  gone: string[];
+  /**
+   * For a save: the change number before it, so the changes after it up to
+   * `seq` are the save's own (LiveUpdates skips their echo).
+   */
+  from?: number;
+  /** For a save: those of `items` the viewer follows, which assigning themselves or adding one can start. */
+  followed?: string[];
+}
+
+/**
+ * The ids of the item's checklist, the parent and its sub-items, as the
+ * board holds them: every row an item save can change (ticking, reopening
+ * and nesting reach the parent or its sub-items), and what keeps a finished
+ * checklist on the board whole (listItems' completedSince).
+ */
+export function groupIds(db: Db, userId: string, id: string): string[] {
+  const item = getItem(db, userId, id);
+  if (!item) return [id];
+  return getItemWithSubItems(db, userId, item.parentId ?? item.id).map((i) => i.id);
+}
+
+/** Read `ids` back for the board, as `Saved`. */
+export function readItems(db: Db, userId: string, ids: Iterable<string>): Saved {
+  const seq = changeSeq();
+  const found: Item[] = [];
+  const gone: string[] = [];
+  for (const id of new Set(ids)) {
+    const item = getItem(db, userId, id);
+    if (item) found.push(item);
+    else gone.push(id);
+  }
+  return { seq, items: found, gone };
+}
+
+/** readItems for the whole checklist of each of `ids` (groupIds). */
+export function readGroups(db: Db, userId: string, ids: string[]): Saved {
+  return readItems(db, userId, ids.flatMap((id) => groupIds(db, userId, id)));
+}
+
 export function getItem(db: Db, userId: string, id: string): Item | undefined {
   return db
     .select({ items })
@@ -682,6 +731,7 @@ export function completeItem(
   // last open sub-item completes the parent, each logged on its own so every
   // item's history says when it was done.
   const now = Date.now();
+  let endedSessions = false;
   db.transaction((tx) => {
     const parent = existing.parentId
       ? getItem(tx as unknown as Db, userId, existing.parentId)
@@ -699,10 +749,12 @@ export function completeItem(
     for (const it of [existing, ...openChildren, ...(parentDone ? [parent] : [])]) {
       tx.update(items).set({ completedAt: now }).where(eq(items.id, it.id)).run();
       // Finished work needs no agent: end any open sessions with the item.
-      tx.update(agentSessions)
+      const ended = tx
+        .update(agentSessions)
         .set({ finishedAt: now })
         .where(and(eq(agentSessions.itemId, it.id), isNull(agentSessions.finishedAt)))
         .run();
+      if (ended.changes > 0) endedSessions = true;
       recordAudit(tx as unknown as Db, {
         actor: userId,
         source,
@@ -725,6 +777,9 @@ export function completeItem(
       });
     }
   });
+  // The agents shown working on it stop, which its row doesn't show: open
+  // boards reload rather than read the row (Change.rows).
+  if (endedSessions) announceChange({ actor: userId, projectId: existing.projectId });
   return getItemOrThrow(db, userId, id);
 }
 
@@ -926,7 +981,9 @@ export function setItemsCollapsed(
   // item, so it stays out of the item's history and the activity feed.
   db.update(items).set({ collapsed }).where(inArray(items.id, changed.map((c) => c.id))).run();
   // Unaudited, so announced here: everyone with the list open sees it fold.
-  for (const { id, projectId } of changed) announceChange({ actor: userId, projectId, itemId: id });
+  for (const { id, projectId } of changed) {
+    announceChange({ actor: userId, projectId, itemId: id, rows: true });
+  }
 }
 
 export { ITEM_SORTS, type ItemSort } from "../lib/itemSorts";

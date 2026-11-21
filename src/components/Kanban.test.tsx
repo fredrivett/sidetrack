@@ -25,6 +25,8 @@ vi.mock("@/app/actions", () => ({
 }));
 // The Agenda's greeting; it never arrives here.
 vi.mock("./ai-read", () => ({ aiRead: vi.fn(() => new Promise(() => {})) }));
+// jsdom has no EventSource; the board's live updates have tests of their own.
+vi.mock("./LiveUpdates", () => ({ LiveUpdates: () => null }));
 // Each item row reads the selection once per render, and nothing else
 // does, so counting the reads counts the rows' renders.
 vi.mock("./useItemShortcuts", async (original) => {
@@ -92,6 +94,7 @@ const board = (
     viewer={null}
     timeZone={Intl.DateTimeFormat().resolvedOptions().timeZone}
     initialView="board"
+    seq={0}
     overdueCollapsed={false}
     noDateCollapsed={false}
     noDateFoldedLists={[]}
