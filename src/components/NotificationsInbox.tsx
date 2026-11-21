@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, CalendarClock, Check, CheckCheck } from "lucide-react";
+import { Bell, CalendarClock, Check, CheckCheck, Circle, CircleCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { markNotificationsReadAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,6 @@ import { formatRelative } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { DueBadge } from "./DueBadge";
 import { runAction } from "./run-action";
-import { Struck } from "./Struck";
 import { ProjectIcon } from "./ProjectIcon";
 import { AgentAvatar, UserAvatar } from "./UserAvatar";
 
@@ -186,9 +185,11 @@ export function NotificationsInbox({
                         <ListChip key={i} list={list} name={part.text} onOpen={() => openList(n, list.id)} />
                       ) : part.due ? (
                         <DueBadge key={i} due={part.due.dueDate} from={part.due.dueFrom} done />
+                      ) : part.em === "item" ? (
+                        <ItemName key={i} name={part.text} done={part.done} />
                       ) : part.em ? (
                         <strong key={i} className="font-semibold">
-                          {part.done ? <Struck className="[--strike-gap:var(--row-bg)]">{part.text}</Struck> : part.text}
+                          {part.text}
                         </strong>
                       ) : (
                         part.text
@@ -216,8 +217,7 @@ export function NotificationsInbox({
                         )}
                         <span
                           aria-hidden
-                          // A chip's outline sits outside it, so it takes a little more room.
-                          className={cn("mr-1.5 text-[10px] leading-none", n.list ? "ml-2" : "ml-1.5")}
+                          className="mx-1.5 text-[10px] leading-none"
                         >
                           •
                         </span>
@@ -264,9 +264,46 @@ export function NotificationsInbox({
 }
 
 /**
+ * An item a notification names, drawn as an item: its circle, ticked when
+ * done, then its title. The title underlines while the row is hovered or
+ * focused, as the row is what opens it, but not while a list chip is. The circle keeps to the first word,
+ * so a wrapped title never leaves it alone at a line's end.
+ */
+function ItemName({ name, done }: { name: string; done?: boolean }) {
+  const Icon = done ? CircleCheck : Circle;
+  const space = name.search(/\s/);
+  const [first, rest] = space < 0 ? [name, ""] : [name.slice(0, space), name.slice(space)];
+  const underline =
+    "underline decoration-transparent underline-offset-2 transition-colors group-hover/row:decoration-current group-has-[>button:focus-visible]/row:decoration-current group-has-[[data-list-chip]:hover]/row:decoration-transparent";
+  return (
+    <span className={cn("font-medium", done ? "text-muted-foreground" : "text-foreground")}>
+      <span className="whitespace-nowrap">
+        <Icon
+          aria-hidden
+          className={cn(
+            "mr-1 inline size-[0.95em] align-[-0.15em]",
+            done ? "text-green-600 dark:text-green-500" : "text-muted-foreground",
+          )}
+          strokeWidth={2.25}
+        />
+        {done && <span className="sr-only">done: </span>}
+        <span className={underline}>
+          {first}
+        </span>
+      </span>
+      {rest && (
+        <span className={underline}>
+          {rest}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/**
  * A list a notification names: its icon (none rather than a letter) and
- * name, opening the list. Above the row's own button, which covers the row.
- * Smaller in the line under the sentence.
+ * name, opening the list. Above the row's own button, which covers the row,
+ * so it underlines on its own hover. Muted in the line under the sentence.
  */
 function ListChip({
   list,
@@ -282,19 +319,20 @@ function ListChip({
   return (
     <button
       type="button"
+      // Hovering it underlines only it, not the row's item (ItemName).
+      data-list-chip
       onClick={onOpen}
       className={cn(
-        "relative z-10 inline-flex max-w-full items-center rounded-md bg-muted align-middle leading-none ring-1 ring-border/70 hover:bg-accent",
-        small
-          ? "gap-0.5 px-1 py-px text-[11px] text-muted-foreground hover:text-foreground"
-          : "-top-px gap-1 px-1.5 py-0.5 text-[13px] font-medium text-foreground",
+        "relative z-10 inline-flex max-w-full items-baseline gap-1 rounded-sm align-baseline underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-ring",
+        small ? "min-w-0 text-muted-foreground hover:text-foreground" : "font-semibold text-foreground",
       )}
     >
       <ProjectIcon
         icon={list.icon}
         homepageUrl={list.homepageUrl}
         name={name}
-        size={small ? 11 : 13}
+        size={small ? 12 : 13}
+        className="self-center"
         // A letter in a chip reads as part of the name.
         letter={false}
       />
