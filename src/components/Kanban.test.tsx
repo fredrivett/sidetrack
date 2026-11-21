@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { Item } from "@/core/schema";
 import type { SpaceView } from "@/core/spaces";
 import { NO_FILTERS } from "@/lib/filters";
@@ -220,6 +220,35 @@ describe("Kanban, re-rendering rows", () => {
     rerender(board(work, [], { b: refreshed }, ["i1"]));
     expect(screen.getByText("Task 9")).toBeTruthy();
     expect(rowRenders).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a list's rows mounted as it grows long enough to render only some", () => {
+    // jsdom has no layout: give the column and its rows a height, so the
+    // long list has rows in view and rows out of it.
+    const column = vi
+      .spyOn(HTMLElement.prototype, "clientHeight", "get")
+      .mockImplementation(function (this: HTMLElement) {
+        return this.matches("[data-column-scroll]") ? 800 : 0;
+      });
+    const row52 = vi
+      .spyOn(HTMLElement.prototype, "offsetHeight", "get")
+      .mockImplementation(function (this: HTMLElement) {
+        return this.matches("[data-list-index]") ? 52 : 0;
+      });
+    onTestFinished(() => {
+      column.mockRestore();
+      row52.mockRestore();
+    });
+    const items = Array.from({ length: 60 }, (_, i) => item(i + 1));
+    const { rerender } = render(board(work, [], { b: items.slice(0, 59) }));
+    expect(document.querySelectorAll("[data-item-row]")).toHaveLength(59);
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    const row = document.querySelector('[data-item-row="i1"]');
+    expect(row?.hasAttribute("data-selected")).toBe(true);
+
+    rerender(board(work, [], { b: items }));
+    expect(document.querySelectorAll("[data-item-row]").length).toBeLessThan(60);
+    expect(document.querySelector('[data-item-row="i1"]')).toBe(row);
   });
 
   it("moves the selection on an arrow from a row's assignee button, without opening its menu", () => {

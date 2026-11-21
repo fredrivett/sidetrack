@@ -1,7 +1,8 @@
 "use client";
 
 import { ChevronDown } from "lucide-react";
-import { useId, useOptimistic, useState, useTransition } from "react";
+import { type ReactNode, useEffect, useId, useOptimistic, useState, useTransition } from "react";
+import { flushSync } from "react-dom";
 import type { Greeting } from "@/core/agendaGreeting";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
@@ -19,6 +20,7 @@ import { ItemGroupView } from "./ItemList";
 import { ItemRow } from "./ItemRow";
 import { MoveToTomorrowDialog } from "./MoveToTomorrowDialog";
 import type { ProjectView } from "./Kanban";
+import { Button } from "./ui/button";
 import { ProjectIcon } from "./ProjectIcon";
 import { runAction } from "./run-action";
 import { useToday } from "./use-day-start";
@@ -28,6 +30,40 @@ import { useItemDetailDialog } from "./use-item-detail-dialog";
 type AgendaList = Pick<ProjectView, "id" | "name" | "icon" | "homepageUrl" | "refPrefix">;
 
 const openCount = (rows: Item[]) => rows.filter((i) => i.completedAt === null).length;
+
+/** How many of a list's undated items No date shows until asked for the rest. */
+const NO_DATE_SHOWN = 10;
+
+/**
+ * A section's rows, folding away. Rows 0fr to 1fr animates to the content's
+ * own height. Folded, it's inert, so its rows leave the tab order too, and
+ * once the fold has closed they unmount: a folded No date with hundreds of
+ * items costs nothing to render.
+ */
+function Fold({ id, collapsed, children }: { id: string; collapsed: boolean; children: ReactNode }) {
+  const [mounted, setMounted] = useState(!collapsed);
+  if (!collapsed && !mounted) setMounted(true);
+  useEffect(() => {
+    if (!collapsed) return;
+    // As long as the fold's transition (duration-300).
+    const timer = setTimeout(() => setMounted(false), 300);
+    return () => clearTimeout(timer);
+  }, [collapsed]);
+  return (
+    <div
+      id={id}
+      inert={collapsed}
+      className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none ${
+        collapsed ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100"
+      }`}
+    >
+      {/* -mx-1 px-1 and pb-1 leave room for the rows' focus rings. */}
+      <div className="-mx-1 min-h-0 overflow-hidden">
+        <div className="space-y-1.5 px-1 pt-0.5 pb-1">{mounted && children}</div>
+      </div>
+    </div>
+  );
+}
 
 /**
  * One scroll across every active list, from what's late to what has no date:
@@ -119,6 +155,9 @@ export function AgendaView({
       );
     });
   const noDateId = useId();
+  // The lists whose No date card shows all its items, not only the first
+  // NO_DATE_SHOWN: for this visit only.
+  const [allShown, setAllShown] = useState<ReadonlySet<string>>(new Set());
   // Each list's card in No date folds on its own, the same way.
   const [foldedLists, showListFolded] = useOptimistic(
     savedFoldedLists,
@@ -134,21 +173,10 @@ export function AgendaView({
         `${folded ? "collapse" : "expand"} ${project.name}`,
       );
     });
-  // Rows 0fr to 1fr animates to the content's own height. Folded, it's inert,
-  // so its rows leave the tab order too.
-  const fold = (id: string, collapsed: boolean, rows: React.ReactNode) => (
-    <div
-      id={id}
-      inert={collapsed}
-      className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none ${
-        collapsed ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100"
-      }`}
-    >
-      {/* -mx-1 px-1 and pb-1 leave room for the rows' focus rings. */}
-      <div className="-mx-1 min-h-0 overflow-hidden">
-        <div className="space-y-1.5 px-1 pt-0.5 pb-1">{rows}</div>
-      </div>
-    </div>
+  const fold = (id: string, collapsed: boolean, rows: ReactNode) => (
+    <Fold id={id} collapsed={collapsed}>
+      {rows}
+    </Fold>
   );
   const chevron = (collapsed: boolean, size: string) => (
     <ChevronDown
@@ -288,21 +316,47 @@ export function AgendaView({
                   {chevron(folded, "size-3.5")}
                 </button>
               </h3>
-              {fold(bodyId, folded, groups.map((group) =>
-                lightable(group.id, group.parentId ? (
-                  <ItemRow
-                    item={group}
-                    prefix={row.prefix}
-                    assignees={row.assignees}
-                    viewerId={viewerId}
-                    prLinks={prLinksByItem[group.id] ?? []}
-                    context={byId.get(group.parentId)?.title}
-                    onOpenDetail={() => openDetail(group)}
-                  />
-                ) : (
-                  <ItemGroupView group={group} {...row} />
-                )),
-              ))}
+              {fold(bodyId, folded, [
+                ...(allShown.has(project.id) ? groups : groups.slice(0, NO_DATE_SHOWN)).map(
+                  (group) =>
+                    lightable(
+                      group.id,
+                      group.parentId ? (
+                        <ItemRow
+                          item={group}
+                          prefix={row.prefix}
+                          assignees={row.assignees}
+                          viewerId={viewerId}
+                          prLinks={prLinksByItem[group.id] ?? []}
+                          context={byId.get(group.parentId)?.title}
+                          onOpenDetail={() => openDetail(group)}
+                        />
+                      ) : (
+                        <ItemGroupView group={group} {...row} />
+                      ),
+                    ),
+                ),
+                groups.length > NO_DATE_SHOWN && !allShown.has(project.id) && (
+                  <Button
+                    key="more"
+                    variant="ghost"
+                    size="sm"
+                    className="w-full text-neutral-500"
+                    aria-label={`Show ${groups.length - NO_DATE_SHOWN} more in ${project.name}`}
+                    onClick={(e) => {
+                      // The button goes as the rest come in: focus moves on to
+                      // the first of them, rather than back to the page's top.
+                      const lastShown = e.currentTarget.previousElementSibling;
+                      flushSync(() => setAllShown((s) => new Set(s).add(project.id)));
+                      lastShown?.nextElementSibling
+                        ?.querySelector<HTMLElement>("button:not([role=checkbox])")
+                        ?.focus();
+                    }}
+                  >
+                    Show {groups.length - NO_DATE_SHOWN} more
+                  </Button>
+                ),
+              ])}
             </div>
           );
         })

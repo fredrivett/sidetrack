@@ -317,12 +317,12 @@ describe("AgendaView", () => {
 
     const toggle = screen.getByRole("button", { name: /^Overdue/ });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    // Folded rows stay out of reach (inert) but the count still shows.
+    // Folded, its rows aren't rendered (Fold), but the count still shows.
     const rows = document.getElementById(toggle.getAttribute("aria-controls") ?? "");
     expect(rows?.hasAttribute("inert")).toBe(true);
-    expect(rows?.textContent).toContain("Call the bank");
+    expect(screen.queryByText("Call the bank")).toBeNull();
     expect(toggle.textContent).toContain("1");
-    expect(rows?.closest("[inert]")?.contains(screen.getByText("Bins"))).toBe(false);
+    expect(rows?.contains(screen.getByText("Bins"))).toBe(false);
 
     // Still saving, so the open state shown is the optimistic one.
     vi.mocked(setOverdueCollapsedAction).mockReturnValue(new Promise(() => {}));
@@ -330,6 +330,7 @@ describe("AgendaView", () => {
     expect(vi.mocked(setOverdueCollapsedAction)).toHaveBeenLastCalledWith(false);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(rows?.hasAttribute("inert")).toBe(false);
+    expect(rows?.textContent).toContain("Call the bank");
   });
 
   it("folds No date away at once and saves it, keeping each list's card", () => {
@@ -348,6 +349,44 @@ describe("AgendaView", () => {
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(rows?.hasAttribute("inert")).toBe(true);
     expect(rows?.contains(screen.getByText("Bins"))).toBe(false);
+  });
+
+  it("shows a list's first 10 undated items in No date, with their checklists, and the rest on asking", () => {
+    const first = item("Undated 1", null);
+    const items = [
+      first,
+      item("Step", null, { parentId: first.id }),
+      ...Array.from({ length: 11 }, (_, k) => item(`Undated ${k + 2}`, null)),
+    ];
+    const buy = { ...home, id: "p2", name: "Buy", prefix: "BUY", refPrefix: "BUY" } as ProjectView;
+    const buyItems = Array.from({ length: 11 }, (_, k) =>
+      item(`Buy ${k + 1}`, null, { projectId: "p2" }),
+    );
+    renderAgenda([...items, ...buyItems], [home, buy]);
+    const noDate = within(section(/^No date/));
+    expect(noDate.getByText("Step")).toBeTruthy();
+    expect(noDate.getByText("Undated 10")).toBeTruthy();
+    expect(noDate.queryByText("Undated 11")).toBeNull();
+    // The card's count is still all of them.
+    expect(noDate.getByRole("heading", { level: 3, name: /Home/ }).textContent).toContain("13");
+
+    fireEvent.click(noDate.getByRole("button", { name: "Show 2 more in Home" }));
+    expect(noDate.getByText("Undated 12")).toBeTruthy();
+    expect(noDate.queryByRole("button", { name: /more in Home$/ })).toBeNull();
+    // Focus goes on to the first of the rest, not back to the top of the page.
+    expect(document.activeElement).toBe(noDate.getByText("Undated 11").closest("button"));
+    // Buy's card keeps its own 10.
+    expect(noDate.queryByText("Buy 11")).toBeNull();
+    expect(noDate.getByRole("button", { name: "Show 1 more in Buy" })).toBeTruthy();
+  });
+
+  // A folded No date with hundreds of items shouldn't cost a render.
+  it("unmounts a folded card's rows once the fold has closed", async () => {
+    renderAgenda([item("Tidy flat", null)]);
+    vi.mocked(setNoDateListFoldedAction).mockReturnValue(new Promise(() => {}));
+    fireEvent.click(screen.getByRole("button", { name: /^Home/ }));
+    expect(screen.getByText("Tidy flat")).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText("Tidy flat")).toBeNull());
   });
 
   it("folds one list's card in No date at once and saves it, leaving the others open", () => {
@@ -394,6 +433,10 @@ describe("AgendaView", () => {
     // An item the page hasn't loaded is named, but isn't a button.
     expect(within(greeting).queryByRole("button", { name: "Renew passport" })).toBeNull();
 
+    fireEvent.click(within(greeting).getByRole("button", { name: "give it a new day" }));
+    expect(vi.mocked(setOverdueCollapsedAction)).toHaveBeenLastCalledWith(false);
+    expect(screen.getByRole("button", { name: /^Overdue/ }).getAttribute("aria-expanded")).toBe("true");
+
     // Hovering a chip lights up its row.
     const chip = within(greeting).getByRole("button", { name: "Call the bank" });
     fireEvent.pointerEnter(chip);
@@ -401,10 +444,6 @@ describe("AgendaView", () => {
     expect(lit()?.textContent).toContain("Call the bank");
     fireEvent.pointerLeave(chip);
     expect(lit()).toBeNull();
-
-    fireEvent.click(within(greeting).getByRole("button", { name: "give it a new day" }));
-    expect(vi.mocked(setOverdueCollapsedAction)).toHaveBeenLastCalledWith(false);
-    expect(screen.getByRole("button", { name: /^Overdue/ }).getAttribute("aria-expanded")).toBe("true");
 
     // A thumbs down sends what the reader saw, chips as their titles.
     fireEvent.click(screen.getByRole("button", { name: "Not quite right" }));
