@@ -5,6 +5,7 @@ import { listOpenAgentSessions } from "@/core/agentSessions";
 import { setAgentWebhook } from "@/core/agentWebhooks";
 import { createApiKey } from "@/core/api-keys";
 import { listAudit } from "@/core/audit";
+import { addComment, listComments } from "@/core/comments";
 import { addItem, completeItem, getItem, listItems } from "@/core/items";
 import { listLabels } from "@/core/labels";
 import { acceptInvite, inviteMember } from "@/core/members";
@@ -515,6 +516,105 @@ describe("comments", () => {
     expect(data.comments).toEqual([
       expect.objectContaining({ body: "Ordered the washer", agentName: "Test agent" }),
     ]);
+  });
+});
+
+describe("comment edits and deletes", () => {
+  it("edits and deletes the user's own comment, audited as the agent, and refuses anyone else's", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const bob = createTestUser(db, { username: "bob" });
+    const list = createProject(db, fred, { name: "Home" }, "web");
+    inviteMember(db, fred, list.id, "bob", "web");
+    acceptInvite(db, bob, list.id, "web");
+    const item = addItem(db, fred, { projectId: list.id, title: "Fix tap" }, "web");
+    const bobs = addComment(db, bob, item.id, "Bob's note", "web");
+    const fredCall = await connectAs(fred);
+    const mine = (await fredCall("add_comment", { item_id: "HOM-1", body: "Ordered the washr" })).data;
+
+    const edited = await fredCall("update_comment", { id: mine.id, body: "Ordered the washer" });
+    expect(edited.data).toMatchObject({ body: "Ordered the washer", editedAt: expect.any(Number) });
+
+    for (const tool of ["update_comment", "delete_comment"]) {
+      const { error } = await fredCall(tool, { id: bobs.id, body: "Hijacked" });
+      expect(error).toMatch(/only a comment's author.*no change was made/);
+    }
+    expect(listComments(db, fred, item.id).map((c) => c.body)).toEqual([
+      "Bob's note",
+      "Ordered the washer",
+    ]);
+
+    expect((await fredCall("delete_comment", { id: mine.id })).data).toEqual({ deleted: true });
+    expect(listComments(db, fred, item.id).map((c) => c.body)).toEqual(["Bob's note"]);
+    // The deletion itself stays in the log, saying which agent did it.
+    expect(listAudit(db, fred)[0]).toMatchObject({
+      source: "mcp",
+      agentKeyId: AGENT.keyId,
+      agentName: AGENT.name,
+      detail: 'deleted a comment on "Fix tap"',
+    });
+
+    const recent = await (await connectAs(bob))("list_recent_comments", { list_id: list.id });
+    expect(recent.data).toEqual([
+      expect.objectContaining({ body: "Bob's note", item: expect.objectContaining({ ref: "HOM-1" }) }),
+    ]);
+  });
+});
+
+describe("search_done, labels and notifications", () => {
+  it("finds finished items across lists by title or ref, with their ref and list", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const home = createProject(db, fred, { name: "Home" }, "web");
+    const work = createProject(db, fred, { name: "Work" }, "web");
+    const tap = addItem(db, fred, { projectId: home.id, title: "Fix tap" }, "web");
+    addItem(db, fred, { projectId: home.id, title: "Fix fence" }, "web");
+    const deck = addItem(db, fred, { projectId: work.id, title: "Fix the deck" }, "web");
+    completeItem(db, fred, tap.id, "web");
+    completeItem(db, fred, deck.id, "web");
+    const call = await connectAs(fred);
+
+    const fixes = (await call("search_done", { query: "fix" })).data.items as Record<string, unknown>[];
+    // The open "Fix fence" isn't done, so it's left out.
+    expect(fixes.map((it) => [it.ref, it.listName]).sort()).toEqual([
+      ["HOM-1", "Home"],
+      ["WOR-1", "Work"],
+    ]);
+    const byRef = (await call("search_done", { query: "wor-1" })).data.items as Record<string, unknown>[];
+    expect(byRef.map((it) => it.title)).toEqual(["Fix the deck"]);
+  });
+
+  it("counts each label's open and done items only when asked", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const list = createProject(db, fred, { name: "Home" }, "web");
+    addItem(db, fred, { projectId: list.id, title: "A", labels: ["bug"] }, "web");
+    const b = addItem(db, fred, { projectId: list.id, title: "B", labels: ["bug", "chore"] }, "web");
+    completeItem(db, fred, b.id, "web");
+    addItem(db, fred, { projectId: list.id, title: "C", labels: ["idea"] }, "web");
+    const call = await connectAs(fred);
+
+    const plain = (await call("list_labels", { list_id: list.id })).data as unknown as object[];
+    expect(plain[0]).not.toHaveProperty("usage");
+    const counted = (await call("list_labels", { list_id: list.id, include_usage: true }))
+      .data as unknown as { name: string; usage: unknown }[];
+    expect(Object.fromEntries(counted.map((l) => [l.name, l.usage]))).toEqual({
+      bug: { active: 1, done: 1 },
+      chore: { active: 0, done: 1 },
+      idea: { active: 1, done: 0 },
+    });
+  });
+
+  it("sets notification levels for scopes the user is in, and refuses others", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const bob = createTestUser(db, { username: "bob" });
+    const mine = createProject(db, fred, { name: "Home" }, "web");
+    const bobs = createProject(db, bob, { name: "Secret" }, "web");
+    const call = await connectAs(fred);
+
+    const set = await call("set_notification_level", { scope: `list:${mine.id}`, level: "mine" });
+    expect(set.data).toEqual({ levels: { [`list:${mine.id}`]: "mine" } });
+    const refused = await call("set_notification_level", { scope: `list:${bobs.id}`, level: "all" });
+    expect(refused.error).toMatch(/no change was made/);
+    const cleared = await call("set_notification_level", { scope: `list:${mine.id}`, level: null });
+    expect(cleared.data).toEqual({ levels: {} });
   });
 });
 
