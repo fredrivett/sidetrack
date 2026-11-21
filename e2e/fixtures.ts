@@ -5,6 +5,7 @@ import { getDb } from "@/core/db";
 import { addItem } from "@/core/items";
 import { acceptInvite, inviteMember } from "@/core/members";
 import { createProject } from "@/core/projects";
+import { createSpace, setProjectSpace } from "@/core/spaces";
 import type { ListRole } from "@/core/schema";
 
 export { expect };
@@ -71,6 +72,10 @@ export type User = {
   password: string;
   /** Adds a list with these items, as if the user had made it. */
   addList(name: string, items?: string[]): { id: string };
+  /** Adds an item to one of their lists, assigned to these people. */
+  addItem(listId: string, title: string, assigneeIds?: string[]): void;
+  /** Adds a Space of theirs, with these lists of theirs in it. */
+  addSpace(name: string, listIds?: string[]): { id: string };
 };
 
 /**
@@ -97,6 +102,14 @@ export const test = base.extend<{ user: User }>({
         const project = createProject(db, response.user.id, { name }, SOURCE);
         for (const title of items) addItem(db, response.user.id, { projectId: project.id, title }, SOURCE);
         return { id: project.id };
+      },
+      addItem(listId, title, assigneeIds = []) {
+        addItem(db, response.user.id, { projectId: listId, title, assigneeIds }, SOURCE);
+      },
+      addSpace(name, listIds = []) {
+        const space = createSpace(db, response.user.id, { name }, SOURCE);
+        for (const id of listIds) setProjectSpace(db, response.user.id, id, space.id, SOURCE);
+        return { id: space.id };
       },
     });
   },

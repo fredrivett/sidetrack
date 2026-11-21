@@ -35,6 +35,8 @@ type Picked = {
   places: string[];
   listRoles: Record<string, ListRole>;
   spaceRoles: Record<string, InviteSpaceRole>;
+  /** Places, by key, where they'll see only your items. */
+  onlyMine?: string[];
 };
 const NOTHING_PICKED: Picked = { people: [], places: [], listRoles: {}, spaceRoles: {} };
 
@@ -85,6 +87,12 @@ export function InviteDialog({
   const [kept, setKept] = useStoredState("draft:invite:picked", NOTHING_PICKED);
   const { people, listRoles, spaceRoles } = kept;
   const picked = new Set(kept.places);
+  const mine = new Set(kept.onlyMine ?? []);
+  const setMine = (k: string, on: boolean) =>
+    setKept((c) => ({
+      ...c,
+      onlyMine: on ? [...new Set([...(c.onlyMine ?? []), k])] : (c.onlyMine ?? []).filter((x) => x !== k),
+    }));
   const setPeople = (next: (current: string[]) => string[]) =>
     setKept((c) => ({ ...c, people: next(c.people) }));
   const [error, setError] = useState<string | null>(null);
@@ -117,12 +125,27 @@ export function InviteDialog({
   // In the order they're shown: each Space, then its lists.
   const chosen = groups.flatMap((g): { place: InvitePlace; name: string }[] => [
     ...(g.admin && picked.has(key({ kind: "space", id: g.id }))
-      ? [{ place: { kind: "space", id: g.id, role: spaceRoles[g.id] ?? "member" } as const, name: g.name }]
+      ? [
+          {
+            place: {
+              kind: "space",
+              id: g.id,
+              role: spaceRoles[g.id] ?? "member",
+              onlyMine: (spaceRoles[g.id] ?? "member") !== "member" && mine.has(key({ kind: "space", id: g.id })),
+            } as const,
+            name: g.name,
+          },
+        ]
       : []),
     ...g.lists
       .filter((l) => picked.has(key({ kind: "list", id: l.id })))
       .map((l) => ({
-        place: { kind: "list", id: l.id, role: listRoles[l.id] ?? "editor" } as const,
+        place: {
+          kind: "list",
+          id: l.id,
+          role: listRoles[l.id] ?? "editor",
+          onlyMine: (listRoles[l.id] ?? "editor") !== "editor" && mine.has(key({ kind: "list", id: l.id })),
+        } as const,
         name: l.name,
       })),
   ]);
@@ -215,6 +238,10 @@ export function InviteDialog({
           scope="list"
           disabled={pending}
           onChange={(r) => setKept((c) => ({ ...c, listRoles: { ...c.listRoles, [l.id]: r } }))}
+          onlyMine={{
+            value: mine.has(key({ kind: "list", id: l.id })),
+            onChange: (on) => setMine(key({ kind: "list", id: l.id }), on),
+          }}
         />
       ),
     });
@@ -321,6 +348,10 @@ export function InviteDialog({
                               onChange={(r) =>
                                 setKept((c) => ({ ...c, spaceRoles: { ...c.spaceRoles, [g.id]: r } }))
                               }
+                              onlyMine={{
+                                value: mine.has(key({ kind: "space", id: g.id })),
+                                onChange: (on) => setMine(key({ kind: "space", id: g.id }), on),
+                              }}
                             />
                           ),
                         })}

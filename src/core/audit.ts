@@ -61,7 +61,8 @@ export interface EventInput {
 function seesRowItem(userId: string) {
   const about = sql`(case when ${auditLog.entityType} = 'comment' then ${auditLog.parentId} else ${auditLog.entityId} end)`;
   return or(
-    sql`${auditLog.entityType} not in ('item', 'comment')`,
+    // A label's name can give a hidden item away, like the item's own history.
+    sql`${auditLog.entityType} not in ('item', 'comment', 'label')`,
     isNull(projects.id),
     hasWholeListAccess(userId),
     sql`exists (select 1 from ${items} inner join ${projects} on ${projects.id} = ${items.projectId} where ${items.id} = ${about} and ${hasItemAccess(userId)})`,
@@ -118,7 +119,18 @@ export function recordAudit(db: Db, input: EventInput): void {
     event,
   });
   // Every audited change reaches open pages once it commits (see changes.ts).
-  announceChange({ actor: input.actor, projectId: columns.projectId });
+  const itemId =
+    columns.entityType === "item"
+      ? columns.entityId
+      : columns.entityType === "comment"
+        ? (columns.parentId ?? undefined)
+        : undefined;
+  announceChange({
+    actor: input.actor,
+    projectId: columns.projectId,
+    ...(itemId ? { itemId } : {}),
+    ...(columns.entityType === "label" ? { wholeOnly: true } : {}),
+  });
 }
 
 export function listAudit(

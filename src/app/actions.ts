@@ -56,6 +56,7 @@ import {
   deleteComment as deleteCommentCore,
   getComment as getCommentCore,
   listComments as listCommentsCore,
+  listMentionable as listMentionableCore,
   listRecentComments as listRecentCommentsCore,
   mentionNotice as mentionNoticeCore,
   updateComment as updateCommentCore,
@@ -272,12 +273,18 @@ export async function listSuggestedCollaboratorsAction(projectId: string) {
   return listSuggestedCollaboratorsCore(db, userId, projectId);
 }
 
-export async function inviteMemberAction(projectId: string, person: string, role: ListRole = "editor") {
+export async function inviteMemberAction(
+  projectId: string,
+  person: string,
+  role: ListRole = "editor",
+  /** They'll see only the items assigned to you. */
+  onlyMine = false,
+) {
   const session = await getCurrentSession();
   if (!session) redirect("/login");
   const userId = session.user.id;
   const { db } = getDb();
-  const member = inviteMemberCore(db, userId, projectId, person, SOURCE, role);
+  const member = inviteMemberCore(db, userId, projectId, person, SOURCE, role, { onlyMine });
 
   // Notify the invitee by email, once the invite has answered: it's
   // best-effort (the in-app banner is the source of truth, so notifyInvite
@@ -290,6 +297,7 @@ export async function inviteMemberAction(projectId: string, person: string, role
       projectName: project.name,
       url: await appBaseUrl(),
       role,
+      onlyMine,
     };
     after(() => notifyInvite(invite));
   }
@@ -321,7 +329,7 @@ export async function invitePeopleAction(people: string[], places: InvitePlace[]
       url,
       kind: named[0]?.kind,
       role: named[0]?.role,
-      places: named.map(({ name, kind, role }) => ({ name, kind, role })),
+      places: named.map(({ name, kind, role, onlyMine }) => ({ name, kind, role, onlyMine })),
     };
     after(() => notifyInvite(invite));
   }
@@ -329,11 +337,16 @@ export async function invitePeopleAction(people: string[], places: InvitePlace[]
   return sent.length;
 }
 
-/** Change what a member of the list can do on it: edit, comment or only view. */
-export async function setMemberRoleAction(projectId: string, targetUserId: string, role: ListRole) {
+/** Change what a member of the list can do on it, and whether they see only your items. */
+export async function setMemberRoleAction(
+  projectId: string,
+  targetUserId: string,
+  role: ListRole,
+  onlyMine?: boolean,
+) {
   const userId = await requireUserId();
   const { db } = getDb();
-  setMemberRoleCore(db, userId, projectId, targetUserId, role, SOURCE);
+  setMemberRoleCore(db, userId, projectId, targetUserId, role, SOURCE, onlyMine);
   refresh();
 }
 
@@ -409,11 +422,13 @@ export async function inviteSpaceMemberAction(
   spaceId: string,
   person: string,
   role: Exclude<SpaceRole, "admin"> = "member",
+  /** They'll see only the items assigned to you. */
+  onlyMine = false,
 ) {
   const session = await getCurrentSession();
   if (!session) redirect("/login");
   const { db } = getDb();
-  const member = inviteSpaceMemberCore(db, session.user.id, spaceId, person, SOURCE, role);
+  const member = inviteSpaceMemberCore(db, session.user.id, spaceId, person, SOURCE, role, { onlyMine });
   // Best-effort and after answering, like a list invite.
   const space = listSpacesCore(db, session.user.id).find((s) => s.id === spaceId);
   if (member.email && space) {
@@ -424,6 +439,7 @@ export async function inviteSpaceMemberAction(
       url: await appBaseUrl(),
       kind: "space" as const,
       role,
+      onlyMine,
     };
     after(() => notifyInvite(invite));
   }
@@ -443,10 +459,11 @@ export async function setSpaceMemberRoleAction(
   spaceId: string,
   targetUserId: string,
   role: SpaceRole,
+  onlyMine?: boolean,
 ) {
   const userId = await requireUserId();
   const { db } = getDb();
-  setSpaceMemberRoleCore(db, userId, spaceId, targetUserId, role, SOURCE);
+  setSpaceMemberRoleCore(db, userId, spaceId, targetUserId, role, SOURCE, onlyMine);
   refresh();
 }
 
@@ -698,10 +715,15 @@ export async function deleteItemAction(id: string) {
   refresh();
 }
 
+/** An item's comments, and who a comment on it can mention: one read, as
+ * Next runs a page's actions one at a time. */
 export async function listCommentsAction(itemId: string) {
   const userId = await requireUserId();
   const { db } = getDb();
-  return listCommentsCore(db, userId, itemId);
+  return {
+    comments: listCommentsCore(db, userId, itemId),
+    mentionable: listMentionableCore(db, userId, itemId),
+  };
 }
 
 export async function listRecentCommentsAction(opts: {

@@ -198,6 +198,32 @@ describe("invite_people", () => {
   });
 });
 
+describe("only_mine", () => {
+  it("lets an agent share a list so someone sees only the user's items", async () => {
+    const lorna = createTestUser(db, { username: "lorna" });
+    const jo = createTestUser(db, { username: "jo" });
+    const list = createProject(db, lorna, { name: "Week" }, "web");
+    addItem(db, lorna, { projectId: list.id, title: "Swim", assigneeIds: [lorna] }, "web");
+    addItem(db, lorna, { projectId: list.id, title: "Hidden" }, "web");
+    const call = await connectAs(lorna);
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const editor = await call("invite_member", { list_id: list.id, person: "jo", role: "editor", only_mine: true });
+      expect(editor.error).toMatch(/viewers and commenters/);
+      const sent = await call("invite_member", { list_id: list.id, person: "jo", role: "viewer", only_mine: true });
+      expect(sent.data).toEqual(expect.objectContaining({ onlyAssignedTo: lorna }));
+      acceptInvite(db, jo, list.id, "web");
+      expect(listItems(db, jo, list.id).map((i) => i.title)).toEqual(["Swim"]);
+      // Turned off, they see it all; left out, it stays as it was.
+      await call("set_member_role", { list_id: list.id, user_id: jo, role: "commenter", only_mine: false });
+      await call("set_member_role", { list_id: list.id, user_id: jo, role: "viewer" });
+      expect(listItems(db, jo, list.id)).toHaveLength(2);
+    } finally {
+      log.mockRestore();
+    }
+  });
+});
+
 describe("emails", () => {
   it("link invites to the app's address the request came in on", async () => {
     const fred = createTestUser(db, { username: "fred" });

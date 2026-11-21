@@ -28,6 +28,8 @@ export interface MemberView {
   status: MembershipStatus;
   /** What they can do on the list. */
   role: ListRole;
+  /** Set when they see only the items assigned to this user ("only my tasks"). */
+  onlyAssignedTo: string | null;
   createdAt: number;
 }
 
@@ -191,6 +193,7 @@ export function inviteMember(
     email: target.email,
     status: "pending",
     role,
+    onlyAssignedTo: onlyMine ? userId : null,
     createdAt: Date.now(),
   };
 }
@@ -201,9 +204,10 @@ function assertListRole(role: string): asserts role is ListRole {
 
 /**
  * Change what a member, or someone invited, can do on the list: edit,
- * comment or only view. Owner-only. Taking edit away takes them off the
- * list's items and ends their agents there (revokeListAccess), unless the
- * list's Space still lets them edit.
+ * comment or only view, and with `onlyMine`, whether they see only the
+ * owner's items (left as it is when undefined). Owner-only. Taking edit
+ * away takes them off the list's items and ends their agents there
+ * (revokeListAccess), unless the list's Space still lets them edit.
  */
 export function setMemberRole(
   db: Db,
@@ -212,20 +216,32 @@ export function setMemberRole(
   targetUserId: string,
   role: ListRole,
   source: AuditOrigin,
+  onlyMine?: boolean,
 ): void {
   assertListRole(role);
+  if (onlyMine && role === "editor") {
+    throw new Error("only viewers and commenters can be shown just your items");
+  }
   const project = getProject(db, userId, projectId);
   if (!project) throw new Error(`list not found: ${projectId}`);
   if (project.userId !== userId) throw new Error("only the list owner can change roles");
   const membership = ownMembership(db, targetUserId, projectId);
   if (!membership) throw new Error("they aren't on this list");
-  if (membership.role === role) return;
+  // An editor sees the whole list: an edit (a sort, a move) reaches items
+  // they couldn't otherwise see.
+  const limitedTo =
+    role === "editor"
+      ? null
+      : onlyMine === undefined
+        ? membership.onlyAssignedTo
+        : onlyMine
+          ? userId
+          : null;
+  if (membership.role === role && membership.onlyAssignedTo === limitedTo) return;
   const target = getUserById(db, targetUserId);
   db.transaction((tx) => {
-    // An editor sees the whole list: an edit (a sort, a move) reaches items
-    // they couldn't otherwise see.
     tx.update(projectMembers)
-      .set(role === "editor" ? { role, onlyAssignedTo: null } : { role })
+      .set({ role, onlyAssignedTo: limitedTo })
       .where(eq(projectMembers.id, membership.id))
       .run();
     const lost = revokeListAccess(tx as unknown as Db, targetUserId, projectId);
@@ -240,6 +256,8 @@ export function setMemberRole(
         member: personAt(target ?? { id: targetUserId, username: null }),
         role,
         lost: accessLost(lost),
+        ...(limitedTo ? { onlyAssignedTo: personAt(getUserById(tx as unknown as Db, limitedTo) ?? { id: limitedTo, username: null }) } : {}),
+        ...(membership.onlyAssignedTo && !limitedTo ? { seesAll: true as const } : {}),
       },
     });
   });
@@ -322,6 +340,9 @@ export function acceptInvite(
         listName: projectName(db, projectId),
         membershipId: membership.id,
         role: membership.role,
+        ...(membership.onlyAssignedTo
+          ? { onlyAssignedTo: personAt(getUserById(tx as unknown as Db, membership.onlyAssignedTo) ?? { id: membership.onlyAssignedTo, username: null }) }
+          : {}),
       },
     });
   });
@@ -511,12 +532,13 @@ export function listMembers(
       email: r.user?.email ?? null,
       status: r.membership.status,
       role: r.membership.role,
+      onlyAssignedTo: r.membership.onlyAssignedTo,
       createdAt: r.membership.createdAt,
     }));
 }
 
 /** Someone the caller already collaborates with, suggested for a quick invite. */
-export type CollaboratorView = Omit<MemberView, "status" | "role" | "createdAt">;
+export type CollaboratorView = Omit<MemberView, "status" | "role" | "onlyAssignedTo" | "createdAt">;
 
 /**
  * People the owner already shares another list or a Space with (in either

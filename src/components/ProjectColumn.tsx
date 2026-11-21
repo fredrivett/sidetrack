@@ -164,14 +164,16 @@ export function ProjectColumn({
             {(project.status !== "active" ||
               (!project.isOwner && !inSpace) ||
               project.access !== "edit") && (
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
                 {project.status !== "active" && (
                   <StatusBadge status={project.status} />
                 )}
                 {project.access !== "edit" && (
-                  <span className="inline-flex items-center gap-1 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
+                  <span className="inline-flex items-center gap-1 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap uppercase tracking-wide text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
                     {project.access === "comment" ? <MessageSquare className="size-3" /> : <Eye className="size-3" />}
                     {project.access === "comment" ? "Can comment" : "View only"}
+                    {/* Whose items, by first name: it's a badge, not a sentence. */}
+                    {project.onlyItemsOf && `, ${project.onlyItemsOf.split(" ")[0]}’s items`}
                   </span>
                 )}
                 {!project.isOwner && !inSpace && (

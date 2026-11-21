@@ -14,7 +14,7 @@ import type { Db } from "./db";
 import { SYSTEM_ACTOR } from "./audit";
 import { duePart, type Part, plainText } from "./describe";
 import { autoFollow, followersOf } from "./follows";
-import type { ChangeEvent, ItemAt } from "./events";
+import type { ChangeEvent, ItemAt, PersonAt } from "./events";
 import { isLooking } from "./presence";
 import { remindDue } from "./reminders";
 import { forgetPushSubscriptions, pushTargets } from "./push";
@@ -213,7 +213,11 @@ function rule(
         as("activity", followersOf(db, event.itemId)),
       );
     case "comment.created": {
-      const mentioned = event.mentioned?.map((p) => p.userId) ?? [];
+      // Only those who can see the item: one shown part of the list
+      // mustn't follow, or hear of, an item they can't see.
+      const mentioned = (event.mentioned ?? [])
+        .map((p) => p.userId)
+        .filter((u) => canSeeItem(db, u, event.item.itemId, event.projectId));
       autoFollow(db, event.item.itemId, [actor, ...mentioned]);
       return onItem(event.item.itemId, event.projectId, [
         ...as("mentioned", mentioned),
@@ -221,7 +225,11 @@ function rule(
       ]);
     }
     case "comment.edited": {
-      const mentioned = event.mentioned?.map((p) => p.userId) ?? [];
+      // Only those who can see the item: one shown part of the list
+      // mustn't follow, or hear of, an item they can't see.
+      const mentioned = (event.mentioned ?? [])
+        .map((p) => p.userId)
+        .filter((u) => canSeeItem(db, u, event.item.itemId, event.projectId));
       autoFollow(db, event.item.itemId, mentioned);
       return onItem(event.item.itemId, event.projectId, as("mentioned", mentioned));
     }
@@ -852,8 +860,12 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
       return [];
     }
     // What someone joined or was invited as, when it's less than editing.
-    const asRole = (role: ListRole | SpaceRole | undefined): Part[] =>
-      role && role !== "editor" && role !== "member" ? [t(` as ${roleWords(role)}`)] : [];
+    // and whose items they see, when it's only someone's.
+    const whose = (only: PersonAt) => (only.userId === r.userId ? "your" : `${only.name}'s`);
+    const asRole = (role: ListRole | SpaceRole | undefined, only?: PersonAt): Part[] =>
+      role && role !== "editor" && role !== "member"
+        ? [t(` as ${roleWords(role)}${only ? ` of ${whose(only)} items` : ""}`)]
+        : [];
     // Someone else invited: told to those already in the list or Space, by
     // its current name, while they still are.
     if (
@@ -881,7 +893,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
             { text: event.member.name, em: "person" },
             t(" to "),
             place,
-            ...asRole(event.role),
+            ...asRole(event.role, event.onlyAssignedTo),
           ],
           snippet: null,
         },
@@ -902,7 +914,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
             who,
             t(" invited you to "),
             { text: name, em: "place", quote: true },
-            ...asRole(event.role),
+            ...asRole(event.role, event.onlyAssignedTo),
           ],
           snippet: null,
         },
@@ -933,7 +945,13 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           title: list.name,
           list: place.list,
           url: `/board?p=${encodeURIComponent(event.projectId)}`,
-          parts: [who, t(` made you ${roleWords(event.role)} of `), place],
+          parts: [
+            who,
+            t(` made you ${roleWords(event.role)} of `),
+            place,
+            ...(event.onlyAssignedTo ? [t(`, seeing only ${whose(event.onlyAssignedTo)} items`)] : []),
+            ...(event.seesAll ? [t(", seeing all of it")] : []),
+          ],
           snippet: null,
         },
       ];
@@ -953,7 +971,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
             ? list.space
               ? [who, t(" added "), place, t(" to "), { text: list.space, em: "place", quote: true }]
               : [who, t(" added "), place]
-            : [person, t(" joined "), place, ...(event.type === "member.joined" ? asRole(event.role) : [])];
+            : [person, t(" joined "), place, ...(event.type === "member.joined" ? asRole(event.role, event.onlyAssignedTo) : [])];
       return [
         {
           ...base,
@@ -977,8 +995,14 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           url: "/",
           parts:
             event.type === "space.member.role"
-              ? [who, t(` made you ${roleWords(event.role)} of `), space]
-              : [person, t(" joined "), space, ...asRole(event.role)],
+              ? [
+                  who,
+                  t(` made you ${roleWords(event.role)} of `),
+                  space,
+                  ...(event.onlyAssignedTo ? [t(`, seeing only ${whose(event.onlyAssignedTo)} items`)] : []),
+                  ...(event.seesAll ? [t(", seeing all of it")] : []),
+                ]
+              : [person, t(" joined "), space, ...asRole(event.role, event.onlyAssignedTo)],
           snippet: null,
         },
       ];

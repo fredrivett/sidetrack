@@ -180,6 +180,10 @@ export type ChangeEvent =
       member: PersonAt;
       role: ListRole;
       lost?: AccessLost;
+      /** Set when they now see only the items assigned to this person. */
+      onlyAssignedTo?: PersonAt;
+      /** Set when they saw only someone's items and now see all of them. */
+      seesAll?: true;
     }
   | {
       type: "member.joined" | "member.declined";
@@ -188,6 +192,8 @@ export type ChangeEvent =
       membershipId: string;
       /** What they joined as; absent on joins from before it was recorded. */
       role?: ListRole;
+      /** Set when they joined to see only the items assigned to this person. */
+      onlyAssignedTo?: PersonAt;
     }
   | {
       type: "member.removed";
@@ -265,6 +271,8 @@ export type ChangeEvent =
       membershipId: string;
       /** What they joined as; absent on joins from before it was recorded. */
       role?: SpaceRole;
+      /** Set when they joined to see only the items assigned to this person. */
+      onlyAssignedTo?: PersonAt;
     }
   | {
       type: "space.member.removed";
@@ -281,6 +289,10 @@ export type ChangeEvent =
       member: PersonAt;
       role: SpaceRole;
       lost?: AccessLost;
+      /** Set when they now see only the items assigned to this person. */
+      onlyAssignedTo?: PersonAt;
+      /** Set when they saw only someone's items and now see all of them. */
+      seesAll?: true;
     }
   // Pull requests
   | ({ type: "item.pr.linked" | "item.pr.unlinked"; projectId: string; prUrl: string } & ItemAt)

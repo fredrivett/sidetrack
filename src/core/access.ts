@@ -1,4 +1,5 @@
-import { and, eq, or, type SQL, sql } from "drizzle-orm";
+import { and, eq, inArray, or, type SQL, sql } from "drizzle-orm";
+import { users } from "./auth-schema";
 import type { Db } from "./db";
 import {
   items,
@@ -134,6 +135,37 @@ export function hasWholeListAccess(userId: string) {
     sql`exists (select 1 from ${projectMembers} pm where pm.project_id = ${projects.id} and pm.user_id = ${userId} and pm.status = 'accepted' and pm.only_assigned_to is null)`,
     sql`exists (select 1 from ${spaceMembers} sm where sm.space_id = ${projects.spaceId} and sm.user_id = ${userId} and sm.status = 'accepted' and sm.only_assigned_to is null)`,
   );
+}
+
+/**
+ * The lists `userId` sees only part of, by list id, each with whose items
+ * they see (a name for the badge: \`@lorna\`). Lists they see whole are left out.
+ */
+export function limitedListsById(db: Db, userId: string): Map<string, string> {
+  const rows = db
+    .select({
+      id: projects.id,
+      // Spelled out: in a select field drizzle leaves columns unqualified,
+      // and a bare "id" here would be the member row's.
+      limitedTo: sql<string>`coalesce(
+        (select pm.only_assigned_to from ${projectMembers} pm where pm.project_id = "projects"."id" and pm.user_id = ${userId} and pm.status = 'accepted'),
+        (select sm.only_assigned_to from ${spaceMembers} sm where sm.space_id = "projects"."space_id" and sm.user_id = ${userId} and sm.status = 'accepted')
+      )`,
+    })
+    .from(projects)
+    .where(and(hasProjectAccess(userId), sql`not (${hasWholeListAccess(userId)})`))
+    .all();
+  const names = new Map(
+    rows.length
+      ? db
+          .select({ id: users.id, username: users.username, name: users.name })
+          .from(users)
+          .where(inArray(users.id, [...new Set(rows.map((r) => r.limitedTo))]))
+          .all()
+          .map((u) => [u.id, u.name || (u.username ? `@${u.username}` : "someone")])
+      : [],
+  );
+  return new Map(rows.map((r) => [r.id, names.get(r.limitedTo) ?? "someone"]));
 }
 
 /** What `userId` can do on each list they can open, by list id. */

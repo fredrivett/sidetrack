@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, type SQL, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { hasItemAccess, requireListAccess } from "./access";
+import { canSeeItem, hasItemAccess, requireListAccess } from "./access";
 import { users } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
@@ -109,6 +109,17 @@ export function listComments(db: Db, userId: string, itemId: string): CommentVie
   return selectComments(db, userId, eq(comments.itemId, itemId)).map(withoutItem);
 }
 
+/** Who on the item's list can see it, by user id: the people a comment on
+ * it can mention. Someone shown only part of the list isn't, for an item
+ * outside their part. Empty when `userId` can't open the item. */
+export function listMentionable(db: Db, userId: string, itemId: string): string[] {
+  const item = getItem(db, userId, itemId);
+  if (!item) return [];
+  return listAssignees(db, userId, item.projectId)
+    .filter((p) => canSeeItem(db, p.userId, item.id, item.projectId))
+    .map((p) => p.userId);
+}
+
 /** How many comments each item the user can open has, for the board's rows; items without any are left out. */
 export function countCommentsByItem(db: Db, userId: string): Record<string, number> {
   const rows = db
@@ -178,7 +189,11 @@ export function mentionNotice(
   const people = listAssignees(db, userId, item.projectId);
   const already = new Set(before === undefined ? [] : mentionedPeople(before, people));
   const to = mentionedPeople(comment.body, people).flatMap((p) =>
-    !already.has(p) && p.email && (comment.agentName || p.userId !== comment.userId)
+    !already.has(p) &&
+    p.email &&
+    (comment.agentName || p.userId !== comment.userId) &&
+    // Someone shown only part of the list isn't emailed an item they can't see.
+    canSeeItem(db, p.userId, item.id, item.projectId)
       ? [{ userId: p.userId, email: p.email, name: p.name }]
       : [],
   );

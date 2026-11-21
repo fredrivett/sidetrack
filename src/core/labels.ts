@@ -2,25 +2,44 @@ import { createHash } from "node:crypto";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { isEmoji } from "@/lib/projectIcon";
-import { hasItemAccess, hasProjectAccess, requireListAccess } from "./access";
+import { hasItemAccess, hasProjectAccess, hasWholeListAccess, requireListAccess } from "./access";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
 import type { ChangeEvent } from "./events";
 import { type Label, items, labels, projects } from "./schema";
 
+/**
+ * The list's labels. Someone shown only part of the list gets only the
+ * labels on items they can see: a label's name can give a hidden item away.
+ */
 export function listLabels(
   db: Db,
   userId: string,
   projectId: string,
 ): Label[] {
-  return db
+  const all = db
     .select({ labels })
     .from(labels)
     .innerJoin(projects, eq(projects.id, labels.projectId))
     .where(and(eq(labels.projectId, projectId), hasProjectAccess(userId)))
     .orderBy(asc(labels.name))
-    .all()
-    .map((row) => row.labels);
+    .all();
+  const whole = db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(and(eq(projects.id, projectId), hasWholeListAccess(userId)))
+    .get();
+  if (all.length === 0 || whole) return all.map((row) => row.labels);
+  const seen = new Set(
+    db
+      .select({ labels: items.labels })
+      .from(items)
+      .innerJoin(projects, eq(projects.id, items.projectId))
+      .where(and(eq(items.projectId, projectId), hasItemAccess(userId)))
+      .all()
+      .flatMap((i) => i.labels),
+  );
+  return all.flatMap((row) => (seen.has(row.labels.name) ? [row.labels] : []));
 }
 
 /** A label's emoji as someone chose it, or as Jev suggested it (`chosen` false). */

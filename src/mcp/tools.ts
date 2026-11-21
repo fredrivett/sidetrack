@@ -317,6 +317,7 @@ async function sendInviteNotification(
   toEmail: string | null,
   kind: InviteKind = "list",
   role?: ListRole | SpaceRole,
+  onlyMine?: boolean,
 ) {
   if (!toEmail) return;
   await notifyInvite({
@@ -326,6 +327,7 @@ async function sendInviteNotification(
     url,
     kind,
     role,
+    onlyMine,
   });
 }
 
@@ -1598,19 +1600,24 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Lands a pending invite they must accept before they gain access. " +
         "role is what they can do once they join: editor (the default) changes everything except owner-only actions " +
         "(delete, prefix, managing members); commenter sees the list and comments on its items; viewer only sees it. " +
-        "Use the role the user asked for; when they said to share it read-only or just so someone can see it, that's viewer.",
+        "Use the role the user asked for; when they said to share it read-only or just so someone can see it, that's viewer. " +
+        "only_mine (viewer or commenter) shows them only the items assigned to the user, as for an accountability partner.",
       inputSchema: {
         list_id: z.string(),
         person: z.string().min(1),
         role: z.enum(LIST_ROLES).optional(),
+        only_mine: z
+          .boolean()
+          .optional()
+          .describe("Viewers and commenters only: they see just the items assigned to you (the user), not the rest of the list."),
       },
     },
-    async ({ list_id, person, role }) => {
+    async ({ list_id, person, role, only_mine }) => {
       const { db } = getDb();
       const project = getProject(db, userId, list_id);
       if (!project) return notFound("list", list_id);
-      const member = inviteMember(db, userId, list_id, person, SOURCE, role);
-      await sendInviteNotification(db, ctx.baseUrl, userId, project.name, member.email, "list", role);
+      const member = inviteMember(db, userId, list_id, person, SOURCE, role, { onlyMine: only_mine });
+      await sendInviteNotification(db, ctx.baseUrl, userId, project.name, member.email, "list", role, only_mine);
       return json(member);
     },
   );
@@ -1622,13 +1629,22 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       description:
         "Change what a member, or someone invited, can do on a list (owner only): editor, commenter (sees the list and comments) " +
         "or viewer (sees it only). user_id comes from list_members. Taking edit away takes them off the list's items " +
-        "and ends their agents' work there, unless the list's Space still lets them edit.",
-      inputSchema: { list_id: z.string(), user_id: z.string(), role: z.enum(LIST_ROLES) },
+        "and ends their agents' work there, unless the list's Space still lets them edit. " +
+        "only_mine turns showing them only the user's items on or off; leave it out to keep it as it is. Editors always see everything.",
+      inputSchema: {
+        list_id: z.string(),
+        user_id: z.string(),
+        role: z.enum(LIST_ROLES),
+        only_mine: z
+          .boolean()
+          .optional()
+          .describe("Viewers and commenters only: they see just the items assigned to you (the user), not the rest of the list."),
+      },
     },
-    async ({ list_id, user_id, role }) => {
+    async ({ list_id, user_id, role, only_mine }) => {
       const { db } = getDb();
       if (!getProject(db, userId, list_id)) return notFound("list", list_id);
-      setMemberRole(db, userId, list_id, user_id, role, SOURCE);
+      setMemberRole(db, userId, list_id, user_id, role, SOURCE, only_mine);
       return json({ ok: true });
     },
   );
@@ -1852,14 +1868,19 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Each place is a list_id (owner only; role editor, commenter or viewer) or a space_id (admins only; " +
         "role member, commenter or viewer). Each invitee gets one push and one email naming every place; " +
         "people already in a place hear only of that place. Use it instead of invite_member / invite_space_member " +
-        "when the user names more than one place or person. Check with the user before inviting someone they didn't name.",
+        "when the user names more than one place or person. A place's only_mine (viewer or commenter) shows them only the user's items there. " +
+        "Check with the user before inviting someone they didn't name.",
       inputSchema: {
         people: z.array(z.string().min(1)).min(1),
         places: z
           .array(
             z.union([
-              z.object({ list_id: z.string(), role: z.enum(LIST_ROLES).optional() }),
-              z.object({ space_id: z.string(), role: z.enum(["member", "commenter", "viewer"]).optional() }),
+              z.object({ list_id: z.string(), role: z.enum(LIST_ROLES).optional(), only_mine: z.boolean().optional() }),
+              z.object({
+                space_id: z.string(),
+                role: z.enum(["member", "commenter", "viewer"]).optional(),
+                only_mine: z.boolean().optional(),
+              }),
             ]),
           )
           .min(1),
@@ -1872,14 +1893,14 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       for (const p of places) {
         if ("list_id" in p) {
           if (!getProject(db, userId, p.list_id)) return notFound("list", p.list_id);
-          resolved.push({ kind: "list", id: p.list_id, role: p.role ?? "editor" });
+          resolved.push({ kind: "list", id: p.list_id, role: p.role ?? "editor", onlyMine: p.only_mine });
         } else {
           if (!spaces.some((s) => s.id === p.space_id)) return notFound("space", p.space_id);
-          resolved.push({ kind: "space", id: p.space_id, role: p.role ?? "member" });
+          resolved.push({ kind: "space", id: p.space_id, role: p.role ?? "member", onlyMine: p.only_mine });
         }
       }
       const { sent, places: invited } = invitePeople(db, userId, { people, places: resolved }, SOURCE);
-      const named = invited.map(({ name, kind, role }) => ({ name, kind, role }));
+      const named = invited.map(({ name, kind, role, onlyMine }) => ({ name, kind, role, onlyMine }));
       const inviterName = getUserName(db, userId) ?? "Someone";
       const emails = new Set(sent.flatMap((s) => (s.member.email ? [s.member.email] : [])));
       for (const to of emails) {
@@ -1890,6 +1911,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           url: ctx.baseUrl,
           kind: named[0].kind,
           role: named[0].role,
+          onlyMine: named[0].onlyMine,
           places: named,
         });
       }
@@ -1905,19 +1927,24 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Invite an existing user to a Space (admins only). person is a username (\"alice\" or \"@alice\") or an email; " +
         "they must already have an account. Once they accept they see every list in the Space, and role says what else: " +
         "member (the default) edits them, commenter comments on their items, viewer only sees them. " +
+        "only_mine (viewer or commenter) shows them only the items assigned to the user. " +
         "Check with the user before inviting someone they didn't name.",
       inputSchema: {
         space_id: z.string(),
         person: z.string().min(1),
         role: z.enum(["member", "commenter", "viewer"]).optional(),
+        only_mine: z
+          .boolean()
+          .optional()
+          .describe("Viewers and commenters only: they see just the items assigned to you (the user), not the rest of the list."),
       },
     },
-    async ({ space_id, person, role }) => {
+    async ({ space_id, person, role, only_mine }) => {
       const { db } = getDb();
       const space = listSpaces(db, userId).find((s) => s.id === space_id);
       if (!space) return notFound("space", space_id);
-      const member = inviteSpaceMember(db, userId, space_id, person, SOURCE, role);
-      await sendInviteNotification(db, ctx.baseUrl, userId, space.name, member.email, "space", role);
+      const member = inviteSpaceMember(db, userId, space_id, person, SOURCE, role, { onlyMine: only_mine });
+      await sendInviteNotification(db, ctx.baseUrl, userId, space.name, member.email, "space", role, only_mine);
       return json(member);
     },
   );
@@ -1948,17 +1975,22 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Change someone's role in a Space (admins only): admin (manages the Space and its people, and edits its lists), member (edits its lists), " +
         "commenter (sees its lists and comments) or viewer (sees its lists only). user_id comes from list_space_members, " +
         "and they must have accepted. All admins are equal. A Space always keeps an admin, so the last admin can't be given another role. " +
-        "Taking edit away takes them off the items they're assigned in the Space.",
+        "Taking edit away takes them off the items they're assigned in the Space. " +
+        "only_mine turns showing them only the user's items on or off; leave it out to keep it as it is. Admins and members always see everything.",
       inputSchema: {
         space_id: z.string(),
         user_id: z.string(),
         role: z.enum(SPACE_ROLES),
+        only_mine: z
+          .boolean()
+          .optional()
+          .describe("Viewers and commenters only: they see just the items assigned to you (the user), not the rest of the list."),
       },
     },
-    async ({ space_id, user_id, role }) => {
+    async ({ space_id, user_id, role, only_mine }) => {
       const { db } = getDb();
       if (!isJoined(db, space_id)) return notFound("space", space_id);
-      setSpaceMemberRole(db, userId, space_id, user_id, role, SOURCE);
+      setSpaceMemberRole(db, userId, space_id, user_id, role, SOURCE, only_mine);
       return json({ ok: true });
     },
   );

@@ -3,6 +3,7 @@ import { roleWords } from "../lib/roles";
 import { ITEM_SORTS } from "../lib/itemSorts";
 import { repeatLabel } from "../lib/repeat";
 import { dueWord } from "../lib/time";
+import { hasItemAccess } from "./access";
 import { users } from "./auth-schema";
 import type { Db } from "./db";
 import type { AccessLost, ChangeEvent, DueAt, ItemAt, ListChanges, PersonAt, SpaceAt } from "./events";
@@ -76,7 +77,9 @@ export function namesFor(db: Db, events: ChangeEvent[], viewer: string): Names {
     ? db
         .select({ id: items.id, title: items.title, projectId: items.projectId, completedAt: items.completedAt })
         .from(items)
-        .where(inArray(items.id, [...ids.items]))
+        .innerJoin(projects, eq(projects.id, items.projectId))
+        // Only items the viewer can see now; the rest keep the name the event stored.
+        .where(and(inArray(items.id, [...ids.items]), hasItemAccess(viewer)))
         .all()
     : [];
   const userRows = ids.people.size
@@ -197,6 +200,9 @@ function listChanges(c: ListChanges): string[] {
     c.done && (c.done === "cleared" ? "moved done items to Done" : "moved done items back to the list"),
   ].filter((p): p is string => Boolean(p));
 }
+
+/** Whose items a role covers, when it's only someone's. */
+const onlyOf = (only?: PersonAt) => (only ? ` of ${only.name}'s items` : "");
 
 export function describeEvent(event: ChangeEvent, names: Names): Part[] {
   const projectId = "projectId" in event ? event.projectId : "";
@@ -338,7 +344,7 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
         person(event.member),
         t(" to "),
         list(event.listName),
-        ...(event.role && event.role !== "editor" ? [t(` as ${roleWords(event.role)}`)] : []),
+        ...(event.role && event.role !== "editor" ? [t(` as ${roleWords(event.role)}${onlyOf(event.onlyAssignedTo)}`)] : []),
       ];
     case "member.role":
       return [
@@ -346,13 +352,15 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
         person(event.member),
         t(` ${roleWords(event.role)} of `),
         list(event.listName),
+        ...(event.onlyAssignedTo ? [t(`, seeing only ${event.onlyAssignedTo.name}'s items`)] : []),
+        ...(event.seesAll ? [t(", seeing all of it")] : []),
         ...lostText(event.lost),
       ];
     case "member.joined":
       return [
         t("accepted invite to "),
         list(event.listName),
-        ...(event.role && event.role !== "editor" ? [t(` as ${roleWords(event.role)}`)] : []),
+        ...(event.role && event.role !== "editor" ? [t(` as ${roleWords(event.role)}${onlyOf(event.onlyAssignedTo)}`)] : []),
       ];
     case "member.declined":
       return [t("declined invite to "), list(event.listName)];
@@ -423,13 +431,13 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
         person(event.member),
         t(" to space "),
         space(event.space),
-        ...(event.role && event.role !== "member" ? [t(` as ${roleWords(event.role)}`)] : []),
+        ...(event.role && event.role !== "member" ? [t(` as ${roleWords(event.role)}${onlyOf(event.onlyAssignedTo)}`)] : []),
       ];
     case "space.member.joined":
       return [
         t("accepted invite to space "),
         space(event.space),
-        ...(event.role && event.role !== "member" ? [t(` as ${roleWords(event.role)}`)] : []),
+        ...(event.role && event.role !== "member" ? [t(` as ${roleWords(event.role)}${onlyOf(event.onlyAssignedTo)}`)] : []),
       ];
     case "space.member.declined":
       return [t("declined invite to space "), space(event.space)];
@@ -448,6 +456,8 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
         person(event.member),
         t(` ${roleWords(event.role)} of space `),
         space(event.space),
+        ...(event.onlyAssignedTo ? [t(`, seeing only ${event.onlyAssignedTo.name}'s items`)] : []),
+        ...(event.seesAll ? [t(", seeing all of it")] : []),
         ...lostText(event.lost),
       ];
     case "item.pr.linked":

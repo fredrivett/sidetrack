@@ -146,6 +146,7 @@ function SpaceCard({
   // What the next invite lets them do. Admins are made from members, not
   // invited as admins.
   const [role, setRole] = useState<Exclude<SpaceRole, "admin">>("member");
+  const [onlyMine, setOnlyMine] = useState(false);
   const [saving, start] = useTransition();
   const tap = useTapToConfirm();
 
@@ -179,6 +180,12 @@ function SpaceCard({
   }
 
   const admins = members.filter((m) => m.status === "accepted" && m.role === "admin");
+  // Whose items someone sees: yours, or another admin's, by name.
+  const limit = (m: SpaceMemberView) => {
+    if (m.onlyAssignedTo === null || m.onlyAssignedTo === viewerId) return { value: m.onlyAssignedTo !== null };
+    const by = members.find((p) => p.userId === m.onlyAssignedTo);
+    return { value: false, someoneElse: by ? displayName(by) : "someone else" };
+  };
   const lastAdmin = isAdmin && admins.length === 1;
 
   return (
@@ -248,7 +255,7 @@ function SpaceCard({
             e.preventDefault();
             const handle = person.trim();
             if (handle) {
-              save(() => inviteSpaceMemberAction(space.id, handle, role), `invite ${handle}`, () =>
+              save(() => inviteSpaceMemberAction(space.id, handle, role, role !== "member" && onlyMine), `invite ${handle}`, () =>
                 setPerson(""),
               );
             }
@@ -268,6 +275,7 @@ function SpaceCard({
             roles={INVITE_ROLES}
             scope="space"
             onChange={setRole}
+            onlyMine={{ value: onlyMine, onChange: setOnlyMine }}
           />
           <Button type="submit" size="sm" disabled={!person.trim()}>
             Invite
@@ -316,6 +324,14 @@ function SpaceCard({
                           `change ${displayName(m)}'s role`,
                         )
                       }
+                      onlyMine={{
+                        ...limit(m),
+                        onChange: (on) =>
+                          save(
+                            () => setSpaceMemberRoleAction(space.id, m.userId, m.role, on),
+                            `change what ${displayName(m)} sees`,
+                          ),
+                      }}
                     />
                   ) : (
                     m.role !== "member" && (
@@ -336,6 +352,14 @@ function SpaceCard({
                         `change ${displayName(m)}'s role`,
                       )
                     }
+                    onlyMine={{
+                      ...limit(m),
+                      onChange: (on) =>
+                        save(
+                          () => setSpaceMemberRoleAction(space.id, m.userId, m.role, on),
+                          `change what ${displayName(m)} sees`,
+                        ),
+                    }}
                   />
                 ) : (
                   m.role !== "member" && (

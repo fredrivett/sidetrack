@@ -263,10 +263,10 @@ export function setPrState(db: Db, userId: string, prUrlRaw: string, state: PrSt
     .where(inArray(itemPrLinks.id, links.map((l) => l.id)))
     .run();
   // Not audited, so announce it here: the PR badge shows on the board.
-  const lists = db
-    .selectDistinct({ projectId: items.projectId })
+  const linked = db
+    .selectDistinct({ id: items.id, projectId: items.projectId })
     .from(items)
     .where(inArray(items.id, links.map((l) => l.itemId)))
     .all();
-  for (const { projectId } of lists) announceChange({ actor: userId, projectId });
+  for (const { id, projectId } of linked) announceChange({ actor: userId, projectId, itemId: id });
 }
