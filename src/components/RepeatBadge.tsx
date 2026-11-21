@@ -1,7 +1,7 @@
 "use client";
 
 import { Repeat as RepeatIcon } from "lucide-react";
-import { nextDue, type Repeat, repeatLabel, repeatOnName } from "@/lib/repeat";
+import { nextDue, ordinal, type Repeat, repeatLabel, repeatOnName } from "@/lib/repeat";
 import { addDays, dayOf, type Due } from "@/lib/time";
 import { useToday } from "./use-day-start";
 
@@ -46,10 +46,11 @@ const EVERY_ONE = { day: "Daily", week: "Weekly", month: "Monthly" } as const;
 
 /**
  * A rule in a few words beside the repeat icon, which already says "every":
- * "Weekly", "2 weeks • weekends", "3 days".
+ * "Weekly", "2 weeks • weekends", "3 days", "Monthly • 1st".
  */
-export function shortLabel({ every, unit, on }: Repeat): string {
+export function shortLabel({ every, unit, on, day }: Repeat): string {
   const gap = every === 1 ? EVERY_ONE[unit] : `${every} ${unit}s`;
+  if (day) return `${gap} • ${ordinal(day)}`;
   return on ? `${gap} • ${repeatOnName(on)}` : gap;
 }
 

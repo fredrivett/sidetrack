@@ -41,6 +41,7 @@ const base: Item = {
   repeatEvery: null,
   repeatUnit: null,
   repeatOn: null,
+  repeatDay: null,
   position: "a0",
   number: 1,
   completedAt: null,

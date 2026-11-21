@@ -106,6 +106,23 @@ describe("tool output", () => {
     expect(done.data).toMatchObject({ repeat: { every: 2, unit: "day" }, comesBack: "2026-11-18" });
   });
 
+  it("takes and gives a monthly rule's day of the month", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const list = createProject(db, fred, { name: "Home" }, "web");
+    const call = await connectAs(fred);
+    const added = await call("add_item", {
+      list_id: list.id,
+      title: "Pay rent",
+      repeat: { every: 1, unit: "month", day: 1 },
+    });
+    expect((added.data.created as Record<string, unknown>).repeat).toEqual({ every: 1, unit: "month", day: 1 });
+    expect(added.data.created).not.toHaveProperty("repeatDay");
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-21T12:00:00Z"));
+    expect((await call("complete_item", { id: "HOM-1" })).data.comesBack).toBe("2026-12-01");
+  });
+
   it("counts the return day in UTC when the user's zone isn't known", async () => {
     const fred = createTestUser(db, { username: "fred" });
     const list = createProject(db, fred, { name: "Home" }, "web");

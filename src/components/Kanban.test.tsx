@@ -178,6 +178,7 @@ describe("Kanban, re-rendering rows", () => {
     repeatEvery: null,
     repeatUnit: null,
     repeatOn: null,
+    repeatDay: null,
     position: `a${n}`,
     number: n,
     completedAt: null,

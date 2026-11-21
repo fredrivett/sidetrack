@@ -84,6 +84,7 @@ const item = (title: string, dueDate: string | null, more: Partial<Item> = {}): 
   repeatEvery: null,
   repeatUnit: null,
   repeatOn: null,
+  repeatDay: null,
   position: `a${n}`,
   number: n,
   completedAt: null,

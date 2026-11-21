@@ -316,6 +316,9 @@ export const items = sqliteTable(
     // The days a weekly or monthly rule keeps to ("on weekends", "on
     // Saturdays"); null for any day, and always for a daily rule.
     repeatOn: text("repeat_on").$type<RepeatOn>(),
+    // The day of the month (1 to 31) a monthly rule keeps to ("on the 1st"),
+    // whenever it's done; null otherwise, and always alongside repeat_on.
+    repeatDay: integer("repeat_day"),
     completedAt: integer("completed_at"),
     createdAt: integer("created_at")
       .notNull()

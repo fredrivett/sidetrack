@@ -148,6 +148,7 @@ const Repeat = z.object({
   every: z.number().int().min(1).max(MAX_REPEAT_EVERY),
   unit: z.enum(REPEAT_UNITS),
   on: z.enum(REPEAT_ONS).nullable().optional(),
+  day: z.number().int().min(1).max(31).nullable().optional(),
 });
 const ListPosRef = z
   .string()
@@ -167,14 +168,15 @@ function forAgent(value: unknown, timeZone: string): unknown {
   if (value && Object.getPrototypeOf(value) === Object.prototype) {
     let obj = value as Record<string, unknown>;
     // An item's repeat rule goes out as one `repeat` field, the shape
-    // add_item and update_item take: { every, unit, on? }, or null. A finished
+    // add_item and update_item take: { every, unit, on?, day? }, or null. A finished
     // repeating item also says the day it comes back (the web's "Next: Tue").
     if ("repeatUnit" in obj && "repeatEvery" in obj) {
-      const { repeatEvery, repeatUnit, repeatOn, ...rest } = obj;
+      const { repeatEvery, repeatUnit, repeatOn, repeatDay, ...rest } = obj;
       const repeat = repeatOf({
         repeatEvery: repeatEvery as number | null,
         repeatUnit: repeatUnit as RepeatUnit | null,
         repeatOn: repeatOn as RepeatOn | null | undefined,
+        repeatDay: repeatDay as number | null | undefined,
       });
       obj = { ...rest, repeat };
       if (repeat && typeof obj.completedAt === "number") {
@@ -368,7 +370,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       title: "Get list",
       description:
         "Fetch a list with its items in position order. Pass include_completed: true to also return completed items. Works for archived lists too. " +
-        "A repeating item carries `repeat` ({ every, unit, on? }); a finished one also carries `comesBack`, the day it reopens. ",
+        "A repeating item carries `repeat` ({ every, unit, on?, day? }); a finished one also carries `comesBack`, the day it reopens. ",
       inputSchema: {
         id: z.string(),
         include_completed: z.boolean().optional(),
@@ -404,7 +406,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "- Do not show completed items in the tree.\n" +
         "- A task is a box-drawing branch, e.g. `├── Write the docs`.\n" +
         "- An item's sub-items (its checklist, in `children`) nest one level beneath it, e.g. `│   ├── Kitchen`.\n" +
-        "- A repeating item carries `repeat` ({ every, unit, on? }); a finished one also carries `comesBack`, the day it reopens. Mark a repeating item with its rule, e.g. `├── Water plants (every 3 days)` or `├── Clean the car (every 2 weeks on weekends)`.",
+        "- A repeating item carries `repeat` ({ every, unit, on?, day? }); a finished one also carries `comesBack`, the day it reopens. Mark a repeating item with its rule, e.g. `├── Water plants (every 3 days)` or `├── Clean the car (every 2 weeks on weekends)`.",
       inputSchema: {
         include_completed: z.boolean().optional(),
         include_archived: z.boolean().optional(),
@@ -442,7 +444,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Items carry assigneeIds, everyone they're assigned to; a joint item has several. " +
         "filter narrows to items assigned to the user, alone or jointly with others (mine), " +
         "assigned only to other people (theirs), or to nobody (unassigned). Every item falls under exactly one of the three.\n" +
-        "A repeating item carries `repeat` ({ every, unit, on? }); a finished one also carries `comesBack`, the day it reopens. " +
+        "A repeating item carries `repeat` ({ every, unit, on?, day? }); a finished one also carries `comesBack`, the day it reopens. " +
         "Show the user the items as a list with the list name, anything overdue marked, repeating ones with their rule, " +
         "and finished ones crossed out (a finished repeating one with the day it comes back), as on their screen.",
       inputSchema: { filter: Whose.optional() },
@@ -493,7 +495,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Items carry assigneeIds, everyone they're assigned to; a joint item has several. " +
         "filter narrows to items assigned to the user, alone or jointly with others (mine), " +
         "assigned only to other people (theirs), or to nobody (unassigned), as in list_today.\n" +
-        "A repeating item carries `repeat` ({ every, unit, on? }); a finished one also carries `comesBack`, the day it reopens. " +
+        "A repeating item carries `repeat` ({ every, unit, on?, day? }); a finished one also carries `comesBack`, the day it reopens. " +
         "Show the user the items grouped under each list name, sub-items indented, repeating ones with their rule, finished ones crossed out, as on their screen. " +
         "To give an item a date, call update_item with due_date.",
       inputSchema: { filter: Whose.optional() },
@@ -671,7 +673,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Fetch a single item by reference — its title, description, labels (names; see list_labels for their emoji), assignees (assigneeIds, user ids; empty when unassigned) and completion state, " +
         "plus its sub-items (its checklist) as `children`, finished ones included. A sub-item has a parentId. " +
         "Use this to answer a question about one item without pulling its whole list. " +
-        "A repeating item carries `repeat` ({ every, unit, on? }); a finished one also carries `comesBack`, the day it reopens. " +
+        "A repeating item carries `repeat` ({ every, unit, on?, day? }); a finished one also carries `comesBack`, the day it reopens. " +
         "`agents` lists the agents working on it now (open start_work sessions: agentName, threadUrl, note, lastActiveAt); " +
         "check it before starting work so you don't duplicate another agent's. " +
         "`comments` is its discussion, oldest first: each has body (Markdown), author (name, displayUsername), agentName when an agent wrote it for that person, createdAt and editedAt. " +
@@ -748,7 +750,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "assignee_id (one id) also works, for older prompts; don't pass both. " +
         "completed: true creates it already done, in one call — use it when the user tells you about something they've finished, " +
         "instead of add_item then complete_item. " +
-        "repeat makes a task come round again: { every, unit, on? } with unit day, week or month, e.g. { every: 3, unit: \"day\" } for every 3 days. " +
+        "repeat makes a task come round again: { every, unit, on?, day? } with unit day, week or month, e.g. { every: 3, unit: \"day\" } for every 3 days. " +
         "The next due date counts from the day it was last completed, not a fixed calendar: completing it leaves it crossed out for the rest of the day, " +
         "then on the day `every` units after the day it was done it reopens as the same item (same ref), due that day. " +
         "Its due date is only for this time: it comes back due on that one day, whatever it was due before. " +
@@ -757,6 +759,10 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "It then comes back on the first of those days from the day `every` units after it was done, or that weekend from its Saturday, " +
         "so { every: 2, unit: \"week\", on: \"weekend\" } done three days late on a Wednesday is due the weekend after the Wednesday two weeks on. " +
         "A month later keeps the day of the month, or the month's last day when that's shorter. " +
+        "To keep a monthly task to a fixed day of the month instead, set day (1 to 31, not with on), " +
+        "when the user names one (\"on the 1st of every month\", \"rent on the 28th\"): it then comes back on the next of that day after it's done, " +
+        "however early or late, then `every` - 1 months on, so { every: 1, unit: \"month\", day: 1 } done on 21 November is due 1 December. " +
+        "A month without that day (29 to 31) uses its last day. " +
         "position defaults to end (the bottom of the list, or of the parent's sub-items); top|end|after:<item>|before:<item> are also valid, " +
         "where <item> is a short ref (e.g. \"HOM-12\") or an id of a sibling (same list, same parent). " +
         "Returns { created, items } where items is every incomplete item in the list in position order " +
@@ -906,7 +912,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         DUE_SPAN +
         "Passing due_date without due_from makes it due that day alone. due_from without due_date changes when the span starts and keeps its due_date; " +
         "due_from: null makes it due on its due_date alone. " +
-        "repeat sets how often a task comes round again, { every, unit, on? } (see add_item); pass null to stop it repeating. " +
+        "repeat sets how often a task comes round again, { every, unit, on?, day? } (see add_item); pass null to stop it repeating. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id. " +
         "Returns { updated, items } where items is every incomplete item in the item's list in position order " +
         "(so a completed item is in updated but not items).\n" +
@@ -1007,7 +1013,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Mark an item as completed. It keeps its place in the list: the user sees it crossed out for the rest of the day " +
         "(the day turns over at 4am their time), then it moves to the list's Done section. " +
         "Completing an item with sub-items also completes its open sub-items; completing a parent's last open sub-item completes the parent too. " +
-        "A repeating item (one with a repeat rule) reopens by itself on its next due date: `every` units after the day it was completed (then its rule's next weekday or weekend, if it has `on`). " +
+        "A repeating item (one with a repeat rule) reopens by itself on its next due date: `every` units after the day it was completed (then its rule's next weekday or weekend, if it has `on`), or, with `day`, the next of that day of the month. " +
         "The result then carries `comesBack`, that day (YYYY-MM-DD); tell the user when it'll be back. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: { id: z.string() },

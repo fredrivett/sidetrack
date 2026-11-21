@@ -463,6 +463,13 @@
       "when": 1795184491015,
       "tag": "0065_two_factor",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "6",
+      "when": 1795227723358,
+      "tag": "0066_repeat_day",
+      "breakpoints": true
     }
   ]
 }
