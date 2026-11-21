@@ -316,6 +316,7 @@ export function LabelPicker({
 export function LabelChips({
   projectId,
   value,
+  suggested = false,
   onChange,
   draftEmoji,
   onDraftEmoji,
@@ -325,6 +326,8 @@ export function LabelChips({
 }: {
   projectId: string;
   value: string[];
+  /** `value` is Jev's suggestion, not picked yet: its chips show dashed. */
+  suggested?: boolean;
   /** The item's labels changed: the names, and the emoji for new ones. */
   onChange: (names: string[], added?: { name: string; emoji?: LabelEmoji }) => void;
   draftEmoji: Record<string, LabelEmoji>;
@@ -351,7 +354,7 @@ export function LabelChips({
             disabled={disabled}
             onRemove={() => remove(name)}
             onRenamed={onRenamed && ((to) => onRenamed(name, to))}
-            className="rounded-full pl-2"
+            className={cn("rounded-full pl-2", suggested && "border-dashed text-muted-foreground")}
           />
         ) : (
           // A new label until the list has it: its emoji as typed.

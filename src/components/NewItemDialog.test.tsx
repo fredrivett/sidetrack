@@ -4,6 +4,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { addItemAction } from "@/app/actions";
 import type { Item } from "@/core/schema";
 import type { ProjectView } from "./Kanban";
+import type { AssigneeView } from "@/core/members";
+import { aiRead } from "./ai-read";
 import { NewItemDialog } from "./NewItemDialog";
 
 vi.mock("@/app/actions", () => ({
@@ -32,13 +34,26 @@ afterEach(() => {
 
 const home = { id: "p1", name: "Home", refPrefix: "HOM", icon: null, status: "active" } as unknown as ProjectView;
 
-const dialog = (dueToday?: boolean, open = true) => (
+const person = (userId: string, name: string): AssigneeView => ({
+  userId,
+  name,
+  username: name.toLowerCase(),
+  displayUsername: null,
+  email: null,
+  image: null,
+  isOwner: userId === "me",
+  canEdit: true,
+});
+const me = person("me", "Fred");
+const bob = person("bob", "Bob");
+
+const dialog = (dueToday?: boolean, open = true, people: AssigneeView[] = []) => (
   <NewItemDialog
     open={open}
     onOpenChange={() => {}}
     onOpenItem={() => {}}
     projects={[home]}
-    assigneesByProject={{}}
+    assigneesByProject={{ p1: people }}
     viewerId="me"
     initialProjectId="p1"
     dueToday={dueToday}
@@ -107,5 +122,96 @@ describe("NewItemDialog", () => {
     const { rerender } = render(dialog(undefined, false));
     rerender(dialog());
     expect(screen.getByRole("button", { name: "Due date" })).toBeTruthy();
+  });
+
+  it("fills in Jev's suggestions only where nothing's picked, until they're cleared", async () => {
+    vi.mocked(aiRead).mockResolvedValueOnce({
+      projectId: "p1",
+      duplicate: null,
+      parent: null,
+      due: "tomorrow",
+      repeat: { every: 1, unit: "week" },
+      label: null,
+      assigneeId: "bob",
+      titleParts: [],
+    });
+    const { rerender } = render(dialog(undefined, false, [me, bob]));
+    rerender(dialog(undefined, true, [me, bob]));
+    const dueChip = () => screen.getByRole("button", { name: /^Due/ });
+    const repeatChip = () => screen.getByRole("button", { name: /Repeat|Weekly/ });
+    const assigneeChip = () => screen.getByRole("button", { name: /Unassigned|Bob/ });
+    // Picked before Jev answers, so Jev's date mustn't replace it.
+    fireEvent.click(dueChip());
+    fireEvent.click(screen.getByRole("button", { name: "Today" }));
+    fireEvent.change(screen.getByPlaceholderText("Add a task…"), { target: { value: "Bins out" } });
+    await act(() => new Promise((r) => setTimeout(r, 500)));
+    expect(dueChip().textContent).toBe("Due Today");
+    expect(repeatChip().title).toBe("Suggested by Jev");
+    expect(assigneeChip().textContent).toMatch(/Bob$/);
+    expect(assigneeChip().title).toMatch(/suggested by Jev/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear suggestions" }));
+    expect(repeatChip().textContent).toBe("Repeat");
+    expect(assigneeChip().textContent).toBe("Unassigned");
+    expect(dueChip().textContent).toBe("Due Today");
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: /Add item/ })));
+    expect(vi.mocked(addItemAction)).toHaveBeenLastCalledWith(
+      expect.objectContaining({ dueDate: "2026-11-14", repeat: null, assigneeIds: [] }),
+    );
+  });
+
+  it("assigns you on a list only you can edit, unless you unassign yourself", async () => {
+    const { rerender } = render(dialog(undefined, false, [me, { ...bob, canEdit: false }]));
+    rerender(dialog(undefined, true, [me, { ...bob, canEdit: false }]));
+    expect(screen.getByRole("button", { name: "Fred" })).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText("Add a task…"), { target: { value: "Water plants" } });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: /Add & create more/ })));
+    expect(vi.mocked(addItemAction)).toHaveBeenLastCalledWith(
+      expect.objectContaining({ assigneeIds: ["me"] }),
+    );
+  });
+
+  it("adds without the title's parts that set its fields, unless one disagrees with a pick", async () => {
+    const bins = "put the bins out tomorrow and every monday";
+    vi.mocked(aiRead).mockResolvedValue({
+      projectId: "p1",
+      duplicate: null,
+      parent: null,
+      due: null,
+      repeat: null,
+      label: null,
+      assigneeId: null,
+      titleParts: [
+        { field: "due", due: { dueFrom: null, dueDate: "2026-11-15" }, text: "tomorrow", remove: true },
+        { field: "repeat", repeat: { every: 1, unit: "week", on: "mon" }, text: "every monday", remove: true },
+      ],
+    });
+    render(dialog());
+    const title = () => screen.getByPlaceholderText<HTMLInputElement>("Add a task…");
+    fireEvent.change(title(), { target: { value: `TODO ${bins}` } });
+    await act(() => new Promise((r) => setTimeout(r, 500)));
+    // What's typed stays in the field; the line under it says what's added.
+    expect(title().value).toBe(`TODO ${bins}`);
+    expect(document.body.textContent).toContain("Adds as “Put the bins out”");
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: /Add & create more/ })));
+    expect(vi.mocked(addItemAction)).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        title: "Put the bins out",
+        dueDate: "2026-11-15",
+        repeat: { every: 1, unit: "week", on: "mon" },
+      }),
+    );
+
+    // Today picked first: \"tomorrow\" disagrees, so it stays and today stands.
+    fireEvent.click(screen.getByRole("button", { name: "Due date" }));
+    fireEvent.click(screen.getByRole("button", { name: "Today" }));
+    fireEvent.change(title(), { target: { value: bins } });
+    await act(() => new Promise((r) => setTimeout(r, 500)));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: /Add item/ })));
+    expect(vi.mocked(addItemAction)).toHaveBeenLastCalledWith(
+      expect.objectContaining({ title: "put the bins out tomorrow", dueDate: "2026-11-14" }),
+    );
+    vi.mocked(aiRead).mockReset();
+    vi.mocked(aiRead).mockImplementation(() => new Promise(() => {}));
   });
 });

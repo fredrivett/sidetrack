@@ -4,6 +4,8 @@ import { listIconContext } from "@/core/autoEmoji";
 import { listAccessById } from "@/core/access";
 import type { Db } from "@/core/db";
 import { feedbackFollowUps } from "@/core/feedback";
+import { listLabels } from "@/core/labels";
+import { type AssigneeView, listAssignees } from "@/core/members";
 import { projectRefPrefixes } from "@/core/itemRef";
 import { getProject, getProjectWithItems, listProjects, sampleOpenItemTitles } from "@/core/projects";
 import { getTimeZone } from "@/core/users";
@@ -11,7 +13,9 @@ import { suggestDayTags } from "@/lib/dayTags";
 import { suggestEmoji, suggestLabelEmoji } from "@/lib/emojiSuggest";
 import { getEnv } from "@/lib/env";
 import { formatItemRef } from "@/lib/itemRef";
-import { checkDraftItem, suggestList } from "@/lib/itemSuggest";
+import { askAboutDraft, type DraftAnswers } from "@/lib/itemSuggest";
+import { isDay } from "@/lib/time";
+import { askTitleParts } from "@/lib/titleParse";
 
 // The reads that ask an AI (Jev or Claude), served by /api/ai/[read] rather
 // than as Server Actions: Next runs a page's Server Actions one at a time,
@@ -33,6 +37,13 @@ function read<I extends z.ZodType, R>(
   run: (input: z.output<I>, ctx: ReadContext) => Promise<R>,
 ) {
   return { input, run };
+}
+
+/** Someone who can do a task, as the AI reads them. */
+function personName(p: AssigneeView, viewerId: string): string {
+  return [p.name || p.displayUsername || p.username || p.email, p.userId === viewerId && "(the person writing this task)"]
+    .filter(Boolean)
+    .join(" ");
 }
 
 // Well beyond anything typed into the app: these only bound what one
@@ -65,48 +76,111 @@ export const AI_READS = {
 
   /**
    * Suggestions for an item being written in the New item dialog: the list
-   * it fits (when none was chosen), and an open item in that list it repeats
-   * or is a step of. Nothing is applied; the dialog shows them.
+   * it fits (when none was chosen), an open item in that list it repeats or
+   * is a step of, and what to fill in: when it's due, how it repeats, one of
+   * the list's labels and who on it does it, and the parts of the title
+   * that say any of these (`titleParts`, read by Claude from the viewer's
+   * `today`). Nothing is applied; the dialog shows them.
    */
   newItem: read(
-    z.object({ projectId: id.nullable(), title: text, description: text }),
+    z.object({
+      projectId: id.nullable(),
+      title: text,
+      description: text,
+      today: z.string().refine(isDay).nullable().optional(),
+    }),
     async (input, ctx) => {
       const { db, userId } = ctx;
-      const apiKey = getEnv().TYPESAFE_API_KEY;
+      const { TYPESAFE_API_KEY: apiKey, ANTHROPIC_API_KEY } = getEnv();
       const draft = { title: input.title.trim(), description: input.description.trim() };
-      const nothing = { projectId: null, duplicate: null, parent: null };
-      if (!apiKey || !draft.title) return nothing;
-      let projectId = input.projectId;
-      if (!projectId) {
-        const titles = sampleOpenItemTitles(db, userId, 10);
-        // Only lists they can add to: not ones they view or comment on.
+      const editable = () => {
         const access = listAccessById(db, userId);
-        const lists = listProjects(db, userId)
-          .filter((p) => p.status === "active" && access.get(p.id) === "edit")
-          .map((p) => ({
-            id: p.id,
-            name: p.name,
-            summary: p.summary,
-            itemTitles: titles.get(p.id) ?? [],
-          }));
-        projectId = await suggestList(draft, lists, apiKey, ctx.fetch);
-        if (!projectId) return nothing;
-      }
-      const found = getProjectWithItems(db, userId, projectId);
-      if (!found) return nothing;
-      const { duplicateId, parentId } = await checkDraftItem(
-        draft,
-        found.items.map((it) => ({ id: it.id, title: it.title, topLevel: !it.parentId })),
-        apiKey,
-        ctx.fetch,
-      );
-      // The ref as the board shows it: owner-qualified when the prefix clashes.
-      const prefix = projectRefPrefixes(db, userId)[projectId] ?? found.project.prefix;
-      const hint = (id: string | null) => {
-        const it = found.items.find((i) => i.id === id);
-        return it ? { id: it.id, ref: formatItemRef(prefix, it.number), title: it.title } : null;
+        return listProjects(db, userId).filter(
+          (p) => p.status === "active" && access.get(p.id) === "edit",
+        );
       };
-      return { projectId, duplicate: hint(duplicateId), parent: hint(parentId) };
+      // Read alongside Jev's answers, so it adds no wait of its own.
+      const titleParts =
+        ANTHROPIC_API_KEY && input.today && draft.title
+          ? askTitleParts(
+              draft.title,
+              {
+                today: input.today,
+                lists: editable().map((p) => ({ id: p.id, name: p.name })),
+                labels: input.projectId ? listLabels(db, userId, input.projectId).map((l) => l.name) : [],
+                people: input.projectId
+                  ? listAssignees(db, userId, input.projectId)
+                      .filter((a) => a.canEdit)
+                      .map((a) => ({ id: a.userId, name: personName(a, userId) }))
+                  : [],
+              },
+              ANTHROPIC_API_KEY,
+              ctx.fetch,
+            )
+          : Promise.resolve([]);
+      const [suggestion, parts] = await Promise.all([suggest(), titleParts]);
+      return { ...suggestion, titleParts: parts };
+
+      async function suggest() {
+        const nothing = {
+          projectId: null,
+          duplicate: null,
+          parent: null,
+          due: null,
+          repeat: null,
+          label: null,
+          assigneeId: null,
+        };
+        if (!apiKey || !draft.title) return nothing;
+        let projectId = input.projectId;
+        // When it's due and how it repeats don't depend on the list, so
+        // they're asked along with the list when there's one to find.
+        let timing: Pick<DraftAnswers, "due" | "repeat"> | null = null;
+        if (!projectId) {
+          const titles = sampleOpenItemTitles(db, userId, 10);
+          // Only lists they can add to: not ones they view or comment on.
+          const lists = editable()
+            .map((p) => ({
+              id: p.id,
+              name: p.name,
+              summary: p.summary,
+              itemTitles: titles.get(p.id) ?? [],
+            }));
+          const found = await askAboutDraft(draft, { lists, timing: true }, apiKey, ctx.fetch);
+          timing = { due: found.due, repeat: found.repeat };
+          projectId = found.listId;
+          if (!projectId) return { ...nothing, ...timing };
+        }
+        const found = getProjectWithItems(db, userId, projectId);
+        if (!found) return { ...nothing, ...timing };
+        const labels = listLabels(db, userId, projectId);
+        const people = listAssignees(db, userId, projectId).filter((a) => a.canEdit);
+        const answers = await askAboutDraft(
+          draft,
+          {
+            items: found.items.map((it) => ({ id: it.id, title: it.title, topLevel: !it.parentId })),
+            labels: labels.map((l) => ({ id: l.id, name: l.name })),
+            people: people.map((p) => ({ id: p.userId, name: personName(p, userId) })),
+            timing: !timing,
+          },
+          apiKey,
+          ctx.fetch,
+        );
+        // The ref as the board shows it: owner-qualified when the prefix clashes.
+        const prefix = projectRefPrefixes(db, userId)[projectId] ?? found.project.prefix;
+        const hint = (id: string | null) => {
+          const it = found.items.find((i) => i.id === id);
+          return it ? { id: it.id, ref: formatItemRef(prefix, it.number), title: it.title } : null;
+        };
+        return {
+          projectId,
+          duplicate: hint(answers.duplicateId),
+          parent: hint(answers.parentId),
+          ...(timing ?? { due: answers.due, repeat: answers.repeat }),
+          label: labels.find((l) => l.id === answers.labelId)?.name ?? null,
+          assigneeId: answers.assigneeId,
+        };
+      }
     },
   ),
 
