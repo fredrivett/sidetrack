@@ -15,7 +15,8 @@ import { helloNow } from "@/components/AgendaGreeting";
 import { AgendaView } from "@/components/AgendaView";
 import { AgentSessionsProvider } from "@/components/agent-sessions";
 import { AuditDialog } from "@/components/AuditDialog";
-import { BoardHeader, BoardRail, ColumnCard } from "@/components/BoardLayout";
+import { BoardHeader, BoardRail, HeaderRule, ColumnCard } from "@/components/BoardLayout";
+import { cn } from "@/lib/utils";
 import { DoneView } from "@/components/DoneView";
 import { FilterMenu } from "@/components/FilterMenu";
 import { type ItemSaves, ItemSavesContext } from "@/components/item-saves";
@@ -753,11 +754,12 @@ export function PreviewBoard({
               <button
                 type="button"
                 onClick={() => setActivityOpen(true)}
-                className={buttonVariants({ variant: "outline", size: "sm" })}
+                className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "text-muted-foreground")}
               >
                 <History />
                 <span className="hidden sm:inline">Activity</span>
               </button>
+              <HeaderRule />
               <UserMenu
                 user={FRED}
                 archivedCount={0}

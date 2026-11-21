@@ -32,7 +32,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AddProjectButton } from "./AddProjectButton";
 import { AuditDialog } from "./AuditDialog";
-import { BoardHeader, BoardMain, BoardRail } from "./BoardLayout";
+import { BoardHeader, HeaderRule, BoardMain, BoardRail } from "./BoardLayout";
 import { CommandPalette } from "./CommandPalette";
 import { AgendaView } from "./AgendaView";
 import { DoneView } from "./DoneView";
@@ -781,8 +781,9 @@ export function Kanban({
               <TooltipTrigger
                 render={
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
+                    className="text-muted-foreground"
                     aria-label="Send feedback"
                     aria-keyshortcuts="!"
                     onClick={() => {
@@ -832,6 +833,7 @@ export function Kanban({
               );
             }}
           />
+          <HeaderRule />
           <UserMenu
             user={viewer}
             archivedCount={archived.length}

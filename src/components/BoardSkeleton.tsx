@@ -1,4 +1,4 @@
-import { BoardHeader, BoardMain, BoardRail, ColumnCard } from "./BoardLayout";
+import { BoardHeader, BoardMain, HeaderRule, BoardRail, ColumnCard } from "./BoardLayout";
 import type { BoardView } from "./Kanban";
 
 // The board page while it loads: the real frame from BoardLayout with grey
@@ -178,6 +178,7 @@ export function BoardSkeleton({ view }: { view: BoardView }) {
             (BoardHeader). */}
         <Bone className="h-7 w-7 rounded-md sm:w-[98px] touch:h-9 touch:w-9 touch:sm:w-20" />
         <Bone className="h-7 w-7 rounded-md sm:w-9 touch:h-9 touch:w-9 touch:sm:w-[42px]" />
+        <HeaderRule />
         <Bone className="size-7 rounded-full touch:size-9" />
       </BoardHeader>
       {view === "brief" || view === "done" ? (

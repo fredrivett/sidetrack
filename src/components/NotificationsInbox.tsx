@@ -77,23 +77,25 @@ export function NotificationsInbox({
           render={
             <PopoverTrigger
               render={
+                // Quiet, like the header's other icons, until something's
+                // unseen: then it's filled, with a dot on the bell. The count
+                // is in its label and inside, not on it.
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
                   aria-label={unread.length ? `Notifications, ${unread.length} unread` : "Notifications"}
                   aria-keyshortcuts="N"
-                  className="relative"
+                  className={cn(
+                    "relative",
+                    unread.length > 0 ? "bg-muted text-foreground dark:bg-muted/50" : "text-muted-foreground",
+                  )}
                 >
                   <Bell />
                   {unread.length > 0 && (
                     <span
                       aria-hidden
-                      // On phones the button has no border, so the count
-                      // sits on the bell rather than the box's corner.
-                      className="absolute -top-1.5 -right-1.5 max-sm:top-0 max-sm:right-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] leading-none font-semibold text-white tabular-nums ring-2 ring-background"
-                    >
-                      {unread.length > 9 ? "9+" : unread.length}
-                    </span>
+                      className="absolute top-1 right-1.5 size-2 rounded-full bg-red-500 ring-2 ring-background touch:top-1.5 touch:right-2"
+                    />
                   )}
                 </Button>
               }
