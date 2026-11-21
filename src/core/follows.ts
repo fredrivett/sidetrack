@@ -1,5 +1,5 @@
 import { and, eq, inArray, or } from "drizzle-orm";
-import { hasProjectAccess } from "./access";
+import { hasItemAccess } from "./access";
 import type { Db } from "./db";
 import { getItem } from "./items";
 import { itemFollows, items, projects } from "./schema";
@@ -73,7 +73,7 @@ export function listFollowedItemIds(db: Db, userId: string): string[] {
     .from(itemFollows)
     .innerJoin(items, eq(items.id, itemFollows.itemId))
     .innerJoin(projects, eq(projects.id, items.projectId))
-    .where(and(eq(itemFollows.userId, userId), hasProjectAccess(userId)))
+    .where(and(eq(itemFollows.userId, userId), hasItemAccess(userId)))
     .all();
   const choice = new Map(own.map((r) => [r.itemId, r.following]));
   const followed = own.filter((r) => r.following).map((r) => r.itemId);

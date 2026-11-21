@@ -7,7 +7,7 @@ import { getPostHog } from "../lib/posthog";
 import { isEmoji } from "../lib/projectIcon";
 import { dayOf } from "../lib/time";
 import { type PushMessage, sendPush } from "../lib/push";
-import { hasProjectAccess, listAccess, listMemberIds } from "./access";
+import { canSeeItem, hasItemAccess, hasProjectAccess, listAccess, listMemberIds } from "./access";
 import { users } from "./auth-schema";
 import { onChanges } from "./changes";
 import type { Db } from "./db";
@@ -116,13 +116,14 @@ function rule(
   db: Db,
   event: ChangeEvent,
   actor: string,
-): { to: Recipient[]; groupKey: string; projectId?: string; spaceId?: string } | null {
+): { to: Recipient[]; groupKey: string; projectId?: string; spaceId?: string; itemId?: string } | null {
   const as = (reason: NotificationReason, userIds: string[]): Recipient[] =>
     userIds.map((userId) => ({ userId, reason }));
   const onItem = (itemId: string, projectId: string, to: Recipient[]) => ({
     to,
     groupKey: `item:${itemId}`,
     projectId,
+    itemId,
   });
   const followers = (itemId: string) => as("following", followersOf(db, itemId));
   // Who hears that someone was invited to or joined a list or Space:
@@ -329,7 +330,7 @@ export function writeNotifications(
     const had = best.get(userId);
     if (!had || strength(reason) < strength(had)) best.set(userId, reason);
   }
-  const { projectId, spaceId } = r;
+  const { projectId, spaceId, itemId } = r;
   // An invitee is told before they can open the place they're invited to.
   const to = [...best].filter(
     ([u, reason]) =>
@@ -341,6 +342,8 @@ export function writeNotifications(
           .from(projects)
           .where(and(eq(projects.id, projectId), hasProjectAccess(u)))
           .get()) &&
+      // Someone shown only part of the list hears only of what they see.
+      (reason === "invited" || !itemId || !projectId || canSeeItem(db, u, itemId, projectId)) &&
       (reason === "invited" || !spaceId || inSpace(db, u, spaceId)),
   );
   // Each at the level they chose for where it happened.
@@ -619,7 +622,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           })
           .from(items)
           .innerJoin(projects, eq(projects.id, items.projectId))
-          .where(and(inArray(items.id, itemIds), hasProjectAccess(userId)))
+          .where(and(inArray(items.id, itemIds), hasItemAccess(userId)))
           .all()
       : []
     ).map((r) => [r.id, r]),

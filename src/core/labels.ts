@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { isEmoji } from "@/lib/projectIcon";
-import { hasProjectAccess, requireListAccess } from "./access";
+import { hasItemAccess, hasProjectAccess, requireListAccess } from "./access";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
 import type { ChangeEvent } from "./events";
@@ -283,7 +283,9 @@ export function listLabelUsage(
       labels: items.labels,
     })
     .from(items)
-    .where(eq(items.projectId, projectId))
+    .innerJoin(projects, eq(projects.id, items.projectId))
+    // Only the items they can see: shown part of the list, the rest isn't counted.
+    .where(and(eq(items.projectId, projectId), hasItemAccess(userId)))
     .orderBy(desc(items.completedAt), asc(items.number))
     .all();
   return Object.fromEntries(

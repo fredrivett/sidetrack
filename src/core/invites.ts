@@ -54,12 +54,12 @@ export function invitePeople(
           ? {
               kind: "list",
               placeId: place.id,
-              member: inviteMember(tx as unknown as Db, userId, place.id, person, source, place.role, inviteId),
+              member: inviteMember(tx as unknown as Db, userId, place.id, person, source, place.role, { inviteId }),
             }
           : {
               kind: "space",
               placeId: place.id,
-              member: inviteSpaceMember(tx as unknown as Db, userId, place.id, person, source, place.role, inviteId),
+              member: inviteSpaceMember(tx as unknown as Db, userId, place.id, person, source, place.role, { inviteId }),
             },
       ),
     ),

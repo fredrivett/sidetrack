@@ -9,7 +9,7 @@ import { isYours } from "../lib/filters";
 import { formatItemRef } from "../lib/itemRef";
 import { nestItems } from "../lib/itemTree";
 import { addDays, agendaSection, dayOf, weekSpan } from "../lib/time";
-import { hasProjectAccess } from "./access";
+import { hasItemAccess } from "./access";
 import type { Db } from "./db";
 import { getDayNote } from "./dayNotes";
 import { listAssignees } from "./members";
@@ -134,7 +134,7 @@ export function buildAgendaBrief(
     .innerJoin(projects, eq(projects.id, items.projectId))
     .where(
       and(
-        hasProjectAccess(viewerId),
+        hasItemAccess(viewerId),
         eq(projects.status, "active"),
         or(isNull(items.completedAt), gte(items.completedAt, doneFrom)),
       ),

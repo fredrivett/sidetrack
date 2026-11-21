@@ -168,6 +168,8 @@ export type ChangeEvent =
       role?: ListRole;
       /** Set when one invite covered several places or people (invitePeople). */
       inviteId?: string;
+      /** Set when they'll see only the items assigned to this person. */
+      onlyAssignedTo?: PersonAt;
     }
   /** The list's owner changed what a member can do on it. */
   | {
@@ -254,6 +256,8 @@ export type ChangeEvent =
       role?: SpaceRole;
       /** Set when one invite covered several places or people (invitePeople). */
       inviteId?: string;
+      /** Set when they'll see only the items assigned to this person. */
+      onlyAssignedTo?: PersonAt;
     }
   | {
       type: "space.member.joined" | "space.member.declined";

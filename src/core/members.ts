@@ -113,10 +113,18 @@ export function inviteMember(
   handle: string,
   source: AuditOrigin,
   role: ListRole = "editor",
-  /** Shared by each place one invite (invitePeople) covers. */
-  inviteId?: string,
+  opts: {
+    /** Shared by each place one invite (invitePeople) covers. */
+    inviteId?: string;
+    /** They'll see only the items assigned to the inviter ("only my tasks"). */
+    onlyMine?: boolean;
+  } = {},
 ): MemberView {
   assertListRole(role);
+  const { inviteId, onlyMine } = opts;
+  if (onlyMine && role === "editor") {
+    throw new Error("only viewers and commenters can be shown just your items");
+  }
   const project = getProject(db, userId, projectId);
   if (!project) throw new Error(`list not found: ${projectId}`);
   if (project.userId !== userId) {
@@ -150,7 +158,14 @@ export function inviteMember(
   const id = nanoid(12);
   db.transaction((tx) => {
     tx.insert(projectMembers)
-      .values({ id, projectId, userId: target.id, status: "pending", role })
+      .values({
+        id,
+        projectId,
+        userId: target.id,
+        status: "pending",
+        role,
+        onlyAssignedTo: onlyMine ? userId : null,
+      })
       .run();
     recordAudit(tx as unknown as Db, {
       actor: userId,
@@ -163,6 +178,7 @@ export function inviteMember(
         member: personAt(target),
         role,
         ...(inviteId ? { inviteId } : {}),
+        ...(onlyMine ? { onlyAssignedTo: personAt(getUserById(tx as unknown as Db, userId) ?? { id: userId, username: null }) } : {}),
       },
     });
   });
@@ -206,7 +222,12 @@ export function setMemberRole(
   if (membership.role === role) return;
   const target = getUserById(db, targetUserId);
   db.transaction((tx) => {
-    tx.update(projectMembers).set({ role }).where(eq(projectMembers.id, membership.id)).run();
+    // An editor sees the whole list: an edit (a sort, a move) reaches items
+    // they couldn't otherwise see.
+    tx.update(projectMembers)
+      .set(role === "editor" ? { role, onlyAssignedTo: null } : { role })
+      .where(eq(projectMembers.id, membership.id))
+      .run();
     const lost = revokeListAccess(tx as unknown as Db, targetUserId, projectId);
     recordAudit(tx as unknown as Db, {
       actor: userId,

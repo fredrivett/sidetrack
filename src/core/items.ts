@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, type SQL, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { hasProjectAccess, listAccess, requireListAccess } from "./access";
+import { hasItemAccess, hasProjectAccess, listAccess, requireListAccess } from "./access";
 import { users } from "./auth-schema";
 import { type AuditOrigin, recordAudit, SYSTEM_ACTOR } from "./audit";
 import { ensureLabels, type LabelEmoji, normalizeLabelNames } from "./labels";
@@ -30,7 +30,7 @@ import { agentSessions, type Item, items, projects } from "./schema";
 // string drop the id filter and match an arbitrary accessible item. The only
 // caller always has an id, so require it and always filter on it.
 function accessibleItemWhere(userId: string, itemId: string) {
-  return and(hasProjectAccess(userId), eq(items.id, itemId));
+  return and(hasItemAccess(userId), eq(items.id, itemId));
 }
 
 function accessibleProjectWhere(userId: string, projectId: string) {
@@ -76,7 +76,7 @@ export function listItems(
 ): Item[] {
   const baseConds = [
     eq(items.projectId, projectId),
-    hasProjectAccess(userId),
+    hasItemAccess(userId),
   ];
   if (!opts.includeCompleted) baseConds.push(isNull(items.completedAt));
   else if (opts.completedSince !== undefined) {
@@ -115,7 +115,7 @@ export function listDoneBefore(
   const query = opts.query?.trim().toLowerCase();
   // A ref, optionally qualified ("alice/SID-12"), by its list's prefix.
   const ref = query ? /^(?:.*\/)?([a-z]+)-(\d+)$/.exec(query) : null;
-  const inLists = and(hasProjectAccess(userId), ne(projects.status, "archived"));
+  const inLists = and(hasItemAccess(userId), ne(projects.status, "archived"));
   const finished = (...where: SQL[]) =>
     and(
       inLists,
@@ -268,7 +268,7 @@ export function listSubItems(db: Db, userId: string, parentId: string): Item[] {
     .select({ items })
     .from(items)
     .innerJoin(projects, eq(projects.id, items.projectId))
-    .where(and(eq(items.parentId, parentId), hasProjectAccess(userId)))
+    .where(and(eq(items.parentId, parentId), hasItemAccess(userId)))
     .orderBy(asc(items.position), asc(items.id))
     .all()
     .map((row) => row.items);
@@ -774,7 +774,7 @@ export function reopenDueRepeats(
     .innerJoin(projects, eq(projects.id, items.projectId))
     .where(
       and(
-        hasProjectAccess(userId),
+        hasItemAccess(userId),
         ne(projects.status, "archived"),
         isNotNull(items.repeatUnit),
         isNotNull(items.completedAt),

@@ -263,11 +263,19 @@ export function inviteSpaceMember(
   handle: string,
   source: AuditOrigin,
   role: Exclude<SpaceRole, "admin"> = "member",
-  /** Shared by each place one invite (invitePeople) covers. */
-  inviteId?: string,
+  opts: {
+    /** Shared by each place one invite (invitePeople) covers. */
+    inviteId?: string;
+    /** They'll see only the items assigned to the inviter ("only my tasks"). */
+    onlyMine?: boolean;
+  } = {},
 ): SpaceMemberView {
   const { space } = requireAdmin(db, userId, spaceId, "invite people");
   if (!["member", "commenter", "viewer"].includes(role)) throw new Error(`invalid role: ${role}`);
+  const { inviteId, onlyMine } = opts;
+  if (onlyMine && role === "member") {
+    throw new Error("only viewers and commenters can be shown just your items");
+  }
   const target = findUserByHandle(db, handle);
   if (!target) throw new Error(`no account found for "${handle.trim()}"`);
   const existing = membershipOf(db, target.id, spaceId);
@@ -282,7 +290,15 @@ export function inviteSpaceMember(
   const now = Date.now();
   db.transaction((tx) => {
     tx.insert(spaceMembers)
-      .values({ id, spaceId, userId: target.id, status: "pending", role, createdAt: now })
+      .values({
+        id,
+        spaceId,
+        userId: target.id,
+        status: "pending",
+        role,
+        createdAt: now,
+        onlyAssignedTo: onlyMine ? userId : null,
+      })
       .run();
     recordAudit(tx as unknown as Db, {
       actor: userId,
@@ -294,6 +310,7 @@ export function inviteSpaceMember(
         member: personAt(target),
         role,
         ...(inviteId ? { inviteId } : {}),
+        ...(onlyMine ? { onlyAssignedTo: personAt(tx.select().from(users).where(eq(users.id, userId)).get() ?? { id: userId, username: null }) } : {}),
       },
     });
   });
@@ -453,7 +470,12 @@ export function setSpaceMemberRole(
   if (membership.role === role) return;
   const target = db.select().from(users).where(eq(users.id, targetUserId)).get();
   db.transaction((tx) => {
-    tx.update(spaceMembers).set({ role }).where(eq(spaceMembers.id, membership.id)).run();
+    // Members and admins see every list whole: an edit (a sort, a move)
+    // reaches items they couldn't otherwise see.
+    tx.update(spaceMembers)
+      .set(role === "member" || role === "admin" ? { role, onlyAssignedTo: null } : { role })
+      .where(eq(spaceMembers.id, membership.id))
+      .run();
     // As in removeSpaceMember: checked after the write, inside the transaction.
     if (adminCount(tx as unknown as Db, spaceId) === 0) {
       throw new Error("the space needs an admin: make someone else an admin first");

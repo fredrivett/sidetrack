@@ -14,7 +14,7 @@ import { addDays, dayOf } from "../lib/time";
 import { type GreetingLength, type GreetingPrefs, LENGTH_LIMITS } from "../lib/greetingPrefs";
 import { type AgendaBrief, type BriefItem, buildAgendaBrief, type PartOfDay } from "./agendaBrief";
 import type { Db } from "./db";
-import { hasProjectAccess } from "./access";
+import { hasItemAccess } from "./access";
 import { agendaGreetings, items, projects } from "./schema";
 import { getAgendaReadAt, getGreetingPrefs, getProfile } from "./users";
 
@@ -193,7 +193,7 @@ function stillVisible(db: Db, viewerId: string, greeting: StoredGreeting): boole
     .select({ id: items.id })
     .from(items)
     .innerJoin(projects, eq(items.projectId, projects.id))
-    .where(both(inArray(items.id, ids), hasProjectAccess(viewerId)))
+    .where(both(inArray(items.id, ids), hasItemAccess(viewerId)))
     .all();
   return seen.length === ids.length;
 }

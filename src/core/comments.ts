@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, type SQL, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { hasProjectAccess, requireListAccess } from "./access";
+import { hasItemAccess, requireListAccess } from "./access";
 import { users } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
 import type { Db } from "./db";
@@ -72,7 +72,7 @@ function selectComments(
     .innerJoin(projects, eq(projects.id, items.projectId))
     // Left join, so a deleted user's comments still show.
     .leftJoin(users, eq(users.id, comments.userId))
-    .where(and(where, hasProjectAccess(userId)))
+    .where(and(where, hasItemAccess(userId)))
     .orderBy(dir(comments.createdAt), dir(sql`${comments}.rowid`));
   return (opts.limit ? query.limit(opts.limit) : query)
     .all()
@@ -116,7 +116,7 @@ export function countCommentsByItem(db: Db, userId: string): Record<string, numb
     .from(comments)
     .innerJoin(items, eq(items.id, comments.itemId))
     .innerJoin(projects, eq(projects.id, items.projectId))
-    .where(hasProjectAccess(userId))
+    .where(hasItemAccess(userId))
     .groupBy(comments.itemId)
     .all();
   return Object.fromEntries(rows.map((r) => [r.itemId, r.count]));
