@@ -1130,9 +1130,11 @@ function ViewTabs({ view, onSwitch }: { view: BoardView; onSwitch: (next: BoardV
       ref={viewTabs}
       role="group"
       aria-label="View"
-      // Tabs, as tall as the header's buttons beside them: 28px, 36px
-      // on touch.
-      className="relative flex h-7 items-stretch text-[13px] font-medium max-[360px]:text-xs touch:h-9 touch:text-sm touch:max-[360px]:text-xs"
+      // Tabs that fill the header top to bottom, through its padding
+      // (-my-2 against its py-2), so they click anywhere above the
+      // underline: at least the header's buttons beside them (28px, 36px
+      // on touch) plus that padding, taller when the header wraps.
+      className="relative -my-2 flex min-h-11 self-stretch text-[13px] font-medium max-[360px]:text-xs touch:min-h-13 touch:text-sm touch:max-[360px]:text-xs"
     >
       {BOARD_VIEWS.map(([v, label, Icon], i) => (
         <Tooltip key={v}>
