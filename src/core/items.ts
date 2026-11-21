@@ -235,15 +235,24 @@ function assertDue(
 }
 
 // A repeat rule is a whole number of days, weeks or months, and a weekly or
-// monthly one may keep to a weekday or weekends; null clears it.
+// monthly one may keep to a weekday or weekends, or a monthly one to a day
+// of the month; null clears it.
 function assertRepeat(repeat: Repeat | null): Repeat | null {
   if (!repeat) return null;
-  const { every, unit, on } = repeat;
+  const { every, unit, on, day } = repeat;
   if (!(REPEAT_UNITS as readonly string[]).includes(unit)) {
     throw new Error(`invalid repeat unit: ${unit} (expected day, week or month)`);
   }
   if (!Number.isInteger(every) || every < 1 || every > MAX_REPEAT_EVERY) {
     throw new Error(`invalid repeat: every ${every} (expected 1 to ${MAX_REPEAT_EVERY})`);
+  }
+  if (day != null) {
+    if (!Number.isInteger(day) || day < 1 || day > 31) {
+      throw new Error(`invalid repeat day: ${day} (expected 1 to 31)`);
+    }
+    if (unit !== "month") throw new Error("only a monthly repeat can keep to a day of the month");
+    if (on) throw new Error("a repeat keeps to a day of the month or to certain days, not both");
+    return { every, unit, day };
   }
   if (!on) return { every, unit };
   if (!(REPEAT_ONS as readonly string[]).includes(on)) {
@@ -425,6 +434,7 @@ export function addItem(
         repeatEvery: repeat?.every ?? null,
         repeatUnit: repeat?.unit ?? null,
         repeatOn: repeat?.on ?? null,
+        repeatDay: repeat?.day ?? null,
         position,
         number,
         createdAt: now,
@@ -604,10 +614,16 @@ export function updateItem(
   if (patch.repeat !== undefined) {
     const r = assertRepeat(patch.repeat);
     const was = repeatOf(existing);
-    if (r?.every !== was?.every || r?.unit !== was?.unit || r?.on !== was?.on) {
+    if (
+      r?.every !== was?.every ||
+      r?.unit !== was?.unit ||
+      r?.on !== was?.on ||
+      r?.day !== was?.day
+    ) {
       next.repeatEvery = r?.every ?? null;
       next.repeatUnit = r?.unit ?? null;
       next.repeatOn = r?.on ?? null;
+      next.repeatDay = r?.day ?? null;
       changes.repeat = r;
     }
   }

@@ -1283,6 +1283,46 @@ describe("repeating items", () => {
     expect(listAudit(db, userId)[0].detail).toContain("repeats every week on Tuesdays");
   });
 
+  it("brings a rule on a date back on that date, however late it's done", () => {
+    const { db, userId, projectId } = seedProject();
+    const rent = addItem(
+      db,
+      userId,
+      { projectId, title: "Pay rent", dueDate: "2026-11-01", repeat: { every: 1, unit: "month", day: 1 } },
+      "web",
+    );
+    expect(rent.repeatDay).toBe(1);
+    expect(listAudit(db, userId)[0].detail).toContain("repeats every month on the 1st");
+    // Paid three weeks late, on 21 November: back on 1 December, not 21st.
+    completeAt(db, userId, rent.id, Date.UTC(2026, 10, 21, 12));
+    expect(reopenDueRepeats(db, userId, { timeZone: tz, now: Date.UTC(2026, 10, 30, 12) })).toBe(0);
+    expect(reopenDueRepeats(db, userId, { timeZone: tz, now: Date.UTC(2026, 11, 1, 4) })).toBe(1);
+    expect(getItem(db, userId, rent.id)).toMatchObject({
+      completedAt: null,
+      dueFrom: null,
+      dueDate: "2026-12-01",
+      repeatDay: 1,
+    });
+  });
+
+  it("keeps a rule to a date only when it's monthly, and to one date from 1 to 31", () => {
+    const { db, userId, projectId } = seedProject();
+    const add = (repeat: Repeat) =>
+      addItem(db, userId, { projectId, title: "Rent", repeat }, "web");
+    expect(() => add({ every: 1, unit: "week", day: 1 })).toThrow(/monthly/);
+    expect(() => add({ every: 1, unit: "month", day: 1, on: "mon" })).toThrow(/not both/);
+    expect(() => add({ every: 1, unit: "month", day: 32 })).toThrow(/repeat day/);
+    expect(() => add({ every: 1, unit: "month", day: 0 })).toThrow(/repeat day/);
+    const rent = add({ every: 1, unit: "month", day: 1 });
+    // Changing only the date is a change, and logged as one; dropping it too.
+    updateItem(db, userId, rent.id, { repeat: { every: 1, unit: "month", day: 31 } }, "web");
+    expect(getItem(db, userId, rent.id)?.repeatDay).toBe(31);
+    expect(listAudit(db, userId)[0].detail).toContain("repeats every month on the 31st");
+    updateItem(db, userId, rent.id, { repeat: { every: 1, unit: "month" } }, "web");
+    expect(getItem(db, userId, rent.id)?.repeatDay).toBeNull();
+    expect(listAudit(db, userId)[0].detail).toMatch(/repeats every month$/);
+  });
+
   it("counts a completion before 4am as the day before, in the user's saved zone", () => {
     const { db, userId, projectId } = seedProject();
     setTimeZone(db, userId, "Pacific/Auckland"); // UTC+13 in November

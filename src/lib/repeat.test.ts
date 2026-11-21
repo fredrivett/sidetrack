@@ -56,7 +56,45 @@ describe("nextDue", () => {
   });
 });
 
+describe("a rule on a day of the month", () => {
+  const monthly = (day: number, every = 1) => ({ every, unit: "month", day }) as const;
+
+  it("comes back on the next of that day after it's done, early or late", () => {
+    // Due 1 November, done on 21 November: 1 December, not 21 December.
+    expect(nextDue("2026-11-21", monthly(1))).toEqual({ dueFrom: null, dueDate: "2026-12-01" });
+    // Done on the day itself: a month on, across the year end.
+    expect(nextDueDay("2026-12-01", monthly(1))).toBe("2027-01-01");
+    // Done early, before that day comes round this month: this month's.
+    expect(nextDueDay("2026-11-10", monthly(15))).toBe("2026-11-15");
+    expect(nextDueDay("2026-11-15", monthly(15))).toBe("2026-12-15");
+  });
+
+  it("counts `every` months from the next of that day", () => {
+    expect(nextDueDay("2026-11-21", monthly(1, 3))).toBe("2027-02-01");
+    expect(nextDueDay("2026-11-01", monthly(1, 3))).toBe("2027-02-01");
+    expect(nextDueDay("2026-11-10", monthly(15, 2))).toBe("2026-12-15");
+  });
+
+  it("uses a shorter month's last day, and the day again after it", () => {
+    expect(nextDueDay("2027-02-10", monthly(31))).toBe("2027-02-28");
+    expect(nextDueDay("2028-02-10", monthly(30))).toBe("2028-02-29");
+    // Done on February's last day: March keeps the 31st, not the 28th.
+    expect(nextDueDay("2027-02-28", monthly(31))).toBe("2027-03-31");
+    // November's last day stood in for the 31st, so it's done for November.
+    expect(nextDueDay("2026-11-30", monthly(31))).toBe("2026-12-31");
+    expect(nextDueDay("2026-12-31", monthly(31, 2))).toBe("2027-02-28");
+  });
+});
+
 describe("repeatLabel", () => {
+  it("names a day of the month as an ordinal", () => {
+    expect(repeatLabel({ every: 1, unit: "month", day: 1 })).toBe("Every month on the 1st");
+    expect(repeatLabel({ every: 2, unit: "month", day: 22 })).toBe("Every 2 months on the 22nd");
+    expect(
+      [2, 3, 4, 11, 12, 13, 21, 23, 31].map((day) => repeatLabel({ every: 1, unit: "month", day }).slice(19)),
+    ).toEqual(["2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "23rd", "31st"]);
+  });
+
   it("says every unit, with the count when it isn't one", () => {
     expect(repeatLabel({ every: 1, unit: "month" })).toBe("Every month");
     expect(repeatLabel({ every: 3, unit: "day" })).toBe("Every 3 days");

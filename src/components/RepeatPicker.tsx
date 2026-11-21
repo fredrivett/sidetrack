@@ -5,6 +5,7 @@ import { useState } from "react";
 import {
   MAX_REPEAT_EVERY,
   nextDue,
+  ordinal,
   type Repeat,
   REPEAT_ONS,
   REPEAT_UNITS,
@@ -34,19 +35,27 @@ const QUICK_REPEATS: Array<[string, Repeat]> = [
 const sameGap = (a: Repeat | null, b: Repeat | null) =>
   a?.every === b?.every && a?.unit === b?.unit;
 const sameRepeat = (a: Repeat | null, b: Repeat | null) =>
-  sameGap(a, b) && (a?.on ?? null) === (b?.on ?? null);
+  sameGap(a, b) &&
+  (a?.on ?? null) === (b?.on ?? null) &&
+  (a?.day ?? null) === (b?.day ?? null);
 
 /** `every` `unit`, keeping the days `was` kept to when the new unit can. */
 function withGap(every: number, unit: RepeatUnit, was: Repeat | null): Repeat {
+  if (unit === "month" && was?.day) return { every, unit, day: was.day };
   return unit !== "day" && was?.on
     ? { every, unit, on: was.on }
     : { every, unit };
 }
 
+const DAYS_OF_MONTH = Array.from({ length: 31 }, (_, i): [string, string] => [
+  String(i + 1),
+  `the ${ordinal(i + 1)}`,
+]);
+
 /**
  * How often a task comes round again: Daily, Weekly, Monthly, or Custom for
  * "every 3 days" and the like, and for a weekly or monthly rule, the days it
- * keeps to ("on weekends"). The count saves on blur or Enter, the unit and
+ * keeps to ("on weekends"), or for a monthly one, a date ("on the 1st"). The count saves on blur or Enter, the unit and
  * days as soon as they're picked. Keyed by item, so a draft never carries
  * over.
  */
@@ -88,6 +97,22 @@ export function RepeatPicker({
     const next = withGap(n, nextUnit, repeat);
     if (!sameRepeat(next, repeat)) onChange(next);
   }
+
+  // A rule on a date keeps to it; any other counts from when it's done.
+  const rule = repeat?.day
+    ? `Keeps to the ${ordinal(repeat.day)}${
+        repeat.day > 28 ? " (a shorter month's last day)" : ""
+      }, whenever it's done`
+    : "Counts from when it's done";
+  const hint =
+    repeat && today
+      ? `${rule}: finish it today and it's back ${backLabel(
+          nextDue(today, repeat),
+          today,
+        ).replace("Tomorrow", "tomorrow")}.`
+      : repeat?.day
+        ? `${rule}.`
+        : `${rule}: finish it late and the next one moves too.`;
 
   const pressed =
     "border-neutral-900 bg-neutral-900 text-white hover:bg-neutral-800 hover:text-white dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900";
@@ -197,38 +222,44 @@ export function RepeatPicker({
               {editing ? "on" : "On"}
               <MenuSelect
                 label="Repeat on"
-                value={repeat.on ?? "any"}
+                value={repeat.day ? "date" : (repeat.on ?? "any")}
                 options={[
                   ["any", "any day"],
                   ["weekend", repeatOnName("weekend")],
                   null,
                   ...REPEAT_ONS.filter((on) => on !== "weekend").map(
-                    (on): [RepeatOn, string] => [on, repeatOnName(on)],
+                    (on): [RepeatOn | "date", string] => [on, repeatOnName(on)],
                   ),
+                  // A fixed day of the month, from today's to start with.
+                  ...(repeat.unit === "month"
+                    ? [null, ["date", "a date"] as ["date", string]]
+                    : []),
                 ]}
                 disabled={disabled}
-                onChange={(on) =>
-                  onChange(
-                    on === "any"
-                      ? { every: repeat.every, unit: repeat.unit }
-                      : { ...repeat, on },
-                  )
-                }
+                onChange={(on) => {
+                  const gap = { every: repeat.every, unit: repeat.unit };
+                  if (on === "any") onChange(gap);
+                  else if (on === "date") {
+                    onChange({ ...gap, day: today ? Number(today.slice(8)) : 1 });
+                  } else onChange({ ...gap, on });
+                }}
               />
+              {repeat.day && (
+                <MenuSelect
+                  label="Day of the month"
+                  value={String(repeat.day)}
+                  options={DAYS_OF_MONTH}
+                  disabled={disabled}
+                  onChange={(day) => onChange({ ...repeat, day: Number(day) })}
+                />
+              )}
             </>
           )}
         </div>
       )}
       {repeat && (
         <p className="text-xs text-neutral-400">
-          {back
-            ? `Next: ${back}.`
-            : today
-              ? `Counts from when it's done: finish it today and it's back ${backLabel(
-                  nextDue(today, repeat),
-                  today,
-                ).replace("Tomorrow", "tomorrow")}.`
-              : "Counts from when it's done: finish it late and the next one moves too."}
+          {back ? `Next: ${back}.` : hint}
         </p>
       )}
     </div>
