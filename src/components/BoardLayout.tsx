@@ -96,7 +96,10 @@ export function ColumnCard({
       {...props}
     >
       <header className="flex items-start gap-2 shrink-0 pl-[5px] pr-[7px]">{header}</header>
-      <div className="flex-1 min-h-0 -mx-3 overflow-y-auto px-3">{children}</div>
+      {/* The scroll a long list renders its rows within (useVirtualRows). */}
+      <div data-column-scroll className="flex-1 min-h-0 -mx-3 overflow-y-auto px-3">
+        {children}
+      </div>
     </article>
   );
 }
