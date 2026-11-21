@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, House, ShieldCheck } from "lucide-react";
+import { Bell, Check, ChevronDown, House, Plus, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import posthog from "posthog-js";
 import { unstable_rethrow } from "next/navigation";
@@ -26,7 +26,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  GET_STARTED_STEPS,
   type GetStarted,
   type GetStartedStep,
   type InstallPlatform,
@@ -48,6 +47,10 @@ import { runAction } from "./run-action";
 
 const TITLES: Record<GetStartedStep, string> = {
   lists: "Set up your lists",
+  date: "Give something a date",
+  repeat: "Make something repeat",
+  label: "Create your first label",
+  notifications: "Turn on notifications",
   secure: "Secure your account",
   phone: "Add Sidetrack to your Home Screen",
   computer: "Install Sidetrack on your computer",
@@ -146,12 +149,15 @@ export function GetStartedStack({
   shareable,
   onShare,
   onAddList,
+  onAddItem,
 }: {
   state: GetStarted;
   /** The lists the viewer owns, which they can share. */
   shareable: { id: string; name: string }[];
   onShare: (projectId: string, projectName: string) => void;
   onAddList: () => void;
+  /** Opens New item, due today when `dueToday`. */
+  onAddItem: (dueToday: boolean) => void;
 }) {
   const device = useDevice();
   // Chrome and Edge can show their own install dialog from a button.
@@ -173,7 +179,7 @@ export function GetStartedStack({
   const [showCode, setShowCode] = useState(false);
 
   const done = (step: GetStartedStep) => !queue.includes(step);
-  const doneCount = GET_STARTED_STEPS.filter(done).length;
+  const doneCount = state.steps.filter(done).length;
   const front = picked && queue.includes(picked) ? picked : queue[0];
   const order = front ? [front, ...queue.filter((s) => s !== front)] : [];
 
@@ -219,6 +225,45 @@ export function GetStartedStack({
           </Button>
         );
         break;
+      case "date":
+        why = "Dated things come to you: they show up here on your Brief on the day they're due, so you don't have to go looking.";
+        actions = (
+          <Button size="sm" onClick={() => onAddItem(true)}>
+            <Plus data-icon="inline-start" />
+            Add something for today
+          </Button>
+        );
+        break;
+      case "repeat":
+        why = "For the things that come round again, like bins night or paying the rent. Pick Repeat when you add or edit an item, and once you tick it off it comes back when it's next due.";
+        actions = (
+          <Button size="sm" onClick={() => onAddItem(false)}>
+            <Plus data-icon="inline-start" />
+            Add a repeating item
+          </Button>
+        );
+        break;
+      case "label":
+        why = "Labels group items across a list, like errands, calls or waiting on, and Filter shows just the ones with a label. Pick Label when you add or edit an item.";
+        actions = (
+          <Button size="sm" onClick={() => onAddItem(false)}>
+            <Plus data-icon="inline-start" />
+            Add an item
+          </Button>
+        );
+        break;
+      case "notifications":
+        why =
+          device?.os === "ios" && !isInstalled()
+            ? "So Sidetrack can nudge you when something's due or someone gives you something to do. On an iPhone, add Sidetrack to your Home Screen first, then turn them on from there."
+            : "So Sidetrack can nudge you when something's due or someone gives you something to do. Turn them on for each phone and computer you use.";
+        actions = (
+          <Link href="/settings/notifications" className={buttonVariants({ size: "sm" })}>
+            <Bell data-icon="inline-start" />
+            Turn on notifications
+          </Link>
+        );
+        break;
       case "secure":
         why = "Turn on two-factor sign-in, so signing in also asks for a code from an authenticator app. Your password alone won't get anyone in.";
         actions = (
@@ -229,28 +274,18 @@ export function GetStartedStack({
         );
         break;
       case "phone": {
-        const notifications = (
-          <>
-            Then turn on notifications in{" "}
-            <Link href="/settings/notifications" className="underline underline-offset-2">
-              Settings
-            </Link>
-            .
-          </>
-        );
         if (device?.os === "ios") {
           why = (
             <>
               So it&apos;s a tap away, and can nudge you when something&apos;s due. In Safari, tap
-              Share, then Add to Home Screen, and open Sidetrack from there. {notifications}
+              Share, then Add to Home Screen, and open Sidetrack from there.
             </>
           );
         } else if (device?.os === "android") {
           why = (
             <>
               So it&apos;s a tap away, and can nudge you when something&apos;s due. In Chrome, tap
-              ⋮, then Add to Home screen or Install app, and open Sidetrack from there.{" "}
-              {notifications}
+              ⋮, then Add to Home screen or Install app, and open Sidetrack from there.
             </>
           );
         } else {
@@ -353,7 +388,7 @@ export function GetStartedStack({
             blends its paper into the card. Lazy, so the hidden one isn't fetched
             until it's shown. Keyed by step so a new step never shows the last
             step's drawing while its own loads. */}
-        <div key={step} aria-hidden="true" className="aspect-[4/3] w-48 shrink-0 self-center sm:w-44 sm:self-start">
+        <div key={step} aria-hidden="true" className="aspect-[4/3] w-48 shrink-0 self-start sm:w-44">
           {/* eslint-disable-next-line @next/next/no-img-element -- small static WebP, no resizing needed */}
           <img
             src={`/get-started/${step}-light.webp`}
@@ -411,11 +446,11 @@ export function GetStartedStack({
           <span className="h-1 w-24 overflow-hidden rounded-full bg-muted" aria-hidden="true">
             <span
               className="block h-full rounded-full bg-neutral-700 transition-[width] duration-300 ease-out dark:bg-neutral-300"
-              style={{ width: `${(doneCount / GET_STARTED_STEPS.length) * 100}%` }}
+              style={{ width: `${(doneCount / state.steps.length) * 100}%` }}
             />
           </span>
           <span className="tabular-nums text-neutral-400 dark:text-neutral-500">
-            {doneCount} of {GET_STARTED_STEPS.length}
+            {doneCount} of {state.steps.length}
           </span>
           <ChevronDown
             aria-hidden="true"
@@ -453,7 +488,7 @@ export function GetStartedStack({
             </div>
           )}
           <ul className="space-y-0.5 text-sm">
-            {GET_STARTED_STEPS.map((step) =>
+            {state.steps.map((step) =>
               done(step) ? (
                 <li key={step} className="flex items-center gap-2 px-1 py-0.5 text-muted-foreground">
                   <Check aria-hidden="true" className="size-3.5 text-emerald-600 dark:text-emerald-400" />

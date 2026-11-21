@@ -7,10 +7,11 @@ import { NO_FILTERS } from "@/lib/filters";
 import * as itemRef from "@/lib/itemRef";
 import { Kanban, type ProjectView } from "./Kanban";
 import * as shortcuts from "./useItemShortcuts";
-import type { GetStarted } from "@/lib/getStarted";
+import { GET_STARTED_STEPS, type GetStarted } from "@/lib/getStarted";
 
 const GET_STARTED_DONE: GetStarted = {
-  done: { lists: true, secure: true, phone: true, computer: true, share: true, agent: true },
+  steps: [...GET_STARTED_STEPS],
+  done: Object.fromEntries(GET_STARTED_STEPS.map((s) => [s, true])) as GetStarted["done"],
   queue: [],
   collapsed: true,
   pendingInvites: [],

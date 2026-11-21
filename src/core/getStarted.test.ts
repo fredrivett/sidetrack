@@ -42,8 +42,53 @@ describe("getGetStarted", () => {
     const { db, fred } = setup();
     const state = getGetStarted(db, fred);
     expect(Object.values(state.done).some(Boolean)).toBe(false);
-    expect(state.queue).toEqual(["lists", "phone", "computer", "share", "secure", "agent"]);
+    // Repeat waits for a date.
+    expect(state.steps).toEqual(["lists", "date", "label", "phone", "notifications", "computer", "share", "secure", "agent"]);
+    expect(state.queue).toEqual(state.steps);
     expect(state.collapsed).toBe(false);
+  });
+
+  it("offers repeat once something has a date, and ticks each from the user's own items", () => {
+    const { db, fred, alice } = setup();
+    // Dated and repeating items on a list fred was only invited to aren't his doing.
+    const theirs = createProject(db, alice, { name: "Theirs" }, "web");
+    inviteMember(db, alice, theirs.id, "fred", "web");
+    acceptInvite(db, fred, theirs.id, "web");
+    addItem(db, alice, { projectId: theirs.id, title: "Bins", dueDate: "2026-11-23", repeat: { every: 1, unit: "week" } }, "web");
+    expect(getGetStarted(db, fred).done.date).toBe(false);
+    expect(getGetStarted(db, fred).steps).not.toContain("repeat");
+
+    const home = createProject(db, fred, { name: "Home" }, "web");
+    addItem(db, fred, { projectId: home.id, title: "Dentist", dueDate: "2026-11-24" }, "web");
+    let state = getGetStarted(db, fred);
+    expect(state.done.date).toBe(true);
+    expect(state.done.repeat).toBe(false);
+    // It takes the place it has in the order, ahead of the devices.
+    expect(state.queue.slice(0, 3)).toEqual(["lists", "repeat", "label"]);
+
+    addItem(db, fred, { projectId: home.id, title: "Rent", repeat: { every: 1, unit: "month" } }, "web");
+    state = getGetStarted(db, fred);
+    expect(state.done.repeat).toBe(true);
+    expect(state.steps).toContain("repeat");
+  });
+
+  it("ticks label from a labelled item or a label made in one of the user's lists", () => {
+    const { db, fred, alice } = setup();
+    const theirs = createProject(db, alice, { name: "Theirs" }, "web");
+    addItem(db, alice, { projectId: theirs.id, title: "Call the bank", labels: ["calls"] }, "web");
+    const home = createProject(db, fred, { name: "Home" }, "web");
+    addItem(db, fred, { projectId: home.id, title: "Unlabelled" }, "web");
+    expect(getGetStarted(db, fred).done.label).toBe(false);
+    expect(getGetStarted(db, alice).done.label).toBe(true);
+    addItem(db, fred, { projectId: home.id, title: "Post a parcel", labels: ["errands"] }, "web");
+    expect(getGetStarted(db, fred).done.label).toBe(true);
+  });
+
+  it("ticks notifications on any device, and leaves them out where the server can't send them", () => {
+    const { db, fred } = setup();
+    expect(getGetStarted(db, fred, { push: false }).steps).not.toContain("notifications");
+    addPushDevice(db, fred, "Chrome on Mac");
+    expect(getGetStarted(db, fred).done.notifications).toBe(true);
   });
 
   it("ticks securing the account while two-factor sign-in is on", () => {
@@ -156,13 +201,14 @@ describe("the stack's view state", () => {
     const { db, fred } = setup();
     sendGetStartedToBack(db, fred, "phone");
     sendGetStartedToBack(db, fred, "lists");
-    expect(getGetStarted(db, fred).queue).toEqual(["computer", "share", "secure", "agent", "phone", "lists"]);
+    const rest = ["date", "label", "notifications", "computer", "share", "secure", "agent"];
+    expect(getGetStarted(db, fred).queue).toEqual([...rest, "phone", "lists"]);
     // Sending one back again moves it behind the other.
     sendGetStartedToBack(db, fred, "phone");
-    expect(getGetStarted(db, fred).queue).toEqual(["computer", "share", "secure", "agent", "lists", "phone"]);
+    expect(getGetStarted(db, fred).queue).toEqual([...rest, "lists", "phone"]);
     // A card that's done leaves the queue wherever it was.
     recordInstall(db, fred, "phone", "web");
-    expect(getGetStarted(db, fred).queue).toEqual(["computer", "share", "secure", "agent", "lists"]);
+    expect(getGetStarted(db, fred).queue).toEqual([...rest, "lists"]);
   });
 
   it("keeps collapsed separately from the order", () => {
@@ -181,7 +227,7 @@ describe("the stack's view state", () => {
       .where(eq(users.id, fred))
       .run();
     const state = getGetStarted(db, fred);
-    expect(state.queue).toEqual(["lists", "phone", "computer", "secure", "agent", "share"]);
+    expect(state.queue).toEqual(["lists", "date", "label", "phone", "notifications", "computer", "secure", "agent", "share"]);
     expect(state.collapsed).toBe(false);
   });
 });
