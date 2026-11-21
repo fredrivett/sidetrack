@@ -79,12 +79,13 @@ export default async function Welcome() {
   const signedIn = Boolean(session);
   const { now, today } = renderedAt();
   // Self-hosted instances usually lock signup after the first account, so
-  // the call to action falls back to signing in.
+  // the call to action falls back to signing in. `nudge` is what the
+  // preview says when the visitor tries something that needs an account.
   const cta = signedIn
-    ? { href: "/", label: "Open Sidetrack" }
+    ? { href: "/", label: "Open Sidetrack", nudge: "Open Sidetrack to try it on yours." }
     : isSignUpOpen()
-      ? { href: "/login?mode=sign-up", label: "Get started" }
-      : { href: "/login", label: "Sign in" };
+      ? { href: "/login?mode=sign-up", label: "Get started", nudge: "Sign up to try it out." }
+      : { href: "/login", label: "Sign in", nudge: "Sign in to try it out." };
 
   return (
     <div className="relative isolate flex min-h-dvh flex-col overflow-x-hidden">
@@ -125,6 +126,10 @@ export default async function Welcome() {
           )}
           <Link href={cta.href} className={buttonVariants()}>
             {cta.label}
+            <ArrowRight
+              data-icon="inline-end"
+              className="transition-transform duration-200 ease-out motion-safe:group-hover/button:translate-x-0.5"
+            />
           </Link>
         </nav>
       </header>
@@ -184,7 +189,7 @@ export default async function Welcome() {
           aria-label="A sample board to try"
           className="relative top-0 mx-auto mt-16 max-w-6xl px-5 motion-safe:animate-[rise-in_600ms_cubic-bezier(0.2,0.8,0.2,1)_backwards] [animation-delay:150ms] sm:mt-20 sm:px-8"
         >
-          <PreviewBoard today={today} now={now} />
+          <PreviewBoard today={today} now={now} signUp={cta} />
           {/* What the agent on FIX-12 last reported, below its list. Violet,
               the agents' colour, in both themes, as on the social card
               (opengraph-image.tsx). */}

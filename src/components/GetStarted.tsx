@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, Share2 } from "lucide-react";
+import { Check, ChevronDown, House, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import posthog from "posthog-js";
 import { unstable_rethrow } from "next/navigation";
@@ -12,12 +12,12 @@ import {
   useSyncExternalStore,
   useTransition,
 } from "react";
-import { encode } from "uqr";
 import {
   recordInstallAction,
   sendGetStartedToBackAction,
   setGetStartedCollapsedAction,
 } from "@/app/actions";
+import { QrCode } from "@/components/QrCode";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -31,22 +31,35 @@ import {
   type GetStartedStep,
   type InstallPlatform,
 } from "@/lib/getStarted";
-import { installPlatform, isAndroid, isFirefox, isInstalled, isIos, isSafari } from "@/lib/device";
+import {
+  canPromptInstall,
+  installPlatform,
+  isAndroid,
+  isChrome,
+  isEdge,
+  isFirefox,
+  isInstalled,
+  isIos,
+  isSafari,
+  showInstallPrompt,
+  subscribeInstallPrompt,
+} from "@/lib/device";
 import { runAction } from "./run-action";
 
 const TITLES: Record<GetStartedStep, string> = {
   lists: "Set up your lists",
+  secure: "Secure your account",
   phone: "Add Sidetrack to your Home Screen",
   computer: "Install Sidetrack on your computer",
-  share: "Share a list with someone",
+  share: "Share with someone",
   agent: "Let an agent work on your lists",
 };
 
 /** This device, once the browser has said; null while rendering on the server. */
 interface Device {
   platform: InstallPlatform;
-  os: "ios" | "android" | "mac" | "other";
-  browser: "safari" | "firefox" | "other";
+  os: "ios" | "android" | "mac" | "windows" | "other";
+  browser: "safari" | "firefox" | "edge" | "chrome" | "other";
 }
 
 const noSubscribe = () => () => {};
@@ -58,8 +71,24 @@ function useDevice(): Device | null {
     () =>
       [
         installPlatform(),
-        isIos() ? "ios" : isAndroid() ? "android" : /Macintosh/.test(navigator.userAgent) ? "mac" : "other",
-        isSafari() ? "safari" : isFirefox() ? "firefox" : "other",
+        isIos()
+          ? "ios"
+          : isAndroid()
+            ? "android"
+            : /Macintosh/.test(navigator.userAgent)
+              ? "mac"
+              : /Windows/.test(navigator.userAgent)
+                ? "windows"
+                : "other",
+        isSafari()
+          ? "safari"
+          : isFirefox()
+            ? "firefox"
+            : isEdge()
+              ? "edge"
+              : isChrome()
+                ? "chrome"
+                : "other",
       ].join("|"),
     () => "",
   );
@@ -98,23 +127,11 @@ export function InstallReporter({ done }: { done: GetStarted["done"] }) {
   return null;
 }
 
-/** A QR code for `text`, drawn as SVG modules. */
-function QrCode({ text }: { text: string }) {
-  const { data, size } = encode(text, { border: 1 });
-  const path = data
-    .flatMap((row, y) => row.map((on, x) => (on ? `M${x} ${y}h1v1h-1z` : "")))
-    .join("");
-  return (
-    <svg
-      viewBox={`0 0 ${size} ${size}`}
-      role="img"
-      aria-label={`QR code for ${text}`}
-      className="size-28 rounded-md bg-white p-1"
-      shapeRendering="crispEdges"
-    >
-      <path d={path} fill="#0a0a0a" />
-    </svg>
-  );
+/** "@a", "@a and @b", "@a, @b and 2 others". */
+function listPeople(handles: string[]): string {
+  if (handles.length <= 2) return handles.join(" and ");
+  const rest = handles.length - 2;
+  return `${handles.slice(0, 2).join(", ")} and ${rest === 1 ? handles[2] : `${rest} others`}`;
 }
 
 /**
@@ -137,6 +154,8 @@ export function GetStartedStack({
   onAddList: () => void;
 }) {
   const device = useDevice();
+  // Chrome and Edge can show their own install dialog from a button.
+  const canInstall = useSyncExternalStore(subscribeInstallPrompt, canPromptInstall, () => false);
   const [, start] = useTransition();
   const bodyId = useId();
   // Folds, sends back and ticks at once, then saves; a failed save puts it
@@ -200,6 +219,15 @@ export function GetStartedStack({
           </Button>
         );
         break;
+      case "secure":
+        why = "Turn on two-factor sign-in, so signing in also asks for a code from an authenticator app. Your password alone won't get anyone in.";
+        actions = (
+          <Link href="/settings/profile?setup=two-factor" className={buttonVariants({ size: "sm" })}>
+            <ShieldCheck data-icon="inline-start" />
+            Set up two-factor
+          </Link>
+        );
+        break;
       case "phone": {
         const notifications = (
           <>
@@ -240,37 +268,75 @@ export function GetStartedStack({
           );
         break;
       }
-      case "computer":
+      case "computer": {
+        const opensFrom =
+          device?.os === "mac"
+            ? " It then opens from your Dock, like any other app."
+            : device?.os === "windows"
+              ? " It then opens from the Start menu or your taskbar, like any other app."
+              : "";
         why =
           device?.platform === "phone" || !device
             ? "Next time you're at your computer, open Sidetrack in Chrome or Edge and choose Install, or in Safari on a Mac choose File → Add to Dock."
-            : device.browser === "safari"
-              ? "It opens in its own window, one click away. In Safari's menu bar, choose File → Add to Dock, then open Sidetrack from your Dock."
-              : device.browser === "firefox"
-                ? `Firefox can't install web apps. Open Sidetrack in Chrome or Edge and choose Install${device.os === "mac" ? ", or in Safari choose File → Add to Dock" : ""}.`
-                : "It opens in its own window, one click away. Choose Install in the address bar, or Install Sidetrack in the browser's menu.";
-        actions = ticksItself;
-        break;
-      case "share":
-        why = "A household list, or a project with a friend. Their changes show up on your board as they make them.";
+            : canInstall
+              ? `It opens in its own window, one click away.${opensFrom}`
+              : device.browser === "safari"
+                ? "It opens in its own window, one click away. In Safari's menu bar, choose File → Add to Dock, then open Sidetrack from your Dock."
+                : device.browser === "firefox"
+                  ? `Firefox can't install web apps. Open Sidetrack in Chrome or Edge and choose Install${device.os === "mac" ? ", or in Safari choose File → Add to Dock" : ""}.`
+                  : device.browser === "edge"
+                    ? `It opens in its own window, one click away. Click the Install icon at the right of the address bar, or open the … menu, then Apps → Install Sidetrack.${opensFrom}`
+                    : device.browser === "chrome"
+                      ? `It opens in its own window, one click away. Click the Install icon at the right of the address bar, or open the ⋮ menu, then Cast, save and share → Install Sidetrack.${opensFrom}`
+                      : `It opens in its own window, one click away. Choose Install in the address bar, or Install Sidetrack in the browser's menu.${opensFrom}`;
         actions =
-          shareable.length === 0 ? (
-            <span className="text-xs text-muted-foreground">Make a list first.</span>
+          device?.platform === "computer" && canInstall ? (
+            <Button
+              size="sm"
+              onClick={() => {
+                posthog.capture("get_started_install_prompt");
+                void showInstallPrompt();
+              }}
+            >
+              Install Sidetrack
+            </Button>
           ) : (
-            <DropdownMenu>
-              <DropdownMenuTrigger render={<Button size="sm" />}>
-                <Share2 data-icon="inline-start" />
-                Share a list
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                {shareable.map((list) => (
-                  <DropdownMenuItem key={list.id} onClick={() => onShare(list.id, list.name)}>
-                    {list.name}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            ticksItself
           );
+        break;
+      }
+      case "share":
+        why =
+          state.pendingInvites.length > 0 ? (
+            <>
+              Waiting for {listPeople(state.pendingInvites)} to accept. Ticks itself once they do,
+              or share with someone else meanwhile.
+            </>
+          ) : (
+            "Make a Space for your household or a project with a friend, and everyone in it sees every list in it. Their changes show up on your board as they make them."
+          );
+        actions = (
+          <>
+            <Link href="/settings/spaces" className={buttonVariants({ size: "sm" })}>
+              <House data-icon="inline-start" />
+              Make a Space
+            </Link>
+            {shareable.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger render={<Button size="sm" variant="outline" />}>
+                  Share one list
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  {shareable.map((list) => (
+                    <DropdownMenuItem key={list.id} onClick={() => onShare(list.id, list.name)}>
+                      {list.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </>
+        );
         break;
       case "agent":
         why = "Connect Claude, Amp or another MCP agent, and it can add items, pick them up and tick them off.";
@@ -315,7 +381,7 @@ export function GetStartedStack({
           <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{why}</p>
           {step === "phone" && showCode && device?.platform === "computer" && (
             <div className="mt-3">
-              <QrCode text={window.location.origin} />
+              <QrCode text={window.location.origin} label={`QR code for ${window.location.origin}`} />
             </div>
           )}
           <div className="mt-3 flex flex-wrap items-center gap-2">

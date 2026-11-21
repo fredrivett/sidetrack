@@ -41,3 +41,54 @@ export function isSafari() {
   const ua = navigator.userAgent;
   return /Safari\//.test(ua) && !/Chrome\/|Chromium\/|Edg\/|Firefox\//.test(ua);
 }
+
+/** Microsoft Edge, whose install is under … → Apps rather than Chrome's menu. */
+export function isEdge() {
+  return /Edg\//.test(navigator.userAgent);
+}
+
+/** Chrome, or a browser built on it that reports itself the same way (Brave, Arc). */
+export function isChrome() {
+  return /Chrome\//.test(navigator.userAgent) && !/Edg\/|OPR\//.test(navigator.userAgent);
+}
+
+/** Chrome and Edge's `beforeinstallprompt`, which isn't in TypeScript's DOM types. */
+interface BeforeInstallPromptEvent extends Event {
+  prompt(): Promise<{ outcome: "accepted" | "dismissed" }>;
+}
+
+// Chrome and Edge offer to install the app with this event, once, soon after
+// the page loads, so it's kept from module load for an Install button to use
+// later. It can show its dialog only once; the browser sends another if the
+// user dismisses it.
+let installPrompt: BeforeInstallPromptEvent | null = null;
+const installPromptListeners = new Set<() => void>();
+const setInstallPrompt = (event: BeforeInstallPromptEvent | null) => {
+  installPrompt = event;
+  installPromptListeners.forEach((listener) => listener());
+};
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeinstallprompt", (event) =>
+    setInstallPrompt(event as BeforeInstallPromptEvent),
+  );
+  window.addEventListener("appinstalled", () => setInstallPrompt(null));
+}
+
+/** Whether the browser can show its own install dialog (`showInstallPrompt`). */
+export function canPromptInstall() {
+  return installPrompt !== null;
+}
+
+/** Calls `listener` when `canPromptInstall` changes. Returns an unsubscribe. */
+export function subscribeInstallPrompt(listener: () => void) {
+  installPromptListeners.add(listener);
+  return () => installPromptListeners.delete(listener);
+}
+
+/** Shows the browser's install dialog; installing fires `appinstalled`. */
+export async function showInstallPrompt() {
+  const event = installPrompt;
+  if (!event) return;
+  setInstallPrompt(null);
+  await event.prompt();
+}

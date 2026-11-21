@@ -1,8 +1,11 @@
-import Link from "next/link";
+import type { Metadata } from "next";
+import { SettingsHeader } from "@/components/SettingsHeader";
 import { SpacesPanel } from "@/components/SpacesPanel";
 import { getDb } from "@/core/db";
 import { listSpaces } from "@/core/spaces";
 import { requireUserId } from "@/auth/session";
+
+export const metadata: Metadata = { title: "Spaces" };
 
 export const dynamic = "force-dynamic";
 
@@ -11,21 +14,13 @@ export default async function SpacesPage() {
   const { db } = getDb();
 
   return (
-    <main className="min-h-dvh px-4 py-6 sm:px-6">
-      <div className="mx-auto max-w-2xl space-y-6">
-        <header className="space-y-1">
-          <Link href="/" className="text-xs text-muted-foreground hover:underline">
-            ← Back to board
-          </Link>
-          <h1 className="text-lg font-semibold tracking-tight">Spaces</h1>
-          <p className="text-sm text-muted-foreground">
-            A space shares every list in it with everyone in it, such as a household or a
-            small team. Admins invite and remove people, and choose what each can do: edit
-            the lists, or only comment on or view them.
-          </p>
-        </header>
-        <SpacesPanel spaces={listSpaces(db, userId)} viewerId={userId} />
-      </div>
-    </main>
+    <>
+      <SettingsHeader title="Spaces">
+        A space shares every list in it with everyone in it, such as a household or a
+        small team. Admins invite and remove people, and choose what each can do: edit
+        the lists, or only comment on or view them.
+      </SettingsHeader>
+      <SpacesPanel spaces={listSpaces(db, userId)} viewerId={userId} />
+    </>
   );
 }

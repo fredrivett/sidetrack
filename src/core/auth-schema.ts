@@ -67,9 +67,35 @@ export const users = sqliteTable("users", {
   // sets it in the same statement as the insert, so concurrent signups can't
   // share one. null only for the instant between the insert and the trigger.
   userNumber: integer("user_number").unique(),
+  // Better Auth `twoFactor` plugin: whether sign-in asks for a code from an
+  // authenticator app (or a backup code) after the password. Set by the
+  // plugin once the first code verifies; the audit_two_factor_update trigger
+  // (migration 0065) logs each change.
+  twoFactorEnabled: integer("two_factor_enabled", { mode: "boolean" })
+    .notNull()
+    .default(false),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
+
+// Better Auth `twoFactor` plugin: one row per user who has started setting up
+// two-factor sign-in. `secret` (the TOTP seed) and `backupCodes` are
+// encrypted with BETTER_AUTH_SECRET by the plugin, never stored in the clear.
+// `verified` is false between /two-factor/enable and the first code that
+// verifies, so an abandoned setup never asks for a code at sign-in.
+export const twoFactors = sqliteTable(
+  "two_factors",
+  {
+    id: text("id").primaryKey(),
+    secret: text("secret").notNull(),
+    backupCodes: text("backup_codes").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    verified: integer("verified", { mode: "boolean" }).notNull().default(true),
+  },
+  (t) => [index("two_factors_user_id").on(t.userId)],
+);
 
 export const sessions = sqliteTable("sessions", {
   id: text("id").primaryKey(),

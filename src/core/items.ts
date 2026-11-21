@@ -1,12 +1,12 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, type SQL, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { hasProjectAccess, listAccess, requireListAccess } from "./access";
+import { hasItemAccess, hasProjectAccess, listAccess, requireListAccess } from "./access";
 import { users } from "./auth-schema";
 import { type AuditOrigin, recordAudit, SYSTEM_ACTOR } from "./audit";
 import { ensureLabels, type LabelEmoji, normalizeLabelNames } from "./labels";
 import { announceChange } from "./changes";
 import type { Db } from "./db";
-import type { ChangeEvent, ItemChanges, PersonAt } from "./events";
+import type { ChangeEvent, ItemChanges, PersonAt, SourceAt } from "./events";
 import { getTimeZone } from "./users";
 import {
   MAX_REPEAT_EVERY,
@@ -30,7 +30,7 @@ import { agentSessions, type Item, items, projects } from "./schema";
 // string drop the id filter and match an arbitrary accessible item. The only
 // caller always has an id, so require it and always filter on it.
 function accessibleItemWhere(userId: string, itemId: string) {
-  return and(hasProjectAccess(userId), eq(items.id, itemId));
+  return and(hasItemAccess(userId), eq(items.id, itemId));
 }
 
 function accessibleProjectWhere(userId: string, projectId: string) {
@@ -76,7 +76,7 @@ export function listItems(
 ): Item[] {
   const baseConds = [
     eq(items.projectId, projectId),
-    hasProjectAccess(userId),
+    hasItemAccess(userId),
   ];
   if (!opts.includeCompleted) baseConds.push(isNull(items.completedAt));
   else if (opts.completedSince !== undefined) {
@@ -115,7 +115,7 @@ export function listDoneBefore(
   const query = opts.query?.trim().toLowerCase();
   // A ref, optionally qualified ("alice/SID-12"), by its list's prefix.
   const ref = query ? /^(?:.*\/)?([a-z]+)-(\d+)$/.exec(query) : null;
-  const inLists = and(hasProjectAccess(userId), ne(projects.status, "archived"));
+  const inLists = and(hasItemAccess(userId), ne(projects.status, "archived"));
   const finished = (...where: SQL[]) =>
     and(
       inLists,
@@ -235,15 +235,24 @@ function assertDue(
 }
 
 // A repeat rule is a whole number of days, weeks or months, and a weekly or
-// monthly one may keep to a weekday or weekends; null clears it.
-function assertRepeat(repeat: Repeat | null): Repeat | null {
+// monthly one may keep to a weekday or weekends, or a monthly one to a day
+// of the month; null clears it.
+export function assertRepeat(repeat: Repeat | null): Repeat | null {
   if (!repeat) return null;
-  const { every, unit, on } = repeat;
+  const { every, unit, on, day } = repeat;
   if (!(REPEAT_UNITS as readonly string[]).includes(unit)) {
     throw new Error(`invalid repeat unit: ${unit} (expected day, week or month)`);
   }
   if (!Number.isInteger(every) || every < 1 || every > MAX_REPEAT_EVERY) {
     throw new Error(`invalid repeat: every ${every} (expected 1 to ${MAX_REPEAT_EVERY})`);
+  }
+  if (day != null) {
+    if (!Number.isInteger(day) || day < 1 || day > 31) {
+      throw new Error(`invalid repeat day: ${day} (expected 1 to 31)`);
+    }
+    if (unit !== "month") throw new Error("only a monthly repeat can keep to a day of the month");
+    if (on) throw new Error("a repeat keeps to a day of the month or to certain days, not both");
+    return { every, unit, day };
   }
   if (!on) return { every, unit };
   if (!(REPEAT_ONS as readonly string[]).includes(on)) {
@@ -259,7 +268,7 @@ export function listSubItems(db: Db, userId: string, parentId: string): Item[] {
     .select({ items })
     .from(items)
     .innerJoin(projects, eq(projects.id, items.projectId))
-    .where(and(eq(items.parentId, parentId), hasProjectAccess(userId)))
+    .where(and(eq(items.parentId, parentId), hasItemAccess(userId)))
     .orderBy(asc(items.position), asc(items.id))
     .all()
     .map((row) => row.items);
@@ -363,6 +372,8 @@ export function addItem(
     repeat?: Repeat | null;
     /** Titles of sub-items to create under it, in order, in the same transaction. */
     subItems?: string[];
+    /** The source it was added from, such as a photo of a page, for its history. */
+    from?: SourceAt;
   },
   source: AuditOrigin,
   /** Internal: a line added with its parent, by the parent's addItem. */
@@ -425,6 +436,7 @@ export function addItem(
         repeatEvery: repeat?.every ?? null,
         repeatUnit: repeat?.unit ?? null,
         repeatOn: repeat?.on ?? null,
+        repeatDay: repeat?.day ?? null,
         position,
         number,
         createdAt: now,
@@ -445,6 +457,7 @@ export function addItem(
         assignees: assigneeIds.map((a) => personAt(tx as unknown as Db, a)),
         repeat,
         ...(withParent ? { withParent: true as const } : {}),
+        ...(input.from ? { from: input.from } : {}),
       },
     });
     // Created done: log the completion as its own row, as completeItem does,
@@ -453,7 +466,14 @@ export function addItem(
       recordAudit(tx as unknown as Db, {
         actor: userId,
         source,
-        event: { type: "item.completed", itemId: id, title, projectId: input.projectId, added: true },
+        event: {
+          type: "item.completed",
+          itemId: id,
+          title,
+          projectId: input.projectId,
+          added: true,
+          ...(input.from ? { from: input.from } : {}),
+        },
       });
     }
     // A done sub-item doesn't contradict a finished parent; only an open one does.
@@ -531,6 +551,8 @@ export function updateItem(
     repeat?: Repeat | null;
   },
   source: AuditOrigin,
+  /** The source the change came from, such as a photo of a page. */
+  from?: SourceAt,
 ): Item {
   const existing = getItem(db, userId, id);
   if (!existing) throw new Error(`item not found: ${id}`);
@@ -604,10 +626,16 @@ export function updateItem(
   if (patch.repeat !== undefined) {
     const r = assertRepeat(patch.repeat);
     const was = repeatOf(existing);
-    if (r?.every !== was?.every || r?.unit !== was?.unit || r?.on !== was?.on) {
+    if (
+      r?.every !== was?.every ||
+      r?.unit !== was?.unit ||
+      r?.on !== was?.on ||
+      r?.day !== was?.day
+    ) {
       next.repeatEvery = r?.every ?? null;
       next.repeatUnit = r?.unit ?? null;
       next.repeatOn = r?.on ?? null;
+      next.repeatDay = r?.day ?? null;
       changes.repeat = r;
     }
   }
@@ -627,6 +655,7 @@ export function updateItem(
         title: existing.title,
         projectId: existing.projectId,
         changes,
+        ...(from && { from }),
       },
     });
   });
@@ -639,6 +668,8 @@ export function completeItem(
   userId: string,
   id: string,
   source: AuditOrigin,
+  /** The source it was ticked off from, such as a crossed-out line on a photo. */
+  from?: SourceAt,
 ): Item {
   const existing = getItem(db, userId, id);
   if (!existing) throw new Error(`item not found: ${id}`);
@@ -689,6 +720,7 @@ export function completeItem(
                   as: it === parent ? ("last-sub-item" as const) : ("parent" as const),
                 },
               }),
+          ...(it === existing && from ? { from } : {}),
         },
       });
     }
@@ -758,7 +790,7 @@ export function reopenDueRepeats(
     .innerJoin(projects, eq(projects.id, items.projectId))
     .where(
       and(
-        hasProjectAccess(userId),
+        hasItemAccess(userId),
         ne(projects.status, "archived"),
         isNotNull(items.repeatUnit),
         isNotNull(items.completedAt),
@@ -880,23 +912,21 @@ export function setItemsCollapsed(
   collapsed: boolean,
 ): void {
   // The items that change, and the lists they're on.
-  const changed: string[] = [];
-  const lists = new Set<string>();
+  const changed: Array<{ id: string; projectId: string }> = [];
   for (const id of ids) {
     const item = getItem(db, userId, id);
     if (!item) throw new Error(`item not found: ${id}`);
     // Anyone who can see the list folds it, viewers too: it's how the list
     // is viewed, not a change to its items.
     if (item.collapsed === collapsed) continue;
-    changed.push(id);
-    lists.add(item.projectId);
+    changed.push({ id, projectId: item.projectId });
   }
   if (changed.length === 0) return;
   // audit-exempt: collapsing is how the list is viewed, not a change to the
   // item, so it stays out of the item's history and the activity feed.
-  db.update(items).set({ collapsed }).where(inArray(items.id, changed)).run();
+  db.update(items).set({ collapsed }).where(inArray(items.id, changed.map((c) => c.id))).run();
   // Unaudited, so announced here: everyone with the list open sees it fold.
-  for (const projectId of lists) announceChange({ actor: userId, projectId });
+  for (const { id, projectId } of changed) announceChange({ actor: userId, projectId, itemId: id });
 }
 
 export { ITEM_SORTS, type ItemSort } from "../lib/itemSorts";

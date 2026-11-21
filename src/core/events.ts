@@ -18,6 +18,12 @@ export interface ItemAt {
   title: string;
 }
 
+/** The captured thing an item was added from, such as a photo of a page. */
+export interface SourceAt {
+  sourceId: string;
+  kind: "photo";
+}
+
 /** A person as they were labelled when the change happened, for once they're gone. */
 export interface PersonAt {
   userId: string;
@@ -81,8 +87,16 @@ export type ChangeEvent =
       repeat: Repeat | null;
       /** Added as one of its parent's lines, in the same go as the parent. */
       withParent?: true;
+      /** Added from a source, such as a photo of a page, after review. */
+      from?: SourceAt;
     } & ItemAt)
-  | ({ type: "item.updated"; projectId: string; changes: ItemChanges } & ItemAt)
+  | ({
+      type: "item.updated";
+      projectId: string;
+      changes: ItemChanges;
+      /** Changed from a source, such as a photo of a page, after review. */
+      from?: SourceAt;
+    } & ItemAt)
   | ({
       type: "item.completed";
       projectId: string;
@@ -93,6 +107,8 @@ export type ChangeEvent =
       with?: ItemAt & { as: "last-sub-item" | "parent" };
       /** Logged as already done when it was added. */
       added?: true;
+      /** Ticked off from a source, such as a crossed-out line on a photo. */
+      from?: SourceAt;
     } & ItemAt)
   | ({
       type: "item.reopened";
@@ -166,6 +182,10 @@ export type ChangeEvent =
       member: PersonAt;
       /** Absent on invites from before list roles, which were all editors. */
       role?: ListRole;
+      /** Set when one invite covered several places or people (invitePeople). */
+      inviteId?: string;
+      /** Set when they'll see only the items assigned to this person. */
+      onlyAssignedTo?: PersonAt;
     }
   /** The list's owner changed what a member can do on it. */
   | {
@@ -176,6 +196,10 @@ export type ChangeEvent =
       member: PersonAt;
       role: ListRole;
       lost?: AccessLost;
+      /** Set when they now see only the items assigned to this person. */
+      onlyAssignedTo?: PersonAt;
+      /** Set when they saw only someone's items and now see all of them. */
+      seesAll?: true;
     }
   | {
       type: "member.joined" | "member.declined";
@@ -184,6 +208,8 @@ export type ChangeEvent =
       membershipId: string;
       /** What they joined as; absent on joins from before it was recorded. */
       role?: ListRole;
+      /** Set when they joined to see only the items assigned to this person. */
+      onlyAssignedTo?: PersonAt;
     }
   | {
       type: "member.removed";
@@ -250,6 +276,10 @@ export type ChangeEvent =
       member: PersonAt;
       /** Absent on invites from before Space roles beyond member. */
       role?: SpaceRole;
+      /** Set when one invite covered several places or people (invitePeople). */
+      inviteId?: string;
+      /** Set when they'll see only the items assigned to this person. */
+      onlyAssignedTo?: PersonAt;
     }
   | {
       type: "space.member.joined" | "space.member.declined";
@@ -257,6 +287,8 @@ export type ChangeEvent =
       membershipId: string;
       /** What they joined as; absent on joins from before it was recorded. */
       role?: SpaceRole;
+      /** Set when they joined to see only the items assigned to this person. */
+      onlyAssignedTo?: PersonAt;
     }
   | {
       type: "space.member.removed";
@@ -273,6 +305,10 @@ export type ChangeEvent =
       member: PersonAt;
       role: SpaceRole;
       lost?: AccessLost;
+      /** Set when they now see only the items assigned to this person. */
+      onlyAssignedTo?: PersonAt;
+      /** Set when they saw only someone's items and now see all of them. */
+      seesAll?: true;
     }
   // Pull requests
   | ({ type: "item.pr.linked" | "item.pr.unlinked"; projectId: string; prUrl: string } & ItemAt)
@@ -331,13 +367,32 @@ export type AccountEvent =
   /** Signed in again with a new password, after the old one stopped working. */
   | { type: "calendar.reconnected"; accountId: string; username: string }
   | { type: "calendar.included"; accountId: string; calendarId: string; name: string; included: boolean }
+  /** `replaced`: a new address for a user who had one; the old one stops working. */
+  | { type: "email.address.created"; addressId: string; replaced: boolean }
+  | { type: "email.address.removed"; addressId: string }
+  /** A photo's reviewed lines went on the board; each item's own row says it too. */
+  | {
+      type: "source.added";
+      sourceId: string;
+      kind: "photo";
+      added: number;
+      /** Existing items the photo changed, such as a new due date. */
+      updated?: number;
+      completed: number;
+      skipped: number;
+    }
   | { type: "profile.username"; userId: string; from: string; to: string }
   /** `image` null: cleared. */
   | { type: "profile.avatar"; userId: string; image: string | null; uploaded?: true }
   /** The app first opened in its own window on this platform (getStarted.ts). */
   | { type: "profile.installed"; userId: string; platform: InstallPlatform }
   /** Written by the audit_password_update trigger (migration 0045), not core. */
-  | { type: "profile.password"; userId: string; viaReset: boolean };
+  | { type: "profile.password"; userId: string; viaReset: boolean }
+  /** Written by the audit_two_factor_update trigger (migration 0065). */
+  | { type: "profile.two_factor"; userId: string; enabled: boolean }
+  /** Written by the audit_backup_codes_update trigger (migration 0065).
+   * `used`: one was spent signing in; otherwise a new set was generated. */
+  | { type: "profile.backup_codes"; userId: string; used: boolean };
 
 /** `lost`, or undefined when it cleaned up nothing, to keep it off the event. */
 export function accessLost(lost: AccessLost): AccessLost | undefined {
@@ -496,8 +551,16 @@ export function auditColumns(event: ChangeEvent): {
     case "calendar.reconnected":
     case "calendar.included":
       return account("update", "calendar", event.accountId);
+    case "email.address.created":
+      return account(event.replaced ? "update" : "create", "email_address", event.addressId);
+    case "email.address.removed":
+      return account("delete", "email_address", event.addressId);
+    case "source.added":
+      return account("create", "source", event.sourceId);
     case "profile.username":
     case "profile.password":
+    case "profile.two_factor":
+    case "profile.backup_codes":
       return account("update", "profile", event.userId);
     case "profile.avatar":
       return account(event.image ? "update" : "delete", "profile", event.userId);

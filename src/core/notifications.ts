@@ -7,14 +7,14 @@ import { getPostHog } from "../lib/posthog";
 import { isEmoji } from "../lib/projectIcon";
 import { dayOf } from "../lib/time";
 import { type PushMessage, sendPush } from "../lib/push";
-import { hasProjectAccess, listAccess, listMemberIds } from "./access";
+import { canSeeItem, hasItemAccess, hasProjectAccess, listAccess, listMemberIds } from "./access";
 import { users } from "./auth-schema";
 import { onChanges } from "./changes";
 import type { Db } from "./db";
 import { SYSTEM_ACTOR } from "./audit";
 import { duePart, type Part, plainText } from "./describe";
 import { autoFollow, followersOf } from "./follows";
-import type { ChangeEvent, ItemAt } from "./events";
+import type { ChangeEvent, ItemAt, PersonAt } from "./events";
 import { isLooking } from "./presence";
 import { remindDue } from "./reminders";
 import { forgetPushSubscriptions, pushTargets } from "./push";
@@ -31,6 +31,7 @@ import {
   type SpaceRole,
   notificationSettings,
   notifications,
+  projectMembers,
   projects,
   spaceMembers,
   spaces,
@@ -72,6 +73,9 @@ export interface NotificationView {
   } | null;
   /** The agent that made it for them. */
   agentName: string | null;
+  /** For an invite: who was invited (null: the reader) and to where, so a
+   * push about one invite to several places or people can say it once. */
+  invite?: { who: string | null; place: string };
 }
 
 const INBOX_SIZE = 30;
@@ -112,13 +116,14 @@ function rule(
   db: Db,
   event: ChangeEvent,
   actor: string,
-): { to: Recipient[]; groupKey: string; projectId?: string; spaceId?: string } | null {
+): { to: Recipient[]; groupKey: string; projectId?: string; spaceId?: string; itemId?: string } | null {
   const as = (reason: NotificationReason, userIds: string[]): Recipient[] =>
     userIds.map((userId) => ({ userId, reason }));
   const onItem = (itemId: string, projectId: string, to: Recipient[]) => ({
     to,
     groupKey: `item:${itemId}`,
     projectId,
+    itemId,
   });
   const followers = (itemId: string) => as("following", followersOf(db, itemId));
   // Who hears that someone was invited to or joined a list or Space:
@@ -208,7 +213,11 @@ function rule(
         as("activity", followersOf(db, event.itemId)),
       );
     case "comment.created": {
-      const mentioned = event.mentioned?.map((p) => p.userId) ?? [];
+      // Only those who can see the item: one shown part of the list
+      // mustn't follow, or hear of, an item they can't see.
+      const mentioned = (event.mentioned ?? [])
+        .map((p) => p.userId)
+        .filter((u) => canSeeItem(db, u, event.item.itemId, event.projectId));
       autoFollow(db, event.item.itemId, [actor, ...mentioned]);
       return onItem(event.item.itemId, event.projectId, [
         ...as("mentioned", mentioned),
@@ -216,7 +225,11 @@ function rule(
       ]);
     }
     case "comment.edited": {
-      const mentioned = event.mentioned?.map((p) => p.userId) ?? [];
+      // Only those who can see the item: one shown part of the list
+      // mustn't follow, or hear of, an item they can't see.
+      const mentioned = (event.mentioned ?? [])
+        .map((p) => p.userId)
+        .filter((u) => canSeeItem(db, u, event.item.itemId, event.projectId));
       autoFollow(db, event.item.itemId, mentioned);
       return onItem(event.item.itemId, event.projectId, as("mentioned", mentioned));
     }
@@ -224,7 +237,8 @@ function rule(
       return {
         // The invitee can't open it yet; the rest are told who's coming.
         to: [...as("invited", [event.member.userId]), ...as("joined", listPeople(event.projectId))],
-        groupKey: `list:${event.projectId}`,
+        // One invite to several places or people is told as one.
+        groupKey: event.inviteId ? `invite:${event.inviteId}` : `list:${event.projectId}`,
         projectId: event.projectId,
       };
     case "member.joined":
@@ -264,7 +278,7 @@ function rule(
           ...as("invited", [event.member.userId]),
           ...as("joined", spacePeople(event.space.spaceId)),
         ],
-        groupKey: `space:${event.space.spaceId}`,
+        groupKey: event.inviteId ? `invite:${event.inviteId}` : `space:${event.space.spaceId}`,
         spaceId: event.space.spaceId,
       };
     case "space.member.joined":
@@ -324,7 +338,7 @@ export function writeNotifications(
     const had = best.get(userId);
     if (!had || strength(reason) < strength(had)) best.set(userId, reason);
   }
-  const { projectId, spaceId } = r;
+  const { projectId, spaceId, itemId } = r;
   // An invitee is told before they can open the place they're invited to.
   const to = [...best].filter(
     ([u, reason]) =>
@@ -336,6 +350,8 @@ export function writeNotifications(
           .from(projects)
           .where(and(eq(projects.id, projectId), hasProjectAccess(u)))
           .get()) &&
+      // Someone shown only part of the list hears only of what they see.
+      (reason === "invited" || !itemId || !projectId || canSeeItem(db, u, itemId, projectId)) &&
       (reason === "invited" || !spaceId || inSpace(db, u, spaceId)),
   );
   // Each at the level they chose for where it happened.
@@ -614,7 +630,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           })
           .from(items)
           .innerJoin(projects, eq(projects.id, items.projectId))
-          .where(and(inArray(items.id, itemIds), hasProjectAccess(userId)))
+          .where(and(inArray(items.id, itemIds), hasItemAccess(userId)))
           .all()
       : []
     ).map((r) => [r.id, r]),
@@ -692,6 +708,29 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
     ).map((sp) => [sp.id, sp.name]),
   );
 
+  // Invites still standing, pending or taken up: one revoked or declined (or
+  // left since) goes from everyone's inbox, the invitee's too.
+  const inviteIds = (type: "member.invited" | "space.member.invited") =>
+    events.flatMap((e) => (e.type === type ? [e.membershipId] : []));
+  const listInvites = inviteIds("member.invited");
+  const spaceInvites = inviteIds("space.member.invited");
+  const standing = new Set([
+    ...(listInvites.length
+      ? db
+          .select({ id: projectMembers.id })
+          .from(projectMembers)
+          .where(inArray(projectMembers.id, listInvites))
+          .all()
+      : []),
+    ...(spaceInvites.length
+      ? db
+          .select({ id: spaceMembers.id })
+          .from(spaceMembers)
+          .where(inArray(spaceMembers.id, spaceInvites))
+          .all()
+      : []),
+  ].map((m) => m.id));
+
   return rows.flatMap((r): NotificationView[] => {
     // A due reminder: the item as it is now, while they can open it.
     if (r.reason === "due-today" || r.reason === "overdue") {
@@ -726,6 +765,11 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
         (r.actorId === SYSTEM_ACTOR
           ? "Sidetrack"
           : a?.name || (a?.displayUsername ? `@${a.displayUsername}` : a?.email) || "Someone"),
+      em: "person",
+    };
+    // Whoever joined, even through their agent: it's them on the list now.
+    const person: Part = {
+      text: a?.name || (a?.displayUsername ? `@${a.displayUsername}` : a?.email) || "Someone",
       em: "person",
     };
     const t = (text: string): Part => ({ text });
@@ -809,9 +853,19 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           ];
       }
     }
+    if (
+      (event.type === "member.invited" || event.type === "space.member.invited") &&
+      !standing.has(event.membershipId)
+    ) {
+      return [];
+    }
     // What someone joined or was invited as, when it's less than editing.
-    const asRole = (role: ListRole | SpaceRole | undefined): Part[] =>
-      role && role !== "editor" && role !== "member" ? [t(` as ${roleWords(role)}`)] : [];
+    // and whose items they see, when it's only someone's.
+    const whose = (only: PersonAt) => (only.userId === r.userId ? "your" : `${only.name}'s`);
+    const asRole = (role: ListRole | SpaceRole | undefined, only?: PersonAt): Part[] =>
+      role && role !== "editor" && role !== "member"
+        ? [t(` as ${roleWords(role)}${only ? ` of ${whose(only)} items` : ""}`)]
+        : [];
     // Someone else invited: told to those already in the list or Space, by
     // its current name, while they still are.
     if (
@@ -832,13 +886,14 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           title: name,
           list: place.list,
           url: event.type === "member.invited" ? `/board?p=${encodeURIComponent(event.projectId)}` : "/",
+          invite: { who: event.member.name, place: name },
           parts: [
             who,
             t(" invited "),
             { text: event.member.name, em: "person" },
             t(" to "),
             place,
-            ...asRole(event.role),
+            ...asRole(event.role, event.onlyAssignedTo),
           ],
           snippet: null,
         },
@@ -854,11 +909,12 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           ...base,
           title: name,
           url: "/",
+          invite: { who: null, place: name },
           parts: [
             who,
             t(" invited you to "),
             { text: name, em: "place", quote: true },
-            ...asRole(event.role),
+            ...asRole(event.role, event.onlyAssignedTo),
           ],
           snippet: null,
         },
@@ -889,7 +945,13 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           title: list.name,
           list: place.list,
           url: `/board?p=${encodeURIComponent(event.projectId)}`,
-          parts: [who, t(` made you ${roleWords(event.role)} of `), place],
+          parts: [
+            who,
+            t(` made you ${roleWords(event.role)} of `),
+            place,
+            ...(event.onlyAssignedTo ? [t(`, seeing only ${whose(event.onlyAssignedTo)} items`)] : []),
+            ...(event.seesAll ? [t(", seeing all of it")] : []),
+          ],
           snippet: null,
         },
       ];
@@ -909,7 +971,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
             ? list.space
               ? [who, t(" added "), place, t(" to "), { text: list.space, em: "place", quote: true }]
               : [who, t(" added "), place]
-            : [who, t(" joined "), place, ...(event.type === "member.joined" ? asRole(event.role) : [])];
+            : [person, t(" joined "), place, ...(event.type === "member.joined" ? asRole(event.role, event.onlyAssignedTo) : [])];
       return [
         {
           ...base,
@@ -933,8 +995,14 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           url: "/",
           parts:
             event.type === "space.member.role"
-              ? [who, t(` made you ${roleWords(event.role)} of `), space]
-              : [who, t(" joined "), space, ...asRole(event.role)],
+              ? [
+                  who,
+                  t(` made you ${roleWords(event.role)} of `),
+                  space,
+                  ...(event.onlyAssignedTo ? [t(`, seeing only ${whose(event.onlyAssignedTo)} items`)] : []),
+                  ...(event.seesAll ? [t(", seeing all of it")] : []),
+                ]
+              : [person, t(" joined "), space, ...asRole(event.role, event.onlyAssignedTo)],
           snippet: null,
         },
       ];
@@ -1181,6 +1249,25 @@ function summarise(views: NotificationView[], today: string): Omit<PushMessage, 
         ? "are overdue"
         : "are due or overdue";
     return { title: "Due", body: `${named} ${when}`, url: "/brief" };
+  }
+  // One invite to several places or people: said once, naming each.
+  // Only when one person sent them all: a Space's other admin may have
+  // invited someone else in the same window.
+  const invites = views.flatMap((v) => (v.invite ? [v.invite] : []));
+  if (
+    invites.length === views.length &&
+    new Set(views.map((v) => v.parts[0]?.text)).size === 1
+  ) {
+    const and = (list: string[]) =>
+      list.length === 1 ? list[0] : `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
+    const invited = [...new Set(invites.map((i) => i.who ?? "you"))];
+    const places = [...new Set(invites.map((i) => `"${i.place}"`))];
+    const by = last.parts[0]?.text ?? "Someone";
+    return {
+      title: places.length === 1 ? last.title : "Invites",
+      body: `${by} invited ${and(invited)} to ${and(places)}`,
+      url: invited.includes("you") ? "/" : last.url,
+    };
   }
   // Who: the person each sentence starts with, in order of first change.
   const names = [

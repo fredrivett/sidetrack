@@ -29,7 +29,9 @@ vi.mock(
     ),
 );
 
-vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+vi.mock("sonner", () => ({
+  toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
+}));
 
 const router = { refresh: vi.fn(), push: vi.fn(), replace: vi.fn() };
 vi.mock("next/navigation", async (importOriginal) => ({
@@ -77,7 +79,13 @@ it("keeps every change in the page", async () => {
   // The browser's day matches the page's, as it does for most visitors.
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(Date.parse("2026-11-16T09:00:00Z"));
-  render(<PreviewBoard today="2026-11-16" now={Date.parse("2026-11-16T09:00:00Z")} />);
+  render(
+    <PreviewBoard
+      today="2026-11-16"
+      now={Date.parse("2026-11-16T09:00:00Z")}
+      signUp={{ href: "/login?mode=sign-up", label: "Get started", nudge: "Sign up to try it out." }}
+    />,
+  );
 
   // It opens on the Brief, whose greeting names today's item and the
   // overdue boiler service.
@@ -101,7 +109,7 @@ it("keeps every change in the page", async () => {
   noServerCalls();
   expect(greeting().textContent).not.toMatch(/boiler/);
   expect(greeting().textContent).toMatch(
-    /^Write the launch post is the one for today\. Take the bins out is due tomorrow\./,
+    /^Write the launch post is the one for today\. Email the waitlist is due tomorrow, so worth a head start today\./,
   );
 
   fireEvent.click(screen.getByRole("button", { name: "Board" }));
@@ -142,6 +150,40 @@ it("keeps every change in the page", async () => {
     /working/,
   );
 
+  // Done has what's finished, newest first, including the spam fix just
+  // ticked and a sub-item finished yesterday, under its parent's name.
+  fireEvent.click(screen.getByRole("button", { name: "Done" }));
+  const done = screen.getAllByRole("checkbox").map((box) => box.closest(".group")?.textContent ?? "");
+  expect(done[0]).toMatch(/Fix signup email going to spam/);
+  expect(done.some((t) => /Write the script.*Launch › Record the demo video/.test(t))).toBe(true);
+  expect(done.some((t) => /Take the bins out/.test(t))).toBe(false);
+
+  // Opening an item asks the visitor to sign up, rather than loading it.
+  expect(toast).not.toHaveBeenCalled();
+  fireEvent.click(row("Set up a waitlist"));
+  expect(toast).toHaveBeenCalledWith(
+    "That needs a board of your own",
+    expect.objectContaining({ description: "Sign up to try it out." }),
+  );
+
+  // Activity logs the visitor's own changes, newest first, over the
+  // sample history.
+  fireEvent.click(screen.getByRole("button", { name: "Activity" }));
+  const activity = screen.getByRole("dialog");
+  const entries = within(activity).getAllByRole("listitem").map((li) => li.textContent);
+  expect(entries[0]).toMatch(/^webcompleted Fix signup email going to spam/);
+  expect(entries.some((t) => /made Take the bins out a sub-item of Water the plants/.test(t))).toBe(true);
+  expect(entries.some((t) => /^mcpstarted work on Fix signup email going to spam.*via Amp/.test(t))).toBe(true);
+  fireEvent.click(within(activity).getByRole("button", { name: "mcp" }));
+  expect(within(activity).queryByText(/completed/)).toBeNull();
+  fireEvent.keyDown(activity, { key: "Escape" });
+
+  // The account menu's settings need an account too.
+  fireEvent.click(screen.getByRole("button", { name: "Account" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Profile" }));
+  expect(toast).toHaveBeenCalledTimes(2);
+
+  noServerCalls();
   expect(fetched).not.toHaveBeenCalled();
   expect(toast.error).not.toHaveBeenCalled();
   expect(router.push).not.toHaveBeenCalled();

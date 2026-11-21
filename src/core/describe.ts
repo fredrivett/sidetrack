@@ -3,6 +3,7 @@ import { roleWords } from "../lib/roles";
 import { ITEM_SORTS } from "../lib/itemSorts";
 import { repeatLabel } from "../lib/repeat";
 import { dueWord } from "../lib/time";
+import { hasItemAccess } from "./access";
 import { users } from "./auth-schema";
 import type { Db } from "./db";
 import type { AccessLost, ChangeEvent, DueAt, ItemAt, ListChanges, PersonAt, SpaceAt } from "./events";
@@ -76,7 +77,9 @@ export function namesFor(db: Db, events: ChangeEvent[], viewer: string): Names {
     ? db
         .select({ id: items.id, title: items.title, projectId: items.projectId, completedAt: items.completedAt })
         .from(items)
-        .where(inArray(items.id, [...ids.items]))
+        .innerJoin(projects, eq(projects.id, items.projectId))
+        // Only items the viewer can see now; the rest keep the name the event stored.
+        .where(and(inArray(items.id, [...ids.items]), hasItemAccess(viewer)))
         .all()
     : [];
   const userRows = ids.people.size
@@ -198,6 +201,9 @@ function listChanges(c: ListChanges): string[] {
   ].filter((p): p is string => Boolean(p));
 }
 
+/** Whose items a role covers, when it's only someone's. */
+const onlyOf = (only?: PersonAt) => (only ? ` of ${only.name}'s items` : "");
+
 export function describeEvent(event: ChangeEvent, names: Names): Part[] {
   const projectId = "projectId" in event ? event.projectId : "";
   const item = (it: ItemAt): Part => ({
@@ -225,6 +231,7 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
       if (event.labels.length) parts.push(t(`, labelled ${event.labels.join(", ")}`));
       if (event.assignees.length) parts.push(t(", assigned to "), ...people(names, event.assignees));
       if (event.repeat) parts.push(t(`, repeats ${repeatLabel(event.repeat).replace("Every", "every")}`));
+      if (event.from) parts.push(t(" from a photo"));
       return parts;
     }
     case "item.updated": {
@@ -261,14 +268,18 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
         subject,
         t(": "),
         ...changes.flatMap((p, i) => (i ? [t(", "), ...p] : p)),
+        ...(event.from ? [t(" from a photo")] : []),
       ];
     }
-    case "item.completed":
-      return !event.with
+    case "item.completed": {
+      const parts: Part[] = !event.with
         ? [t("completed "), item(event)]
         : event.with.as === "last-sub-item"
           ? [t("completed "), item(event), t(" with its last sub-item, "), item(event.with)]
           : [t("completed "), item(event), t(" with "), item(event.with)];
+      if (event.from) parts.push(t(" from a photo"));
+      return parts;
+    }
     case "item.reopened": {
       const parts: Part[] = [t("reopened "), item(event)];
       if (event.forSubItem) parts.push(t(" for an open sub-item"));
@@ -338,7 +349,7 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
         person(event.member),
         t(" to "),
         list(event.listName),
-        ...(event.role && event.role !== "editor" ? [t(` as ${roleWords(event.role)}`)] : []),
+        ...(event.role && event.role !== "editor" ? [t(` as ${roleWords(event.role)}${onlyOf(event.onlyAssignedTo)}`)] : []),
       ];
     case "member.role":
       return [
@@ -346,13 +357,15 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
         person(event.member),
         t(` ${roleWords(event.role)} of `),
         list(event.listName),
+        ...(event.onlyAssignedTo ? [t(`, seeing only ${event.onlyAssignedTo.name}'s items`)] : []),
+        ...(event.seesAll ? [t(", seeing all of it")] : []),
         ...lostText(event.lost),
       ];
     case "member.joined":
       return [
         t("accepted invite to "),
         list(event.listName),
-        ...(event.role && event.role !== "editor" ? [t(` as ${roleWords(event.role)}`)] : []),
+        ...(event.role && event.role !== "editor" ? [t(` as ${roleWords(event.role)}${onlyOf(event.onlyAssignedTo)}`)] : []),
       ];
     case "member.declined":
       return [t("declined invite to "), list(event.listName)];
@@ -423,13 +436,13 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
         person(event.member),
         t(" to space "),
         space(event.space),
-        ...(event.role && event.role !== "member" ? [t(` as ${roleWords(event.role)}`)] : []),
+        ...(event.role && event.role !== "member" ? [t(` as ${roleWords(event.role)}${onlyOf(event.onlyAssignedTo)}`)] : []),
       ];
     case "space.member.joined":
       return [
         t("accepted invite to space "),
         space(event.space),
-        ...(event.role && event.role !== "member" ? [t(` as ${roleWords(event.role)}`)] : []),
+        ...(event.role && event.role !== "member" ? [t(` as ${roleWords(event.role)}${onlyOf(event.onlyAssignedTo)}`)] : []),
       ];
     case "space.member.declined":
       return [t("declined invite to space "), space(event.space)];
@@ -448,6 +461,8 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
         person(event.member),
         t(` ${roleWords(event.role)} of space `),
         space(event.space),
+        ...(event.onlyAssignedTo ? [t(`, seeing only ${event.onlyAssignedTo.name}'s items`)] : []),
+        ...(event.seesAll ? [t(", seeing all of it")] : []),
         ...lostText(event.lost),
       ];
     case "item.pr.linked":
@@ -530,6 +545,21 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
       return event.included
         ? [t("included calendar "), key(event.name), t(" in Sidetrack")]
         : [t("left calendar "), key(event.name), t(" out of Sidetrack")];
+    case "email.address.created":
+      return event.replaced
+        ? [t("replaced the email forwarding address")]
+        : [t("set up an email forwarding address")];
+    case "email.address.removed":
+      return [t("turned off email forwarding")];
+    case "source.added": {
+      const did = [
+        event.added && `added ${event.added} item${event.added === 1 ? "" : "s"}`,
+        event.updated && `updated ${event.updated}`,
+        event.completed && `ticked off ${event.completed}`,
+      ].filter(Boolean);
+      const said = did.length > 1 ? `${did.slice(0, -1).join(", ")} and ${did.at(-1)}` : did[0];
+      return [t(`${said || "added nothing"} from a photo of a page`)];
+    }
     case "profile.username":
       return [
         t("changed username from "),
@@ -551,5 +581,9 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
       return [t(event.platform === "phone" ? "added Sidetrack to a phone's Home Screen" : "installed Sidetrack on a computer")];
     case "profile.password":
       return [t(event.viaReset ? "reset password with an emailed link" : "changed password")];
+    case "profile.two_factor":
+      return [t(event.enabled ? "turned on two-factor sign-in" : "turned off two-factor sign-in")];
+    case "profile.backup_codes":
+      return [t(event.used ? "used a backup code" : "generated new backup codes")];
   }
 }

@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { listAccessById } from "@/core/access";
+import { limitedListsById, listAccessById } from "@/core/access";
 import { AgentSessionsProvider } from "@/components/agent-sessions";
 import { CommentCountsProvider } from "@/components/comment-counts";
 import { Kanban } from "@/components/Kanban";
@@ -9,6 +9,7 @@ import {
   listStartableAgents,
   listStartableLists,
 } from "@/core/agentSessions";
+import { changeSeq } from "@/core/changes";
 import { countCommentsByItem } from "@/core/comments";
 import { listLabels } from "@/core/labels";
 import { getDb } from "@/core/db";
@@ -19,6 +20,7 @@ import { listFollowedItemIds } from "@/core/follows";
 import { listAssignees, listPendingInvites } from "@/core/members";
 import { listAllPrLinks, suggestedRepositories } from "@/core/prLinks";
 import { listProjects } from "@/core/projects";
+import { listPendingSources } from "@/core/sources";
 import { listPendingSpaceInvites, listSpaces, listTrays } from "@/core/spaces";
 import { COLLAPSED_TRAYS_COOKIE, parseCollapsedTrays } from "@/components/SpaceTray";
 import { getGetStarted } from "@/core/getStarted";
@@ -51,6 +53,8 @@ export default async function Home({
   const { db } = getDb();
   // Repeating items whose next due day has come reopen as the page loads.
   reopenDueRepeats(db, userId);
+  // Read before anything the page shows, so the page has every change up to it.
+  const seq = changeSeq();
   // Tag each project with whether the viewer owns it (vs. it being shared with
   // them) for the badge and owner-only gating, plus its display ref-prefix —
   // qualified (alice/SID) only when a shared project's prefix clashes on this
@@ -58,10 +62,12 @@ export default async function Home({
   const refPrefixes = projectRefPrefixes(db, userId);
   const repoSuggestions = suggestedRepositories(db, userId);
   const access = listAccessById(db, userId);
+  const limited = limitedListsById(db, userId);
   const projects = listProjects(db, userId).map((p) => ({
     ...p,
     isOwner: p.userId === userId,
     access: access.get(p.id) ?? "view",
+    onlyItemsOf: limited.get(p.id) ?? null,
     refPrefix: refPrefixes[p.id] ?? p.prefix,
     suggestedRepository: repoSuggestions[p.id],
   }));
@@ -132,6 +138,7 @@ export default async function Home({
             spaces={listSpaces(db, userId)}
             trayOrder={listTrays(db, userId)}
             pendingSpaceInvites={listPendingSpaceInvites(db, userId)}
+            pendingPhotos={listPendingSources(db, userId)}
             initialListId={typeof p === "string" ? p : null}
             initialItemId={typeof item === "string" ? item : null}
           // A push can link to an item not loaded with the board.
@@ -152,7 +159,7 @@ export default async function Home({
             feedbackEnabled={Boolean(getEnv().FEEDBACK_LIST_ID)}
           />
         </CommentCountsProvider>
-        <LiveUpdates />
+        <LiveUpdates seq={seq} />
         <PostHogIdentify userId={userId} username={viewer?.displayUsername ?? null} />
       </AgentSessionsProvider>
     </ServerTodayProvider>

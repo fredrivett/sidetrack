@@ -1,13 +1,14 @@
 "use client";
 
 import { ChevronDown } from "lucide-react";
-import { useId, useOptimistic, useState, useTransition } from "react";
+import { type ReactNode, useEffect, useId, useOptimistic, useState, useTransition } from "react";
+import { flushSync } from "react-dom";
 import type { Greeting } from "@/core/agendaGreeting";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { formatItemRef } from "@/lib/itemRef";
 import { nestItems } from "@/lib/itemTree";
-import { AGENDA_SECTIONS, agendaSection, type AgendaSection } from "@/lib/time";
+import { AGENDA_SECTIONS, agendaSection, type AgendaSection, weekday } from "@/lib/time";
 import { isYours, type ItemFilters, matchesFilters } from "@/lib/filters";
 import { useAgendaSaves } from "./agenda-saves";
 import { AgendaGreeting } from "./AgendaGreeting";
@@ -19,6 +20,7 @@ import { ItemGroupView } from "./ItemList";
 import { ItemRow } from "./ItemRow";
 import { MoveToTomorrowDialog } from "./MoveToTomorrowDialog";
 import type { ProjectView } from "./Kanban";
+import { Button } from "./ui/button";
 import { ProjectIcon } from "./ProjectIcon";
 import { runAction } from "./run-action";
 import { useToday } from "./use-day-start";
@@ -29,11 +31,46 @@ type AgendaList = Pick<ProjectView, "id" | "name" | "icon" | "homepageUrl" | "re
 
 const openCount = (rows: Item[]) => rows.filter((i) => i.completedAt === null).length;
 
+/** How many of a list's undated items No date shows until asked for the rest. */
+const NO_DATE_SHOWN = 10;
+
+/**
+ * A section's rows, folding away. Rows 0fr to 1fr animates to the content's
+ * own height. Folded, it's inert, so its rows leave the tab order too, and
+ * once the fold has closed they unmount: a folded No date with hundreds of
+ * items costs nothing to render.
+ */
+function Fold({ id, collapsed, children }: { id: string; collapsed: boolean; children: ReactNode }) {
+  const [mounted, setMounted] = useState(!collapsed);
+  if (!collapsed && !mounted) setMounted(true);
+  useEffect(() => {
+    if (!collapsed) return;
+    // As long as the fold's transition (duration-300).
+    const timer = setTimeout(() => setMounted(false), 300);
+    return () => clearTimeout(timer);
+  }, [collapsed]);
+  return (
+    <div
+      id={id}
+      inert={collapsed}
+      className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none ${
+        collapsed ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100"
+      }`}
+    >
+      {/* -mx-1 px-1 and pb-1 leave room for the rows' focus rings. */}
+      <div className="-mx-1 min-h-0 overflow-hidden">
+        <div className="space-y-1.5 px-1 pt-0.5 pb-1">{mounted && children}</div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * One scroll across every active list, from what's late to what has no date:
- * Overdue, Today, This week, Next week, Later, then No date (see
- * agendaSection). Every open item assigned to the viewer or to nobody is on
- * it (isYours), and items finished today stay crossed out in place. Dated sections run by due day, ties keeping board and
+ * Overdue, Today, Tomorrow, This week (This weekend on a Saturday or
+ * Sunday), Next week, Later, then No date (see agendaSection). Every open
+ * item assigned to the viewer or to nobody is on it (isYours), and items
+ * finished today stay crossed out in place. Dated sections run by due day, ties keeping board and
  * list order; No date groups its items by list, an undated parent with its
  * undated sub-items under it. Overdue sits in a faint red card the viewer can
  * fold away, which stays folded on every device until they open it again.
@@ -89,9 +126,9 @@ export function AgendaView({
   filters: ItemFilters;
   /**
    * The landing page's preview: this greeting instead of asking for one, and
-   * items that don't open, since their dialog loads from the server.
+   * `onOpenItem` instead of an item's dialog, which loads from the server.
    */
-  preview?: { greeting: Greeting };
+  preview?: { greeting: Greeting; onOpenItem: (item: Item) => void };
 }) {
   const today = useToday();
   const saves = useAgendaSaves();
@@ -119,6 +156,9 @@ export function AgendaView({
       );
     });
   const noDateId = useId();
+  // The lists whose No date card shows all its items, not only the first
+  // NO_DATE_SHOWN: for this visit only.
+  const [allShown, setAllShown] = useState<ReadonlySet<string>>(new Set());
   // Each list's card in No date folds on its own, the same way.
   const [foldedLists, showListFolded] = useOptimistic(
     savedFoldedLists,
@@ -134,21 +174,10 @@ export function AgendaView({
         `${folded ? "collapse" : "expand"} ${project.name}`,
       );
     });
-  // Rows 0fr to 1fr animates to the content's own height. Folded, it's inert,
-  // so its rows leave the tab order too.
-  const fold = (id: string, collapsed: boolean, rows: React.ReactNode) => (
-    <div
-      id={id}
-      inert={collapsed}
-      className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none ${
-        collapsed ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100"
-      }`}
-    >
-      {/* -mx-1 px-1 and pb-1 leave room for the rows' focus rings. */}
-      <div className="-mx-1 min-h-0 overflow-hidden">
-        <div className="space-y-1.5 px-1 pt-0.5 pb-1">{rows}</div>
-      </div>
-    </div>
+  const fold = (id: string, collapsed: boolean, rows: ReactNode) => (
+    <Fold id={id} collapsed={collapsed}>
+      {rows}
+    </Fold>
   );
   const chevron = (collapsed: boolean, size: string) => (
     <ChevronDown
@@ -176,7 +205,7 @@ export function AgendaView({
   // Every item, not just those shown, so an open dialog stays open whatever
   // its item becomes.
   const detail = useItemDetailDialog(all);
-  const openDetail = preview ? () => {} : detail.openDetail;
+  const openDetail = preview ? preview.onOpenItem : detail.openDetail;
 
   const sectionOf = new Map<string, AgendaSection>();
   if (today) {
@@ -288,21 +317,47 @@ export function AgendaView({
                   {chevron(folded, "size-3.5")}
                 </button>
               </h3>
-              {fold(bodyId, folded, groups.map((group) =>
-                lightable(group.id, group.parentId ? (
-                  <ItemRow
-                    item={group}
-                    prefix={row.prefix}
-                    assignees={row.assignees}
-                    viewerId={viewerId}
-                    prLinks={prLinksByItem[group.id] ?? []}
-                    context={byId.get(group.parentId)?.title}
-                    onOpenDetail={() => openDetail(group)}
-                  />
-                ) : (
-                  <ItemGroupView group={group} {...row} />
-                )),
-              ))}
+              {fold(bodyId, folded, [
+                ...(allShown.has(project.id) ? groups : groups.slice(0, NO_DATE_SHOWN)).map(
+                  (group) =>
+                    lightable(
+                      group.id,
+                      group.parentId ? (
+                        <ItemRow
+                          item={group}
+                          prefix={row.prefix}
+                          assignees={row.assignees}
+                          viewerId={viewerId}
+                          prLinks={prLinksByItem[group.id] ?? []}
+                          context={byId.get(group.parentId)?.title}
+                          onOpenDetail={() => openDetail(group)}
+                        />
+                      ) : (
+                        <ItemGroupView group={group} {...row} />
+                      ),
+                    ),
+                ),
+                groups.length > NO_DATE_SHOWN && !allShown.has(project.id) && (
+                  <Button
+                    key="more"
+                    variant="ghost"
+                    size="sm"
+                    className="w-full text-neutral-500"
+                    aria-label={`Show ${groups.length - NO_DATE_SHOWN} more in ${project.name}`}
+                    onClick={(e) => {
+                      // The button goes as the rest come in: focus moves on to
+                      // the first of them, rather than back to the page's top.
+                      const lastShown = e.currentTarget.previousElementSibling;
+                      flushSync(() => setAllShown((s) => new Set(s).add(project.id)));
+                      lastShown?.nextElementSibling
+                        ?.querySelector<HTMLElement>("button:not([role=checkbox])")
+                        ?.focus();
+                    }}
+                  >
+                    Show {groups.length - NO_DATE_SHOWN} more
+                  </Button>
+                ),
+              ])}
             </div>
           );
         })
@@ -439,7 +494,8 @@ export function AgendaView({
             <section key={label} className="space-y-1.5">
               {/* Quiet section labels. Counts are what's left. */}
               <h2 className="flex items-center gap-1.5 px-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                {label}
+                {/* At the weekend, what's left of the week is the weekend. */}
+                {label === "This week" && today && weekday(today) % 6 === 0 ? "This weekend" : label}
                 <span className="tabular-nums text-neutral-400 dark:text-neutral-500">
                   {openCount(rows)}
                 </span>

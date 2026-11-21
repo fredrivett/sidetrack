@@ -1,0 +1,11 @@
+name = "sidetrack-email-in"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+# Email only: no public workers.dev URL.
+workers_dev = false
+
+[vars]
+SIDETRACK_URL = "https://sidetrack.it"
+
+# EMAIL_IN_SECRET is a secret: `npx wrangler secret put EMAIL_IN_SECRET`,
+# with the same value as the server's EMAIL_IN_SECRET.

@@ -116,10 +116,15 @@ export function weekday(day: string): number {
 }
 
 // Building a formatter costs far more than using one, and list_today asks
-// for every finished item's day, so keep one per named zone. The runtime's
-// own zone isn't cached: the device can move to another one.
+// for every finished item's day, as the Brief does on each render, so keep
+// one per named zone. The runtime's own zone can change (the device moves
+// to another one), so its formatter is kept only for a minute at a time.
 const dayFormats = new Map<string, Intl.DateTimeFormat>();
+let localDayFormat: { format: Intl.DateTimeFormat; until: number } | null = null;
 function dayFormat(timeZone?: string): Intl.DateTimeFormat {
+  if (!timeZone && localDayFormat && Date.now() < localDayFormat.until) {
+    return localDayFormat.format;
+  }
   let f = timeZone ? dayFormats.get(timeZone) : undefined;
   if (!f) {
     f = new Intl.DateTimeFormat("en-CA", {
@@ -131,6 +136,7 @@ function dayFormat(timeZone?: string): Intl.DateTimeFormat {
       hourCycle: "h23",
     });
     if (timeZone) dayFormats.set(timeZone, f);
+    else localDayFormat = { format: f, until: Date.now() + 60_000 };
   }
   return f;
 }
@@ -379,6 +385,8 @@ export function dueWord(due: string, today: string, from?: string | null): strin
   return null;
 }
 
+const dueFormats = new Map<string, Intl.DateTimeFormat>();
+
 /**
  * Short label for when something's due, relative to `today`. A day is
  * "Today", "Tomorrow", "Yesterday", a weekday within the coming week ("Sat"),
@@ -397,15 +405,30 @@ export function dueLabel(
   if (from) return spanDates(from, due, today, false, locale);
   const [y, m, d] = due.split("-").map(Number);
   const date = new Date(Date.UTC(y, m - 1, d));
-  if (due > today && due < addDays(today, 7)) {
-    return date.toLocaleDateString(locale, { weekday: "short", timeZone: "UTC" });
+  const shape =
+    due > today && due < addDays(today, 7)
+      ? "weekday"
+      : due.slice(0, 4) === today.slice(0, 4)
+        ? "date"
+        : "dateYear";
+  // Every row with a date shows one, so build each format once, as spanDates does.
+  const key = `${locale ?? ""}|${shape}`;
+  let format = dueFormats.get(key);
+  if (!format) {
+    format = new Intl.DateTimeFormat(
+      locale,
+      shape === "weekday"
+        ? { weekday: "short", timeZone: "UTC" }
+        : {
+            day: "numeric",
+            month: "short",
+            year: shape === "dateYear" ? "numeric" : undefined,
+            timeZone: "UTC",
+          },
+    );
+    dueFormats.set(key, format);
   }
-  return date.toLocaleDateString(locale, {
-    day: "numeric",
-    month: "short",
-    year: due.slice(0, 4) === today.slice(0, 4) ? undefined : "numeric",
-    timeZone: "UTC",
-  });
+  return format.format(date);
 }
 
 /**
@@ -445,6 +468,7 @@ export function isOnNoDate(
 export const AGENDA_SECTIONS = [
   "Overdue",
   "Today",
+  "Tomorrow",
   "This week",
   "Next week",
   "Later",
@@ -456,8 +480,8 @@ export type AgendaSection = (typeof AGENDA_SECTIONS)[number];
  * Which section of the Agenda view an item shows in on `today`, or null when
  * it's off it. Every open item is on it, and so is one finished today, crossed
  * out in place. A dated item goes under Overdue once its last day has passed;
- * one due today alone under Today; otherwise by the week it starts in, so a
- * span under way ("this week") is under This week to its last day. An
+ * one due today alone under Today, tomorrow alone under Tomorrow; otherwise by
+ * the week it starts in, so a span under way ("this week") is under This week to its last day. An
  * undated item goes under No date, except a sub-item of a dated parent, which
  * is planned with its parent (see isOnNoDate).
  */
@@ -471,6 +495,7 @@ export function agendaSection(
   if (item.completedAt !== null && dayOf(item.completedAt, timeZone) !== today) return null;
   if (item.dueDate < today) return "Overdue";
   if (!item.dueFrom && item.dueDate === today) return "Today";
+  if (!item.dueFrom && item.dueDate === addDays(today, 1)) return "Tomorrow";
   const start = item.dueFrom ?? item.dueDate;
   const sunday = weekSpan(today, 0, "week").dueDate;
   if (start <= sunday) return "This week";

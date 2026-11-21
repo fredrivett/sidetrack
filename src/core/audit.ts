@@ -1,6 +1,6 @@
-import { and, desc, eq, isNull, or } from "drizzle-orm";
+import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { hasProjectAccess } from "./access";
+import { hasItemAccess, hasProjectAccess, hasWholeListAccess } from "./access";
 import { users } from "./auth-schema";
 import { announceChange } from "./changes";
 import type { Db } from "./db";
@@ -49,6 +49,24 @@ export interface EventInput {
   actor: string;
   source: AuditOrigin;
   event: ChangeEvent;
+}
+
+/**
+ * Whether the row is one `userId` may read for the item it's about. A row
+ * about an item or its comments shows while they can see that item, or,
+ * once it's deleted or gone elsewhere, if they see the whole list it was
+ * on; one shown only someone's items mustn't read the rest's history.
+ * Rows about no item pass. Needs `projects` joined to the row's list.
+ */
+function seesRowItem(userId: string) {
+  const about = sql`(case when ${auditLog.entityType} = 'comment' then ${auditLog.parentId} else ${auditLog.entityId} end)`;
+  return or(
+    // A label's name can give a hidden item away, like the item's own history.
+    sql`${auditLog.entityType} not in ('item', 'comment', 'label')`,
+    isNull(projects.id),
+    hasWholeListAccess(userId),
+    sql`exists (select 1 from ${items} inner join ${projects} on ${projects.id} = ${items.projectId} where ${items.id} = ${about} and ${hasItemAccess(userId)})`,
+  );
 }
 
 /**
@@ -101,7 +119,18 @@ export function recordAudit(db: Db, input: EventInput): void {
     event,
   });
   // Every audited change reaches open pages once it commits (see changes.ts).
-  announceChange({ actor: input.actor, projectId: columns.projectId });
+  const itemId =
+    columns.entityType === "item"
+      ? columns.entityId
+      : columns.entityType === "comment"
+        ? (columns.parentId ?? undefined)
+        : undefined;
+  announceChange({
+    actor: input.actor,
+    projectId: columns.projectId,
+    ...(itemId ? { itemId } : {}),
+    ...(columns.entityType === "label" ? { wholeOnly: true } : {}),
+  });
 }
 
 export function listAudit(
@@ -125,7 +154,7 @@ export function listAudit(
       .select({ id: items.id })
       .from(items)
       .innerJoin(projects, eq(projects.id, items.projectId))
-      .where(and(eq(items.id, opts.itemId), hasProjectAccess(userId)))
+      .where(and(eq(items.id, opts.itemId), hasItemAccess(userId)))
       .get();
     if (!accessible) return [];
     // Its sub-items' rows are those made while they were its sub-items,
@@ -152,7 +181,7 @@ export function listAudit(
       .where(and(eq(projects.id, opts.projectId), hasProjectAccess(userId)))
       .get();
     if (!accessible) return [];
-    filters.push(eq(auditLog.projectId, opts.projectId));
+    filters.push(eq(auditLog.projectId, opts.projectId), seesRowItem(userId));
   } else {
     // All-projects view: any actor's activity on a project the user can access,
     // plus the user's own *orphaned* rows — events with no live project, i.e.
@@ -165,7 +194,7 @@ export function listAudit(
       hasProjectAccess(userId),
       and(isNull(projects.id), eq(auditLog.actor, userId)),
     );
-    if (accessibleOrMine) filters.push(accessibleOrMine);
+    if (accessibleOrMine) filters.push(accessibleOrMine, seesRowItem(userId));
   }
 
   if (opts.source) filters.push(eq(auditLog.source, opts.source));

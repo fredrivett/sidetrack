@@ -11,7 +11,8 @@ import { ItemDetailDialog } from "./ItemDetailDialog";
 vi.mock("@/app/actions", () => ({
   addItemAction: vi.fn(),
   listAuditAction: vi.fn(),
-  listCommentsAction: vi.fn(async () => []),
+  listCommentsAction: vi.fn(async () => ({ comments: [], mentionable: [] })),
+  getItemSourceAction: vi.fn(async () => null),
   addCommentAction: vi.fn(),
   updateCommentAction: vi.fn(),
   deleteCommentAction: vi.fn(),
@@ -69,6 +70,7 @@ const item: Item = {
   repeatEvery: null,
   repeatUnit: null,
   repeatOn: null,
+  repeatDay: null,
   position: "a0",
   number: 42,
   completedAt: null,

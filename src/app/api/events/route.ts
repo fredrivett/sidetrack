@@ -14,9 +14,10 @@ const shutdown = new AbortController();
 process.once("SIGTERM", () => shutdown.abort());
 
 /**
- * Live updates: a Server-Sent Events stream that sends a bare `change` event
- * whenever something the viewer sees changes (see watchChanges). It carries
- * no data, so a page that hears one reloads what it shows (LiveUpdates).
+ * Live updates: a Server-Sent Events stream that sends an event whenever
+ * something the viewer sees changes (see watchChanges). It carries only the
+ * change's number (changeSeq), so a page that hears a number newer than the
+ * one it was rendered with reloads what it shows (LiveUpdates).
  */
 export async function GET(request: Request) {
   const session = await getCurrentSession();
@@ -26,7 +27,7 @@ export async function GET(request: Request) {
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       const send = (chunk: string) => controller.enqueue(encoder.encode(chunk));
-      const unwatch = watchChanges(getDb().db, session.user.id, () => send("data: change\n\n"));
+      const unwatch = watchChanges(getDb().db, session.user.id, (seq) => send(`data: ${seq}\n\n`));
       // The board holds this open only while it's on screen, so while it's
       // open, notifications go to the inbox without a push.
       const away = markLooking(session.user.id);

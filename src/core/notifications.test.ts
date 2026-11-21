@@ -5,7 +5,8 @@ import { plainText } from "./describe";
 import { addItem, completeItem, listItems, reopenDueRepeats, uncompleteItem, updateItem } from "./items";
 import { moveItem, previewMoveItem } from "./move";
 import { setFollowing } from "./follows";
-import { acceptInvite, inviteMember, removeMember } from "./members";
+import { invitePeople } from "./invites";
+import { acceptInvite, inviteMember, listMembers, removeMember } from "./members";
 import {
   deliverNotifications,
   listNotifications,
@@ -21,6 +22,8 @@ import {
   createSpace,
   deleteSpace,
   inviteSpaceMember,
+  removeSpaceMember,
+  setProjectSpace,
   setSpaceMemberRole,
   updateSpace,
 } from "./spaces";
@@ -393,6 +396,112 @@ describe("notifications", () => {
     expect(unread(db, alice)).toEqual(['Fred made you an admin of "Family"', 'Fred invited you to "Family"']);
   });
 
+  it("tells one invite to several places and people as one, each reader only of the places they're in", async () => {
+    const { db, fred, alice, listId } = seed();
+    const jo = createTestUser(db, { username: "jo", name: "Jo" });
+    const kim = createTestUser(db, { username: "kim", name: "Kim" });
+    // A list Alice isn't on: the surprise party.
+    const party = createProject(db, fred, { name: "Party" }, "web");
+    const family = createSpace(db, fred, { name: "Family" }, "web");
+    subscribe(db, alice);
+    subscribe(db, jo);
+    await deliverNotifications(db, due());
+    sendPush.mockClear();
+    invitePeople(
+      db,
+      fred,
+      {
+        people: ["jo", "@kim"],
+        places: [
+          { kind: "list", id: listId, role: "viewer" },
+          { kind: "list", id: party.id, role: "editor" },
+          { kind: "space", id: family.id, role: "member" },
+        ],
+      },
+      "web",
+    );
+    // Each place still has its own invite, with its own role.
+    expect(
+      listMembers(db, fred, listId).map((m) => [m.userId, m.status, m.role]),
+    ).toEqual(expect.arrayContaining([[jo, "pending", "viewer"], [kim, "pending", "viewer"]]));
+    // Alice is only on Home: nothing about Party or Family reaches her.
+    expect(unread(db, alice).sort()).toEqual([
+      'Fred invited @jo to "Home" as a viewer',
+      'Fred invited @kim to "Home" as a viewer',
+    ]);
+    expect(unread(db, jo)).toHaveLength(3);
+    // One push each, naming every place and person they may know of.
+    await deliverNotifications(db, due());
+    const pushes = (sendPush.mock.calls as unknown as Array<[unknown[], { body: string }]>)
+      .filter(([targets]) => targets.length > 0)
+      .map(([, m]) => m.body)
+      .sort();
+    expect(pushes).toEqual([
+      'Fred invited @jo and @kim to "Home"',
+      'Fred invited you to "Home", "Party" and "Family"',
+    ].sort());
+  });
+
+  it("invites someone typed two ways once", () => {
+    const { db, fred, listId } = seed();
+    const jo = createTestUser(db, { username: "jo", name: "Jo", email: "jo@example.com" });
+    const { sent } = invitePeople(
+      db,
+      fred,
+      { people: ["jo", "@Jo", "JO@example.com"], places: [{ kind: "list", id: listId, role: "editor" }] },
+      "web",
+    );
+    expect(sent.map((s) => s.member.userId)).toEqual([jo]);
+  });
+
+  it("says who invited whom when two admins invite in the same window", async () => {
+    const { db, fred, alice } = seed();
+    const bob = createTestUser(db, { username: "bob", name: "Bob" });
+    createTestUser(db, { username: "jo", name: "Jo" });
+    createTestUser(db, { username: "kim", name: "Kim" });
+    const family = createSpace(db, fred, { name: "Family" }, "web");
+    inviteSpaceMember(db, fred, family.id, "alice", "web");
+    acceptSpaceInvite(db, alice, family.id, "web");
+    inviteSpaceMember(db, fred, family.id, "bob", "web");
+    acceptSpaceInvite(db, bob, family.id, "web");
+    setSpaceMemberRole(db, fred, family.id, bob, "admin", "web");
+    subscribe(db, alice);
+    await deliverNotifications(db, due());
+    sendPush.mockClear();
+    inviteSpaceMember(db, fred, family.id, "jo", "web");
+    inviteSpaceMember(db, bob, family.id, "kim", "web");
+    await deliverNotifications(db, due());
+    const bodies = (sendPush.mock.calls as unknown as Array<[unknown[], { body: string }]>)
+      .filter(([targets]) => targets.length > 0)
+      .map(([, m]) => m.body);
+    // Not "Bob invited @jo and @kim": Fred invited Jo.
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).toBe('Fred and Bob made 2 changes in "Family"');
+  });
+
+  it("invites to every place or none", () => {
+    const { db, fred, listId } = seed();
+    const jo = createTestUser(db, { username: "jo", name: "Jo" });
+    const other = createTestUser(db, { username: "other", name: "Other" });
+    const theirs = createProject(db, other, { name: "Theirs" }, "web");
+    expect(() =>
+      invitePeople(
+        db,
+        fred,
+        {
+          people: ["jo"],
+          places: [
+            { kind: "list", id: listId, role: "editor" },
+            { kind: "list", id: theirs.id, role: "editor" },
+          ],
+        },
+        "web",
+      ),
+    ).toThrow();
+    expect(listMembers(db, fred, listId).map((m) => m.userId)).not.toContain(jo);
+    expect(unread(db, jo)).toEqual([]);
+  });
+
   it("tells everyone on a list or Space but its viewers who's invited and who joins, and as what", () => {
     const { db, fred, alice, listId } = seed();
     const vic = createTestUser(db, { username: "vic", name: "Vic" });
@@ -406,8 +515,9 @@ describe("notifications", () => {
     acceptInvite(db, bob, listId, "web");
     expect(unread(db, fred)).toEqual(['Bob joined "Home" as a commenter']);
     expect(unread(db, alice)[0]).toBe('Bob joined "Home" as a commenter');
-    // A viewer only looks on.
-    expect(unread(db, vic)).toEqual([]);
+    // A viewer only looks on: not even as background activity.
+    const heard = (u: string) => [...unread(db, u), ...unread(db, u, true)];
+    expect(heard(vic)).toEqual([]);
 
     // In a Space: admins, members and commenters hear; its viewers don't.
     const space = createSpace(db, fred, { name: "Family" }, "web");
@@ -421,12 +531,29 @@ describe("notifications", () => {
     const jo = createTestUser(db, { username: "jo", name: "Jo" });
     for (const u of [fred, alice, bob, vic]) markNotificationsRead(db, u);
     inviteSpaceMember(db, fred, space.id, "jo", "web", "viewer");
-    acceptSpaceInvite(db, jo, space.id, "web");
+    // Through her agent, it's still Jo who joined.
+    acceptSpaceInvite(db, jo, space.id, AMP);
     const told = ['Jo joined "Family" as a viewer', 'Fred invited @jo to "Family" as a viewer'];
     expect(unread(db, alice)).toEqual(told);
     expect(unread(db, bob)).toEqual(told);
     expect(unread(db, fred)).toEqual([told[0]]);
-    expect(unread(db, vic)).toEqual([]);
+    expect(heard(vic)).toEqual([]);
+
+    // A list in the Space: its commenters hear of a list invite; Jo, who
+    // only views it through the Space, doesn't.
+    setProjectSpace(db, fred, listId, space.id, "web");
+    const kimId = createTestUser(db, { username: "kim", name: "Kim" });
+    for (const u of [bob, jo]) markNotificationsRead(db, u);
+    inviteMember(db, fred, listId, "kim", "web");
+    expect(unread(db, bob)).toEqual(['Fred invited @kim to "Home"']);
+    expect(heard(jo)).toEqual([]);
+    // A revoked invite goes from every inbox, the invitee's too.
+    removeMember(db, fred, listId, kimId, "web");
+    expect(unread(db, bob)).toEqual([]);
+    expect(listNotifications(db, kimId).map((n) => plainText(n.parts))).toEqual([]);
+    // Once out of the Space, Bob no longer sees what happened in it.
+    removeSpaceMember(db, fred, space.id, bob, "web");
+    expect(unread(db, bob).filter((n) => n.includes("Family"))).toEqual([]);
   });
 
   it("writes nothing when the change rolls back", () => {

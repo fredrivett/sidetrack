@@ -25,7 +25,7 @@ import { RoleSelect } from "./RoleSelect";
 import { IconPicker } from "./ProjectIconPicker";
 import { SpaceColorPicker, spaceTint } from "./SpaceColor";
 import { runAction } from "./run-action";
-import { useTapToConfirm } from "./use-tap-to-confirm";
+import { ARMED_BUTTON, useTapToConfirm } from "./use-tap-to-confirm";
 
 // The roles someone can be invited with: admins are made from members.
 const INVITE_ROLES = SPACE_ROLES.filter(
@@ -78,8 +78,8 @@ export function SpacesPanel({ spaces, viewerId }: { spaces: SpaceView[]; viewerI
 
   return (
     <div className="space-y-6">
-      <section>
-        <h2 className="mb-2 text-sm font-medium">New space</h2>
+      <section className="space-y-3 rounded-lg border border-border p-4">
+        <h2 className="text-sm font-medium">New space</h2>
         <form onSubmit={create} className="space-y-3">
           <div className="flex gap-2">
             <IconPicker
@@ -146,6 +146,7 @@ function SpaceCard({
   // What the next invite lets them do. Admins are made from members, not
   // invited as admins.
   const [role, setRole] = useState<Exclude<SpaceRole, "admin">>("member");
+  const [onlyMine, setOnlyMine] = useState(false);
   const [saving, start] = useTransition();
   const tap = useTapToConfirm();
 
@@ -179,6 +180,12 @@ function SpaceCard({
   }
 
   const admins = members.filter((m) => m.status === "accepted" && m.role === "admin");
+  // Whose items someone sees: yours, or another admin's, by name.
+  const limit = (m: SpaceMemberView) => {
+    if (m.onlyAssignedTo === null || m.onlyAssignedTo === viewerId) return { value: m.onlyAssignedTo !== null };
+    const by = members.find((p) => p.userId === m.onlyAssignedTo);
+    return { value: false, someoneElse: by ? displayName(by) : "someone else" };
+  };
   const lastAdmin = isAdmin && admins.length === 1;
 
   return (
@@ -186,7 +193,7 @@ function SpaceCard({
       // The board's Edit space links here, by #space-<id>.
       id={`space-${space.id}`}
       aria-busy={saving}
-      className={`scroll-mt-6 space-y-3 rounded-lg border p-3 transition-opacity ${spaceTint(space.color)} ${saving ? "pointer-events-none opacity-60" : ""}`}
+      className={`scroll-mt-6 space-y-3 rounded-lg border p-4 transition-opacity ${spaceTint(space.color)} ${saving ? "pointer-events-none opacity-60" : ""}`}
     >
       <header className="flex items-center gap-2">
         {isAdmin ? (
@@ -248,7 +255,7 @@ function SpaceCard({
             e.preventDefault();
             const handle = person.trim();
             if (handle) {
-              save(() => inviteSpaceMemberAction(space.id, handle, role), `invite ${handle}`, () =>
+              save(() => inviteSpaceMemberAction(space.id, handle, role, role !== "member" && onlyMine), `invite ${handle}`, () =>
                 setPerson(""),
               );
             }
@@ -268,6 +275,7 @@ function SpaceCard({
             roles={INVITE_ROLES}
             scope="space"
             onChange={setRole}
+            onlyMine={{ value: onlyMine, onChange: setOnlyMine }}
           />
           <Button type="submit" size="sm" disabled={!person.trim()}>
             Invite
@@ -316,6 +324,14 @@ function SpaceCard({
                           `change ${displayName(m)}'s role`,
                         )
                       }
+                      onlyMine={{
+                        ...limit(m),
+                        onChange: (on) =>
+                          save(
+                            () => setSpaceMemberRoleAction(space.id, m.userId, m.role, on),
+                            `change what ${displayName(m)} sees`,
+                          ),
+                      }}
                     />
                   ) : (
                     m.role !== "member" && (
@@ -336,6 +352,14 @@ function SpaceCard({
                         `change ${displayName(m)}'s role`,
                       )
                     }
+                    onlyMine={{
+                      ...limit(m),
+                      onChange: (on) =>
+                        save(
+                          () => setSpaceMemberRoleAction(space.id, m.userId, m.role, on),
+                          `change what ${displayName(m)} sees`,
+                        ),
+                    }}
                   />
                 ) : (
                   m.role !== "member" && (
@@ -428,7 +452,7 @@ function SpaceCard({
                 "delete",
               )
             }
-            className={tap.isArmed("delete") ? "bg-destructive text-white hover:bg-destructive" : undefined}
+            className={tap.isArmed("delete") ? ARMED_BUTTON : undefined}
           >
             {tap.isArmed("delete") ? "Confirm delete?" : "Delete space"}
           </Button>

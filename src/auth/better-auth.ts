@@ -2,8 +2,9 @@ import { and, count, eq, like, sql } from "drizzle-orm";
 import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
 import { nextCookies } from "better-auth/next-js";
-import { username } from "better-auth/plugins";
+import { twoFactor, username } from "better-auth/plugins";
 import { users as authUsers, verifications } from "@/core/auth-schema";
 import { getDb } from "@/core/db";
 import { auditLog, meta, projects } from "@/core/schema";
@@ -147,6 +148,12 @@ function revokeResetLinks(userId: string): void {
 // yet; it's blocked so a direct API call can't change it unaudited either.
 const PROFILE_FIELDS = ["name", "image", "username", "displayUsername"] as const;
 
+// The key backup codes are encrypted with (twoFactor below). Production
+// always has BETTER_AUTH_SECRET (env.ts refuses to start without it); local
+// runs and tests may not, and any fixed key does there, as their session
+// secret is Better Auth's public default anyway.
+const BACKUP_CODES_KEY = env.BETTER_AUTH_SECRET ?? "sidetrack-local-backup-codes";
+
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
     provider: "sqlite",
@@ -228,15 +235,30 @@ export const auth = betterAuth({
     },
   },
   hooks: {
-    // A signed-in password change clears the user's reset links before the
-    // new password is written, so the accounts trigger (migration 0022)
-    // never takes it for a reset. The trigger clears them after every change
-    // anyway; this only has to run first. A failed attempt (wrong current
-    // password) clears them too, which only the signed-in user can cause.
     before: createAuthMiddleware(async (ctx) => {
-      if (ctx.path !== "/change-password") return;
-      const session = await getSessionFromCtx(ctx);
-      if (session) revokeResetLinks(session.user.id);
+      // A signed-in password change clears the user's reset links before the
+      // new password is written, so the accounts trigger (migration 0022)
+      // never takes it for a reset. The trigger clears them after every
+      // change anyway; this only has to run first. A failed attempt (wrong
+      // current password) clears them too, which only the signed-in user can
+      // cause.
+      if (ctx.path === "/change-password") {
+        const session = await getSessionFromCtx(ctx);
+        if (session) revokeResetLinks(session.user.id);
+        return;
+      }
+      // /two-factor/enable on an account that already has it would swap in a
+      // new secret straight away, unverified and unaudited, locking out the
+      // authenticator already set up. Setting up a new one means turning it
+      // off first.
+      if (ctx.path === "/two-factor/enable") {
+        const session = await getSessionFromCtx(ctx);
+        if (session?.user.twoFactorEnabled) {
+          throw new APIError("BAD_REQUEST", {
+            message: "Two-factor sign-in is already on. Turn it off to set up a new authenticator.",
+          });
+        }
+      }
     }),
   },
   plugins: [
@@ -252,6 +274,31 @@ export const auth = betterAuth({
       // still be mixed-case; isReservedUsername lowercases internally.
       usernameValidator: (value) =>
         USERNAME_RE.test(value) && !isReservedUsername(value),
+    }),
+    // Two-factor sign-in: after the password, a code from an authenticator
+    // app, or one of ten single-use backup codes. The plugin encrypts the
+    // secret and the codes, rate-limits /two-factor/* (3 per 10s per IP in
+    // production), and can trust a device for 30 days. Its writes are
+    // audited by triggers (migration 0065).
+    twoFactor({
+      issuer: "Sidetrack",
+      backupCodeOptions: {
+        // Encrypted as the plugin does by default, but kept beside how many
+        // are left, in the clear, so the audit trigger (migration 0065) can
+        // tell a code used (one fewer) from a new set (ten again).
+        storeBackupCodes: {
+          encrypt: async (codes) =>
+            JSON.stringify({
+              left: (JSON.parse(codes) as string[]).length,
+              codes: await symmetricEncrypt({ key: BACKUP_CODES_KEY, data: codes }),
+            }),
+          decrypt: async (stored) =>
+            symmetricDecrypt({
+              key: BACKUP_CODES_KEY,
+              data: (JSON.parse(stored) as { codes: string }).codes,
+            }),
+        },
+      },
     }),
     // nextCookies must stay last so it can attach Set-Cookie headers after
     // every other plugin's response hooks have run.

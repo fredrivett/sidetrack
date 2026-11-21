@@ -1,18 +1,28 @@
+import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { beforeEach, describe, expect, it } from "vitest";
 import { listAudit } from "./audit";
-import { addLabel, listLabels } from "./labels";
+import { addLabel, listLabels, updateLabel } from "./labels";
 import { createTestDb, createTestUser } from "./test-helpers";
-import { addItem, getItem, listItems } from "./items";
+import { addItem, getItem, listDoneBefore, listItems, listSubItems, setItemParent } from "./items";
+import { countCommentsByItem, listComments, listMentionable, listRecentComments } from "./comments";
+import { buildAgendaBrief } from "./agendaBrief";
+import { resolveItemRef } from "./itemRef";
+import { listLabelUsage } from "./labels";
+import { listNotifications, setNotificationLevel } from "./notifications";
+import { listAllPrLinks } from "./prLinks";
+import { listNoDate, listToday, sampleOpenItemTitles } from "./projects";
 import {
   createProject,
   getProject,
   getProjectWithItems,
   listProjects,
 } from "./projects";
-import { type ListRole, projectMembers, projectPositions } from "./schema";
-import { listAccess, listAccessById } from "./access";
+import { itemFollows, type ListRole, notifications, projectMembers, projectPositions } from "./schema";
+import { limitedListsById, listAccess, listAccessById } from "./access";
 import { addComment, mentionNotice } from "./comments";
+import { plainText } from "./describe";
+import { listFollowedItemIds } from "./follows";
 import { completeItem, deleteItem, setItemsCollapsed, updateItem } from "./items";
 import { acceptInvite, inviteMember, listAssignees, setMemberRole } from "./members";
 import { linkItemToPr, listItemsForPr, setPrState } from "./prLinks";
@@ -235,5 +245,179 @@ describe("list roles: view, comment, edit", () => {
     expect(getItem(db, owner, item.id)?.assigneeIds).toEqual([jo]);
     expect(getItem(db, owner, report.id)?.assigneeIds).toEqual([]);
     expect(listAccess(db, jo, other.id)).toBe("comment");
+  });
+});
+
+describe("a membership shown only someone's items", () => {
+  // Lorna's week: what's assigned to her (or has a line that is) shows
+  // whole; everything else must never reach Jo, by any read.
+  function setup() {
+    const { db } = createTestDb();
+    const lorna = createTestUser(db, { username: "lorna", name: "Lorna" });
+    const fred = createTestUser(db, { username: "fred", name: "Fred" });
+    const jo = createTestUser(db, { username: "jo", name: "Jo" });
+    const vic = createTestUser(db, { username: "vic", name: "Vic" });
+    const list = createProject(db, lorna, { name: "Week" }, "web");
+    inviteMember(db, lorna, list.id, "fred", "web", "editor");
+    acceptInvite(db, fred, list.id, "web");
+    inviteMember(db, lorna, list.id, "vic", "web", "viewer");
+    acceptInvite(db, vic, list.id, "web");
+    inviteMember(db, lorna, list.id, "jo", "web", "commenter", { onlyMine: true });
+    acceptInvite(db, jo, list.id, "web");
+    for (const u of [jo, vic]) setNotificationLevel(db, u, "all", "all");
+
+    const swim = addItem(db, lorna, { projectId: list.id, title: "Swim", assigneeIds: [lorna], subItems: ["Pack towel"] }, "web");
+    const garden = addItem(db, lorna, { projectId: list.id, title: "Garden", subItems: ["Mow"] }, "web");
+    const mow = listSubItems(db, lorna, garden.id)[0];
+    updateItem(db, lorna, mow.id, { assigneeIds: [lorna] }, "web");
+    const party = addItem(db, fred, { projectId: list.id, title: "SECRET party", labels: ["fun"], subItems: ["SECRET cake"], dueDate: "2026-11-21" }, "web");
+    const cake = listSubItems(db, fred, party.id)[0];
+    updateItem(db, fred, cake.id, { assigneeIds: [fred] }, "web");
+    addComment(db, fred, party.id, "SECRET comment", "web");
+    linkItemToPr(db, fred, party.id, "https://github.com/o/r/pull/1", "web");
+    const errand = addItem(db, fred, { projectId: list.id, title: "SECRET errand", assigneeIds: [fred], dueDate: "2026-11-21" }, "web");
+    completeItem(db, fred, errand.id, "web");
+    const gone = addItem(db, fred, { projectId: list.id, title: "SECRET deleted" }, "web");
+    deleteItem(db, fred, gone.id, "web");
+    return { db, lorna, fred, jo, vic, list, swim, party, errand };
+  }
+
+  // Everything a person can read about the board, as one string.
+  function everything(db: Db, u: string, listId: string, ids: string[]) {
+    const now = Date.parse("2026-11-21T12:00:00Z");
+    return JSON.stringify([
+      listItems(db, u, listId, { includeCompleted: true }),
+      listDoneBefore(db, u, { before: now + 1, limit: 50 }),
+      listToday(db, u, { today: "2026-11-21" }),
+      listNoDate(db, u, { today: "2026-11-21" }),
+      sampleOpenItemTitles(db, u, 50),
+      ids.map((id) => [getItem(db, u, id), listComments(db, u, id), listAudit(db, u, { itemId: id })]),
+      [1, 2, 3, 4, 5, 6, 7, 8].map((n) => resolveItemRef(db, u, `${getProject(db, u, listId)?.prefix}-${n}`)),
+      listRecentComments(db, u),
+      listAudit(db, u, { projectId: listId }),
+      listAudit(db, u),
+      listLabelUsage(db, u, listId),
+      listNotifications(db, u),
+      listAllPrLinks(db, u),
+      listItemsForPr(db, u, "https://github.com/o/r/pull/1"),
+      buildAgendaBrief(db, u, { now, timeZone: "UTC", since: 0 }),
+    ], (_, v) => (v instanceof Map ? [...v] : v instanceof Set ? [...v] : v));
+  }
+
+  it("shows Jo only Lorna's item groups, by every read", () => {
+    const { db, fred, jo, vic, list, party, errand, swim } = setup();
+    const ids = [party.id, errand.id, swim.id];
+    // The control: someone shown the whole list reads all of it.
+    for (const whole of [fred, vic]) expect(everything(db, whole, list.id, ids)).toContain("SECRET");
+    const seen = everything(db, jo, list.id, ids);
+    expect(seen).not.toContain("SECRET");
+    // A label only on a hidden item would give it away.
+    expect(listLabels(db, jo, list.id).map((l) => l.name)).toEqual([]);
+    expect(listLabels(db, vic, list.id).map((l) => l.name)).toEqual(["fun"]);
+    expect(countCommentsByItem(db, jo)).toEqual({});
+    // Not just hidden when shown: nothing about them was written for her.
+    const rows = db.select().from(notifications).where(eq(notifications.userId, jo)).all();
+    expect(rows).toHaveLength(listNotifications(db, jo).length);
+    expect(Object.keys(countCommentsByItem(db, vic))).toEqual([party.id]);
+    expect(listItems(db, jo, list.id).map((i) => i.title).sort()).toEqual(["Garden", "Mow", "Pack towel", "Swim"]);
+    expect([...limitedListsById(db, jo)]).toEqual([[list.id, "Lorna"]]);
+    expect(limitedListsById(db, vic).size).toBe(0);
+    // Nor can she act on what she can't see.
+    expect(() => addComment(db, jo, party.id, "hi", "web")).toThrow(/not found/);
+    expect(addComment(db, jo, swim.id, "Go Lorna", "web").body).toBe("Go Lorna");
+  });
+
+  it("keeps hidden labels and hidden items' names out of her activity", () => {
+    const { db, lorna, fred, jo, list } = setup();
+    const label = addLabel(db, fred, list.id, { name: "SECRET label" }, "web");
+    updateLabel(db, fred, label.id, { name: "SECRET renamed" }, "web");
+    // A sub-item she sees leaves a parent she doesn't, which is then renamed.
+    const parent = addItem(db, fred, { projectId: list.id, title: "Parent", subItems: ["Lorna's bit"] }, "web");
+    const bit = listSubItems(db, fred, parent.id)[0];
+    updateItem(db, fred, bit.id, { assigneeIds: [lorna] }, "web");
+    setItemParent(db, fred, bit.id, null, "web");
+    updateItem(db, fred, parent.id, { title: "SECRET parent" }, "web");
+    const feed = JSON.stringify([listAudit(db, jo, { projectId: list.id }), listAudit(db, jo), listAudit(db, jo, { itemId: bit.id })]);
+    expect(feed).toContain("Lorna's bit");
+    expect(feed).not.toContain("SECRET");
+    // The control: an editor's feed names them.
+    expect(JSON.stringify(listAudit(db, fred, { projectId: list.id }))).toContain("SECRET parent");
+  });
+
+  it("doesn't email or make Jo follow a hidden item she's mentioned on", () => {
+    const { db, fred, jo, party, swim } = setup();
+    const notice = (itemId: string) => mentionNotice(db, fred, addComment(db, fred, itemId, "@jo look", "web"));
+    expect(notice(party.id)).toBeNull();
+    expect(listFollowedItemIds(db, jo)).not.toContain(party.id);
+    expect(db.select().from(itemFollows).where(eq(itemFollows.userId, jo)).all().map((f) => f.itemId)).not.toContain(party.id);
+    // The control: on her own partner's item she's emailed.
+    expect(notice(swim.id)?.to.map((t) => t.userId)).toEqual([jo]);
+    // Nor is she offered to mention on it.
+    expect(listMentionable(db, fred, party.id)).not.toContain(jo);
+    expect(listMentionable(db, fred, swim.id)).toContain(jo);
+  });
+
+  it("says so when she's shown the whole list again", () => {
+    const { db, lorna, jo, list, party } = setup();
+    setMemberRole(db, lorna, list.id, jo, "commenter", "web", false);
+    expect(getItem(db, jo, party.id)).toBeDefined();
+    const said = listNotifications(db, jo).map((n) => plainText(n.parts));
+    expect(said).toContain('Lorna made you a commenter of "Week", seeing all of it');
+    expect(listAudit(db, lorna, { projectId: list.id }).map((e) => e.detail)).toContainEqual(
+      expect.stringMatching(/commenter of .*Week.*, seeing all of it/),
+    );
+  });
+
+  it("says whose items they see when they're invited and join", () => {
+    const { db, lorna, fred, jo } = setup();
+    const said = (u: string) => listNotifications(db, u).map((n) => plainText(n.parts));
+    expect(said(fred)).toContain('Lorna invited @jo to "Week" as a commenter of @lorna\'s items');
+    expect(said(jo)).toContain('Lorna invited you to "Week" as a commenter of @lorna\'s items');
+    expect(said(lorna)).toContain('Jo joined "Week" as a commenter of your items');
+  });
+
+  it("follows assignment as it changes, and the most generous route in", () => {
+    const { db, lorna, fred, jo, list, party, swim } = setup();
+    addComment(db, fred, swim.id, "Nice one", "web");
+    const told = () => JSON.stringify(listNotifications(db, jo));
+    expect(told()).toContain("Swim");
+    updateItem(db, lorna, swim.id, { assigneeIds: [] }, "web");
+    expect(getItem(db, jo, swim.id)).toBeUndefined();
+    // What she was told of it goes once she can't see it.
+    expect(told()).not.toContain("Swim");
+    updateItem(db, lorna, party.id, { assigneeIds: [lorna] }, "web");
+    expect(listItems(db, jo, list.id).map((i) => i.title)).toContain("SECRET party");
+    // A Space that shows her everything outranks the limit on the list.
+    const space = createSpace(db, lorna, { name: "Fam" }, "web");
+    setProjectSpace(db, lorna, list.id, space.id, "web");
+    inviteSpaceMember(db, lorna, space.id, "jo", "web", "viewer");
+    acceptSpaceInvite(db, jo, space.id, "web");
+    expect(getItem(db, jo, swim.id)).toBeDefined();
+  });
+
+  it("is lifted when they're made an editor, and editors can't be limited", () => {
+    const { db, lorna, jo, list, party } = setup();
+    setMemberRole(db, lorna, list.id, jo, "editor", "web");
+    expect(getItem(db, jo, party.id)).toBeDefined();
+    setMemberRole(db, lorna, list.id, jo, "viewer", "web");
+    expect(getItem(db, jo, party.id)).toBeDefined();
+    const other = createProject(db, lorna, { name: "Other" }, "web");
+    expect(() => inviteMember(db, lorna, other.id, "jo", "web", "editor", { onlyMine: true })).toThrow(
+      /viewers and commenters/,
+    );
+  });
+
+  it("limits a Space membership the same way", () => {
+    const { db, lorna, fred } = setup();
+    const kim = createTestUser(db, { username: "kim", name: "Kim" });
+    const space = createSpace(db, lorna, { name: "Fam" }, "web");
+    const home = createProject(db, lorna, { name: "Home", spaceId: space.id }, "web");
+    const mine = addItem(db, lorna, { projectId: home.id, title: "Mine", assigneeIds: [lorna] }, "web");
+    const hidden = addItem(db, lorna, { projectId: home.id, title: "SECRET home" }, "web");
+    inviteSpaceMember(db, lorna, space.id, "kim", "web", "viewer", { onlyMine: true });
+    acceptSpaceInvite(db, kim, space.id, "web");
+    expect(everything(db, kim, home.id, [mine.id, hidden.id])).not.toContain("SECRET");
+    expect(getItem(db, kim, mine.id)?.title).toBe("Mine");
+    expect(getItem(db, fred, mine.id)).toBeUndefined();
   });
 });

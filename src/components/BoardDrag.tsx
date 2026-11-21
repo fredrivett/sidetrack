@@ -301,8 +301,10 @@ export function BoardDrag({
           sensors={sensors}
           collisionDetection={collide}
           // A dragged parent's sub-items leave the list, and rows come and go
-          // between lists, so re-measure the rows.
-          measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
+          // between lists, so re-measure the rows as they change mid-drag.
+          // Only while dragging: Always also measures every row as it mounts,
+          // a forced layout per row on each view switch.
+          measuring={{ droppable: { strategy: MeasuringStrategy.WhileDragging } }}
           accessibility={{
             announcements,
             screenReaderInstructions: {

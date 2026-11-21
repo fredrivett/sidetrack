@@ -152,6 +152,32 @@ describe("parseServerEnv", () => {
     ).toThrow(/SIGNUP_NOTIFY_EMAIL must be an email address/);
   });
 
+  it("uploads backups only with every setting and a well-formed key", () => {
+    const dev = { nodeEnv: "development", nextPhase: undefined };
+    const key = Buffer.alloc(32, 9);
+    const all = {
+      BACKUP_S3_ENDPOINT: "https://acct.r2.cloudflarestorage.com/",
+      BACKUP_S3_BUCKET: "sidetrack-backups",
+      BACKUP_S3_ACCESS_KEY_ID: "id",
+      BACKUP_S3_SECRET_ACCESS_KEY: "secret",
+      BACKUP_ENCRYPTION_KEY: key.toString("base64"),
+    };
+    expect(parseServerEnv({}, dev).BACKUP_UPLOAD).toBeUndefined();
+    expect(parseServerEnv(all, dev).BACKUP_UPLOAD).toEqual({
+      endpoint: "https://acct.r2.cloudflarestorage.com",
+      bucket: "sidetrack-backups",
+      accessKeyId: "id",
+      secretAccessKey: "secret",
+      key,
+    });
+    expect(() => parseServerEnv({ ...all, BACKUP_S3_BUCKET: " " }, dev)).toThrow(/set all or none/);
+    expect(() => parseServerEnv({ BACKUP_ENCRYPTION_KEY: all.BACKUP_ENCRYPTION_KEY }, dev)).toThrow(
+      /set all or none/,
+    );
+    expect(() => parseServerEnv({ ...all, BACKUP_ENCRYPTION_KEY: "short" }, dev)).toThrow(/32 bytes/);
+    expect(() => parseServerEnv({ ...all, BACKUP_S3_ENDPOINT: "acct.r2.dev" }, dev)).toThrow(/https/);
+  });
+
   it("turns push on only with a whole, well-formed key pair and a contact Apple accepts", () => {
     const dev = { nodeEnv: "development", nextPhase: undefined };
     const pub = Buffer.alloc(65, 4).toString("base64url");

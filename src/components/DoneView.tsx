@@ -33,9 +33,10 @@ export function DoneView({
   failed,
   onLoadMore,
   onRetry,
+  onOpenItem,
 }: {
   /** The lists on the board; archived lists stay out. */
-  projects: ProjectView[];
+  projects: Pick<ProjectView, "id" | "name" | "refPrefix">[];
   itemsByProject: Record<string, Item[]>;
   assigneesByProject: Record<string, AssigneeView[]>;
   prLinksByItem: Record<string, ItemPrLink[]>;
@@ -50,6 +51,8 @@ export function DoneView({
   failed: boolean;
   onLoadMore: () => void;
   onRetry: () => void;
+  /** Opens a row's item instead of its dialog, in the landing page's preview. */
+  onOpenItem?: (item: Item) => void;
 }) {
   // Day labels depend on the viewer's clock, so rows wait for the browser.
   const today = useToday();
@@ -117,7 +120,7 @@ export function DoneView({
                     viewerId={viewerId}
                     prLinks={prLinksByItem[item.id] ?? []}
                     context={[project?.name, parent?.title].filter(Boolean).join(" › ")}
-                    onOpenDetail={() => detail.openDetail(item)}
+                    onOpenDetail={() => (onOpenItem ?? detail.openDetail)(item)}
                   />
                 );
               })}

@@ -111,6 +111,12 @@ export function LoginForm({
           setError(res.error.message ?? "Sign in failed.");
           return;
         }
+        // The password was right, but the account asks for a second step:
+        // no session yet, only the short-lived two-factor cookie.
+        if (res.data && "twoFactorRedirect" in res.data && res.data.twoFactorRedirect) {
+          router.push(`/login/two-factor?next=${encodeURIComponent(sanitizeNext(next))}`);
+          return;
+        }
       }
       // Re-sanitize at the navigation site: never trust the prop blindly,
       // so an open-redirect target can't slip through if the caller changes.

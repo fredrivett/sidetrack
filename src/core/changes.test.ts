@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { watchChanges } from "./changes";
-import { addItem, setItemsCollapsed } from "./items";
+import { changeSeq, watchChanges } from "./changes";
+import { addComment } from "./comments";
+import { addLabel, updateLabel } from "./labels";
+import { addItem, setItemsCollapsed, updateItem } from "./items";
 import { acceptInvite, inviteMember } from "./members";
 import { linkItemToPr, setPrState } from "./prLinks";
 import { createProject, deleteProject } from "./projects";
@@ -52,6 +54,38 @@ describe("watchChanges", () => {
 
   afterEach(() => {
     for (const stop of stops.splice(0)) stop();
+  });
+
+  it("reloads someone shown only the owner's items only for those, and for one leaving them", async () => {
+    const jo = createTestUser(db, { username: "jo" });
+    inviteMember(db, owner, projectId, "jo", "web", "viewer", { onlyMine: true });
+    acceptInvite(db, jo, projectId, "web");
+    const hidden = addItem(db, member, { projectId, title: "Hidden" }, "web");
+    const mine = addItem(db, owner, { projectId, title: "Mine", assigneeIds: [owner] }, "web");
+    await settle();
+    watch(jo, member);
+    updateItem(db, member, hidden.id, { title: "Still hidden" }, "web");
+    addComment(db, member, hidden.id, "psst", "web");
+    setItemsCollapsed(db, member, [hidden.id], true);
+    await settle();
+    // One batch: the editor reloads once, Jo not at all.
+    expect(heard).toEqual({ [jo]: 0, [member]: 1 });
+    updateItem(db, owner, mine.id, { title: "Mine, renamed" }, "web");
+    await settle();
+    expect(heard[jo]).toBe(1);
+    // Taken off her board: she must reload to lose it.
+    updateItem(db, owner, mine.id, { assigneeIds: [] }, "web");
+    await settle();
+    expect(heard[jo]).toBe(2);
+    // Now hidden, its changes are quiet again.
+    updateItem(db, owner, mine.id, { title: "Gone quiet" }, "web");
+    await settle();
+    expect(heard[jo]).toBe(2);
+    // A label's name could give a hidden item away; its changes stay quiet too.
+    const label = addLabel(db, member, projectId, { name: "Secret" }, "web");
+    updateLabel(db, member, label.id, { name: "Still secret" }, "web");
+    await settle();
+    expect(heard[jo]).toBe(2);
   });
 
   it("tells everyone on a list about its changes, once per batch, and nobody else", async () => {
@@ -173,6 +207,25 @@ describe("watchChanges", () => {
     setOverdueCollapsed(db, owner, true);
     await settle();
     expect(heard).toEqual({ [owner]: 1, [stranger]: 0 });
+  });
+
+  // A page reads the number before its data, and skips the events of
+  // changes it already shows (LiveUpdates).
+  it("numbers each batch above what was read before its changes, and within what's read after", async () => {
+    const numbers: number[] = [];
+    stops.push(watchChanges(db, owner, (seq) => numbers.push(seq)));
+    const before = changeSeq();
+    addItem(db, owner, { projectId, title: "One" }, "web");
+    addItem(db, owner, { projectId, title: "Two" }, "web");
+    const after = changeSeq();
+    await settle();
+    addItem(db, owner, { projectId, title: "Three" }, "web");
+    await settle();
+    expect(numbers).toHaveLength(2);
+    expect(numbers[0]).toBeGreaterThan(before);
+    expect(numbers[0]).toBe(after);
+    expect(numbers[1]).toBeGreaterThan(after);
+    expect(numbers[1]).toBe(changeSeq());
   });
 
   // The board reloads to reopen repeating items by the viewer's new day.

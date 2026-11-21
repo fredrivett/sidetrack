@@ -146,7 +146,9 @@ export const NAV_KEYS: Record<string, "up" | "down" | "left" | "right"> = {
 /**
  * The row the movement keys go to from the selected item: up and down within
  * its list, left and right to the same place in the next list with items, or
- * its last item if that list is shorter. Views that don't group by list are
+ * its last item if that list is shorter, or, when that place isn't rendered
+ * (a long list scrolled elsewhere), its row nearest the same height on
+ * screen. Views that don't group by list are
  * one column. With nothing selected (or it's gone), the hovered row, else the
  * first one on screen. Null when there are no rows.
  */
@@ -177,7 +179,23 @@ export function stepItemRow(
   if (dir === "up") return lists[at][i - 1] ?? current;
   if (dir === "down") return lists[at][i + 1] ?? current;
   const next = lists[at + (dir === "left" ? -1 : 1)];
-  return next ? next[Math.min(i, next.length - 1)] : current;
+  if (!next) return current;
+  // A long list renders only the rows near its view, each marked with its
+  // place in the list (useVirtualRows), so places go by that.
+  const place = (r: HTMLElement, rendered: HTMLElement[]) =>
+    Number(r.closest<HTMLElement>("[data-list-index]")?.dataset.listIndex ?? rendered.indexOf(r));
+  const want = place(current, lists[at]);
+  const same = next.find((r) => place(r, next) === want);
+  if (same) return same;
+  // A list that renders every row is shorter: its last one.
+  if (!next[0].closest("[data-list-index]")) return next[next.length - 1];
+  // A long list scrolled elsewhere: its row at the same height on screen.
+  const middle = (r: HTMLElement) => {
+    const b = r.getBoundingClientRect();
+    return (b.top + b.bottom) / 2;
+  };
+  const y = middle(current);
+  return next.reduce((best, r) => (Math.abs(middle(r) - y) < Math.abs(middle(best) - y) ? r : best));
 }
 
 /**

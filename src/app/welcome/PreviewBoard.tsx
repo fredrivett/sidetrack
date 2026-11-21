@@ -1,15 +1,23 @@
 "use client";
 
 import { CircleCheck, History, SquareKanban, Sunrise } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import type { Greeting } from "@/core/agendaGreeting";
+import type { AuditEntryWithActor } from "@/core/audit";
+import type { FeedComment } from "@/core/comments";
+import type { Part } from "@/core/describe";
 import type { AssigneeView } from "@/core/members";
-import type { AgentSession, Item, Label } from "@/core/schema";
+import type { AgentSession, AuditAction, Item, Label } from "@/core/schema";
 import { type AgendaSaves, AgendaSavesContext } from "@/components/agenda-saves";
 import { helloNow } from "@/components/AgendaGreeting";
 import { AgendaView } from "@/components/AgendaView";
 import { AgentSessionsProvider } from "@/components/agent-sessions";
-import { BoardHeader, BoardRail, ColumnCard } from "@/components/BoardLayout";
+import { AuditDialog } from "@/components/AuditDialog";
+import { BoardHeader, BoardRail, HeaderRule, ColumnCard } from "@/components/BoardLayout";
+import { cn } from "@/lib/utils";
+import { DoneView } from "@/components/DoneView";
 import { FilterMenu } from "@/components/FilterMenu";
 import { type ItemSaves, ItemSavesContext } from "@/components/item-saves";
 import { BoardDrag } from "@/components/BoardDrag";
@@ -25,19 +33,21 @@ import {
   type ItemChanges,
   ItemChangesContext,
 } from "@/components/use-optimistic-items";
-import { UserAvatar } from "@/components/UserAvatar";
+import { UserMenu } from "@/components/UserMenu";
 import { type ItemFilters, matchesFilters, NO_FILTERS, shownInGroups } from "@/lib/filters";
 import { nestItems } from "@/lib/itemTree";
 import { addDays, weekday, weekSpan } from "@/lib/time";
 
-// The landing page's board: the app's own Brief, trays, columns and item
-// rows, on made-up lists kept in this component's state. It opens on the
-// Brief, whose greeting is written here from the lists (previewGreeting), so
-// it keeps up as they change. Ticking, assigning, due dates, dragging and
+// The landing page's board: the app's own Brief, Board, Done, Activity and
+// account menu, on made-up lists kept in this component's state. It opens on
+// the Brief, whose greeting is written here from the lists (previewGreeting),
+// so it keeps up as they change. Ticking, assigning, due dates, dragging and
 // folding checklists and sections all work, through local versions of the
-// board's saves (ItemChangesContext, ItemSavesContext, AgendaSavesContext);
-// nothing is sent anywhere, and a reload starts it over. Opening an item's
-// dialog, which loads from the server, does nothing here.
+// board's saves (ItemChangesContext, ItemSavesContext, AgendaSavesContext),
+// and Activity logs them under a made-up history (demoLog); nothing is sent
+// anywhere, and a reload starts it over. What needs an account, such as an
+// item's dialog (which loads from the server) or settings, asks the visitor
+// to sign up instead, in a toast.
 
 const noop = () => {};
 
@@ -121,6 +131,7 @@ function demo(today: string, now: number) {
       repeatEvery: null,
       repeatUnit: null,
       repeatOn: null,
+      repeatDay: null,
       completedAt: null,
       createdAt: now,
       ...extra,
@@ -136,6 +147,12 @@ function demo(today: string, now: number) {
     labels: ["Marketing"],
     assigneeIds: [VIEWER],
     dueDate: today,
+  });
+  // Tomorrow's, which wants a head start today.
+  add("lch", 13, "Email the waitlist", {
+    labels: ["Marketing"],
+    assigneeIds: [VIEWER],
+    dueDate: addDays(today, 1),
   });
   add("lch", 11, "Set up a waitlist", {
     labels: ["Infra"],
@@ -166,7 +183,7 @@ function demo(today: string, now: number) {
     completedAt: hoursAgo(3),
   });
   add("cho", 5, "Take the bins out", {
-    assigneeIds: [VIEWER],
+    assigneeIds: ["sam"],
     dueDate: addDays(today, 1),
     repeatEvery: 1,
     repeatUnit: "week",
@@ -217,12 +234,133 @@ function demo(today: string, now: number) {
   return { items, sessions };
 }
 
+/** A run of an Activity row; an item's carries its id, to strike it once done. */
+type LogPart = Part & { itemId?: string };
+
+/** An Activity row, without the actor's name and face, which come from PEOPLE. */
+type LogEntry = {
+  id: string;
+  ts: number;
+  actor: string;
+  /** The agent that made it, on the actor's behalf. */
+  agent: string | null;
+  action: AuditAction;
+  projectId: string;
+  parts: LogPart[];
+};
+
+const said = (text: string): LogPart => ({ text });
+const named = (item: Pick<Item, "id" | "title">): LogPart => ({
+  text: item.title,
+  em: "item",
+  quote: true,
+  itemId: item.id,
+});
+const who = (name: string): LogPart => ({ text: name, em: "person" });
+const due = (dueDate: string): LogPart => ({ text: dueDate, due: { dueDate, dueFrom: null } });
+
+/**
+ * What happened on the lists before the visitor arrived, newest first, as
+ * Activity would show it, and the comments on their items.
+ */
+function demoLog(items: Item[], today: string, now: number) {
+  const it = (id: string) => items.find((i) => i.id === id) as Item;
+  const ago = (minutes: number) => now - minutes * 60_000;
+  const entry = (
+    minutes: number,
+    actor: string,
+    action: AuditAction,
+    id: string,
+    parts: LogPart[],
+    agent: string | null = null,
+  ): LogEntry => ({
+    id: `demo-${minutes}-${id}`,
+    ts: ago(minutes),
+    actor,
+    agent,
+    action,
+    projectId: it(id).projectId,
+    parts,
+  });
+  const log: LogEntry[] = [
+    entry(1, VIEWER, "start", "lch-12", [said("started work on "), named(it("lch-12"))], "Amp"),
+    entry(4, VIEWER, "report", "fix-12", [
+      said("reported on "),
+      named(it("fix-12")),
+      said(": two of the three roofers have quoted"),
+    ], "Claude"),
+    entry(10, VIEWER, "create", "fix-11", [said("commented on "), named(it("fix-11"))], "Claude"),
+    entry(60, VIEWER, "complete", "lch-11", [said("completed "), named(it("lch-11"))]),
+    entry(90, VIEWER, "start", "fix-11", [said("started work on "), named(it("fix-11"))], "Claude"),
+    entry(120, VIEWER, "complete", "cho-2", [said("completed "), named(it("cho-2"))]),
+    entry(121, VIEWER, "start", "lch-14", [said("started work on "), named(it("lch-14"))], "Claude"),
+    entry(180, "jo", "complete", "cho-3", [said("completed "), named(it("cho-3"))]),
+    entry(20 * 60, VIEWER, "complete", "lch-10", [said("completed "), named(it("lch-10"))]),
+    entry(22 * 60, VIEWER, "update", "fix-4", [
+      said("updated "),
+      named(it("fix-4")),
+      said(": due "),
+      due(addDays(today, -2)),
+    ]),
+    entry(26 * 60, "sam", "complete", "fix-8", [said("completed "), named(it("fix-8"))]),
+    entry(30 * 60, VIEWER, "create", "fix-11", [
+      said("added task "),
+      named(it("fix-11")),
+      said(", assigned to "),
+      who(FRED.name ?? ""),
+    ]),
+  ];
+  const comment = (
+    minutes: number,
+    author: AssigneeView,
+    id: string,
+    body: string,
+    agentName: string | null = null,
+  ): FeedComment => {
+    const { title, number, projectId, completedAt } = it(id);
+    return {
+      id: `comment-${id}-${minutes}`,
+      itemId: id,
+      userId: author.userId,
+      agentKeyId: agentName?.toLowerCase() ?? null,
+      agentName,
+      body,
+      createdAt: ago(minutes),
+      editedAt: null,
+      author,
+      item: { id, title, number, projectId, completedAt },
+    };
+  };
+  const comments = [
+    comment(
+      10,
+      FRED,
+      "fix-11",
+      "Two quotes in so far: £4,200 from Hadley & Sons and £4,850 from TopRoof. Chasing the third, then I'll compare all three here.",
+      "Claude",
+    ),
+    comment(170, JO, "cho-3", "The fern by the window was bone dry. Might be worth moving it out of the sun."),
+    comment(25 * 60, SAM, "fix-6", "Got the washers. I'll do it on Saturday once the water's off."),
+  ];
+  return { log, comments };
+}
+
 /** The viewer's agents, which the assignee pickers offer to start. */
 const AGENTS = [
   { keyId: "amp", name: "Amp" },
   { keyId: "claude", name: "Claude" },
 ];
 const ALL_LISTS = [...PERSONAL, ...HOME].map((l) => l.id);
+// The lists as the Brief, Done and Activity read them.
+const LISTS = [...PERSONAL, ...HOME].map((l) => ({
+  id: l.id,
+  name: l.name,
+  icon: l.icon,
+  homepageUrl: null,
+  prefix: l.prefix,
+  refPrefix: l.prefix,
+}));
+const assigneesByProject = Object.fromEntries([...PERSONAL, ...HOME].map((l) => [l.id, l.assignees]));
 // The Filter menu's choices: everyone and every label on the lists.
 const PEOPLE = [FRED, JO, SAM];
 const LABEL_CHOICES = Object.values(LABELS)
@@ -263,7 +401,9 @@ function previewGreeting(items: Item[], sessions: AgentSession[], today: string)
   }
   const tomorrow = mine.filter((i) => i.dueDate === addDays(today, 1) && !i.dueFrom);
   if (tomorrow.length > 0) {
-    sentences.push(`${two(tomorrow)} ${tomorrow.length === 1 ? "is" : "are"} due tomorrow.`);
+    sentences.push(
+      `${two(tomorrow)} ${tomorrow.length === 1 ? "is" : "are"} due tomorrow, so worth a head start today.`,
+    );
   }
   const agents = mine.flatMap((i) => {
     const s = sessions.find((s) => s.itemId === i.id && s.finishedAt === null);
@@ -299,13 +439,37 @@ function agentSession(itemId: string, agentName: string, lastActiveAt: number): 
   };
 }
 
-export function PreviewBoard({ today, now }: { today: string; now: number }) {
-  const [initial] = useState(() => demo(today, now));
+export function PreviewBoard({
+  today,
+  now,
+  signUp,
+}: {
+  today: string;
+  now: number;
+  /** Where the page's call to action goes, which the toast offers. */
+  signUp: { href: string; label: string; nudge: string };
+}) {
+  const router = useRouter();
+  const [initial] = useState(() => {
+    const board = demo(today, now);
+    return { ...board, ...demoLog(board.items, today, now) };
+  });
   const [items, setItems] = useState(initial.items);
   const [sessions, setSessions] = useState(initial.sessions);
+  const [log, setLog] = useState(initial.log);
   const [collapsedTrays, setCollapsedTrays] = useState<ReadonlySet<string>>(new Set());
   const [filters, setFilters] = useState(NO_FILTERS);
-  const [view, setView] = useState<"brief" | "board">("brief");
+  const [view, setView] = useState<"brief" | "board" | "done">("brief");
+  const [activityOpen, setActivityOpen] = useState(false);
+
+  // What needs an account (an item's dialog, settings) asks for one instead.
+  // One at a time, however often it's asked.
+  const askToSignUp = () =>
+    toast("That needs a board of your own", {
+      id: "preview-sign-up",
+      description: signUp.nudge,
+      action: { label: signUp.label, onClick: () => router.push(signUp.href) },
+    });
   // The Brief's folds, kept here as the board keeps them on the account.
   const [folds, setFolds] = useState({
     overdue: false,
@@ -323,18 +487,52 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
   }));
   if (finished.some((s, i) => s.finishedAt !== sessions[i].finishedAt)) setSessions(finished);
 
-  // The board's saves, applied here instead of on the server.
-  const changes = useMemo<ItemChanges>(
-    () => ({
-      setCompleted: (item, done) =>
-        setItems((list) => applyItemChange(list, { kind: "complete", item, done, at: Date.now() })),
-      deleteItem: (item) => setItems((list) => applyItemChange(list, { kind: "delete", item })),
-      setParent: (item, parentId) =>
-        setItems((list) => applyItemChange(list, { kind: "parent", item, parentId })),
-    }),
-    [],
-  );
-  const saves = useMemo<ItemSaves>(() => {
+  // The board's saves, applied here instead of on the server, and logged as
+  // the visitor's own changes, for Activity. Made afresh each render, so the
+  // log reads the items as they are now.
+  const record = (
+    action: AuditAction,
+    projectId: string,
+    parts: LogPart[],
+    agent: string | null = null,
+  ) =>
+    setLog((had) => [
+      { id: `visitor-${had.length}`, ts: Date.now(), actor: VIEWER, agent, action, projectId, parts },
+      ...had,
+    ]);
+  const itemOf = (id: string) => items.find((i) => i.id === id);
+  const nest = (item: Item, parentId: string | null) => {
+    const parent = itemOf(parentId ?? item.parentId ?? "");
+    if (!parent || parentId === item.parentId) return;
+    record(
+      "update",
+      item.projectId,
+      parentId
+        ? [said("made "), named(item), said(" a sub-item of "), named(parent)]
+        : [said("moved "), named(item), said(" out of "), named(parent)],
+    );
+  };
+  const changes: ItemChanges = {
+    setCompleted: (item, done) => {
+      setItems((list) => applyItemChange(list, { kind: "complete", item, done, at: Date.now() }));
+      record(done ? "complete" : "uncomplete", item.projectId, [
+        said(done ? "completed " : "reopened "),
+        named(item),
+      ]);
+    },
+    deleteItem: (item) => {
+      setItems((list) => applyItemChange(list, { kind: "delete", item }));
+      record("delete", item.projectId, [said("deleted "), named(item)]);
+    },
+    setParent: (item, parentId) => {
+      setItems((list) => applyItemChange(list, { kind: "parent", item, parentId }));
+      nest(item, parentId);
+    },
+  };
+  const saves: ItemSaves = (() => {
+    const nameOf = (id: string) =>
+      PEOPLE.find((p) => p.userId === id)?.name ?? AGENTS.find((a) => a.keyId === id)?.name ?? id;
+    const people = (ids: string[]) => ids.flatMap((id, n) => [...(n ? [said(", ")] : []), who(nameOf(id))]);
     // Within the item's own list: a drop's top and end are that list's.
     const move = (id: string, parentId: string | null | undefined, position: string) =>
       setItems((list) => {
@@ -346,49 +544,93 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
           ...moveItem(own, id, { parentId: parent ?? null, position }),
         ];
       });
+    const update = (i: Item, patch: Parameters<ItemSaves["updateItem"]>[1]) => {
+      const next = { ...i };
+      if ("dueDate" in patch) {
+        next.dueDate = patch.dueDate ?? null;
+        next.dueFrom = patch.dueFrom ?? null;
+      }
+      const add = patch.addAssigneeIds ?? [];
+      const remove = patch.removeAssigneeIds ?? [];
+      next.assigneeIds = [
+        ...(patch.assigneeIds ?? i.assigneeIds).filter((a) => !remove.includes(a)),
+        ...add.filter((a) => !i.assigneeIds.includes(a)),
+      ];
+      return next;
+    };
     return {
-      updateItem: async (id, patch) =>
-        setItems((list) =>
-          list.map((i) => {
-            if (i.id !== id) return i;
-            const next = { ...i };
-            if ("dueDate" in patch) {
-              next.dueDate = patch.dueDate ?? null;
-              next.dueFrom = patch.dueFrom ?? null;
-            }
-            const add = patch.addAssigneeIds ?? [];
-            const remove = patch.removeAssigneeIds ?? [];
-            next.assigneeIds = [
-              ...(patch.assigneeIds ?? i.assigneeIds).filter((a) => !remove.includes(a)),
-              ...add.filter((a) => !i.assigneeIds.includes(a)),
-            ];
-            return next;
-          }),
-        ),
-      reorderItem: async (id, position) => move(id, undefined, position),
-      setItemParent: async (id, parentId, position) =>
-        position
-          ? move(id, parentId, position)
-          : setItems((list) => {
-              const item = list.find((i) => i.id === id);
-              return item ? applyItemChange(list, { kind: "parent", item, parentId }) : list;
-            }),
+      updateItem: async (id, patch) => {
+        setItems((list) => list.map((i) => (i.id === id ? update(i, patch) : i)));
+        const before = itemOf(id);
+        if (!before) return;
+        const after = update(before, patch);
+        const added = after.assigneeIds.filter((a) => !before.assigneeIds.includes(a));
+        const removed = before.assigneeIds.filter((a) => !after.assigneeIds.includes(a));
+        const changed: LogPart[][] = [];
+        if (after.dueDate !== before.dueDate || after.dueFrom !== before.dueFrom) {
+          changed.push(
+            after.dueDate
+              ? [
+                  said("due "),
+                  {
+                    text: after.dueFrom ? `${after.dueFrom} to ${after.dueDate}` : after.dueDate,
+                    due: { dueDate: after.dueDate, dueFrom: after.dueFrom },
+                  },
+                ]
+              : [said("due date cleared")],
+          );
+        }
+        if (added.length) changed.push([said("assigned "), ...people(added)]);
+        if (removed.length) changed.push([said("unassigned "), ...people(removed)]);
+        if (changed.length === 0) return;
+        record("update", before.projectId, [
+          said("updated "),
+          named(before),
+          said(": "),
+          ...changed.flatMap((p, n) => (n ? [said(", "), ...p] : p)),
+        ]);
+      },
+      reorderItem: async (id, position) => {
+        move(id, undefined, position);
+        const item = itemOf(id);
+        if (item) record("reorder", item.projectId, [said("reordered "), named(item)]);
+      },
+      setItemParent: async (id, parentId, position) => {
+        if (position) move(id, parentId, position);
+        else {
+          setItems((list) => {
+            const item = list.find((i) => i.id === id);
+            return item ? applyItemChange(list, { kind: "parent", item, parentId }) : list;
+          });
+        }
+        const item = itemOf(id);
+        if (item) nest(item, parentId);
+      },
       setItemsCollapsed: async (ids, collapsed) =>
         setItems((list) => list.map((i) => (ids.includes(i.id) ? { ...i, collapsed } : i))),
       startAgent: async (itemId, keyId) => {
-        const name = AGENTS.find((a) => a.keyId === keyId)?.name ?? keyId;
+        const name = nameOf(keyId);
         setSessions((list) => [...list, agentSession(itemId, name, Date.now())]);
+        const item = itemOf(itemId);
+        if (item) {
+          record("start", item.projectId, [said("asked "), who(name), said(" to work on "), named(item)]);
+        }
       },
-      stopAgent: async (itemId, keyId) =>
+      stopAgent: async (itemId, keyId) => {
         setSessions((list) =>
           list.map((s) =>
             s.itemId === itemId && s.agentKeyId === keyId && s.finishedAt === null
               ? { ...s, finishedAt: Date.now() }
               : s,
           ),
-        ),
+        );
+        const item = itemOf(itemId);
+        if (item) {
+          record("finish", item.projectId, [said("stopped "), who(nameOf(keyId)), said(" on "), named(item)]);
+        }
+      },
     };
-  }, []);
+  })();
 
   const agendaSaves = useMemo<AgendaSaves>(
     () => ({
@@ -402,6 +644,36 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
     }),
     [],
   );
+
+  const itemsByProject = Object.fromEntries(
+    ALL_LISTS.map((id) => [id, items.filter((i) => i.projectId === id)]),
+  );
+  // An Activity row as the dialog reads it: who made it, and its items struck
+  // through once done.
+  const logged = (e: LogEntry): AuditEntryWithActor => {
+    const actor = PEOPLE.find((p) => p.userId === e.actor);
+    const parts: Part[] = e.parts.map(({ itemId, ...part }) =>
+      itemId && itemOf(itemId)?.completedAt ? { ...part, done: true } : part,
+    );
+    return {
+      id: e.id,
+      ts: e.ts,
+      actor: e.actor,
+      source: e.agent ? "mcp" : "web",
+      action: e.action,
+      entityType: "item",
+      entityId: "",
+      projectId: e.projectId,
+      parentId: null,
+      detail: parts.map((p) => p.text).join(""),
+      event: null,
+      agentKeyId: e.agent?.toLowerCase() ?? null,
+      agentName: e.agent,
+      parts,
+      actorName: actor?.name ?? null,
+      actorImage: actor?.image ?? null,
+    };
+  };
 
   const toggleTray = (id: string, collapsed: boolean) =>
     setCollapsedTrays((trays) => {
@@ -434,9 +706,7 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
           <div className="flex h-[36rem] flex-col overflow-hidden rounded-2xl [&_section]:[--column-width:calc(100vw-82px)] border border-neutral-200 bg-neutral-50 text-left shadow-xl shadow-neutral-900/5 dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-black/40">
             <BoardHeader
               nav={
-                // The board's view switch (Kanban), between the Brief and
-                // the Board; the preview has no Done to switch to. The
-                // underline sits on the header's bottom border: 8px of
+                // The board's view switch (Kanban). The underline sits on the header's bottom border: 8px of
                 // padding and the 1px border below the tabs, which stretch to
                 // the header's height when its right side wraps to two rows.
                 <div className="flex min-h-7 items-stretch self-stretch text-[13px] font-medium max-[360px]:text-xs touch:min-h-9 touch:text-sm touch:max-[360px]:text-xs">
@@ -447,20 +717,17 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
                       ["Done", CircleCheck],
                     ] as const
                   ).map(([label, Icon]) => {
-                    const to = label === "Done" ? null : (label.toLowerCase() as "brief" | "board");
-                    const Tab = to ? "button" : "span";
+                    const to = label.toLowerCase() as typeof view;
                     return (
-                    <Tab
+                    <button
                       key={label}
-                      {...(to && {
-                        type: "button" as const,
-                        onClick: () => setView(to),
-                        "aria-pressed": view === to,
-                      })}
+                      type="button"
+                      onClick={() => setView(to)}
+                      aria-pressed={view === to}
                       className={`relative flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 outline-none focus-visible:ring-2 focus-visible:ring-neutral-300 sm:px-2.5 [&_svg]:size-3.5 touch:[&_svg]:size-4 touch:max-sm:[&_svg]:size-5 ${
                         view === to
                           ? "text-neutral-900 after:absolute after:inset-x-0 after:-bottom-[9px] after:h-0.5 after:rounded-full after:bg-neutral-900 dark:text-neutral-100 dark:after:bg-neutral-100"
-                          : `text-neutral-500 dark:text-neutral-400 ${to ? "hover:text-neutral-900 dark:hover:text-neutral-100" : ""}`
+                          : "text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
                       }`}
                     >
                       <Icon aria-hidden />
@@ -471,7 +738,7 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
                       >
                         {label}
                       </span>
-                    </Tab>
+                    </button>
                     );
                   })}
                 </div>
@@ -484,28 +751,30 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
                 labels={LABEL_CHOICES}
                 viewerId={VIEWER}
               />
-              <span data-slot="button" className={buttonVariants({ variant: "outline", size: "sm" })}>
+              <button
+                type="button"
+                onClick={() => setActivityOpen(true)}
+                className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "text-muted-foreground")}
+              >
                 <History />
                 <span className="hidden sm:inline">Activity</span>
-              </span>
-              <UserAvatar user={FRED} size={28} className="touch:size-9! touch:text-lg!" />
+              </button>
+              <HeaderRule />
+              <UserMenu
+                user={FRED}
+                archivedCount={0}
+                onShowArchived={askToSignUp}
+                onShowActivity={() => setActivityOpen(true)}
+                onInvite={askToSignUp}
+                onTry={askToSignUp}
+              />
             </BoardHeader>
             {view === "brief" ? (
               <AgendaSavesContext value={agendaSaves}>
                 <AgendaView
-                  projects={[...PERSONAL, ...HOME].map((l) => ({
-                    id: l.id,
-                    name: l.name,
-                    icon: l.icon,
-                    homepageUrl: null,
-                    refPrefix: l.prefix,
-                  }))}
-                  itemsByProject={Object.fromEntries(
-                    ALL_LISTS.map((id) => [id, items.filter((i) => i.projectId === id)]),
-                  )}
-                  assigneesByProject={Object.fromEntries(
-                    [...PERSONAL, ...HOME].map((l) => [l.id, l.assignees]),
-                  )}
+                  projects={LISTS}
+                  itemsByProject={itemsByProject}
+                  assigneesByProject={assigneesByProject}
                   prLinksByItem={{}}
                   viewerId={VIEWER}
                   overdueCollapsed={folds.overdue}
@@ -514,9 +783,29 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
                   greet
                   firstName="Fred"
                   filters={filters}
-                  preview={{ greeting: previewGreeting(items, finished, today) }}
+                  preview={{
+                    greeting: previewGreeting(items, finished, today),
+                    onOpenItem: askToSignUp,
+                  }}
                 />
               </AgendaSavesContext>
+            ) : view === "done" ? (
+              <DoneView
+                projects={LISTS}
+                itemsByProject={itemsByProject}
+                assigneesByProject={assigneesByProject}
+                prLinksByItem={{}}
+                viewerId={VIEWER}
+                filters={filters}
+                // Everything finished is here: there's no more to load.
+                since={0}
+                more={false}
+                loading={false}
+                failed={false}
+                onLoadMore={noop}
+                onRetry={noop}
+                onOpenItem={askToSignUp}
+              />
             ) : (
             <BoardRail>
               {trays.map((tray) => (
@@ -536,6 +825,7 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
                       list={list}
                       items={items.filter((i) => i.projectId === list.id)}
                       filters={filters}
+                      onOpenItem={askToSignUp}
                     />
                   ))}
                 </SpaceTray>
@@ -543,6 +833,15 @@ export function PreviewBoard({ today, now }: { today: string; now: number }) {
             </BoardRail>
             )}
           </div>
+          <AuditDialog
+            open={activityOpen}
+            projects={LISTS}
+            assigneesByProject={assigneesByProject}
+            items={items}
+            onOpenItem={askToSignUp}
+            onClose={() => setActivityOpen(false)}
+            preview={{ entries: log.map(logged), comments: initial.comments }}
+          />
         </AgentSessionsProvider>
         </BoardDrag>
         </LabelsContext>
@@ -556,10 +855,12 @@ function PreviewColumn({
   list,
   items,
   filters,
+  onOpenItem,
 }: {
   list: PreviewList;
   items: Item[];
   filters: ItemFilters;
+  onOpenItem: () => void;
 }) {
   const { collapsed, setCollapsed } = useCollapsedItems(items);
   const today = useToday();
@@ -602,7 +903,7 @@ function PreviewColumn({
           assignees={list.assignees}
           viewerId={VIEWER}
           prLinksByItem={{}}
-          onOpenDetail={noop}
+          onOpenDetail={onOpenItem}
         />
       </div>
     </ColumnCard>

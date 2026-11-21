@@ -1,8 +1,10 @@
 import { createAuthClient } from "better-auth/react";
-import { usernameClient } from "better-auth/client/plugins";
+import { twoFactorClient, usernameClient } from "better-auth/client/plugins";
 
 export const authClient = createAuthClient({
-  plugins: [usernameClient()],
+  // No onTwoFactorRedirect: LoginForm reads `twoFactorRedirect` from the
+  // sign-in result and goes to /login/two-factor itself, keeping `next`.
+  plugins: [usernameClient(), twoFactorClient()],
 });
 
 export const {
@@ -14,4 +16,5 @@ export const {
   requestPasswordReset,
   resetPassword,
   changePassword,
+  twoFactor,
 } = authClient;

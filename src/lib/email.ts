@@ -156,6 +156,10 @@ export interface InviteEmail {
   url: string;
   kind?: InviteKind;
   role?: ListRole | SpaceRole;
+  /** They'll see only the items assigned to the inviter. */
+  onlyMine?: boolean;
+  /** Every place, when one invite covered several; projectName is unused then. */
+  places?: Array<{ name: string; kind: InviteKind; role: ListRole | SpaceRole; onlyMine?: boolean }>;
 }
 
 // Single source of truth for the invite email's copy.
@@ -165,19 +169,30 @@ function inviteMessage({
   url,
   kind = "list",
   role,
-}: {
-  inviterName: string;
-  projectName: string;
-  url: string;
-  kind?: InviteKind;
-  role?: ListRole | SpaceRole;
-}): { subject: string; text: string } {
-  // Said only when they'll see but not change it.
-  const as = role === "viewer" || role === "commenter" ? `, as ${roleWords(role)}` : "";
+  onlyMine,
+  places,
+}: Omit<InviteEmail, "to">): { subject: string; text: string } {
+  // Said only when they'll see but not change it, with whose items when
+  // it's only the inviter's.
+  const asWords = (r?: ListRole | SpaceRole, mine?: boolean) =>
+    r === "viewer" || r === "commenter"
+      ? `as ${roleWords(r)}${mine ? ` of ${inviterName}'s items` : ""}`
+      : "";
+  const as = asWords(role, onlyMine) && `, ${asWords(role, onlyMine)}`;
+  const several = places && places.length > 1;
+  const named = places?.map((p) => {
+    const how = [p.kind === "space" ? "a space" : "", asWords(p.role, p.onlyMine)].filter(Boolean).join(", ");
+    return `"${p.name}"${how ? ` (${how})` : ""}`;
+  });
   return {
-    subject: `${inviterName} invited you to a Sidetrack ${kind}`,
+    subject: several
+      ? `${inviterName} invited you to Sidetrack`
+      : `${inviterName} invited you to a Sidetrack ${kind}`,
     text:
-      (kind === "space"
+      (several && named
+        ? `${inviterName} invited you to ${named.slice(0, -1).join(", ")} and ` +
+          `${named[named.length - 1]} in Sidetrack.`
+        : kind === "space"
         ? `${inviterName} invited you to join the space "${projectName}" in ` +
           `Sidetrack, to share every list in it${as}.`
         : as
@@ -199,10 +214,12 @@ export async function deliverInviteEmail(
     url,
     kind,
     role,
+    onlyMine,
+    places,
   }: InviteEmail,
   deps: EmailDeps,
 ): Promise<void> {
-  const { subject, text } = inviteMessage({ inviterName, projectName, url, kind, role });
+  const { subject, text } = inviteMessage({ inviterName, projectName, url, kind, role, onlyMine, places });
   await deliverEmail(
     {
       to,
