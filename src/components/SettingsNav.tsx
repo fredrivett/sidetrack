@@ -18,8 +18,11 @@ export function SettingsNav() {
       <div className="sticky top-6 space-y-5">
         {SETTINGS_GROUPS.map((group) => (
           <div key={group.label} className="space-y-1">
-            <h2 className="px-2 text-xs font-medium text-muted-foreground">{group.label}</h2>
-            <ul className="space-y-0.5">
+            {/* A label, not a heading: the nav comes before the page's h1. */}
+            <div id={`settings-nav-${group.label}`} className="px-2 text-xs font-medium text-muted-foreground">
+              {group.label}
+            </div>
+            <ul aria-labelledby={`settings-nav-${group.label}`} className="space-y-0.5">
               {group.pages.map(({ href, label, Icon }) => {
                 const current = pathname === href;
                 return (

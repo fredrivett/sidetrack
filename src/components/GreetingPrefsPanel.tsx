@@ -2,7 +2,7 @@
 
 import { unstable_rethrow } from "next/navigation";
 import posthog from "posthog-js";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { setGreetingPrefsAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,6 +31,9 @@ export function GreetingPrefsPanel({ initial }: { initial: GreetingPrefs }) {
   const noteDraft = useDraft("greeting-note", saved.note);
   const note = noteDraft.value;
   const [pending, startTransition] = useTransition();
+  // Save note and Cancel go once the note matches what's saved, so focus
+  // returns to the note rather than falling to the page.
+  const noteRef = useRef<HTMLTextAreaElement>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Settings panels hold while saving and report failures inline.
@@ -43,7 +46,10 @@ export function GreetingPrefsPanel({ initial }: { initial: GreetingPrefs }) {
         setSaved(kept);
         // Only when the note was what changed: a draft typed before
         // changing the length or sharing stays as typed.
-        if (next.note !== saved.note) noteDraft.clear();
+        if (next.note !== saved.note) {
+          noteDraft.clear();
+          noteRef.current?.focus();
+        }
         // What people choose shapes the defaults. Never the note itself.
         posthog.capture("greeting_prefs_saved", {
           length: kept.length,
@@ -101,6 +107,7 @@ export function GreetingPrefsPanel({ initial }: { initial: GreetingPrefs }) {
           In your own words
         </label>
         <Textarea
+          ref={noteRef}
           id="greeting-note"
           draft={noteDraft}
           // Capped by characters, as it's kept, so an emoji counts once.
@@ -133,7 +140,19 @@ export function GreetingPrefsPanel({ initial }: { initial: GreetingPrefs }) {
             <Button type="submit" size="sm">
               Save note
             </Button>
-            <Button type="button" size="sm" variant="ghost" onClick={noteDraft.clear}>
+            {/* Held while saving: clearing the draft mid-save would lose the
+                text if the save then fails. */}
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              aria-disabled={pending || undefined}
+              onClick={() => {
+                if (pending) return;
+                noteDraft.clear();
+                noteRef.current?.focus();
+              }}
+            >
               Cancel
             </Button>
           </div>

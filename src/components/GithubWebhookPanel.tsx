@@ -2,7 +2,7 @@
 
 import { ArrowUpRight, Plus, Webhook } from "lucide-react";
 import { unstable_rethrow, useRouter } from "next/navigation";
-import { useState, useSyncExternalStore, useTransition } from "react";
+import { useState, useTransition } from "react";
 import {
   addGithubWebhookSecretAction,
   removeGithubWebhookAction,
@@ -12,8 +12,8 @@ import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
 import { Input } from "@/components/ui/input";
 import type { GithubWebhookView } from "@/core/github";
-import { formatRelative } from "@/lib/time";
 import { GitHubMark } from "./GitHubMark";
+import { RelativeTime } from "./RelativeTime";
 import { ARMED_BUTTON, useTapToConfirm } from "./use-tap-to-confirm";
 
 /** A labelled value to paste into GitHub's form, with a copy button. */
@@ -28,24 +28,6 @@ function CopyField({ label, value }: { label: string; value: string }) {
         <CopyButton value={value} aria-label={`Copy ${label.toLowerCase()}`} />
       </div>
     </div>
-  );
-}
-
-const noSubscribe = () => () => {};
-
-/**
- * A time as "3d ago", with the full local date on hover. Relative text renders
- * the same on the server as in the browser; the full date depends on the
- * viewer's timezone, so the title is only added once in the browser.
- */
-function Time({ ts }: { ts: number | null }) {
-  const inBrowser = useSyncExternalStore(noSubscribe, () => true, () => false);
-  if (ts === null) return "never";
-  const date = new Date(ts);
-  return (
-    <time dateTime={date.toISOString()} title={inBrowser ? date.toLocaleString() : undefined}>
-      {formatRelative(ts)}
-    </time>
   );
 }
 
@@ -208,7 +190,7 @@ export function GithubWebhookPanel({
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium">{s.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    Created <Time ts={s.createdAt} /> · last delivery <Time ts={s.lastDeliveryAt} />
+                    Created <RelativeTime ts={s.createdAt} /> · last delivery <RelativeTime ts={s.lastDeliveryAt} />
                   </p>
                 </div>
                 <Button

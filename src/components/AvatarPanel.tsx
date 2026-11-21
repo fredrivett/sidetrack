@@ -57,6 +57,9 @@ async function shrinkImage(file: File): Promise<Blob> {
 export function AvatarPanel({ user }: { user: AvatarUser }) {
   const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
+  // Save and Cancel go once the URL matches what's saved, so focus returns
+  // to the field rather than falling to the page.
+  const urlInput = useRef<HTMLInputElement>(null);
   const [pending, startTransition] = useTransition();
   const uploaded = isUploadedAvatar(user.userId, user.image);
   // The URL field holds a pasted URL; an uploaded image has none to show.
@@ -87,6 +90,7 @@ export function AvatarPanel({ user }: { user: AvatarUser }) {
         return "Couldn't update avatar.";
       }
       setValue(image ?? "");
+      urlInput.current?.focus();
       return null;
     }, message);
   }
@@ -167,6 +171,7 @@ export function AvatarPanel({ user }: { user: AvatarUser }) {
       </label>
       <div className="flex gap-2">
         <Input
+          ref={urlInput}
           id="avatar"
           name="avatar"
           type="url"
@@ -199,6 +204,7 @@ export function AvatarPanel({ user }: { user: AvatarUser }) {
               onClick={() => {
                 setValue(initial);
                 setError(null);
+                urlInput.current?.focus();
               }}
             >
               Cancel

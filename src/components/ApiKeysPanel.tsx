@@ -14,7 +14,7 @@ import {
   setAgentWebhookAction,
 } from "@/app/actions";
 import type { AgentWebhookView } from "@/core/agentWebhooks";
-import { formatRelative } from "@/lib/time";
+import { RelativeTime } from "./RelativeTime";
 
 type KeyRow = {
   id: string;
@@ -24,9 +24,9 @@ type KeyRow = {
   lastUsedAt: Date | number | null;
 };
 
-function fmt(d: Date | number | null): string {
-  if (d === null) return "never";
-  return formatRelative(d instanceof Date ? d.getTime() : d);
+/** A Date or epoch ms as epoch ms, for RelativeTime. */
+function ms(d: Date | number | null): number | null {
+  return d instanceof Date ? d.getTime() : d;
 }
 
 export function ApiKeysPanel({
@@ -148,8 +148,8 @@ export function ApiKeysPanel({
                   <div>
                     <p className="text-sm font-medium truncate">{k.name}</p>
                     <p className="text-xs text-muted-foreground">
-                      <span className="font-mono">{k.prefix}…</span> · created {fmt(k.createdAt)} · last used{" "}
-                      {fmt(k.lastUsedAt)}
+                      <span className="font-mono">{k.prefix}…</span> · created <RelativeTime ts={ms(k.createdAt)} /> · last used{" "}
+                      <RelativeTime ts={ms(k.lastUsedAt)} />
                     </p>
                   </div>
                   <AgentWebhookControl
@@ -268,7 +268,7 @@ function AgentWebhookControl({
         </form>
       ) : webhook ? (
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span>Starts work when assigned · set {fmt(webhook.createdAt)}</span>
+          <span>Starts work when assigned · set <RelativeTime ts={ms(webhook.createdAt)} /></span>
           <Button
             variant="ghost"
             size="xs"
