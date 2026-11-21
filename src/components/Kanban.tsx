@@ -882,6 +882,7 @@ export function Kanban({
               shareable: active.filter((p) => p.isOwner).map(({ id, name }) => ({ id, name })),
               onShare: openShare,
               onAddList: () => setNewList({ open: true, spaceId: "" }),
+              onAddItem: (dueToday) => openNewItem(undefined, dueToday),
             }}
             // Greets in the viewer's day, so waits for their browser's timezone.
             greet={timeZone !== null}

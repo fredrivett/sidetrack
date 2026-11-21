@@ -123,7 +123,7 @@ export default async function Home({
             overdueCollapsed={getOverdueCollapsed(db, userId)}
             noDateCollapsed={getNoDateCollapsed(db, userId)}
             noDateFoldedLists={getNoDateFoldedLists(db, userId)}
-            getStarted={getGetStarted(db, userId)}
+            getStarted={getGetStarted(db, userId, { push: Boolean(getEnv().VAPID) })}
             // From the path (/brief, /board, …), which the proxy passes as ?view=.
             initialView={
               view === "board" || view === "done" || view === "archived" ? view : "brief"
