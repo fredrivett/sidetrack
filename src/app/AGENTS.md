@@ -10,7 +10,14 @@ in `src/components/`.
 - Actions are thin wrappers around the matching `src/core` fn. Don't put
   business logic here — if you'd want to test it, it belongs in `src/core`.
 - Call `refresh()` (which wraps `revalidatePath("/")`) after every mutating
-  action so the kanban re-fetches.
+  action so the kanban re-fetches, except item saves made in quick runs
+  (ticking, dragging, nesting, editing, folding, deleting, adding a
+  checklist line). Re-rendering a big board after each of those is slow, so
+  they return the rows they changed instead (`readItems` or `savedRows`,
+  reading every row core changed, such as a parent a tick completes), and
+  the board puts them in (`useSavedItems`). Saves that change more than
+  rows, such as labels (which can make new ones) or a move, still refresh.
+  Live updates follow the same split (`Change.rows` in `src/core/changes.ts`).
 - Import core functions with the `as ...Core` alias pattern already in use,
   e.g. `import { addItem as addItemCore } from "@/core/items"`. Keeps the
   exported action name short and avoids shadowing.

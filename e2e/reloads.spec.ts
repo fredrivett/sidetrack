@@ -1,7 +1,7 @@
 import { getDb } from "@/core/db";
 import { getItem, listItems } from "@/core/items";
 import { getTimeZone, setTimeZone } from "@/core/users";
-import type { Route } from "@playwright/test";
+import type { Page, Route } from "@playwright/test";
 import { expect, test } from "./fixtures";
 
 // What an open page does when the server changes under it: another tab's
@@ -22,6 +22,48 @@ test("shows a change made in another tab without a reload", async ({ page, conte
 
   await expect(page.getByRole("button", { name: "Refill salt", exact: true })).toBeVisible();
   expect(await page.evaluate(() => "e2eMarker" in window)).toBe(true);
+});
+
+// A big board takes a while to render again, so item saves hand back just
+// the rows they changed (useSavedItems), here and in the board's other tabs.
+test("ticks and deletes an item without reloading the board, here or in another tab", async ({ page, context, user }) => {
+  user.addList("Home", ["Water plants"]);
+  const complete = (p: Page) =>
+    p
+      .locator("[data-item-row]")
+      .filter({ has: p.getByRole("button", { name: "Water plants", exact: true }) })
+      .getByRole("checkbox", { name: "Complete" });
+  const pages: Page[] = [page, await context.newPage()];
+  const reloads = [0, 0];
+  for (const [n, p] of pages.entries()) {
+    // Each page reloads once as its live updates open; count the rest.
+    const opened = p.waitForResponse((r) => r.request().headers().rsc === "1");
+    await p.goto("/board");
+    await opened;
+    p.on("request", (r) => {
+      if (r.headers().rsc === "1") reloads[n]++;
+    });
+  }
+  const read = page.waitForResponse((r) => r.url().includes("/api/items?ids="));
+  const saved = pages[1].waitForResponse((r) => r.request().headers()["next-action"] !== undefined);
+  await complete(pages[1]).check();
+  expect(await (await saved).headerValue("x-action-revalidated")).toBe(null);
+  await read;
+  await expect(complete(page)).toBeChecked();
+  await expect(complete(pages[1])).toBeChecked();
+  expect(reloads).toEqual([0, 0]);
+  const reopened = page.waitForResponse((r) => r.request().headers().rsc === "1");
+  await page.reload();
+  await expect(complete(page)).toBeChecked();
+  await reopened;
+
+  // A delete reaches the other tab the same way.
+  const gone = page.waitForResponse((r) => r.url().includes("/api/items?ids="));
+  await pages[1].getByRole("button", { name: "Water plants", exact: true }).click({ button: "right" });
+  await pages[1].getByRole("menuitem", { name: "Delete item" }).click();
+  await pages[1].getByRole("menuitem", { name: "Confirm delete?" }).click();
+  await gone;
+  await expect(page.getByRole("button", { name: "Water plants", exact: true })).toBeHidden();
 });
 
 test("keeps New item's draft through a reload, until it's cancelled", async ({ page, user }) => {
@@ -62,9 +104,11 @@ test("after a deploy, keeps what's open and offers to reload", async ({ page, co
   // ...and something changes, so the page wants fresh data.
   const other = await context.newPage();
   await other.goto("/board");
-  await other.getByRole("button", { name: "Water plants", exact: true }).click({ button: "right" });
-  await other.getByRole("menuitem", { name: "Delete item" }).click();
-  await other.getByRole("menuitem", { name: "Confirm delete?" }).click();
+  // A comment, which reloads boards: a tick or a delete only reads rows.
+  await other.getByRole("button", { name: "Water plants", exact: true }).click();
+  await other.getByRole("combobox", { name: "Add a comment" }).fill("Twice a week");
+  await other.getByRole("button", { name: /^Comment/ }).click();
+  await expect(other.getByRole("combobox", { name: "Add a comment" })).toHaveValue("");
   await other.close();
 
   const toast = page.getByText("Sidetrack has been updated");

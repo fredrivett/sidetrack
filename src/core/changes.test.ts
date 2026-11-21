@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { changeSeq, watchChanges } from "./changes";
+import { changeSeq, type Seen, watchChanges } from "./changes";
+import { setFollowing } from "./follows";
 import { addComment } from "./comments";
 import { addLabel, updateLabel } from "./labels";
-import { addItem, setItemsCollapsed, updateItem } from "./items";
+import { addItem, completeItem, reorderItem, setItemParent, setItemsCollapsed, updateItem } from "./items";
 import { acceptInvite, inviteMember } from "./members";
 import { linkItemToPr, setPrState } from "./prLinks";
-import { createProject, deleteProject } from "./projects";
+import { createProject, deleteProject, updateProject } from "./projects";
 import { createTestDb, createTestUser } from "./test-helpers";
 import {
   acceptSpaceInvite,
@@ -226,6 +227,48 @@ describe("watchChanges", () => {
     expect(numbers[0]).toBe(after);
     expect(numbers[1]).toBeGreaterThan(after);
     expect(numbers[1]).toBe(changeSeq());
+  });
+
+  // A board reads just the rows when they show all of a change (LiveUpdates).
+  it("names the items a change was about, and whether their rows show all of it to each viewer", async () => {
+    const seen: Record<string, Seen[]> = { [owner]: [], [member]: [] };
+    for (const id of [owner, member]) stops.push(watchChanges(db, id, (_, s) => seen[id].push(s)));
+    const one = addItem(db, owner, { projectId, title: "One" }, "web");
+    const two = addItem(db, owner, { projectId, title: "Two" }, "web");
+    await settle();
+    // A new item: its creator follows it, which its row doesn't show.
+    expect(seen[owner].at(-1)).toEqual({ items: [one.id, two.id], rows: false, first: changeSeq() - 1 });
+    reorderItem(db, owner, two.id, "top", "web");
+    await settle();
+    expect(seen[member].at(-1)).toMatchObject({ items: [two.id], rows: true });
+    // Its follower's inbox has news, which a row doesn't show; the ticker's doesn't.
+    setFollowing(db, member, one.id, true);
+    completeItem(db, owner, one.id, "web");
+    await settle();
+    expect(seen[member].at(-1)).toMatchObject({ items: [one.id], rows: false });
+    expect(seen[owner].at(-1)).toMatchObject({ items: [one.id], rows: true });
+    // About more than an item.
+    updateProject(db, owner, projectId, { name: "Renamed" }, "web");
+    await settle();
+    expect(seen[owner].at(-1)).toBeNull();
+  });
+
+  it("names the checklist someone shown only the owner's items gains or loses with one of those", async () => {
+    const jo = createTestUser(db, { username: "jo" });
+    inviteMember(db, owner, projectId, "jo", "web", "viewer", { onlyMine: true });
+    acceptInvite(db, jo, projectId, "web");
+    const parent = addItem(db, owner, { projectId, title: "Trip" }, "web");
+    const line = addItem(db, owner, { projectId, title: "Pack", parentId: parent.id }, "web");
+    const theirs = addItem(db, owner, { projectId, title: "Tickets", assigneeIds: [owner] }, "web");
+    await settle();
+    const seen: Seen[] = [];
+    stops.push(watchChanges(db, jo, (_, s) => seen.push(s)));
+    setItemParent(db, owner, theirs.id, parent.id, "web");
+    await settle();
+    expect(new Set(seen.at(-1)?.items)).toEqual(new Set([theirs.id, parent.id, line.id]));
+    setItemParent(db, owner, theirs.id, null, "web");
+    await settle();
+    expect(new Set(seen.at(-1)?.items)).toEqual(new Set([theirs.id, parent.id, line.id]));
   });
 
   // The board reloads to reopen repeating items by the viewer's new day.

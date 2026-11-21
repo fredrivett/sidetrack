@@ -8,7 +8,7 @@ import { runAction } from "./run-action";
 /**
  * The parents among `items` whose sub-items are hidden: `item.collapsed`, with
  * the viewer's toggles shown at once rather than after the save and refresh.
- * Once a toggle lands, the refreshed items take over again.
+ * Once a toggle lands, the saved rows (useSavedItems) take over again.
  */
 export function useCollapsedItems(items: Item[]) {
   const [collapsed, apply] = useOptimistic(

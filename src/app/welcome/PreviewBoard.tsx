@@ -608,6 +608,8 @@ export function PreviewBoard({
       },
       setItemsCollapsed: async (ids, collapsed) =>
         setItems((list) => list.map((i) => (ids.includes(i.id) ? { ...i, collapsed } : i))),
+      // Lines are added from the item's dialog, which the preview doesn't open.
+      addSubItem: async () => {},
       startAgent: async (itemId, keyId) => {
         const name = nameOf(keyId);
         setSessions((list) => [...list, agentSession(itemId, name, Date.now())]);

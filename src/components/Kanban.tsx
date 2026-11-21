@@ -64,14 +64,17 @@ import { useStoredState } from "./use-stored-state";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
 import { useSameContent } from "./use-same-content";
 import { LabelsContext } from "./Labels";
+import { LiveUpdates } from "./LiveUpdates";
 import { ListAccessContext } from "./list-access";
 import { RemoveListContext, useOptimisticLists } from "./use-list-saves";
 import {
-  applyItemChange,
-  type ItemChange,
+  applySaved,
+  isSaved,
   ItemChangesContext,
   useOptimisticItems,
+  useSavedItems,
 } from "./use-optimistic-items";
+import { defaultItemSaves, type ItemSaves, ItemSavesContext } from "./item-saves";
 import { assigneeName, type AvatarUser } from "./UserAvatar";
 import { UserMenu } from "./UserMenu";
 import { createSelection, NAV_KEYS, SelectedItemContext, stepItemRow } from "./useItemShortcuts";
@@ -145,6 +148,7 @@ export function Kanban({
   filters: savedFilters,
   aiEnabled,
   feedbackEnabled = false,
+  seq,
 }: {
   viewerId: string;
   /** The viewer's own display fields, for the avatar on the Account button. */
@@ -200,6 +204,8 @@ export function Kanban({
   aiEnabled: boolean;
   /** Whether this deployment takes feedback (FEEDBACK_LIST_ID). */
   feedbackEnabled?: boolean;
+  /** The number of the last change the page was rendered with (changeSeq). */
+  seq: number;
 }) {
   const railRef = useRef<HTMLDivElement>(null);
 
@@ -288,16 +294,52 @@ export function Kanban({
     return merged;
   }, [serverItemsByProject, older, found, search]);
 
+  // Items a notification or ?item= opens can be anywhere the viewer can open:
+  // an archived list, or Done from before this week, which is fetched.
+  const [fetchedItems, setFetchedItems] = useState<Item[]>(initialItemExtra);
+  // Rows item saves and live updates hand back, over the server's (see
+  // useSavedItems). The Done view's older pages, ⌘K's matches and the
+  // fetched items are copies no refresh replaces, so the rows go into them
+  // too; otherwise an older item would show as it was until they're read
+  // again.
+  const saved = useSavedItems(allItemsByProject, seq, completedSince);
+  const { merge: mergeSaved } = saved;
+  const merge = useCallback(
+    (rows: unknown) => {
+      mergeSaved(rows);
+      if (!isSaved(rows)) return;
+      setOlder((o) => o && { ...o, items: applySaved(o.items, rows) });
+      setFound((f) => f && { ...f, items: applySaved(f.items, rows) });
+      setFetchedItems((had) => applySaved(had, rows));
+    },
+    [mergeSaved],
+  );
+  const shownFollowed = useMemo(
+    () =>
+      saved.followed.length ? [...new Set([...followedItemIds, ...saved.followed])] : followedItemIds,
+    [followedItemIds, saved.followed],
+  );
+  const liveRows = useMemo(
+    () => ({ asOf: saved.asOf, own: saved.own, merge }),
+    [saved.asOf, saved.own, merge],
+  );
   // Every view reads items and lists from here, so a change shown ahead of the
   // server (a tick, a delete, a move) shows at once wherever it appears.
-  // The Done view's older pages are a copy the refresh doesn't replace, so a
-  // saved change is applied to them too; otherwise a deleted or moved older
-  // item would show as it was until they're read again.
-  const applyToOlder = useCallback((change: ItemChange) => {
-    setOlder((o) => o && { ...o, items: applyItemChange(o.items, change) });
-    setFound((f) => f && { ...f, items: applyItemChange(f.items, change) });
-  }, []);
-  const [itemsByProject, itemChanges] = useOptimisticItems(allItemsByProject, applyToOlder);
+  const [itemsByProject, itemChanges] = useOptimisticItems(saved.items, merge);
+  const itemSaves = useMemo<ItemSaves>(() => {
+    const merged =
+      <A extends unknown[]>(save: (...args: A) => Promise<unknown>) =>
+      (...args: A) =>
+        save(...args).then(merge);
+    return {
+      ...defaultItemSaves,
+      updateItem: merged(defaultItemSaves.updateItem),
+      reorderItem: merged(defaultItemSaves.reorderItem),
+      setItemParent: merged(defaultItemSaves.setItemParent),
+      setItemsCollapsed: merged(defaultItemSaves.setItemsCollapsed),
+      addSubItem: merged(defaultItemSaves.addSubItem),
+    };
+  }, [merge]);
   const [projects, removeList] = useOptimisticLists(serverProjects);
   const [view, setView] = useState<BoardView>(initialView);
   // The view asked for, which the tabs show at once while the view itself
@@ -536,9 +578,6 @@ export function Kanban({
       (subItems > 0 && matchesFilters(bare, item, shownFilters, today))
     );
   };
-  // Items a notification or ?item= opens can be anywhere the viewer can open:
-  // an archived list, or Done from before this week, which is fetched.
-  const [fetchedItems, setFetchedItems] = useState<Item[]>(initialItemExtra);
   const loadedItems = projects.flatMap((p) => itemsByProject[p.id] ?? []);
   const detailItems = [
     ...loadedItems,
@@ -778,14 +817,16 @@ export function Kanban({
   );
 
   return (
-    <FollowsProvider followedItemIds={followedItemIds}>
+    <FollowsProvider followedItemIds={shownFollowed}>
     <SelectedItemContext value={selection}>
     <NotificationLevelsProvider levels={notificationLevels}>
     <ItemChangesContext value={itemChanges}>
+    <ItemSavesContext value={itemSaves}>
     <LabelsContext value={sameLabels}>
     <ListAccessContext value={accessByProject}>
     <RemoveListContext value={removeList}>
     <BoardDrag groups={moveTargets}>
+      <LiveUpdates seq={seq} rows={liveRows} />
       <BoardMain>
         <BoardHeader
           nav={<ViewTabs view={view} chosen={chosenView} onSwitch={switchView} />}
@@ -1106,6 +1147,7 @@ export function Kanban({
     </RemoveListContext>
     </ListAccessContext>
     </LabelsContext>
+    </ItemSavesContext>
     </ItemChangesContext>
     </NotificationLevelsProvider>
     </SelectedItemContext>

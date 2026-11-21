@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { listAudit } from "./audit";
+import { changeSeq } from "./changes";
 import { addLabel, listLabels } from "./labels";
 import {
   addItem,
@@ -9,6 +10,7 @@ import {
   getItem,
   listDoneBefore,
   listItems,
+  readItems,
   reopenDueRepeats,
   reorderItem,
   setItemOrder,
@@ -303,6 +305,25 @@ describe("items", () => {
     // An empty id must not fall through to "match any owned item".
     expect(getItem(db, userId, "")).toBeUndefined();
     expect(getItem(db, userId, "nope")).toBeUndefined();
+  });
+
+  it("reads rows back for the board, with what can't be read as gone", () => {
+    const { db, userId, projectId } = seedProject();
+    const mine = addItem(db, userId, { projectId, title: "mine" }, "web");
+    const deleted = addItem(db, userId, { projectId, title: "deleted" }, "web");
+    deleteItem(db, userId, deleted.id, "web");
+    const stranger = createTestUser(db);
+    const theirs = addItem(
+      db,
+      stranger,
+      { projectId: createProject(db, stranger, { name: "Theirs" }, "web").id, title: "theirs" },
+      "web",
+    );
+    const before = changeSeq();
+    const saved = readItems(db, userId, [mine.id, theirs.id, mine.id, deleted.id]);
+    expect(saved.seq).toBeGreaterThanOrEqual(before);
+    expect(saved.items.map((i) => i.title)).toEqual(["mine"]);
+    expect(saved.gone).toEqual([theirs.id, deleted.id]);
   });
 
   it("numbers items monotonically per project, never reusing after delete", () => {

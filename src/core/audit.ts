@@ -110,7 +110,7 @@ export function recordAudit(db: Db, input: EventInput): void {
     })
     .run();
   // Who it concerns hears about it (notifications.ts), in this transaction.
-  writeNotifications(db, {
+  const notified = writeNotifications(db, {
     auditId: id,
     ts,
     actor: input.actor,
@@ -130,7 +130,31 @@ export function recordAudit(db: Db, input: EventInput): void {
     projectId: columns.projectId,
     ...(itemId ? { itemId } : {}),
     ...(columns.entityType === "label" ? { wholeOnly: true } : {}),
+    ...(rowsShowAll(event) ? { rows: true } : {}),
+    ...(notified.length ? { notified } : {}),
   });
+}
+
+/**
+ * Whether the item's own row shows all of what the event changed, for anyone
+ * it didn't notify (see Change.rows). Not so for a new item, which its
+ * creator follows, or labels, which can make new ones, or assignees, who
+ * follow what they're on, or a move, which renumbers it.
+ */
+function rowsShowAll(event: ChangeEvent): boolean {
+  switch (event.type) {
+    case "item.updated":
+      return !event.changes.labels && !event.changes.assignees;
+    case "item.completed":
+    case "item.reopened":
+    case "item.reordered":
+    case "item.deleted":
+    case "item.nested":
+    case "item.unnested":
+      return true;
+    default:
+      return false;
+  }
 }
 
 export function listAudit(
