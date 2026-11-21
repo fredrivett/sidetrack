@@ -10,6 +10,7 @@ import { addItem, completeItem, getItem, listItems } from "@/core/items";
 import { listLabels } from "@/core/labels";
 import { acceptInvite, inviteMember } from "@/core/members";
 import { createProject, getProject, listProjects, updateProject } from "@/core/projects";
+import { addSmartMatch, setSmartRule } from "@/core/smartDue";
 import {
   acceptSpaceInvite,
   createSpace,
@@ -133,6 +134,39 @@ describe("tool output", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-11-21T12:00:00Z"));
     expect((await call("complete_item", { id: "HOM-1" })).data.comesBack).toBe("2026-12-01");
+  });
+
+  it("sets a smart due date and its matches by ref, and an unknown match changes nothing", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const list = createProject(db, fred, { name: "Home" }, "web");
+    addItem(db, fred, { projectId: list.id, title: "Renew travel insurance" }, "web");
+    addItem(db, fred, { projectId: list.id, title: "Lisbon", dueFrom: "2027-03-03", dueDate: "2027-03-08" }, "web");
+    const call = await connectAs(fred);
+    await call("set_smart_due", { id: "HOM-1", rule: "before our next trip", lead: 7 });
+    expect((await call("add_smart_match", { id: "HOM-1", anchor_id: "HOM-9" })).error).toBeTruthy();
+    const r = await call("add_smart_match", { id: "HOM-1", anchor_id: "HOM-2", reason: "a trip" });
+    expect(r.data).toMatchObject({
+      item: { ref: "HOM-1", dueDate: "2027-02-24", smartRule: "before our next trip" },
+      smart: { lead: 7, matches: [{ ref: "HOM-2", reason: "a trip", current: true }] },
+    });
+    expect((await call("get_item", { id: "HOM-1" })).data.smart).toMatchObject({ rule: "before our next trip" });
+    expect((await call("get_item", { id: "HOM-2" })).data).not.toHaveProperty("smart");
+  });
+
+  it("removes a match in a list the user can't open, by the id smart.matches gives", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const ann = createTestUser(db, { username: "ann" });
+    const home = createProject(db, fred, { name: "Home" }, "web");
+    const secret = createProject(db, fred, { name: "Secret" }, "web");
+    inviteMember(db, fred, home.id, "ann", "web");
+    acceptInvite(db, ann, home.id, "web");
+    const smart = addItem(db, fred, { projectId: home.id, title: "Bake a cake" }, "web");
+    const party = addItem(db, fred, { projectId: secret.id, title: "Party", dueDate: "2027-03-03" }, "web");
+    setSmartRule(db, fred, smart.id, { rule: "before the party", lead: 0 }, "web");
+    addSmartMatch(db, fred, smart.id, party.id, null, "web");
+    const call = await connectAs(ann);
+    const r = await call("remove_smart_match", { id: "HOM-1", anchor_id: party.id });
+    expect(r.data).toMatchObject({ item: { dueDate: null }, smart: { matches: [] } });
   });
 
   it("counts the return day in UTC when the user's zone isn't known", async () => {

@@ -132,6 +132,8 @@ function demo(today: string, now: number) {
       repeatUnit: null,
       repeatOn: null,
       repeatDay: null,
+      smartRule: null,
+      smartLead: null,
       completedAt: null,
       createdAt: now,
       ...extra,

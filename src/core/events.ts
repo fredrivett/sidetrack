@@ -48,13 +48,35 @@ export interface DueAt {
   dueFrom: string | null;
 }
 
+/** An item a smart due date hangs off, with its list, so a reader who can't
+ * see that list isn't told its name. */
+export interface AnchorAt extends ItemAt {
+  projectId: string;
+}
+
+/** A smart due date's rule ("before our next trip", `lead` days before). */
+export interface SmartRule {
+  rule: string;
+  lead: number;
+}
+
 /** What updateItem changed, in the order it's described. */
 export interface ItemChanges {
   title?: { from: string; to: string };
   description?: "edited" | "cleared";
   labels?: { added: string[]; removed: string[] };
   assignees?: { added: PersonAt[]; removed: PersonAt[] };
+  /** A smart due date set or changed; null when it went back to a plain one. */
+  smart?: SmartRule | null;
+  /** A match added to its smart due date, or one someone said isn't one. */
+  matched?: AnchorAt;
+  unmatched?: AnchorAt;
   due?: DueAt;
+  /**
+   * For a due date its smart rule worked out: what it was, and the match it
+   * now comes from (null: none, so it's waiting for one).
+   */
+  smartDue?: { was: DueAt; anchor: AnchorAt | null };
   repeat?: Repeat | null;
 }
 

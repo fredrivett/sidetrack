@@ -14,7 +14,7 @@ import type { Db } from "./db";
 import { SYSTEM_ACTOR } from "./audit";
 import { duePart, type Part, plainText } from "./describe";
 import { autoFollow, followersOf } from "./follows";
-import type { ChangeEvent, ItemAt, PersonAt } from "./events";
+import type { ChangeEvent, DueAt, ItemAt, PersonAt } from "./events";
 import { isLooking } from "./presence";
 import { remindDue } from "./reminders";
 import { forgetPushSubscriptions, pushTargets } from "./push";
@@ -111,6 +111,15 @@ function finishedParent(db: Db, itemId: string): string | null {
   return parentOpen && !siblingOpen ? parentId : null;
 }
 
+/**
+ * Whether a smart due date's move asks for attention: it got a date, or one
+ * sooner than before. A later date, or none, can wait to be noticed.
+ */
+function movedEarlier(due: DueAt, was: DueAt): boolean {
+  if (!due.dueDate) return false;
+  return !was.dueDate || due.dueDate < (was.dueFrom ?? was.dueDate);
+}
+
 /** Who `event` concerns and why, before the checks every rule shares. */
 function rule(
   db: Db,
@@ -170,7 +179,7 @@ function rule(
       return onItem(event.itemId, event.projectId, [
         ...as("assigned", added),
         ...as("unassigned", c.assignees?.removed.map((a) => a.userId) ?? []),
-        ...(c.due ? followers(event.itemId) : []),
+        ...(c.due && (!c.smartDue || movedEarlier(c.due, c.smartDue.was)) ? followers(event.itemId) : []),
         // Reworded: worth knowing, not worth a buzz unless they asked.
         ...(c.title || c.description
           ? followersOf(db, event.itemId).map((userId) => ({ userId, reason: "activity" as const }))
@@ -817,6 +826,9 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           if (r.reason === "assigned") return say([who, t(" assigned you "), item]);
           if (r.reason === "unassigned") return say([who, t(" took you off "), item]);
           if (r.reason === "activity") return say([who, t(" edited "), item]);
+          if (r.actorId === SYSTEM_ACTOR && event.changes.smartDue && event.changes.due?.dueDate) {
+            return say([item, t(" is now due "), duePart({ ...event.changes.due, dueDate: event.changes.due.dueDate })]);
+          }
           return event.changes.due?.dueDate
             ? say([who, t(" set "), item, t(" due "), duePart({ ...event.changes.due, dueDate: event.changes.due.dueDate })])
             : say([who, t(" cleared the due date on "), item]);

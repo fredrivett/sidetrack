@@ -12,6 +12,7 @@ import type { Db } from "./db";
 import type { ListChanges } from "./events";
 import { parseProjectRef, resolvePosition } from "./fracidx";
 import { listItems } from "./items";
+import { recalibrate, smartDependents } from "./smartDue";
 import {
   type Item,
   items,
@@ -609,7 +610,13 @@ export function deleteProject(
   db.transaction((tx) => {
     // Read before the delete takes their access with it.
     const members = listMemberIds(tx as unknown as Db, id);
+    // Smart dates elsewhere that hang off its items, worked out again without them.
+    const dependents = smartDependents(
+      tx as unknown as Db,
+      tx.select({ id: items.id }).from(items).where(eq(items.projectId, id)).all().map((r) => r.id),
+    );
     tx.delete(projects).where(eq(projects.id, id)).run();
+    recalibrate(tx as unknown as Db, dependents);
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,

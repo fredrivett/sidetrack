@@ -60,6 +60,12 @@ const ACTIONS: Record<string, string | Exempt> = {
   addFeedbackFollowUpAction: "add_to_feedback",
   addItemAction: "add_item",
   updateItemAction: "update_item",
+  setSmartRuleAction: "set_smart_due",
+  getSmartDueAction: "get_item",
+  // Agents find items to match with list_all_items.
+  findSmartCandidatesAction: "list_all_items",
+  addSmartMatchAction: "add_smart_match",
+  removeSmartMatchAction: "remove_smart_match",
   completeItemAction: "complete_item",
   uncompleteItemAction: "uncomplete_item",
   listDoneBeforeAction: "search_done",

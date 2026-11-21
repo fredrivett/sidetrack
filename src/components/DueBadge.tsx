@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays } from "lucide-react";
+import { CalendarDays, Sparkles } from "lucide-react";
 import { dueLabel, dueWord } from "@/lib/time";
 import { useLabelDay } from "./use-day-start";
 
@@ -32,10 +32,13 @@ export function DueBadge({
   due,
   from,
   done,
+  smart,
 }: {
   due: string;
   from?: string | null;
   done: boolean;
+  /** Its smart due date's rule, when its date is worked out from one. */
+  smart?: string | null;
 }) {
   const { label, tone } = useDueLabel(due, from, done);
   const toneClass =
@@ -46,10 +49,24 @@ export function DueBadge({
         : "bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400";
   return (
     <span
+      title={smart ? `Smart: ${smart}` : undefined}
       className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ${toneClass}`}
     >
-      <CalendarDays className="size-3" />
+      {smart ? <Sparkles className="size-3" /> : <CalendarDays className="size-3" />}
       {label}
+    </span>
+  );
+}
+
+/** A smart due date with nothing to work it out from yet. */
+export function WaitingBadge({ rule }: { rule: string }) {
+  return (
+    <span
+      title={`Smart: ${rule}. Nothing matches yet.`}
+      className="inline-flex max-w-full items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-neutral-500 ring-1 ring-neutral-200 ring-inset dark:text-neutral-400 dark:ring-neutral-700"
+    >
+      <Sparkles className="size-3 shrink-0" />
+      <span className="truncate">Waiting: {rule}</span>
     </span>
   );
 }

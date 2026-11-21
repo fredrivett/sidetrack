@@ -4,7 +4,7 @@ import { hasItemAccess, hasProjectAccess, hasWholeListAccess } from "./access";
 import { users } from "./auth-schema";
 import { announceChange } from "./changes";
 import type { Db } from "./db";
-import { describeEvent, namesFor, type Part, plainText } from "./describe";
+import { describeEvent, hideAnchors, namesFor, type Part, plainText } from "./describe";
 import { auditColumns, type ChangeEvent } from "./events";
 import { writeNotifications } from "./notifications";
 import {
@@ -225,6 +225,7 @@ export function listAudit(
     const parts = r.entry.event ? describeEvent(r.entry.event, names) : null;
     return {
     ...r.entry,
+    event: r.entry.event && hideAnchors(r.entry.event, names),
     parts,
     detail: parts ? plainText(parts) : r.entry.detail,
     actorName:

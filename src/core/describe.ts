@@ -6,7 +6,8 @@ import { dueWord } from "../lib/time";
 import { hasItemAccess } from "./access";
 import { users } from "./auth-schema";
 import type { Db } from "./db";
-import type { AccessLost, ChangeEvent, DueAt, ItemAt, ListChanges, PersonAt, SpaceAt } from "./events";
+import { hasProjectAccess } from "./access";
+import type { AccessLost, AnchorAt, ChangeEvent, DueAt, ItemAt, ListChanges, PersonAt, SpaceAt } from "./events";
 import { items, projects, spaceMembers, spaces } from "./schema";
 
 // Turns change events (core/events.ts) into sentences. Activity, an item's
@@ -44,6 +45,8 @@ export interface Names {
   /** Whether the item is done now, when it reads by its current title. */
   done(it: ItemAt, projectId: string): boolean;
   person(p: PersonAt): string;
+  /** A smart due date's match by name, or null when the reader can't open its list. */
+  anchor(a: AnchorAt): string | null;
   list(id: string, fallback: string): string;
   space(s: SpaceAt): string;
 }
@@ -110,6 +113,26 @@ export function namesFor(db: Db, events: ChangeEvent[], viewer: string): Names {
         )
         .all()
     : [];
+  // The lists of smart due dates' matches the viewer can open.
+  const anchorLists = [
+    ...new Set(
+      events.flatMap((e) => {
+        if (e.type !== "item.updated") return [];
+        const c = e.changes;
+        return [c.matched, c.unmatched, c.smartDue?.anchor].flatMap((a) => (a ? [a.projectId] : []));
+      }),
+    ),
+  ];
+  const openLists = new Set(
+    anchorLists.length
+      ? db
+          .select({ id: projects.id })
+          .from(projects)
+          .where(and(inArray(projects.id, anchorLists), hasProjectAccess(viewer)))
+          .all()
+          .map((r) => r.id)
+      : [],
+  );
   const itemById = new Map(itemRows.map((r) => [r.id, r]));
   // `@username`, then name, then email.
   const people = new Map(
@@ -127,6 +150,11 @@ export function namesFor(db: Db, events: ChangeEvent[], viewer: string): Names {
       return row?.projectId === projectId && row.completedAt !== null;
     },
     person: (p) => people.get(p.userId) ?? p.name,
+    anchor(a) {
+      if (!openLists.has(a.projectId)) return null;
+      const row = itemById.get(a.itemId);
+      return row && row.projectId === a.projectId ? row.title : a.title;
+    },
     list: (id, fallback) => lists.get(id) ?? fallback,
     space: (sp) => spaceNames.get(sp.spaceId) ?? sp.name,
   };
@@ -204,6 +232,37 @@ function listChanges(c: ListChanges): string[] {
 /** Whose items a role covers, when it's only someone's. */
 const onlyOf = (only?: PersonAt) => (only ? ` of ${only.name}'s items` : "");
 
+/**
+ * `event` as `names`' reader may have it: a smart due date's match in a list
+ * they can't open loses its title, as the sentence already says.
+ */
+export function hideAnchors(event: ChangeEvent, names: Names): ChangeEvent {
+  if (event.type !== "item.updated") return event;
+  const c = event.changes;
+  const hide = (a: AnchorAt): AnchorAt => (names.anchor(a) === null ? { ...a, title: "" } : a);
+  if (!c.matched && !c.unmatched && !c.smartDue?.anchor) return event;
+  return {
+    ...event,
+    changes: {
+      ...c,
+      ...(c.matched && { matched: hide(c.matched) }),
+      ...(c.unmatched && { unmatched: hide(c.unmatched) }),
+      ...(c.smartDue?.anchor && { smartDue: { ...c.smartDue, anchor: hide(c.smartDue.anchor) } }),
+    },
+  };
+}
+
+/** A smart rule with its lead: “before our next trip”, 1 week before. */
+export function smartLabel(rule: string, lead: number): string {
+  const days =
+    lead === 0
+      ? "on the day"
+      : lead % 7 === 0
+        ? `${lead / 7} week${lead === 7 ? "" : "s"} before`
+        : `${lead} day${lead === 1 ? "" : "s"} before`;
+  return `“${rule}”, ${days}`;
+}
+
 export function describeEvent(event: ChangeEvent, names: Names): Part[] {
   const projectId = "projectId" in event ? event.projectId : "";
   const item = (it: ItemAt): Part => ({
@@ -253,10 +312,28 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
       if (c.assignees?.removed.length) {
         changes.push([t("unassigned "), ...people(names, c.assignees.removed)]);
       }
+      const anchor = (a: AnchorAt): Part => {
+        const name = names.anchor(a);
+        return name === null ? t("an item you can't see") : { text: name, em: "item", quote: true };
+      };
+      if (c.smart) {
+        changes.push([t(`smart due date ${smartLabel(c.smart.rule, c.smart.lead)}`)]);
+      } else if (c.smart === null && !c.due) {
+        changes.push([t("no longer a smart due date")]);
+      }
+      if (c.matched) changes.push([t("matched "), anchor(c.matched)]);
+      if (c.unmatched) changes.push([t("unmatched "), anchor(c.unmatched)]);
       if (c.due) {
+        const was = c.smartDue?.was.dueDate;
         changes.push(
-          c.due.dueDate ? [t("due "), duePart({ ...c.due, dueDate: c.due.dueDate })] : [t("due date cleared")],
+          c.due.dueDate
+            ? [
+                t(c.smartDue && was ? (c.due.dueDate < (c.smartDue.was.dueFrom ?? was) ? "moved earlier to " : "moved later to ") : "due "),
+                duePart({ ...c.due, dueDate: c.due.dueDate }),
+              ]
+            : [t(c.smartDue ? "no date until something matches" : "due date cleared")],
         );
+        if (c.smartDue?.anchor) changes.push([t("from "), anchor(c.smartDue.anchor)]);
       }
       if (c.repeat !== undefined) {
         changes.push([

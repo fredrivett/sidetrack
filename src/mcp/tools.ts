@@ -53,6 +53,7 @@ import {
 } from "@/core/labels";
 import { moveItem, previewMoveItem } from "@/core/move";
 import { getDb } from "@/core/db";
+import { addSmartMatch, getSmartDue, removeSmartMatch, setSmartRule } from "@/core/smartDue";
 import { getTimeZone } from "@/core/users";
 import { addFromSource, discardSource, getItemSource, getSource, proposeFromPhoto } from "@/core/sources";
 import { nestItems } from "@/lib/itemTree";
@@ -728,6 +729,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "A repeating item carries `repeat` ({ every, unit, on?, day? }); a finished one also carries `comesBack`, the day it reopens. " +
         "`agents` lists the agents working on it now (open start_work sessions: agentName, threadUrl, note, lastActiveAt); " +
         "check it before starting work so you don't duplicate another agent's. " +
+        "`smart` is set when its due date is smart (set_smart_due): its rule, lead and matches, the one its date comes from marked current. " +
         "`fromPhoto` is set when it was added from a photo with add_from_photo: { source_id, created_at }. " +
         "`comments` is its discussion, oldest first: each has body (Markdown), author (name, displayUsername), agentName when an agent wrote it for that person, createdAt and editedAt. " +
         "Read them before working on the item: they often hold decisions and context the description doesn't. " +
@@ -747,6 +749,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         agents: listOpenAgentSessions(db, userId, item.id),
         comments: listComments(db, userId, item.id),
         fromPhoto: photoOf(getItemSource(db, userId, item.id)),
+        ...(item.smartRule !== null && { smart: getSmartDue(db, userId, item.id) }),
       });
     },
   );
@@ -1267,6 +1270,91 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         updated: { ...updated, ref: formatItemRef(refPrefix, updated.number) },
         items: withRefs(refPrefix, listItems(db, userId, updated.projectId)),
       });
+    },
+  );
+
+  // The item, with its ref, and its smart due date's rule and matches.
+  const smartResult = (id: string) => {
+    const { db } = getDb();
+    const it = getItem(db, userId, id);
+    return json({ item: it && withItemRef(db, userId, it), smart: getSmartDue(db, userId, id) });
+  };
+
+  server.registerTool(
+    "set_smart_due",
+    {
+      title: "Set a smart due date",
+      description:
+        "Make an item due relative to something not known yet, in the user's words: \"before our next trip\", \"before Mum's birthday\". " +
+        "Use it when the user ties a deadline to another thing rather than a day; for a day or week, set due_date with update_item instead. " +
+        "lead is how many days before the match it's due (0 on the day, 7 for a week before). " +
+        "Its due date is then worked out by Sidetrack, never set: the earliest first day of its matches that are open and dated, lead days before. " +
+        "With no match it has no date, so add the item it hangs off with add_smart_match (find it with list_all_items). " +
+        "The date then follows that item by itself: moved, finished or deleted, it's worked out again from the rest. " +
+        "rule null makes it a plain due date again, keeping the date it has; setting due_date with update_item does the same. " +
+        "A repeating item can't have one yet. id accepts the item's short ref (e.g. \"HOM-12\") or its internal id. " +
+        "Returns { item, smart }: smart has rule, lead and matches (each with title, ref, due, reason, and current: the one its date comes from). " +
+        "Tell the user the date it worked out and which match it comes from, or that it's waiting for one.",
+      inputSchema: {
+        id: z.string(),
+        rule: z.string().max(200).nullable(),
+        lead: z.number().int().min(0).max(365).optional(),
+      },
+    },
+    async ({ id, rule, lead }) => {
+      const { db } = getDb();
+      const { item, error } = resolveItemArg(db, userId, id);
+      if (error) return error;
+      setSmartRule(db, userId, item.id, rule === null ? null : { rule, lead: lead ?? item.smartLead ?? 0 }, SOURCE);
+      return smartResult(item.id);
+    },
+  );
+
+  server.registerTool(
+    "add_smart_match",
+    {
+      title: "Add a match to a smart due date",
+      description:
+        "Say which item a smart due date (set_smart_due) hangs off: \"Lisbon flights\" for \"before our next trip\". " +
+        "Match only items that really fit the rule; reason says why in a few words (\"a trip\"), shown to the user. " +
+        "Its date is worked out again at once. A match the user removed before comes back, so don't add one they removed unless they ask. " +
+        "id and anchor_id accept short refs or internal ids. Returns { item, smart } like set_smart_due.",
+      inputSchema: { id: z.string(), anchor_id: z.string(), reason: z.string().max(100).optional() },
+    },
+    async ({ id, anchor_id, reason }) => {
+      const { db } = getDb();
+      const { item, error } = resolveItemArg(db, userId, id);
+      if (error) return error;
+      const anchor = resolveItemArg(db, userId, anchor_id);
+      if (anchor.error) return anchor.error;
+      addSmartMatch(db, userId, item.id, anchor.item.id, reason ?? null, SOURCE);
+      return smartResult(item.id);
+    },
+  );
+
+  server.registerTool(
+    "remove_smart_match",
+    {
+      title: "Remove a match from a smart due date",
+      description:
+        "Say an item isn't a match for a smart due date after all (\"Trip to B&Q\" isn't a trip). " +
+        "It stops counting and is remembered as removed, and the date is worked out again from the rest. " +
+        "id and anchor_id accept short refs or internal ids; a match in a list the user can't open has no ref, so pass its anchorId from smart.matches. " +
+        "Returns { item, smart } like set_smart_due.",
+      inputSchema: { id: z.string(), anchor_id: z.string() },
+    },
+    async ({ id, anchor_id }) => {
+      const { db } = getDb();
+      const { item, error } = resolveItemArg(db, userId, id);
+      if (error) return error;
+      // A match in a list they can't open is still theirs to remove, by its id.
+      const anchor = resolveItemArg(db, userId, anchor_id);
+      const anchorId = anchor.error ? anchor_id : anchor.item.id;
+      if (!getSmartDue(db, userId, item.id)?.matches.some((m) => m.anchorId === anchorId)) {
+        return errorText(`${anchor_id} isn't one of ${id}'s matches — no change was made.`);
+      }
+      removeSmartMatch(db, userId, item.id, anchorId, SOURCE);
+      return smartResult(item.id);
     },
   );
 
