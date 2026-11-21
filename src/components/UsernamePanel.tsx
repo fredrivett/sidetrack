@@ -162,10 +162,28 @@ export function UsernamePanel({ initial }: { initial: string }) {
           {error}
         </p>
       )}
-      <Button type="button" size="sm" onClick={onSave} disabled={!canSave}>
-        <Check data-icon="inline-start" />
-        {pending ? "Saving…" : "Save"}
-      </Button>
+      {/* Only once there's something to save, so an untouched field has no
+          grey button that looks broken. */}
+      {!identical && (
+        <div className="flex gap-2">
+          <Button type="button" size="sm" onClick={onSave} disabled={!canSave}>
+            <Check data-icon="inline-start" />
+            {pending ? "Saving…" : "Save"}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={pending}
+            onClick={() => {
+              setValue(initial);
+              setError(null);
+            }}
+          >
+            Cancel
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

@@ -127,9 +127,17 @@ export function GreetingPrefsPanel({ initial }: { initial: GreetingPrefs }) {
             </span>
           </span>
         </label>
-        <Button type="submit" size="sm" disabled={!noteChanged}>
-          Save note
-        </Button>
+        {/* Only once the note differs from what's saved. */}
+        {noteChanged && (
+          <div className="flex gap-2">
+            <Button type="submit" size="sm">
+              Save note
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={noteDraft.clear}>
+              Cancel
+            </Button>
+          </div>
+        )}
       </form>
 
       {error && (

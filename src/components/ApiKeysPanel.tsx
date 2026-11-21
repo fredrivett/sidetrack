@@ -6,7 +6,7 @@ import { unstable_rethrow, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
 import { Input } from "@/components/ui/input";
-import { useTapToConfirm } from "./use-tap-to-confirm";
+import { ARMED_BUTTON, useTapToConfirm } from "./use-tap-to-confirm";
 import {
   createApiKeyAction,
   removeAgentWebhookAction,
@@ -86,8 +86,8 @@ export function ApiKeysPanel({
 
   return (
     <div className="space-y-6">
-      <section>
-        <h2 className="text-sm font-medium mb-2">Create a new key</h2>
+      <section className="space-y-3 rounded-lg border border-border p-4">
+        <h2 className="text-sm font-medium">Create a new key</h2>
         <form
           action={onCreate}
           className="flex gap-2"
@@ -105,7 +105,7 @@ export function ApiKeysPanel({
             {pending ? "…" : "Create"}
           </Button>
         </form>
-        {error && <p role="alert" className="text-sm text-destructive mt-2">{error}</p>}
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       </section>
 
       {justCreated && (
@@ -130,10 +130,10 @@ export function ApiKeysPanel({
         </section>
       )}
 
-      <section>
-        <h2 className="text-sm font-medium mb-2">Existing keys</h2>
+      <section className="space-y-3 rounded-lg border border-border p-4">
+        <h2 className="text-sm font-medium">Existing keys</h2>
         {revokeError && (
-          <p role="alert" className="text-sm text-destructive mb-2">{revokeError}</p>
+          <p role="alert" className="text-sm text-destructive">{revokeError}</p>
         )}
         {initial.length === 0 ? (
           <p className="text-sm text-muted-foreground">No keys yet.</p>
@@ -162,11 +162,7 @@ export function ApiKeysPanel({
                   size="sm"
                   onClick={() => tap.confirm(() => onRevoke(k.id), k.id)}
                   disabled={pending}
-                  className={
-                    tap.isArmed(k.id)
-                      ? "bg-destructive! text-white! hover:bg-destructive/90! dark:bg-destructive! dark:hover:bg-destructive/90!"
-                      : undefined
-                  }
+                  className={tap.isArmed(k.id) ? ARMED_BUTTON : undefined}
                 >
                   {tap.isArmed(k.id) ? "Confirm?" : "Revoke"}
                 </Button>
@@ -289,7 +285,7 @@ function AgentWebhookControl({
             aria-disabled={pending || undefined}
             className={
               tap.isArmed(keyId)
-                ? "text-destructive! aria-disabled:opacity-50"
+                ? `${ARMED_BUTTON} aria-disabled:opacity-50`
                 : "aria-disabled:opacity-50"
             }
           >

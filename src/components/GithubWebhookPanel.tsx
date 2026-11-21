@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import type { GithubWebhookView } from "@/core/github";
 import { formatRelative } from "@/lib/time";
 import { GitHubMark } from "./GitHubMark";
-import { useTapToConfirm } from "./use-tap-to-confirm";
+import { ARMED_BUTTON, useTapToConfirm } from "./use-tap-to-confirm";
 
 /** A labelled value to paste into GitHub's form, with a copy button. */
 function CopyField({ label, value }: { label: string; value: string }) {
@@ -30,10 +30,6 @@ function CopyField({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-
-/** The armed look for a destructive button, filled red. */
-const ARMED =
-  "bg-destructive! text-white! hover:bg-destructive/90! dark:bg-destructive! dark:hover:bg-destructive/90!";
 
 const noSubscribe = () => () => {};
 
@@ -127,7 +123,8 @@ export function GithubWebhookPanel({
 
   if (!webhook || !payloadUrl) {
     return (
-      <section className="space-y-3">
+      <section className="space-y-3 rounded-lg border border-border p-4">
+        <h2 className="text-sm font-medium">Set up</h2>
         <p className="text-sm text-muted-foreground">
           Name a first secret, say for the repository it&apos;s for, to get a
           payload URL and secret. Then add them to a repository under Settings →
@@ -141,7 +138,7 @@ export function GithubWebhookPanel({
 
   return (
     <div className="space-y-6">
-      <section className="space-y-3">
+      <section className="space-y-3 rounded-lg border border-border p-4">
         <h2 className="text-sm font-medium">Add it to a repository</h2>
         <p className="text-sm text-muted-foreground">
           On GitHub, open the repository&apos;s Settings → Webhooks → Add webhook,
@@ -193,7 +190,7 @@ export function GithubWebhookPanel({
         )}
       </section>
 
-      <section className="space-y-3">
+      <section className="space-y-3 rounded-lg border border-border p-4">
         <h2 className="text-sm font-medium">Secrets</h2>
         <p className="text-sm text-muted-foreground">
           GitHub&apos;s deliveries are accepted when signed with any of these. Give
@@ -219,7 +216,7 @@ export function GithubWebhookPanel({
                   size="sm"
                   disabled={pending}
                   onClick={() => tap.confirm(() => removeSecret(s.id), s.id)}
-                  className={tap.isArmed(s.id) ? ARMED : undefined}
+                  className={tap.isArmed(s.id) ? ARMED_BUTTON : undefined}
                 >
                   {tap.isArmed(s.id) ? "Confirm?" : "Remove"}
                 </Button>
@@ -236,7 +233,7 @@ export function GithubWebhookPanel({
           size="sm"
           disabled={pending}
           onClick={() => tap.confirm(remove, "remove")}
-          className={tap.isArmed("remove") ? ARMED : undefined}
+          className={tap.isArmed("remove") ? ARMED_BUTTON : undefined}
         >
           {tap.isArmed("remove") ? "Confirm remove?" : "Remove webhook"}
         </Button>

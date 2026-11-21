@@ -7,11 +7,7 @@ import { createEmailAddressAction, removeEmailAddressAction } from "@/app/action
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
 import { formatRelative } from "@/lib/time";
-import { useTapToConfirm } from "./use-tap-to-confirm";
-
-/** The armed look for a destructive button, filled red. */
-const ARMED =
-  "bg-destructive! text-white! hover:bg-destructive/90! dark:bg-destructive! dark:hover:bg-destructive/90!";
+import { ARMED_BUTTON, useTapToConfirm } from "./use-tap-to-confirm";
 
 export function EmailInPanel({
   address,
@@ -39,7 +35,11 @@ export function EmailInPanel({
 
   if (!address) {
     return (
-      <section className="space-y-3">
+      <section className="space-y-3 rounded-lg border border-border p-4">
+        <h2 className="text-sm font-medium">Your address</h2>
+        <p className="text-sm text-muted-foreground">
+          Get a private address to forward emails to.
+        </p>
         <Button disabled={pending} onClick={() => run(createEmailAddressAction)}>
           <Mail data-icon="inline-start" />
           {pending ? "Getting an address…" : "Get an address"}
@@ -50,31 +50,29 @@ export function EmailInPanel({
   }
 
   return (
-    <div className="space-y-6">
-      <section className="space-y-3">
-        <h2 className="text-sm font-medium">Your address</h2>
-        <div className="flex items-center gap-2">
-          <code className="min-w-0 flex-1 break-all rounded border bg-background px-2 py-1.5 font-mono text-xs select-all">
-            {address.email}
-          </code>
-          <CopyButton value={address.email} aria-label="Copy address" />
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Created {formatRelative(address.createdAt)} · last email{" "}
-          {address.lastReceivedAt === null ? "never" : formatRelative(address.lastReceivedAt)}
-        </p>
-        <p className="text-sm text-muted-foreground">
-          Anyone with this address can send to it, so keep it to yourself. If it
-          gets out, replace it: the old one stops working.
-        </p>
-      </section>
-
-      <section className="flex flex-wrap gap-2">
+    <section className="space-y-3 rounded-lg border border-border p-4">
+      <h2 className="text-sm font-medium">Your address</h2>
+      <div className="flex items-center gap-2">
+        <code className="min-w-0 flex-1 break-all rounded border bg-background px-2 py-1.5 font-mono text-xs select-all">
+          {address.email}
+        </code>
+        <CopyButton value={address.email} aria-label="Copy address" />
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Created {formatRelative(address.createdAt)} · last email{" "}
+        {address.lastReceivedAt === null ? "never" : formatRelative(address.lastReceivedAt)}
+      </p>
+      <p className="text-sm text-muted-foreground">
+        Anyone with this address can send to it, so keep it to yourself. If it
+        gets out, replace it: the old one stops working.
+      </p>
+      <div className="flex flex-wrap gap-2">
         <Button
           variant="outline"
           size="sm"
           disabled={pending}
           onClick={() => tap.confirm(() => run(createEmailAddressAction), "replace")}
+          className={tap.isArmed("replace") ? ARMED_BUTTON : undefined}
         >
           {tap.isArmed("replace") ? "Confirm replace?" : "Replace address"}
         </Button>
@@ -83,12 +81,12 @@ export function EmailInPanel({
           size="sm"
           disabled={pending}
           onClick={() => tap.confirm(() => run(removeEmailAddressAction), "remove")}
-          className={tap.isArmed("remove") ? ARMED : undefined}
+          className={tap.isArmed("remove") ? ARMED_BUTTON : undefined}
         >
           {tap.isArmed("remove") ? "Confirm turn off?" : "Turn off"}
         </Button>
-      </section>
+      </div>
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-    </div>
+    </section>
   );
 }

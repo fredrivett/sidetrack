@@ -15,11 +15,7 @@ import { Input } from "@/components/ui/input";
 import type { CalendarAccountView } from "@/core/calendars";
 import { formatRelative } from "@/lib/time";
 import { cn } from "@/lib/utils";
-import { useTapToConfirm } from "./use-tap-to-confirm";
-
-/** The armed look for a destructive button, filled red. */
-const ARMED =
-  "bg-destructive! text-white! hover:bg-destructive/90! dark:bg-destructive! dark:hover:bg-destructive/90!";
+import { ARMED_BUTTON, useTapToConfirm } from "./use-tap-to-confirm";
 
 /** The form that signs in to iCloud: a first connect, or signing in again with a new password. */
 function ConnectForm({ username: known, onDone }: { username?: string; onDone?: () => void }) {
@@ -112,7 +108,7 @@ function Account({ account }: { account: CalendarAccountView }) {
 
   return (
     <section
-      className={cn("space-y-3 rounded-lg border p-3", pending && saving === null && "opacity-60")}
+      className={cn("space-y-3 rounded-lg border p-4", pending && saving === null && "opacity-60")}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -140,7 +136,7 @@ function Account({ account }: { account: CalendarAccountView }) {
             onClick={() =>
               !pending && tap.confirm(() => run(() => disconnectCalendarAccountAction(account.id)), "disconnect")
             }
-            className={tap.isArmed("disconnect") ? ARMED : undefined}
+            className={tap.isArmed("disconnect") ? ARMED_BUTTON : undefined}
           >
             {tap.isArmed("disconnect") ? "Confirm?" : "Disconnect"}
           </Button>
@@ -192,7 +188,7 @@ export function CalendarsPanel({ accounts }: { accounts: CalendarAccountView[] }
         <Account key={a.id} account={a} />
       ))}
 
-      <section className="space-y-3">
+      <section className="space-y-3 rounded-lg border border-border p-4">
         <h2 className="text-sm font-medium">{accounts.length ? "Connect another iCloud account" : "Connect iCloud"}</h2>
         <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
           <li>

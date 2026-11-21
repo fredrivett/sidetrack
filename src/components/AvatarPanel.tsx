@@ -177,18 +177,34 @@ export function AvatarPanel({ user }: { user: AvatarUser }) {
             setValue(e.target.value);
           }}
         />
-        <Button
-          type="button"
-          onClick={() =>
-            preview
-              ? saveUrl(preview, "Avatar updated")
-              : setError("Avatar must be an http(s) image URL.")
-          }
-          disabled={pending || !trimmed || preview === initial}
-        >
-          <Check data-icon="inline-start" />
-          {pending ? "Saving…" : "Save"}
-        </Button>
+        {/* Only once the URL differs from what's saved. */}
+        {value !== initial && (
+          <>
+            <Button
+              type="button"
+              onClick={() =>
+                preview
+                  ? saveUrl(preview, "Avatar updated")
+                  : setError("Avatar must be an http(s) image URL.")
+              }
+              disabled={pending || !trimmed || preview === initial}
+            >
+              <Check data-icon="inline-start" />
+              {pending ? "Saving…" : "Save"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={pending}
+              onClick={() => {
+                setValue(initial);
+                setError(null);
+              }}
+            >
+              Cancel
+            </Button>
+          </>
+        )}
       </div>
       <p className="text-xs text-muted-foreground">
         Shown next to items assigned to you. Remove it to show your initials.

@@ -25,7 +25,7 @@ import { RoleSelect } from "./RoleSelect";
 import { IconPicker } from "./ProjectIconPicker";
 import { SpaceColorPicker, spaceTint } from "./SpaceColor";
 import { runAction } from "./run-action";
-import { useTapToConfirm } from "./use-tap-to-confirm";
+import { ARMED_BUTTON, useTapToConfirm } from "./use-tap-to-confirm";
 
 // The roles someone can be invited with: admins are made from members.
 const INVITE_ROLES = SPACE_ROLES.filter(
@@ -78,8 +78,8 @@ export function SpacesPanel({ spaces, viewerId }: { spaces: SpaceView[]; viewerI
 
   return (
     <div className="space-y-6">
-      <section>
-        <h2 className="mb-2 text-sm font-medium">New space</h2>
+      <section className="space-y-3 rounded-lg border border-border p-4">
+        <h2 className="text-sm font-medium">New space</h2>
         <form onSubmit={create} className="space-y-3">
           <div className="flex gap-2">
             <IconPicker
@@ -186,7 +186,7 @@ function SpaceCard({
       // The board's Edit space links here, by #space-<id>.
       id={`space-${space.id}`}
       aria-busy={saving}
-      className={`scroll-mt-6 space-y-3 rounded-lg border p-3 transition-opacity ${spaceTint(space.color)} ${saving ? "pointer-events-none opacity-60" : ""}`}
+      className={`scroll-mt-6 space-y-3 rounded-lg border p-4 transition-opacity ${spaceTint(space.color)} ${saving ? "pointer-events-none opacity-60" : ""}`}
     >
       <header className="flex items-center gap-2">
         {isAdmin ? (
@@ -428,7 +428,7 @@ function SpaceCard({
                 "delete",
               )
             }
-            className={tap.isArmed("delete") ? "bg-destructive text-white hover:bg-destructive" : undefined}
+            className={tap.isArmed("delete") ? ARMED_BUTTON : undefined}
           >
             {tap.isArmed("delete") ? "Confirm delete?" : "Delete space"}
           </Button>
