@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { invitePeopleAction } from "@/app/actions";
 import type { InvitePlace } from "@/core/invites";
 import { LIST_ROLES, SPACE_ROLES, type ListRole, type SpaceRole } from "@/core/schema";
+import { roleName } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -17,6 +18,7 @@ import {
   ResponsiveDialogDescription,
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
+import { ProjectIcon } from "./ProjectIcon";
 import { RoleSelect } from "./RoleSelect";
 import { useDraft } from "./use-draft";
 import { useStoredState } from "./use-stored-state";
@@ -36,6 +38,29 @@ type Picked = {
 };
 const NOTHING_PICKED: Picked = { people: [], places: [], listRoles: {}, spaceRoles: {} };
 
+/** A list the viewer owns, as the dialog shows it. */
+type InviteList = { id: string; name: string; icon: string | null; homepageUrl: string | null };
+
+// A tree line from a Space's checkbox down to each of its lists, bending into
+// it, as sub-items hang off their parent on the board (ItemList's BRANCH and
+// TRUNK). Row maths: lists sit 28px in (pl-7) and 2px apart (space-y-0.5,
+// mt-0.5); a row is 40px tall with its checkbox's centre 16px in (px-2 plus
+// half of 16px). So the line runs 13px left of a row, and bends into its
+// middle from the gap above; the first list's reaches up into the Space's
+// row to 4px under its checkbox (which ends 12px above the row's foot), so
+// the line hangs off it whether or not the row is shaded.
+const BRANCH =
+  "relative before:absolute before:-left-[13px] before:w-[13px] before:rounded-bl-lg before:border-b-2 before:border-l-2 before:border-neutral-200 dark:before:border-neutral-700";
+const TRUNK =
+  "after:absolute after:top-0 after:-bottom-0.5 after:-left-[13px] after:border-l-2 after:border-neutral-200 dark:after:border-neutral-700";
+
+/** "Home", "Home and Life", "Home, Life and 2 more". */
+function namesOf(names: string[]): string {
+  if (names.length <= 2) return names.join(" and ");
+  if (names.length === 3) return `${names[0]}, ${names[1]} and ${names[2]}`;
+  return `${names[0]}, ${names[1]} and ${names.length - 2} more`;
+}
+
 /**
  * Invite several people to several places at once: the Spaces the viewer
  * runs and the lists they own, each with its own role. One invite, so
@@ -44,15 +69,16 @@ const NOTHING_PICKED: Picked = { people: [], places: [], listRoles: {}, spaceRol
 export function InviteDialog({
   open,
   onOpenChange,
-  spaces,
-  lists,
+  groups,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Spaces the viewer can invite to (they're an admin). */
-  spaces: { id: string; name: string }[];
-  /** Lists the viewer can invite to (they own them). */
-  lists: { id: string; name: string }[];
+  /**
+   * Where they can be invited, grouped as on the board: each Space with the
+   * viewer's own lists in it, then Personal. An `admin` Space can be invited
+   * to whole; any other group only heads its lists.
+   */
+  groups: { id: string; name: string; icon: string | null; admin: boolean; lists: InviteList[] }[];
 }) {
   const draft = useDraft("invite:people");
   const person = draft.value;
@@ -88,14 +114,19 @@ export function InviteDialog({
     }));
   }
 
-  const places: InvitePlace[] = [
-    ...spaces
-      .filter((s) => picked.has(key({ kind: "space", id: s.id })))
-      .map((s): InvitePlace => ({ kind: "space", id: s.id, role: spaceRoles[s.id] ?? "member" })),
-    ...lists
+  // In the order they're shown: each Space, then its lists.
+  const chosen = groups.flatMap((g): { place: InvitePlace; name: string }[] => [
+    ...(g.admin && picked.has(key({ kind: "space", id: g.id }))
+      ? [{ place: { kind: "space", id: g.id, role: spaceRoles[g.id] ?? "member" } as const, name: g.name }]
+      : []),
+    ...g.lists
       .filter((l) => picked.has(key({ kind: "list", id: l.id })))
-      .map((l): InvitePlace => ({ kind: "list", id: l.id, role: listRoles[l.id] ?? "editor" })),
-  ];
+      .map((l) => ({
+        place: { kind: "list", id: l.id, role: listRoles[l.id] ?? "editor" } as const,
+        name: l.name,
+      })),
+  ]);
+  const places = chosen.map((c) => c.place);
   // What's typed but not yet added counts too, so Invite doesn't drop it.
   const everyone = [...new Set([...people, ...person.split(/[\s,]+/).filter(Boolean)])];
   const ready = everyone.length > 0 && places.length > 0;
@@ -118,33 +149,79 @@ export function InviteDialog({
     });
   }
 
-  const row = (
-    kind: "space" | "list",
-    place: { id: string; name: string },
-    select: React.ReactNode,
-  ) => {
-    const k = key({ kind, id: place.id });
+  /** One place to tick: a Space (its group's heading) or a list in it. */
+  const row = ({
+    kind,
+    id,
+    name,
+    icon,
+    homepageUrl = null,
+    select,
+    covered,
+    tree = "",
+  }: {
+    kind: "space" | "list";
+    id: string;
+    name: string;
+    icon: string | null;
+    homepageUrl?: string | null;
+    select: React.ReactNode;
+    /** Unticked, what they'd get here anyway from its Space being ticked. */
+    covered?: string;
+    /** The tree line's classes, for a list under its Space. */
+    tree?: string;
+  }) => {
+    const k = key({ kind, id });
     const on = picked.has(k);
     return (
       <li
         key={k}
-        className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+        data-on={on || undefined}
+        className={`${tree} flex min-h-10 items-center justify-between gap-2 rounded-lg px-2 py-1 hover:bg-neutral-100 data-on:bg-neutral-100 dark:hover:bg-neutral-800/70 dark:data-on:bg-neutral-800/70`}
       >
-        <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-sm">
+        <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 self-stretch text-sm">
           <Checkbox
             checked={on}
             onCheckedChange={(checked) => !pending && toggle(k, checked)}
             aria-disabled={pending || undefined}
-            aria-label={`Invite to ${place.name}`}
+            aria-label={`Invite to ${name}`}
           />
-          <span className="truncate">{place.name}</span>
+          <ProjectIcon icon={icon} homepageUrl={homepageUrl} name={name} size={16} />
+          <span className={`truncate ${kind === "space" ? "font-medium" : ""}`}>{name}</span>
+          {kind === "space" && (
+            <span className="shrink-0 text-xs text-neutral-500">Whole Space</span>
+          )}
         </label>
-        {on && select}
+        {on ? (
+          select
+        ) : covered ? (
+          <span className="shrink-0 px-2 text-xs text-neutral-500">{covered} via Space</span>
+        ) : null}
       </li>
     );
   };
 
-  const nothingToShare = spaces.length === 0 && lists.length === 0;
+  const listRow = (l: InviteList, covered: string | undefined, tree: string) =>
+    row({
+      kind: "list",
+      ...l,
+      covered,
+      tree,
+      select: (
+        <RoleSelect
+          label={`What they can do on ${l.name}`}
+          value={listRoles[l.id] ?? "editor"}
+          roles={LIST_ROLES}
+          scope="list"
+          disabled={pending}
+          onChange={(r) => setKept((c) => ({ ...c, listRoles: { ...c.listRoles, [l.id]: r } }))}
+        />
+      ),
+    });
+
+  const nothingToShare = groups.every((g) => !g.admin && g.lists.length === 0);
+  // Without Spaces, the lists are one group with nothing to head it.
+  const flat = groups.length === 1 && !groups[0].admin;
 
   return (
     // It stays open while it saves, so a failure shows where they're looking.
@@ -152,13 +229,15 @@ export function InviteDialog({
       <ResponsiveDialogContent initialFocus={personRef}>
         <div className="flex shrink-0 flex-col gap-0.5 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
           <div className="flex items-center gap-2">
-            <ResponsiveDialogTitle>Invite people</ResponsiveDialogTitle>
+            <ResponsiveDialogTitle className="flex items-center gap-2">
+              <UserPlus className="size-4 shrink-0 text-neutral-500" aria-hidden />
+              Invite people
+            </ResponsiveDialogTitle>
             <ResponsiveDialogCloseButton className="ml-auto shrink-0" />
           </div>
           <ResponsiveDialogDescription className="text-xs text-neutral-500">
-            Invite people to several Spaces and lists at once, choosing what
-            they can do in each. They’ll need a Sidetrack account and must
-            accept before they can see them.
+            Choose where to invite them and what they can do there. They’ll
+            need a Sidetrack account, and see nothing until they accept.
           </ResponsiveDialogDescription>
         </div>
 
@@ -206,73 +285,82 @@ export function InviteDialog({
                 }
               }}
               onBlur={() => !pending && addPeople(person)}
-              placeholder="usernames or emails"
+              placeholder="Usernames or emails"
               aria-label="Who to invite"
               autoComplete="off"
               readOnly={pending}
             />
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-2 py-3">
             {nothingToShare && (
               <p className="py-6 text-center text-xs text-neutral-500">
                 You can invite people to lists you own and Spaces you’re an admin of.
               </p>
             )}
-            {spaces.length > 0 && (
-              <section>
-                <h3 className="px-2 pb-1 text-xs font-medium text-neutral-500">Spaces</h3>
-                <ul className="space-y-1">
-                  {spaces.map((s) =>
-                    row(
-                      "space",
-                      s,
-                      <RoleSelect
-                        label={`What they can do in ${s.name}`}
-                        value={spaceRoles[s.id] ?? "member"}
-                        roles={SPACE_INVITE_ROLES}
-                        scope="space"
-                        disabled={pending}
-                        onChange={(r) => setKept((c) => ({ ...c, spaceRoles: { ...c.spaceRoles, [s.id]: r } }))}
-                      />,
-                    ),
-                  )}
-                </ul>
-              </section>
-            )}
-            {lists.length > 0 && (
-              <section className={spaces.length > 0 ? "mt-4" : undefined}>
-                <h3 className="px-2 pb-1 text-xs font-medium text-neutral-500">Lists</h3>
-                <ul className="space-y-1">
-                  {lists.map((l) =>
-                    row(
-                      "list",
-                      l,
-                      <RoleSelect
-                        label={`What they can do on ${l.name}`}
-                        value={listRoles[l.id] ?? "editor"}
-                        roles={LIST_ROLES}
-                        scope="list"
-                        disabled={pending}
-                        onChange={(r) => setKept((c) => ({ ...c, listRoles: { ...c.listRoles, [l.id]: r } }))}
-                      />,
-                    ),
-                  )}
-                </ul>
-              </section>
-            )}
+            {!nothingToShare &&
+              groups.map((g) => {
+                const spaceOn = g.admin && picked.has(key({ kind: "space", id: g.id }));
+                const covered = spaceOn ? roleName(spaceRoles[g.id] ?? "member") : undefined;
+                return (
+                  <section key={g.id} aria-label={flat ? undefined : g.name}>
+                    {flat ? null : g.admin ? (
+                      <ul>
+                        {row({
+                          kind: "space",
+                          id: g.id,
+                          name: g.name,
+                          icon: g.icon,
+                          select: (
+                            <RoleSelect
+                              label={`What they can do in ${g.name}`}
+                              value={spaceRoles[g.id] ?? "member"}
+                              roles={SPACE_INVITE_ROLES}
+                              scope="space"
+                              disabled={pending}
+                              onChange={(r) =>
+                                setKept((c) => ({ ...c, spaceRoles: { ...c.spaceRoles, [g.id]: r } }))
+                              }
+                            />
+                          ),
+                        })}
+                      </ul>
+                    ) : (
+                      <h3 className="px-2 pb-1 text-xs font-medium text-neutral-500">{g.name}</h3>
+                    )}
+                    {g.lists.length > 0 && (
+                      // A Space's lists hang off it on a tree line, so they read as its.
+                      <ul className={g.admin ? "mt-0.5 space-y-0.5 pl-7" : "space-y-0.5"}>
+                        {g.lists.map((l, i) =>
+                          listRow(
+                            l,
+                            covered,
+                            g.admin
+                              ? `${BRANCH} ${i === 0 ? "before:-top-2.5 before:h-[31px]" : "before:-top-0.5 before:h-[23px]"} ${i < g.lists.length - 1 ? TRUNK : ""}`
+                              : "",
+                          ),
+                        )}
+                      </ul>
+                    )}
+                  </section>
+                );
+              })}
           </div>
 
-          <div className="flex shrink-0 items-center gap-2 border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
+          <div className="flex shrink-0 items-center gap-3 border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
             {error ? (
               <p role="alert" className="min-w-0 flex-1 text-xs text-red-600 dark:text-red-400">
                 {error}
               </p>
             ) : (
-              <p className="min-w-0 flex-1 text-xs text-neutral-500">
-                {places.length === 0
+              // Who hears of it: those invited, and those already in each
+              // place who can comment or more (notifications.ts).
+              <p className="line-clamp-2 min-w-0 flex-1 text-xs text-neutral-500">
+                {chosen.length === 0
                   ? "Choose where to invite them."
-                  : `${places.length} ${places.length === 1 ? "place" : "places"} chosen`}
+                  : everyone.length === 0
+                    ? "Add who to invite."
+                    : `This will notify ${namesOf(everyone)}, and the people already in ${namesOf(chosen.map((c) => c.name))}.`}
               </p>
             )}
             <Button type="submit" size="sm" aria-disabled={!ready || pending || undefined}>
