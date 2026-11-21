@@ -76,32 +76,44 @@ export function PasswordPanel({ email }: { email: string }) {
         hidden
         readOnly
       />
-      <Input
-        name="current"
-        type="password"
-        autoComplete="current-password"
-        placeholder="Current password"
-        aria-label="Current password"
-        required
-      />
-      <Input
-        name="password"
-        type="password"
-        autoComplete="new-password"
-        placeholder="New password"
-        aria-label="New password"
-        required
-        minLength={8}
-      />
-      <Input
-        name="confirm"
-        type="password"
-        autoComplete="new-password"
-        placeholder="Confirm new password"
-        aria-label="Confirm new password"
-        required
-        minLength={8}
-      />
+      <div className="space-y-1.5">
+        <label htmlFor="password-current" className="block text-xs text-muted-foreground">
+          Current password
+        </label>
+        <Input
+          id="password-current"
+          name="current"
+          type="password"
+          autoComplete="current-password"
+          required
+        />
+      </div>
+      <div className="space-y-1.5">
+        <label htmlFor="password-password" className="block text-xs text-muted-foreground">
+          New password
+        </label>
+        <Input
+          id="password-password"
+          name="password"
+          type="password"
+          autoComplete="new-password"
+          required
+          minLength={8}
+        />
+      </div>
+      <div className="space-y-1.5">
+        <label htmlFor="password-confirm" className="block text-xs text-muted-foreground">
+          Confirm new password
+        </label>
+        <Input
+          id="password-confirm"
+          name="confirm"
+          type="password"
+          autoComplete="new-password"
+          required
+          minLength={8}
+        />
+      </div>
       <p className="text-xs text-muted-foreground">
         At least 8 characters. Changing it signs you out on your other
         devices.

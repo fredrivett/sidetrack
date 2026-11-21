@@ -6,7 +6,7 @@ import { unstable_rethrow, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
 import { Input } from "@/components/ui/input";
-import { useTapToConfirm } from "./use-tap-to-confirm";
+import { ARMED_BUTTON, useTapToConfirm } from "./use-tap-to-confirm";
 import {
   createApiKeyAction,
   removeAgentWebhookAction,
@@ -14,6 +14,7 @@ import {
   setAgentWebhookAction,
 } from "@/app/actions";
 import type { AgentWebhookView } from "@/core/agentWebhooks";
+import { RelativeTime } from "./RelativeTime";
 
 type KeyRow = {
   id: string;
@@ -23,10 +24,9 @@ type KeyRow = {
   lastUsedAt: Date | number | null;
 };
 
-function fmt(d: Date | number | null): string {
-  if (d === null) return "never";
-  const date = d instanceof Date ? d : new Date(d);
-  return date.toISOString().slice(0, 10);
+/** A Date or epoch ms as epoch ms, for RelativeTime. */
+function ms(d: Date | number | null): number | null {
+  return d instanceof Date ? d.getTime() : d;
 }
 
 export function ApiKeysPanel({
@@ -86,8 +86,8 @@ export function ApiKeysPanel({
 
   return (
     <div className="space-y-6">
-      <section>
-        <h2 className="text-sm font-medium mb-2">Create a new key</h2>
+      <section className="space-y-3 rounded-lg border border-border p-4">
+        <h2 className="text-sm font-medium">Create a new key</h2>
         <form
           action={onCreate}
           className="flex gap-2"
@@ -105,7 +105,7 @@ export function ApiKeysPanel({
             {pending ? "…" : "Create"}
           </Button>
         </form>
-        {error && <p className="text-sm text-destructive mt-2">{error}</p>}
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       </section>
 
       {justCreated && (
@@ -130,10 +130,10 @@ export function ApiKeysPanel({
         </section>
       )}
 
-      <section>
-        <h2 className="text-sm font-medium mb-2">Existing keys</h2>
+      <section className="space-y-3 rounded-lg border border-border p-4">
+        <h2 className="text-sm font-medium">Existing keys</h2>
         {revokeError && (
-          <p className="text-sm text-destructive mb-2">{revokeError}</p>
+          <p role="alert" className="text-sm text-destructive">{revokeError}</p>
         )}
         {initial.length === 0 ? (
           <p className="text-sm text-muted-foreground">No keys yet.</p>
@@ -147,9 +147,9 @@ export function ApiKeysPanel({
                 <div className="min-w-0 flex-1 space-y-2">
                   <div>
                     <p className="text-sm font-medium truncate">{k.name}</p>
-                    <p className="text-xs text-muted-foreground font-mono">
-                      {k.prefix}… · created {fmt(k.createdAt)} · last used{" "}
-                      {fmt(k.lastUsedAt)}
+                    <p className="text-xs text-muted-foreground">
+                      <span className="font-mono">{k.prefix}…</span> · created <RelativeTime ts={ms(k.createdAt)} /> · last used{" "}
+                      <RelativeTime ts={ms(k.lastUsedAt)} />
                     </p>
                   </div>
                   <AgentWebhookControl
@@ -162,11 +162,7 @@ export function ApiKeysPanel({
                   size="sm"
                   onClick={() => tap.confirm(() => onRevoke(k.id), k.id)}
                   disabled={pending}
-                  className={
-                    tap.isArmed(k.id)
-                      ? "bg-destructive! text-white! hover:bg-destructive/90! dark:bg-destructive! dark:hover:bg-destructive/90!"
-                      : undefined
-                  }
+                  className={tap.isArmed(k.id) ? ARMED_BUTTON : undefined}
                 >
                   {tap.isArmed(k.id) ? "Confirm?" : "Revoke"}
                 </Button>
@@ -255,7 +251,7 @@ function AgentWebhookControl({
             aria-disabled={pending || undefined}
             className="aria-disabled:opacity-50"
           >
-            {pending ? "…" : "Save"}
+            {pending ? "Saving…" : "Save"}
           </Button>
           <Button
             type="button"
@@ -272,7 +268,7 @@ function AgentWebhookControl({
         </form>
       ) : webhook ? (
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span>Starts work when assigned · set {fmt(webhook.createdAt)}</span>
+          <span>Starts work when assigned · set <RelativeTime ts={ms(webhook.createdAt)} /></span>
           <Button
             variant="ghost"
             size="xs"
@@ -289,7 +285,7 @@ function AgentWebhookControl({
             aria-disabled={pending || undefined}
             className={
               tap.isArmed(keyId)
-                ? "text-destructive! aria-disabled:opacity-50"
+                ? `${ARMED_BUTTON} aria-disabled:opacity-50`
                 : "aria-disabled:opacity-50"
             }
           >
@@ -301,7 +297,7 @@ function AgentWebhookControl({
           Start work when assigned…
         </Button>
       )}
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
       {secret && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/40 p-3 space-y-2">
           <p className="text-sm font-medium">

@@ -1,10 +1,10 @@
 "use client";
 
-import { Archive, Bell, Boxes, CalendarDays, Check, CircleUserRound, History, KeyRound, Loader2, LogOut, Mail, Moon, Sun, SunMoon, Sunrise, UserPlus, UserRound } from "lucide-react";
+import { Archive, Check, CircleUserRound, History, Loader2, LogOut, Moon, Sun, SunMoon, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import posthog from "posthog-js";
-import { useTransition, type ComponentType } from "react";
+import { useTransition } from "react";
 import { useCopy } from "@/components/ui/use-copy";
 import {
   DropdownMenu,
@@ -21,7 +21,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { GitHubMark } from "@/components/GitHubMark";
+import { SETTINGS_PAGES } from "@/components/settings-pages";
 import { assigneeName, UserAvatar, type AvatarUser } from "@/components/UserAvatar";
 import { signOut } from "@/auth/client";
 import { forgetDrafts } from "./use-draft";
@@ -35,17 +35,6 @@ const THEME_OPTIONS: Record<Theme, { label: string; Icon: typeof Sun }> = {
   dark: { label: "Dark", Icon: Moon },
 };
 
-/** The settings pages, in the menu's Settings group. */
-const SETTINGS_LINKS: [href: string, label: string, Icon: ComponentType<{ className?: string }>][] = [
-  ["/settings/profile", "Profile", UserRound],
-  ["/settings/notifications", "Notifications", Bell],
-  ["/settings/greeting", "Brief greeting", Sunrise],
-  ["/settings/calendars", "Calendars", CalendarDays],
-  ["/settings/spaces", "Spaces", Boxes],
-  ["/settings/keys", "API keys", KeyRound],
-  ["/settings/github", "GitHub", GitHubMark],
-  ["/settings/email", "Email forwarding", Mail],
-];
 
 /**
  * The avatar's menu: who's signed in, settings and theme, inviting people,
@@ -136,7 +125,7 @@ export function UserMenu({
         )}
         <DropdownMenuGroup>
           <DropdownMenuLabel className="px-2.5">Settings</DropdownMenuLabel>
-          {SETTINGS_LINKS.map(([href, label, Icon]) =>
+          {SETTINGS_PAGES.map(({ href, label, Icon }) =>
             onTry ? (
               <DropdownMenuItem key={href} onClick={onTry}>
                 <Icon />
