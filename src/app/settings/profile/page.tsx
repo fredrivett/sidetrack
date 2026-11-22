@@ -2,11 +2,13 @@ import type { Metadata } from "next";
 import { SettingsHeader } from "@/components/SettingsHeader";
 import { redirect } from "next/navigation";
 import { AvatarPanel } from "@/components/AvatarPanel";
+import { InvitesPanel } from "@/components/InvitesPanel";
 import { PasswordPanel } from "@/components/PasswordPanel";
 import { TwoFactorPanel } from "@/components/TwoFactorPanel";
 import { UsernamePanel } from "@/components/UsernamePanel";
 import { getCurrentSession } from "@/auth/session";
 import { getDb } from "@/core/db";
+import { invitedBy, invitedPeople } from "@/core/invitations";
 import { getUserNumber } from "@/core/users";
 import { getEnv } from "@/lib/env";
 import { foundingBatch } from "@/lib/founding";
@@ -56,6 +58,7 @@ export default async function ProfilePage({
           image: user.image ?? null,
         }}
       />
+      <InvitesPanel invitedBy={invitedBy(getDb().db, user.id)} invited={invitedPeople(getDb().db, user.id)} />
       <PasswordPanel email={user.email} />
       <TwoFactorPanel
         email={user.email}

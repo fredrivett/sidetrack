@@ -50,9 +50,10 @@ export default async function Home({
     view?: string | string[];
     p?: string | string[];
     item?: string | string[];
+    open?: string | string[];
   }>;
 }) {
-  const { view, p, item } = await searchParams;
+  const { view, p, item, open } = await searchParams;
   const userId = await requireUserId();
   const { db } = getDb();
   // Repeating items whose next due day has come reopen as the page loads.
@@ -176,6 +177,8 @@ export default async function Home({
             refreshAt={Math.min(...[...limited.values()].map((l) => l.turnsAt ?? Infinity)) || null}
             initialListId={typeof p === "string" ? p : null}
             initialItemId={typeof item === "string" ? item : null}
+            // A link elsewhere (Profile's Invites) can open one of the board's invite dialogs.
+            initialOpen={open === "invite-friend" || open === "share-day" ? open : null}
           // A push can link to an item not loaded with the board.
           initialItemExtra={
             typeof item === "string" &&

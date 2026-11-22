@@ -8,7 +8,7 @@
 // accepts them.
 
 import { createHash, randomBytes } from "node:crypto";
-import { and, count, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { type AuditOrigin, recordAudit } from "./audit";
 import { users } from "./auth-schema";
@@ -38,6 +38,19 @@ export type InvitationView = {
   expiresAt: number;
   expired: boolean;
 };
+
+/** Someone on either side of an invite they joined through, for a profile. */
+export type InvitePerson = {
+  userId: string;
+  displayUsername: string | null;
+  name: string;
+  image: string | null;
+  /** When they joined. */
+  joinedAt: number;
+};
+
+/** How soon after an account was made accepting an invite means it was made by it. */
+const JOINED_WITH = 60 * 60 * 1000;
 
 /** An invite as its link shows it, to whoever opens it. */
 export type InvitationLink = {
@@ -285,4 +298,48 @@ export function acceptInvitation(
     });
     return { shared, within: dayOf(row.places).within };
   });
+}
+
+/**
+ * Accepted invites whose account was made by them: signed up through the
+ * link, not someone already here who opened it later. Those joined people
+ * then, so they're who invited whom.
+ */
+function joinedThrough() {
+  return sql`abs(${invitations.acceptedAt} - ${users.createdAt}) < ${JOINED_WITH}`;
+}
+
+/** Who invited the user to Sidetrack, if they joined through someone's invite. */
+export function invitedBy(db: Db, userId: string): InvitePerson | null {
+  const row = db
+    .select({ inviterId: invitations.inviterId, joinedAt: invitations.acceptedAt })
+    .from(invitations)
+    .innerJoin(users, eq(users.id, invitations.acceptedBy))
+    .where(and(eq(invitations.acceptedBy, userId), joinedThrough()))
+    .orderBy(asc(invitations.acceptedAt))
+    .get();
+  if (!row) return null;
+  const inviter = db
+    .select({ userId: users.id, displayUsername: users.displayUsername, name: users.name, image: users.image })
+    .from(users)
+    .where(eq(users.id, row.inviterId))
+    .get();
+  return inviter ? { ...inviter, joinedAt: row.joinedAt ?? 0 } : null;
+}
+
+/** The people who joined Sidetrack through the user's invites, in the order they joined. */
+export function invitedPeople(db: Db, userId: string): InvitePerson[] {
+  return db
+    .select({
+      userId: users.id,
+      displayUsername: users.displayUsername,
+      name: users.name,
+      image: users.image,
+      joinedAt: sql<number>`${invitations.acceptedAt}`,
+    })
+    .from(invitations)
+    .innerJoin(users, eq(users.id, invitations.acceptedBy))
+    .where(and(eq(invitations.inviterId, userId), joinedThrough()))
+    .orderBy(asc(invitations.acceptedAt))
+    .all();
 }

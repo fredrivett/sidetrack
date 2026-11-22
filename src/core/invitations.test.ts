@@ -6,6 +6,8 @@ import {
   acceptInvitation,
   cancelInvitation,
   findInvitation,
+  invitedBy,
+  invitedPeople,
   INVITES_PER_DAY,
   inviteByEmail,
   listInvitations,
@@ -139,5 +141,25 @@ describe("inviteByEmail", () => {
     const { id } = inviteByEmail(db, fred, { email: "jo@example.com", places: [] }, "web");
     createTestUser(db, { email: "jo@example.com" });
     expect(() => resendInvitation(db, fred, id, "web")).toThrow(/on Sidetrack already/);
+  });
+
+  it("says who invited whom, for those who joined through the invite, not those already here", () => {
+    const first = inviteByEmail(db, fred, { email: "jo@example.com", places: [] }, "web");
+    const jo = createTestUser(db, { username: "jo", name: "Jo" });
+    acceptInvitation(db, first.token, jo, "web");
+    // Already on Sidetrack an hour and more before opening Fred's link.
+    const sam = createTestUser(db, { username: "sam" });
+    const late = inviteByEmail(db, fred, { email: "sam@example.com", places: [] }, "web");
+    acceptInvitation(db, late.token, sam, "web", Date.now() + 2 * 60 * 60 * 1000);
+    // Jo invites someone in turn.
+    const kim = createTestUser(db, { username: "kim" });
+    acceptInvitation(db, inviteByEmail(db, jo, { email: "kim@example.com", places: [] }, "web").token, kim, "web");
+
+    expect(invitedBy(db, jo)).toMatchObject({ userId: fred, name: "Fred" });
+    expect(invitedBy(db, kim)).toMatchObject({ userId: jo });
+    expect(invitedBy(db, sam)).toBeNull();
+    expect(invitedBy(db, fred)).toBeNull();
+    expect(invitedPeople(db, fred).map((p) => p.userId)).toEqual([jo]);
+    expect(invitedPeople(db, jo).map((p) => p.userId)).toEqual([kim]);
   });
 });

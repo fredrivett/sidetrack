@@ -166,6 +166,7 @@ export function Kanban({
   initialCollapsedTrays,
   initialListId,
   initialItemId,
+  initialOpen = null,
   initialItemExtra,
   notifications,
   followedItemIds,
@@ -231,6 +232,8 @@ export function Kanban({
   initialListId: string | null;
   /** From `?item=`, an item to open on load, as tapping a notification does. */
   initialItemId: string | null;
+  /** ?open=: a dialog to open once, from a link elsewhere. */
+  initialOpen?: "invite-friend" | "share-day" | null;
   /** ?item= when it isn't on the board (done before this week), with its sub-items. */
   initialItemExtra: Item[];
   notifications: NotificationView[];
@@ -658,6 +661,17 @@ export function Kanban({
   ];
   // The board's dialog also reopens the item that was open before a reload.
   const paletteDetail = useItemDetailDialog(detailItems, initialItemId, true);
+  // ?open= opens its dialog once, from a link such as Profile's Invites.
+  useEffect(() => {
+    if (initialOpen === "invite-friend") setInvitingFriend(true);
+    else if (initialOpen === "share-day") setSharingDay("");
+    else return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("open");
+    window.history.replaceState(null, "", url.toString());
+    // Once, on load, like ?item= below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // ?item= opens the item once; a reload shouldn't open it again.
   useEffect(() => {
     const url = new URL(window.location.href);

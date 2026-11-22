@@ -985,6 +985,8 @@ export const invitations = sqliteTable(
   (t) => [
     uniqueIndex("invitations_token_hash").on(t.tokenHash),
     index("invitations_inviter").on(t.inviterId, t.createdAt),
+    // Who invited someone, for their profile (invitedBy).
+    index("invitations_accepted_by").on(t.acceptedBy),
   ],
 );
 
