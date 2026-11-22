@@ -107,6 +107,28 @@ body {
   scrollbar-width: none;
 }
 
+/* Off-screen parts of a big board skip layout and paint until scrolled near,
+   so work that lays out the whole page, such as the palette's drawer
+   measuring itself as it opens, costs only what's on screen.
+
+   Even on screen the element is contained: what's inside is clipped to its
+   box, and a fixed element inside sits in the box instead of the viewport,
+   so a drag's lifted card goes in the body (ItemList). */
+
+/* The board's columns beyond the rail's edges. Sized by the rail, not their
+   rows, so they need no placeholder height. */
+[data-column-scroll] {
+  content-visibility: auto;
+}
+
+/* The Brief's rows, not the wrappers around them, whose clip would cut off a
+   row's own focus or selection ring. A row's height once shown stays; until
+   then it's a typical row's, inside its border and padding. */
+[data-brief] [data-item-row] {
+  content-visibility: auto;
+  contain-intrinsic-height: auto 36px;
+}
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);

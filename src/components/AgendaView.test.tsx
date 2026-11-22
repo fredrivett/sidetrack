@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   setAgendaReadAction,
   setItemsCollapsedAction,
@@ -352,6 +352,94 @@ describe("AgendaView", () => {
     // Buy's card keeps its own 10.
     expect(noDate.queryByText("Buy 11")).toBeNull();
     expect(noDate.getByRole("button", { name: "Show 1 more in Buy" })).toBeTruthy();
+  });
+
+  // A long one renders only the rows near the Brief's view, as on the board,
+  // without moving it.
+  describe("a long section, with the Brief scrolled down to it", () => {
+    // jsdom has no layout: give the Brief a height and scroll it 3000px down,
+    // with the list 580px above the view's top (its first 10 rows, 52px each
+    // and 6px apart, just off screen). Scrolling writes where it's read.
+    let top = 3000;
+    beforeEach(() => {
+      top = 3000;
+      const brief = (el: HTMLElement) => el.matches("[data-brief]");
+      const mocks = [
+        vi
+          .spyOn(HTMLElement.prototype, "clientHeight", "get")
+          .mockImplementation(function (this: HTMLElement) {
+            return brief(this) ? 800 : 0;
+          }),
+        vi
+          .spyOn(HTMLElement.prototype, "scrollTop", "get")
+          .mockImplementation(function (this: HTMLElement) {
+            return brief(this) ? top : 0;
+          }),
+        vi
+          .spyOn(HTMLElement.prototype, "offsetHeight", "get")
+          .mockImplementation(function (this: HTMLElement) {
+            return this.matches("[data-index]") ? 52 : 0;
+          }),
+        vi
+          .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+          .mockImplementation(function (this: HTMLElement) {
+            const y = this.matches("[data-brief] .flow-root") ? -580 : 0;
+            return { top: y, bottom: y, left: 0, right: 0, width: 0, height: 0, x: 0, y } as DOMRect;
+          }),
+      ];
+      HTMLElement.prototype.scrollTo = function (this: HTMLElement, to?: ScrollToOptions | number) {
+        if (brief(this) && typeof to === "object" && to.top !== undefined) top = to.top;
+      } as HTMLElement["scrollTo"];
+      // Reporting each element as it's observed, as a browser does.
+      vi.stubGlobal(
+        "ResizeObserver",
+        class {
+          report: ResizeObserverCallback;
+          constructor(report: ResizeObserverCallback) {
+            this.report = report;
+          }
+          observe() {
+            this.report([], this as unknown as ResizeObserver);
+          }
+          unobserve() {
+            return undefined;
+          }
+          disconnect() {
+            return undefined;
+          }
+        },
+      );
+      return () => {
+        mocks.forEach((m) => m.mockRestore());
+        // @ts-expect-error jsdom has none
+        delete HTMLElement.prototype.scrollTo;
+        vi.unstubAllGlobals();
+      };
+    });
+
+    it("shows a No date card's rest where its Show more was, focusing the first", () => {
+      renderAgenda(Array.from({ length: 80 }, (_, k) => item(`Undated ${k + 1}`, null)));
+      const noDate = within(section(/^No date/));
+      fireEvent.click(noDate.getByRole("button", { name: "Show 70 more in Home" }));
+      expect(top).toBe(3000);
+      expect(document.activeElement).toBe(noDate.getByText("Undated 11").closest("button"));
+      // On screen where the button was, down to the view's foot, and no further.
+      expect(noDate.getByText("Undated 24")).toBeTruthy();
+      expect(noDate.queryByText("Undated 50")).toBeNull();
+    });
+
+    it("unfolds Overdue on the rows in view", () => {
+      renderAgenda(
+        Array.from({ length: 80 }, (_, k) => item(`Late ${k + 1}`, "2026-11-10")),
+        [home],
+        true,
+      );
+      vi.mocked(setOverdueCollapsedAction).mockReturnValue(new Promise(() => {}));
+      fireEvent.click(screen.getByRole("button", { name: /^Overdue/ }));
+      expect(top).toBe(3000);
+      expect(screen.getByText("Late 24")).toBeTruthy();
+      expect(screen.queryByText("Late 50")).toBeNull();
+    });
   });
 
   // A folded No date with hundreds of items shouldn't cost a render.

@@ -1,7 +1,17 @@
 "use client";
 
 import { ChevronDown } from "lucide-react";
-import { type ReactNode, useEffect, useId, useOptimistic, useState, useTransition } from "react";
+import {
+  type ReactNode,
+  useContext,
+  useEffect,
+  useId,
+  useOptimistic,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  useTransition,
+} from "react";
 import { flushSync } from "react-dom";
 import type { Greeting } from "@/core/agendaGreeting";
 import type { AssigneeView } from "@/core/members";
@@ -17,7 +27,7 @@ import { PostStack } from "./PostCard";
 import type { GetStarted } from "@/lib/getStarted";
 import type { FeedbackAbout } from "./FeedbackDialog";
 import { ItemDetailDialog, ItemDetailView } from "./ItemDetailDialog";
-import { ItemGroupView } from "./ItemList";
+import { ChecklistDragContext, ItemGroupView, useVirtualRows, VIRTUAL_FROM } from "./ItemList";
 import { ItemRow } from "./ItemRow";
 import { MoveToTomorrowDialog } from "./MoveToTomorrowDialog";
 import type { ProjectView } from "./Kanban";
@@ -26,6 +36,7 @@ import { ProjectIcon } from "./ProjectIcon";
 import { runAction } from "./run-action";
 import { useToday } from "./use-day-start";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
+import { SelectedItemContext } from "./useItemShortcuts";
 
 /** What the Brief reads of a list. */
 type AgendaList = Pick<ProjectView, "id" | "name" | "icon" | "homepageUrl" | "refPrefix">;
@@ -34,6 +45,49 @@ const openCount = (rows: Item[]) => rows.filter((i) => i.completedAt === null).l
 
 /** How many of a list's undated items No date shows until asked for the rest. */
 const NO_DATE_SHOWN = 10;
+const noSubscribe = () => () => {};
+
+/** A top-level row in a Brief section or No date card, and its sub-items' ids. */
+type Entry = { id: string; rows: string[]; node: ReactNode };
+
+/**
+ * The rows of a section or No date card. A long one renders only those near
+ * the Brief's view, as a long list does on the board (useVirtualRows), plus
+ * the selected row's, so the up and down keys reach its neighbours; its
+ * first and last, which they reach from the sections around it; and the one
+ * whose checklist is being dragged, which scrolls the Brief as it goes.
+ */
+function BriefRows({ entries }: { entries: Entry[] }) {
+  const ids = entries.map((e) => e.id);
+  const selection = useContext(SelectedItemContext);
+  const selected = useSyncExternalStore(
+    selection?.subscribe ?? noSubscribe,
+    () => {
+      const id = selection?.get() ?? null;
+      if (id === null || entries.length < VIRTUAL_FROM) return null;
+      return entries.find((e) => e.rows.includes(id))?.id ?? null;
+    },
+    () => null,
+  );
+  const [dragging, setDragging] = useState<string | null>(null);
+  const dragged = dragging && entries.find((e) => e.rows.includes(dragging))?.id;
+  const keep = new Set([ids[0], ids.at(-1), dragged].filter((id) => id != null));
+  const listEl = useRef<HTMLDivElement>(null);
+  const virtual = useVirtualRows(listEl, ids, keep, selected, "[data-brief]");
+  return (
+    <ChecklistDragContext value={setDragging}>
+      {/* flow-root keeps the first row's margin inside, where the rows are
+          measured from (as on the board). */}
+      <div ref={listEl} className="flow-root" style={{ paddingBottom: virtual.below }}>
+        {virtual.rows.map(({ index, above }) => (
+          <div key={ids[index]} ref={virtual.measure} data-index={index} style={{ marginTop: above }}>
+            {entries[index].node}
+          </div>
+        ))}
+      </div>
+    </ChecklistDragContext>
+  );
+}
 
 /**
  * A section's rows, folding away. Rows 0fr to 1fr animates to the content's
@@ -189,15 +243,18 @@ export function AgendaView({
   );
   // The row of the item a greeting chip is hovered or focused on.
   const [lit, setLit] = useState<string | null>(null);
-  const lightable = (id: string, row: React.ReactNode) => (
-    <div
-      key={id}
-      data-lit={lit === id || undefined}
-      className="rounded-lg transition-shadow duration-200 data-lit:ring-2 data-lit:ring-neutral-300 dark:data-lit:ring-neutral-600"
-    >
-      {row}
-    </div>
-  );
+  const lightable = (item: Item & { children: Item[] }, row: React.ReactNode): Entry => ({
+    id: item.id,
+    rows: [item.id, ...item.children.map((c) => c.id)],
+    node: (
+      <div
+        data-lit={lit === item.id || undefined}
+        className="rounded-lg transition-shadow duration-200 data-lit:ring-2 data-lit:ring-neutral-300 dark:data-lit:ring-neutral-600"
+      >
+        {row}
+      </div>
+    ),
+  });
 
   const all = projects.flatMap((p) => itemsByProject[p.id] ?? []);
   const byId = new Map(all.map((i) => [i.id, i]));
@@ -284,6 +341,7 @@ export function AgendaView({
           const row = rowProps(project);
           const folded = foldedLists.includes(project.id);
           const bodyId = `${noDateId}-${project.id}`;
+          const shown = allShown.has(project.id) ? groups : groups.slice(0, NO_DATE_SHOWN);
           return (
             // A card per list, so each list's undated items read as one group,
             // and fold away one list at a time.
@@ -313,10 +371,11 @@ export function AgendaView({
                 </button>
               </h3>
               {fold(bodyId, folded, [
-                ...(allShown.has(project.id) ? groups : groups.slice(0, NO_DATE_SHOWN)).map(
-                  (group) =>
+                <BriefRows
+                  key="rows"
+                  entries={shown.map((group) =>
                     lightable(
-                      group.id,
+                      group,
                       group.parentId ? (
                         <ItemRow
                           item={group}
@@ -331,7 +390,8 @@ export function AgendaView({
                         <ItemGroupView group={group} sortable {...row} />
                       ),
                     ),
-                ),
+                  )}
+                />,
                 groups.length > NO_DATE_SHOWN && !allShown.has(project.id) && (
                   <Button
                     key="more"
@@ -342,10 +402,14 @@ export function AgendaView({
                     onClick={(e) => {
                       // The button goes as the rest come in: focus moves on to
                       // the first of them, rather than back to the page's top.
-                      const lastShown = e.currentTarget.previousElementSibling;
+                      // It's where the button was, so on screen and rendered
+                      // even once the card renders only the rows near the view.
+                      const list = e.currentTarget.previousElementSibling;
                       flushSync(() => setAllShown((s) => new Set(s).add(project.id)));
-                      lastShown?.nextElementSibling
-                        ?.querySelector<HTMLElement>("button:not([role=checkbox])")
+                      list
+                        ?.querySelector<HTMLElement>(
+                          `[data-index="${NO_DATE_SHOWN}"] button:not([role=checkbox])`,
+                        )
                         ?.focus();
                     }}
                   >
@@ -356,37 +420,42 @@ export function AgendaView({
             </div>
           );
         })
-      : nestItems(rows).map((item) => {
-          const project = projectOf.get(item.projectId);
-          const parent = item.parentId ? byId.get(item.parentId) : undefined;
-          return lightable(
-            item.id,
-            item.children.length > 0 ? (
-              <ItemGroupView
-                group={item}
-                list={project}
-                // Sorted by day here: only steps due the same day show in
-                // their checklist's order, so only they can be reordered.
-                sortable={new Set(item.children.map(dueOf)).size === 1}
-                {...rowProps(project)}
-              />
-            ) : (
-            <ItemRow
-              item={item}
-              prefix={project?.refPrefix ?? ""}
-              assignees={assigneesByProject[item.projectId] ?? []}
-              viewerId={viewerId}
-              prLinks={prLinksByItem[item.id] ?? []}
-              context={parent?.title}
-              list={project}
-              onOpenDetail={() => openDetail(item)}
-            />
-            ),
-          );
-        });
+      : (
+          <BriefRows
+            entries={nestItems(rows).map((item) => {
+              const project = projectOf.get(item.projectId);
+              const parent = item.parentId ? byId.get(item.parentId) : undefined;
+              return lightable(
+                item,
+                item.children.length > 0 ? (
+                  <ItemGroupView
+                    group={item}
+                    list={project}
+                    // Sorted by day here: only steps due the same day show in
+                    // their checklist's order, so only they can be reordered.
+                    sortable={new Set(item.children.map(dueOf)).size === 1}
+                    {...rowProps(project)}
+                  />
+                ) : (
+                  <ItemRow
+                    item={item}
+                    prefix={project?.refPrefix ?? ""}
+                    assignees={assigneesByProject[item.projectId] ?? []}
+                    viewerId={viewerId}
+                    prLinks={prLinksByItem[item.id] ?? []}
+                    context={parent?.title}
+                    list={project}
+                    onOpenDetail={() => openDetail(item)}
+                  />
+                ),
+              );
+            })}
+          />
+        );
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    // data-brief: its rows skip rendering off screen (globals.css).
+    <div data-brief className="flex-1 overflow-y-auto">
       {/* Two columns from 900px when greeting: it sticks on the left. */}
       <div
         className={`mx-auto w-full max-w-xl px-3 pt-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[900px]:pt-12 ${
