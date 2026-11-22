@@ -163,6 +163,8 @@ export function TitleField({
             if (!panelRef.current?.contains(e.relatedTarget)) setCaret(null);
           }}
           aria-describedby={panelId}
+          // Coming back to New item from an item it opened lands here too.
+          autoFocus
           placeholder="Add a task…"
           aria-label="Title"
           className="relative w-full bg-transparent text-base leading-6 font-medium text-transparent caret-foreground outline-none placeholder:text-muted-foreground selection:bg-blue-500/30 selection:text-transparent"
