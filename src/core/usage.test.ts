@@ -1,7 +1,13 @@
 import { nanoid } from "nanoid";
 import { describe, expect, it } from "vitest";
 import { SYSTEM_ACTOR } from "./audit";
-import { apiKeys, sessions } from "./auth-schema";
+import { eq } from "drizzle-orm";
+import { createApiKey } from "./api-keys";
+import { apiKeys, sessions, users } from "./auth-schema";
+import { addItem, completeItem } from "./items";
+import { acceptInvite, inviteMember } from "./members";
+import { createProject, updateProject } from "./projects";
+import { acceptSpaceInvite, createSpace, inviteSpaceMember } from "./spaces";
 import { auditLog } from "./schema";
 import { createTestDb, createTestUser } from "./test-helpers";
 import { dailyUsage } from "./usage";
@@ -64,6 +70,12 @@ describe("dailyUsage", () => {
     change(db, ann, "2026-11-21T11:00:00Z", "Amp");
     change(db, ann, "2026-11-22T09:00:00Z", "Claude");
     change(db, ann, "2026-11-22T09:05:00Z", "Claude");
+    // A day before the range: not counted, so its agent isn't named.
+    change(db, ann, "2026-11-20T13:00:00Z", "Old");
+    // GitHub closing her item while she's away isn't her being seen.
+    db.insert(auditLog)
+      .values({ id: nanoid(12), ts: Date.parse("2026-11-22T11:30:00Z"), actor: ann, source: "github", action: "update", entityType: "item", entityId: "i1" })
+      .run();
     // Ann's latest sign-in is older than her last change: the change wins.
     const at = (iso: string) => new Date(iso);
     for (const [userId, updated] of [
@@ -82,11 +94,53 @@ describe("dailyUsage", () => {
 
     const usage = dailyUsage(db, { days: 2, timeZone: "UTC", now: Date.parse("2026-11-22T12:00:00Z") });
     const of = (id: string) => usage.users.find((u) => u.id === id) ?? expect.fail(`no row for ${id}`);
-    expect([of(ann).agentPerDay, of(ann).agentTotal, of(ann).total, of(ann).agents]).toEqual([[1, 2], 3, 4, ["Claude", "Amp"]]);
+    expect([of(ann).agentPerDay, of(ann).agentTotal, of(ann).total, of(ann).agents]).toEqual([[1, 2], 3, 5, ["Claude", "Amp"]]);
     expect(of(ann).lastSeenAt).toBe(Date.parse("2026-11-22T09:05:00Z"));
     expect(of(bob).lastSeenAt).toBe(Date.parse("2026-11-21T08:00:00Z"));
     expect(of(cat).lastSeenAt).toBe(Date.parse("2026-11-22T11:00:00Z"));
     expect([of(cat).agentTotal, of(cat).agents]).toEqual([0, []]);
+  });
+
+  it("sizes each account and says what each person has set up", () => {
+    const { db } = createTestDb();
+    const owner = createTestUser(db, { username: "owner" });
+    const guest = createTestUser(db, { username: "guest" });
+    const spaced = createTestUser(db, { username: "spaced" });
+    const friend = createTestUser(db, { username: "friend" });
+    const alone = createTestUser(db, { username: "alone" });
+    // Owner: two open items and a done one on an active list, one on an
+    // archived list, which doesn't count; guest joins the active list.
+    const home = createProject(db, owner, { name: "Home" }, "web");
+    addItem(db, owner, { projectId: home.id, title: "a" }, "web");
+    addItem(db, owner, { projectId: home.id, title: "b" }, "web");
+    completeItem(db, owner, addItem(db, owner, { projectId: home.id, title: "c" }, "web").id, "web");
+    const old = createProject(db, owner, { name: "Old" }, "web");
+    addItem(db, owner, { projectId: old.id, title: "d" }, "web");
+    updateProject(db, owner, old.id, { status: "archived" }, "web");
+    inviteMember(db, owner, home.id, "guest", "web");
+    acceptInvite(db, guest, home.id, "web");
+    // A Space counts once someone else has joined it.
+    const space = createSpace(db, spaced, { name: "Flat" }, "web");
+    createSpace(db, alone, { name: "Solo" }, "web");
+    inviteSpaceMember(db, spaced, space.id, "friend", "web");
+    acceptSpaceInvite(db, friend, space.id, "web");
+    createApiKey(db, alone, "Amp", "web");
+    createApiKey(db, alone, "Claude", "web");
+    db.update(users).set({ twoFactorEnabled: true }).where(eq(users.id, alone)).run();
+
+    const usage = dailyUsage(db, { days: 2, timeZone: "UTC" });
+    const of = (id: string) => usage.users.find((u) => u.id === id) ?? expect.fail(`no row for ${id}`);
+    expect([of(owner).lists, of(owner).openItems]).toEqual([1, 2]);
+    expect([of(guest).lists, of(guest).openItems]).toEqual([0, 0]);
+    expect([owner, guest, spaced, friend, alone].map((id) => of(id).features.sharing)).toEqual([true, true, true, true, false]);
+    expect(of(alone).features).toEqual({
+      agentKeys: 2,
+      push: false,
+      emailIn: false,
+      calendars: false,
+      sharing: false,
+      twoFactor: true,
+    });
   });
 
   it("splits days at midnight in a time zone off the hour", () => {

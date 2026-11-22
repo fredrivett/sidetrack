@@ -1,4 +1,5 @@
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Bell, CalendarDays, KeyRound, Mail, ShieldCheck, Users } from "lucide-react";
+import type { UserUsage } from "@/core/usage";
 import Link from "next/link";
 import { LogoMark } from "@/components/LogoMark";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -55,6 +56,12 @@ function summary(perDay: number[]): string {
   return `${total} change${total === 1 ? "" : "s"} on ${active} of the last ${DAYS} days`;
 }
 
+/** A share as a percentage, never "0%" for something that isn't none. */
+function percent(part: number, whole: number): string {
+  const p = Math.round((100 * part) / whole);
+  return p === 0 && part > 0 ? "<1%" : `${p}%`;
+}
+
 /** A headline number, with what it's out of and, optionally, a small chart. */
 function Stat({ label, value, note, children }: { label: string; value: string | number; note?: string; children?: React.ReactNode }) {
   return (
@@ -75,16 +82,39 @@ function Stat({ label, value, note, children }: { label: string; value: string |
 function Bars({ values, labels, label }: { values: number[]; labels: string[]; label: string }) {
   const top = Math.max(1, ...values);
   return (
-    <div className="flex h-8 items-end gap-px" role="img" aria-label={label}>
+    <div className="flex h-8 items-end gap-px" role="img" aria-label={`${label}: ${values.join(", ")}`}>
       {values.map((n, i) => (
         <span
           key={labels[i]}
           title={labels[i]}
           className={i === values.length - 1 ? "flex-1 rounded-[1px] bg-foreground" : "flex-1 rounded-[1px] bg-muted-foreground/40"}
-          style={{ height: `${Math.max(8, (100 * n) / top)}%` }}
+          style={{ height: n ? `${Math.max(8, (100 * n) / top)}%` : "2px" }}
         />
       ))}
     </div>
+  );
+}
+
+/** What each person has set up, as small icons; only what's on shows. */
+function Features({ features }: { features: UserUsage["features"] }) {
+  const on = [
+    features.agentKeys > 0 && { Icon: KeyRound, label: `${features.agentKeys} agent key${features.agentKeys === 1 ? "" : "s"}`, agent: true },
+    features.sharing && { Icon: Users, label: "Shares lists" },
+    features.push && { Icon: Bell, label: "Push notifications" },
+    features.emailIn && { Icon: Mail, label: "Email in" },
+    features.calendars && { Icon: CalendarDays, label: "Calendars" },
+    features.twoFactor && { Icon: ShieldCheck, label: "Two-factor" },
+  ].filter((f) => f !== false);
+  if (!on.length) return null;
+  return (
+    <span className="flex items-center gap-1">
+      {on.map(({ Icon, label, agent }) => (
+        <span key={label} title={label} className={agent ? "text-violet-600 dark:text-violet-300" : undefined}>
+          <Icon className="size-3" aria-hidden />
+          <span className="sr-only">{label}</span>
+        </span>
+      ))}
+    </span>
   );
 }
 
@@ -112,15 +142,17 @@ export default async function AdminPage() {
     const from = DAYS - 7 * (WEEKS - w);
     return users.filter((u) => u.perDay.slice(from, from + 7).some(Boolean)).length;
   });
+  // The same calendar weeks, by the day each person joined.
+  const joinedOn = users.map((u) => dayOf.format(u.createdAt));
   const signups = Array.from({ length: WEEKS }, (_, w) => {
-    const ago = (WEEKS - w) * 7 * DAY_MS;
-    return users.filter((u) => now - u.createdAt < ago && now - u.createdAt >= ago - 7 * DAY_MS).length;
+    const from = DAYS - 7 * (WEEKS - w);
+    return joinedOn.filter((day) => day >= days[from] && day <= days[from + 6]).length;
   });
   const newPeople = users.filter((u) => now - u.createdAt < 30 * DAY_MS).length;
   const total = users.reduce((sum, u) => sum + u.total, 0);
   const agentTotal = users.reduce((sum, u) => sum + u.agentTotal, 0);
   const grid = { gridTemplateColumns: `repeat(${DAYS}, ${CELL}px)` };
-  // Grey (all on the board) to violet (all through agents), like agents' avatars.
+  // Grey (all in the app) to violet (all through agents), like agents' avatars.
   const fill = (agentShare: number) => `color-mix(in oklab, var(--agent) ${Math.round(100 * agentShare)}%, var(--foreground))`;
 
   return (
@@ -174,10 +206,10 @@ export default async function AdminPage() {
           </Stat>
           <Stat
             label="Through agents"
-            value={total ? `${Math.round((100 * agentTotal) / total)}%` : "–"}
-            note={`of ${total} changes`}
+            value={total ? percent(agentTotal, total) : "–"}
+            note={`of ${total} change${total === 1 ? "" : "s"}`}
           >
-            {/* The split itself, board then agents. */}
+            {/* The split itself, app then agents. */}
             <div className="flex h-2 overflow-hidden rounded-full bg-muted-foreground/40" aria-hidden>
               <span className="ml-auto bg-violet-600 dark:bg-violet-400" style={{ width: `${total ? (100 * agentTotal) / total : 0}%` }} />
             </div>
@@ -199,7 +231,7 @@ export default async function AdminPage() {
                 More
               </span>
               <span className="flex items-center gap-1">
-                Board
+                App
                 {[0, 0.25, 0.5, 0.75, 1].map((agentShare) => (
                   <Swatch key={agentShare} style={{ opacity: 0.75, backgroundColor: fill(agentShare) }} />
                 ))}
@@ -273,14 +305,21 @@ export default async function AdminPage() {
                               {user.agentTotal > 0 && (
                                 <>
                                   {" · "}
-                                  <span className="text-violet-600 dark:text-violet-300" title={`Through ${user.agents.join(", ")}`}>
-                                    {Math.round((100 * user.agentTotal) / user.total)}% agents
+                                  <span className="text-violet-600 dark:text-violet-300" title={user.agents.length ? `Through ${user.agents.join(", ")}` : undefined}
+                                  >
+                                    {percent(user.agentTotal, user.total)} agents
                                   </span>
                                 </>
                               )}
                             </div>
                             <div className="truncate text-xs text-muted-foreground">
                               {here ? <span className="text-green-700 dark:text-green-400">Here now</span> : seenLabel(user.lastSeenAt, now)}
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <span className="truncate">
+                                {user.lists} list{user.lists === 1 ? "" : "s"} · {user.openItems} open
+                              </span>
+                              <Features features={user.features} />
                             </div>
                           </div>
                         </div>

@@ -1,7 +1,7 @@
-import { and, asc, count, eq, gte, max, sql } from "drizzle-orm";
+import { and, asc, count, eq, gte, isNull, max, sql } from "drizzle-orm";
 import { apiKeys, sessions, users } from "./auth-schema";
 import type { Db } from "./db";
-import { auditLog } from "./schema";
+import { auditLog, items, projectMembers, projects } from "./schema";
 
 // How much each person uses Sidetrack, for the admin view: the changes they
 // made (audit rows, from the web or through an agent) on each day.
@@ -24,11 +24,26 @@ export interface UserUsage {
   /** The agents (API key names, as they were) that made them, most used first. */
   agents: string[];
   /**
-   * When they were last signed in on the web or used an agent key, or null.
+   * When they were last signed in on the web, used an agent key or made a
+   * change themselves (not through GitHub), or null.
    * Sessions note their use at most once a day, so a web visit can be up to
    * a day later than this.
    */
   lastSeenAt: number | null;
+  /** Active lists they own, and the open items in them. */
+  lists: number;
+  openItems: number;
+  /** What they've set up beyond the board. */
+  features: {
+    /** Agent (MCP) keys they hold. */
+    agentKeys: number;
+    push: boolean;
+    emailIn: boolean;
+    calendars: boolean;
+    /** Someone has joined one of their lists, they've joined someone else's, or they share a Space. */
+    sharing: boolean;
+    twoFactor: boolean;
+  };
   /** When they last made a change, ever, or null if they never have. */
   lastActiveAt: number | null;
 }
@@ -85,36 +100,35 @@ export function dailyUsage(
       slot,
       n: count(),
       agent: sql<number>`sum(${auditLog.source} = 'mcp')`,
+      agentName: auditLog.agentName,
     })
     .from(users)
     .crossJoin(auditLog)
     .where(and(eq(auditLog.actor, users.id), gte(auditLog.ts, since)))
-    .groupBy(auditLog.actor, slot)
+    // By agent name too, so the agents come from the counted days only.
+    .groupBy(auditLog.actor, slot, auditLog.agentName)
     .all();
+  const agentCounts = new Map<string, Map<string, number>>();
   const perDay = new Map<string, { all: number[]; agent: number[] }>();
-  for (const { actor, slot, n, agent } of slots) {
+  for (const { actor, slot, n, agent, agentName } of slots) {
     const i = index.get(dayKey(slot * SLOT_MS, format));
     if (i === undefined) continue;
     let counts = perDay.get(actor);
     if (!counts) perDay.set(actor, (counts = { all: Array(days).fill(0), agent: Array(days).fill(0) }));
     counts.all[i] += n;
     counts.agent[i] += agent;
+    // The name is a snapshot, so a revoked or renamed key still shows as it was.
+    if (agent && agentName) {
+      const names = agentCounts.get(actor) ?? new Map<string, number>();
+      agentCounts.set(actor, names.set(agentName, (names.get(agentName) ?? 0) + agent));
+    }
   }
-
-  // Which agents made them, from the same rows (the name is a snapshot, so a
-  // revoked or renamed key still shows as it was).
-  const agents = new Map<string, string[]>();
-  for (const { actor, name } of db
-    .select({ actor: auditLog.actor, name: auditLog.agentName })
-    .from(users)
-    .crossJoin(auditLog)
-    .where(and(eq(auditLog.actor, users.id), gte(auditLog.ts, now - days * DAY_MS), eq(auditLog.source, "mcp")))
-    .groupBy(auditLog.actor, auditLog.agentName)
-    .orderBy(sql`count(*) desc`)
-    .all()) {
-    if (!name) continue;
-    agents.set(actor, [...(agents.get(actor) ?? []), name]);
-  }
+  const agents = new Map(
+    [...agentCounts].map(([actor, names]) => [
+      actor,
+      [...names].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name]) => name),
+    ]),
+  );
 
   // Sessions and keys are a few rows per person: one pass over each.
   const seen = new Map<string, number>();
@@ -136,6 +150,32 @@ export function dailyUsage(
     see(userId, ts?.getTime() ?? null);
   }
 
+  // Lists have no index by owner, so their counts are one pass each.
+  const lists = new Map(
+    db
+      .select({
+        userId: projects.userId,
+        lists: sql<number>`count(distinct ${projects.id})`,
+        open: sql<number>`count(${items.id})`,
+      })
+      .from(projects)
+      .leftJoin(items, and(eq(items.projectId, projects.id), isNull(items.completedAt)))
+      .where(eq(projects.status, "active"))
+      .groupBy(projects.userId)
+      .all()
+      .map(({ userId, ...counts }) => [userId, counts]),
+  );
+  // Owners of a list someone has joined.
+  const sharedOwners = new Set(
+    db
+      .selectDistinct({ userId: projects.userId })
+      .from(projectMembers)
+      .innerJoin(projects, eq(projects.id, projectMembers.projectId))
+      .where(eq(projectMembers.status, "accepted"))
+      .all()
+      .map(({ userId }) => userId),
+  );
+
   const rows = db
     .select({
       id: users.id,
@@ -147,11 +187,28 @@ export function dailyUsage(
       // Each person's last change, from the (actor, ts) index. Spelled out:
       // drizzle leaves out the table name, and "id" in here is audit_log's.
       lastActiveAt: sql<number | null>`(select max("ts") from "audit_log" where "actor" = "users"."id")`,
+      // Their last change made by them, on the web or through an agent: the
+      // GitHub integration's changes are made in their name while they're away.
+      lastOwnChangeAt: sql<number | null>`(select max("ts") from "audit_log"
+        where "actor" = "users"."id" and "source" in ('web', 'mcp'))`,
+      // What they've set up, each a lookup by user on its table's index.
+      // Spelled out for the same reason.
+      agentKeys: sql<number>`(select count(*) from "api_keys" where "user_id" = "users"."id")`,
+      push: sql<number>`exists (select 1 from "push_subscriptions" where "user_id" = "users"."id")`,
+      emailIn: sql<number>`exists (select 1 from "email_addresses" where "user_id" = "users"."id")`,
+      calendars: sql<number>`exists (select 1 from "calendar_accounts" where "user_id" = "users"."id")`,
+      sharing: sql<number>`(
+        exists (select 1 from "project_members" where "user_id" = "users"."id" and "status" = 'accepted')
+        or exists (select 1 from "space_members" as "mine" join "space_members" as "other"
+          on "other"."space_id" = "mine"."space_id" and "other"."user_id" != "mine"."user_id"
+          where "mine"."user_id" = "users"."id" and "mine"."status" = 'accepted' and "other"."status" = 'accepted')
+      )`,
+      twoFactor: users.twoFactorEnabled,
     })
     .from(users)
     .orderBy(asc(users.createdAt))
     .all()
-    .map((user): UserUsage => {
+    .map(({ agentKeys, push, emailIn, calendars, sharing, twoFactor, lastOwnChangeAt, ...user }): UserUsage => {
       const counts = perDay.get(user.id) ?? { all: Array(days).fill(0), agent: Array(days).fill(0) };
       return {
         ...user,
@@ -162,7 +219,17 @@ export function dailyUsage(
         agentTotal: counts.agent.reduce((sum, n) => sum + n, 0),
         agents: agents.get(user.id) ?? [],
         // A change is being seen too, and dates it to the minute.
-        lastSeenAt: Math.max(seen.get(user.id) ?? 0, user.lastActiveAt ?? 0) || null,
+        lists: lists.get(user.id)?.lists ?? 0,
+        openItems: lists.get(user.id)?.open ?? 0,
+        features: {
+          agentKeys,
+          push: Boolean(push),
+          emailIn: Boolean(emailIn),
+          calendars: Boolean(calendars),
+          sharing: Boolean(sharing) || sharedOwners.has(user.id),
+          twoFactor: Boolean(twoFactor),
+        },
+        lastSeenAt: Math.max(seen.get(user.id) ?? 0, lastOwnChangeAt ?? 0) || null,
       };
     })
     .sort((a, b) => b.total - a.total || b.createdAt - a.createdAt);
