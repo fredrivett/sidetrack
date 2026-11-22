@@ -56,6 +56,13 @@ Sidetrack's own work is tracked on the production board (sidetrack.it), in the
 **SDT** list. Find or create items in SDT only, following the Sidetrack MCP
 server's instructions; never use another list for work in this repository.
 
+- An item you file yourself still goes through `start_work`, and every PR for
+  it, follow-ups included, ends its title with `[REF]` (`pr_title`). A ref
+  only in the PR body or branch name links nothing, so the merge won't tick it.
+- When a plan changes, reuse or retitle its planned sub-items. When a new item
+  replaces one, tick the old one off in the same change, with a comment naming
+  its replacement, so it isn't left open.
+
 The exception is feedback: work that answers an item in the **STF** list
 (Sidetrack feedback), including one Amp was assigned, is done on that STF item
 itself, not an SDT copy, so its PR merging checks it off.
