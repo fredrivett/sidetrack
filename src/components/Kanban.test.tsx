@@ -97,8 +97,11 @@ const board = (
   spaces: SpaceView[],
   itemsByProject: Record<string, Item[]> = { a: [], b: [] },
   followedItemIds: string[] = [],
+  parentTitles: Record<string, string> = {},
+  filters = NO_FILTERS,
 ) => (
   <Kanban
+    parentTitles={parentTitles}
     viewerId="u1"
     viewer={null}
     timeZone={Intl.DateTimeFormat().resolvedOptions().timeZone}
@@ -126,7 +129,7 @@ const board = (
     followedItemIds={followedItemIds}
     notificationLevels={{}}
     initialItemExtra={[]}
-    filters={NO_FILTERS}
+    filters={filters}
     aiEnabled={false}
   />
 );
@@ -290,6 +293,34 @@ describe("Kanban, re-rendering rows", () => {
     rerender(board(work, [], { b: refreshed }, ["i1"]));
     expect(screen.getByText("Task 9")).toBeTruthy();
     expect(rowRenders).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows someone else's item by its title alone, over the sub-items the viewer sees", () => {
+    const items = [item(1, { parentId: "hidden" }), item(2, { parentId: "hidden" })];
+    render(board(work, [], { b: items }, [], { hidden: "Fred's chores" }));
+    const parent = screen.getByText("Fred's chores");
+    expect(screen.getByText("Task 1")).toBeTruthy();
+    expect(screen.getByText("Task 2")).toBeTruthy();
+    // Nothing to tick or open: the arrows go straight to the viewer's rows.
+    expect(parent.closest("[data-row-id]")?.querySelector("button, [role=checkbox]")).toBeNull();
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect(document.querySelector("[data-selected]")?.textContent).toContain("Task 1");
+  });
+
+  it("filters the sub-items under someone else's item by their own fields, never the stand-in's", () => {
+    const items = [
+      item(1, { parentId: "hidden", assigneeIds: ["u1"], labels: ["urgent"] }),
+      item(2, { parentId: "hidden", assigneeIds: ["u1"] }),
+    ];
+    const titles = { hidden: "Fred's chores" };
+    render(board(work, [], { b: items }, [], titles, { ...NO_FILTERS, unlabelled: true }));
+    expect(screen.getByText("Task 2")).toBeTruthy();
+    expect(screen.queryByText("Task 1")).toBeNull();
+    // Nothing of the viewer's is unassigned: the stand-in doesn't show alone.
+    // (The board reads its filters once, so a fresh one.)
+    cleanup();
+    render(board(work, [], { b: items }, [], titles, { ...NO_FILTERS, unassigned: true }));
+    expect(screen.queryByText("Fred's chores")).toBeNull();
   });
 
   it("keeps a list's rows mounted as it grows long enough to render only some", () => {

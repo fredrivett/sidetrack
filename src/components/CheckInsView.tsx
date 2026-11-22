@@ -20,7 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ItemDetailDialog } from "./ItemDetailDialog";
-import { ItemGroupView } from "./ItemList";
+import { ItemGroupView, withHiddenParents } from "./ItemList";
 import { UserAvatar } from "./UserAvatar";
 import type { ProjectView } from "./Kanban";
 import { runAction } from "./run-action";
@@ -111,30 +111,27 @@ export function CheckInsView({
   const detailProject = detail.item ? projectOf.get(detail.item.projectId) : undefined;
   const sharesBack = new Set(myDay.shares.map((s) => s.personId));
 
-  // A sub-item shown without its item (someone else's, on their list) says
-  // which item it's under: its title is all of it that's shared.
-  const loaded = new Map(Object.values(itemsByProject).flat().map((i) => [i.id, i.title]));
-  const under = (group: Item) => group.parentId && (loaded.get(group.parentId) ?? parentTitles[group.parentId]);
+  // Titles of the items those sub-items sit under: hidden ones' (parentTitles),
+  // and, on the viewer's own card, ones they can see but aren't in their day.
+  const titles = { ...Object.fromEntries(Object.values(itemsByProject).flat().map((i) => [i.id, i.title])), ...parentTitles };
 
   const groups = (items: Item[], many: boolean) =>
-    nestItems(items).map((group) => {
+    // Someone else's item holding sub-items of theirs shows by its title alone.
+    nestItems(withHiddenParents(items, titles)).map((group) => {
       const list = projectOf.get(group.projectId);
-      const parent = under(group);
       return {
         done: group.completedAt !== null,
         node: (
-          <div key={group.id} className="space-y-1">
-            {parent && <p className="truncate px-1 text-xs text-neutral-500">Under “{parent}”</p>}
-            <ItemGroupView
-              group={group}
-              list={many ? list : undefined}
-              prefix={list?.refPrefix ?? ""}
-              assignees={assigneesByProject[group.projectId] ?? []}
-              viewerId={viewerId}
-              prLinksByItem={prLinksByItem}
-              onOpenDetail={detail.openDetail}
-            />
-          </div>
+          <ItemGroupView
+            key={group.id}
+            group={group}
+            list={many ? list : undefined}
+            prefix={list?.refPrefix ?? ""}
+            assignees={assigneesByProject[group.projectId] ?? []}
+            viewerId={viewerId}
+            prLinksByItem={prLinksByItem}
+            onOpenDetail={detail.openDetail}
+          />
         ),
       };
     });
@@ -221,7 +218,7 @@ export function CheckInsView({
         <ItemDetailDialog
           item={detail.item}
           parent={all.find((i) => i.id === detail.item?.parentId) ?? null}
-          parentTitle={under(detail.item) || undefined}
+          parentTitle={detail.item.parentId ? titles[detail.item.parentId] : undefined}
           checklist={all.filter((i) => i.parentId === detail.item?.id)}
           // Nothing to nest under here: Check-ins follows a day, it doesn't plan one.
           nestTargets={[]}
@@ -263,7 +260,8 @@ function DayCard({
   empty: string;
   footer: ReactNode;
 }) {
-  // Each row counts once: an item, or a sub-item shown without its item.
+  // Each of their items counts once: a top-level one, or a sub-item whose
+  // item isn't in their day (shown under a stand-in, withHiddenParents).
   const ids = new Set(items.map((i) => i.id));
   const top = items.filter((i) => i.parentId === null || !ids.has(i.parentId));
   const done = top.filter((i) => i.completedAt !== null).length;

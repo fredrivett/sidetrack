@@ -13,7 +13,7 @@ import { ColumnCard } from "./BoardLayout";
 import type { ProjectView } from "./Kanban";
 import { EditableText } from "./EditableText";
 import { ItemDetailDialog } from "./ItemDetailDialog";
-import { DraggableItemList, ItemGroupView } from "./ItemList";
+import { DraggableItemList, isHiddenParent, ItemGroupView, withHiddenParents } from "./ItemList";
 import { ProjectDetailDialog } from "./ProjectDetailDialog";
 import { ProjectIconPicker, useListIcon } from "./ProjectIconPicker";
 import { ProjectMenu } from "./ProjectMenu";
@@ -34,6 +34,7 @@ export const ProjectColumn = memo(function ProjectColumn({
   project,
   viewerId,
   items,
+  parentTitles,
   assignees,
   prLinksByItem,
   prevId,
@@ -50,6 +51,8 @@ export const ProjectColumn = memo(function ProjectColumn({
   project: ProjectView;
   viewerId: string;
   items: Item[];
+  /** Titles of items, not the viewer's to see, holding sub-items they do (hiddenParentTitles). */
+  parentTitles: Record<string, string>;
   assignees: AssigneeView[];
   prLinksByItem: Record<string, ItemPrLink[]>;
   prevId: string | null;
@@ -77,7 +80,8 @@ export const ProjectColumn = memo(function ProjectColumn({
   const today = useToday();
   // "Tidy done items" in the list's menu moves today's early too.
   const doneBefore = Math.max(dayStart, project.doneClearedAt ?? -Infinity);
-  const groups = nestItems(items);
+  // Someone else's item holding sub-items the viewer sees shows by its title alone.
+  const groups = nestItems(withHiddenParents(items, parentTitles));
   const active = groups.filter((i) => i.completedAt === null);
   const inList = groups.filter(
     (i) =>
@@ -98,9 +102,9 @@ export const ProjectColumn = memo(function ProjectColumn({
     inList,
     (i, parent) =>
       (filters.doneToday || i.completedAt === null) &&
-      matchesFilters(i, parent, filters, today),
+      !isHiddenParent(i) && matchesFilters(i, parent, filters, today),
   );
-  const shownDone = shownInGroups(done, (i, parent) => matchesFilters(i, parent, filters, today));
+  const shownDone = shownInGroups(done, (i, parent) => !isHiddenParent(i) && matchesFilters(i, parent, filters, today));
   const doneShown = done.filter((g) => shownDone.has(g.id));
   // The header's badge swaps the list for these, and shows only for more than
   // one. Derived, so the list comes back by itself when they drop to one.
@@ -127,8 +131,9 @@ export const ProjectColumn = memo(function ProjectColumn({
   // DraggableItemList, so the header's button can collapse or expand them all
   // at once; it shows only while the list has a parent with sub-items on view.
   const { collapsed: collapsedItems, setCollapsed } = useCollapsedItems(items);
+  // Not a stand-in for someone else's item: its folding isn't the viewer's.
   const parents = inList
-    .filter((g) => g.children.length > 0 && shownInList.has(g.id))
+    .filter((g) => g.children.length > 0 && shownInList.has(g.id) && !isHiddenParent(g))
     .map((g) => g.id);
   const allCollapsed = parents.every((id) => collapsedItems.has(id));
   // The list's held saves (status, order, prefix, icon…) dim the whole column
