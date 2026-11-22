@@ -12,6 +12,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "eval": "vitest run --config vitest.eval.config.ts",
     "test:mutation": "stryker run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/core/migrate.ts",
