@@ -7,6 +7,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  startTransition,
   useOptimistic,
   useRef,
   useState,
@@ -110,6 +111,13 @@ const NO_CHECK_INS: CheckIn[] = [];
 
 /** How many more older finished items the Done view loads at a time. */
 const DONE_PAGE = 50;
+// One empty list each, so a list with nothing in it keeps the same props.
+const NO_ITEMS: Item[] = [];
+const NO_ASSIGNEES: AssigneeView[] = [];
+/** `copy` with `items`, or `copy` itself when they are its own (applySaved left them). */
+function keep<T extends { items: Item[] }>(copy: T, items: Item[]): T {
+  return items === copy.items ? copy : { ...copy, items };
+}
 
 const NEW_ITEM_CLOSED: { open: boolean; projectId: string | null; dueToday?: boolean } = {
   open: false,
@@ -291,14 +299,18 @@ export function Kanban({
     ];
     if (extra.length === 0) return serverItemsByProject;
     // The server's copy wins: an older item reopened is back on the board.
+    // Only the lists that gain items are copied, so the rest keep their
+    // arrays and their columns skip re-rendering.
     const seen = new Set(Object.values(serverItemsByProject).flat().map((i) => i.id));
-    const merged: Record<string, Item[]> = {};
-    for (const [projectId, list] of Object.entries(serverItemsByProject)) {
-      merged[projectId] = [...list];
-    }
+    const merged: Record<string, Item[]> = { ...serverItemsByProject };
+    const copied = new Set<string>();
     for (const item of extra) {
       if (seen.has(item.id) || !merged[item.projectId]) continue;
       seen.add(item.id);
+      if (!copied.has(item.projectId)) {
+        copied.add(item.projectId);
+        merged[item.projectId] = [...merged[item.projectId]];
+      }
       merged[item.projectId].push(item);
     }
     return merged;
@@ -314,15 +326,27 @@ export function Kanban({
   // again.
   const saved = useSavedItems(allItemsByProject, seq, completedSince);
   const { merge: mergeSaved } = saved;
+  // Shows rows at once: a live update's, which shouldn't wait for anything.
   const merge = useCallback(
     (rows: unknown) => {
-      mergeSaved(rows);
       if (!isSaved(rows)) return;
-      setOlder((o) => o && { ...o, items: applySaved(o.items, rows) });
-      setFound((f) => f && { ...f, items: applySaved(f.items, rows) });
+      mergeSaved(rows);
+      // Each copy is kept as it was when the rows aren't in it, so it
+      // doesn't re-render every list for a change it doesn't show.
+      setOlder((o) => o && keep(o, applySaved(o.items, rows)));
+      setFound((f) => f && keep(f, applySaved(f.items, rows)));
       setFetchedItems((had) => applySaved(had, rows));
     },
     [mergeSaved],
+  );
+  // A save's rows, in a transition: they then land in the same render that
+  // stops showing its change ahead, rather than one of their own first (an
+  // update after an await isn't part of the save's transition otherwise).
+  // Only saves: a transition started while another is pending, such as a
+  // ⌘K search's read, waits for it, and a live update shouldn't.
+  const mergeSave = useCallback(
+    (rows: unknown) => startTransition(() => merge(rows)),
+    [merge],
   );
   const shownFollowed = useMemo(
     () =>
@@ -335,12 +359,12 @@ export function Kanban({
   );
   // Every view reads items and lists from here, so a change shown ahead of the
   // server (a tick, a delete, a move) shows at once wherever it appears.
-  const [itemsByProject, itemChanges] = useOptimisticItems(saved.items, merge);
+  const [itemsByProject, itemChanges] = useOptimisticItems(saved.items, mergeSave);
   const itemSaves = useMemo<ItemSaves>(() => {
     const merged =
       <A extends unknown[]>(save: (...args: A) => Promise<unknown>) =>
       (...args: A) =>
-        save(...args).then(merge);
+        save(...args).then(mergeSave);
     return {
       ...defaultItemSaves,
       updateItem: merged(defaultItemSaves.updateItem),
@@ -349,7 +373,7 @@ export function Kanban({
       setItemsCollapsed: merged(defaultItemSaves.setItemsCollapsed),
       addSubItem: merged(defaultItemSaves.addSubItem),
     };
-  }, [merge]);
+  }, [mergeSave]);
   const [projects, removeList] = useOptimisticLists(serverProjects);
   const [view, setView] = useState<BoardView>(initialView);
   // The view asked for, which the tabs show at once while the view itself
@@ -503,7 +527,8 @@ export function Kanban({
       : trays
           .map((t) => ({ ...t, lists: movable.filter((p) => trayByList[p.id] === t.id) }))
           .filter((t) => t.lists.length > 0);
-  const moveTargets = movable.length > 1 ? moveGroups : null;
+  // The same object while the lists are, as every list reads it (BoardDrag).
+  const moveTargets = useSameContent(movable.length > 1 ? moveGroups : null);
   // Where the viewer can invite people: the lists they own, on their trays
   // (one group without Spaces), and the Spaces they're an admin of.
   const owned = active.filter((p) => p.isOwner);
@@ -533,11 +558,12 @@ export function Kanban({
         .map((l) => [l.name, { name: l.name, emoji: l.emoji }]),
     ).values(),
   ].sort((a, b) => a.name.localeCompare(b.name));
-  const shownFilters = {
+  // The same object until the filters change, so the memoized columns skip.
+  const shownFilters = useSameContent({
     ...filters,
     assignees: filters.assignees.filter((id) => people.some((p) => p.userId === id)),
     labels: filters.labels.filter((name) => labelChoices.some((l) => l.name === name)),
-  };
+  });
 
   // Moving a tray holds it, dimmed, until the board comes back in the new
   // order, as moving a list holds its column.
@@ -632,6 +658,11 @@ export function Kanban({
     );
   }
 
+  const showListActivity = useCallback(
+    (projectId: string) => setAudit({ open: true, projectId }),
+    [],
+  );
+
   const openShare = useCallback(
     (projectId: string, projectName: string) =>
       setShare({ open: true, projectId, projectName }),
@@ -667,14 +698,14 @@ export function Kanban({
         key={p.id}
         project={p}
         viewerId={viewerId}
-        items={itemsByProject[p.id] ?? []}
-        assignees={assigneesByProject[p.id] ?? []}
+        items={itemsByProject[p.id] ?? NO_ITEMS}
+        assignees={assigneesByProject[p.id] ?? NO_ASSIGNEES}
         prLinksByItem={prLinksByItem}
         prevId={group[idx - 1]?.id ?? null}
         nextId={group[idx + 1]?.id ?? null}
         firstId={group[0].id}
         lastId={group[group.length - 1].id}
-        onShowActivity={(pid) => setAudit({ open: true, projectId: pid })}
+        onShowActivity={showListActivity}
         onAddItem={openNewItem}
         onShare={openShare}
         spaces={spaces}

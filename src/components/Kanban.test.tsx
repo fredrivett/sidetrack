@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { Item } from "@/core/schema";
 import type { SpaceView } from "@/core/spaces";
@@ -7,6 +7,8 @@ import { NO_FILTERS } from "@/lib/filters";
 import * as itemRef from "@/lib/itemRef";
 import { Kanban, type ProjectView } from "./Kanban";
 import * as shortcuts from "./useItemShortcuts";
+import { completeItemAction, listDoneBeforeAction } from "@/app/actions";
+import { useCollapsedItems } from "./use-collapsed-items";
 import { GET_STARTED_STEPS, type GetStarted } from "@/lib/getStarted";
 
 const GET_STARTED_DONE: GetStarted = {
@@ -21,10 +23,17 @@ const GET_STARTED_DONE: GetStarted = {
 // The server actions pull in server-only modules (next/cache, the DB).
 vi.mock("@/app/actions", () => ({
   listDoneBeforeAction: vi.fn(),
+  completeItemAction: vi.fn(),
   setTimeZoneAction: vi.fn(() => Promise.resolve()),
 }));
 // The Agenda's greeting; it never arrives here.
 vi.mock("./ai-read", () => ({ aiRead: vi.fn(() => new Promise(() => {})) }));
+// Each column reads its folded sub-items once per render, so counting the
+// calls by list counts the columns' renders.
+vi.mock("./use-collapsed-items", async (original) => {
+  const actual = await original<typeof import("./use-collapsed-items")>();
+  return { ...actual, useCollapsedItems: vi.fn(actual.useCollapsedItems) };
+});
 // jsdom has no EventSource; the board's live updates have tests of their own.
 vi.mock("./LiveUpdates", () => ({ LiveUpdates: () => null }));
 // Each item row reads the selection once per render, and nothing else
@@ -325,6 +334,50 @@ describe("Kanban, re-rendering rows", () => {
     expect(screen.queryByRole("menu")).toBeNull();
     expect(document.querySelector("[data-selected]")?.textContent).toContain("Task 1");
     expect(document.activeElement).not.toBe(assign);
+  });
+
+  // A tick on a big board re-renders its own list, not all of them.
+  describe("ticking an item", () => {
+    const lists = [list("a", "Home", "active", null), ...work];
+    const home = item(1, { projectId: "a", title: "Water plants" });
+    const ticked = { ...home, completedAt: 1 };
+    /** How many times list `id`'s column has rendered. */
+    const columnRenders = (id: string) =>
+      vi.mocked(useCollapsedItems).mock.calls.filter(([items]) => items[0]?.projectId === id).length;
+    async function tick() {
+      vi.mocked(completeItemAction).mockResolvedValueOnce({ seq: 2, items: [ticked], gone: [], from: 1 });
+      vi.mocked(useCollapsedItems).mockClear();
+      const row = screen.getByText("Water plants").closest("[data-item-row]") as HTMLElement;
+      fireEvent.click(within(row).getByRole("checkbox", { name: "Complete", hidden: true }));
+      await waitFor(() => expect(within(row).getByRole("checkbox", { name: "Uncomplete", hidden: true })).toBeTruthy());
+      // The saved row has landed.
+      await act(async () => {});
+    }
+
+    it("re-renders only the ticked item's list", async () => {
+      render(board(lists, [], { a: [home], b: [item(2)] }));
+      await tick();
+      expect(columnRenders("a")).toBeGreaterThan(0);
+      expect(columnRenders("b")).toBe(0);
+    });
+
+    // ⌘K's matches from older Done are a copy the saved rows go into too.
+    it("re-renders only the ticked item's list while ⌘K shows older matches", async () => {
+      vi.mocked(listDoneBeforeAction).mockResolvedValue({
+        items: [item(3, { title: "Task 3 old", completedAt: -1 })],
+        since: 0,
+        more: false,
+      });
+      render(board(lists, [], { a: [home], b: [item(2)] }));
+      fireEvent.keyDown(document, { key: "k", ctrlKey: true });
+      fireEvent.change(screen.getByPlaceholderText("Search commands, lists, items…"), {
+        target: { value: "Task" },
+      });
+      await waitFor(() => expect(screen.getByRole("option", { name: /Task 3 old/ })).toBeTruthy());
+      await tick();
+      expect(columnRenders("a")).toBeGreaterThan(0);
+      expect(columnRenders("b")).toBe(0);
+    });
   });
 
   it("finds an item in the palette once something is typed", () => {

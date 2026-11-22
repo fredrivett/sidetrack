@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, ChevronsDownUp, ChevronsUpDown, Eye, MessageSquare, Plus } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { memo, type ReactNode, useState } from "react";
 import { updateProjectAction } from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
@@ -25,7 +25,12 @@ import { useItemDetailDialog } from "./use-item-detail-dialog";
 import { runAction } from "./run-action";
 import { ListSaveContext, useNewListSave } from "./use-list-saves";
 
-export function ProjectColumn({
+/**
+ * One list's column. Memoized, so a change to one list (a tick, a saved row)
+ * re-renders that column alone, not every list on the board: its props stay
+ * the same objects while the list is as it was.
+ */
+export const ProjectColumn = memo(function ProjectColumn({
   project,
   viewerId,
   items,
@@ -351,7 +356,7 @@ export function ProjectColumn({
     </ColumnCard>
     </ListSaveContext>
   );
-}
+});
 
 /**
  * A header button that folds away rather than popping out: its width eases
