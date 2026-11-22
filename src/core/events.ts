@@ -41,6 +41,8 @@ export interface SpaceAt {
 export interface AccessLost {
   unassigned: number;
   ended: number;
+  /** Their day shares on a list they no longer edit, ended (revokeListAccess). */
+  shares?: number;
 }
 
 export interface DueAt {
@@ -442,7 +444,7 @@ export type AccountEvent =
 
 /** `lost`, or undefined when it cleaned up nothing, to keep it off the event. */
 export function accessLost(lost: AccessLost): AccessLost | undefined {
-  return lost.unassigned || lost.ended ? lost : undefined;
+  return lost.unassigned || lost.ended || lost.shares ? lost : undefined;
 }
 
 /** The audit row's columns for an event, which its filters and indexes use. */

@@ -34,6 +34,8 @@ export interface MemberView {
   onlyAssignedTo: string | null;
   /** With onlyAssignedTo, only their today or week; null is every day. */
   onlyWithin: OnlyWithin | null;
+  /** When onlyAssignedTo isn't the owner but someone sharing their own day: their name. */
+  sharerName?: string;
   createdAt: number;
 }
 
@@ -107,7 +109,8 @@ export function handleFor(user: { username: string | null } | undefined, id: str
 }
 
 /**
- * Invite an existing user to collaborate on a project. Owner-only. The invite
+ * Invite an existing user to collaborate on a project. Owner-only, except
+ * that anyone who can edit it can share their own day there. The invite
  * lands as a `pending` membership the target must accept before they gain
  * access. Throws if the caller isn't the owner, the target has no account, the
  * target is already the owner, or a membership/invite already exists.
@@ -139,7 +142,10 @@ export function inviteMember(
   }
   const project = getProject(db, userId, projectId);
   if (!project) throw new Error(`list not found: ${projectId}`);
-  if (project.userId !== userId) {
+  // Anyone who can edit the list can share their own day on it: only their
+  // items show (hasItemAccess), and the list's people are told who's coming.
+  const sharingDay = onlyMine && within !== null && listAccess(db, userId, projectId) === "edit";
+  if (project.userId !== userId && !sharingDay) {
     throw new Error("only the list owner can invite members");
   }
 
@@ -230,8 +236,9 @@ function assertListRole(role: string): asserts role is ListRole {
 /**
  * Change what a member, or someone invited, can do on the list: edit,
  * comment or only view, and with `onlyMine`, whether they see only the
- * owner's items, and with `within`, only those in the owner's today or week
- * (each left as it is when undefined). Owner-only. Taking edit
+ * caller's items, and with `within`, only those in the owner's today or week
+ * (each left as it is when undefined). Owner-only, but for what of their
+ * own day someone shares. Taking edit
  * away takes them off the list's items and ends their agents there
  * (revokeListAccess), unless the list's Space still lets them edit.
  */
@@ -251,10 +258,17 @@ export function setMemberRole(
   if (onlyMine && role === "editor") {
     throw new Error("only viewers and commenters can be shown just your items");
   }
-  const project = getProject(db, userId, projectId);
-  if (!project) throw new Error(`list not found: ${projectId}`);
-  if (project.userId !== userId) throw new Error("only the list owner can change roles");
   const membership = ownMembership(db, targetUserId, projectId);
+  // The owner, or whoever they see only the items of: someone sharing their
+  // own day, who can change what of it they see (not their role, nor make it
+  // all their items for good), even once they're off the list themselves.
+  const sharer = membership?.onlyAssignedTo === userId;
+  const project = sharer ? db.select().from(projects).where(eq(projects.id, projectId)).get() : getProject(db, userId, projectId);
+  if (!project) throw new Error(`list not found: ${projectId}`);
+  const owner = project.userId === userId;
+  if (!owner && !(sharer && role === membership.role && onlyMine !== false && within !== null)) {
+    throw new Error("only the list owner can change roles");
+  }
   if (!membership) throw new Error("they aren't on this list");
   // An editor sees the whole list: an edit (a sort, a move) reaches items
   // they couldn't otherwise see.
@@ -266,7 +280,8 @@ export function setMemberRole(
         : onlyMine
           ? userId
           : null;
-  const window = within === undefined ? (limitedTo ? membership.onlyWithin : null) : assertWithin(!!limitedTo, within);
+  // A window is someone's day: one now limited to another person's items isn't theirs.
+  const window = within === undefined ? (limitedTo && limitedTo === membership.onlyAssignedTo ? membership.onlyWithin : null) : assertWithin(!!limitedTo, within);
   // Their note and mood go with the day share they were chosen for: a share
   // no longer of that person's day, or of no day, drops them, and setting a
   // window again doesn't bring them back.
@@ -419,8 +434,9 @@ export function declineInvite(
 
 /**
  * Remove a membership. The owner may remove anyone (revoking a pending invite
- * or removing an accepted member); a member may remove only themselves
- * (leaving). No-op if there's no matching membership row.
+ * or removing an accepted member), and someone sharing their day whoever
+ * they share it with; a member may remove only themselves (leaving). No-op
+ * if there's no matching membership row.
  */
 export function removeMember(
   db: Db,
@@ -430,7 +446,9 @@ export function removeMember(
   source: AuditOrigin,
 ): void {
   const leaving = targetUserId === userId;
-  if (!leaving) {
+  // As well as the owner: whoever they see only the items of (setMemberRole).
+  const sharer = ownMembership(db, targetUserId, projectId)?.onlyAssignedTo === userId;
+  if (!leaving && !sharer) {
     const project = getProject(db, userId, projectId);
     if (!project) throw new Error(`list not found: ${projectId}`);
     if (project.userId !== userId) {
@@ -483,7 +501,7 @@ export function removeMember(
  * it, if they have: take them off its items (other assignees of a joint item
  * stay) and end their agents' open sessions on it, since only those who can
  * change a list hold its work; and, once they can't open it at all, drop
- * their ordering slot. Leaving work assigned or "working" to someone who
+ * their ordering slot; and end any day share of theirs there. Leaving work assigned or "working" to someone who
  * can't action it would be a lie. Does nothing they still have another way
  * (owner, direct member, or the list's Space), so callers run it after every
  * change that could end access or lower a role. Like the slot cleanup, this
@@ -498,6 +516,20 @@ export function revokeListAccess(
 ): AccessLost {
   const access = listAccess(db, userId, projectId);
   if (access === "edit") return { unassigned: 0, ended: 0 };
+  // Their day, shared on a list they can no longer edit, isn't theirs to
+  // share there any more: whoever they shared it with leaves the list, which
+  // its owner never chose them for.
+  const sharedWith = db
+    .select({ id: projectMembers.id, userId: projectMembers.userId })
+    .from(projectMembers)
+    .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.onlyAssignedTo, userId)))
+    .all();
+  if (sharedWith.length) {
+    db.delete(projectMembers).where(inArray(projectMembers.id, sharedWith.map((m) => m.id))).run();
+    // Their own cleanup, as when removed: a slot only if they can't open it now.
+    for (const m of sharedWith) revokeListAccess(db, m.userId, projectId);
+  }
+  const shares = sharedWith.length ? { shares: sharedWith.length } : {};
   const held = db
     .select({ id: items.id, assigneeIds: items.assigneeIds })
     .from(items)
@@ -529,7 +561,7 @@ export function revokeListAccess(
     )
     .run().changes;
   // Still on their board while they can open it.
-  if (access !== null) return { unassigned: held.length, ended };
+  if (access !== null) return { unassigned: held.length, ended, ...shares };
   // No user FK to cascade the slot. Someone who never had one (a pending
   // invitee) makes this a harmless no-op.
   db.delete(projectPositions)
@@ -540,7 +572,7 @@ export function revokeListAccess(
       ),
     )
     .run();
-  return { unassigned: held.length, ended };
+  return { unassigned: held.length, ended, ...shares };
 }
 
 /** A user as an event names them: `@username`, falling back to the id. */
@@ -557,7 +589,13 @@ export function listMembers(
   userId: string,
   projectId: string,
 ): MemberView[] {
-  if (!getProject(db, userId, projectId)) return [];
+  const project = getProject(db, userId, projectId);
+  if (!project) return [];
+  const sharerName = (id: string | null) => {
+    if (!id || id === project.userId) return {};
+    const u = getUserById(db, id);
+    return { sharerName: u?.name || (u?.username ? `@${u.username}` : "someone") };
+  };
   return db
     .select({ membership: projectMembers, user: users })
     .from(projectMembers)
@@ -575,12 +613,13 @@ export function listMembers(
       role: r.membership.role,
       onlyAssignedTo: r.membership.onlyAssignedTo,
       onlyWithin: r.membership.onlyWithin,
+      ...sharerName(r.membership.onlyAssignedTo),
       createdAt: r.membership.createdAt,
     }));
 }
 
 /** Someone the caller already collaborates with, suggested for a quick invite. */
-export type CollaboratorView = Omit<MemberView, "status" | "role" | "onlyAssignedTo" | "onlyWithin" | "createdAt">;
+export type CollaboratorView = Omit<MemberView, "status" | "role" | "onlyAssignedTo" | "onlyWithin" | "sharerName" | "createdAt">;
 
 /**
  * People the owner already shares another list or a Space with (in either

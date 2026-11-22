@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { listAudit } from "./audit";
 import { addLabel, listLabels, updateLabel } from "./labels";
 import { createTestDb, createTestUser } from "./test-helpers";
-import { addItem, getItem, listDoneBefore, listItems, listSubItems, setItemParent } from "./items";
+import { addItem, getItem, getItemWithSubItems, hiddenParentTitles, readGroups, listDoneBefore, listItems, listSubItems, setItemParent } from "./items";
 import { countCommentsByItem, listComments, listMentionable, listRecentComments } from "./comments";
 import { buildAgendaBrief } from "./agendaBrief";
 import { resolveItemRef } from "./itemRef";
@@ -27,7 +27,7 @@ import { addComment, mentionNotice } from "./comments";
 import { plainText } from "./describe";
 import { listFollowedItemIds } from "./follows";
 import { completeItem, deleteItem, setItemsCollapsed, updateItem } from "./items";
-import { acceptInvite, inviteMember, listAssignees, setMemberRole } from "./members";
+import { acceptInvite, inviteMember, listAssignees, listMembers, removeMember, setMemberRole } from "./members";
 import { linkItemToPr, listItemsForPr, setPrState } from "./prLinks";
 import { updateProject } from "./projects";
 import {
@@ -462,7 +462,7 @@ describe("a membership shown only someone's today or week", () => {
     completeItem(db, lorna, mine("Done yesterday", "2026-11-18").id, "web");
     vi.setSystemTime(THU);
     const seen = () => listItems(db, jo, list.id, { includeCompleted: true }).map((i) => i.title).sort();
-    return { db, lorna, jo, list, seen };
+    return { db, lorna, fred, jo, list, seen };
   }
 
   it("shows today's: due, overdue, a span that's begun, and done today, by her clock", () => {
@@ -615,6 +615,76 @@ describe("a membership shown only someone's today or week", () => {
     expect(() => setSpaceMemberRole(db, lorna, space.id, kim, "commenter", "web", true, null)).toThrow(/only a space admin/);
     stopDayShare(db, lorna, kim, "web");
     expect(listDayShares(db, lorna).map((s) => s.name)).toEqual(["Jo"]);
+  });
+
+  it("lets an editor share her own day on someone else's list: just her items, the owner told, until she's off it", () => {
+    const { db, lorna, fred, jo, seen: onWeek } = setup("today");
+    const kim = createTestUser(db, { username: "kim", name: "Kim" });
+    const home = createProject(db, fred, { name: "Home" }, "web");
+    inviteMember(db, fred, home.id, "lorna", "web", "editor");
+    acceptInvite(db, lorna, home.id, "web");
+    inviteMember(db, fred, home.id, "kim", "web", "commenter");
+    acceptInvite(db, kim, home.id, "web");
+    const today = "2026-11-19";
+    const add = (title: string, who: string, parentId?: string) =>
+      addItem(db, fred, { projectId: home.id, title, assigneeIds: [who], dueDate: today, ...(parentId ? { parentId } : {}) }, "web");
+    add("Lorna's errand", lorna);
+    const chores = add("Fred's chores", fred);
+    add("Lorna's bit", lorna, chores.id);
+    add("Fred's bit", fred, chores.id);
+    const task = add("Lorna's task", lorna);
+    add("Fred helps", fred, task.id);
+    add("Fred's own", fred);
+
+    // Kim only comments there, so it isn't hers to share.
+    expect(() => inviteMember(db, kim, home.id, "jo", "web", "commenter", { onlyMine: true, within: "today" })).toThrow(/only the list owner/);
+    // Nor can Lorna share more than her day.
+    expect(() => inviteMember(db, lorna, home.id, "jo", "web", "commenter", { onlyMine: true })).toThrow(/only the list owner/);
+    inviteMember(db, lorna, home.id, "jo", "web", "commenter", { onlyMine: true, within: "today" });
+    expect(listNotifications(db, fred).map((n) => plainText(n.parts))).toContainEqual(expect.stringContaining("Jo"));
+    acceptInvite(db, jo, home.id, "web");
+
+    const seen = () => listItems(db, jo, home.id, { includeCompleted: true }).map((i) => i.title).sort();
+    // Her items only: not Fred's item her sub-item sits under, just its title.
+    expect(seen()).toEqual(["Lorna's bit", "Lorna's errand", "Lorna's task"]);
+    expect(hiddenParentTitles(db, jo)[chores.id]).toBe("Fred's chores");
+    expect(() => addComment(db, jo, chores.id, "hi", "web")).toThrow();
+    const title = (id: string) => getItem(db, lorna, id)?.title;
+    expect(myDayView(db, lorna).itemIds.map(title).sort()).toEqual([...onWeek(), ...seen()].sort());
+
+    // Nor through the item's own view, or its history.
+    expect(getItemWithSubItems(db, jo, chores.id)).toEqual([]);
+    // Her sub-item there still updates live for Jo, as a group of its own.
+    const bit = listItems(db, jo, home.id).filter((i) => i.title === "Lorna's bit").map((i) => i.id);
+    expect(readGroups(db, jo, bit).items.map((i) => i.title)).toEqual(["Lorna's bit"]);
+    expect(listAudit(db, jo, { itemId: task.id }).map((r) => plainText(r.parts ?? [])).join()).not.toContain("Fred helps");
+    // Her undated item doesn't land in her day by Fred's sub-item under it.
+    const undated = addItem(db, fred, { projectId: home.id, title: "Lorna undated", assigneeIds: [lorna] }, "web");
+    add("Fred's today", fred, undated.id);
+    expect(seen()).not.toContain("Lorna undated");
+
+    // She manages it like any day share of hers; Fred can still remove Jo.
+    expect(listDayShares(db, lorna).find((s) => s.name === "Jo")?.places.map((p) => p.name)).toEqual(["Week", "Home"]);
+    expect(() => setMemberRole(db, lorna, home.id, jo, "viewer", "web")).toThrow(/only the list owner/);
+    expect(() => setMemberRole(db, lorna, home.id, jo, "commenter", "web", undefined, null)).toThrow(/only the list owner/);
+    // Fred's list shows whose day Jo sees: Lorna's, not his.
+    expect(listMembers(db, fred, home.id).find((m) => m.userId === jo)?.sharerName).toBe("Lorna");
+
+    // Fred making it only his items doesn't turn it into a share of his day.
+    const sam = createTestUser(db, { username: "sam", name: "Sam" });
+    inviteMember(db, lorna, home.id, "sam", "web", "viewer", { onlyMine: true, within: "today" });
+    setMemberRole(db, fred, home.id, sam, "viewer", "web", true);
+    expect(listMembers(db, fred, home.id).find((m) => m.userId === sam)).toMatchObject({ onlyAssignedTo: fred, onlyWithin: null });
+    expect(listDayShares(db, fred)).toEqual([]);
+    expect(listDayShares(db, lorna).map((s) => s.name)).not.toContain("Sam");
+
+    // Off the list, her share ends there: Jo leaves it, and the log says so.
+    removeMember(db, fred, home.id, lorna, "web");
+    expect(listAccess(db, jo, home.id)).toBeNull();
+    expect(listDayShares(db, lorna).find((s) => s.name === "Jo")?.places.map((p) => p.name)).toEqual(["Week"]);
+    expect(listAudit(db, fred, { projectId: home.id }).map((r) => plainText(r.parts ?? []))).toContainEqual(
+      expect.stringContaining("stopped sharing their day with 1 person"),
+    );
   });
 
   it("is kept with a role change, cleared with the limit, and needs one", () => {

@@ -175,7 +175,7 @@ export function listAudit(
     // sub-items. Authorized like the item itself, through its current list,
     // so whoever can open the item can read its history and nobody else can.
     const accessible = db
-      .select({ id: items.id })
+      .select({ id: items.id, whole: sql<number>`${hasWholeListAccess(userId)}` })
       .from(items)
       .innerJoin(projects, eq(projects.id, items.projectId))
       .where(and(eq(items.id, opts.itemId), hasItemAccess(userId)))
@@ -193,6 +193,9 @@ export function listAudit(
         and(eq(auditLog.entityType, "comment"), eq(auditLog.parentId, opts.itemId)),
       ),
     );
+    // Only the sub-items they see, for someone shown just one person's items
+    // there: that person's under someone else's item, not the rest.
+    if (!accessible.whole) filters.push(seesRowItem(userId));
   } else if (opts.projectId) {
     // Project-scoped view: every actor's activity on this one project. The
     // projectId comes from the client, so authorize it here — only someone

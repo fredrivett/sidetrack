@@ -152,6 +152,11 @@ export function ShareDialog({
     });
   }
 
+  // Whose items someone sees: the owner's (yours), or, for someone a member
+  // shares their own day with, that member's, by name (as SpacesPanel does).
+  const limit = (m: (typeof members)[number]) =>
+    m.sharerName ? { value: false, someoneElse: m.sharerName } : { value: m.onlyAssignedTo !== null };
+
   function changeRole(targetUserId: string, next: ListRole, onlyMine?: boolean) {
     if (!projectId) return;
     setError(null);
@@ -278,10 +283,7 @@ export function ShareDialog({
               scope="list"
                       disabled={pending}
                       onChange={(next) => changeRole(m.userId, next)}
-                      onlyMine={{
-                        value: m.onlyAssignedTo !== null,
-                        onChange: (on) => changeRole(m.userId, m.role, on),
-                      }}
+                      onlyMine={{ ...limit(m), onChange: (on) => changeRole(m.userId, m.role, on) }}
                       within={m.onlyWithin}
                     />
                     <button

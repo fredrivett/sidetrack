@@ -189,3 +189,23 @@ test("shares your day, which shows on their Check-ins, not their board", async (
   await expect(joPage.getByText("Nobody shares their day with you yet.")).toBeVisible();
   await context.close();
 });
+
+test("shares your day on someone else's list you edit, not one you only comment on", async ({ page, user }) => {
+  const fred = await createPerson();
+  const home = fred.shareList("Fred's home", [], user.id, user.username, "editor");
+  fred.shareList("Fred's notes", [], user.id, user.username, "commenter");
+  user.addItem(home.id, "Water the plants", [user.id], "2020-01-06");
+  const jo = await createPerson();
+  await page.goto("/check-ins");
+  await page.getByRole("button", { name: "Share my day" }).click();
+  const dialog = page.getByRole("dialog", { name: "Share my day" });
+  await expect(dialog.getByRole("checkbox", { name: "Share from Fred's notes" })).toHaveAttribute("aria-disabled", "true");
+  await expect(dialog.getByText("You can't edit this list")).toBeVisible();
+  await dialog.getByLabel("Who to share your day with").fill(jo.username);
+  await dialog.getByRole("checkbox", { name: "Share from Fred's home" }).click();
+  await dialog.getByRole("button", { name: "Share my day" }).click();
+  await expect(dialog).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByText("Who sees your day")).toBeVisible();
+  await expect(page.getByText("Water the plants")).toBeVisible();
+});

@@ -15,7 +15,7 @@ import { myDayView } from "@/core/dayShares";
 import { listLabels } from "@/core/labels";
 import { getDb } from "@/core/db";
 import { projectRefPrefixes } from "@/core/itemRef";
-import { getItemWithSubItems, listItems, reopenDueRepeats } from "@/core/items";
+import { getItemWithSubItems, hiddenParentTitles, listItems, reopenDueRepeats } from "@/core/items";
 import { listNotificationLevels, listNotifications } from "@/core/notifications";
 import { listFollowedItemIds } from "@/core/follows";
 import { listAssignees, listPendingInvites } from "@/core/members";
@@ -168,6 +168,7 @@ export default async function Home({
             pendingPhotos={listPendingSources(db, userId)}
             checkIns={[...checkIns.values()]}
             myDay={myDay}
+            parentTitles={hiddenParentTitles(db, userId)}
             // Someone's day it shows only part of turns over: what's on it changes.
             refreshAt={Math.min(...[...limited.values()].map((l) => l.turnsAt ?? Infinity)) || null}
             initialListId={typeof p === "string" ? p : null}
