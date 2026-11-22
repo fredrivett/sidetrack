@@ -153,6 +153,8 @@ export function isSaved(value: unknown): value is Saved {
 export function applySaved(list: Item[], saved: Saved): Item[] {
   const rows = new Map(saved.items.map((i) => [i.id, i]));
   const gone = new Set(saved.gone);
+  // The same list when none of the rows are in it.
+  if (!list.some((i) => rows.has(i.id) || gone.has(i.id))) return list;
   return list.flatMap((i) => (gone.has(i.id) ? [] : [rows.get(i.id) ?? i]));
 }
 
@@ -203,6 +205,19 @@ function overlay(byProject: Record<string, Item[]>, seq: number, rows: Rows, sin
     list.splice(at === -1 ? list.length : at, 0, row);
   }
   return out;
+}
+
+/** `next`, with each list that holds the same items as in `prev` kept as `prev`'s array; `prev` when all are. */
+function sameLists(prev: Record<string, Item[]>, next: Record<string, Item[]>) {
+  let changed = Object.keys(prev).length !== Object.keys(next).length;
+  const out: Record<string, Item[]> = {};
+  for (const [id, list] of Object.entries(next)) {
+    const had = prev[id];
+    const same = had !== undefined && had.length === list.length && had.every((i, n) => i === list[n]);
+    out[id] = same ? had : list;
+    if (!same) changed = true;
+  }
+  return changed ? out : prev;
 }
 
 /**
@@ -264,10 +279,16 @@ export function useSavedItems(
       ownSaves.current = [...ownSaves.current.filter(([, to]) => to > rendered.current), [from, saved.seq]];
     }
   }, []);
-  const items = useMemo(
+  // Each list keeps its array while it holds the same rows: a list with a
+  // row saved earlier would otherwise get a new one on every save anywhere,
+  // and re-render (ProjectColumn is memoized on its items).
+  const [kept, setKept] = useState(itemsByProject);
+  const built = useMemo(
     () => overlay(itemsByProject, seq, rows, completedSince),
     [itemsByProject, seq, rows, completedSince],
   );
+  const items = useMemo(() => sameLists(kept, built), [kept, built]);
+  if (items !== kept) setKept(items);
   const followed = useMemo(
     () => [...follows].flatMap(([id, asOf]) => (asOf > seq ? [id] : [])),
     [follows, seq],

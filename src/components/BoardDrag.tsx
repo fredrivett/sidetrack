@@ -14,7 +14,7 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { createContext, type ReactNode, use, useRef, useState } from "react";
+import { createContext, type ReactNode, use, useCallback, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import type { Item } from "@/core/schema";
 import type { RowProps } from "./ItemList";
@@ -207,10 +207,10 @@ export function BoardDrag({
   const [source, setSource] = useState<string | null>(null);
   const [request, setRequest] = useState<MoveRequest | null>(null);
 
-  function setIncoming(next: Incoming | null) {
+  const setIncoming = useCallback((next: Incoming | null) => {
     latest.current = next;
     setIncomingState(next);
-  }
+  }, []);
   const canMoveTo = (id: string) =>
     groups?.some((g) => g.lists.some((l) => l.id === id)) ?? false;
 
@@ -254,10 +254,32 @@ export function BoardDrag({
     onDragCancel: (a) => answer(a.active)?.onDragCancel(a),
   };
 
-  const move: MoveTargets | null = groups && {
-    groups,
-    open: (item, projectId, position) => setRequest({ item, projectId, position }),
-  };
+  // Both contexts keep their value while what they say is the same: every
+  // list reads them, so a new one each render would re-render every list on
+  // the board for a change to one of them.
+  const move = useMemo<MoveTargets | null>(
+    () =>
+      groups && {
+        groups,
+        open: (item, projectId, position) => setRequest({ item, projectId, position }),
+      },
+    [groups],
+  );
+  const drag = useMemo<BoardDragValue>(
+    () => ({
+      incoming,
+      getIncoming: () => latest.current,
+      setIncoming,
+      register: (projectId, list) => {
+        lists.set(projectId, list);
+        return () => {
+          if (lists.get(projectId) === list) lists.delete(projectId);
+        };
+      },
+      source,
+    }),
+    [incoming, setIncoming, lists, source],
+  );
   function close(moved?: boolean) {
     setRequest(null);
     // Only the row dropped for this move: another may still be waiting for
@@ -279,20 +301,7 @@ export function BoardDrag({
 
   return (
     <MoveItemContext value={move}>
-      <BoardDragContext
-        value={{
-          incoming,
-          getIncoming: () => latest.current,
-          setIncoming,
-          register: (projectId, list) => {
-            lists.set(projectId, list);
-            return () => {
-              if (lists.get(projectId) === list) lists.delete(projectId);
-            };
-          },
-          source,
-        }}
-      >
+      <BoardDragContext value={drag}>
         <DndContext
           // Stable, unique id so dnd-kit's aria-describedby is deterministic
           // across SSR and client. Without it, dnd-kit falls back to a global
