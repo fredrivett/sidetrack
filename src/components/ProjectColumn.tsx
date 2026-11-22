@@ -105,6 +105,10 @@ export const ProjectColumn = memo(function ProjectColumn({
   // The header's badge swaps the list for these, and shows only for more than
   // one. Derived, so the list comes back by itself when they drop to one.
   const [showDoneChoice, setShowDone] = useState(false);
+  // Cancelled items are listed behind the badge, to find and reopen, but
+  // aren't counted as done.
+  const doneCount = doneShown.filter((g) => !g.cancelled).length;
+  const cancelledCount = doneShown.length - doneCount;
   const hasDoneBadge = doneShown.length > 1;
   const showDone = showDoneChoice && hasDoneBadge;
   // Set by the first click, so the swap animates but the board's first
@@ -195,7 +199,7 @@ export const ProjectColumn = memo(function ProjectColumn({
             <button
               type="button"
               aria-pressed={showDone}
-              aria-label={`${doneShown.length} done this week`}
+              aria-label={`${doneCount} done this week${cancelledCount ? `, ${cancelledCount} cancelled` : ""}`}
               title={showDone ? "Back to the list" : "Done this week"}
               onClick={() => {
                 setShowDone(!showDone);
@@ -208,7 +212,7 @@ export const ProjectColumn = memo(function ProjectColumn({
               }`}
             >
               <Check className="size-3.5" />
-              {doneShown.length}
+              {doneCount}
             </button>
           </HeaderSlot>
           <HeaderSlot show={parents.length > 0 && !showDone}>

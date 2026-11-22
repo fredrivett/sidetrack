@@ -210,7 +210,8 @@ export function buildAgendaBrief(
     const doneIds = new Set(done.map((d) => d.id));
     finished = [...doneIds]
       .map((id) => byId.get(id))
-      .filter((i): i is Item => i?.completedAt != null && i.completedAt >= since)
+      // Cancelled since isn't finished, however it was ticked before.
+      .filter((i): i is Item => i?.completedAt != null && i.completedAt >= since && !i.cancelled)
       .filter((i) => !i.parentId || !doneIds.has(i.parentId))
       .map((item) => ({ item, at: item.completedAt ?? 0 }));
     const sinceDay = dayOf(since, timeZone);

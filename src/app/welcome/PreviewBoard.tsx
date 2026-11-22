@@ -134,6 +134,9 @@ function demo(today: string, now: number) {
       repeatDay: null,
       smartRule: null,
       smartLead: null,
+      cancelled: false,
+      cancelReason: null,
+      replacedById: null,
       completedAt: null,
       createdAt: now,
       ...extra,
@@ -529,6 +532,24 @@ export function PreviewBoard({
     setParent: (item, parentId) => {
       setItems((list) => applyItemChange(list, { kind: "parent", item, parentId }));
       nest(item, parentId);
+    },
+    cancel: async (item, opts) => {
+      const at = Date.now();
+      setItems((list) =>
+        applyItemChange(list, { kind: "complete", item, done: true, at }).map((i) =>
+          i.id === item.id || (i.parentId === item.id && i.completedAt === at)
+            ? {
+                ...i,
+                cancelled: true,
+                cancelReason: i.id === item.id ? (opts.reason?.trim() || null) : null,
+                // The preview can't resolve a typed ref; the chip shows the reason alone.
+                replacedById: null,
+              }
+            : i,
+        ),
+      );
+      record("cancel", item.projectId, [said("cancelled "), named(item)]);
+      return true;
     },
   };
   const saves: ItemSaves = (() => {

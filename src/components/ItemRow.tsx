@@ -8,6 +8,7 @@ import {
   CalendarX,
   Check,
   ChevronRight,
+  CircleX,
   Copy,
   Eye,
   IndentDecrease,
@@ -54,6 +55,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
+import { CancelItemDialog, CancelledChip } from "./CancelItem";
 import { Kbd } from "@/components/ui/kbd";
 import { useMediaQuery } from "@/components/ui/use-media-query";
 import { toggleAssignee } from "@/lib/assignees";
@@ -200,6 +202,9 @@ function ItemRowView({
     if (isDragging) draggedRef.current = true;
   }, [isDragging]);
   const completed = item.completedAt !== null;
+  // Closed without being done: an ✕, a dashed strike and a Cancelled chip.
+  const cancelled = completed && item.cancelled;
+  const [cancelOpen, setCancelOpen] = useState(false);
   const repeat = repeatOf(item);
   const listLabels = useListLabels(item.projectId);
   const commentCount = useCommentCount(item.id);
@@ -338,6 +343,7 @@ function ItemRowView({
     // them. Disabled without hover (touch): its long-press would fight the
     // touch drag, and tapping the row opens the detail dialog, which has the
     // same actions.
+    <>
     <ContextMenu
       disabled={!canHover}
       onOpenChange={(open) => {
@@ -383,9 +389,14 @@ function ItemRowView({
         <span className="mt-0.5 flex" onClick={(e) => e.stopPropagation()}>
           <Checkbox
             checked={completed}
+            cancelled={cancelled}
             onCheckedChange={toggle}
             readOnly={!canEdit}
-            aria-label={canEdit ? (completed ? "Uncomplete" : "Complete") : completed ? "Done" : "Not done"}
+            aria-label={
+              cancelled
+                ? canEdit ? "Reopen" : "Cancelled"
+                : canEdit ? (completed ? "Uncomplete" : "Complete") : completed ? "Done" : "Not done"
+            }
           />
         </span>
 
@@ -400,7 +411,9 @@ function ItemRowView({
               }`}
             >
               {/* Struck through on its own, so the line stops at the title. */}
-              <span className={completed ? "line-through" : undefined}>{item.title}</span>
+              <span className={completed ? "line-through" : undefined}>
+                {item.title}
+              </span>
               {/* Inline after the last word, so it marks a description
                   without adding a line to the row. The no-break space keeps it
                   from wrapping onto a line of its own. */}
@@ -432,8 +445,9 @@ function ItemRowView({
                 {context}
               </span>
             )}
-            {(list || item.labels.length > 0 || item.dueDate || item.smartRule || repeat) && (
+            {(cancelled || list || item.labels.length > 0 || item.dueDate || item.smartRule || repeat) && (
               <span className="flex flex-wrap items-center gap-1">
+                {cancelled && <CancelledChip item={item} />}
                 {list && (
                   <span className="inline-flex max-w-full items-center gap-1 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] text-neutral-500 dark:bg-neutral-800">
                     <ProjectIcon
@@ -674,6 +688,12 @@ function ItemRowView({
           </ContextMenuSub>
         )}
         <MoveToListContextMenu item={item} />
+        {!completed && (
+          <ContextMenuItem data-replay-safe onClick={() => setCancelOpen(true)}>
+            <CircleX />
+            Cancel item…
+          </ContextMenuItem>
+        )}
         {(nestUnder || parentTitle) && (
           <>
             <ContextMenuSeparator />
@@ -714,6 +734,9 @@ function ItemRowView({
         )}
       </ContextMenuContent>
     </ContextMenu>
+    {/* Mounted once asked for: a board has hundreds of rows. */}
+    {cancelOpen && <CancelItemDialog item={item} open={cancelOpen} onOpenChange={setCancelOpen} />}
+    </>
   );
 }
 

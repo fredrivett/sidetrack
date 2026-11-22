@@ -146,6 +146,7 @@ function rowsShowAll(event: ChangeEvent): boolean {
     case "item.updated":
       return !event.changes.labels && !event.changes.assignees;
     case "item.completed":
+    case "item.cancelled":
     case "item.reopened":
     case "item.reordered":
     case "item.deleted":

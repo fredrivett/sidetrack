@@ -72,6 +72,7 @@ import {
 } from "@/core/members";
 import {
   addItem,
+  cancelItem,
   completeItem,
   deleteItem,
   getItem,
@@ -736,6 +737,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "check it before starting work so you don't duplicate another agent's. " +
         "`smart` is set when its due date is smart (set_smart_due): its rule, lead and matches, the one its date comes from marked current. " +
         "`fromPhoto` is set when it was added from a photo with add_from_photo: { source_id, created_at }. " +
+        "A cancelled item (cancel_item) has `cancelled` true, `cancelReason`, and `replacedBy`, the ref of the item that did its work, when there is one. " +
         "`comments` is its discussion, oldest first: each has body (Markdown), author (name, displayUsername), agentName when an agent wrote it for that person, createdAt and editedAt. " +
         "Read them before working on the item: they often hold decisions and context the description doesn't. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id; the result carries its display `ref`.",
@@ -755,6 +757,10 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         comments: listComments(db, userId, item.id),
         fromPhoto: photoOf(getItemSource(db, userId, item.id)),
         ...(item.smartRule !== null && { smart: getSmartDue(db, userId, item.id) }),
+        ...(() => {
+          const by = item.replacedById ? getItem(db, userId, item.replacedById) : undefined;
+          return by ? { replacedBy: withItemRef(db, userId, by).ref } : {};
+        })(),
       });
     },
   );
@@ -1387,11 +1393,43 @@ export function registerTools(server: McpServer, ctx: McpContext) {
   );
 
   server.registerTool(
+    "cancel_item",
+    {
+      title: "Cancel item",
+      description:
+        "Close an item without it being done: work that won't happen, or that another item did instead. " +
+        "It leaves the board like a completed item but never counts as finished (the greeting, Done) and never repeats again. " +
+        "Cancelling a parent cancels its open sub-items. Cancelling a parent's last open sub-item completes the parent if at least one sub-item was done, and leaves it open if all were cancelled. " +
+        "reason is the user's words for why (e.g. \"won't do\"). replaced_by is the item that did the work instead, by ref or id; use it, not complete_item, when a replanned item supersedes this one. " +
+        "uncomplete_item reopens it and clears both. id and replaced_by accept the item's short ref (e.g. \"ENG-42\") or its internal id.",
+      inputSchema: {
+        id: z.string(),
+        reason: z.string().max(500).optional(),
+        replaced_by: z.string().optional(),
+      },
+    },
+    async ({ id, reason, replaced_by }) => {
+      const { db } = getDb();
+      const { item, error } = resolveItemArg(db, userId, id);
+      if (error) return error;
+      let replacedById: string | undefined;
+      if (replaced_by) {
+        const r = resolveItemArg(db, userId, replaced_by);
+        if (r.error) return r.error;
+        replacedById = r.item.id;
+      }
+      return json(
+        withItemRef(db, userId, cancelItem(db, userId, item.id, { reason, replacedById }, SOURCE)),
+      );
+    },
+  );
+
+  server.registerTool(
     "uncomplete_item",
     {
       title: "Uncomplete item",
       description:
-        "Reopen a completed item. It returns to the same place in the list it had before. " +
+        "Reopen a completed or cancelled item (a cancelled one loses its reason and replacement). It returns to the same place in the list it had before. " +
         "Reopening a sub-item of a finished parent reopens the parent too; reopening a parent leaves its sub-items as they are. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id.",
       inputSchema: { id: z.string() },

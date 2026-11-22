@@ -70,6 +70,7 @@ const ACTIONS: Record<string, string | Exempt> = {
   addSmartMatchAction: "add_smart_match",
   removeSmartMatchAction: "remove_smart_match",
   completeItemAction: "complete_item",
+  cancelItemAction: "cancel_item",
   uncompleteItemAction: "uncomplete_item",
   listDoneBeforeAction: "search_done",
   getItemWithSubItemsAction: "get_item",
@@ -132,6 +133,7 @@ const ACTIONS: Record<string, string | Exempt> = {
   addFromSourceAction: "add_photo_lines",
   discardSourceAction: "discard_photo",
   getItemSourceAction: "get_item",
+  getReplacementAction: "get_item",
 };
 
 function serverActions(): string[] {

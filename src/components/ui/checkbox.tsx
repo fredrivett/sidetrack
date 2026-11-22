@@ -2,7 +2,7 @@
 
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox"
 import { cn } from "@/lib/utils"
-import { CheckIcon } from "lucide-react"
+import { CheckIcon, XIcon } from "lucide-react"
 
 // A task-completion circle (Things/Todoist/Reminders style) rather than a
 // form checkbox: a thin outline at rest, a faint check on hover to preview the
@@ -12,12 +12,20 @@ import { CheckIcon } from "lucide-react"
 const root = (el: HTMLElement) =>
   el.closest<HTMLElement>('[data-slot="checkbox"]')
 
-function Checkbox({ className, ...props }: CheckboxPrimitive.Root.Props) {
+// A cancelled item (closed without being done) keeps its circle hollow, with
+// an ✕ in place of the check, so it never reads as finished.
+function Checkbox({
+  className,
+  cancelled = false,
+  ...props
+}: CheckboxPrimitive.Root.Props & { cancelled?: boolean }) {
   return (
     <CheckboxPrimitive.Root
       data-slot="checkbox"
       className={cn(
         "group/checkbox peer relative flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full border-[1.5px] border-neutral-300 text-neutral-500 transition-colors outline-none hover:border-neutral-500 focus-visible:ring-3 focus-visible:ring-ring/50 data-disabled:cursor-not-allowed data-disabled:opacity-50 data-checked:border-neutral-400 data-checked:bg-neutral-400 data-checked:text-white dark:border-neutral-600 dark:text-neutral-400 dark:hover:border-neutral-400 dark:data-checked:border-neutral-600 dark:data-checked:bg-neutral-600 dark:data-checked:text-neutral-900",
+        cancelled &&
+          "data-checked:border-dashed data-checked:border-neutral-400 data-checked:bg-transparent data-checked:text-neutral-500 dark:data-checked:border-neutral-500 dark:data-checked:bg-transparent dark:data-checked:text-neutral-400",
         className
       )}
       {...props}
@@ -30,7 +38,7 @@ function Checkbox({ className, ...props }: CheckboxPrimitive.Root.Props) {
         data-slot="checkbox-indicator"
         className="grid place-content-center opacity-0 transition-opacity group-hover/checkbox:opacity-70 group-data-checked/checkbox:opacity-100 [&>svg]:size-2.5"
       >
-        <CheckIcon strokeWidth={3.5} />
+        {cancelled ? <XIcon strokeWidth={3.5} /> : <CheckIcon strokeWidth={3.5} />}
       </span>
       {/* A haptic tick on iPhone, which has no vibrate API: iOS 18+ plays one
           only when the user's own tap toggles a native switch (earlier iOS

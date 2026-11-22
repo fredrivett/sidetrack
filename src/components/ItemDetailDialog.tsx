@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ChevronRight,
   Circle,
+  CircleX,
   Copy,
   CornerLeftUp,
   ExternalLink,
@@ -85,6 +86,7 @@ import { useItemChanges } from "./use-optimistic-items";
 import { useCopyItemRef } from "./useCopyItemRef";
 import { useFollows } from "./follows";
 import { Struck } from "./Struck";
+import { CancelItemDialog, CancelledChip } from "./CancelItem";
 import { AgentAvatar, AvatarStack, assigneeName, assigneeNames } from "./UserAvatar";
 import { useAgentAssignment, useItemAgentSessions } from "./agent-sessions";
 
@@ -387,6 +389,7 @@ function Checklist({
       >
         <Checkbox
           checked={done}
+          cancelled={done && child.cancelled}
           onCheckedChange={() => setCompleted(child, !done)}
           readOnly={readOnly}
           aria-label={`${readOnly ? (done ? "Done:" : "Not done:") : done ? "Uncomplete" : "Complete"} ${child.title}`}
@@ -629,6 +632,11 @@ export function ItemDetailView({
   // A sub-item's assignee picker in the checklist, when one is open.
   const [childPickerFor, setChildPickerFor] = useState<string | null>(null);
   const completed = item.completedAt !== null;
+  // Closed without being done: an ✕ and a dashed strike, never the green tick.
+  const cancelled = completed && item.cancelled;
+  const [cancelOpen, setCancelOpen] = useState(false);
+  // Done and cancelled titles share the strike; the ✕ and chip tell them apart.
+  const strike = "text-neutral-400 line-through";
   const ref = formatItemRef(prefix, item.number);
   const { assigneesById, setAssignees } = useOptimisticAssignees([item, ...checklist]);
   const assigneeIds = assigneesById[item.id];
@@ -781,10 +789,10 @@ export function ItemDetailView({
         {!canEdit ? (
           <span
             role="img"
-            aria-label={completed ? "Done" : "Not done"}
-            className={`mt-px shrink-0 ${completed ? "text-green-600 dark:text-green-500" : "text-neutral-300 dark:text-neutral-600"}`}
+            aria-label={cancelled ? "Cancelled" : completed ? "Done" : "Not done"}
+            className={`mt-px shrink-0 ${cancelled ? "text-neutral-400" : completed ? "text-green-600 dark:text-green-500" : "text-neutral-300 dark:text-neutral-600"}`}
           >
-            {completed ? <CheckCircle2 className="size-6" /> : <Circle className="size-6" />}
+            {cancelled ? <CircleX className="size-6" /> : completed ? <CheckCircle2 className="size-6" /> : <Circle className="size-6" />}
           </span>
         ) : (
         <button
@@ -792,22 +800,24 @@ export function ItemDetailView({
           onClick={toggle}
           disabled={pending}
           aria-pressed={completed}
-          aria-label={completed ? "Completed" : "Complete"}
-          title={completed ? "Mark as not done (X)" : "Complete (X)"}
+          aria-label={cancelled ? "Cancelled" : completed ? "Completed" : "Complete"}
+          title={cancelled ? "Reopen (X)" : completed ? "Mark as not done (X)" : "Complete (X)"}
           className={`mt-px shrink-0 rounded-full transition disabled:opacity-50 ${
-            completed
+            cancelled
+              ? "text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+              : completed
               ? "text-green-600 hover:text-green-700 dark:text-green-500"
               : "text-neutral-400 hover:text-green-600 dark:text-neutral-500 dark:hover:text-green-500"
           }`}
         >
-          {completed ? <CheckCircle2 className="size-6" /> : <Circle className="size-6" />}
+          {cancelled ? <CircleX className="size-6" /> : completed ? <CheckCircle2 className="size-6" /> : <Circle className="size-6" />}
         </button>
         )}
         <ResponsiveDialogTitle className="min-w-0 flex-1">
           {!canEdit ? (
             <span
               className={`block w-full break-words text-base leading-6 font-medium ${
-                completed ? "text-neutral-400 line-through" : ""
+                completed ? strike : ""
               }`}
             >
               <InlineCode>{item.title}</InlineCode>
@@ -821,7 +831,7 @@ export function ItemDetailView({
             }
             required
             className={`block w-full break-words text-base leading-6 font-medium ${
-              completed ? "text-neutral-400 line-through" : ""
+              completed ? strike : ""
             }`}
             inputClassName="w-full text-base"
             renderValue={(title) => <InlineCode>{title}</InlineCode>}
@@ -1050,12 +1060,36 @@ export function ItemDetailView({
     </div>
 
     <div className="flex shrink-0 items-center justify-between border-t border-neutral-200 px-4 py-2.5 dark:border-neutral-800">
-      <span data-replay-safe className="text-xs text-neutral-400">
-        {completed && item.completedAt
-          ? `Completed ${dayLabel(item.completedAt)}`
-          : `Created ${dayLabel(item.createdAt)}`}
+      <span data-replay-safe className="flex min-w-0 flex-wrap items-center gap-1 text-xs text-neutral-400">
+        {cancelled && item.completedAt ? (
+          <>
+            <span>
+              Cancelled {dayLabel(item.completedAt)}
+              {item.cancelReason && `: ${item.cancelReason}`}
+            </span>
+            <CancelledChip item={item} />
+          </>
+        ) : completed && item.completedAt ? (
+          `Completed ${dayLabel(item.completedAt)}`
+        ) : (
+          `Created ${dayLabel(item.createdAt)}`
+        )}
       </span>
       {canEdit ? (
+        <span className="flex shrink-0 items-center gap-1">
+        {!completed && (
+          <Button
+            variant="ghost"
+            size="sm"
+            data-replay-safe
+            onClick={() => setCancelOpen(true)}
+            disabled={pending}
+            className="text-neutral-500"
+          >
+            <CircleX />
+            Cancel…
+          </Button>
+        )}
         <Button
           variant={confirmingDelete ? "destructive" : "ghost"}
           size="sm"
@@ -1068,6 +1102,7 @@ export function ItemDetailView({
           {confirmingDelete ? "Confirm delete?" : "Delete"}
           {!confirmingDelete && <Kbd className="ml-0.5">⌫</Kbd>}
         </Button>
+        </span>
       ) : (
         <span className="inline-flex items-center gap-1 text-xs text-neutral-400">
           {access === "comment" ? <MessageSquare className="size-3.5" /> : <Eye className="size-3.5" />}
@@ -1075,6 +1110,7 @@ export function ItemDetailView({
         </span>
       )}
     </div>
+    {cancelOpen && <CancelItemDialog item={item} open={cancelOpen} onOpenChange={setCancelOpen} />}
     </>
   );
 }

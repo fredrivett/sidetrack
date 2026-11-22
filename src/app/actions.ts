@@ -4,6 +4,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { appBaseUrl } from "./site";
+import { formatItemRef } from "@/lib/itemRef";
+import {
+  projectRefPrefixes as projectRefPrefixesCore,
+  resolveItemRef as resolveItemRefCore,
+} from "@/core/itemRef";
 import {
   createApiKey as createApiKeyCore,
   revokeApiKey as revokeApiKeyCore,
@@ -78,6 +83,7 @@ import {
 import type { FeedbackArea, FeedbackKind, FeedbackRating } from "@/lib/feedback";
 import {
   addItem as addItemCore,
+  cancelItem as cancelItemCore,
   completeItem as completeItemCore,
   deleteItem as deleteItemCore,
   getItem as getItemCore,
@@ -714,6 +720,38 @@ export async function completeItemAction(id: string) {
   return savedRows(db, userId, from, groupIdsCore(db, userId, id));
 }
 
+/**
+ * Cancel an item. `replacedBy` is the ref someone typed ("SDT-87"); an
+ * unknown or ambiguous one refuses the whole cancel, so nothing closes on a
+ * guess.
+ */
+export async function cancelItemAction(
+  id: string,
+  opts: { reason?: string | null; replacedBy?: string | null },
+) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  let replacedById: string | null = null;
+  const typed = opts.replacedBy?.trim();
+  if (typed) {
+    const found = resolveItemRefCore(db, userId, typed);
+    if (found.status !== "ok") {
+      throw new Error(
+        found.status === "ambiguous" ? `${typed} matches more than one item` : `No item ${typed}`,
+      );
+    }
+    replacedById = found.item.id;
+  }
+  // Cancelling ends the agents' sessions on it too, which no row shows.
+  const working = groupIdsCore(db, userId, id).some(
+    (i) => listOpenAgentSessionsCore(db, userId, i).length > 0,
+  );
+  const from = changeSeq();
+  cancelItemCore(db, userId, id, { reason: opts.reason, replacedById }, SOURCE);
+  if (working) refresh();
+  return savedRows(db, userId, from, groupIdsCore(db, userId, id));
+}
+
 export async function uncompleteItemAction(id: string) {
   const userId = await requireUserId();
   const { db } = getDb();
@@ -856,6 +894,17 @@ export async function discardSourceAction(sourceId: string) {
 }
 
 /** The photo an item was added from, and where on it, for the item's dialog. */
+/** The item a cancelled one was replaced by, as its cancelled chip names it: null when it's gone or out of sight. */
+export async function getReplacementAction(itemId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const replacedById = getItemCore(db, userId, itemId)?.replacedById;
+  const it = replacedById ? getItemCore(db, userId, replacedById) : undefined;
+  if (!it) return null;
+  const prefix = projectRefPrefixesCore(db, userId)[it.projectId] ?? "";
+  return { id: it.id, ref: formatItemRef(prefix, it.number), title: it.title, done: it.completedAt !== null };
+}
+
 export async function getItemSourceAction(itemId: string) {
   const userId = await requireUserId();
   const { db } = getDb();
