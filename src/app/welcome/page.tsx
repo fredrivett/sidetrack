@@ -87,6 +87,29 @@ export default async function Welcome() {
       ? { href: "/login?mode=sign-up", label: "Get started", nudge: "Sign up to try it out." }
       : { href: "/login", label: "Sign in", nudge: "Sign in to try it out." };
 
+  // The repo on GitHub with its stars. In the header on wider screens; on
+  // phones the header has no room for it, so it sits in the hero instead.
+  const githubStars = (className: string) => (
+    <a
+      href={REPO}
+      className={cn(
+        className,
+        "flex h-7 items-center gap-1.5 rounded-full border border-neutral-200 bg-white/60 px-2.5 text-xs font-medium text-muted-foreground tabular-nums outline-none transition-colors hover:border-neutral-300 hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 dark:border-neutral-800 dark:bg-neutral-900/60 dark:hover:border-neutral-700",
+      )}
+      aria-label={
+        stars === null ? "Sidetrack on GitHub" : `Sidetrack on GitHub, ${stars} ${stars === 1 ? "star" : "stars"}`
+      }
+    >
+      <GitHubMark className="size-3.5" />
+      {stars !== null && (
+        <span className="flex items-center gap-1">
+          <Star className="size-3 fill-current" aria-hidden />
+          {new Intl.NumberFormat("en", { notation: "compact" }).format(stars)}
+        </span>
+      )}
+    </a>
+  );
+
   return (
     <div className="relative isolate flex min-h-dvh flex-col overflow-x-hidden">
       <script
@@ -104,21 +127,7 @@ export default async function Welcome() {
           Sidetrack
         </Link>
         <nav className="flex items-center gap-1 sm:gap-2">
-          <a
-            href={REPO}
-            className="mr-1 flex h-7 items-center gap-1.5 rounded-full border border-neutral-200 bg-white/60 px-2.5 text-xs font-medium text-muted-foreground tabular-nums outline-none transition-colors hover:border-neutral-300 hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 dark:border-neutral-800 dark:bg-neutral-900/60 dark:hover:border-neutral-700"
-            aria-label={
-              stars === null ? "Sidetrack on GitHub" : `Sidetrack on GitHub, ${stars} ${stars === 1 ? "star" : "stars"}`
-            }
-          >
-            <GitHubMark className="size-3.5" />
-            {stars !== null && (
-              <span className="flex items-center gap-1">
-                <Star className="size-3 fill-current" aria-hidden />
-                {new Intl.NumberFormat("en", { notation: "compact" }).format(stars)}
-              </span>
-            )}
-          </a>
+          {githubStars("mr-1 max-sm:hidden")}
           {!signedIn && cta.href !== "/login" && (
             <Link href="/login" className={buttonVariants({ variant: "ghost" })}>
               Sign in
@@ -136,6 +145,7 @@ export default async function Welcome() {
 
       <main className="flex-1">
         <section className="mx-auto max-w-5xl px-5 pt-14 text-center sm:px-8 sm:pt-20">
+          {githubStars("mx-auto mb-8 w-fit sm:hidden")}
           <LogoMark className="mx-auto mb-8 h-[57px] w-[54px] [&_rect]:motion-safe:animate-[slide-in_700ms_cubic-bezier(0.2,0.8,0.2,1)_both] [&_rect:nth-child(even)]:[--slide-from:-96px_0] [&_rect:nth-child(odd)]:[--slide-from:96px_0] [&_rect:nth-child(2)]:[animation-delay:70ms] [&_rect:nth-child(3)]:[animation-delay:140ms] [&_rect:nth-child(4)]:[animation-delay:210ms] [&_rect:nth-child(5)]:[animation-delay:280ms]" />
           <p className="mb-5 text-xs font-medium uppercase tracking-[0.18em] text-balance text-muted-foreground">
             {/* Each phrase keeps its dot, so phones wrap between phrases and
