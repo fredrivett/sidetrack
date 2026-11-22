@@ -132,7 +132,8 @@ test("reorders a checklist from the Brief and from the item's dialog", async ({ 
   await expect(steps).toHaveText(["Windows", "Garage", "Oven"]);
 
   // In the dialog, Windows goes to the end; Escape on the way only puts it back.
-  await row(page, "Spring clean").click();
+  // The greeting can name it too: open it from its row.
+  await page.locator("[data-item-row]").getByRole("button", { name: "Spring clean", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Spring clean" });
   const lines = dialog.getByRole("button", { name: /^Reorder / });
   await expect(lines).toHaveText(["Windows", "Garage", "Oven"]);
