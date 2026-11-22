@@ -17,11 +17,27 @@ const root = (el: HTMLElement) =>
 function Checkbox({
   className,
   cancelled = false,
+  onShiftClick,
   ...props
-}: CheckboxPrimitive.Root.Props & { cancelled?: boolean }) {
+}: CheckboxPrimitive.Root.Props & {
+  cancelled?: boolean
+  /** A shift-click, instead of toggling, such as to cancel an item. */
+  onShiftClick?: () => void
+}) {
   return (
     <CheckboxPrimitive.Root
       data-slot="checkbox"
+      // Capture, so it's caught before the hidden switch below toggles (its
+      // default is cancelled) or forwards the click to the Root.
+      onClickCapture={
+        onShiftClick &&
+        ((e) => {
+          if (!e.shiftKey) return
+          e.preventDefault()
+          e.stopPropagation()
+          onShiftClick()
+        })
+      }
       className={cn(
         "group/checkbox peer relative flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full border-[1.5px] border-neutral-300 text-neutral-500 transition-colors outline-none hover:border-neutral-500 focus-visible:ring-3 focus-visible:ring-ring/50 data-disabled:cursor-not-allowed data-disabled:opacity-50 data-checked:border-neutral-400 data-checked:bg-neutral-400 data-checked:text-white dark:border-neutral-600 dark:text-neutral-400 dark:hover:border-neutral-400 dark:data-checked:border-neutral-600 dark:data-checked:bg-neutral-600 dark:data-checked:text-neutral-900",
         cancelled &&

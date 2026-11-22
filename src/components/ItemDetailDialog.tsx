@@ -711,6 +711,7 @@ export function ItemDetailView({
     onAssignToMe: canAssignSelf ? toggleMe : undefined,
     onDue: () => !pending && setDueOpen(true),
     onToggleDone: () => toggle(),
+    onCancel: completed ? undefined : () => !pending && setCancelOpen(true),
     onDelete: () => del(),
   });
   useItemShortcuts({
@@ -797,11 +798,12 @@ export function ItemDetailView({
         ) : (
         <button
           type="button"
-          onClick={toggle}
+          // Shift-click cancels instead, as on the board's circle.
+          onClick={(e) => (e.shiftKey && !completed ? setCancelOpen(true) : toggle())}
           disabled={pending}
           aria-pressed={completed}
           aria-label={cancelled ? "Cancelled" : completed ? "Completed" : "Complete"}
-          title={cancelled ? "Reopen (X)" : completed ? "Mark as not done (X)" : "Complete (X)"}
+          title={cancelled ? "Reopen (X)" : completed ? "Mark as not done (X)" : "Complete (X) · Shift-click to cancel (⇧X)"}
           className={`mt-px shrink-0 rounded-full transition disabled:opacity-50 ${
             cancelled
               ? "text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"

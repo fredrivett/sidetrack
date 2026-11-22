@@ -259,6 +259,7 @@ function ItemRowView({
     });
   }
   const openPicker = useCallback(() => setAssignOpen(true), []);
+  const openCancel = useCallback(() => setCancelOpen(true), []);
   // I adds you, or takes you off if you're already on it, leaving anyone else.
   const toggleMe = useCallback(() => {
     assign(toggleAssignee(assigneeIds, viewerId));
@@ -298,6 +299,7 @@ function ItemRowView({
     onAssignToMe: canEdit && canAssignSelf ? toggleMe : undefined,
     onDue: canEdit && today ? openDue : undefined,
     onToggleDone: canEdit ? toggleDone : undefined,
+    onCancel: canEdit && !completed ? openCancel : undefined,
     onDelete: canEdit ? keyDel : undefined,
     // ↵ only on the selected item, not one the pointer happens to rest on.
     onOpen: selected ? onOpenDetail : undefined,
@@ -390,6 +392,8 @@ function ItemRowView({
           <Checkbox
             checked={completed}
             cancelled={cancelled}
+            onShiftClick={canEdit && !completed ? openCancel : undefined}
+            title={canEdit && !completed ? "Complete (X) · Shift-click to cancel (⇧X)" : undefined}
             onCheckedChange={toggle}
             readOnly={!canEdit}
             aria-label={

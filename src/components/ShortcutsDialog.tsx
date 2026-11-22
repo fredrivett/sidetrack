@@ -43,6 +43,7 @@ const SECTIONS: Array<{ title: string; shortcuts: Array<[string, string[]]> }> =
       ["Assign to me", ["I"]],
       ["Due date", ["D"]],
       ["Complete", ["X"]],
+      ["Cancel", ["⇧", "X"]],
       ["Delete", ["⌫"]],
       ["Copy ref", ["mod", "."]],
     ],
