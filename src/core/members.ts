@@ -244,6 +244,8 @@ export function setMemberRole(
   source: AuditOrigin,
   onlyMine?: boolean,
   within?: OnlyWithin | null,
+  /** With a day share, whether they also see your day note's words, or mood; left as they are when undefined. */
+  share?: { note?: boolean; mood?: boolean },
 ): void {
   assertListRole(role);
   if (onlyMine && role === "editor") {
@@ -265,15 +267,19 @@ export function setMemberRole(
           ? userId
           : null;
   const window = within === undefined ? (limitedTo ? membership.onlyWithin : null) : assertWithin(!!limitedTo, within);
-  if (membership.role === role && membership.onlyAssignedTo === limitedTo && membership.onlyWithin === window) return;
+  // Their note and mood go with the day share they were chosen for: a share
+  // no longer of that person's day, or of no day, drops them, and setting a
+  // window again doesn't bring them back.
   const keepsNote = window !== null && limitedTo === membership.onlyAssignedTo;
+  if ((share?.note || share?.mood) && !keepsNote) throw new Error("only your day can be shared with your note or mood");
+  const shareNote = keepsNote && (share?.note ?? membership.shareNote);
+  const shareMood = keepsNote && (share?.mood ?? membership.shareMood);
+  const shareChanged = shareNote !== membership.shareNote || shareMood !== membership.shareMood;
+  if (membership.role === role && membership.onlyAssignedTo === limitedTo && membership.onlyWithin === window && !shareChanged) return;
   const target = getUserById(db, targetUserId);
   db.transaction((tx) => {
     tx.update(projectMembers)
-      // Their note and mood go with the day share they were chosen for:
-      // a share no longer of that person's day, or of no day, drops them,
-      // and setting a window again doesn't bring them back.
-      .set({ role, onlyAssignedTo: limitedTo, onlyWithin: window, ...(keepsNote ? {} : { shareNote: false, shareMood: false }) })
+      .set({ role, onlyAssignedTo: limitedTo, onlyWithin: window, shareNote, shareMood })
       .where(eq(projectMembers.id, membership.id))
       .run();
     const lost = revokeListAccess(tx as unknown as Db, targetUserId, projectId);
@@ -290,6 +296,7 @@ export function setMemberRole(
         lost: accessLost(lost),
         ...(limitedTo ? { onlyAssignedTo: personAt(getUserById(tx as unknown as Db, limitedTo) ?? { id: limitedTo, username: null }) } : {}),
         ...(window ? { onlyWithin: window } : {}),
+        ...(shareChanged ? { shareNote, shareMood } : {}),
         ...(membership.onlyAssignedTo && !limitedTo ? { seesAll: true as const } : {}),
       },
     });

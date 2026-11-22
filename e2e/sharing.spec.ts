@@ -168,5 +168,24 @@ test("shares your day, which shows on their Check-ins, not their board", async (
   await expect(day.getByRole("list", { name: "How today feels" }).getByText("Tired")).toBeVisible();
   await expect(day.getByText("swim first")).toHaveCount(0);
   await expect(joPage.getByText("Next year's trip")).toHaveCount(0);
+
+  // She sees who sees her day, and can take back her mood, then stop altogether.
+  await page.reload();
+  await expect(page.getByText("Who sees your day")).toBeVisible();
+  await page.getByRole("button", { name: "What Other sees" }).click();
+  await page.getByRole("menuitemcheckbox", { name: "How today feels" }).click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByText("Today", { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByText("Today", { exact: true })).toBeVisible();
+  await joPage.reload();
+  await expect(day.getByText("Overdue swim")).toBeVisible();
+  await expect(day.getByRole("list", { name: "How today feels" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "What Other sees" }).click();
+  await page.getByRole("menuitem", { name: "Stop sharing with Other" }).click();
+  await expect(page.getByText("Only you see this.")).toBeVisible();
+  await joPage.reload();
+  await expect(joPage.getByText("Nobody shares their day with you yet.")).toBeVisible();
   await context.close();
 });

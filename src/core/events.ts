@@ -227,6 +227,9 @@ export type ChangeEvent =
       onlyAssignedTo?: PersonAt;
       /** With onlyAssignedTo, only their today or week. */
       onlyWithin?: OnlyWithin;
+      /** Set when what they see of the day note changed: its words, its mood. */
+      shareNote?: boolean;
+      shareMood?: boolean;
       /** Set when they saw only someone's items and now see all of them. */
       seesAll?: true;
     }
@@ -347,6 +350,9 @@ export type ChangeEvent =
       onlyAssignedTo?: PersonAt;
       /** With onlyAssignedTo, only their today or week. */
       onlyWithin?: OnlyWithin;
+      /** Set when what they see of the day note changed: its words, its mood. */
+      shareNote?: boolean;
+      shareMood?: boolean;
       /** Set when they saw only someone's items and now see all of them. */
       seesAll?: true;
     }

@@ -96,6 +96,19 @@ function requireAdmin(db: Db, userId: string, spaceId: string, what: string) {
   return found;
 }
 
+/**
+ * For an admin, or for the person whose items alone `targetUserId` sees in
+ * the Space: someone they share their own day with, which they can always
+ * change or stop, even once they're no longer an admin, or in the Space.
+ */
+function requireAdminOrSharer(db: Db, userId: string, spaceId: string, targetUserId: string, what: string) {
+  if (membershipOf(db, targetUserId, spaceId)?.onlyAssignedTo === userId) {
+    const space = db.select().from(spaces).where(eq(spaces.id, spaceId)).get();
+    if (space) return { space, admin: membershipOf(db, userId, spaceId)?.role === "admin" };
+  }
+  return { space: requireAdmin(db, userId, spaceId, what).space, admin: true };
+}
+
 function adminCount(db: Db, spaceId: string): number {
   return (
     db
@@ -412,7 +425,8 @@ export function declineSpaceInvite(
 
 /**
  * Remove someone from a Space: an admin removing anyone (or revoking an
- * invite), or anyone leaving. The last admin can't leave. Lists they own stay
+ * invite), someone removing a person who sees only their items
+ * (requireAdminOrSharer), or anyone leaving. The last admin can't leave. Lists they own stay
  * in the Space; they lose access to everyone else's, with the usual cleanup
  * (revokeListAccess). No-op if they have no membership.
  */
@@ -426,7 +440,7 @@ export function removeSpaceMember(
   const leaving = targetUserId === userId;
   const { space } = leaving
     ? requireMember(db, userId, spaceId)
-    : requireAdmin(db, userId, spaceId, "remove people");
+    : requireAdminOrSharer(db, userId, spaceId, targetUserId, "remove people");
   const membership = membershipOf(db, targetUserId, spaceId);
   if (!membership) return;
   const target = db.select().from(users).where(eq(users.id, targetUserId)).get();
@@ -469,7 +483,8 @@ export function removeSpaceMember(
 
 /**
  * Change someone's role in a Space: admin, member, commenter or viewer.
- * Admin-only. A pending invite's role can change too, but not to admin:
+ * Admin-only, except that someone can change what of their own day they share
+ * (requireAdminOrSharer). A pending invite's role can change too, but not to admin:
  * admins are made from people who've joined. The last admin can't be given
  * another role. Taking edit away takes them off the Space's items and ends
  * their agents there (revokeListAccess), on lists they can't edit another way.
@@ -485,6 +500,8 @@ export function setSpaceMemberRole(
   onlyMine?: boolean,
   /** With a limit, only the caller's today or week; left as it is when undefined. */
   within?: OnlyWithin | null,
+  /** With a day share, whether they also see the caller's day note's words, or mood; left as they are when undefined. */
+  share?: { note?: boolean; mood?: boolean },
 ): void {
   if (!(SPACE_ROLES as readonly string[]).includes(role)) {
     throw new Error(`invalid role: ${role}`);
@@ -493,9 +510,14 @@ export function setSpaceMemberRole(
   if (onlyMine && whole) {
     throw new Error("only viewers and commenters can be shown just your items");
   }
-  const { space } = requireAdmin(db, userId, spaceId, "change roles");
+  const { space, admin } = requireAdminOrSharer(db, userId, spaceId, targetUserId, "change roles");
   const membership = membershipOf(db, targetUserId, spaceId);
   if (!membership) throw new Error("they aren't in this space");
+  // Someone who isn't an admin changes only what of their own day is shared:
+  // not the role, nor a day share into one of all their items.
+  if (!admin && (role !== membership.role || onlyMine === false || within === null)) {
+    throw new Error("only a space admin can change roles");
+  }
   if (membership.status !== "accepted" && role === "admin") {
     throw new Error("only people who've joined the space can be made an admin");
   }
@@ -509,15 +531,19 @@ export function setSpaceMemberRole(
         ? userId
         : null;
   const window = within === undefined ? (limitedTo ? membership.onlyWithin : null) : assertWithin(!!limitedTo, within);
-  if (membership.role === role && membership.onlyAssignedTo === limitedTo && membership.onlyWithin === window) return;
+  // Their note and mood go with the day share they were chosen for: a share
+  // no longer of that person's day, or of no day, drops them, and setting a
+  // window again doesn't bring them back.
   const keepsNote = window !== null && limitedTo === membership.onlyAssignedTo;
+  if ((share?.note || share?.mood) && !keepsNote) throw new Error("only your day can be shared with your note or mood");
+  const shareNote = keepsNote && (share?.note ?? membership.shareNote);
+  const shareMood = keepsNote && (share?.mood ?? membership.shareMood);
+  const shareChanged = shareNote !== membership.shareNote || shareMood !== membership.shareMood;
+  if (membership.role === role && membership.onlyAssignedTo === limitedTo && membership.onlyWithin === window && !shareChanged) return;
   const target = db.select().from(users).where(eq(users.id, targetUserId)).get();
   db.transaction((tx) => {
     tx.update(spaceMembers)
-      // Their note and mood go with the day share they were chosen for:
-      // a share no longer of that person's day, or of no day, drops them,
-      // and setting a window again doesn't bring them back.
-      .set({ role, onlyAssignedTo: limitedTo, onlyWithin: window, ...(keepsNote ? {} : { shareNote: false, shareMood: false }) })
+      .set({ role, onlyAssignedTo: limitedTo, onlyWithin: window, shareNote, shareMood })
       .where(eq(spaceMembers.id, membership.id))
       .run();
     // As in removeSpaceMember: checked after the write, inside the transaction.
@@ -542,6 +568,7 @@ export function setSpaceMemberRole(
         lost: accessLost(lost),
         ...(limitedTo ? { onlyAssignedTo: personAt(tx.select().from(users).where(eq(users.id, limitedTo)).get() ?? { id: limitedTo, username: null }) } : {}),
         ...(window ? { onlyWithin: window } : {}),
+        ...(shareChanged ? { shareNote, shareMood } : {}),
         ...(membership.onlyAssignedTo && !limitedTo ? { seesAll: true as const } : {}),
       },
     });

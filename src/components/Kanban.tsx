@@ -55,7 +55,7 @@ import { ProjectColumn } from "./ProjectColumn";
 import { PullToSearch } from "./PullToSearch";
 import { runAction } from "./run-action";
 import { ShareDialog } from "./ShareDialog";
-import { CheckInsView, type CheckIn } from "./CheckInsView";
+import { CheckInsView, type CheckIn, type MyDay } from "./CheckInsView";
 import { InviteDialog } from "./InviteDialog";
 import { ShareDayDialog } from "./ShareDayDialog";
 import { InstallReporter } from "./GetStarted";
@@ -154,6 +154,7 @@ export function Kanban({
   pendingSpaceInvites,
   pendingPhotos,
   checkIns = NO_CHECK_INS,
+  myDay,
   refreshAt = null,
   initialCollapsedTrays,
   initialListId,
@@ -170,6 +171,8 @@ export function Kanban({
   viewerId: string;
   /** The days people share with the viewer: their lists stay off the board. */
   checkIns?: CheckIn[];
+  /** The viewer's own shared day and who sees it, for Check-ins. */
+  myDay?: MyDay;
   /** When a day shown here turns over (the sharer's 4am), to reload then. */
   refreshAt?: number | null;
   /** The viewer's own display fields, for the avatar on the Account button. */
@@ -1003,6 +1006,9 @@ export function Kanban({
         ) : view === "check-ins" ? (
           <CheckInsView
             checkIns={checkIns}
+            myDay={myDay}
+            viewer={{ name: viewer?.name || (viewer?.displayUsername ? `@${viewer.displayUsername}` : "You"), username: viewer?.displayUsername ?? null, image: viewer?.image ?? null }}
+            projectsById={new Map(projects.map((p) => [p.id, p]))}
             itemsByProject={itemsByProject}
             assigneesByProject={assigneesByProject}
             prLinksByItem={prLinksByItem}
