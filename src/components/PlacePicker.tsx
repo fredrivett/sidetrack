@@ -4,8 +4,8 @@ import type { ReactNode } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ProjectIcon } from "./ProjectIcon";
 
-/** A list the viewer owns, as a picker shows it. */
-export type PlaceList = { id: string; name: string; icon: string | null; homepageUrl: string | null };
+/** A list the viewer can pick, as a picker shows it; `unavailable` says why it's shown but can't be. */
+export type PlaceList = { id: string; name: string; icon: string | null; homepageUrl: string | null; unavailable?: string };
 
 /**
  * Places grouped as on the board: each Space with the viewer's own lists in
@@ -37,7 +37,7 @@ export function pickedPlaces(groups: PlaceGroup[], picked: ReadonlySet<string>):
   return groups.flatMap((g): Place[] => [
     ...(g.admin && picked.has(placeKey({ kind: "space", id: g.id })) ? [{ kind: "space" as const, id: g.id, name: g.name }] : []),
     ...g.lists
-      .filter((l) => picked.has(placeKey({ kind: "list", id: l.id })))
+      .filter((l) => !l.unavailable && picked.has(placeKey({ kind: "list", id: l.id })))
       .map((l) => ({ kind: "list" as const, id: l.id, name: l.name })),
   ]);
 }
@@ -67,27 +67,33 @@ export function PlacePicker({
   /** Shown when there's nothing to pick. */
   empty: string;
 }) {
-  const row = (place: Place & { icon: string | null; homepageUrl?: string | null }, spaceOn: boolean, tree = "") => {
+  const row = (place: Place & { icon: string | null; homepageUrl?: string | null; unavailable?: string }, spaceOn: boolean, tree = "") => {
     const k = placeKey(place);
-    const on = picked.has(k);
+    const off = Boolean(place.unavailable);
+    const on = !off && picked.has(k);
     return (
       <li
         key={k}
         data-on={on || undefined}
-        className={`${tree} flex min-h-10 items-center justify-between gap-2 rounded-lg px-2 py-1 hover:bg-neutral-100 data-on:bg-neutral-100 dark:hover:bg-neutral-800/70 dark:data-on:bg-neutral-800/70`}
+        className={`${tree} flex min-h-10 items-center justify-between gap-2 rounded-lg px-2 py-1 data-on:bg-neutral-100 dark:data-on:bg-neutral-800/70 ${off ? "" : "hover:bg-neutral-100 dark:hover:bg-neutral-800/70"}`}
       >
-        <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 self-stretch text-sm">
+        <label className={`flex min-w-0 flex-1 items-center gap-2.5 self-stretch text-sm ${off ? "opacity-50" : "cursor-pointer"}`}>
           <Checkbox
             checked={on}
-            onCheckedChange={(checked) => !disabled && onToggle(k, checked)}
-            aria-disabled={disabled || undefined}
+            onCheckedChange={(checked) => !disabled && !off && onToggle(k, checked)}
+            aria-disabled={disabled || off || undefined}
             aria-label={label(place.name)}
+            aria-description={place.unavailable}
           />
           <ProjectIcon icon={place.icon} homepageUrl={place.homepageUrl ?? null} name={place.name} size={16} />
           <span className={`truncate ${place.kind === "space" ? "font-medium" : ""}`}>{place.name}</span>
           {place.kind === "space" && <span className="shrink-0 text-xs text-neutral-500">Whole Space</span>}
         </label>
-        {trailing({ kind: place.kind, id: place.id, name: place.name }, { on, spaceOn })}
+        {off ? (
+          <span className="shrink-0 text-xs text-neutral-500">{place.unavailable}</span>
+        ) : (
+          trailing({ kind: place.kind, id: place.id, name: place.name }, { on, spaceOn })
+        )}
       </li>
     );
   };

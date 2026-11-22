@@ -79,6 +79,7 @@ export function CheckInsView({
   projectsById,
   assigneesByProject,
   prLinksByItem,
+  parentTitles,
   viewerId,
   onShareDay,
 }: {
@@ -90,6 +91,8 @@ export function CheckInsView({
   projectsById: Map<string, ProjectView>;
   assigneesByProject: Record<string, AssigneeView[]>;
   prLinksByItem: Record<string, ItemPrLink[]>;
+  /** Titles of items they can't see that hold sub-items they can. */
+  parentTitles: Record<string, string>;
   viewerId: string;
   /** Opens Share my day, with someone to share it with already filled in. */
   onShareDay: (person?: string) => void;
@@ -108,22 +111,30 @@ export function CheckInsView({
   const detailProject = detail.item ? projectOf.get(detail.item.projectId) : undefined;
   const sharesBack = new Set(myDay.shares.map((s) => s.personId));
 
+  // A sub-item shown without its item (someone else's, on their list) says
+  // which item it's under: its title is all of it that's shared.
+  const loaded = new Map(Object.values(itemsByProject).flat().map((i) => [i.id, i.title]));
+  const under = (group: Item) => group.parentId && (loaded.get(group.parentId) ?? parentTitles[group.parentId]);
+
   const groups = (items: Item[], many: boolean) =>
     nestItems(items).map((group) => {
       const list = projectOf.get(group.projectId);
+      const parent = under(group);
       return {
         done: group.completedAt !== null,
         node: (
-          <ItemGroupView
-            key={group.id}
-            group={group}
-            list={many ? list : undefined}
-            prefix={list?.refPrefix ?? ""}
-            assignees={assigneesByProject[group.projectId] ?? []}
-            viewerId={viewerId}
-            prLinksByItem={prLinksByItem}
-            onOpenDetail={detail.openDetail}
-          />
+          <div key={group.id} className="space-y-1">
+            {parent && <p className="truncate px-1 text-xs text-neutral-500">Under “{parent}”</p>}
+            <ItemGroupView
+              group={group}
+              list={many ? list : undefined}
+              prefix={list?.refPrefix ?? ""}
+              assignees={assigneesByProject[group.projectId] ?? []}
+              viewerId={viewerId}
+              prLinksByItem={prLinksByItem}
+              onOpenDetail={detail.openDetail}
+            />
+          </div>
         ),
       };
     });
@@ -251,7 +262,9 @@ function DayCard({
   empty: string;
   footer: ReactNode;
 }) {
-  const top = items.filter((i) => i.parentId === null);
+  // Each row counts once: an item, or a sub-item shown without its item.
+  const ids = new Set(items.map((i) => i.id));
+  const top = items.filter((i) => i.parentId === null || !ids.has(i.parentId));
   const done = top.filter((i) => i.completedAt !== null).length;
   const open = groups.filter((g) => !g.done);
   const finished = groups.filter((g) => g.done);

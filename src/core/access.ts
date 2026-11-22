@@ -93,31 +93,43 @@ function projectAccessAtLeast(userId: string, access: ListAccess) {
 /**
  * As hasProjectAccess, for one item: `items` and `projects` must be in
  * scope. A membership limited to someone's items (`only_assigned_to`) opens
- * only the item groups assigned to them: an item with its sub-items, whole,
- * when that person is on any of them. Any other route in opens every item,
- * so the most generous route still counts. Use it wherever an item, or
- * something about one (its comments, history, counts), is read.
+ * only those (limitedSees). Any other route in opens every item, so the most
+ * generous route still counts. Use it wherever an item, or something about
+ * one (its comments, history, counts), is read.
  */
 export function hasItemAccess(userId: string) {
-  // The item's group: its parent's, for a sub-item.
-  const group = sql`coalesce(${items.parentId}, ${items.id})`;
-  const sees = (limitedTo: SQL, within: SQL) =>
-    sql`(${limitedTo} is null or (exists (select 1 from items g, json_each(g.assignee_ids) a where (g.id = ${group} or g.parent_id = ${group}) and a.value = ${limitedTo}) and ${inWindow(group, limitedTo, within)}))`;
   return or(
     eq(projects.userId, userId),
-    sql`exists (select 1 from ${projectMembers} pm where pm.project_id = ${projects.id} and pm.user_id = ${userId} and pm.status = 'accepted' and ${sees(sql`pm.only_assigned_to`, sql`pm.only_within`)})`,
-    sql`exists (select 1 from ${spaceMembers} sm where sm.space_id = ${projects.spaceId} and sm.user_id = ${userId} and sm.status = 'accepted' and ${sees(sql`sm.only_assigned_to`, sql`sm.only_within`)})`,
+    sql`exists (select 1 from ${projectMembers} pm where pm.project_id = ${projects.id} and pm.user_id = ${userId} and pm.status = 'accepted' and (pm.only_assigned_to is null or ${limitedSees(sql`pm.only_assigned_to`, sql`pm.only_within`)}))`,
+    sql`exists (select 1 from ${spaceMembers} sm where sm.space_id = ${projects.spaceId} and sm.user_id = ${userId} and sm.status = 'accepted' and (sm.only_assigned_to is null or ${limitedSees(sql`sm.only_assigned_to`, sql`sm.only_within`)}))`,
   );
 }
 
 /**
- * Whether the item's group (`items` in scope) is `person`'s and in their
- * today or week: what someone their day is shared with sees of it, as
+ * Whether the item (`items` and `projects` in scope) is `person`'s and in
+ * their today or week: what someone their day is shared with sees of it, as
  * hasItemAccess works it out.
  */
 export function inDayOf(person: string, within: OnlyWithin) {
+  return limitedSees(sql`${person}`, sql`${within}`);
+}
+
+/**
+ * What a membership limited to `person`'s items, in their `within` (null:
+ * every day), sees of the item (`items` and `projects` in scope). On their
+ * own list, the item groups assigned to them: an item with its sub-items,
+ * whole, when they're on any of it. On someone else's list, just their
+ * own items: someone else's item, or sub-item, isn't theirs to share, nor
+ * does it count towards the window. A sub-item of theirs under someone
+ * else's item shows on its own, with only that item's title to place it
+ * (hiddenParentTitles). (Losing edit there ends the share, revokeListAccess.)
+ */
+function limitedSees(person: SQL, within: SQL) {
+  // The item's group: its parent's, for a sub-item.
   const group = sql`coalesce(${items.parentId}, ${items.id})`;
-  return sql`(exists (select 1 from items g, json_each(g.assignee_ids) a where (g.id = ${group} or g.parent_id = ${group}) and a.value = ${person}) and ${inWindow(group, sql`${person}`, sql`${within}`)})`;
+  const onGroup = sql`exists (select 1 from items g, json_each(g.assignee_ids) a where (g.id = ${group} or g.parent_id = ${group}) and a.value = ${person})`;
+  const theirs = sql`exists (select 1 from json_each(${items.assigneeIds}) a where a.value = ${person})`;
+  return sql`(case when ${projects.userId} = ${person} then (${onGroup} and ${inWindow(group, person, within)}) else (${theirs} and ${inWindow(group, person, within, true)}) end)`;
 }
 
 /**
@@ -125,15 +137,18 @@ export function inDayOf(person: string, within: OnlyWithin) {
  * `person`'s days, by their clock (st_today, from db-functions.ts): some item
  * in it, with a due date, that's still open and due by the window's end
  * (overdue counts, or it'd hide by slipping; a span counts from its first
- * day), or that was finished within it. No window is every day.
+ * day), or that was finished within it; with `onlyTheirs`, counting only
+ * items assigned to them. No window is every day.
  */
-function inWindow(group: SQL, person: SQL, within: SQL) {
+function inWindow(group: SQL, person: SQL, within: SQL, onlyTheirs = false) {
   const tz = sql`(select ${users.timeZone} from ${users} where ${users.id} = ${person})`;
   const today = sql`st_today(${tz})`;
   const monday = sql`st_week_start(${tz})`;
   const lands = (from: SQL, to: SQL) =>
     sql`((w.completed_at is null and coalesce(w.due_from, w.due_date) <= ${to}) or (w.completed_at is not null and st_day(w.completed_at, ${tz}) between ${from} and ${to}))`;
-  return sql`(${within} is null or exists (select 1 from items w where (w.id = ${group} or w.parent_id = ${group}) and w.due_date is not null and (case ${within} when 'today' then ${lands(today, today)} else ${lands(monday, sql`date(${monday}, '+6 days')`)} end)))`;
+  // Only by their own items, where someone else's in the group are hidden.
+  const theirs = onlyTheirs ? sql` and exists (select 1 from json_each(w.assignee_ids) a where a.value = ${person})` : sql``;
+  return sql`(${within} is null or exists (select 1 from items w where (w.id = ${group} or w.parent_id = ${group})${theirs} and w.due_date is not null and (case ${within} when 'today' then ${lands(today, today)} else ${lands(monday, sql`date(${monday}, '+6 days')`)} end)))`;
 }
 
 /**

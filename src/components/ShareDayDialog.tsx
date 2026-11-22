@@ -48,7 +48,7 @@ export function ShareDayDialog({
   /** Someone to share it with, already filled in, such as when sharing back. */
   person: string | null;
   onOpenChange: (open: boolean) => void;
-  /** The lists you own and Spaces you run, grouped as Invite people shows them. */
+  /** The lists on your board and Spaces you run, grouped as Invite people shows them; those you can't edit are `unavailable`. */
   groups: PlaceGroup[];
 }) {
   const draft = useDraft("share-day:person");

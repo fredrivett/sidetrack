@@ -248,12 +248,13 @@ export function deleteSpace(
   db.transaction((tx) => {
     // Cascades the memberships; lists' space_id is set null.
     tx.delete(spaces).where(eq(spaces.id, spaceId)).run();
-    const lost = { unassigned: 0, ended: 0 };
+    const lost = { unassigned: 0, ended: 0, shares: 0 };
     for (const person of people) {
       for (const listId of listIds) {
         const r = revokeListAccess(tx as unknown as Db, person, listId);
         lost.unassigned += r.unassigned;
         lost.ended += r.ended;
+        lost.shares += r.shares ?? 0;
       }
     }
     recordAudit(tx as unknown as Db, {
@@ -460,11 +461,12 @@ export function removeSpaceMember(
         "the last admin can't leave the space: make someone else an admin first, or delete the space",
       );
     }
-    const lost = { unassigned: 0, ended: 0 };
+    const lost = { unassigned: 0, ended: 0, shares: 0 };
     for (const listId of listIds) {
       const r = revokeListAccess(tx as unknown as Db, targetUserId, listId);
       lost.unassigned += r.unassigned;
       lost.ended += r.ended;
+      lost.shares += r.shares ?? 0;
     }
     recordAudit(tx as unknown as Db, {
       actor: userId,
@@ -530,7 +532,8 @@ export function setSpaceMemberRole(
       : onlyMine
         ? userId
         : null;
-  const window = within === undefined ? (limitedTo ? membership.onlyWithin : null) : assertWithin(!!limitedTo, within);
+  // A window is someone's day: one now limited to another person's items isn't theirs.
+  const window = within === undefined ? (limitedTo && limitedTo === membership.onlyAssignedTo ? membership.onlyWithin : null) : assertWithin(!!limitedTo, within);
   // Their note and mood go with the day share they were chosen for: a share
   // no longer of that person's day, or of no day, drops them, and setting a
   // window again doesn't bring them back.
@@ -550,11 +553,12 @@ export function setSpaceMemberRole(
     if (adminCount(tx as unknown as Db, spaceId) === 0) {
       throw new Error("the space needs an admin: make someone else an admin first");
     }
-    const lost = { unassigned: 0, ended: 0 };
+    const lost = { unassigned: 0, ended: 0, shares: 0 };
     for (const projectId of listIdsInSpace(tx as unknown as Db, spaceId)) {
       const l = revokeListAccess(tx as unknown as Db, targetUserId, projectId);
       lost.unassigned += l.unassigned;
       lost.ended += l.ended;
+      lost.shares += l.shares ?? 0;
     }
     recordAudit(tx as unknown as Db, {
       actor: userId,
@@ -627,11 +631,12 @@ export function setProjectSpace(
     : [];
   db.transaction((tx) => {
     tx.update(projects).set({ spaceId }).where(eq(projects.id, projectId)).run();
-    const lost = { unassigned: 0, ended: 0 };
+    const lost = { unassigned: 0, ended: 0, shares: 0 };
     for (const person of losing) {
       const r = revokeListAccess(tx as unknown as Db, person, projectId);
       lost.unassigned += r.unassigned;
       lost.ended += r.ended;
+      lost.shares += r.shares ?? 0;
     }
     recordAudit(tx as unknown as Db, {
       actor: userId,

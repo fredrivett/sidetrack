@@ -62,7 +62,6 @@ function rows(db: Db, userId: string, personId?: string): Row[] {
     .innerJoin(projects, eq(projects.id, projectMembers.projectId))
     .where(
       and(
-        eq(projects.userId, userId),
         eq(projectMembers.onlyAssignedTo, userId),
         isNotNull(projectMembers.onlyWithin),
         ...(personId ? [eq(projectMembers.userId, personId)] : []),

@@ -195,10 +195,11 @@ function people(names: Names, list: PersonAt[]): Part[] {
 /** What losing access cleaned up, as trailing clauses. */
 function lostText(lost: AccessLost | undefined): Part[] {
   if (!lost) return [];
-  const n = (count: number, what: string) => `${count} ${what}${count === 1 ? "" : "s"}`;
+  const n = (count: number, what: string, many = `${what}s`) => `${count} ${count === 1 ? what : many}`;
   return [
     ...(lost.unassigned ? [t(`, unassigned from ${n(lost.unassigned, "item")}`)] : []),
     ...(lost.ended ? [t(`, ended ${n(lost.ended, "agent session")}`)] : []),
+    ...(lost.shares ? [t(`, stopped sharing their day with ${n(lost.shares, "person", "people")}`)] : []),
   ];
 }
 

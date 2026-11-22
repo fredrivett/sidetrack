@@ -155,6 +155,7 @@ export function Kanban({
   pendingPhotos,
   checkIns = NO_CHECK_INS,
   myDay,
+  parentTitles = {},
   refreshAt = null,
   initialCollapsedTrays,
   initialListId,
@@ -173,6 +174,8 @@ export function Kanban({
   checkIns?: CheckIn[];
   /** The viewer's own shared day and who sees it, for Check-ins. */
   myDay?: MyDay;
+  /** Titles of items, not theirs to see, that hold sub-items they see (hiddenParentTitles). */
+  parentTitles?: Record<string, string>;
   /** When a day shown here turns over (the sharer's 4am), to reload then. */
   refreshAt?: number | null;
   /** The viewer's own display fields, for the avatar on the Account button. */
@@ -548,6 +551,16 @@ export function Kanban({
       ? [{ id: "personal", name: "Lists", icon: null, admin: false, lists: owned }]
       : trays
           .map((t) => ({ ...t, lists: owned.filter((p) => trayByList[p.id] === t.id) }))
+          .filter((t) => t.admin || t.lists.length > 0);
+  // Share my day offers every list on the board, grouped the same way:
+  // anyone who can edit a list can share their own items on it; the rest
+  // show, dimmed, with why not.
+  const dayLists = active.map((p) => (p.access === "edit" ? p : { ...p, unavailable: "You can't edit this list" }));
+  const shareDayGroups =
+    spaces.length === 0
+      ? [{ id: "personal", name: "Lists", icon: null, admin: false, lists: dayLists }]
+      : trays
+          .map((t) => ({ ...t, lists: dayLists.filter((p) => trayByList[p.id] === t.id) }))
           .filter((t) => t.admin || t.lists.length > 0);
   // Everyone who can hold work on the board's lists, to filter by: viewers
   // and commenters are never assigned. Someone filtered by who has since
@@ -1012,6 +1025,7 @@ export function Kanban({
             itemsByProject={itemsByProject}
             assigneesByProject={assigneesByProject}
             prLinksByItem={prLinksByItem}
+            parentTitles={parentTitles}
             viewerId={viewerId}
             onShareDay={(person) => setSharingDay(person ?? "")}
           />
@@ -1215,7 +1229,7 @@ export function Kanban({
           open={sharingDay !== null}
           person={sharingDay || null}
           onOpenChange={(open) => !open && setSharingDay(null)}
-          groups={inviteGroups}
+          groups={shareDayGroups}
         />
       </BoardMain>
     </BoardDrag>

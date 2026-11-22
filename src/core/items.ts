@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, type SQL, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 import { nanoid } from "nanoid";
-import { hasItemAccess, hasProjectAccess, listAccess, requireListAccess } from "./access";
+import { hasItemAccess, hasProjectAccess, hasWholeListAccess, listAccess, requireListAccess } from "./access";
 import { users } from "./auth-schema";
 import { type AuditOrigin, recordAudit, SYSTEM_ACTOR } from "./audit";
 import { ensureLabels, type LabelEmoji, normalizeLabelNames } from "./labels";
@@ -275,6 +276,25 @@ export function listSubItems(db: Db, userId: string, parentId: string): Item[] {
     .map((row) => row.items);
 }
 
+/**
+ * The titles, by id, of the items that hold sub-items `userId` sees on lists
+ * they see only part of: just the title, to place such a sub-item when its
+ * item isn't theirs to see (limitedSees). Nothing else of the item.
+ */
+export function hiddenParentTitles(db: Db, userId: string): Record<string, string> {
+  const parent = alias(items, "parent");
+  return Object.fromEntries(
+    db
+      .select({ id: parent.id, title: parent.title })
+      .from(items)
+      .innerJoin(projects, eq(projects.id, items.projectId))
+      .innerJoin(parent, eq(parent.id, items.parentId))
+      .where(and(hasItemAccess(userId), sql`not (${hasWholeListAccess(userId)})`))
+      .all()
+      .map((r) => [r.id, r.title]),
+  );
+}
+
 function childrenOf(db: Db, parentId: string): Item[] {
   return db
     .select()
@@ -506,7 +526,7 @@ export function addItem(
  */
 export function getItemWithSubItems(db: Db, userId: string, id: string): Item[] {
   const item = getItem(db, userId, id);
-  return item ? [item, ...childrenOf(db, item.id)] : [];
+  return item ? [item, ...listSubItems(db, userId, item.id)] : [];
 }
 
 /**
