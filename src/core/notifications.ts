@@ -201,6 +201,9 @@ function rule(
         followers(event.itemId).filter((r) => !told.has(r.userId)),
       );
     }
+    case "item.cancelled":
+      // Told to the same people as a tick; sub-items go with their parent.
+      return event.with ? null : onItem(event.itemId, event.projectId, followers(event.itemId));
     case "item.reopened": {
       // Likewise a parent reopened for a sub-item, or a sub-item with its parent.
       if (event.forSubItem || event.with) return null;
@@ -591,6 +594,7 @@ function itemOf(event: ChangeEvent): ItemAt | null {
     case "item.created":
     case "item.updated":
     case "item.completed":
+    case "item.cancelled":
     case "item.reopened":
     case "item.moved":
     case "agent.requested":
@@ -836,6 +840,8 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
             : say([who, t(" cleared the due date on "), item]);
         case "item.completed":
           return say([who, t(" completed "), item]);
+        case "item.cancelled":
+          return say([who, t(" cancelled "), item]);
         case "item.reopened":
           return event.repeat
             ? say([item, t(" is due again")])
@@ -1207,6 +1213,7 @@ function cancelUndone(group: Row[]): { kept: Row[]; undone: string[] } {
     const e = r.event;
     if (!e) return null;
     if (e.type === "item.completed" && !e.with) return { did: `done ${e.itemId}`, undoes: `open ${e.itemId}` };
+    if (e.type === "item.cancelled" && !e.with) return { did: `done ${e.itemId}`, undoes: `open ${e.itemId}` };
     if (e.type === "item.reopened" && !e.with && !e.forSubItem && !e.repeat) {
       return { did: `open ${e.itemId}`, undoes: `done ${e.itemId}` };
     }

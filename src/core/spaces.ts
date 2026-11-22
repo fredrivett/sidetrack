@@ -272,6 +272,27 @@ export function deleteSpace(
 }
 
 /**
+ * Whether the user may invite anyone to the Space with this role and limit,
+ * whoever it is: admins only. Throws if not; returns the Space and the
+ * window to store.
+ */
+export function checkSpaceInvite(
+  db: Db,
+  userId: string,
+  spaceId: string,
+  role: Exclude<SpaceRole, "admin">,
+  opts: { onlyMine?: boolean; within?: OnlyWithin | null },
+) {
+  const { space } = requireAdmin(db, userId, spaceId, "invite people");
+  if (!["member", "commenter", "viewer"].includes(role)) throw new Error(`invalid role: ${role}`);
+  const within = assertWithin(opts.onlyMine, opts.within);
+  if (opts.onlyMine && role === "member") {
+    throw new Error("only viewers and commenters can be shown just your items");
+  }
+  return { space, within };
+}
+
+/**
  * Invite an existing user to a Space, as a member (the default), a
  * commenter or a viewer. Admin-only. They get that role once they accept;
  * an admin can make them an admin after that.
@@ -295,13 +316,8 @@ export function inviteSpaceMember(
     shareMood?: boolean;
   } = {},
 ): SpaceMemberView {
-  const { space } = requireAdmin(db, userId, spaceId, "invite people");
-  if (!["member", "commenter", "viewer"].includes(role)) throw new Error(`invalid role: ${role}`);
   const { inviteId, onlyMine } = opts;
-  const within = assertWithin(onlyMine, opts.within);
-  if (onlyMine && role === "member") {
-    throw new Error("only viewers and commenters can be shown just your items");
-  }
+  const { space, within } = checkSpaceInvite(db, userId, spaceId, role, opts);
   const target = findUserByHandle(db, handle);
   if (!target) throw new Error(`no account found for "${handle.trim()}"`);
   const existing = membershipOf(db, target.id, spaceId);

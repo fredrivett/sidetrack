@@ -242,6 +242,59 @@ export async function deliverInviteEmail(
   );
 }
 
+/** An invite to join Sidetrack, for someone without an account (core/invitations.ts). */
+export interface JoinInviteEmail {
+  to: string;
+  inviterName: string;
+  /** The invite's own link, which is how they join. */
+  url: string;
+  /** The places it shares; none for Invite a friend. */
+  places: string[];
+  /** Set when it shares the inviter's day: today or this week. */
+  within: OnlyWithin | null;
+  /** How many days the link works. */
+  days: number;
+}
+
+// Single source of truth for the join invite email's copy.
+function joinInviteMessage({ inviterName, url, places, within, days }: Omit<JoinInviteEmail, "to">): {
+  subject: string;
+  text: string;
+} {
+  const named = places.length > 1 ? `${places.slice(0, -1).join(", ")} and ${places.at(-1)}` : places[0];
+  const [subject, said] = within
+    ? [
+        `${inviterName} wants to share their ${within === "week" ? "week" : "day"} with you`,
+        `${inviterName} wants to share their ${within === "week" ? "week" : "day"} with you on Sidetrack: ` +
+          `what they're getting done ${within === "week" ? "this week" : "today"}, as it happens. ` +
+          "You can follow along and leave them a comment.",
+      ]
+    : places.length
+      ? [`${inviterName} invited you to Sidetrack`, `${inviterName} invited you to Sidetrack, to share ${named}.`]
+      : [`${inviterName} invited you to Sidetrack`, `${inviterName} invited you to join them on Sidetrack.`];
+  return {
+    subject,
+    text:
+      `${said}\n\nJoin here: ${url}\n\nThe link is just for you and works for ${days} days. ` +
+      "If you weren't expecting this, you can ignore this email.",
+  };
+}
+
+/** Pure-dependency core for the join invite email; app code uses `notifyJoinInvite`. */
+export async function deliverJoinInviteEmail({ to, ...invite }: JoinInviteEmail, deps: EmailDeps): Promise<void> {
+  const { subject, text } = joinInviteMessage(invite);
+  await deliverEmail(
+    {
+      to,
+      subject,
+      text,
+      logLine: `[email] no SMTP_URL or RESEND_API_KEY set — invite to join for ${to}: ${invite.url}`,
+      errorLabel: "invite email",
+    },
+    deps,
+  );
+}
+
 // Single source of truth for the mention email's copy.
 function mentionMessage({
   authorName,
@@ -419,6 +472,18 @@ export async function sendPasswordResetEmail(opts: {
 
 export async function sendInviteEmail(opts: InviteEmail): Promise<void> {
   await deliverInviteEmail(opts, liveDeps());
+}
+
+/**
+ * Sends an invite to join, never throwing: a failure is logged, and the
+ * inviter can send it again from where they see it waiting.
+ */
+export async function notifyJoinInvite(opts: JoinInviteEmail): Promise<void> {
+  try {
+    await deliverJoinInviteEmail(opts, liveDeps());
+  } catch (err) {
+    console.error("[invite] join invite email failed:", err);
+  }
 }
 
 /**

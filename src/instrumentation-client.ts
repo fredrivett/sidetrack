@@ -36,6 +36,14 @@ if (key) {
     },
     before_send: (event) => {
       if (event?.event === "$snapshot") maskReplayAttributes(event.properties.$snapshot_data);
+      // An invite's link is its secret (app/invite/[token]): keep it out of
+      // every URL an event records.
+      if (event?.properties) {
+        for (const key of ["$current_url", "$pathname", "$referrer", "$initial_current_url", "$initial_referrer"]) {
+          const value = event.properties[key];
+          if (typeof value === "string") event.properties[key] = value.replace(/\/invite\/[^/?#]+/, "/invite/[token]");
+        }
+      }
       return event;
     },
   });

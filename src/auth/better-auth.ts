@@ -8,6 +8,7 @@ import { twoFactor, username } from "better-auth/plugins";
 import { users as authUsers, verifications } from "@/core/auth-schema";
 import { getDb } from "@/core/db";
 import { auditLog, meta, projects } from "@/core/schema";
+import { acceptInvitation, findInvitation } from "@/core/invitations";
 import { getUserNumber } from "@/core/users";
 import { notifySignup, sendPasswordResetEmail } from "@/lib/email";
 import { SIGNUP_LOCK_KEY } from "./signup";
@@ -40,6 +41,22 @@ const USERNAME_MAX_LENGTH = 30;
 // Auth runs hooks across async boundaries, which is what made the naive
 // `userCount() === 0` check racey).
 const ALLOW_SIGNUP = env.ALLOW_SIGNUP;
+
+/**
+ * Invite links a sign-up is using, until when. The user.create hooks check an
+ * invite before the account is made and accept it only after the whole
+ * sign-up, so without this, sign-ups racing with one link could each pass the
+ * check. In memory, as Sidetrack runs as one process (one SQLite volume); the
+ * time frees a link whose sign-up failed after the check.
+ */
+const inviteInUse = new Map<string, number>();
+const INVITE_HOLD_MS = 60_000;
+
+/** The invite link's token a sign-up came with (LoginForm sends it), if any. */
+function inviteToken(ctx: { body?: unknown } | null): string | null {
+  const invite = (ctx?.body as { invite?: unknown } | undefined)?.invite;
+  return typeof invite === "string" && invite ? invite : null;
+}
 const ME_ADOPTION_KEY = "me_data_adopted";
 
 function userCount(): number {
@@ -188,11 +205,21 @@ export const auth = betterAuth({
   databaseHooks: {
     user: {
       create: {
-        before: async (user) => {
+        before: async (user, ctx) => {
           // Validate first: a bad avatar rejected after the claim below would
           // leave the instance locked with no user until the next boot.
           const normalized = withNormalizedAvatar(user);
           if (ALLOW_SIGNUP) return normalized;
+          // Someone invited (an unused, unexpired link) may join a closed
+          // instance: the invite is someone already here letting them in.
+          const invite = inviteToken(ctx);
+          if (invite && findInvitation(db, invite)?.status === "open") {
+            if ((inviteInUse.get(invite) ?? 0) > Date.now()) {
+              throw new APIError("FORBIDDEN", { message: "This invite is being used to sign up. Try again in a minute." });
+            }
+            inviteInUse.set(invite, Date.now() + INVITE_HOLD_MS);
+            return normalized;
+          }
           // First signup wins the lock; everyone after is rejected. A lost
           // claim (false) means it's already held → closed.
           if (!claimSentinel(SIGNUP_LOCK_KEY)) {
@@ -202,7 +229,19 @@ export const auth = betterAuth({
           }
           return normalized;
         },
-        after: async (user) => {
+        after: async (user, ctx) => {
+          // Joined through an invite: accept it, sharing what it shares. A
+          // failure (a link used meanwhile) mustn't fail the sign-up.
+          const invite = inviteToken(ctx);
+          if (invite) {
+            try {
+              acceptInvitation(db, invite, user.id, "web");
+            } catch (err) {
+              console.error("[auth] couldn't accept the invite signed up with:", err);
+            } finally {
+              inviteInUse.delete(invite);
+            }
+          }
           // First-ever signup adopts legacy 'me' data. Gated by its own
           // atomic sentinel rather than userCount(), which races under
           // ALLOW_SIGNUP=true (concurrent first signups could both observe

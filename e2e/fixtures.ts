@@ -6,6 +6,7 @@ import { auth } from "@/auth/better-auth";
 import { accounts, users } from "@/core/auth-schema";
 import { getDb } from "@/core/db";
 import { setDayNote } from "@/core/dayNotes";
+import { inviteByEmail } from "@/core/invitations";
 import { addItem } from "@/core/items";
 import { acceptInvite, inviteMember } from "@/core/members";
 import { createProject } from "@/core/projects";
@@ -109,14 +110,23 @@ export type User = {
   password: string;
   /** Adds a list with these items, as if the user had made it. */
   addList(name: string, items?: string[]): { id: string };
-  /** Adds an item to one of their lists, assigned to these people, due on a day ("YYYY-MM-DD"). */
-  addItem(listId: string, title: string, assigneeIds?: string[], dueDate?: string): void;
+  /** Adds an item to one of their lists, assigned to these people, due on a day ("YYYY-MM-DD"), with these sub-items. */
+  addItem(
+    listId: string,
+    title: string,
+    assigneeIds?: string[],
+    dueDate?: string,
+    subItems?: string[],
+  ): void;
   /** Adds a Space of theirs, with these lists of theirs in it. */
   addSpace(name: string, listIds?: string[]): { id: string };
   /** A photo an agent read these lines off, uploaded and waiting for review. */
   addPhoto(lines: ProposedLine[]): { id: string };
   /** Their note about today, written in the suite's time zone. */
   setDayNote(text: string): void;
+  /** Invites `email`, who has no account, to see their week on these lists, as
+   * Share my day would; returns the emailed link's path. */
+  shareWeekByEmail(email: string, listIds: string[]): string;
 };
 
 /**
@@ -144,8 +154,8 @@ export const test = base.extend<{ user: User }>({
         for (const title of items) addItem(db, response.user.id, { projectId: project.id, title }, SOURCE);
         return { id: project.id };
       },
-      addItem(listId, title, assigneeIds = [], dueDate) {
-        addItem(db, response.user.id, { projectId: listId, title, assigneeIds, dueDate }, SOURCE);
+      addItem(listId, title, assigneeIds = [], dueDate, subItems) {
+        addItem(db, response.user.id, { projectId: listId, title, assigneeIds, dueDate, subItems }, SOURCE);
       },
       addSpace(name, listIds = []) {
         const space = createSpace(db, response.user.id, { name }, SOURCE);
@@ -160,6 +170,10 @@ export const test = base.extend<{ user: User }>({
       setDayNote(text) {
         setTimeZone(db, response.user.id, "Europe/London");
         setDayNote(db, response.user.id, dayOf(Date.now(), "Europe/London"), text);
+      },
+      shareWeekByEmail(to, listIds) {
+        const places = listIds.map((id) => ({ kind: "list" as const, id, role: "commenter" as const, onlyMine: true, within: "week" as const }));
+        return `/invite/${inviteByEmail(db, response.user.id, { email: to, places }, SOURCE).token}`;
       },
     });
   },

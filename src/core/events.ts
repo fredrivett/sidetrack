@@ -135,6 +135,16 @@ export type ChangeEvent =
       from?: SourceAt;
     } & ItemAt)
   | ({
+      type: "item.cancelled";
+      projectId: string;
+      /** In the person's words, such as "won't do". */
+      reason?: string;
+      /** The item that did the work instead. */
+      replacedBy?: ItemAt;
+      /** The parent it was cancelled with. */
+      with?: ItemAt;
+    } & ItemAt)
+  | ({
       type: "item.reopened";
       projectId: string;
       /** Reopened because a sub-item opened under it. */
@@ -429,6 +439,17 @@ export type AccountEvent =
       completed: number;
       skipped: number;
     }
+  /** An invite by email for someone not on Sidetrack yet (invitations.ts):
+   * the places it shares, named as they were, and the window when it's
+   * their day. None for Invite a friend. */
+  | { type: "invitation.sent"; invitationId: string; email: string; places: string[]; within?: OnlyWithin }
+  /** A new link for it, the old one stops working. */
+  | { type: "invitation.resent"; invitationId: string; email: string }
+  | { type: "invitation.cancelled"; invitationId: string; email: string }
+  /** By whoever joined (or opened it signed in). `shared`: the places it
+   * shares were shared with them; false when the inviter can't share them
+   * any more. */
+  | { type: "invitation.accepted"; invitationId: string; inviter: PersonAt; shared: boolean }
   | { type: "profile.username"; userId: string; from: string; to: string }
   /** `image` null: cleared. */
   | { type: "profile.avatar"; userId: string; image: string | null; uploaded?: true }
@@ -463,6 +484,8 @@ export function auditColumns(event: ChangeEvent): {
       return { action: "update", entityType: "item", entityId: event.itemId, projectId: event.projectId };
     case "item.completed":
       return { action: "complete", entityType: "item", entityId: event.itemId, projectId: event.projectId };
+    case "item.cancelled":
+      return { action: "cancel", entityType: "item", entityId: event.itemId, projectId: event.projectId };
     case "item.reopened":
       return { action: "uncomplete", entityType: "item", entityId: event.itemId, projectId: event.projectId };
     case "item.reordered":
@@ -605,6 +628,13 @@ export function auditColumns(event: ChangeEvent): {
       return account("delete", "email_address", event.addressId);
     case "source.added":
       return account("create", "source", event.sourceId);
+    case "invitation.sent":
+      return account("create", "invitation", event.invitationId);
+    case "invitation.resent":
+    case "invitation.accepted":
+      return account("update", "invitation", event.invitationId);
+    case "invitation.cancelled":
+      return account("delete", "invitation", event.invitationId);
     case "profile.username":
     case "profile.password":
     case "profile.two_factor":

@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ChevronRight,
   Circle,
+  CircleX,
   Copy,
   CornerLeftUp,
   ExternalLink,
@@ -73,6 +74,8 @@ import { DueBadge, WaitingBadge } from "./DueBadge";
 import { RepeatBadge } from "./RepeatBadge";
 import { SmartDuePanel } from "./SmartDuePanel";
 import { useListAccess } from "./list-access";
+import { SortableChecklist } from "./ItemList";
+import type { RowDrag } from "./ItemRow";
 import { MoveToListPicker, useMoveItem } from "./MoveItem";
 import { AssigneeChip, CHIP, DueChip, EMPTY_CHIP, Field, RepeatChip } from "./DialogFields";
 import { InlineCode, Markdown } from "./Markdown";
@@ -83,6 +86,7 @@ import { useItemChanges } from "./use-optimistic-items";
 import { useCopyItemRef } from "./useCopyItemRef";
 import { useFollows } from "./follows";
 import { Struck } from "./Struck";
+import { CancelItemDialog, CancelledChip } from "./CancelItem";
 import { AgentAvatar, AvatarStack, assigneeName, assigneeNames } from "./UserAvatar";
 import { useAgentAssignment, useItemAgentSessions } from "./agent-sessions";
 
@@ -363,68 +367,87 @@ function Checklist({
     });
   }
 
+  // A sub-item's line: the row that drags to reorder it, or (`lifted`) the
+  // copy that follows the pointer.
+  function step(child: Item, drag: RowDrag | undefined, lifted = false) {
+    const done = child.completedAt !== null;
+    const childAssigneeIds = assigneesById[child.id] ?? child.assigneeIds;
+    const assigned = assignees.filter((a) => childAssigneeIds.includes(a.userId));
+    return (
+      <div
+        {...drag?.attributes}
+        {...drag?.listeners}
+        ref={drag?.setActivatorNodeRef}
+        aria-label={drag ? `Reorder ${child.title}` : undefined}
+        data-item-ref={lifted ? undefined : formatItemRef(prefix, child.number)}
+        className={`flex items-center gap-2 rounded-md px-1 py-0.5 outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 ${
+          drag ? "touch-manipulation" : ""
+        } ${
+          // While dragged, the line stays behind as the slot it would drop into.
+          drag?.isDragging ? "bg-neutral-100 *:invisible dark:bg-neutral-800/50" : ""
+        }`}
+      >
+        <Checkbox
+          checked={done}
+          cancelled={done && child.cancelled}
+          onCheckedChange={() => setCompleted(child, !done)}
+          readOnly={readOnly}
+          aria-label={`${readOnly ? (done ? "Done:" : "Not done:") : done ? "Uncomplete" : "Complete"} ${child.title}`}
+        />
+        <button
+          type="button"
+          autoFocus={!lifted && child.id === focusId}
+          onClick={() => onOpenItem(child)}
+          className={`min-w-0 flex-1 truncate text-left text-sm hover:underline ${
+            done ? "text-neutral-400 line-through" : ""
+          }`}
+        >
+          {child.title}
+        </button>
+        {readOnly ? (
+          assigned.length > 0 && <AvatarStack users={assigned} size={18} />
+        ) : (
+        <DropdownMenu
+          open={pickerFor === child.id}
+          onOpenChange={(o) => onPickerFor(o ? child.id : null)}
+        >
+          <DropdownMenuTrigger
+            aria-label={
+              assigned.length
+                ? `${child.title}: assigned to ${assigneeNames(assigned)}. Change assignees`
+                : `Assign ${child.title}`
+            }
+            className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full touch:h-8 touch:min-w-8 text-neutral-300 transition hover:bg-neutral-100 hover:text-neutral-600 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+          >
+            {assigned.length ? (
+              <AvatarStack users={assigned} size={18} ringClassName="ring-popover" />
+            ) : (
+              <UserRound className="size-4" />
+            )}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent data-assignee-picker align="end" className="w-52">
+            <AssigneeOptions
+              selected={childAssigneeIds}
+              assignees={assignees}
+              viewerId={viewerId}
+              onChange={(assigneeIds) => onAssign(child.id, assigneeIds)}
+            />
+          </DropdownMenuContent>
+        </DropdownMenu>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-1">
-      {items.map((child) => {
-        const done = child.completedAt !== null;
-        const childAssigneeIds = assigneesById[child.id] ?? child.assigneeIds;
-        const assigned = assignees.filter((a) => childAssigneeIds.includes(a.userId));
-        return (
-          <div
-            key={child.id}
-            data-item-ref={formatItemRef(prefix, child.number)}
-            className="flex items-center gap-2 px-1 py-0.5"
-          >
-            <Checkbox
-              checked={done}
-              onCheckedChange={() => setCompleted(child, !done)}
-              readOnly={readOnly}
-              aria-label={`${readOnly ? (done ? "Done:" : "Not done:") : done ? "Uncomplete" : "Complete"} ${child.title}`}
-            />
-            <button
-              type="button"
-              autoFocus={child.id === focusId}
-              onClick={() => onOpenItem(child)}
-              className={`min-w-0 flex-1 truncate text-left text-sm hover:underline ${
-                done ? "text-neutral-400 line-through" : ""
-              }`}
-            >
-              {child.title}
-            </button>
-            {readOnly ? (
-              assigned.length > 0 && <AvatarStack users={assigned} size={18} />
-            ) : (
-            <DropdownMenu
-              open={pickerFor === child.id}
-              onOpenChange={(o) => onPickerFor(o ? child.id : null)}
-            >
-              <DropdownMenuTrigger
-                aria-label={
-                  assigned.length
-                    ? `${child.title}: assigned to ${assigneeNames(assigned)}. Change assignees`
-                    : `Assign ${child.title}`
-                }
-                className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full touch:h-8 touch:min-w-8 text-neutral-300 transition hover:bg-neutral-100 hover:text-neutral-600 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
-              >
-                {assigned.length ? (
-                  <AvatarStack users={assigned} size={18} ringClassName="ring-popover" />
-                ) : (
-                  <UserRound className="size-4" />
-                )}
-              </DropdownMenuTrigger>
-              <DropdownMenuContent data-assignee-picker align="end" className="w-52">
-                <AssigneeOptions
-                  selected={childAssigneeIds}
-                  assignees={assignees}
-                  viewerId={viewerId}
-                  onChange={(assigneeIds) => onAssign(child.id, assigneeIds)}
-                />
-              </DropdownMenuContent>
-            </DropdownMenu>
-            )}
-          </div>
-        );
-      })}
+      <SortableChecklist
+        items={items}
+        disabled={readOnly}
+        lifted={(child) => step(child, undefined, true)}
+      >
+        {(child, drag) => step(child, drag)}
+      </SortableChecklist>
       {adding.map(({ key, title }) => (
         <div
           key={`adding-${key}`}
@@ -609,6 +632,11 @@ export function ItemDetailView({
   // A sub-item's assignee picker in the checklist, when one is open.
   const [childPickerFor, setChildPickerFor] = useState<string | null>(null);
   const completed = item.completedAt !== null;
+  // Closed without being done: an ✕ and a dashed strike, never the green tick.
+  const cancelled = completed && item.cancelled;
+  const [cancelOpen, setCancelOpen] = useState(false);
+  // Done and cancelled titles share the strike; the ✕ and chip tell them apart.
+  const strike = "text-neutral-400 line-through";
   const ref = formatItemRef(prefix, item.number);
   const { assigneesById, setAssignees } = useOptimisticAssignees([item, ...checklist]);
   const assigneeIds = assigneesById[item.id];
@@ -761,10 +789,10 @@ export function ItemDetailView({
         {!canEdit ? (
           <span
             role="img"
-            aria-label={completed ? "Done" : "Not done"}
-            className={`mt-px shrink-0 ${completed ? "text-green-600 dark:text-green-500" : "text-neutral-300 dark:text-neutral-600"}`}
+            aria-label={cancelled ? "Cancelled" : completed ? "Done" : "Not done"}
+            className={`mt-px shrink-0 ${cancelled ? "text-neutral-400" : completed ? "text-green-600 dark:text-green-500" : "text-neutral-300 dark:text-neutral-600"}`}
           >
-            {completed ? <CheckCircle2 className="size-6" /> : <Circle className="size-6" />}
+            {cancelled ? <CircleX className="size-6" /> : completed ? <CheckCircle2 className="size-6" /> : <Circle className="size-6" />}
           </span>
         ) : (
         <button
@@ -772,22 +800,24 @@ export function ItemDetailView({
           onClick={toggle}
           disabled={pending}
           aria-pressed={completed}
-          aria-label={completed ? "Completed" : "Complete"}
-          title={completed ? "Mark as not done (X)" : "Complete (X)"}
+          aria-label={cancelled ? "Cancelled" : completed ? "Completed" : "Complete"}
+          title={cancelled ? "Reopen (X)" : completed ? "Mark as not done (X)" : "Complete (X)"}
           className={`mt-px shrink-0 rounded-full transition disabled:opacity-50 ${
-            completed
+            cancelled
+              ? "text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+              : completed
               ? "text-green-600 hover:text-green-700 dark:text-green-500"
               : "text-neutral-400 hover:text-green-600 dark:text-neutral-500 dark:hover:text-green-500"
           }`}
         >
-          {completed ? <CheckCircle2 className="size-6" /> : <Circle className="size-6" />}
+          {cancelled ? <CircleX className="size-6" /> : completed ? <CheckCircle2 className="size-6" /> : <Circle className="size-6" />}
         </button>
         )}
         <ResponsiveDialogTitle className="min-w-0 flex-1">
           {!canEdit ? (
             <span
               className={`block w-full break-words text-base leading-6 font-medium ${
-                completed ? "text-neutral-400 line-through" : ""
+                completed ? strike : ""
               }`}
             >
               <InlineCode>{item.title}</InlineCode>
@@ -801,7 +831,7 @@ export function ItemDetailView({
             }
             required
             className={`block w-full break-words text-base leading-6 font-medium ${
-              completed ? "text-neutral-400 line-through" : ""
+              completed ? strike : ""
             }`}
             inputClassName="w-full text-base"
             renderValue={(title) => <InlineCode>{title}</InlineCode>}
@@ -1030,12 +1060,36 @@ export function ItemDetailView({
     </div>
 
     <div className="flex shrink-0 items-center justify-between border-t border-neutral-200 px-4 py-2.5 dark:border-neutral-800">
-      <span data-replay-safe className="text-xs text-neutral-400">
-        {completed && item.completedAt
-          ? `Completed ${dayLabel(item.completedAt)}`
-          : `Created ${dayLabel(item.createdAt)}`}
+      <span data-replay-safe className="flex min-w-0 flex-wrap items-center gap-1 text-xs text-neutral-400">
+        {cancelled && item.completedAt ? (
+          <>
+            <span>
+              Cancelled {dayLabel(item.completedAt)}
+              {item.cancelReason && `: ${item.cancelReason}`}
+            </span>
+            <CancelledChip item={item} />
+          </>
+        ) : completed && item.completedAt ? (
+          `Completed ${dayLabel(item.completedAt)}`
+        ) : (
+          `Created ${dayLabel(item.createdAt)}`
+        )}
       </span>
       {canEdit ? (
+        <span className="flex shrink-0 items-center gap-1">
+        {!completed && (
+          <Button
+            variant="ghost"
+            size="sm"
+            data-replay-safe
+            onClick={() => setCancelOpen(true)}
+            disabled={pending}
+            className="text-neutral-500"
+          >
+            <CircleX />
+            Cancel…
+          </Button>
+        )}
         <Button
           variant={confirmingDelete ? "destructive" : "ghost"}
           size="sm"
@@ -1048,6 +1102,7 @@ export function ItemDetailView({
           {confirmingDelete ? "Confirm delete?" : "Delete"}
           {!confirmingDelete && <Kbd className="ml-0.5">⌫</Kbd>}
         </Button>
+        </span>
       ) : (
         <span className="inline-flex items-center gap-1 text-xs text-neutral-400">
           {access === "comment" ? <MessageSquare className="size-3.5" /> : <Eye className="size-3.5" />}
@@ -1055,6 +1110,7 @@ export function ItemDetailView({
         </span>
       )}
     </div>
+    {cancelOpen && <CancelItemDialog item={item} open={cancelOpen} onOpenChange={setCancelOpen} />}
     </>
   );
 }

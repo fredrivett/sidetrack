@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   deliverInviteEmail,
+  deliverJoinInviteEmail,
   deliverPasswordResetEmail,
   deliverSignupNotificationEmail,
   redactSmtpUrl,
@@ -153,6 +154,33 @@ describe("deliverPasswordResetEmail", () => {
         sendSmtp: smtp.fn,
       }),
     ).rejects.toThrow(/Resend rejected.*422.*invalid from/);
+  });
+});
+
+describe("deliverJoinInviteEmail", () => {
+  const sent = async (invite: Partial<Parameters<typeof deliverJoinInviteEmail>[0]>) => {
+    const smtp = smtpStub();
+    await deliverJoinInviteEmail(
+      { to: "jo@example.com", inviterName: "Fred", url: "https://x.test/invite/tok", places: [], within: null, days: 30, ...invite },
+      { env: { ...noEnv, SMTP_URL: "smtp://localhost:1025" }, fetchFn: fetchStub({}).fn, log: () => {}, sendSmtp: smtp.fn },
+    );
+    return smtp.calls[0].message;
+  };
+
+  it("says whose day they're invited to see, with the link on its own line", async () => {
+    const { to, subject, text } = await sent({ places: ["Home", "Life"], within: "week" });
+    expect(to).toBe("jo@example.com");
+    expect(subject).toBe("Fred wants to share their week with you");
+    expect(text).toContain("what they're getting done this week");
+    expect(text).toContain("\n\nJoin here: https://x.test/invite/tok\n\n");
+    expect(text).toContain("works for 30 days");
+  });
+
+  it("invites a friend to join without saying anything is shared", async () => {
+    const { subject, text } = await sent({});
+    expect(subject).toBe("Fred invited you to Sidetrack");
+    expect(text).toMatch(/^Fred invited you to join them on Sidetrack\./);
+    expect(text).not.toMatch(/share/);
   });
 });
 

@@ -4,6 +4,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { appBaseUrl } from "./site";
+import { formatItemRef } from "@/lib/itemRef";
+import {
+  projectRefPrefixes as projectRefPrefixesCore,
+  resolveItemRef as resolveItemRefCore,
+} from "@/core/itemRef";
 import {
   createApiKey as createApiKeyCore,
   revokeApiKey as revokeApiKeyCore,
@@ -78,6 +83,7 @@ import {
 import type { FeedbackArea, FeedbackKind, FeedbackRating } from "@/lib/feedback";
 import {
   addItem as addItemCore,
+  cancelItem as cancelItemCore,
   completeItem as completeItemCore,
   deleteItem as deleteItemCore,
   getItem as getItemCore,
@@ -129,7 +135,15 @@ import {
   savePushSubscription as savePushSubscriptionCore,
 } from "@/core/push";
 import type { AuditSource, ListRole, NotificationLevel, OnlyWithin, ProjectStatus, SpaceColor, SpaceRole } from "@/core/schema";
-import { invitePeople as invitePeopleCore, type InvitePlace } from "@/core/invites";
+import { emailsWithoutAccounts, invitePeople as invitePeopleCore, type InvitePlace } from "@/core/invites";
+import {
+  acceptInvitation as acceptInvitationCore,
+  cancelInvitation as cancelInvitationCore,
+  INVITE_DAYS,
+  inviteByEmail as inviteByEmailCore,
+  resendInvitation as resendInvitationCore,
+  type SentInvitation,
+} from "@/core/invitations";
 import {
   acceptSpaceInvite as acceptSpaceInviteCore,
   createSpace as createSpaceCore,
@@ -176,7 +190,7 @@ import {
 } from "@/core/sources";
 import { getCurrentSession, requireUserId } from "@/auth/session";
 import { sendAgentRequest } from "@/lib/agentRequest";
-import { notifyInvite, notifyMentions } from "@/lib/email";
+import { notifyInvite, notifyJoinInvite, notifyMentions } from "@/lib/email";
 import { getEnv } from "@/lib/env";
 import type { ItemFilters } from "@/lib/filters";
 import type { GreetingPrefs } from "@/lib/greetingPrefs";
@@ -319,7 +333,12 @@ export async function inviteMemberAction(
   if (!session) redirect("/login");
   const userId = session.user.id;
   const { db } = getDb();
-  const member = inviteMemberCore(db, userId, projectId, person, SOURCE, role, { onlyMine, within });
+  let member;
+  try {
+    member = inviteMemberCore(db, userId, projectId, person, SOURCE, role, { onlyMine, within });
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Couldn't send the invite." };
+  }
 
   // Notify the invitee by email, once the invite has answered: it's
   // best-effort (the in-app banner is the source of truth, so notifyInvite
@@ -339,7 +358,6 @@ export async function inviteMemberAction(
   }
 
   refresh();
-  return member;
 }
 
 /**
@@ -352,7 +370,20 @@ export async function invitePeopleAction(people: string[], places: InvitePlace[]
   if (!session) redirect("/login");
   const userId = session.user.id;
   const { db } = getDb();
-  const { sent, places: named } = invitePeopleCore(db, userId, { people, places }, SOURCE);
+  // Someone without an account can be invited to Sidetrack instead
+  // (inviteByEmailAction), which the dialog offers.
+  const strangers = emailsWithoutAccounts(db, people);
+  if (strangers.length) {
+    const who = strangers.length === 1 ? `${strangers[0]} isn't` : `${strangers.join(", ")} aren't`;
+    return { error: `${who} on Sidetrack yet`, notOnSidetrack: strangers };
+  }
+  let invited;
+  try {
+    invited = invitePeopleCore(db, userId, { people, places }, SOURCE);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Couldn't send the invites." };
+  }
+  const { sent, places: named } = invited;
 
   // One email each, best-effort and after answering, like a single invite.
   const url = await appBaseUrl();
@@ -370,7 +401,82 @@ export async function invitePeopleAction(people: string[], places: InvitePlace[]
     after(() => notifyInvite(invite));
   }
   refresh();
-  return sent.length;
+}
+
+/**
+ * Invite someone not on Sidetrack yet, by email: to join, and with
+ * `places`, to those, such as Share my day's. Returns why it was refused.
+ */
+export async function inviteByEmailAction(email: string, places: InvitePlace[]) {
+  const session = await getCurrentSession();
+  if (!session) redirect("/login");
+  const { db } = getDb();
+  let sent: SentInvitation;
+  try {
+    sent = inviteByEmailCore(db, session.user.id, { email, places }, SOURCE);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Couldn't send the invite." };
+  }
+  await sendJoinInvite(sent, session.user.name);
+  refresh();
+}
+
+/** Send an invite to join again, with a new link. Returns why it was refused, such as the day's limit. */
+export async function resendInvitationAction(id: string) {
+  const session = await getCurrentSession();
+  if (!session) redirect("/login");
+  const { db } = getDb();
+  let sent: SentInvitation;
+  try {
+    sent = resendInvitationCore(db, session.user.id, id, SOURCE);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Couldn't send the invite again." };
+  }
+  await sendJoinInvite(sent, session.user.name);
+  refresh();
+}
+
+/** The email, after answering: best-effort, as the inviter can send it again. */
+async function sendJoinInvite(sent: SentInvitation, inviterName: string) {
+  const invite = {
+    to: sent.email,
+    inviterName,
+    url: `${await appBaseUrl()}/invite/${sent.token}`,
+    places: sent.places,
+    within: sent.within,
+    days: INVITE_DAYS,
+  };
+  after(() => notifyJoinInvite(invite));
+}
+
+/** Cancel an invite to join. Returns why it was refused, such as it being accepted meanwhile. */
+export async function cancelInvitationAction(id: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  try {
+    cancelInvitationCore(db, userId, id, SOURCE);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Couldn't cancel the invite." };
+  }
+  refresh();
+}
+
+/**
+ * Accept an invite to join, by its link's token, as the signed-in user, and
+ * go where it shows: Check-ins for someone's day, else the board. Returns
+ * why it was refused, such as a link already used.
+ */
+export async function acceptInvitationAction(token: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  let accepted;
+  try {
+    accepted = acceptInvitationCore(db, token, userId, SOURCE);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Couldn't accept the invite." };
+  }
+  refresh();
+  redirect(accepted.within ? "/check-ins" : "/");
 }
 
 /** Change what a member of the list can do on it, and whether they see only your items. */
@@ -714,6 +820,38 @@ export async function completeItemAction(id: string) {
   return savedRows(db, userId, from, groupIdsCore(db, userId, id));
 }
 
+/**
+ * Cancel an item. `replacedBy` is the ref someone typed ("SDT-87"); an
+ * unknown or ambiguous one refuses the whole cancel, so nothing closes on a
+ * guess.
+ */
+export async function cancelItemAction(
+  id: string,
+  opts: { reason?: string | null; replacedBy?: string | null },
+) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  let replacedById: string | null = null;
+  const typed = opts.replacedBy?.trim();
+  if (typed) {
+    const found = resolveItemRefCore(db, userId, typed);
+    if (found.status !== "ok") {
+      throw new Error(
+        found.status === "ambiguous" ? `${typed} matches more than one item` : `No item ${typed}`,
+      );
+    }
+    replacedById = found.item.id;
+  }
+  // Cancelling ends the agents' sessions on it too, which no row shows.
+  const working = groupIdsCore(db, userId, id).some(
+    (i) => listOpenAgentSessionsCore(db, userId, i).length > 0,
+  );
+  const from = changeSeq();
+  cancelItemCore(db, userId, id, { reason: opts.reason, replacedById }, SOURCE);
+  if (working) refresh();
+  return savedRows(db, userId, from, groupIdsCore(db, userId, id));
+}
+
 export async function uncompleteItemAction(id: string) {
   const userId = await requireUserId();
   const { db } = getDb();
@@ -856,6 +994,17 @@ export async function discardSourceAction(sourceId: string) {
 }
 
 /** The photo an item was added from, and where on it, for the item's dialog. */
+/** The item a cancelled one was replaced by, as its cancelled chip names it: null when it's gone or out of sight. */
+export async function getReplacementAction(itemId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const replacedById = getItemCore(db, userId, itemId)?.replacedById;
+  const it = replacedById ? getItemCore(db, userId, replacedById) : undefined;
+  if (!it) return null;
+  const prefix = projectRefPrefixesCore(db, userId)[it.projectId] ?? "";
+  return { id: it.id, ref: formatItemRef(prefix, it.number), title: it.title, done: it.completedAt !== null };
+}
+
 export async function getItemSourceAction(itemId: string) {
   const userId = await requireUserId();
   const { db } = getDb();

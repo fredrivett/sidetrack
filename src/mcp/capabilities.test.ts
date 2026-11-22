@@ -40,6 +40,10 @@ const ACTIONS: Record<string, string | Exempt> = {
   listSuggestedCollaboratorsAction: "list_collaborators",
   inviteMemberAction: "invite_member",
   invitePeopleAction: "invite_people",
+  inviteByEmailAction: "invite_by_email",
+  resendInvitationAction: "resend_invitation",
+  cancelInvitationAction: "cancel_invitation",
+  acceptInvitationAction: { exempt: "credential", note: "redeems an invite link's secret token" },
   setMemberRoleAction: "set_member_role",
   removeMemberAction: "remove_member",
   updateDayShareAction: "update_day_share",
@@ -70,6 +74,7 @@ const ACTIONS: Record<string, string | Exempt> = {
   addSmartMatchAction: "add_smart_match",
   removeSmartMatchAction: "remove_smart_match",
   completeItemAction: "complete_item",
+  cancelItemAction: "cancel_item",
   uncompleteItemAction: "uncomplete_item",
   listDoneBeforeAction: "search_done",
   getItemWithSubItemsAction: "get_item",
@@ -132,6 +137,7 @@ const ACTIONS: Record<string, string | Exempt> = {
   addFromSourceAction: "add_photo_lines",
   discardSourceAction: "discard_photo",
   getItemSourceAction: "get_item",
+  getReplacementAction: "get_item",
 };
 
 function serverActions(): string[] {

@@ -181,8 +181,8 @@ function glideBack(incoming: Incoming, clear: () => void) {
   }
 }
 
-const MOUSE = { activationConstraint: { distance: 5 } };
-const TOUCH = { activationConstraint: { delay: 200, tolerance: 5 } };
+export const MOUSE = { activationConstraint: { distance: 5 } };
+export const TOUCH = { activationConstraint: { delay: 200, tolerance: 5 } };
 
 /**
  * The board's drag and drop, and its moves between lists: one drag context

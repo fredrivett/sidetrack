@@ -139,12 +139,15 @@ export function ShareDialog({
     if (!handle || !projectId) return;
     setError(null);
     start(async () => {
+      let refused: string | undefined;
       try {
-        await inviteMemberAction(projectId, handle, role, role !== "editor" && onlyMine);
+        refused = (await inviteMemberAction(projectId, handle, role, role !== "editor" && onlyMine))?.error;
       } catch (err) {
         unstable_rethrow(err);
-        if (latestProjectId.current !== projectId) return;
-        setError(err instanceof Error ? err.message : "Couldn't send the invite.");
+        refused = "Couldn't send the invite. Please try again.";
+      }
+      if (refused) {
+        if (latestProjectId.current === projectId) setError(refused);
         return;
       }
       if (fromForm && latestProjectId.current === projectId) draft.clear();

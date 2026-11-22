@@ -37,8 +37,8 @@ export function InvitesBanner({
   return (
     <div className="shrink-0 space-y-2 border-b border-amber-200 bg-amber-50 px-4 py-2 dark:border-amber-900 dark:bg-amber-950/40">
       {photos.map((photo) => (
-        <div key={photo.id} className="flex items-center justify-between gap-3 text-sm">
-          <span className="min-w-0 truncate text-amber-900 dark:text-amber-200">
+        <div key={photo.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 text-sm">
+          <span className="min-w-0 flex-1 basis-48 text-amber-900 dark:text-amber-200">
             {photo.agentName ? (
               <span className="font-medium">{photo.agentName}</span>
             ) : (
@@ -46,18 +46,18 @@ export function InvitesBanner({
             )}{" "}
             read a photo for you to add
           </span>
-          <Button size="sm" render={<Link href={`/sources/${photo.id}`} />} nativeButton={false}>
+          <Button size="sm" className="ml-auto" render={<Link href={`/sources/${photo.id}`} />} nativeButton={false}>
             Review
           </Button>
         </div>
       ))}
       {spaceInvites.map((invite) => (
-        <div key={invite.spaceId} className="flex items-center justify-between gap-3 text-sm">
-          <span className="min-w-0 truncate text-amber-900 dark:text-amber-200">
+        <div key={invite.spaceId} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 text-sm">
+          <span className="min-w-0 flex-1 basis-48 text-amber-900 dark:text-amber-200">
             You&rsquo;re invited to join the space{" "}
             <span className="font-medium">“{invite.spaceName}”</span> and share its lists
           </span>
-          <div className="flex shrink-0 gap-2">
+          <div className="ml-auto flex shrink-0 gap-2">
             <Button
               size="sm"
               aria-disabled={pending || undefined}
@@ -97,14 +97,14 @@ export function InvitesBanner({
       {invites.map((invite) => (
         <div
           key={invite.projectId}
-          className="flex items-center justify-between gap-3 text-sm"
+          className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 text-sm"
         >
-          <span className="min-w-0 truncate text-amber-900 dark:text-amber-200">
+          <span className="min-w-0 flex-1 basis-48 text-amber-900 dark:text-amber-200">
             <span className="font-medium">{invite.ownerName ?? "Someone"}</span>{" "}
             invited you to{" "}
             <span className="font-medium">“{invite.projectName}”</span>
           </span>
-          <div className="flex shrink-0 gap-2">
+          <div className="ml-auto flex shrink-0 gap-2">
             <Button
               size="sm"
               aria-disabled={pending || undefined}

@@ -135,13 +135,14 @@ export function InviteDialog({
     if (!ready || pending) return;
     setError(null);
     start(async () => {
+      let refused: string | undefined;
       try {
-        await invitePeopleAction(everyone, places);
+        refused = (await invitePeopleAction(everyone, places))?.error;
       } catch (err) {
         unstable_rethrow(err);
-        setError(err instanceof Error ? err.message : "Couldn't send the invites.");
-        return;
+        refused = "Couldn't send the invites. Please try again.";
       }
+      if (refused) return setError(refused);
       toast.success(
         `Invited ${everyone.length === 1 ? everyone[0] : `${everyone.length} people`}`,
       );

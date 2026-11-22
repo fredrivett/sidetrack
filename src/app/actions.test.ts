@@ -11,6 +11,7 @@ import {
   addSubItemAction,
   completeItemAction,
   deleteItemAction,
+  invitePeopleAction,
   moveItemAction,
   setItemParentAction,
   uncompleteItemAction,
@@ -23,7 +24,7 @@ const ctx = vi.hoisted(() => ({ db: null as unknown, viewer: "" }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/auth/session", () => ({
   requireUserId: async () => ctx.viewer,
-  getCurrentSession: async () => null,
+  getCurrentSession: async () => ({ user: { id: ctx.viewer, name: "Fred" } }),
 }));
 vi.mock("@/core/db", () => ({ getDb: () => ({ db: ctx.db }) }));
 vi.mock("@/lib/env", () => ({ getEnv: () => ({ TYPESAFE_API_KEY: "test" }) }));
@@ -62,6 +63,20 @@ describe("moveItemAction", () => {
     const done = await moveItemAction(item.id, ops.id, stale.plan.token);
     expect(done.moved).toBe(true);
     expect(getItem(db, fred, item.id)).toMatchObject({ projectId: ops.id, labels: ["Bug"] });
+  });
+});
+
+describe("invitePeopleAction", () => {
+  // Production hides a thrown Server Action's message (React error #441),
+  // so a refusal the person can act on comes back instead.
+  it("returns why it refused, such as someone without an account", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    ctx.viewer = fred;
+    const home = createProject(db, fred, { name: "Home" }, "web");
+
+    const refused = await invitePeopleAction(["jo@example.com"], [{ kind: "list", id: home.id, role: "commenter" }]);
+    expect(refused).toEqual({ error: "jo@example.com isn't on Sidetrack yet", notOnSidetrack: ["jo@example.com"] });
+    expect(revalidatePath).not.toHaveBeenCalled();
   });
 });
 

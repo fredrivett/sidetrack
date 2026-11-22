@@ -209,3 +209,69 @@ test("shares your day on someone else's list you edit, not one you only comment 
   await expect(page.getByText("Who sees your day")).toBeVisible();
   await expect(page.getByText("Water the plants")).toBeVisible();
 });
+
+test("offers to invite someone who isn't on Sidetrack yet, by email, to see your day", async ({ page, user }) => {
+  user.addList("Week");
+  await page.goto("/check-ins");
+  await page.getByRole("button", { name: "Share my day" }).click();
+  const dialog = page.getByRole("dialog", { name: "Share my day" });
+  await dialog.getByRole("checkbox", { name: "Share from Week" }).click();
+  await dialog.getByLabel("Who to share your day with").fill("nobody@example.com");
+  await dialog.getByRole("button", { name: "Share my day" }).click();
+  await expect(dialog.getByText("nobody@example.com isn’t on Sidetrack yet.")).toBeVisible();
+  await dialog.getByRole("button", { name: "Email an invite" }).click();
+  await expect(dialog).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByText("Who sees your day")).toBeVisible();
+  await expect(page.getByText("nobody@example.com")).toBeVisible();
+  await expect(page.getByText("Invited, not joined yet")).toBeVisible();
+});
+
+test("someone invited by email joins through the link and sees your week", async ({ page, user, browser, baseURL }) => {
+  const list = user.addList("Week");
+  user.addItem(list.id, "Book the dentist", [user.id], "2020-01-06");
+  const email = `new-${user.username}@example.com`;
+  const link = user.shareWeekByEmail(email, [list.id]);
+
+  const context = await browser.newContext();
+  const theirs = await context.newPage();
+  await theirs.goto(`${baseURL}${link}`);
+  await expect(theirs.getByText("E2E User wants to share their week with you")).toBeVisible();
+  await expect(theirs.getByLabel("Email")).toHaveValue(email);
+  await theirs.getByLabel("Username").fill(`n${user.username}`.slice(0, 30));
+  await theirs.getByLabel("Password").fill("newcomer-password");
+  await theirs.getByRole("button", { name: /Create account|Sign up/ }).click();
+  await expect(theirs).toHaveURL(/\/check-ins$/);
+  const week = theirs.getByRole("region", { name: "E2E User’s week" });
+  await expect(week.getByText("Book the dentist")).toBeVisible();
+
+  // The link works once.
+  await context.clearCookies();
+  await theirs.goto(`${baseURL}${link}`);
+  await expect(theirs.getByText("This invite has expired or been used")).toBeVisible();
+
+  // And they're who sees your day now.
+  await page.goto("/check-ins");
+  await expect(page.getByText("Who sees your day")).toBeVisible();
+  await expect(page.getByText("Invited, not joined yet")).toHaveCount(0);
+});
+
+test("invites a friend to Sidetrack, and cancels the invite", async ({ page, user }) => {
+  void user;
+  await page.goto("/check-ins");
+  await page.getByRole("button", { name: "Account" }).click();
+  await page.getByRole("menuitem", { name: "Invite a friend…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Invite a friend" });
+  await dialog.getByLabel("Their email").fill("friend@example.com");
+  await dialog.getByRole("button", { name: "Send invite" }).click();
+  await expect(dialog).toHaveCount(0);
+  await page.getByRole("button", { name: "Account" }).click();
+  await page.getByRole("menuitem", { name: "Invite a friend…" }).click();
+  await expect(dialog.getByRole("region", { name: "Invited, not joined yet" }).getByText("friend@example.com")).toBeVisible();
+  await dialog.getByRole("button", { name: "Invite to friend@example.com" }).click();
+  await page.getByRole("menuitem", { name: "Cancel invite" }).click();
+  await expect(dialog.getByText("friend@example.com")).toHaveCount(0);
+  await page.reload();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("region", { name: "Invited, not joined yet" })).toHaveCount(0);
+});
