@@ -84,6 +84,7 @@ export function useItemShortcuts({
   onAssignToMe,
   onDue,
   onToggleDone,
+  onCancel,
   onDelete,
   onOpen,
 }: {
@@ -93,6 +94,8 @@ export function useItemShortcuts({
   onAssignToMe?: () => void;
   onDue?: () => void;
   onToggleDone?: () => void;
+  /** ⇧X: opens the cancel dialog (CancelItemDialog), never cancels at once. */
+  onCancel?: () => void;
   onDelete?: () => void;
   onOpen?: () => void;
 }) {
@@ -116,7 +119,8 @@ export function useItemShortcuts({
       // The rest act on the item itself, so not from inside an assignee picker.
       else if (menu) return;
       else if (matchesShortcut(e, { key: "d" })) run = onDue;
-      else if (matchesShortcut(e, { key: "x" })) run = onToggleDone;
+      else if (matchesShortcut(e, { key: "x", shift: false })) run = onToggleDone;
+      else if (matchesShortcut(e, { key: "x", shift: true })) run = onCancel;
       else if (e.key === "Backspace" || e.key === "Delete") run = onDelete;
       else if (e.key === "Enter" && !e.shiftKey) run = onOpen;
       if (!run || e.repeat) return;
@@ -128,7 +132,7 @@ export function useItemShortcuts({
     // swallow the I its "me" row advertises.
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
-  }, [active, deferToDialog, onOpenPicker, onAssignToMe, onDue, onToggleDone, onDelete, onOpen]);
+  }, [active, deferToDialog, onOpenPicker, onAssignToMe, onDue, onToggleDone, onCancel, onDelete, onOpen]);
 }
 
 /** The board's movement keys: the arrows, and Vim's HJKL. */

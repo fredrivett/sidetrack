@@ -185,3 +185,39 @@ test("cancels an item with its replacement, and reopens it", async ({ page, user
   await expect(cancelled.getByRole("checkbox", { name: "Complete" })).not.toBeChecked();
   await expect(cancelled.getByText("Cancelled")).toBeHidden();
 });
+
+test("Shift-clicking an item's circle opens Cancel, without ticking it", async ({ page, user }) => {
+  user.addList("Home", ["Water plants"]);
+  await page.goto("/board");
+  const item = page.locator("[data-item-row]").filter({ has: row(page, "Water plants") });
+  const circle = item.getByRole("checkbox", { name: "Complete" });
+  await circle.click({ modifiers: ["Shift"] });
+  const cancel = page.getByRole("dialog", { name: /Cancel “Water plants”/ });
+  await expect(cancel).toBeVisible();
+  await cancel.getByRole("button", { name: "Keep it open" }).click();
+  await expect(cancel).toBeHidden();
+  await page.reload();
+  await expect(circle).not.toBeChecked();
+});
+
+test("⇧X opens Cancel for the hovered item, and X still ticks it", async ({ page, user }) => {
+  user.addList("Home", ["Water plants"]);
+  await page.goto("/board");
+  const cancel = page.getByRole("dialog", { name: /Cancel “Water plants”/ });
+  // The server's page shows the rows before the keys work: hover anew (a
+  // hover from before then isn't counted) and press, until it opens.
+  await expect(async () => {
+    await page.mouse.move(0, 0);
+    await row(page, "Water plants").hover();
+    await page.keyboard.press("Shift+X");
+    await expect(cancel).toBeVisible({ timeout: 500 });
+  }).toPass();
+  await cancel.getByRole("button", { name: "Cancel item" }).click();
+  await expect(cancel).toBeHidden();
+  const item = page.locator("[data-item-row]").filter({ hasText: "Water plants" });
+  await expect(item.getByText("Cancelled")).toBeVisible();
+  await item.hover();
+  await page.keyboard.press("x");
+  await expect(item.getByRole("checkbox", { name: "Complete" })).not.toBeChecked();
+  await expect(item.getByText("Cancelled")).toBeHidden();
+});
