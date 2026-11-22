@@ -3,6 +3,8 @@
 import {
   type Active,
   type Announcements,
+  closestCenter,
+  DndContext,
   type DragEndEvent,
   type DragMoveEvent,
   DragOverlay,
@@ -10,11 +12,16 @@ import {
   type DroppableContainer,
   defaultDropAnimationSideEffects,
   type KeyboardCoordinateGetter,
+  KeyboardSensor,
   type Modifier,
+  MouseSensor,
   type Over,
+  TouchSensor,
   type UniqueIdentifier,
   useDndMonitor,
   useDroppable,
+  useSensor,
+  useSensors,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -32,6 +39,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useLayoutEffect,
   useOptimistic,
   useRef,
@@ -39,10 +47,11 @@ import {
   useSyncExternalStore,
   useTransition,
 } from "react";
+import { createPortal } from "react-dom";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { type DropTarget, nestItems, projectDrop, type TreeRow } from "@/lib/itemTree";
-import { columnEl, useBoardDrag } from "./BoardDrag";
+import { columnEl, MOUSE, TOUCH, useBoardDrag } from "./BoardDrag";
 import { useItemSaves } from "./item-saves";
 import { ItemRow, type RowDrag } from "./ItemRow";
 import { useMoveItem } from "./MoveItem";
@@ -214,18 +223,214 @@ const progress = (children: Item[]) => ({
   total: children.length,
 });
 
+const KEYBOARD = { coordinateGetter: sortableKeyboardCoordinates };
+const lockToColumn: Modifier = ({ transform }) => ({ ...transform, x: 0 });
+
+function SortableStep({
+  id,
+  disabled,
+  justDraggedRef,
+  children,
+}: {
+  id: string;
+  disabled: boolean;
+  justDraggedRef: { current: boolean };
+  children: (drag: RowDrag | undefined) => ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id, disabled });
+  const clear = () => {
+    justDraggedRef.current = false;
+  };
+  return (
+    <div
+      ref={setNodeRef}
+      // A drag in a phone's drawer moves the row, not the drawer.
+      data-base-ui-swipe-ignore={disabled ? undefined : ""}
+      // The row stays hidden under the card as it lands (see dropAnimation);
+      // only the row, so a Brief sub-item's tree line stays put. Transparent,
+      // not invisible, so dnd-kit can still hand focus back to it after a
+      // keyboard drop; important, over ItemRow's own opacity.
+      className="[&.dnd-landing_[aria-roledescription=sortable]]:opacity-0!"
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+      onPointerDownCapture={clear}
+      onKeyDownCapture={clear}
+      // The click that follows a drop (the mouse's, or Space's on keyup)
+      // mustn't open or tick what's under it.
+      onClickCapture={(e) => {
+        if (!justDraggedRef.current) return;
+        justDraggedRef.current = false;
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+    >
+      {children(
+        disabled ? undefined : { attributes, listeners, setActivatorNodeRef, isDragging },
+      )}
+    </div>
+  );
+}
+
 /**
- * A top-level row followed by its sub-items, indented and static: Done,
- * No date, and the copy of a dragged parent that follows the pointer. The
- * sub-items fold away as stored on the item, the same as on the board.
+ * One checklist's sub-items, dragged up and down to reorder them: the Brief's
+ * checklists and the item's dialog, which show a checklist on its own rather
+ * than the board's whole list. Only within the checklist; nesting and moving
+ * out are the board's drags and the menus'. Optimistic, like the board's: the
+ * new order shows at once and goes back, with a toast, if the save fails.
+ * From the keyboard: Space picks up a focused row, the arrows move it, Space
+ * drops it.
+ *
+ * With some sub-items hidden (`items` is those shown), a drop lands just
+ * after the one on view above it, or just before the one below when it's
+ * first, as the board's filtered drops do.
+ */
+export function SortableChecklist({
+  items,
+  disabled = false,
+  children,
+  lifted,
+  indent = "",
+}: {
+  items: Item[];
+  /** How far in the rows sit within their wrapper, so the lifted copy keeps its place. */
+  indent?: string;
+  /** For those who can't change the list. */
+  disabled?: boolean;
+  /** A sub-item's row, given the drag wiring for it (none when disabled). */
+  children: (item: Item, drag: RowDrag | undefined, index: number) => ReactNode;
+  /** The copy of the row that follows the pointer. */
+  lifted: (item: Item) => ReactNode;
+}) {
+  const saves = useItemSaves();
+  // The move, applied over the latest `items`: a tick, rename or new step
+  // that lands while it saves still shows.
+  const [order, showMove] = useOptimistic(items, (cur, move: { id: string; position: string }) => {
+    const moved = cur.find((i) => i.id === move.id);
+    const rest = cur.filter((i) => i.id !== move.id);
+    const [side, anchor] = move.position.split(":");
+    const at = rest.findIndex((i) => i.id === anchor);
+    if (!moved || at === -1) return cur;
+    const to = side === "after" ? at + 1 : at;
+    return [...rest.slice(0, to), moved, ...rest.slice(to)];
+  });
+  const [, start] = useTransition();
+  const [activeId, setActiveId] = useState<string | null>(null);
+  // The overlay goes into the body, out of any dialog's transform, once
+  // there's something to drag (there's no body to portal into on the server).
+  const [portal, setPortal] = useState(false);
+  const justDraggedRef = useRef(false);
+  const dndId = useId();
+  const sensors = useSensors(
+    useSensor(MouseSensor, MOUSE),
+    useSensor(TouchSensor, TOUCH),
+    useSensor(KeyboardSensor, KEYBOARD),
+  );
+
+  const title = (id: UniqueIdentifier) => order.find((i) => i.id === id)?.title ?? "item";
+  const place = (over: Over | null) => {
+    const at = over ? order.findIndex((i) => i.id === over.id) : -1;
+    return at === -1 ? "can't go here" : `is step ${at + 1} of ${order.length}`;
+  };
+  const announcements: Announcements = {
+    onDragStart: ({ active }) => `Picked up “${title(active.id)}”.`,
+    onDragOver: ({ active, over }) => `“${title(active.id)}” ${place(over)}.`,
+    onDragEnd: ({ active, over }) => `Dropped. “${title(active.id)}” ${place(over)}.`,
+    onDragCancel: ({ active }) => `Put “${title(active.id)}” back.`,
+  };
+
+  function onDragEnd({ active, over }: DragEndEvent) {
+    setActiveId(null);
+    justDraggedRef.current = true;
+    const from = order.findIndex((i) => i.id === active.id);
+    const to = over ? order.findIndex((i) => i.id === over.id) : -1;
+    if (from === -1 || to === -1 || from === to) return;
+    const next = arrayMove(order, from, to);
+    const moved = next[to];
+    const position = to > 0 ? `after:${next[to - 1].id}` : `before:${next[1].id}`;
+    navigator.vibrate?.(15);
+    start(async () => {
+      showMove({ id: moved.id, position });
+      await runAction(saves.reorderItem(moved.id, position), `move “${moved.title}”`);
+    });
+  }
+
+  const active = activeId ? order.find((i) => i.id === activeId) : undefined;
+  return (
+    <DndContext
+      id={dndId}
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      modifiers={[lockToColumn]}
+      accessibility={{
+        announcements,
+        screenReaderInstructions: {
+          draggable:
+            "To move a step, press Space. Use the up and down arrows to move it, then press Space to drop it, or Escape to cancel.",
+        },
+      }}
+      onDragStart={({ active, activatorEvent }) => {
+        setPortal(true);
+        setActiveId(String(active.id));
+        if (!(activatorEvent instanceof KeyboardEvent)) navigator.vibrate?.(10);
+      }}
+      onDragEnd={onDragEnd}
+      onDragCancel={() => {
+        setActiveId(null);
+        justDraggedRef.current = true;
+      }}
+    >
+      <SortableContext
+        items={order.map((i) => i.id)}
+        strategy={verticalListSortingStrategy}
+        disabled={disabled}
+      >
+        {order.map((item, i) => (
+          <SortableStep key={item.id} id={item.id} disabled={disabled} justDraggedRef={justDraggedRef}>
+            {(drag) => children(item, drag, i)}
+          </SortableStep>
+        ))}
+      </SortableContext>
+      {portal &&
+        createPortal(
+          <DragOverlay dropAnimation={dropAnimation}>
+            {active && (
+              <div className={indent}>
+                {/* Lifted off the list, as the board's dragged rows are. */}
+                <div className="cursor-grabbing rounded-lg **:cursor-grabbing! bg-white shadow-xl transition-[scale,box-shadow] duration-200 ease-out in-[.dnd-dropping]:scale-100! in-[.dnd-dropping]:shadow-none motion-safe:scale-[1.03] motion-safe:animate-[lift_150ms_ease-out] dark:bg-neutral-900">
+                  {lifted(active)}
+                </div>
+              </div>
+            )}
+          </DragOverlay>,
+          document.body,
+        )}
+    </DndContext>
+  );
+}
+
+/**
+ * A top-level row followed by its sub-items, indented: Done, the Brief, and
+ * the copy of a dragged parent that follows the pointer. The sub-items fold
+ * away as stored on the item, the same as on the board, and where `sortable`
+ * (the Brief) drag up and down to reorder (SortableChecklist).
  */
 export function ItemGroupView({
   group,
   collapsed: given,
   shown,
   list,
+  sortable = false,
   ...row
 }: RowProps & {
+  /** Its sub-items drag to reorder. */
+  sortable?: boolean;
   group: ItemGroup;
   /** The list the item is on, shown on its row where lists mix (the Brief's dated sections). */
   list?: Parameters<typeof ItemRow>[0]["list"];
@@ -255,10 +460,24 @@ export function ItemGroupView({
             : undefined,
       })}
       {expanded &&
-        children.map((child, i) => (
-          <SubItem key={child.id} last={i === children.length - 1}>
-            {rowFor(row, child, { parentTitle: group.title })}
-          </SubItem>
+        (sortable ? (
+          <SortableChecklist
+            items={children}
+            indent="ml-4 pl-5"
+            lifted={(child) => rowFor(row, child, { parentTitle: group.title })}
+          >
+            {(child, drag, i) => (
+              <SubItem last={i === children.length - 1}>
+                {rowFor(row, child, { parentTitle: group.title, drag })}
+              </SubItem>
+            )}
+          </SortableChecklist>
+        ) : (
+          children.map((child, i) => (
+            <SubItem key={child.id} last={i === children.length - 1}>
+              {rowFor(row, child, { parentTitle: group.title })}
+            </SubItem>
+          ))
         ))}
     </div>
   );

@@ -328,7 +328,7 @@ export function AgendaView({
                           onOpenDetail={() => openDetail(group)}
                         />
                       ) : (
-                        <ItemGroupView group={group} {...row} />
+                        <ItemGroupView group={group} sortable {...row} />
                       ),
                     ),
                 ),
@@ -362,7 +362,14 @@ export function AgendaView({
           return lightable(
             item.id,
             item.children.length > 0 ? (
-              <ItemGroupView group={item} list={project} {...rowProps(project)} />
+              <ItemGroupView
+                group={item}
+                list={project}
+                // Sorted by day here: only steps due the same day show in
+                // their checklist's order, so only they can be reordered.
+                sortable={new Set(item.children.map(dueOf)).size === 1}
+                {...rowProps(project)}
+              />
             ) : (
             <ItemRow
               item={item}
