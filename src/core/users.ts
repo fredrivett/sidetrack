@@ -128,6 +128,29 @@ export function setAgendaReadAt(db: Db, userId: string, at: number): void {
   db.update(users).set({ agendaReadAt: at }).where(eq(users.id, userId)).run();
 }
 
+/** The changelog posts the user has read or dismissed, by slug. */
+export function getSeenPosts(db: Db, userId: string): string[] {
+  const saved = db.select({ seen: users.seenPosts }).from(users).where(eq(users.id, userId)).get()?.seen;
+  return Array.isArray(saved) ? saved.filter((s): s is string => typeof s === "string") : [];
+}
+
+/** Far more posts than anyone will see while they're still on the Brief. */
+const SEEN_POSTS_MAX = 200;
+
+/**
+ * Mark a post seen, so it leaves the user's stack on the Brief. Not audited,
+ * like folding a section: it's how they view the Brief, not a change to
+ * anything shared.
+ */
+export function markPostSeen(db: Db, userId: string, slug: string): void {
+  if (typeof slug !== "string" || !/^[a-z0-9-]{1,100}$/.test(slug)) throw new Error("Not a post");
+  const seen = [...getSeenPosts(db, userId).filter((s) => s !== slug), slug].slice(-SEEN_POSTS_MAX);
+  // audit-exempt: view state, not a change to anything shown to others.
+  db.update(users).set({ seenPosts: seen }).where(eq(users.id, userId)).run();
+  // Unaudited, so announced here: the user's other tabs and devices follow.
+  announceChange({ actor: userId, projectId: null });
+}
+
 /** The display fields for the user's own avatar and name, or null if unknown. */
 export function getProfile(db: Db, userId: string) {
   return (

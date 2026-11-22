@@ -23,11 +23,13 @@ export function proxy(request: NextRequest) {
   // Password reset pages must work signed-out: /forgot-password requests the
   // email, /reset-password is where the emailed link lands (with ?token=).
   // The landing page is public too (signed-out visitors see it at /, below),
-  // and so is the changelog, with its images and clips in public/changelog/.
+  // and so is the changelog, with its images in public/changelog/ and posts'
+  // drawings in public/posts/.
   if (
     pathname === "/welcome" ||
     pathname === "/changelog" ||
     pathname.startsWith("/changelog/") ||
+    pathname.startsWith("/posts/") ||
     pathname === "/login" ||
     pathname.startsWith("/login/") ||
     pathname === "/forgot-password" ||

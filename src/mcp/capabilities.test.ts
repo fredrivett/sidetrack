@@ -90,6 +90,7 @@ const ACTIONS: Record<string, string | Exempt> = {
   setOverdueCollapsedAction: { exempt: "view", note: "folding the Agenda's Overdue" },
   sendGetStartedToBackAction: { exempt: "view", note: "the Get started card stack" },
   setGetStartedCollapsedAction: { exempt: "view", note: "the Get started card stack" },
+  markPostSeenAction: { exempt: "view", note: "the Brief's stack of changelog posts" },
   recordInstallAction: { exempt: "background", note: "the app noticing it's installed" },
   setAgendaReadAction: { exempt: "view", note: "the greeting the user has read in the app" },
   setDayNoteAction: { exempt: "view", note: "only the in-app greeting reads it" },

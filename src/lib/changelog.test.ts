@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { checkPullRequest, loadEntries, parseEntry, type ChangelogEntry } from "./changelog";
+import {
+  checkPullRequest,
+  loadEntries,
+  loadPosts,
+  parseEntry,
+  parsePost,
+  postsToShow,
+  type ChangelogEntry,
+} from "./changelog";
 
 const entry = (front: string, text = "Repeats can keep to a weekday.") =>
   `---\n${front}\n---\n${text}\n`;
@@ -11,6 +19,46 @@ describe("changes/", () => {
     expect(entries.length).toBeGreaterThan(0);
     const dates = entries.map((e) => e.date);
     expect(dates).toEqual([...dates].sort().reverse());
+  });
+});
+
+describe("posts/", () => {
+  // Every committed post must parse, with both of its drawings.
+  it("holds only valid posts, newest first", () => {
+    const dates = loadPosts().map((p) => p.date);
+    expect(dates).toEqual([...dates].sort().reverse());
+  });
+});
+
+describe("parsePost", () => {
+  it("splits the body into paragraphs, joining wrapped lines", () => {
+    const p = parsePost("calm.md", "---\ndate: 2026-11-21\ntitle: A calm start\n---\nOne line\nwrapped.\n\n  \nTwo.\n\nFred\n");
+    expect(p.slug).toBe("calm");
+    expect(p.paragraphs).toEqual(["One line wrapped.", "Two.", "Fred"]);
+  });
+
+  it("rejects a post that isn't small", () => {
+    expect(() => parsePost("x.md", `---\ndate: 2026-11-21\ntitle: T\n---\n${"a".repeat(901)}\n`)).toThrow(/^x\.md: body/);
+  });
+});
+
+describe("postsToShow", () => {
+  const post = (slug: string, date: string) => parsePost(`${slug}.md`, `---\ndate: ${date}\ntitle: T\n---\nText.\n`);
+  const posts = [post("newer", "2026-11-21"), post("older", "2026-11-10")];
+  const slugs = (seen: string[], today: string) => postsToShow(posts, seen, today).map((p) => p.slug);
+
+  // Seeing the newest must not hide the older one still unread.
+  it("stacks every unseen post, newest first", () => {
+    expect(slugs([], "2026-11-21")).toEqual(["newer", "older"]);
+    expect(slugs(["newer"], "2026-11-21")).toEqual(["older"]);
+    expect(slugs(["older", "newer"], "2026-11-21")).toEqual([]);
+  });
+
+  it("shows each for 30 days from its date, and not before it", () => {
+    expect(slugs([], "2026-12-09")).toEqual(["newer", "older"]);
+    expect(slugs([], "2026-12-10")).toEqual(["newer"]);
+    expect(slugs([], "2026-12-21")).toEqual([]);
+    expect(slugs([], "2026-11-20")).toEqual(["older"]);
   });
 });
 

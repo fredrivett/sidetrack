@@ -5,15 +5,16 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { CHANGES_DIR, checkPullRequest, loadEntries, parseEntry } from "../src/lib/changelog";
+import { CHANGES_DIR, checkPullRequest, loadEntries, loadPosts, parseEntry } from "../src/lib/changelog";
 
 const run = (cmd: string, args: string[]) => execFileSync(cmd, args, { encoding: "utf8" }).trim();
 
 const number = Number(process.env.PR_NUMBER);
 const labels = (JSON.parse(process.env.LABELS ?? "[]") as string[]).map(String);
 
-// Every entry must parse, not only this PR's, so main never holds a bad one.
+// Every entry and post must parse, not only this PR's, so main never holds a bad one.
 loadEntries();
+loadPosts();
 
 const changed = run("git", [
   "diff", "--name-only", "--diff-filter=AMR", `${process.env.BASE_SHA}...HEAD`, "--", "changes/",
