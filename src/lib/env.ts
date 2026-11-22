@@ -67,6 +67,10 @@ export interface ServerEnv {
   EMAIL_FROM: string | undefined;
   // Where to email a notice of each new signup. Unset sends none.
   SIGNUP_NOTIFY_EMAIL: string | undefined;
+  // Who can open /admin, by user id. Ids rather than emails: signup doesn't
+  // verify addresses, so anyone could sign up as a listed email with no
+  // account yet. Empty means nobody.
+  ADMIN_USER_IDS: string[];
   // TypeSafe Jev key for AI list-icon suggestions. Unset turns them off.
   TYPESAFE_API_KEY: string | undefined;
   // Anthropic key for the Agenda greeting's writer (greetingWriter.ts), with
@@ -176,6 +180,7 @@ function schemaFor(mode: EnvMode) {
       RESEND_API_KEY: optionalTrimmed,
       EMAIL_FROM: optionalTrimmed,
       SIGNUP_NOTIFY_EMAIL: optionalTrimmed,
+      ADMIN_USER_IDS: optionalTrimmed,
       TYPESAFE_API_KEY: optionalTrimmed,
       ANTHROPIC_API_KEY: optionalTrimmed,
       FEEDBACK_LIST_ID: optionalTrimmed,
@@ -352,6 +357,10 @@ function schemaFor(mode: EnvMode) {
       RESEND_API_KEY: env.RESEND_API_KEY,
       EMAIL_FROM: env.EMAIL_FROM,
       SIGNUP_NOTIFY_EMAIL: env.SIGNUP_NOTIFY_EMAIL,
+      ADMIN_USER_IDS: (env.ADMIN_USER_IDS ?? "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean),
       TYPESAFE_API_KEY: env.TYPESAFE_API_KEY,
       ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
       FEEDBACK_LIST_ID: env.FEEDBACK_LIST_ID,

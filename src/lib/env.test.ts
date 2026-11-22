@@ -152,6 +152,12 @@ describe("parseServerEnv", () => {
     ).toThrow(/SIGNUP_NOTIFY_EMAIL must be an email address/);
   });
 
+  it("reads ADMIN_USER_IDS as a list, keeping each id's case", () => {
+    const dev = { nodeEnv: "development", nextPhase: undefined };
+    expect(parseServerEnv({ ADMIN_USER_IDS: " aB1, ,cD2 " }, dev).ADMIN_USER_IDS).toEqual(["aB1", "cD2"]);
+    expect(parseServerEnv({}, dev).ADMIN_USER_IDS).toEqual([]);
+  });
+
   it("uploads backups only with every setting and a well-formed key", () => {
     const dev = { nodeEnv: "development", nextPhase: undefined };
     const key = Buffer.alloc(32, 9);

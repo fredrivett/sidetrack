@@ -1,0 +1,111 @@
+import { and, asc, count, eq, gte, sql } from "drizzle-orm";
+import { users } from "./auth-schema";
+import type { Db } from "./db";
+import { auditLog } from "./schema";
+
+// How much each person uses Sidetrack, for the admin view: the changes they
+// made (audit rows, from the web or through an agent) on each day.
+
+export interface UserUsage {
+  id: string;
+  name: string;
+  username: string;
+  email: string;
+  image: string | null;
+  createdAt: number;
+  /** Changes made on each of `DailyUsage.days`, in the same order. */
+  perDay: number[];
+  /** Changes made over the whole range. */
+  total: number;
+  /** When they last made a change, ever, or null if they never have. */
+  lastActiveAt: number | null;
+}
+
+export interface DailyUsage {
+  /** The days covered, oldest first, as YYYY-MM-DD in `timeZone`. */
+  days: string[];
+  /** Everyone, most active over the range first, then newest signup first. */
+  users: UserUsage[];
+}
+
+const DAY_MS = 86_400_000;
+// Rows are counted in quarter-hour slots in SQL, then slots are put in days
+// here: every time zone's midnight falls on a quarter hour.
+const SLOT_MS = 15 * 60_000;
+
+/** The YYYY-MM-DD `ts` falls on in `timeZone`. */
+function dayKey(ts: number, format: Intl.DateTimeFormat): string {
+  return format.format(ts); // en-CA formats as YYYY-MM-DD
+}
+
+/** The `days` days ending today in `timeZone`, oldest first. */
+function dayKeys(now: number, days: number, format: Intl.DateTimeFormat): string[] {
+  // Count back on the calendar rather than in 24-hour steps, which a
+  // daylight-saving change would make skip or repeat a day.
+  const today = new Date(`${dayKey(now, format)}T00:00:00Z`).getTime();
+  return Array.from({ length: days }, (_, i) =>
+    new Date(today - (days - 1 - i) * DAY_MS).toISOString().slice(0, 10),
+  );
+}
+
+export function dailyUsage(
+  db: Db,
+  { days, timeZone, now = Date.now() }: { days: number; timeZone: string; now?: number },
+): DailyUsage {
+  const format = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
+  const keys = dayKeys(now, days, format);
+  const index = new Map(keys.map((key, i) => [key, i]));
+
+  // A day more than the range, so the first day is covered in any time zone;
+  // slots outside the range fall out when they're put in days.
+  const since = now - (days + 1) * DAY_MS;
+  // Inlined, not bound: a bound number reaches SQLite as a real, which would
+  // make this a float division and every change its own slot.
+  const slot = sql<number>`${auditLog.ts} / ${sql.raw(String(SLOT_MS))}`;
+  // A cross join keeps SQLite going person by person, seeking each one's
+  // range on the (actor, ts) index, rather than reading the whole log.
+  // Starting from users also leaves out the system actor and deleted people.
+  const slots = db
+    .select({ actor: auditLog.actor, slot, n: count() })
+    .from(users)
+    .crossJoin(auditLog)
+    .where(and(eq(auditLog.actor, users.id), gte(auditLog.ts, since)))
+    .groupBy(auditLog.actor, slot)
+    .all();
+  const perDay = new Map<string, number[]>();
+  for (const { actor, slot, n } of slots) {
+    const i = index.get(dayKey(slot * SLOT_MS, format));
+    if (i === undefined) continue;
+    let counts = perDay.get(actor);
+    if (!counts) perDay.set(actor, (counts = Array(days).fill(0)));
+    counts[i] += n;
+  }
+
+  const rows = db
+    .select({
+      id: users.id,
+      name: users.name,
+      username: users.displayUsername,
+      email: users.email,
+      image: users.image,
+      createdAt: users.createdAt,
+      // Each person's last change, from the (actor, ts) index. Spelled out:
+      // drizzle leaves out the table name, and "id" in here is audit_log's.
+      lastActiveAt: sql<number | null>`(select max("ts") from "audit_log" where "actor" = "users"."id")`,
+    })
+    .from(users)
+    .orderBy(asc(users.createdAt))
+    .all()
+    .map((user): UserUsage => {
+      const counts = perDay.get(user.id) ?? Array(days).fill(0);
+      return {
+        ...user,
+        createdAt: user.createdAt.getTime(),
+        perDay: counts,
+        total: counts.reduce((sum, n) => sum + n, 0),
+      };
+    })
+    .sort((a, b) => b.total - a.total || b.createdAt - a.createdAt);
+
+  return { days: keys, users: rows };
+}

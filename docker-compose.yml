@@ -41,6 +41,9 @@ services:
       # the SMTP or Resend settings above (with neither, the signup is only
       # logged). Best-effort: a failed send never blocks the signup.
       SIGNUP_NOTIFY_EMAIL: ${SIGNUP_NOTIFY_EMAIL:-}
+      # Optional. Comma-separated user ids who can open /admin, which shows
+      # every account's usage. Unset = /admin is a 404 for everyone.
+      ADMIN_USER_IDS: ${ADMIN_USER_IDS:-}
       # Optional. Enables AI list-icon suggestions. Unset = off.
       TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
       # Optional. Web Push keys for push notifications, from
