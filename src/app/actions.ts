@@ -129,7 +129,15 @@ import {
   savePushSubscription as savePushSubscriptionCore,
 } from "@/core/push";
 import type { AuditSource, ListRole, NotificationLevel, OnlyWithin, ProjectStatus, SpaceColor, SpaceRole } from "@/core/schema";
-import { invitePeople as invitePeopleCore, type InvitePlace } from "@/core/invites";
+import { emailsWithoutAccounts, invitePeople as invitePeopleCore, type InvitePlace } from "@/core/invites";
+import {
+  acceptInvitation as acceptInvitationCore,
+  cancelInvitation as cancelInvitationCore,
+  INVITE_DAYS,
+  inviteByEmail as inviteByEmailCore,
+  resendInvitation as resendInvitationCore,
+  type SentInvitation,
+} from "@/core/invitations";
 import {
   acceptSpaceInvite as acceptSpaceInviteCore,
   createSpace as createSpaceCore,
@@ -176,7 +184,7 @@ import {
 } from "@/core/sources";
 import { getCurrentSession, requireUserId } from "@/auth/session";
 import { sendAgentRequest } from "@/lib/agentRequest";
-import { notifyInvite, notifyMentions } from "@/lib/email";
+import { notifyInvite, notifyJoinInvite, notifyMentions } from "@/lib/email";
 import { getEnv } from "@/lib/env";
 import type { ItemFilters } from "@/lib/filters";
 import type { GreetingPrefs } from "@/lib/greetingPrefs";
@@ -319,7 +327,12 @@ export async function inviteMemberAction(
   if (!session) redirect("/login");
   const userId = session.user.id;
   const { db } = getDb();
-  const member = inviteMemberCore(db, userId, projectId, person, SOURCE, role, { onlyMine, within });
+  let member;
+  try {
+    member = inviteMemberCore(db, userId, projectId, person, SOURCE, role, { onlyMine, within });
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Couldn't send the invite." };
+  }
 
   // Notify the invitee by email, once the invite has answered: it's
   // best-effort (the in-app banner is the source of truth, so notifyInvite
@@ -339,7 +352,6 @@ export async function inviteMemberAction(
   }
 
   refresh();
-  return member;
 }
 
 /**
@@ -352,7 +364,20 @@ export async function invitePeopleAction(people: string[], places: InvitePlace[]
   if (!session) redirect("/login");
   const userId = session.user.id;
   const { db } = getDb();
-  const { sent, places: named } = invitePeopleCore(db, userId, { people, places }, SOURCE);
+  // Someone without an account can be invited to Sidetrack instead
+  // (inviteByEmailAction), which the dialog offers.
+  const strangers = emailsWithoutAccounts(db, people);
+  if (strangers.length) {
+    const who = strangers.length === 1 ? `${strangers[0]} isn't` : `${strangers.join(", ")} aren't`;
+    return { error: `${who} on Sidetrack yet`, notOnSidetrack: strangers };
+  }
+  let invited;
+  try {
+    invited = invitePeopleCore(db, userId, { people, places }, SOURCE);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Couldn't send the invites." };
+  }
+  const { sent, places: named } = invited;
 
   // One email each, best-effort and after answering, like a single invite.
   const url = await appBaseUrl();
@@ -370,7 +395,82 @@ export async function invitePeopleAction(people: string[], places: InvitePlace[]
     after(() => notifyInvite(invite));
   }
   refresh();
-  return sent.length;
+}
+
+/**
+ * Invite someone not on Sidetrack yet, by email: to join, and with
+ * `places`, to those, such as Share my day's. Returns why it was refused.
+ */
+export async function inviteByEmailAction(email: string, places: InvitePlace[]) {
+  const session = await getCurrentSession();
+  if (!session) redirect("/login");
+  const { db } = getDb();
+  let sent: SentInvitation;
+  try {
+    sent = inviteByEmailCore(db, session.user.id, { email, places }, SOURCE);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Couldn't send the invite." };
+  }
+  await sendJoinInvite(sent, session.user.name);
+  refresh();
+}
+
+/** Send an invite to join again, with a new link. Returns why it was refused, such as the day's limit. */
+export async function resendInvitationAction(id: string) {
+  const session = await getCurrentSession();
+  if (!session) redirect("/login");
+  const { db } = getDb();
+  let sent: SentInvitation;
+  try {
+    sent = resendInvitationCore(db, session.user.id, id, SOURCE);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Couldn't send the invite again." };
+  }
+  await sendJoinInvite(sent, session.user.name);
+  refresh();
+}
+
+/** The email, after answering: best-effort, as the inviter can send it again. */
+async function sendJoinInvite(sent: SentInvitation, inviterName: string) {
+  const invite = {
+    to: sent.email,
+    inviterName,
+    url: `${await appBaseUrl()}/invite/${sent.token}`,
+    places: sent.places,
+    within: sent.within,
+    days: INVITE_DAYS,
+  };
+  after(() => notifyJoinInvite(invite));
+}
+
+/** Cancel an invite to join. Returns why it was refused, such as it being accepted meanwhile. */
+export async function cancelInvitationAction(id: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  try {
+    cancelInvitationCore(db, userId, id, SOURCE);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Couldn't cancel the invite." };
+  }
+  refresh();
+}
+
+/**
+ * Accept an invite to join, by its link's token, as the signed-in user, and
+ * go where it shows: Check-ins for someone's day, else the board. Returns
+ * why it was refused, such as a link already used.
+ */
+export async function acceptInvitationAction(token: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  let accepted;
+  try {
+    accepted = acceptInvitationCore(db, token, userId, SOURCE);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Couldn't accept the invite." };
+  }
+  refresh();
+  redirect(accepted.within ? "/check-ins" : "/");
 }
 
 /** Change what a member of the list can do on it, and whether they see only your items. */

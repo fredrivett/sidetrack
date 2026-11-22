@@ -57,6 +57,8 @@ import { runAction } from "./run-action";
 import { ShareDialog } from "./ShareDialog";
 import { CheckInsView, type CheckIn, type MyDay } from "./CheckInsView";
 import { InviteDialog } from "./InviteDialog";
+import { InviteFriendDialog } from "./InviteFriendDialog";
+import type { InvitationView } from "@/core/invitations";
 import { ShareDayDialog } from "./ShareDayDialog";
 import { InstallReporter } from "./GetStarted";
 import type { GetStarted } from "@/lib/getStarted";
@@ -116,6 +118,7 @@ const DONE_PAGE = 50;
 // One empty list each, so a list with nothing in it keeps the same props.
 const NO_ITEMS: Item[] = [];
 const NO_TITLES: Record<string, string> = {};
+const NO_INVITES: InvitationView[] = [];
 const NO_ASSIGNEES: AssigneeView[] = [];
 /** `copy` with `items`, or `copy` itself when they are its own (applySaved left them). */
 function keep<T extends { items: Item[] }>(copy: T, items: Item[]): T {
@@ -156,6 +159,7 @@ export function Kanban({
   pendingPhotos,
   checkIns = NO_CHECK_INS,
   myDay,
+  friendInvites = NO_INVITES,
   parentTitles = NO_TITLES,
   refreshAt = null,
   initialCollapsedTrays,
@@ -175,6 +179,8 @@ export function Kanban({
   checkIns?: CheckIn[];
   /** The viewer's own shared day and who sees it, for Check-ins. */
   myDay?: MyDay;
+  /** Invites sent from Invite a friend that nobody has accepted yet. */
+  friendInvites?: InvitationView[];
   /** Titles of items, not theirs to see, that hold sub-items they see (hiddenParentTitles). */
   parentTitles?: Record<string, string>;
   /** When a day shown here turns over (the sharer's 4am), to reload then. */
@@ -471,6 +477,7 @@ export function Kanban({
   const [newList, setNewList] = useState({ open: false, spaceId: "" });
   // Kept for this tab, so Invite people and its draft come back after a reload.
   const [inviting, setInviting] = useStoredState("inviting", false, "session");
+  const [invitingFriend, setInvitingFriend] = useStoredState("inviting-friend", false, "session");
   // Share my day: open with who it's for, "" for nobody yet.
   const [sharingDay, setSharingDay] = useStoredState<string | null>("sharing-day", null, "session");
   // Kept for this tab, so Share and its draft come back after a reload.
@@ -980,6 +987,7 @@ export function Kanban({
             onShowArchived={() => switchView("archived")}
             onShowActivity={() => setAudit({ open: true })}
             onInvite={() => setInviting(true)}
+            onInviteFriend={() => setInvitingFriend(true)}
           />
         </BoardHeader>
         <InvitesBanner
@@ -1227,6 +1235,7 @@ export function Kanban({
           onOpenChange={setInviting}
           groups={inviteGroups}
         />
+        <InviteFriendDialog open={invitingFriend} onOpenChange={setInvitingFriend} invited={friendInvites} />
         <ShareDayDialog
           open={sharingDay !== null}
           person={sharingDay || null}

@@ -12,6 +12,7 @@ import { changeSeq } from "@/core/changes";
 import { countCommentsByItem } from "@/core/comments";
 import { sharedDayNote } from "@/core/dayNotes";
 import { myDayView } from "@/core/dayShares";
+import { listInvitations } from "@/core/invitations";
 import { listLabels } from "@/core/labels";
 import { getDb } from "@/core/db";
 import { projectRefPrefixes } from "@/core/itemRef";
@@ -168,6 +169,8 @@ export default async function Home({
             pendingPhotos={listPendingSources(db, userId)}
             checkIns={[...checkIns.values()]}
             myDay={myDay}
+            // Invite a friend's, which share nothing; Check-ins lists those sharing a day.
+            friendInvites={listInvitations(db, userId).filter((i) => i.places.length === 0)}
             parentTitles={hiddenParentTitles(db, userId)}
             // Someone's day it shows only part of turns over: what's on it changes.
             refreshAt={Math.min(...[...limited.values()].map((l) => l.turnsAt ?? Infinity)) || null}

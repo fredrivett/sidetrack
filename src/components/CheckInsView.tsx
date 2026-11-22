@@ -1,9 +1,11 @@
 "use client";
 
 import { useTransition, type ReactNode } from "react";
-import { Ellipsis, HeartHandshake, Plus, Quote } from "lucide-react";
-import { stopDayShareAction, updateDayShareAction } from "@/app/actions";
+import { Ellipsis, HeartHandshake, Mail, Plus, Quote } from "lucide-react";
+import { toast } from "sonner";
+import { cancelInvitationAction, resendInvitationAction, stopDayShareAction, updateDayShareAction } from "@/app/actions";
 import type { DayShare } from "@/core/dayShares";
+import type { InvitationView } from "@/core/invitations";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink, OnlyWithin } from "@/core/schema";
 import type { DayTag } from "@/lib/dayTags";
@@ -51,9 +53,11 @@ export type MyDay = {
   /** Their items in the day they share (mySharedDay). */
   itemIds: string[];
   shares: DayShare[];
+  /** Invited by email, not joined yet. */
+  invited: InvitationView[];
 };
 
-const NO_ONE: MyDay = { within: "today", day: "", note: null, mood: [], itemIds: [], shares: [] };
+const NO_ONE: MyDay = { within: "today", day: "", note: null, mood: [], itemIds: [], shares: [], invited: [] };
 
 const dayName = (day: string) =>
   day ? new Date(`${day}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }) : "";
@@ -110,6 +114,7 @@ export function CheckInsView({
   const detail = useItemDetailDialog(all);
   const detailProject = detail.item ? projectOf.get(detail.item.projectId) : undefined;
   const sharesBack = new Set(myDay.shares.map((s) => s.personId));
+  const sharing = myDay.shares.length + myDay.invited.length > 0;
 
   // Titles of the items those sub-items sit under: hidden ones' (parentTitles),
   // and, on the viewer's own card, ones they can see but aren't in their day.
@@ -154,19 +159,22 @@ export function CheckInsView({
             footer={
               <div className="space-y-1 border-t border-stone-100 px-4 py-3 dark:border-stone-800/60">
                 <h3 className="pb-1 text-xs text-neutral-500">
-                  {myDay.shares.length ? "Who sees your day" : "Only you see this."}
+                  {sharing ? "Who sees your day" : "Only you see this."}
                 </h3>
                 {myDay.shares.map((s) => (
                   <ShareRow key={s.personId} share={s} />
                 ))}
+                {myDay.invited.map((i) => (
+                  <InvitedRow key={i.id} invitation={i} />
+                ))}
                 <Button
-                  variant={myDay.shares.length ? "ghost" : "outline"}
+                  variant={sharing ? "ghost" : "outline"}
                   size="sm"
-                  className={myDay.shares.length ? "-ml-2 text-neutral-500" : ""}
+                  className={sharing ? "-ml-2 text-neutral-500" : ""}
                   onClick={() => onShareDay()}
                 >
-                  {myDay.shares.length ? <Plus aria-hidden className="size-3.5" /> : <HeartHandshake aria-hidden className="size-3.5" />}
-                  {myDay.shares.length ? "Share with someone else" : "Share my day"}
+                  {sharing ? <Plus aria-hidden className="size-3.5" /> : <HeartHandshake aria-hidden className="size-3.5" />}
+                  {sharing ? "Share with someone else" : "Share my day"}
                 </Button>
               </div>
             }
@@ -409,6 +417,60 @@ function ShareRow({ share: s }: { share: DayShare }) {
             onClick={() => save(() => stopDayShareAction(s.personId), `stop sharing your day with ${s.name}`)}
           >
             Stop sharing with {s.name}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
+/**
+ * Someone invited by email to see the viewer's day, who hasn't joined yet:
+ * a ⋯ menu to send it again (a new link) or cancel it. Each holds the row.
+ */
+export function InvitedRow({ invitation: i }: { invitation: InvitationView }) {
+  const [saving, start] = useTransition();
+  const save = (action: () => Promise<{ error: string } | undefined | void>, what: string, done?: string) =>
+    !saving &&
+    start(async () => {
+      let refused: string | undefined;
+      const ok = await runAction(
+        action().then((r) => {
+          refused = r?.error;
+        }),
+        what,
+      );
+      if (refused) toast.error(refused);
+      else if (ok && done) toast.success(done);
+    });
+  return (
+    <div
+      aria-disabled={saving || undefined}
+      aria-busy={saving || undefined}
+      className="flex min-h-8 items-center gap-2 text-sm aria-disabled:opacity-50"
+    >
+      <span className="inline-flex size-[22px] shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-500 dark:bg-neutral-800">
+        <Mail aria-hidden className="size-3" />
+      </span>
+      <span className="min-w-0 flex-1 leading-tight">
+        <span className="block truncate">{i.email}</span>
+        <span className="block text-xs text-neutral-500">{i.expired ? "Invite expired" : "Invited, not joined yet"}</span>
+      </span>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          aria-label={`Invite to ${i.email}`}
+          aria-disabled={saving || undefined}
+          className="rounded p-1 text-neutral-500 hover:bg-neutral-100 aria-disabled:pointer-events-none dark:hover:bg-neutral-800"
+        >
+          <Ellipsis aria-hidden className="size-4" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-52">
+          <DropdownMenuItem onClick={() => save(() => resendInvitationAction(i.id), `send ${i.email} their invite again`, `Invite sent to ${i.email} again`)}>
+            Send invite again
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem variant="destructive" onClick={() => save(() => cancelInvitationAction(i.id), `cancel ${i.email}'s invite`)}>
+            Cancel invite
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { HeartHandshake } from "lucide-react";
+import { HeartHandshake, Mail } from "lucide-react";
 import { unstable_rethrow } from "next/navigation";
-import { invitePeopleAction } from "@/app/actions";
+import { inviteByEmailAction, invitePeopleAction } from "@/app/actions";
 import type { InvitePlace } from "@/core/invites";
 import type { OnlyWithin } from "@/core/schema";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -55,6 +56,9 @@ export function ShareDayDialog({
   const [kept, setKept] = useStoredState("draft:share-day:picked", NOTHING_PICKED);
   const picked = new Set(kept.places);
   const [error, setError] = useState<string | null>(null);
+  // Who they typed has no account: the dialog offers to email them an
+  // invite instead, which shares the day once they join.
+  const [stranger, setStranger] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const personRef = useRef<HTMLInputElement>(null);
   const chosen = pickedPlaces(groups, picked);
@@ -72,6 +76,7 @@ export function ShareDayDialog({
       draft.clear();
       setKept(NOTHING_PICKED);
       setError(null);
+      setStranger(null);
     }
     onOpenChange(next);
   }
@@ -83,15 +88,24 @@ export function ShareDayDialog({
           ? { kind: "list", id: p.id, role: "commenter", onlyMine: true, within: kept.within, shareNote: kept.note, shareMood: kept.mood }
           : { kind: "space", id: p.id, role: "commenter", onlyMine: true, within: kept.within, shareNote: kept.note, shareMood: kept.mood },
       );
+    // Inviting someone not on Sidetrack yet, once they've said to.
+    const inviting = stranger !== null && stranger === who;
     setError(null);
     start(async () => {
+      let refused: string | undefined;
       try {
-        await invitePeopleAction([who], places);
+        const res: { error: string; notOnSidetrack?: string[] } | undefined = inviting
+          ? await inviteByEmailAction(who, places)
+          : await invitePeopleAction([who], places);
+        if (res?.notOnSidetrack?.length) return setStranger(who);
+        refused = res?.error;
       } catch (err) {
         unstable_rethrow(err);
-        setError(err instanceof Error ? err.message : "Couldn't share your day. Please try again.");
-        return;
+        refused = inviting ? "Couldn't send the invite. Please try again." : "Couldn't share your day. Please try again.";
       }
+      if (refused) return setError(refused);
+      if (inviting) toast.success(`Invite sent to ${who}`);
+      setStranger(null);
       draft.clear();
       setKept(NOTHING_PICKED);
       onOpenChange(false);
@@ -99,6 +113,8 @@ export function ShareDayDialog({
   }
 
   const span = kept.within === "today" ? "day" : "week";
+  // Still the address that had no account; typing someone else starts over.
+  const invitingNow = stranger !== null && stranger === who;
 
   return (
     // It stays open while it saves, so a failure shows where they're looking.
@@ -130,7 +146,11 @@ export function ShareDayDialog({
             <Input
               ref={personRef}
               value={draft.value}
-              onChange={(e) => !pending && draft.set(e.target.value)}
+              onChange={(e) => {
+                if (pending) return;
+                draft.set(e.target.value);
+                setError(null);
+              }}
               readOnly={pending}
               placeholder="Their username or email"
               aria-label="Who to share your day with"
@@ -210,6 +230,13 @@ export function ShareDayDialog({
               <p role="alert" className="min-w-0 flex-1 text-xs text-red-600 dark:text-red-400">
                 {error}
               </p>
+            ) : invitingNow ? (
+              <p role="status" className="min-w-0 flex-1 text-xs">
+                <span className="block font-medium">{who} isn’t on Sidetrack yet.</span>
+                <span className="block text-neutral-500">
+                  We’ll email them an invite. Your {span} shows on their Check-ins once they join.
+                </span>
+              </p>
             ) : (
               <p className="line-clamp-2 min-w-0 flex-1 text-xs text-neutral-500">
                 {chosen.length === 0
@@ -220,8 +247,8 @@ export function ShareDayDialog({
               </p>
             )}
             <Button type="submit" size="sm" aria-disabled={!ready || pending || undefined}>
-              <HeartHandshake data-icon="inline-start" />
-              {pending ? "Sharing…" : `Share my ${span}`}
+              {invitingNow ? <Mail data-icon="inline-start" /> : <HeartHandshake data-icon="inline-start" />}
+              {invitingNow ? (pending ? "Sending…" : "Email an invite") : pending ? "Sharing…" : `Share my ${span}`}
             </Button>
           </div>
         </form>
