@@ -174,6 +174,7 @@ export function Kanban({
   filters: savedFilters,
   aiEnabled,
   feedbackEnabled = false,
+  admin = false,
   seq,
 }: {
   viewerId: string;
@@ -247,6 +248,8 @@ export function Kanban({
   aiEnabled: boolean;
   /** Whether this deployment takes feedback (FEEDBACK_LIST_ID). */
   feedbackEnabled?: boolean;
+  /** Whether the viewer is in ADMIN_USER_IDS, for the account menu's Admin link. */
+  admin?: boolean;
   /** The number of the last change the page was rendered with (changeSeq). */
   seq: number;
 }) {
@@ -1024,6 +1027,7 @@ export function Kanban({
             onShowActivity={() => setAudit({ open: true })}
             onInvite={() => setInviting(true)}
             onInviteFriend={() => setInvitingFriend(true)}
+            admin={admin}
           />
         </BoardHeader>
         <InvitesBanner

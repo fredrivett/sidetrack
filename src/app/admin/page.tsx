@@ -388,7 +388,8 @@ export default async function AdminPage() {
               </thead>
               <tbody>
                 {weeks.map((cohort) => (
-                  <tr key={cohort.week}>
+                  // Fixed height, so a row with no cells yet is as tall as the rest.
+                  <tr key={cohort.week} className="h-9">
                     <td className="sticky left-0 z-10 border-r border-b border-border bg-background px-4 py-0 whitespace-nowrap text-muted-foreground">
                       Week of{" "}
                       {new Date(`${cohort.week}T00:00:00Z`).toLocaleDateString("en-GB", { timeZone: "UTC", day: "numeric", month: "short" })}

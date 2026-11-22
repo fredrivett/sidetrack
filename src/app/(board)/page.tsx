@@ -195,6 +195,7 @@ export default async function Home({
             filters={getBoardFilters(db, userId)}
             aiEnabled={Boolean(getEnv().TYPESAFE_API_KEY)}
             feedbackEnabled={Boolean(getEnv().FEEDBACK_LIST_ID)}
+            admin={getEnv().ADMIN_USER_IDS.includes(userId)}
             seq={seq}
           />
         </CommentCountsProvider>
