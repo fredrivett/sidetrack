@@ -243,6 +243,7 @@ links go to the server log ([Password resets](#password-resets)).
 | `RESEND_API_KEY` | unset | Send through [Resend](https://resend.com) instead |
 | `EMAIL_FROM` | `Sidetrack <no-reply@sidetrack.local>` with SMTP | From address, such as `Sidetrack <no-reply@example.com>`. Required with Resend, where its domain must be verified. Worth setting with SMTP too, as servers may reject the default |
 | `SIGNUP_NOTIFY_EMAIL` | unset | Your address, to be emailed when someone new signs up. Needs SMTP or Resend (otherwise it's only logged). A failed send never blocks the signup |
+| `ADMIN_USER_IDS` | unset | Comma-separated user ids of the people who can open `/admin`, which shows every account and how many changes each made per day. Find yours with `sqlite3 data/sidetrack.db "select id from users where email = 'you@example.com'"`. Ids rather than emails, because sign-up doesn't verify addresses. Unset, `/admin` is a 404 for everyone |
 
 ### Feedback
 

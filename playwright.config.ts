@@ -13,6 +13,8 @@ const env = {
   BETTER_AUTH_URL: BASE_URL,
   BETTER_AUTH_SECRET: "e2e-only-secret-0123456789abcdef0123456789",
   ALLOW_SIGNUP: "true",
+  // The admin e2e/fixtures.ts's createAdmin makes.
+  ADMIN_USER_IDS: "e2e-admin",
 };
 Object.assign(process.env, env);
 

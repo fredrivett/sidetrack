@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { test as base, expect, type BrowserContext } from "@playwright/test";
+import { hashPassword } from "better-auth/crypto";
 import { auth } from "@/auth/better-auth";
+import { accounts, users } from "@/core/auth-schema";
 import { getDb } from "@/core/db";
 import { setDayNote } from "@/core/dayNotes";
 import { inviteByEmail } from "@/core/invitations";
@@ -67,6 +69,36 @@ export async function createPerson() {
       inviteMember(db, user.id, project.id, withHandle, SOURCE, role);
       acceptInvite(db, withId, project.id, SOURCE);
       return { id: project.id };
+    },
+  };
+}
+
+/** The user id the server lets into /admin (ADMIN_USER_IDS in playwright.config.ts). */
+export const ADMIN_ID = "e2e-admin";
+
+/** The admin, not signed in. Their id has to be the one the server was
+ * started with, which sign-up can't choose, so their rows are written
+ * directly, once per run: tests that use them share them. */
+export async function createAdmin() {
+  const { db } = getDb();
+  const email = "admin@sidetrack.test";
+  const now = new Date();
+  // audit-exempt: test setup, not a user action.
+  db.insert(users)
+    .values({ id: ADMIN_ID, name: "Admin", email, username: "e2eadmin", displayUsername: "e2eadmin", createdAt: now, updatedAt: now })
+    .onConflictDoNothing()
+    .run();
+  const password = await hashPassword(PASSWORD);
+  // audit-exempt: test setup, not a user action.
+  db.insert(accounts)
+    .values({ id: ADMIN_ID, accountId: ADMIN_ID, providerId: "credential", userId: ADMIN_ID, password, createdAt: now, updatedAt: now })
+    .onConflictDoNothing()
+    .run();
+  return {
+    /** Signs `context` in as them. */
+    async signIn(context: BrowserContext, baseURL: string) {
+      const { headers } = await auth.api.signInEmail({ body: { email, password: PASSWORD }, returnHeaders: true });
+      await useSession(context, headers, baseURL);
     },
   };
 }
