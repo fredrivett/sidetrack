@@ -1,0 +1,1 @@
+CREATE INDEX `invitations_accepted_by` ON `invitations` (`accepted_by`);
