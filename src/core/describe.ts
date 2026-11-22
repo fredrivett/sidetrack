@@ -646,6 +646,23 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
       const said = did.length > 1 ? `${did.slice(0, -1).join(", ")} and ${did.at(-1)}` : did[0];
       return [t(`${said || "added nothing"} from a photo of a page`)];
     }
+    case "invitation.sent": {
+      const to: Part = { text: event.email, em: "person" };
+      if (!event.places.length) return [t("invited "), to, t(" to Sidetrack")];
+      const places = event.places.flatMap((name, i): Part[] => [
+        ...(i === 0 ? [] : [t(i === event.places.length - 1 ? " and " : ", ")]),
+        { text: name, em: "place", quote: true },
+      ]);
+      return event.within
+        ? [t(`invited `), to, t(`, who's not on Sidetrack yet, sharing ${event.within === "week" ? "this week" : "today"} on `), ...places]
+        : [t("invited "), to, t(", who's not on Sidetrack yet, to "), ...places];
+    }
+    case "invitation.resent":
+      return [t("sent "), { text: event.email, em: "person" }, t(" their invite again")];
+    case "invitation.cancelled":
+      return [t("cancelled "), { text: event.email, em: "person" }, t("'s invite")];
+    case "invitation.accepted":
+      return [t("joined from "), person(event.inviter), t(event.shared ? "'s invite" : "'s invite, which no longer shared anything")];
     case "profile.username":
       return [
         t("changed username from "),

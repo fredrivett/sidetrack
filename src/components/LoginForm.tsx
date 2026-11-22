@@ -29,12 +29,20 @@ export function LoginForm({
   initialMode,
   next,
   signUpAbove,
+  invite,
 }: {
   allowSignUp: boolean;
   initialMode: Mode;
   next: string;
   /** Shown above the card while signing up: the founding ticket. */
   signUpAbove?: ReactNode;
+  /**
+   * Signing up from an invite's link (/invite/[token]): the sign-up carries
+   * its token, which lets them in on a closed instance and accepts it, and
+   * starts with the address it was sent to. `above` shows what it's for,
+   * whichever way they sign in.
+   */
+  invite?: { token: string; email: string; above: ReactNode };
 }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>(initialMode);
@@ -100,6 +108,7 @@ export function LoginForm({
           password,
           name: name || email,
           username,
+          ...(invite && { invite: invite.token }),
         });
         if (res.error) {
           setError(res.error.message ?? "Sign up failed.");
@@ -140,11 +149,15 @@ export function LoginForm({
   };
 
   return (
-    <AuthShell above={mode === "sign-up" && signUpAbove}>
-      <AuthTitle title={mode === "sign-up" ? "Create your account" : "Welcome back"}>
+    <AuthShell above={invite?.above ?? (mode === "sign-up" && signUpAbove)}>
+      <AuthTitle title={mode === "sign-up" ? (invite ? "Join Sidetrack" : "Create your account") : "Welcome back"}>
         {mode === "sign-up"
-          ? "Get your side projects back on track."
-          : "Sign in to your board."}
+          ? invite
+            ? "Create your account to accept."
+            : "Get your side projects back on track."
+          : invite
+            ? "Sign in to accept."
+            : "Sign in to your board."}
       </AuthTitle>
       <form action={onSubmit} className="space-y-4">
         {mode === "sign-up" && (
@@ -206,6 +219,7 @@ export function LoginForm({
             type="email"
             autoComplete="email"
             placeholder="you@example.com"
+            defaultValue={invite?.email}
             required
             autoFocus
             className="h-9"

@@ -13,6 +13,7 @@ import type { Repeat, RepeatOn, RepeatUnit } from "../lib/repeat";
 import type { StoredGreeting } from "./agendaGreeting";
 import { apiKeys, users } from "./auth-schema";
 import type { ChangeEvent } from "./events";
+import type { InvitePlace } from "./invites";
 
 /** How far a membership limited to someone's items reaches in time, by
  * that person's clock: their today, or their week. */
@@ -68,6 +69,8 @@ export const AUDIT_ENTITIES = [
   "calendar",
   // A photo of a page whose lines were added (sources); no project.
   "source",
+  // An invite by email to someone not on Sidetrack yet (invitations).
+  "invitation",
 ] as const;
 export type AuditEntity = (typeof AUDIT_ENTITIES)[number];
 
@@ -943,6 +946,34 @@ export const dayNotes = sqliteTable(
     updatedAt: integer("updated_at").notNull(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.day] })],
+);
+
+// An invite by email for someone not on Sidetrack yet (invitations.ts):
+// from Share my day, with the places it shares, or Invite a friend, with
+// none. Its link carries a token, of which only the hash is kept. Signing up
+// through the link, or opening it signed in, makes the memberships `places`
+// describes, as if invited then (invitePeople), already accepted. Accepted
+// rows stay, as the record of who joined from whose invite; cancelling
+// deletes one. No foreign key on inviter_id or accepted_by, like
+// project_members.user_id.
+export const invitations = sqliteTable(
+  "invitations",
+  {
+    id: text("id").primaryKey(),
+    inviterId: text("inviter_id").notNull(),
+    email: text("email").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    places: text("places", { mode: "json" }).$type<InvitePlace[]>().notNull(),
+    createdAt: integer("created_at").notNull(),
+    // Sending it again makes a new link, and starts its time again.
+    expiresAt: integer("expires_at").notNull(),
+    acceptedBy: text("accepted_by"),
+    acceptedAt: integer("accepted_at"),
+  },
+  (t) => [
+    uniqueIndex("invitations_token_hash").on(t.tokenHash),
+    index("invitations_inviter").on(t.inviterId, t.createdAt),
+  ],
 );
 
 export const meta = sqliteTable("meta", {

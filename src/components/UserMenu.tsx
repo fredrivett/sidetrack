@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, Check, CircleCheck, CircleUserRound, History, Loader2, LogOut, Moon, Sun, SunMoon, UserPlus } from "lucide-react";
+import { Archive, Check, CircleCheck, CircleUserRound, History, Loader2, LogOut, Mail, Moon, Sun, SunMoon, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import posthog from "posthog-js";
@@ -37,7 +37,8 @@ const THEME_OPTIONS: Record<Theme, { label: string; Icon: typeof Sun }> = {
 
 
 /**
- * The avatar's menu: who's signed in, settings and theme, inviting people,
+ * The avatar's menu: who's signed in, settings and theme, inviting people
+ * (to places, or a friend to Sidetrack),
  * Activity, Done and Archived lists, sign out and the build.
  */
 export function UserMenu({
@@ -48,6 +49,7 @@ export function UserMenu({
   onShowActivity,
   onTry,
   onInvite,
+  onInviteFriend,
 }: {
   user: AvatarUser | null;
   /** How many lists are archived, for the Archived lists item. */
@@ -65,6 +67,8 @@ export function UserMenu({
   onTry?: () => void;
   /** Opens Invite people, for several lists and Spaces at once. */
   onInvite: () => void;
+  /** Opens Invite a friend: an email to join Sidetrack, sharing nothing. */
+  onInviteFriend?: () => void;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -178,6 +182,12 @@ export function UserMenu({
             <UserPlus />
             Invite people…
           </DropdownMenuItem>
+          {onInviteFriend && (
+            <DropdownMenuItem onClick={onTry ?? onInviteFriend}>
+              <Mail />
+              Invite a friend…
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onClick={onShowActivity}>
             <History />
             Activity

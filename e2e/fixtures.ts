@@ -4,6 +4,7 @@ import { test as base, expect, type BrowserContext } from "@playwright/test";
 import { auth } from "@/auth/better-auth";
 import { getDb } from "@/core/db";
 import { setDayNote } from "@/core/dayNotes";
+import { inviteByEmail } from "@/core/invitations";
 import { addItem } from "@/core/items";
 import { acceptInvite, inviteMember } from "@/core/members";
 import { createProject } from "@/core/projects";
@@ -91,6 +92,9 @@ export type User = {
   addPhoto(lines: ProposedLine[]): { id: string };
   /** Their note about today, written in the suite's time zone. */
   setDayNote(text: string): void;
+  /** Invites `email`, who has no account, to see their week on these lists, as
+   * Share my day would; returns the emailed link's path. */
+  shareWeekByEmail(email: string, listIds: string[]): string;
 };
 
 /**
@@ -134,6 +138,10 @@ export const test = base.extend<{ user: User }>({
       setDayNote(text) {
         setTimeZone(db, response.user.id, "Europe/London");
         setDayNote(db, response.user.id, dayOf(Date.now(), "Europe/London"), text);
+      },
+      shareWeekByEmail(to, listIds) {
+        const places = listIds.map((id) => ({ kind: "list" as const, id, role: "commenter" as const, onlyMine: true, within: "week" as const }));
+        return `/invite/${inviteByEmail(db, response.user.id, { email: to, places }, SOURCE).token}`;
       },
     });
   },

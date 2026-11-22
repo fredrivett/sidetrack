@@ -37,6 +37,12 @@ export type SentInvite =
 /** A place an invite went to, by name, for telling the people invited. */
 export type InvitedPlace = InvitePlace & { name: string };
 
+/** The email addresses among `people` that have no account, to invite to Sidetrack instead (invitations.ts). */
+export function emailsWithoutAccounts(db: Db, people: string[]): string[] {
+  const emails = people.map((p) => p.trim()).filter((p) => p.includes("@") && !p.startsWith("@"));
+  return [...new Set(emails.filter((e) => !findUserByHandle(db, e)))];
+}
+
 /**
  * Invite several people to several lists and Spaces at once, each place
  * with its own role: as if each were invited to each separately (the same

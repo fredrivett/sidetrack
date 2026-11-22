@@ -10,6 +10,7 @@ import { splitDayNote } from "../lib/dayTags";
 import { dayOf, startOfWeekIn } from "../lib/time";
 import { inDayOf } from "./access";
 import { getDayNote } from "./dayNotes";
+import { listInvitations } from "./invitations";
 import { validZone } from "./db-functions";
 import type { AuditOrigin } from "./audit";
 import { users } from "./auth-schema";
@@ -200,7 +201,8 @@ export function mySharedDay(db: Db, userId: string, shares = listDayShares(db, u
 /**
  * The user's own shared day, as Check-ins shows it to them, the way their
  * partners see it (mySharedDay): today, or the week's Monday; their note and
- * mood today, if shared; the items in it; and who sees it.
+ * mood today, if shared; the items in it; who sees it, and who's invited
+ * to by email but hasn't joined yet.
  */
 export function myDayView(db: Db, userId: string, now = Date.now()) {
   const shares = listDayShares(db, userId);
@@ -216,5 +218,7 @@ export function myDayView(db: Db, userId: string, now = Date.now()) {
     mood: seen?.mood ? tags : [],
     itemIds: seen?.itemIds ?? [],
     shares,
+    // People invited by email who haven't joined yet: it's theirs once they do.
+    invited: listInvitations(db, userId, now).filter((i) => i.within),
   };
 }
