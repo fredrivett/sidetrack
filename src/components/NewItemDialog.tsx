@@ -54,7 +54,7 @@ import { runAction } from "./run-action";
 import { useItemShortcuts } from "./useItemShortcuts";
 import { aiRead } from "./ai-read";
 import { shortLabel } from "./RepeatBadge";
-import { PART_TONE, type ShownPart, TitleField } from "./TitleField";
+import { PART_TONE, PartButton, type ShownPart, TitleField } from "./TitleField";
 import { assigneeName } from "./UserAvatar";
 
 // Wait for a pause in typing before asking Jev about the draft.
@@ -124,6 +124,8 @@ type Picked = {
   /** Title parts (by partKey) kept in the title, and ones that set nothing. */
   titleKept?: string[];
   titleDropped?: string[];
+  /** The open item Jev said it repeats, ignored for this item. */
+  duplicateIgnored?: string;
 };
 /** A setter for each field of Picked, taking a value or an update. */
 function pickers(setPicked: (update: (cur: Picked) => Picked) => void) {
@@ -174,8 +176,11 @@ export function NewItemDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Opens an added item, from its toast. */
-  onOpenItem: (item: Item) => void;
+  /**
+   * Opens an item: one just added, from its toast, or the open item Jev
+   * says it repeats, by id (it's on the board).
+   */
+  onOpenItem: (item: Item | { id: string }) => void;
   projects: ProjectView[];
   assigneesByProject: Record<string, AssigneeView[]>;
   viewerId: string;
@@ -314,9 +319,10 @@ export function NewItemDialog({
   // Hints about items on a list they can't add to are no use here.
   // Warnings about the draft are only for the draft they were made for.
   const hints = projectId && fresh ? suggestion : null;
-  const duplicate = hints?.duplicate ?? null;
+  const duplicate =
+    hints?.duplicate && hints.duplicate.id !== picked.duplicateIgnored ? hints.duplicate : null;
   const parentHint =
-    !hasChecklist && !chosenParent && hints?.parent?.id !== duplicate?.id
+    !hasChecklist && !chosenParent && hints?.parent?.id !== hints?.duplicate?.id
       ? (hints?.parent ?? null)
       : null;
   // Each field is what was picked, else what the title says, else the
@@ -565,6 +571,7 @@ export function NewItemDialog({
         noSuggestions: undefined,
         titleKept: undefined,
         titleDropped: undefined,
+        duplicateIgnored: undefined,
       }));
       // Sub-items can't be edited while it saves, so they're all this item's.
       setSubItems(NO_SUB_ITEMS);
@@ -617,10 +624,29 @@ export function NewItemDialog({
               disabled={pending}
             />
             {duplicate && (
-              <p data-item-ref={duplicate.ref} className="text-xs text-amber-700 dark:text-amber-400">
-                Looks like {duplicate.ref} “{duplicate.title}” is already on
-                this list.
-              </p>
+              <div
+                data-item-ref={duplicate.ref}
+                className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-amber-500/12 px-2.5 py-1.5 text-xs text-amber-800 dark:text-amber-300"
+              >
+                <span className="size-1.5 shrink-0 rounded-full bg-amber-500" />
+                <span className="min-w-0 flex-1">
+                  Looks like{" "}
+                  <button
+                    type="button"
+                    onClick={() => onOpenItem(duplicate)}
+                    className="font-medium underline decoration-amber-500/50 underline-offset-2 hover:decoration-current"
+                  >
+                    {duplicate.ref} “{duplicate.title}”
+                  </button>{" "}
+                  is already on this list.
+                </span>
+                <PartButton
+                  disabled={pending}
+                  onClick={() => setPicked((cur) => ({ ...cur, duplicateIgnored: duplicate.id }))}
+                >
+                  Ignore
+                </PartButton>
+              </div>
             )}
             {/* Unstyled, like the title above; no one to mention. */}
             <MentionTextarea

@@ -1157,8 +1157,11 @@ export function Kanban({
         <NewItemDialog
           open={newItem.open}
           onOpenChange={(open) => setNewItem((s) => ({ ...s, open }))}
-          // From the toast: the item opens in place of New item, not over it.
-          onOpenItem={(item) => {
+          // The item opens in place of New item, not over it; what's typed
+          // stays as a draft for when New item opens again.
+          onOpenItem={(hint) => {
+            const item = detailItems.find((i) => i.id === hint.id) ?? ("projectId" in hint ? hint : null);
+            if (!item) return;
             setNewItem((s) => ({ ...s, open: false }));
             paletteDetail.openDetail(item);
           }}

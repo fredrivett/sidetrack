@@ -229,7 +229,8 @@ export function TitleField({
   );
 }
 
-function PartButton({
+/** A small button in a panel under New item's title. */
+export function PartButton({
   onClick,
   disabled,
   children,

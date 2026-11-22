@@ -255,6 +255,45 @@ describe("NewItemDialog", () => {
     vi.mocked(aiRead).mockImplementation(() => new Promise(() => {}));
   });
 
+  it("links an item it looks like it repeats, until that's ignored", async () => {
+    vi.mocked(aiRead).mockResolvedValue({
+      projectId: "p1",
+      duplicate: { id: "i22", ref: "HOM-22", title: "Clean Bathroom" },
+      parent: null,
+      due: null,
+      repeat: null,
+      label: null,
+      assigneeId: null,
+      titleParts: [],
+    });
+    const onOpenItem = vi.fn();
+    render(
+      <NewItemDialog
+        open
+        onOpenChange={() => {}}
+        onOpenItem={onOpenItem}
+        projects={[home]}
+        assigneesByProject={{ p1: [] }}
+        viewerId="me"
+        initialProjectId="p1"
+        shownOnBoard={() => true}
+      />,
+    );
+    const title = () => screen.getByPlaceholderText<HTMLInputElement>("Add a task…");
+    fireEvent.change(title(), { target: { value: "clean bathroom" } });
+    await act(() => new Promise((r) => setTimeout(r, 500)));
+    fireEvent.click(screen.getByRole("button", { name: "HOM-22 “Clean Bathroom”" }));
+    expect(onOpenItem).toHaveBeenLastCalledWith(expect.objectContaining({ id: "i22" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ignore" }));
+    expect(document.body.textContent).not.toContain("already on this list");
+    // Ignored for this draft only: still ignored as it's edited.
+    fireEvent.change(title(), { target: { value: "clean the bathroom" } });
+    await act(() => new Promise((r) => setTimeout(r, 500)));
+    expect(document.body.textContent).not.toContain("already on this list");
+    vi.mocked(aiRead).mockReset();
+    vi.mocked(aiRead).mockImplementation(() => new Promise(() => {}));
+  });
+
   it("doesn't add a suggestion made for what was typed before", async () => {
     vi.mocked(aiRead).mockResolvedValueOnce({
       projectId: "p1",
