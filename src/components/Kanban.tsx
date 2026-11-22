@@ -13,6 +13,7 @@ import {
   useState,
   useSyncExternalStore,
   useTransition,
+  type ComponentProps,
 } from "react";
 import type { AssigneeView, PendingInviteView } from "@/core/members";
 import {
@@ -400,7 +401,7 @@ export function Kanban({
   // The view asked for, which the tabs show at once while the view itself
   // renders in the background (switchView). Kept outside React state so
   // that first frame re-renders the tabs alone, not the whole board.
-  const [chosenView] = useState(() => chosenStore(initialView));
+  const [chosenView] = useState(() => valueStore(initialView));
   // The page shows the filters as soon as they're picked; saving them is so
   // the next visit, on any device, opens the same way. A save that fails
   // says so, and leaves them as picked on this page.
@@ -618,7 +619,9 @@ export function Kanban({
     });
   }
 
-  const [paletteOpen, setPaletteOpen] = useState(false);
+  // Kept out of Kanban's state, so opening and closing the palette re-renders
+  // only it (PaletteHost), not the board or Brief under it.
+  const [palette] = useState(() => valueStore(false));
   const [filterOpen, setFilterOpen] = useState(false);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -764,14 +767,14 @@ export function Kanban({
       if (matchesShortcut(e, { key: "k", mod: true, shift: false, alt: false })) {
         e.preventDefault();
         // Holding the keys repeats keydown; toggle once per press.
-        if (!e.repeat) setPaletteOpen((o) => !o);
+        if (!e.repeat) palette.set(!palette.get());
         return;
       }
       if (isEditableTarget(e.target)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (matchesShortcut(e, { key: "/" })) {
         e.preventDefault();
-        setPaletteOpen(true);
+        palette.set(true);
       } else if (matchesShortcut(e, { key: "c", shift: true })) {
         e.preventDefault();
         setNewList({ open: true, spaceId: "" });
@@ -832,7 +835,7 @@ export function Kanban({
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [openNewItem, switchView, feedbackEnabled, selection, chosenView]);
+  }, [openNewItem, switchView, feedbackEnabled, selection, chosenView, palette]);
 
   // Moving the pointer hands the shortcuts back to the hovered item. Scrolling
   // to the selection moves rows under a still pointer without moving it.
@@ -1178,15 +1181,14 @@ export function Kanban({
           defaultSpaceId={newList.spaceId}
         />
 
-        <PullToSearch onOpen={() => setPaletteOpen(true)} />
+        <PullToSearch onOpen={() => palette.set(true)} />
 
         <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} feedbackEnabled={feedbackEnabled} />
         {feedbackEnabled && (
           <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} about={feedbackAbout} />
         )}
-        <CommandPalette
-          open={paletteOpen}
-          onOpenChange={setPaletteOpen}
+        <PaletteHost
+          store={palette}
           lists={active}
           itemsByProject={itemsByProject}
           onNewItem={() => openNewItem()}
@@ -1265,14 +1267,16 @@ function filtersApply(view: BoardView) {
   return view === "board" || view === "archived";
 }
 
-/** The view the tabs show, for useSyncExternalStore. */
-function chosenStore(initial: BoardView) {
-  let chosen = initial;
+/** A value kept outside React state, for useSyncExternalStore: the view the
+ * tabs show, whether the palette is open. */
+function valueStore<T>(initial: T) {
+  let value = initial;
   const listeners = new Set<() => void>();
   return {
-    get: () => chosen,
-    set(next: BoardView) {
-      chosen = next;
+    get: () => value,
+    set(next: T) {
+      if (Object.is(next, value)) return;
+      value = next;
       for (const listener of listeners) listener();
     },
     subscribe(listener: () => void) {
@@ -1282,6 +1286,18 @@ function chosenStore(initial: BoardView) {
       };
     },
   };
+}
+
+/** The command palette, open while its store says so. */
+function PaletteHost({
+  store,
+  ...props
+}: Omit<ComponentProps<typeof CommandPalette>, "open" | "onOpenChange"> & {
+  /** Whether it's open. */
+  store: ReturnType<typeof valueStore<boolean>>;
+}) {
+  const open = useSyncExternalStore(store.subscribe, store.get, store.get);
+  return <CommandPalette {...props} open={open} onOpenChange={store.set} />;
 }
 
 /**
@@ -1296,7 +1312,7 @@ function ViewTabs({
 }: {
   /** The view on screen. */
   view: BoardView;
-  chosen: ReturnType<typeof chosenStore>;
+  chosen: ReturnType<typeof valueStore<BoardView>>;
   onSwitch: (next: BoardView) => void;
 }) {
   // The tabs, and their underline, go to the view asked for at once, busy

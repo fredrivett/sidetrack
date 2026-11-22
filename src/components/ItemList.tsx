@@ -35,6 +35,7 @@ import { CSS, getEventCoordinates } from "@dnd-kit/utilities";
 import { defaultRangeExtractor, type Range, useVirtualizer } from "@tanstack/react-virtual";
 import { Plus } from "lucide-react";
 import {
+  createContext,
   type ReactNode,
   useCallback,
   useContext,
@@ -42,6 +43,7 @@ import {
   useId,
   useLayoutEffect,
   useOptimistic,
+  useReducer,
   useRef,
   useState,
   useSyncExternalStore,
@@ -61,7 +63,7 @@ import { useCollapsedItems } from "./use-collapsed-items";
 import { SelectedItemContext } from "./useItemShortcuts";
 
 /** A list this long renders only the rows near its column's view (useVirtualRows). */
-const VIRTUAL_FROM = 60;
+export const VIRTUAL_FROM = 60;
 const noSubscribe = () => () => {};
 
 /**
@@ -72,13 +74,15 @@ const noSubscribe = () => () => {};
  * rows count at their measured height, or an estimate until they've shown,
  * so the column scrolls as if they were all there. A list shorter than
  * VIRTUAL_FROM renders every row, in the same elements, so a list that grows
- * or shrinks past it keeps its rows mounted.
+ * or shrinks past it keeps its rows mounted. `scroller` is what scrolls the
+ * list: its column's, or the Brief's.
  */
-function useVirtualRows(
+export function useVirtualRows(
   listEl: { readonly current: HTMLElement | null },
   ids: string[],
   keep: ReadonlySet<string>,
   selected: string | null,
+  scroller = "[data-column-scroll]",
 ) {
   const enabled = ids.length >= VIRTUAL_FROM;
   // Where the list starts in its column's scroll, below the list's summary:
@@ -86,27 +90,6 @@ function useVirtualRows(
   // or goes, such as the summary (and when the observer starts, which
   // reports every element at once).
   const [scrollMargin, setScrollMargin] = useState(0);
-  useLayoutEffect(() => {
-    const list = listEl.current;
-    const scroller = list?.closest<HTMLElement>("[data-column-scroll]");
-    if (!enabled || !list || !scroller) return;
-    const resized = new ResizeObserver(() =>
-      setScrollMargin(
-        list.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop,
-      ),
-    );
-    const observeChildren = () => {
-      resized.disconnect();
-      for (const child of scroller.children) resized.observe(child);
-    };
-    observeChildren();
-    const changed = new MutationObserver(observeChildren);
-    changed.observe(scroller, { childList: true });
-    return () => {
-      changed.disconnect();
-      resized.disconnect();
-    };
-  }, [enabled, listEl]);
   // The selected row's neighbours too, which the up and down keys go to
   // (stepItemRow) when it's scrolled out of view.
   const at = selected === null ? -1 : ids.indexOf(selected);
@@ -114,12 +97,31 @@ function useVirtualRows(
     ...ids.flatMap((id, i) => (keep.has(id) ? [i] : [])),
     ...(at === -1 ? [] : [at - 1, at, at + 1].filter((i) => i >= 0 && i < ids.length)),
   ];
+  // Where the list's scroll is, which the virtualizer otherwise reads only as
+  // it scrolls, and scrolls to as it starts: a list that turns this on or
+  // mounts scrolled down, such as a Brief card's Show more or unfolding,
+  // would jump to the top. Given before the virtualizer starts (its own
+  // layout effects come after this one), and from the first render where the
+  // list is already in the page.
+  const scrollerEl = () => listEl.current?.closest<HTMLElement>(scroller) ?? null;
+  const [instance] = useState<{ current?: { scrollOffset: number | null } }>({});
+  const [, rerender] = useReducer((n: number) => n + 1, 0);
+  useLayoutEffect(() => {
+    const top = scrollerEl()?.scrollTop;
+    if (!enabled || top === undefined || !instance.current) return;
+    if (instance.current.scrollOffset === top) return;
+    instance.current.scrollOffset = top;
+    rerender();
+    // Only as it turns on or mounts; scrolling is the virtualizer's own.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled]);
   // The app doesn't use the React Compiler, which is what this warns about.
   // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: ids.length,
     enabled,
-    getScrollElement: () => listEl.current?.closest<HTMLElement>("[data-column-scroll]") ?? null,
+    getScrollElement: scrollerEl,
+    initialOffset: () => scrollerEl()?.scrollTop ?? 0,
     // A column's height until it's measured, so the server's page, and the
     // render that turns this on, have the rows at the top instead of none.
     initialRect: { width: 0, height: 800 },
@@ -134,6 +136,31 @@ function useVirtualRows(
     rangeExtractor: (range: Range) =>
       [...new Set([...defaultRangeExtractor(range), ...kept])].sort((a, b) => a - b),
   });
+  instance.current = virtualizer;
+  useLayoutEffect(() => {
+    const list = listEl.current;
+    const scrollEl = list?.closest<HTMLElement>(scroller);
+    if (!enabled || !list || !scrollEl) return;
+    const measure = () =>
+      setScrollMargin(
+        list.getBoundingClientRect().top - scrollEl.getBoundingClientRect().top + scrollEl.scrollTop,
+      );
+    // At once too, so a list that turns this on scrolled down renders the
+    // rows on screen, not its first.
+    measure();
+    const resized = new ResizeObserver(measure);
+    const observeChildren = () => {
+      resized.disconnect();
+      for (const child of scrollEl.children) resized.observe(child);
+    };
+    observeChildren();
+    const changed = new MutationObserver(observeChildren);
+    changed.observe(scrollEl, { childList: true });
+    return () => {
+      changed.disconnect();
+      resized.disconnect();
+    };
+  }, [enabled, listEl, scroller]);
   if (!enabled) {
     return { rows: ids.map((_, i) => ({ index: i, above: i ? 6 : 0 })), below: 0 };
   }
@@ -335,6 +362,10 @@ function SortableStep({
   );
 }
 
+/** Told which step a checklist is dragging, and null once it's dropped: the
+ * Brief keeps that checklist's row mounted meanwhile (BriefRows). */
+export const ChecklistDragContext = createContext<((id: string | null) => void) | null>(null);
+
 /**
  * One checklist's sub-items, dragged up and down to reorder them: the Brief's
  * checklists and the item's dialog, which show a checklist on its own rather
@@ -379,6 +410,13 @@ export function SortableChecklist({
   });
   const [, start] = useTransition();
   const [activeId, setActiveId] = useState<string | null>(null);
+  const onDragging = useContext(ChecklistDragContext);
+  // Until it's dropped, or the checklist goes mid-drag.
+  useEffect(() => {
+    if (!activeId) return;
+    onDragging?.(activeId);
+    return () => onDragging?.(null);
+  }, [activeId, onDragging]);
   // The overlay goes into the body, out of any dialog's transform, once
   // there's something to drag (there's no body to portal into on the server).
   const [portal, setPortal] = useState(false);
@@ -1114,37 +1152,43 @@ export function DraggableItemList({
   // What follows the pointer: the row, with a parent's checklist, lifted off
   // the list (scaled up with a deep shadow) until it's dropped. Drawn by the
   // list it's from, wherever it goes, even once that list is empty without it.
-  const overlay = board.source === projectId && (
-    <DragOverlay modifiers={[lockX]} dropAnimation={dropAnimation}>
-      {active && (
-        // Full width, like the row's sortable node, with the card indented
-        // inside: the drop glides this box onto that node, so an indented
-        // card lands indented instead of sliding out to the left.
-        <div
-          className="transition-[padding] duration-200 ease-out"
-          style={{ paddingLeft: shift }}
-        >
+  // Into the body: a column's content-visibility (globals.css) contains
+  // everything in it, even on screen, so a fixed element in there would be
+  // placed from the column instead of the viewport, and clipped to it.
+  const overlay =
+    board.source === projectId &&
+    createPortal(
+      <DragOverlay modifiers={[lockX]} dropAnimation={dropAnimation}>
+        {active && (
+          // Full width, like the row's sortable node, with the card indented
+          // inside: the drop glides this box onto that node, so an indented
+          // card lands indented instead of sliding out to the left.
           <div
-            // The column's own background, so rows under a parent's checklist
-            // don't show through the gaps between its rows.
-            // Grabbing over everything in it, overriding the row's pointer.
-            className="cursor-grabbing rounded-lg **:cursor-grabbing! bg-white shadow-xl transition-[scale,box-shadow] duration-200 ease-out in-[.dnd-dropping]:scale-100! in-[.dnd-dropping]:shadow-none motion-safe:scale-[1.03] motion-safe:animate-[lift_150ms_ease-out] dark:bg-neutral-900"
+            className="transition-[padding] duration-200 ease-out"
+            style={{ paddingLeft: shift }}
           >
-            {active.parentId ? (
-              rowFor(row, active.item)
-            ) : (
-              <ItemGroupView
-                {...row}
-                group={{ ...active.item, children: ownChildren(active.item.id) }}
-                collapsed={collapsed.has(active.item.id)}
-                shown={shown}
-              />
-            )}
+            <div
+              // The column's own background, so rows under a parent's checklist
+              // don't show through the gaps between its rows.
+              // Grabbing over everything in it, overriding the row's pointer.
+              className="cursor-grabbing rounded-lg **:cursor-grabbing! bg-white shadow-xl transition-[scale,box-shadow] duration-200 ease-out in-[.dnd-dropping]:scale-100! in-[.dnd-dropping]:shadow-none motion-safe:scale-[1.03] motion-safe:animate-[lift_150ms_ease-out] dark:bg-neutral-900"
+            >
+              {active.parentId ? (
+                rowFor(row, active.item)
+              ) : (
+                <ItemGroupView
+                  {...row}
+                  group={{ ...active.item, children: ownChildren(active.item.id) }}
+                  collapsed={collapsed.has(active.item.id)}
+                  shown={shown}
+                />
+              )}
+            </div>
           </div>
-        </div>
-      )}
-    </DragOverlay>
-  );
+        )}
+      </DragOverlay>,
+      document.body,
+    );
 
   if (rows.length === 0 && !onAddItem) {
     return (
