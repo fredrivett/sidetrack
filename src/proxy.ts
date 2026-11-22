@@ -34,6 +34,8 @@ export function proxy(request: NextRequest) {
     pathname.startsWith("/login/") ||
     pathname === "/forgot-password" ||
     pathname === "/reset-password" ||
+    // An invite's link, which signs up whoever it's for (app/invite/[token]).
+    pathname.startsWith("/invite/") ||
     pathname.startsWith("/api/auth/")
   ) {
     return NextResponse.next();

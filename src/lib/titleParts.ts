@@ -1,6 +1,7 @@
 // The parts of a new item's title that set one of its fields: "tomorrow" its
 // due date, "every monday" its repeat, "@sam" who does it, "#errands" a
-// label, "Garden:" its list, and filler such as "Remind me to". New item highlights
+// label, "Garden:" its list, and filler such as "Remind me to" (or "add" in
+// "add … to Tuesday"). New item highlights
 // each, fills in its field, and adds the item without the parts that only
 // said the field (`remove`), with the words that joined them. A part that's
 // also what the task is ("Ask Sam to…", "tomorrow's breakfast") sets its
@@ -27,6 +28,10 @@ export type PlacedPart = TitlePart & { start: number; end: number };
 // Openers that only say it's a task, which every item already is.
 const FILLER =
   /^(?:todo|to-do|to do|reminder|remind me to|remember to|don'?t forget to)\b[\s:,-]*/i;
+// "Add … to Tuesday" asks the app to put the task on a day, so its "add" is
+// filler too, but only then: "Add Sam to the group chat" is the task.
+const DAY = String.raw`(?:today|tonight|tomorrow|(?:this |next )?(?:monday|mon|tuesday|tues|tue|wednesday|wed|thursday|thurs|thur|thu|friday|fri|saturday|sat|sunday|sun)|(?:this|next) week(?:end)?|the weekend)`;
+const ADD_TO_DAY = new RegExp(String.raw`^add\s+(?=.*\sto\s+${DAY}[\s.!]*$)`, "i");
 
 /**
  * The parts plain rules find, with no AI: leading filler, an @handle of
@@ -38,7 +43,7 @@ export function ruleParts(
   { people, labels }: { people: Array<{ userId: string; handle: string | null }>; labels: string[] },
 ): TitlePart[] {
   const out: TitlePart[] = [];
-  const filler = FILLER.exec(title);
+  const filler = FILLER.exec(title) ?? ADD_TO_DAY.exec(title);
   if (filler) out.push({ field: "filler", text: filler[0].trimEnd(), remove: true });
   for (const m of title.matchAll(/(?<=^|\s)@([\w.-]+)/g)) {
     const handle = m[1].replace(/[.-]+$/, "").toLowerCase();
@@ -101,7 +106,7 @@ const JOIN_ONLY = new RegExp(String.raw`^\s*${JOIN}?\s*$`, "i");
 const JOIN_START = new RegExp(String.raw`^\s*${JOIN}?\s*`, "i");
 const JOIN_END = new RegExp(String.raw`\s*${JOIN}?\s*$`, "i");
 // Words that bring in a date or a repeat, taken out with it.
-const LEAD = /\b(?:by|on|due|starting|from|until|before)\s+$/i;
+const LEAD = /\b(?:by|on|to|due|starting|from|until|before)\s+$/i;
 
 /**
  * `title` without `parts` (the ones to take out), the words that bring a

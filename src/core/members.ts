@@ -134,20 +134,8 @@ export function inviteMember(
     shareMood?: boolean;
   } = {},
 ): MemberView {
-  assertListRole(role);
   const { inviteId, onlyMine } = opts;
-  const within = assertWithin(onlyMine, opts.within);
-  if (onlyMine && role === "editor") {
-    throw new Error("only viewers and commenters can be shown just your items");
-  }
-  const project = getProject(db, userId, projectId);
-  if (!project) throw new Error(`list not found: ${projectId}`);
-  // Anyone who can edit the list can share their own day on it: only their
-  // items show (hasItemAccess), and the list's people are told who's coming.
-  const sharingDay = onlyMine && within !== null && listAccess(db, userId, projectId) === "edit";
-  if (project.userId !== userId && !sharingDay) {
-    throw new Error("only the list owner can invite members");
-  }
+  const { project, within } = checkListInvite(db, userId, projectId, role, opts);
 
   const target = findUserByHandle(db, handle);
   if (!target) throw new Error(`no account found for "${handle.trim()}"`);
@@ -219,6 +207,36 @@ export function inviteMember(
     onlyWithin: within,
     createdAt: Date.now(),
   };
+}
+
+/**
+ * Whether the user may invite anyone to the list with this role and limit,
+ * whoever it is: owner-only, except that anyone who can edit it can share
+ * their own day there. Throws if not; returns the list and the window to
+ * store. Invites by email (invitations.ts) check this when they're sent,
+ * before there's anyone to invite.
+ */
+export function checkListInvite(
+  db: Db,
+  userId: string,
+  projectId: string,
+  role: ListRole,
+  opts: { onlyMine?: boolean; within?: OnlyWithin | null },
+) {
+  assertListRole(role);
+  const within = assertWithin(opts.onlyMine, opts.within);
+  if (opts.onlyMine && role === "editor") {
+    throw new Error("only viewers and commenters can be shown just your items");
+  }
+  const project = getProject(db, userId, projectId);
+  if (!project) throw new Error(`list not found: ${projectId}`);
+  // Anyone who can edit the list can share their own day on it: only their
+  // items show (hasItemAccess), and the list's people are told who's coming.
+  const sharingDay = opts.onlyMine && within !== null && listAccess(db, userId, projectId) === "edit";
+  if (project.userId !== userId && !sharingDay) {
+    throw new Error("only the list owner can invite members");
+  }
+  return { project, within };
 }
 
 /** The window to store: only with a limit to someone's items, and a known one. */

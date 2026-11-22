@@ -137,7 +137,15 @@ import {
   setSpaceMemberRole,
   updateSpace,
 } from "@/core/spaces";
-import { type InviteKind, notifyInvite, notifyMentions } from "@/lib/email";
+import { type InviteKind, notifyInvite, notifyJoinInvite, notifyMentions } from "@/lib/email";
+import {
+  cancelInvitation,
+  INVITE_DAYS,
+  inviteByEmail,
+  listInvitations,
+  resendInvitation,
+  type SentInvitation,
+} from "@/core/invitations";
 import { collaboratorAccess, invitePeople, type InvitePlace } from "@/core/invites";
 import { getEnv } from "@/lib/env";
 import { formatItemRef, workPrTitle } from "@/lib/itemRef";
@@ -2414,6 +2422,101 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     async ({ person_id }) => {
       const { db } = getDb();
       stopDayShare(db, userId, person_id, SOURCE);
+      return json({ ok: true });
+    },
+  );
+
+  // The email for an invite to join, with its link: sent before answering, like invite_people's.
+  const sendJoinInvite = (sent: SentInvitation) =>
+    notifyJoinInvite({
+      to: sent.email,
+      inviterName: getUserName(getDb().db, userId) ?? "Someone",
+      url: `${ctx.baseUrl}/invite/${sent.token}`,
+      places: sent.places,
+      within: sent.within,
+      days: INVITE_DAYS,
+    });
+
+  server.registerTool(
+    "invite_by_email",
+    {
+      title: "Invite someone not on Sidetrack yet",
+      description:
+        "Invite someone who has no account, by email, to join Sidetrack. With share_day, it shares the user's day with them as " +
+        "Share my day does: their items on the given list_ids and space_ids, within today or week, and optionally the day note's " +
+        "words (note) and mood (mood); they see it once they join through the emailed link. Without share_day it only invites them. " +
+        "invite_people refuses people without accounts; use this for them. Check with the user before inviting someone they didn't name.",
+      inputSchema: {
+        email: z.string().min(3),
+        share_day: z
+          .object({
+            list_ids: z.array(z.string()).optional(),
+            space_ids: z.array(z.string()).optional(),
+            within: z.enum(ONLY_WITHIN),
+            note: z.boolean().optional(),
+            mood: z.boolean().optional(),
+          })
+          .optional(),
+      },
+    },
+    async ({ email, share_day }) => {
+      const { db } = getDb();
+      const day = share_day && { onlyMine: true, within: share_day.within, shareNote: !!share_day.note, shareMood: !!share_day.mood };
+      const places: InvitePlace[] = day
+        ? [
+            ...(share_day.list_ids ?? []).map((id): InvitePlace => ({ kind: "list", id, role: "commenter", ...day })),
+            ...(share_day.space_ids ?? []).map((id): InvitePlace => ({ kind: "space", id, role: "commenter", ...day })),
+          ]
+        : [];
+      if (day && places.length === 0) return errorText("share_day needs a list_id or space_id; nothing was sent");
+      const sent = inviteByEmail(db, userId, { email, places }, SOURCE);
+      await sendJoinInvite(sent);
+      return json({ id: sent.id, email: sent.email, places: sent.places, within: sent.within });
+    },
+  );
+
+  server.registerTool(
+    "list_invitations",
+    {
+      title: "List invites to people not on Sidetrack yet",
+      description:
+        "Invites by email the user sent that nobody has accepted yet, newest first: each one's id (for resend_invitation and " +
+        "cancel_invitation), email, the places it shares and, for a shared day, within, note and mood, and whether its link has expired.",
+      inputSchema: {},
+    },
+    async () => {
+      const { db } = getDb();
+      return json(listInvitations(db, userId));
+    },
+  );
+
+  server.registerTool(
+    "resend_invitation",
+    {
+      title: "Send an invite again",
+      description:
+        "Email an invite (id from list_invitations) again with a new link, which works for its full time again; the old link stops working. " +
+        "Act only when the user asked.",
+      inputSchema: { id: z.string() },
+    },
+    async ({ id }) => {
+      const { db } = getDb();
+      const sent = resendInvitation(db, userId, id, SOURCE);
+      await sendJoinInvite(sent);
+      return json({ ok: true });
+    },
+  );
+
+  server.registerTool(
+    "cancel_invitation",
+    {
+      title: "Cancel an invite",
+      description: "Cancel an invite nobody has accepted (id from list_invitations): its link stops working. Act only when the user asked.",
+      inputSchema: { id: z.string() },
+    },
+    async ({ id }) => {
+      const { db } = getDb();
+      cancelInvitation(db, userId, id, SOURCE);
       return json({ ok: true });
     },
   );

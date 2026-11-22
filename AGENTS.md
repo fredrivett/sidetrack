@@ -42,11 +42,14 @@ Environment variables (`ALLOW_SIGNUP`, `POSTHOG_*`, `BETTER_AUTH_*`, etc.) are
 managed in the Railway dashboard, not via `vercel env`. Ignore Vercel-specific
 tooling/config suggestions; there is no Vercel project.
 
-`railway.json` holds the deploy settings. The database lives on a Railway
-volume, which only one deploy can mount, so each deploy stops the old server
-before starting the new one: a short outage nobody can remove. The settings
-keep it short: the healthcheck (`/api/version`) routes traffic only once
-migrations have run, and draining lets saves in flight finish. A server that
+The deploy settings live on the Railway service (Settings tab), not in the
+repo. Don't add a `railway.json` or `railway.toml`: Railway has deprecated
+them, and until it stops reading them a file at the repo root overrides these
+settings. The database lives on a Railway volume, which only one
+deploy can mount, so each deploy stops the old server before starting the new
+one: a short outage nobody can remove. Two settings keep it short: the
+healthcheck path (`/api/version`) routes traffic only once migrations have
+run, and 10 draining seconds let saves in flight finish. A server that
 doesn't exit promptly on SIGTERM lengthens every outage by the drain time, so
 long-lived responses must end on SIGTERM, as `/api/events` does.
 

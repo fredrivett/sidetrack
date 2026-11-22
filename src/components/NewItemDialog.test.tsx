@@ -215,6 +215,46 @@ describe("NewItemDialog", () => {
     vi.mocked(aiRead).mockImplementation(() => new Promise(() => {}));
   });
 
+  it("lets a date in the title replace the Brief's today, but not a date picked by hand", async () => {
+    vi.mocked(aiRead).mockResolvedValue({
+      projectId: "p1",
+      duplicate: null,
+      parent: null,
+      due: null,
+      repeat: null,
+      label: null,
+      assigneeId: null,
+      titleParts: [
+        { field: "due", due: { dueFrom: null, dueDate: "2026-11-17" }, text: "to tuesday", remove: true },
+      ],
+    });
+    const { rerender } = render(dialog(true, false));
+    rerender(dialog(true));
+    const title = () => screen.getByPlaceholderText<HTMLInputElement>("Add a task…");
+    const dueChip = () => screen.getByRole("button", { name: /^Due/ });
+    fireEvent.change(title(), { target: { value: "add wash clothes to tuesday" } });
+    await act(() => new Promise((r) => setTimeout(r, 500)));
+    expect(dueChip().textContent).toBe("Due Tue");
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: /Add & create more/ })));
+    expect(vi.mocked(addItemAction)).toHaveBeenLastCalledWith(
+      expect.objectContaining({ title: "Wash clothes", dueDate: "2026-11-17" }),
+    );
+
+    // Today picked on the chip: the title's Tuesday loses and stays.
+    expect(dueChip().textContent).toBe("Due Today");
+    fireEvent.click(dueChip());
+    fireEvent.click(screen.getByRole("button", { name: "Today" }));
+    fireEvent.change(title(), { target: { value: "add wash clothes to tuesday" } });
+    await act(() => new Promise((r) => setTimeout(r, 500)));
+    expect(dueChip().textContent).toBe("Due Today");
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: /Add item/ })));
+    expect(vi.mocked(addItemAction)).toHaveBeenLastCalledWith(
+      expect.objectContaining({ title: "Wash clothes to tuesday", dueDate: "2026-11-14" }),
+    );
+    vi.mocked(aiRead).mockReset();
+    vi.mocked(aiRead).mockImplementation(() => new Promise(() => {}));
+  });
+
   it("doesn't add a suggestion made for what was typed before", async () => {
     vi.mocked(aiRead).mockResolvedValueOnce({
       projectId: "p1",

@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { ChangelogEntry, ChangelogPost } from "@/lib/changelog";
@@ -8,6 +9,7 @@ import { cn } from "@/lib/utils";
 
 const REPO = "https://github.com/fredrivett/sidetrack";
 
+const TYPES = ["new", "improved", "fixed"] as const;
 const TYPE_LABEL = { new: "New", improved: "Improved", fixed: "Fixed" } as const;
 const TYPE_CLASS = {
   new: "text-blue-700 dark:text-blue-300",
@@ -28,7 +30,9 @@ const dayLabel = (date: string) =>
 
 /**
  * The changelog's posts and entries, by day, newest first, with a
- * self-hosters filter (which leaves out posts). A day's post comes first.
+ * self-hosters filter (which leaves out posts). A day's post comes first,
+ * then its entries grouped as New, Improved and Fixed, each folded until
+ * opened.
  */
 export function ChangelogFeed({ entries, posts }: { entries: ChangelogEntry[]; posts: ChangelogPost[] }) {
   const [selfHosters, setSelfHosters] = useState(false);
@@ -102,28 +106,52 @@ export function ChangelogFeed({ entries, posts }: { entries: ChangelogEntry[]; p
                     </article>
                   </li>
                 ))}
-              {dayEntries.map((e) => (
-                <li key={e.file} className={cn("relative pb-5 text-sm last:pb-2", TYPE_CLASS[e.type])}>
-                  <span
-                    aria-hidden
-                    className="absolute -left-[24.5px] top-[5px] size-2 rounded-full border-[1.5px] border-current bg-neutral-50 dark:bg-neutral-950"
-                  />
-                  <span className="text-xs font-medium">{TYPE_LABEL[e.type]}</span>
-                  <p className="text-pretty text-foreground">{e.text}</p>
-                  {e.media && <Media file={e.media} />}
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {e.pr.map((n, i) => (
-                      <span key={n}>
-                        {i > 0 && " "}
-                        <a href={`${REPO}/pull/${n}`} className="hover:text-foreground hover:underline">
-                          #{n}
-                        </a>
-                      </span>
-                    ))}
-                    {e.for === "self-hosters" && " · for self-hosters"}
-                  </p>
-                </li>
-              ))}
+              {TYPES.map((type) => {
+                const group = dayEntries.filter((e) => e.type === type);
+                if (group.length === 0) return null;
+                return (
+                  <li key={type} className="relative pb-2 last:pb-0">
+                    {/* Folded until opened, so a busy day is three lines. */}
+                    <details className="group">
+                    <summary
+                      className={cn(
+                        "relative -mx-1.5 inline-flex cursor-pointer list-none items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium select-none hover:bg-muted [&::-webkit-details-marker]:hidden",
+                        TYPE_CLASS[type],
+                      )}
+                    >
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "absolute top-1/2 -left-[18.5px] size-2 -translate-y-1/2 rounded-full border-[1.5px] border-current bg-neutral-50 dark:bg-neutral-950",
+                          TYPE_CLASS[type],
+                        )}
+                      />
+                      {TYPE_LABEL[type]} <span className="text-muted-foreground">{group.length}</span>
+                      <ChevronRight aria-hidden className="size-3.5 text-muted-foreground transition-transform group-open:rotate-90" />
+                    </summary>
+                    <ul className="mt-1.5 space-y-3">
+                      {group.map((e) => (
+                        <li key={e.file} className="text-sm">
+                          <p className="text-pretty">{e.text}</p>
+                          {e.media && <Media file={e.media} />}
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {e.pr.map((n, i) => (
+                              <span key={n}>
+                                {i > 0 && " "}
+                                <a href={`${REPO}/pull/${n}`} className="hover:text-foreground hover:underline">
+                                  #{n}
+                                </a>
+                              </span>
+                            ))}
+                            {e.for === "self-hosters" && " · for self-hosters"}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                    </details>
+                  </li>
+                );
+              })}
             </ol>
           </section>
         );

@@ -21,6 +21,7 @@ describe("cutTitle", () => {
       "put the bins out",
     );
     expect(saved("Renew car insurance by Friday", [due("Friday")])).toBe("Renew car insurance");
+    expect(saved("add wash clothes to tuesday", [due("tuesday")])).toBe("add wash clothes");
     expect(saved("Tomorrow: call the bank", [due("Tomorrow:")])).toBe("Call the bank");
     // Claude sometimes leaves the separator out of the part.
     expect(saved("Mon - bins out", [due("Mon")])).toBe("Bins out");
@@ -56,6 +57,20 @@ describe("ruleParts", () => {
       { field: "who", userId: "u-sam", text: "@sam", remove: true },
       { field: "label", label: "Errands", text: "#ERRANDS", remove: true },
     ]);
+  });
+
+  it("finds a leading add as filler only when it puts the task on a day", () => {
+    const filler = (title: string) =>
+      ruleParts(title, { people: [], labels: [] }).find((p) => p.field === "filler")?.text ?? null;
+    expect(filler("add wash clothes to tuesday")).toBe("add");
+    expect(filler("Add bins out to next week.")).toBe("Add");
+    expect(filler("Add Sam to the group chat")).toBeNull();
+    expect(filler("Add milk to tomorrow's list")).toBeNull();
+    expect(filler("Add notes to tuesday meeting")).toBeNull();
+    expect(filler("Address letters to Sunday school")).toBeNull();
+    expect(saved("add wash clothes to tuesday", [{ field: "filler", text: "add", remove: true }, due("tuesday")])).toBe(
+      "Wash clothes",
+    );
   });
 });
 

@@ -244,6 +244,43 @@ describe("invite_people", () => {
   });
 });
 
+describe("invite_by_email", () => {
+  it("shares the user's day with someone not on Sidetrack yet, emailing them their own link", async () => {
+    const lorna = createTestUser(db, { username: "lorna", name: "Lorna" });
+    const list = createProject(db, lorna, { name: "Life" }, "web");
+    const space = createSpace(db, lorna, { name: "Home" }, "web");
+    const call = await connectAs(lorna);
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      // No place to share from: refused, and nothing is sent.
+      const empty = await call("invite_by_email", { email: "jo@example.com", share_day: { within: "today" } });
+      expect(empty.error).toMatch(/needs a list_id or space_id/);
+      expect((await call("list_invitations")).data).toEqual([]);
+      expect(log).not.toHaveBeenCalled();
+
+      const sent = await call("invite_by_email", {
+        email: "jo@example.com",
+        share_day: { list_ids: [list.id], space_ids: [space.id], within: "week", mood: true },
+      });
+      expect(sent.data).toEqual(expect.objectContaining({ email: "jo@example.com", places: ["Life", "Home"], within: "week" }));
+      const [invite] = (await call("list_invitations")).data as unknown as { id: string; places: unknown[]; mood: boolean; note: boolean }[];
+      expect(invite).toMatchObject({ mood: true, note: false, places: [{ kind: "list", id: list.id }, { kind: "space", id: space.id }] });
+      const link = (n: number) => /\/invite\/(\S+)/.exec(String(log.mock.calls[n]?.[0]))?.[1];
+      expect(String(log.mock.calls[0][0])).toContain("jo@example.com: http://localhost:3000/invite/");
+
+      // Sending it again emails a different link.
+      expect((await call("resend_invitation", { id: invite.id })).error).toBeNull();
+      expect(link(1)).toBeTruthy();
+      expect(link(1)).not.toBe(link(0));
+
+      expect((await call("cancel_invitation", { id: invite.id })).error).toBeNull();
+      expect((await call("list_invitations")).data).toEqual([]);
+    } finally {
+      log.mockRestore();
+    }
+  });
+});
+
 describe("only_mine", () => {
   it("lets an agent share a list so someone sees only the user's items", async () => {
     const lorna = createTestUser(db, { username: "lorna" });
