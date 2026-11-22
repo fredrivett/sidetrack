@@ -1,7 +1,7 @@
 ---
 date: 2026-11-21
 type: new
-pr: [398]
+pr: [398, 401]
 post: true
 ---
-Share your day with someone who keeps you going: they see what's on your day or week, how much is done, and, if you choose, your mood and note, on a new Check-ins tab, without seeing the rest of your lists.
+Share your day with someone who keeps you going, on a new Check-ins tab. They see only what's assigned to you, and you pick the rest: which lists and Spaces, today or this week, and your mood and note. Finally the accountability you need to win your day.

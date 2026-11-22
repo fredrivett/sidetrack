@@ -166,6 +166,7 @@ import {
   setUploadedAvatar as setUploadedAvatarCore,
   setUsername as setUsernameCore,
 } from "@/core/users";
+import { stopDayShare as stopDayShareCore, updateDayShare as updateDayShareCore } from "@/core/dayShares";
 import { setDayNote as setDayNoteCore } from "@/core/dayNotes";
 import {
   addFromSource as addFromSourceCore,
@@ -383,6 +384,25 @@ export async function setMemberRoleAction(
   const userId = await requireUserId();
   const { db } = getDb();
   setMemberRoleCore(db, userId, projectId, targetUserId, role, SOURCE, onlyMine, within);
+  refresh();
+}
+
+/** Change what someone sees of your day: today or this week, and whether they see your note or mood. */
+export async function updateDayShareAction(
+  personId: string,
+  change: { within?: OnlyWithin; note?: boolean; mood?: boolean },
+) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  updateDayShareCore(db, userId, personId, change, SOURCE);
+  refresh();
+}
+
+/** Stop sharing your day with someone. */
+export async function stopDayShareAction(personId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  stopDayShareCore(db, userId, personId, SOURCE);
   refresh();
 }
 

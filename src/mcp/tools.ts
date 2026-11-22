@@ -1,3 +1,4 @@
+import { listDayShares, stopDayShare, updateDayShare } from "@/core/dayShares";
 import { listAccessById } from "@/core/access";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -2323,6 +2324,58 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       const { db } = getDb();
       if (!getProject(db, userId, list_id)) return notFound("list", list_id);
       setMemberRole(db, userId, list_id, user_id, role, SOURCE, only_mine, only_within);
+      return json({ ok: true });
+    },
+  );
+
+  server.registerTool(
+    "list_day_shares",
+    {
+      title: "List who sees the user's day",
+      description:
+        "The people the user shares their day with (Share my day): each with today or week, whether they see the user's day note " +
+        "and mood, whether they've accepted, and the lists and Spaces it covers. person_id is what update_day_share and stop_day_share take.",
+      inputSchema: {},
+    },
+    async () => {
+      const { db } = getDb();
+      return json(listDayShares(db, userId).map((s) => ({ person_id: s.personId, username: s.username, name: s.name, within: s.within, note: s.note, mood: s.mood, pending: s.pending, places: s.places })));
+    },
+  );
+
+  server.registerTool(
+    "update_day_share",
+    {
+      title: "Change what someone sees of the user's day",
+      description:
+        "Change a day share (person_id from list_day_shares) in every list and Space it covers: within (today or week), and whether " +
+        "they also see the user's day note's words (note) or mood (mood). Leave a field out to keep it as it is. Only change what the user asked for.",
+      inputSchema: {
+        person_id: z.string(),
+        within: z.enum(ONLY_WITHIN).optional(),
+        note: z.boolean().optional(),
+        mood: z.boolean().optional(),
+      },
+    },
+    async ({ person_id, within, note, mood }) => {
+      const { db } = getDb();
+      updateDayShare(db, userId, person_id, { within, note, mood }, SOURCE);
+      return json({ ok: true });
+    },
+  );
+
+  server.registerTool(
+    "stop_day_share",
+    {
+      title: "Stop sharing the user's day with someone",
+      description:
+        "Stop sharing the user's day with person_id (from list_day_shares): they leave every list and Space it covered. " +
+        "Act only when the user asked to stop sharing with that person.",
+      inputSchema: { person_id: z.string() },
+    },
+    async ({ person_id }) => {
+      const { db } = getDb();
+      stopDayShare(db, userId, person_id, SOURCE);
       return json({ ok: true });
     },
   );

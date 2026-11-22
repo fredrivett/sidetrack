@@ -229,6 +229,12 @@ function listChanges(c: ListChanges): string[] {
   ].filter((p): p is string => Boolean(p));
 }
 
+/** ", with the day note and mood", ", without the day note or mood": what of the sharer's day note a day share now includes. */
+const noteText = (note?: boolean, mood?: boolean): Part[] => {
+  if (note === undefined && mood === undefined) return [];
+  const on = [note && "note", mood && "mood"].filter(Boolean).join(" and ");
+  return [{ text: on ? `, with the day ${on}` : ", without the day note or mood" }];
+};
 /** Whose items a role covers, when it's only someone's, and how much of their days. */
 const onlyOf = (only?: PersonAt, within?: OnlyWithin) => (only ? ` of ${whoseWords(`${only.name}'s`, within)}` : "");
 
@@ -436,6 +442,7 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
         list(event.listName),
         ...(event.onlyAssignedTo ? [t(`, seeing only ${whoseWords(`${event.onlyAssignedTo.name}'s`, event.onlyWithin)}`)] : []),
         ...(event.seesAll ? [t(", seeing all of it")] : []),
+        ...noteText(event.shareNote, event.shareMood),
         ...lostText(event.lost),
       ];
     case "member.joined":
@@ -540,6 +547,7 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
         space(event.space),
         ...(event.onlyAssignedTo ? [t(`, seeing only ${whoseWords(`${event.onlyAssignedTo.name}'s`, event.onlyWithin)}`)] : []),
         ...(event.seesAll ? [t(", seeing all of it")] : []),
+        ...noteText(event.shareNote, event.shareMood),
         ...lostText(event.lost),
       ];
     case "item.pr.linked":

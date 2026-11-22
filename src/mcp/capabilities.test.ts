@@ -42,6 +42,8 @@ const ACTIONS: Record<string, string | Exempt> = {
   invitePeopleAction: "invite_people",
   setMemberRoleAction: "set_member_role",
   removeMemberAction: "remove_member",
+  updateDayShareAction: "update_day_share",
+  stopDayShareAction: "stop_day_share",
   createSpaceAction: "create_space",
   updateSpaceAction: "update_space",
   reorderSpaceAction: "reorder_space",

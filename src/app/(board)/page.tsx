@@ -11,6 +11,7 @@ import {
 import { changeSeq } from "@/core/changes";
 import { countCommentsByItem } from "@/core/comments";
 import { sharedDayNote } from "@/core/dayNotes";
+import { myDayView } from "@/core/dayShares";
 import { listLabels } from "@/core/labels";
 import { getDb } from "@/core/db";
 import { projectRefPrefixes } from "@/core/itemRef";
@@ -94,6 +95,8 @@ export default async function Home({
     c.lists.push(p);
     checkIns.set(l.personId, c);
   }
+  // The viewer's own day, as the people they share it with see it.
+  const myDay = myDayView(db, userId);
   const pendingInvites = listPendingInvites(db, userId);
   // Finished items stay on the board until their week is over (in each
   // list's Done), so leave older ones out. The browser trims to its own week
@@ -164,6 +167,7 @@ export default async function Home({
             pendingSpaceInvites={listPendingSpaceInvites(db, userId)}
             pendingPhotos={listPendingSources(db, userId)}
             checkIns={[...checkIns.values()]}
+            myDay={myDay}
             // Someone's day it shows only part of turns over: what's on it changes.
             refreshAt={Math.min(...[...limited.values()].map((l) => l.turnsAt ?? Infinity)) || null}
             initialListId={typeof p === "string" ? p : null}

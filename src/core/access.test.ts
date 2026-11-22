@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { users } from "./auth-schema";
 import { setDayNote, sharedDayNote } from "./dayNotes";
+import { listDayShares, myDayView, stopDayShare, updateDayShare } from "./dayShares";
 import { nanoid } from "nanoid";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { listAudit } from "./audit";
@@ -554,6 +555,66 @@ describe("a membership shown only someone's today or week", () => {
     setDayNote(db, sam, "2026-11-19", "Sam's own words");
     expect(sharedDayNote(db, jo, lorna)).toEqual({ note: null, mood: [] });
     expect(sharedDayNote(db, jo, sam)).toEqual({ note: null, mood: [] });
+  });
+
+  it("lists, changes and stops her day shares, and shows her exactly what Jo sees", () => {
+    const { db, lorna, jo, list, seen } = setup("today");
+    createTestUser(db, { username: "kim", name: "Kim" });
+    const space = createSpace(db, lorna, { name: "Fam" }, "web");
+    inviteSpaceMember(db, lorna, space.id, "kim", "web", "commenter", { onlyMine: true, within: "week", shareMood: true });
+    const title = (id: string) => getItem(db, lorna, id)?.title;
+    expect(listDayShares(db, lorna).map((s) => [s.name, s.within, s.note, s.mood, s.pending, s.places.map((p) => p.name)])).toEqual([
+      ["Jo", "today", false, false, false, ["Week"]],
+      ["Kim", "week", false, true, true, ["Fam"]],
+    ]);
+    // Her day, as she sees it on Check-ins, is what Jo sees: Kim's week
+    // doesn't count until she's accepted, nor does the mood Kim would see.
+    // Nor a list Jo hasn't accepted yet.
+    const gym = createProject(db, lorna, { name: "Gym" }, "web");
+    addItem(db, lorna, { projectId: gym.id, title: "Gym today", assigneeIds: [lorna], dueDate: "2026-11-19" }, "web");
+    inviteMember(db, lorna, gym.id, "jo", "web", "viewer", { onlyMine: true, within: "today" });
+    setDayNote(db, lorna, "2026-11-19", "Tired — words");
+    const mine = myDayView(db, lorna);
+    expect([mine.within, mine.note, mine.mood]).toEqual(["today", null, []]);
+    expect(mine.itemIds.map(title).sort()).toEqual(seen());
+
+    updateDayShare(db, lorna, jo, { within: "week", note: true }, "web");
+    expect(seen()).toContain("Tomorrow");
+    expect(myDayView(db, lorna).within).toBe("week");
+    expect(myDayView(db, lorna).itemIds.map(title).sort()).toEqual(seen());
+    expect(sharedDayNote(db, jo, lorna)).toEqual({ note: "words", mood: [] });
+    expect(listAudit(db, lorna, { projectId: list.id }).map((r) => plainText(r.parts ?? []))).toContainEqual(expect.stringContaining("with the day note"));
+    updateDayShare(db, lorna, jo, { note: false }, "web");
+    expect(sharedDayNote(db, jo, lorna).note).toBeNull();
+    expect(seen()).toContain("Tomorrow");
+
+    stopDayShare(db, lorna, jo, "web");
+    expect(listDayShares(db, lorna).map((s) => s.name)).toEqual(["Kim"]);
+    expect(() => listItems(db, jo, list.id)).not.toThrow();
+    expect(listItems(db, jo, list.id)).toEqual([]);
+    expect(() => updateDayShare(db, jo, lorna, { within: "today" }, "web")).toThrow(/don't share your day/);
+  });
+
+  it("lets her change or stop her day share in a Space she no longer runs", () => {
+    const { db, lorna, list } = setup("today");
+    const bob = createTestUser(db, { username: "bob" });
+    const kim = createTestUser(db, { username: "kim", name: "Kim" });
+    const space = createSpace(db, bob, { name: "Fam" }, "web");
+    inviteSpaceMember(db, bob, space.id, "lorna", "web", "member");
+    acceptSpaceInvite(db, lorna, space.id, "web");
+    setSpaceMemberRole(db, bob, space.id, lorna, "admin", "web");
+    inviteSpaceMember(db, lorna, space.id, "kim", "web", "commenter", { onlyMine: true, within: "today" });
+    inviteMember(db, lorna, list.id, "kim", "web", "commenter", { onlyMine: true, within: "today" });
+    setSpaceMemberRole(db, bob, space.id, lorna, "member", "web");
+
+    updateDayShare(db, lorna, kim, { within: "week" }, "web");
+    expect(listDayShares(db, lorna).find((s) => s.name === "Kim")?.within).toBe("week");
+    // Only what of her day is shared, not Kim's role.
+    expect(() => setSpaceMemberRole(db, lorna, space.id, kim, "viewer", "web")).toThrow(/only a space admin/);
+    // Nor her day into all her items, for good.
+    expect(() => setSpaceMemberRole(db, lorna, space.id, kim, "commenter", "web", true, null)).toThrow(/only a space admin/);
+    stopDayShare(db, lorna, kim, "web");
+    expect(listDayShares(db, lorna).map((s) => s.name)).toEqual(["Jo"]);
   });
 
   it("is kept with a role change, cleared with the limit, and needs one", () => {

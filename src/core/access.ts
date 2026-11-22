@@ -111,6 +111,16 @@ export function hasItemAccess(userId: string) {
 }
 
 /**
+ * Whether the item's group (`items` in scope) is `person`'s and in their
+ * today or week: what someone their day is shared with sees of it, as
+ * hasItemAccess works it out.
+ */
+export function inDayOf(person: string, within: OnlyWithin) {
+  const group = sql`coalesce(${items.parentId}, ${items.id})`;
+  return sql`(exists (select 1 from items g, json_each(g.assignee_ids) a where (g.id = ${group} or g.parent_id = ${group}) and a.value = ${person}) and ${inWindow(group, sql`${person}`, sql`${within}`)})`;
+}
+
+/**
  * Whether an item group falls in a membership's window (`only_within`) of
  * `person`'s days, by their clock (st_today, from db-functions.ts): some item
  * in it, with a due date, that's still open and due by the window's end
