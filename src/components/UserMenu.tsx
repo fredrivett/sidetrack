@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, Check, CircleCheck, CircleUserRound, History, Loader2, LogOut, Mail, Moon, Sun, SunMoon, UserPlus } from "lucide-react";
+import { Archive, ChartColumn, Check, CircleCheck, CircleUserRound, History, Loader2, LogOut, Mail, Moon, Sun, SunMoon, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import posthog from "posthog-js";
@@ -50,6 +50,7 @@ export function UserMenu({
   onTry,
   onInvite,
   onInviteFriend,
+  admin = false,
 }: {
   user: AvatarUser | null;
   /** How many lists are archived, for the Archived lists item. */
@@ -69,6 +70,8 @@ export function UserMenu({
   onInvite: () => void;
   /** Opens Invite a friend: an email to join Sidetrack, sharing nothing. */
   onInviteFriend?: () => void;
+  /** Whether they can open /admin (ADMIN_USER_IDS); shows its link. */
+  admin?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -202,6 +205,22 @@ export function UserMenu({
           </DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
+        {admin && (
+          <>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="px-2.5">Admin</DropdownMenuLabel>
+              <DropdownMenuItem
+                render={
+                  <Link href="/admin">
+                    <ChartColumn />
+                    Usage
+                  </Link>
+                }
+              />
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+          </>
+        )}
         {/* Stays open so "Signing out…" shows until the redirect to /login;
             the preview's closes, for its toast. */}
         <DropdownMenuItem
