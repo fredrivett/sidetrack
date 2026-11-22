@@ -331,8 +331,10 @@ export function NewItemDialog({
   const editors = listAssignees.filter((a) => a.canEdit);
 
   // The title's parts as the dialog shows them. One that disagrees with a
-  // field already picked (a Brief's "+" picks today) loses, and stays in
-  // the title so it's noticed.
+  // field already picked loses, and stays in the title so it's noticed. The
+  // date a dialog opens with (a Brief's "+" opens on today) isn't a pick: a
+  // date in the title beats it, as a list named there beats the one it
+  // opened from.
   const placed = placeParts(title, [
     ...ruleParts(title, {
       people: editors.map((a) => ({ userId: a.userId, handle: a.displayUsername ?? a.username })),
@@ -340,13 +342,12 @@ export function NewItemDialog({
     }).filter((p) => !dropped.includes(partKey(p))),
     ...aiParts,
   ]);
-  const pickedDue = picked.due !== undefined ? picked.due : initialDue;
   const shownParts: ShownPart[] = placed.flatMap((p): ShownPart[] => {
     let value = "";
     let clash = false;
     if (p.field === "due") {
       value = today ? dueLabel(p.due.dueDate, today, p.due.dueFrom) : p.due.dueDate;
-      clash = (picked.due !== undefined || Boolean(initialDue)) && !sameDue(pickedDue, p.due);
+      clash = picked.due !== undefined && !sameDue(picked.due, p.due);
     } else if (p.field === "repeat") {
       value = shortLabel(p.repeat);
       clash = picked.repeat !== undefined && !sameRepeat(picked.repeat, p.repeat);
@@ -376,10 +377,9 @@ export function NewItemDialog({
   const { saved, struck } = cutTitle(title, shownParts.filter((p) => p.shown === "out"));
 
   const suggestedDue = prefill?.due && today ? parseDue(prefill.due, today) : null;
-  const dueUnset = picked.due === undefined && !initialDue;
-  const dueFromTitle = dueUnset && Boolean(titleDue);
-  const dueSuggested = dueUnset && !titleDue && Boolean(suggestedDue);
-  const due = picked.due !== undefined ? picked.due : (initialDue ?? titleDue ?? suggestedDue);
+  const dueFromTitle = picked.due === undefined && Boolean(titleDue);
+  const dueSuggested = picked.due === undefined && !initialDue && !titleDue && Boolean(suggestedDue);
+  const due = picked.due !== undefined ? picked.due : (titleDue ?? initialDue ?? suggestedDue);
   const repeatFromTitle = picked.repeat === undefined && Boolean(titleRepeat);
   const repeatSuggested = picked.repeat === undefined && !titleRepeat && Boolean(prefill?.repeat);
   const repeat =
