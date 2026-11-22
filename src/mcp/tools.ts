@@ -139,7 +139,7 @@ import { type InviteKind, notifyInvite, notifyMentions } from "@/lib/email";
 import { collaboratorAccess, invitePeople, type InvitePlace } from "@/core/invites";
 import { getEnv } from "@/lib/env";
 import { formatItemRef, workPrTitle } from "@/lib/itemRef";
-import { checkDraftItem } from "@/lib/itemSuggest";
+import { askAboutDraft } from "@/lib/itemSuggest";
 import {
   MAX_REPEAT_EVERY,
   REPEAT_ONS,
@@ -1008,9 +1008,9 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       const refPrefix = projectRefPrefixes(db, userId)[list_id] ?? project.prefix;
       // Only the duplicate question: no item is offered as a parent.
       const { duplicateId } = apiKey
-        ? await checkDraftItem(
+        ? await askAboutDraft(
             { title: created.title, description: created.description ?? "" },
-            before.map((it) => ({ id: it.id, title: it.title, topLevel: false })),
+            { items: before.map((it) => ({ id: it.id, title: it.title, topLevel: false })) },
             apiKey,
           )
         : { duplicateId: null };

@@ -3,7 +3,7 @@ import { addItem } from "@/core/items";
 import { acceptInvite, inviteMember } from "@/core/members";
 import { createProject } from "@/core/projects";
 import { createTestDb, createTestUser } from "@/core/test-helpers";
-import { checkDraftItem } from "@/lib/itemSuggest";
+import { askAboutDraft } from "@/lib/itemSuggest";
 import { POST } from "./route";
 
 // The reads run against a real in-memory DB as `viewer`; only the framework
@@ -14,9 +14,19 @@ vi.mock("@/auth/session", () => ({
 }));
 vi.mock("@/core/db", () => ({ getDb: () => ({ db: ctx.db }) }));
 vi.mock("@/lib/env", () => ({ getEnv: () => ({ TYPESAFE_API_KEY: "test" }) }));
+const { NOTHING } = vi.hoisted(() => ({
+  NOTHING: {
+    listId: null,
+    duplicateId: null,
+    parentId: null,
+    due: null,
+    repeat: null,
+    labelId: null,
+    assigneeId: null,
+  },
+}));
 vi.mock("@/lib/itemSuggest", () => ({
-  checkDraftItem: vi.fn(async () => ({ duplicateId: null, parentId: null })),
-  suggestList: vi.fn(async () => null),
+  askAboutDraft: vi.fn(async () => NOTHING),
 }));
 
 type Db = ReturnType<typeof createTestDb>["db"];
@@ -25,7 +35,7 @@ let db: Db;
 beforeEach(() => {
   db = createTestDb().db;
   ctx.db = db;
-  vi.mocked(checkDraftItem).mockClear();
+  vi.mocked(askAboutDraft).mockClear();
 });
 
 const HOST = "sidetrack.example";
@@ -65,7 +75,7 @@ describe("POST /api/ai/[read]", () => {
     // Bob's own ENG list makes the shared one fred/ENG on his board.
     createProject(db, bob, { name: "Engines" }, "web");
     const target = addItem(db, fred, { projectId: shared.id, title: "Fix login" }, "web");
-    vi.mocked(checkDraftItem).mockResolvedValueOnce({ duplicateId: target.id, parentId: null });
+    vi.mocked(askAboutDraft).mockResolvedValueOnce({ ...NOTHING, duplicateId: target.id });
 
     ctx.viewer = bob;
     const res = await ask("newItem", draft(shared.id));
@@ -79,14 +89,14 @@ describe("POST /api/ai/[read]", () => {
     // A look-alike that only ends with the host.
     expect((await ask("newItem", draft(list.id), { origin: `https://x${HOST}` })).status).toBe(403);
     expect((await ask("newItem", draft(list.id), {})).status).toBe(403);
-    expect(checkDraftItem).not.toHaveBeenCalled();
+    expect(askAboutDraft).not.toHaveBeenCalled();
   });
 
   it("refuses someone signed out", async () => {
     const list = fredsList();
     ctx.viewer = "";
     expect((await ask("newItem", draft(list.id))).status).toBe(401);
-    expect(checkDraftItem).not.toHaveBeenCalled();
+    expect(askAboutDraft).not.toHaveBeenCalled();
   });
 
   it("answers only the reads it has, not an object's own properties", async () => {
@@ -100,7 +110,7 @@ describe("POST /api/ai/[read]", () => {
     const list = fredsList();
     expect((await ask("newItem", "not json")).status).toBe(400);
     expect((await ask("newItem", JSON.stringify({ projectId: list.id, title: 7 }))).status).toBe(400);
-    expect(checkDraftItem).not.toHaveBeenCalled();
+    expect(askAboutDraft).not.toHaveBeenCalled();
   });
 
   it("stops reading a body past its limit, whatever its length header says", async () => {
@@ -110,7 +120,7 @@ describe("POST /api/ai/[read]", () => {
     expect(
       (await ask("newItem", big, { origin: `https://${HOST}`, "content-length": "10" })).status,
     ).toBe(413);
-    expect(checkDraftItem).not.toHaveBeenCalled();
+    expect(askAboutDraft).not.toHaveBeenCalled();
   });
 
   it("limits how often one person asks, without limiting anyone else", async () => {

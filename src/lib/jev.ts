@@ -8,7 +8,7 @@
 // full (choice criteria included), and output grows with each question too.
 // Each response reports `usage`, so measure a change against the live API.
 // - Ask everything about one state in one request, not one request per
-//   question: `checkDraftItem` asks duplicate and parent together.
+//   question: `askAboutDraft` asks everything about a draft item together.
 // - Ask only what the caller uses. Questions dominate the bill: the emoji
 //   fit questions are ~70% of a suggestion request, so `autoListIcon`, which
 //   keeps only the top pick, skips them.

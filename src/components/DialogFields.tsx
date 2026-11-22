@@ -5,6 +5,7 @@ import { useState } from "react";
 import type { AssigneeView } from "@/core/members";
 import type { Repeat } from "@/lib/repeat";
 import type { Due } from "@/lib/time";
+import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,6 +49,9 @@ export const CHIP =
   "inline-flex h-7 max-w-full min-w-0 shrink-0 items-center gap-1.5 rounded-full border border-input px-2.5 text-sm transition hover:bg-muted aria-disabled:pointer-events-none aria-disabled:opacity-50 data-popup-open:bg-muted touch:h-9 touch:px-3 [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-muted-foreground";
 /** A field in the chip bar with nothing set: dashed, its name in grey. */
 export const EMPTY_CHIP = `${CHIP} border-dashed text-muted-foreground hover:text-foreground`;
+/** A field Jev filled in and nobody has picked yet: its value, dashed and grey. */
+export const SUGGESTED_CHIP = `${CHIP} border-dashed text-muted-foreground`;
+const SUGGESTED_TITLE = "Suggested by Jev";
 
 /**
  * The due date as a chip: when it's due, red once overdue and amber on the
@@ -55,6 +59,8 @@ export const EMPTY_CHIP = `${CHIP} border-dashed text-muted-foreground hover:tex
  */
 export function DueChip({
   due,
+  suggested = false,
+  tone,
   done,
   disabled,
   onChange,
@@ -63,6 +69,10 @@ export function DueChip({
   smart,
 }: {
   due: Due | null;
+  /** `due` is Jev's suggestion. */
+  suggested?: boolean;
+  /** `due` came from the title: its words' colour (TitleField's PART_TONE). */
+  tone?: string;
   done: boolean;
   disabled: boolean;
   onChange: (due: Due | null) => void;
@@ -86,8 +96,10 @@ export function DueChip({
     <Popover open={open} onOpenChange={(next) => setOpen(next && !disabled)}>
       <PopoverTrigger
         aria-disabled={disabled || undefined}
-        title={smart?.rule ? `Smart: ${smart.rule}` : undefined}
-        className={due || waiting ? CHIP : EMPTY_CHIP}
+        title={smart?.rule ? `Smart: ${smart.rule}` : suggested ? SUGGESTED_TITLE : undefined}
+        className={
+          due ? (suggested ? SUGGESTED_CHIP : cn(CHIP, tone)) : waiting ? CHIP : EMPTY_CHIP
+        }
       >
         {smart?.rule ? <Sparkles /> : <CalendarDays />}
         {due ? (
@@ -163,18 +175,28 @@ function DueChipLabel({ due, done }: { due: Due; done: boolean }) {
 /** How the item repeats as a chip, opening the repeat picker. */
 export function RepeatChip({
   repeat,
+  suggested = false,
+  tone,
   completedAt,
   disabled,
   onChange,
 }: {
   repeat: Repeat | null;
+  /** `repeat` is Jev's suggestion. */
+  suggested?: boolean;
+  /** `repeat` came from the title: its words' colour. */
+  tone?: string;
   completedAt: number | null;
   disabled: boolean;
   onChange: (repeat: Repeat | null) => void;
 }) {
   return (
     <Popover>
-      <PopoverTrigger aria-disabled={disabled || undefined} className={repeat ? CHIP : EMPTY_CHIP}>
+      <PopoverTrigger
+        aria-disabled={disabled || undefined}
+        title={suggested ? SUGGESTED_TITLE : undefined}
+        className={repeat ? (suggested ? SUGGESTED_CHIP : cn(CHIP, tone)) : EMPTY_CHIP}
+      >
         <RepeatIcon />
         <span data-replay-safe>{repeat ? shortLabel(repeat) : "Repeat"}</span>
       </PopoverTrigger>
@@ -196,12 +218,18 @@ export function RepeatChip({
  */
 export function AssigneeChip({
   assigned,
+  suggested = false,
+  tone,
   disabled,
   open,
   setOpen,
   children,
 }: {
   assigned: AssigneeView[];
+  /** `assigned` is Jev's suggestion. */
+  suggested?: boolean;
+  /** `assigned` came from the title: its words' colour. */
+  tone?: string;
   disabled: boolean;
   open: boolean;
   setOpen: (open: boolean) => void;
@@ -211,8 +239,8 @@ export function AssigneeChip({
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger
         aria-disabled={disabled || undefined}
-        title="Assignees (A)"
-        className={assigned.length ? CHIP : EMPTY_CHIP}
+        title={suggested ? "Assignees (A), suggested by Jev" : "Assignees (A)"}
+        className={assigned.length ? (suggested ? SUGGESTED_CHIP : cn(CHIP, tone)) : EMPTY_CHIP}
       >
         {assigned.length ? (
           <>

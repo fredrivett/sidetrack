@@ -20,7 +20,8 @@ import { toggleAssignee } from "@/lib/assignees";
 import { cn } from "@/lib/utils";
 import { formatItemRef } from "@/lib/itemRef";
 import type { Repeat } from "@/lib/repeat";
-import type { Due } from "@/lib/time";
+import { type Due, dueLabel, parseDue, sameDue } from "@/lib/time";
+import { cutTitle, placeParts, ruleParts, type TitlePart } from "@/lib/titleParts";
 import { Button } from "@/components/ui/button";
 import { MentionTextarea } from "@/components/MentionTextarea";
 import { useDraft } from "@/components/use-draft";
@@ -37,13 +38,24 @@ import { useCopy } from "@/components/ui/use-copy";
 import { AssigneeOptions } from "./AssigneeOptions";
 import { CreatableCombobox } from "./CreatableCombobox";
 import { useToday } from "./use-day-start";
-import { AssigneeChip, CHIP, DueChip, EMPTY_CHIP, Field, RepeatChip } from "./DialogFields";
-import { LabelChips } from "./Labels";
+import {
+  AssigneeChip,
+  CHIP,
+  DueChip,
+  EMPTY_CHIP,
+  Field,
+  RepeatChip,
+  SUGGESTED_CHIP,
+} from "./DialogFields";
+import { LabelChips, useListLabels } from "./Labels";
 import type { ProjectView } from "./Kanban";
 import { ProjectIcon } from "./ProjectIcon";
 import { runAction } from "./run-action";
 import { useItemShortcuts } from "./useItemShortcuts";
 import { aiRead } from "./ai-read";
+import { shortLabel } from "./RepeatBadge";
+import { PART_TONE, type ShownPart, TitleField } from "./TitleField";
+import { assigneeName } from "./UserAvatar";
 
 // Wait for a pause in typing before asking Jev about the draft.
 const SUGGEST_DELAY_MS = 400;
@@ -94,15 +106,24 @@ function AddedToast({
 
 const NO_SUB_ITEMS: string[] = [];
 
-/** What's been picked in New item. `due` is undefined until a date is picked. */
+/**
+ * What's been picked in New item. The fields Jev can fill in are undefined
+ * until someone picks one, clearing it included: until then a suggestion or
+ * the default stands in, and once picked, nothing replaces it.
+ */
 type Picked = {
   projectId: string;
   parent: { projectId: string; item: ItemHint } | null;
-  labels: string[];
+  labels?: string[];
   labelEmoji: Record<string, LabelEmoji>;
-  assigneeIds: string[];
+  assigneeIds?: string[];
   due?: Due | null;
-  repeat: Repeat | null;
+  repeat?: Repeat | null;
+  /** Jev's suggestions cleared, for this item. */
+  noSuggestions?: boolean;
+  /** Title parts (by partKey) kept in the title, and ones that set nothing. */
+  titleKept?: string[];
+  titleDropped?: string[];
 };
 /** A setter for each field of Picked, taking a value or an update. */
 function pickers(setPicked: (update: (cur: Picked) => Picked) => void) {
@@ -126,11 +147,18 @@ function pickers(setPicked: (update: (cur: Picked) => Picked) => void) {
 const NOTHING_PICKED: Picked = {
   projectId: "",
   parent: null,
-  labels: [],
   labelEmoji: {},
-  assigneeIds: [],
-  repeat: null,
 };
+const NO_IDS: string[] = [];
+const NO_PARTS: TitlePart[] = [];
+/** Which part a choice about it is for, through later readings of the title. */
+const partKey = (p: TitlePart) => `${p.field}:${p.text.toLowerCase()}`;
+const sameRepeat = (a: Repeat | null, b: Repeat) =>
+  a !== null &&
+  a.every === b.every &&
+  a.unit === b.unit &&
+  (a.on ?? null) === (b.on ?? null) &&
+  (a.day ?? null) === (b.day ?? null);
 const NO_PEOPLE: AssigneeView[] = [];
 
 export function NewItemDialog({
@@ -173,10 +201,14 @@ export function NewItemDialog({
   // A parent the user accepted from a suggestion, with the list it's in.
   const parent = picked.parent;
   const setParent = pick.parent;
-  // Jev's suggestion with the draft it was made for, so it's only used while
-  // the form still says the same thing.
+  // Jev's latest suggestion, with the list and adds it was asked for and
+  // the draft it was asked about. It's shown while more is typed, until the
+  // next answer replaces it, so the fields it fills don't blink empty at
+  // each key; another list or another item starts afresh. Only an answer
+  // for the draft as it is now is added with it (`fresh`).
   const [suggested, setSuggested] = useState<{
     for: string;
+    draft: string;
     value: Suggestion;
   } | null>(null);
   // What's typed is kept until it's added or the dialog's cancelled, so a
@@ -184,7 +216,6 @@ export function NewItemDialog({
   const { value: title, set: setTitle } = useDraft("new-item:title");
   const descriptionDraft = useDraft("new-item:description");
   const { value: description, set: setDescription } = descriptionDraft;
-  const { labels, assigneeIds, repeat } = picked;
   const setLabels = pick.labels;
   // The emoji for labels new to the list, held until the item creates them.
   const labelEmoji = picked.labelEmoji;
@@ -197,8 +228,6 @@ export function NewItemDialog({
   // gives the next item the new day, not the one it opened on.
   const today = useToday();
   const initialDue: Due | null = dueToday && today ? { dueFrom: null, dueDate: today } : null;
-  // Unset (undefined) until a date is picked: then the one it opened with.
-  const due = picked.due === undefined ? initialDue : picked.due;
   const setDue = (next: Due | null) => setPicked((cur) => ({ ...cur, due: next }));
   // The steps added so far, kept as drafts are (signing out drops them).
   const [subItems, setSubItems] = useStoredState("draft:new-item:sub-items", NO_SUB_ITEMS);
@@ -251,15 +280,31 @@ export function NewItemDialog({
   const fixedProjectId = pickedProjectId || parent?.projectId || "";
   // `added` too: an add changes the list, so the same draft is asked again
   // (it may now be a duplicate of the item just added).
-  const context = JSON.stringify([draft, fixedProjectId, added]);
+  const scope = JSON.stringify([fixedProjectId, added]);
+  const context = JSON.stringify([draft, scope]);
   const suggestion =
-    draft.title && suggested?.for === context ? suggested.value : null;
+    draft.title && suggested?.for === scope ? suggested.value : null;
+  const fresh = Boolean(suggestion) && suggested?.draft === context;
+  // What Jev fills in, until they clear its suggestions for this item.
+  const prefill = picked.noSuggestions ? null : suggestion;
   // A suggested list counts only if it's one they can add to here.
-  const suggestedList = projects.some((p) => p.id === suggestion?.projectId)
-    ? suggestion?.projectId
+  const suggestedList = projects.some((p) => p.id === prefill?.projectId)
+    ? prefill?.projectId
     : null;
-  const projectId = fixedProjectId || suggestedList || "";
-  const listSuggested = !fixedProjectId && Boolean(projectId);
+  // The parts of the title that set a field: Claude's, from its latest
+  // answer, then the rules' (below, once the list's people are known). A
+  // list named in the title beats the one it opened from, not one picked.
+  const kept = picked.titleKept ?? NO_IDS;
+  const dropped = picked.titleDropped ?? NO_IDS;
+  const aiParts = (suggestion?.titleParts ?? NO_PARTS).filter((p) => !dropped.includes(partKey(p)));
+  const listPart = placeParts(title, aiParts).find((p) => p.field === "list");
+  const listPartId =
+    listPart?.field === "list" && projects.some((pr) => pr.id === listPart.projectId)
+      ? listPart.projectId
+      : "";
+  const projectId = picked.projectId || listPartId || fixedProjectId || suggestedList || "";
+  const listFromTitle = !picked.projectId && Boolean(listPartId);
+  const listSuggested = !fixedProjectId && !listPartId && Boolean(projectId);
   const project = projects.find((p) => p.id === projectId);
   // Sub-items go one level deep, so an item with its own checklist can't
   // go under a parent: neither offer one nor keep one while it has steps.
@@ -267,24 +312,120 @@ export function NewItemDialog({
   const chosenParent =
     !hasChecklist && parent?.projectId === projectId ? parent.item : null;
   // Hints about items on a list they can't add to are no use here.
-  const hints = projectId ? suggestion : null;
+  // Warnings about the draft are only for the draft they were made for.
+  const hints = projectId && fresh ? suggestion : null;
   const duplicate = hints?.duplicate ?? null;
   const parentHint =
     !hasChecklist && !chosenParent && hints?.parent?.id !== duplicate?.id
       ? (hints?.parent ?? null)
       : null;
+  // Each field is what was picked, else what the title says, else the
+  // dialog's default, else Jev's suggestion, shown as one (`…Suggested`)
+  // until it's picked. A suggestion about the list's labels or people is
+  // only for the list it was asked about.
+  const forThisList = prefill?.projectId === projectId ? prefill : null;
+  const listLabels = useListLabels(projectId);
   // Only those who can edit the list can be assigned, so switching lists
   // drops anyone who can't edit the new one (and brings them back on return).
-  const listAssignees = assigneesByProject[projectId] ?? [];
-  const assigned = listAssignees.filter((a) => a.canEdit && assigneeIds.includes(a.userId));
-  const canAssignSelf = listAssignees.some((a) => a.canEdit && a.userId === viewerId);
+  const listAssignees = assigneesByProject[projectId] ?? NO_PEOPLE;
+  const editors = listAssignees.filter((a) => a.canEdit);
+
+  // The title's parts as the dialog shows them. One that disagrees with a
+  // field already picked (a Brief's "+" picks today) loses, and stays in
+  // the title so it's noticed.
+  const placed = placeParts(title, [
+    ...ruleParts(title, {
+      people: editors.map((a) => ({ userId: a.userId, handle: a.displayUsername ?? a.username })),
+      labels: listLabels.map((l) => l.name),
+    }).filter((p) => !dropped.includes(partKey(p))),
+    ...aiParts,
+  ]);
+  const pickedDue = picked.due !== undefined ? picked.due : initialDue;
+  const shownParts: ShownPart[] = placed.flatMap((p): ShownPart[] => {
+    let value = "";
+    let clash = false;
+    if (p.field === "due") {
+      value = today ? dueLabel(p.due.dueDate, today, p.due.dueFrom) : p.due.dueDate;
+      clash = (picked.due !== undefined || Boolean(initialDue)) && !sameDue(pickedDue, p.due);
+    } else if (p.field === "repeat") {
+      value = shortLabel(p.repeat);
+      clash = picked.repeat !== undefined && !sameRepeat(picked.repeat, p.repeat);
+    } else if (p.field === "who") {
+      const person = editors.find((a) => a.userId === p.userId);
+      if (!person) return [];
+      value = assigneeName(person);
+      clash = picked.assigneeIds !== undefined && !picked.assigneeIds.includes(p.userId);
+    } else if (p.field === "label") {
+      value = p.label;
+    } else if (p.field === "list") {
+      const list = projects.find((pr) => pr.id === p.projectId);
+      if (!list) return [];
+      value = list.name;
+      clash = Boolean(picked.projectId) && picked.projectId !== p.projectId;
+    }
+    const isKept = kept.includes(partKey(p));
+    const shown = clash ? "clash" : p.remove && !isKept ? "out" : "stays";
+    return [{ ...p, kept: isKept, value, shown }];
+  });
+  const agreeing = shownParts.filter((p) => p.shown !== "clash");
+  const titleDue = agreeing.flatMap((p) => (p.field === "due" ? [p.due] : []))[0] ?? null;
+  const titleRepeat = agreeing.flatMap((p) => (p.field === "repeat" ? [p.repeat] : []))[0] ?? null;
+  const titleWho = [...new Set(agreeing.flatMap((p) => (p.field === "who" ? [p.userId] : [])))];
+  const titleLabels = agreeing.flatMap((p) => (p.field === "label" ? [p.label] : []));
+  // The title it adds as: without the parts taken out, and what joined them.
+  const { saved, struck } = cutTitle(title, shownParts.filter((p) => p.shown === "out"));
+
+  const suggestedDue = prefill?.due && today ? parseDue(prefill.due, today) : null;
+  const dueUnset = picked.due === undefined && !initialDue;
+  const dueFromTitle = dueUnset && Boolean(titleDue);
+  const dueSuggested = dueUnset && !titleDue && Boolean(suggestedDue);
+  const due = picked.due !== undefined ? picked.due : (initialDue ?? titleDue ?? suggestedDue);
+  const repeatFromTitle = picked.repeat === undefined && Boolean(titleRepeat);
+  const repeatSuggested = picked.repeat === undefined && !titleRepeat && Boolean(prefill?.repeat);
+  const repeat =
+    picked.repeat !== undefined ? picked.repeat : (titleRepeat ?? prefill?.repeat ?? null);
+  const suggestedLabel = listLabels.find((l) => l.name === forThisList?.label)?.name;
+  const labelsSuggested = picked.labels === undefined && Boolean(suggestedLabel);
+  const baseLabels = picked.labels ?? (suggestedLabel ? [suggestedLabel] : NO_IDS);
+  // A label in the title adds to the others; taking its chip off drops it.
+  const labels = titleLabels.length ? [...new Set([...baseLabels, ...titleLabels])] : baseLabels;
+  // On a list only they can edit, it's theirs to do unless they say not.
+  const onlyMe = editors.length === 1 && editors[0].userId === viewerId;
+  const suggestedAssignee = editors.find((a) => a.userId === forThisList?.assigneeId);
+  const whoFromTitle = picked.assigneeIds === undefined && titleWho.length > 0;
+  const assigneesSuggested =
+    picked.assigneeIds === undefined && !onlyMe && !whoFromTitle && Boolean(suggestedAssignee);
+  const assigneeIds =
+    picked.assigneeIds ??
+    (whoFromTitle
+      ? titleWho
+      : onlyMe
+        ? [viewerId]
+        : suggestedAssignee
+          ? [suggestedAssignee.userId]
+          : NO_IDS);
+  const assigned = editors.filter((a) => assigneeIds.includes(a.userId));
+  const canAssignSelf = editors.some((a) => a.userId === viewerId);
+  const anySuggested =
+    listSuggested || dueSuggested || repeatSuggested || labelsSuggested || assigneesSuggested;
+  // A list Jev suggested for what was typed before waits for the answer
+  // about what's typed now: it decides where the item goes.
+  const canAdd = Boolean(title.trim()) && Boolean(projectId) && !pending && !(listSuggested && !fresh);
+  // Keeping a part's words in the title, and stopping it setting its field.
+  function keepPart(part: ShownPart) {
+    const k = partKey(part);
+    setPicked((cur) => {
+      const ks = cur.titleKept ?? [];
+      return { ...cur, titleKept: ks.includes(k) ? ks.filter((x) => x !== k) : [...ks, k] };
+    });
+  }
+  function dropPart(part: ShownPart) {
+    setPicked((cur) => ({ ...cur, titleDropped: [...(cur.titleDropped ?? []), partKey(part)] }));
+  }
   // A, I and D as in the item dialog, A and I once a list is chosen.
   // They're ignored while typing in a field.
   const openPicker = useCallback(() => setAssignOpen(true), []);
-  const toggleMe = useCallback(
-    () => setAssigneeIds((cur) => toggleAssignee(cur, viewerId)),
-    [viewerId, setAssigneeIds],
-  );
+  const toggleMe = () => setAssigneeIds(toggleAssignee(assigneeIds, viewerId));
   useItemShortcuts({
     active: open && !pending && !dueOpen,
     onOpenPicker: projectId ? openPicker : () => {},
@@ -311,11 +452,18 @@ export function NewItemDialog({
     const stale = new AbortController();
     const timer = setTimeout(() => {
       // A suggestion that fails is just left out.
-      aiRead("newItem", { projectId: fixedProjectId || null, ...draft }, stale.signal).then(
+      aiRead(
+        "newItem",
+        { projectId: fixedProjectId || null, ...draft, today: today ?? null },
+        stale.signal,
+      ).then(
         (value) => {
-          if (!stale.signal.aborted) setSuggested({ for: context, value });
+          if (!stale.signal.aborted) setSuggested({ for: scope, draft: context, value });
         },
-        () => {},
+        // An answer that can't be had leaves nothing to stand in for it.
+        () => {
+          if (!stale.signal.aborted) setSuggested(null);
+        },
       );
     }, SUGGEST_DELAY_MS);
     return () => {
@@ -338,15 +486,19 @@ export function NewItemDialog({
    * for the next one. Enter and ⌘Enter add and close, as the main button.
    */
   function add(another: boolean) {
-    const t = title.trim();
-    if (!t || !projectId || pending) return;
+    // What's typed, and the title it adds as.
+    const raw = title.trim();
+    const t = saved;
+    if (!canAdd) return;
     const d = description.trim() || null;
-    const ls = labels;
+    // A suggestion for what was typed before is shown, but not added.
+    const ls =
+      labelsSuggested && !fresh ? labels.filter((l) => l !== suggestedLabel || titleLabels.includes(l)) : labels;
     const emoji = labelEmoji;
-    const who = assigneeIds;
-    const ids = assigned.map((a) => a.userId);
-    const du = due;
-    const r = repeat;
+    const was = picked;
+    const ids = assigneesSuggested && !fresh ? [] : assigned.map((a) => a.userId);
+    const du = dueSuggested && !fresh ? null : due;
+    const r = repeatSuggested && !fresh ? null : repeat;
     const p = chosenParent?.id ?? null;
     // A sub-item still in its input counts, so it isn't lost to the click.
     const subs = [...subItems, subDraft.trim()].filter(Boolean);
@@ -396,18 +548,23 @@ export function NewItemDialog({
       // the next item while this one saves (submitting waits; the button
       // shows "Adding…"), so only clear fields that still hold what was
       // submitted — never text typed for the next item.
-      setTitle((cur) => (cur.trim() === t ? "" : cur));
+      setTitle((cur) => (cur.trim() === raw ? "" : cur));
       setDescription((cur) => ((cur.trim() || null) === d ? "" : cur));
       // Assignees, a due date, repeat and parent belong to the item just
-      // added, like its title; the date it opened with stays for the next.
-      // Compared as JSON: each read from storage is a new copy.
+      // added, like its title, and so does clearing Jev's suggestions: the
+      // next item starts from the defaults (the date it opened with) and
+      // Jev's suggestions for it. Compared as JSON: each read from storage
+      // is a new copy.
       const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
       setPicked((cur) => ({
         ...cur,
-        assigneeIds: same(cur.assigneeIds, who) ? [] : cur.assigneeIds,
-        due: same(cur.due === undefined ? initialDue : cur.due, du) ? undefined : cur.due,
-        repeat: same(cur.repeat, r) ? null : cur.repeat,
+        assigneeIds: same(cur.assigneeIds, was.assigneeIds) ? undefined : cur.assigneeIds,
+        due: same(cur.due, was.due) ? undefined : cur.due,
+        repeat: same(cur.repeat, was.repeat) ? undefined : cur.repeat,
         parent: cur.parent?.item.id === p ? null : cur.parent,
+        noSuggestions: undefined,
+        titleKept: undefined,
+        titleDropped: undefined,
       }));
       // Sub-items can't be edited while it saves, so they're all this item's.
       setSubItems(NO_SUB_ITEMS);
@@ -448,13 +605,16 @@ export function NewItemDialog({
               </ResponsiveDialogDescription>
               <ResponsiveDialogCloseButton className="ml-auto" />
             </div>
-            <input
-              ref={titleRef}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Add a task…"
-              aria-label="Title"
-              className="w-full bg-transparent text-base leading-6 font-medium outline-none placeholder:text-muted-foreground"
+            <TitleField
+              inputRef={titleRef}
+              title={title}
+              onTitle={setTitle}
+              parts={shownParts}
+              saved={saved}
+              struck={struck}
+              onKeep={keepPart}
+              onDrop={dropPart}
+              disabled={pending}
             />
             {duplicate && (
               <p data-item-ref={duplicate.ref} className="text-xs text-amber-700 dark:text-amber-400">
@@ -489,8 +649,10 @@ export function NewItemDialog({
                         "border-blue-500 text-blue-700 hover:text-blue-800 dark:border-blue-400/70 dark:text-blue-300 dark:hover:text-blue-200 [&_svg]:text-current",
                       )
                     : listSuggested
-                      ? cn(CHIP, "border-dashed text-muted-foreground")
-                      : CHIP
+                      ? SUGGESTED_CHIP
+                      : listFromTitle
+                        ? cn(CHIP, PART_TONE.list.chip)
+                        : CHIP
                 }
               >
                 {project ? (
@@ -512,6 +674,8 @@ export function NewItemDialog({
               </CreatableCombobox>
               <DueChip
                 due={due}
+                suggested={dueSuggested}
+                tone={dueFromTitle ? PART_TONE.due.chip : undefined}
                 done={false}
                 disabled={pending}
                 onChange={setDue}
@@ -520,12 +684,16 @@ export function NewItemDialog({
               />
               <RepeatChip
                 repeat={repeat}
+                suggested={repeatSuggested}
+                tone={repeatFromTitle ? PART_TONE.repeat.chip : undefined}
                 completedAt={null}
                 disabled={pending}
                 onChange={setRepeat}
               />
               <AssigneeChip
                 assigned={assigned}
+                suggested={assigneesSuggested}
+                tone={whoFromTitle ? PART_TONE.who.chip : undefined}
                 disabled={pending || !projectId}
                 open={assignOpen}
                 setOpen={(next) => setAssignOpen(next && Boolean(projectId))}
@@ -538,7 +706,7 @@ export function NewItemDialog({
                   // picked on another list for when you switch back.
                   // Unassigned clears everyone.
                   onChange={(ids) =>
-                    setAssigneeIds((cur) => [
+                    setAssigneeIds((cur = NO_IDS) => [
                       ...cur.filter((id) => !listAssignees.some((a) => a.userId === id)),
                       ...ids,
                     ])
@@ -550,8 +718,21 @@ export function NewItemDialog({
               <LabelChips
                 projectId={projectId}
                 value={labels}
+                suggested={labelsSuggested}
                 onChange={(names, added) => {
-                  setLabels(names);
+                  // A label from the title taken off stops the title setting it.
+                  const off = shownParts.filter(
+                    (p) => p.field === "label" && labels.includes(p.label) && !names.includes(p.label),
+                  );
+                  // Labels only the title sets stay the title's, not picks.
+                  const onlyTitle = titleLabels.filter((l) => !baseLabels.includes(l));
+                  setPicked((cur) => ({
+                    ...cur,
+                    labels: names.filter((n) => !onlyTitle.includes(n)),
+                    titleDropped: off.length
+                      ? [...(cur.titleDropped ?? []), ...off.map(partKey)]
+                      : cur.titleDropped,
+                  }));
                   const emoji = added?.emoji;
                   if (added && emoji) {
                     setLabelEmoji((cur) => ({ ...cur, [added.name]: emoji }));
@@ -560,7 +741,7 @@ export function NewItemDialog({
                 draftEmoji={labelEmoji}
                 // The label is renamed on the server; keep this item's name for it in step.
                 onRenamed={(from, to) =>
-                  setLabels((cur) => cur.map((n) => (n === from ? to : n)))
+                  setLabels((cur = baseLabels) => cur.map((n) => (n === from ? to : n)))
                 }
                 onDraftEmoji={(name, emoji) =>
                   setLabelEmoji((cur) => ({ ...cur, [name]: { emoji, chosen: true } }))
@@ -601,6 +782,18 @@ export function NewItemDialog({
                     </span>
                   </button>
                 )
+              )}
+              {/* Fields picked stay as they are; the rest go back to empty. */}
+              {anySuggested && (
+                <button
+                  type="button"
+                  onClick={() => setPicked((cur) => ({ ...cur, noSuggestions: true }))}
+                  disabled={pending}
+                  className={cn(CHIP, "border-transparent text-muted-foreground hover:text-foreground")}
+                >
+                  <X />
+                  <span>Clear suggestions</span>
+                </button>
               )}
             </div>
           </div>
@@ -664,12 +857,12 @@ export function NewItemDialog({
               variant="secondary"
               size="sm"
               onClick={() => add(true)}
-              disabled={!title.trim() || !projectId || pending}
+              disabled={!canAdd}
             >
               <ListPlus data-icon="inline-start" />
               {pending && addingAnother ? "Adding…" : "Add & create more"}
             </Button>
-            <Button type="submit" size="sm" disabled={!title.trim() || !projectId || pending}>
+            <Button type="submit" size="sm" disabled={!canAdd}>
               <Plus data-icon="inline-start" />
               {pending && !addingAnother ? "Adding…" : "Add item"}
             </Button>
