@@ -97,8 +97,10 @@ const board = (
   spaces: SpaceView[],
   itemsByProject: Record<string, Item[]> = { a: [], b: [] },
   followedItemIds: string[] = [],
+  parentTitles: Record<string, string> = {},
 ) => (
   <Kanban
+    parentTitles={parentTitles}
     viewerId="u1"
     viewer={null}
     timeZone={Intl.DateTimeFormat().resolvedOptions().timeZone}
@@ -290,6 +292,18 @@ describe("Kanban, re-rendering rows", () => {
     rerender(board(work, [], { b: refreshed }, ["i1"]));
     expect(screen.getByText("Task 9")).toBeTruthy();
     expect(rowRenders).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows someone else's item by its title alone, over the sub-items the viewer sees", () => {
+    const items = [item(1, { parentId: "hidden" }), item(2, { parentId: "hidden" })];
+    render(board(work, [], { b: items }, [], { hidden: "Fred's chores" }));
+    const parent = screen.getByText("Fred's chores");
+    expect(screen.getByText("Task 1")).toBeTruthy();
+    expect(screen.getByText("Task 2")).toBeTruthy();
+    // Nothing to tick or open: the arrows go straight to the viewer's rows.
+    expect(parent.closest("[data-row-id]")?.querySelector("button, [role=checkbox]")).toBeNull();
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect(document.querySelector("[data-selected]")?.textContent).toContain("Task 1");
   });
 
   it("keeps a list's rows mounted as it grows long enough to render only some", () => {

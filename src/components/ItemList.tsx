@@ -168,11 +168,50 @@ export const BRANCH =
 export const TRUNK =
   "after:absolute after:top-0 after:-bottom-1.5 after:-left-5 after:border-l-2 after:border-neutral-200 dark:after:border-neutral-700";
 
+/** A stand-in for someone else's item the viewer sees only the title of (withHiddenParents). */
+type HiddenParent = Item & { hiddenParent: true };
+export const isHiddenParent = (item: Item): item is HiddenParent => "hiddenParent" in item;
+
+/**
+ * `items` with a stand-in for each item, not the viewer's to see, that holds
+ * sub-items they do see (`titles`, from hiddenParentTitles): its title, and
+ * nothing else, so its sub-items sit under it on the tree line as usual. It
+ * reads as done once every sub-item on view is, as a parent does. For
+ * showing only: it goes where the rows are grouped, never into what the
+ * board saves, selects or opens.
+ */
+export function withHiddenParents(items: Item[], titles: Record<string, string>): Item[] {
+  const ids = new Set(items.map((i) => i.id));
+  const added = new Set<string>();
+  return items.flatMap((item) => {
+    const id = item.parentId;
+    if (!id || ids.has(id) || !(id in titles) || added.has(id)) return [item];
+    added.add(id);
+    const subs = items.filter((i) => i.parentId === id);
+    const done = subs.every((i) => i.completedAt !== null) ? Math.max(...subs.map((i) => i.completedAt ?? 0)) : null;
+    const stub: HiddenParent = { ...item, id, parentId: null, title: titles[id], assigneeIds: [], completedAt: done, collapsed: false, hiddenParent: true };
+    return [stub, item];
+  });
+}
+
+/** A stand-in's row: the title, muted, with nothing to open or tick. */
+function HiddenParentRow({ title }: { title: string }) {
+  return (
+    <div
+      title="Someone else’s item: only its title is shared"
+      className="flex items-start gap-2 rounded-lg border border-dashed border-neutral-200 p-2 text-sm text-neutral-500 dark:border-neutral-800"
+    >
+      <span className="min-w-0 flex-1 truncate leading-5">{title}</span>
+    </div>
+  );
+}
+
 function rowFor(
   row: RowProps,
   item: Item,
   extra: Partial<Parameters<typeof ItemRow>[0]> = {},
 ) {
+  if (isHiddenParent(item)) return <HiddenParentRow title={item.title} />;
   return (
     <ItemRow
       item={item}

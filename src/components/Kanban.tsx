@@ -115,6 +115,7 @@ const NO_CHECK_INS: CheckIn[] = [];
 const DONE_PAGE = 50;
 // One empty list each, so a list with nothing in it keeps the same props.
 const NO_ITEMS: Item[] = [];
+const NO_TITLES: Record<string, string> = {};
 const NO_ASSIGNEES: AssigneeView[] = [];
 /** `copy` with `items`, or `copy` itself when they are its own (applySaved left them). */
 function keep<T extends { items: Item[] }>(copy: T, items: Item[]): T {
@@ -155,7 +156,7 @@ export function Kanban({
   pendingPhotos,
   checkIns = NO_CHECK_INS,
   myDay,
-  parentTitles = {},
+  parentTitles = NO_TITLES,
   refreshAt = null,
   initialCollapsedTrays,
   initialListId,
@@ -723,6 +724,7 @@ export function Kanban({
         project={p}
         viewerId={viewerId}
         items={itemsByProject[p.id] ?? NO_ITEMS}
+        parentTitles={parentTitles}
         assignees={assigneesByProject[p.id] ?? NO_ASSIGNEES}
         prLinksByItem={prLinksByItem}
         prevId={group[idx - 1]?.id ?? null}
