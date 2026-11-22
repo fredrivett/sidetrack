@@ -218,7 +218,7 @@ export function CheckInsView({
         <ItemDetailDialog
           item={detail.item}
           parent={all.find((i) => i.id === detail.item?.parentId) ?? null}
-          parentTitle={detail.item.parentId ? parentTitles[detail.item.parentId] : undefined}
+          parentTitle={detail.item.parentId ? titles[detail.item.parentId] : undefined}
           checklist={all.filter((i) => i.parentId === detail.item?.id)}
           // Nothing to nest under here: Check-ins follows a day, it doesn't plan one.
           nestTargets={[]}
@@ -260,7 +260,8 @@ function DayCard({
   empty: string;
   footer: ReactNode;
 }) {
-  // Each row counts once: an item, or a sub-item shown without its item.
+  // Each of their items counts once: a top-level one, or a sub-item whose
+  // item isn't in their day (shown under a stand-in, withHiddenParents).
   const ids = new Set(items.map((i) => i.id));
   const top = items.filter((i) => i.parentId === null || !ids.has(i.parentId));
   const done = top.filter((i) => i.completedAt !== null).length;

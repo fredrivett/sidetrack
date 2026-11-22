@@ -102,9 +102,9 @@ export const ProjectColumn = memo(function ProjectColumn({
     inList,
     (i, parent) =>
       (filters.doneToday || i.completedAt === null) &&
-      matchesFilters(i, parent, filters, today),
+      !isHiddenParent(i) && matchesFilters(i, parent, filters, today),
   );
-  const shownDone = shownInGroups(done, (i, parent) => matchesFilters(i, parent, filters, today));
+  const shownDone = shownInGroups(done, (i, parent) => !isHiddenParent(i) && matchesFilters(i, parent, filters, today));
   const doneShown = done.filter((g) => shownDone.has(g.id));
   // The header's badge swaps the list for these, and shows only for more than
   // one. Derived, so the list comes back by itself when they drop to one.

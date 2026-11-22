@@ -189,7 +189,25 @@ export function withHiddenParents(items: Item[], titles: Record<string, string>)
     added.add(id);
     const subs = items.filter((i) => i.parentId === id);
     const done = subs.every((i) => i.completedAt !== null) ? Math.max(...subs.map((i) => i.completedAt ?? 0)) : null;
-    const stub: HiddenParent = { ...item, id, parentId: null, title: titles[id], assigneeIds: [], completedAt: done, collapsed: false, hiddenParent: true };
+    // Nothing of a sub-item's but its list and place: the filters read a
+    // parent's labels and dates, and these aren't the hidden item's.
+    const stub: HiddenParent = {
+      ...item,
+      id,
+      parentId: null,
+      title: titles[id],
+      description: null,
+      labels: [],
+      assigneeIds: [],
+      dueDate: null,
+      dueFrom: null,
+      repeatEvery: null,
+      repeatUnit: null,
+      repeatOn: null,
+      completedAt: done,
+      collapsed: false,
+      hiddenParent: true,
+    };
     return [stub, item];
   });
 }
