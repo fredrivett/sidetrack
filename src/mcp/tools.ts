@@ -53,6 +53,7 @@ import {
 } from "@/core/labels";
 import { moveItem, previewMoveItem } from "@/core/move";
 import { getDb } from "@/core/db";
+import { addSmartMatch, getSmartDue, removeSmartMatch, setSmartRule } from "@/core/smartDue";
 import { getTimeZone } from "@/core/users";
 import { addFromSource, discardSource, getItemSource, getSource, proposeFromPhoto } from "@/core/sources";
 import { nestItems } from "@/lib/itemTree";
@@ -110,6 +111,8 @@ import {
   PROJECT_STATUSES,
   SPACE_COLORS,
   LIST_ROLES,
+  ONLY_WITHIN,
+  type OnlyWithin,
   type ListRole,
   NOTIFICATION_LEVELS,
   type SpaceRole,
@@ -352,6 +355,7 @@ async function sendInviteNotification(
   kind: InviteKind = "list",
   role?: ListRole | SpaceRole,
   onlyMine?: boolean,
+  within?: OnlyWithin | null,
 ) {
   if (!toEmail) return;
   await notifyInvite({
@@ -362,6 +366,7 @@ async function sendInviteNotification(
     kind,
     role,
     onlyMine,
+    within,
   });
 }
 
@@ -728,6 +733,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "A repeating item carries `repeat` ({ every, unit, on?, day? }); a finished one also carries `comesBack`, the day it reopens. " +
         "`agents` lists the agents working on it now (open start_work sessions: agentName, threadUrl, note, lastActiveAt); " +
         "check it before starting work so you don't duplicate another agent's. " +
+        "`smart` is set when its due date is smart (set_smart_due): its rule, lead and matches, the one its date comes from marked current. " +
         "`fromPhoto` is set when it was added from a photo with add_from_photo: { source_id, created_at }. " +
         "`comments` is its discussion, oldest first: each has body (Markdown), author (name, displayUsername), agentName when an agent wrote it for that person, createdAt and editedAt. " +
         "Read them before working on the item: they often hold decisions and context the description doesn't. " +
@@ -747,6 +753,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         agents: listOpenAgentSessions(db, userId, item.id),
         comments: listComments(db, userId, item.id),
         fromPhoto: photoOf(getItemSource(db, userId, item.id)),
+        ...(item.smartRule !== null && { smart: getSmartDue(db, userId, item.id) }),
       });
     },
   );
@@ -1267,6 +1274,91 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         updated: { ...updated, ref: formatItemRef(refPrefix, updated.number) },
         items: withRefs(refPrefix, listItems(db, userId, updated.projectId)),
       });
+    },
+  );
+
+  // The item, with its ref, and its smart due date's rule and matches.
+  const smartResult = (id: string) => {
+    const { db } = getDb();
+    const it = getItem(db, userId, id);
+    return json({ item: it && withItemRef(db, userId, it), smart: getSmartDue(db, userId, id) });
+  };
+
+  server.registerTool(
+    "set_smart_due",
+    {
+      title: "Set a smart due date",
+      description:
+        "Make an item due relative to something not known yet, in the user's words: \"before our next trip\", \"before Mum's birthday\". " +
+        "Use it when the user ties a deadline to another thing rather than a day; for a day or week, set due_date with update_item instead. " +
+        "lead is how many days before the match it's due (0 on the day, 7 for a week before). " +
+        "Its due date is then worked out by Sidetrack, never set: the earliest first day of its matches that are open and dated, lead days before. " +
+        "With no match it has no date, so add the item it hangs off with add_smart_match (find it with list_all_items). " +
+        "The date then follows that item by itself: moved, finished or deleted, it's worked out again from the rest. " +
+        "rule null makes it a plain due date again, keeping the date it has; setting due_date with update_item does the same. " +
+        "A repeating item can't have one yet. id accepts the item's short ref (e.g. \"HOM-12\") or its internal id. " +
+        "Returns { item, smart }: smart has rule, lead and matches (each with title, ref, due, reason, and current: the one its date comes from). " +
+        "Tell the user the date it worked out and which match it comes from, or that it's waiting for one.",
+      inputSchema: {
+        id: z.string(),
+        rule: z.string().max(200).nullable(),
+        lead: z.number().int().min(0).max(365).optional(),
+      },
+    },
+    async ({ id, rule, lead }) => {
+      const { db } = getDb();
+      const { item, error } = resolveItemArg(db, userId, id);
+      if (error) return error;
+      setSmartRule(db, userId, item.id, rule === null ? null : { rule, lead: lead ?? item.smartLead ?? 0 }, SOURCE);
+      return smartResult(item.id);
+    },
+  );
+
+  server.registerTool(
+    "add_smart_match",
+    {
+      title: "Add a match to a smart due date",
+      description:
+        "Say which item a smart due date (set_smart_due) hangs off: \"Lisbon flights\" for \"before our next trip\". " +
+        "Match only items that really fit the rule; reason says why in a few words (\"a trip\"), shown to the user. " +
+        "Its date is worked out again at once. A match the user removed before comes back, so don't add one they removed unless they ask. " +
+        "id and anchor_id accept short refs or internal ids. Returns { item, smart } like set_smart_due.",
+      inputSchema: { id: z.string(), anchor_id: z.string(), reason: z.string().max(100).optional() },
+    },
+    async ({ id, anchor_id, reason }) => {
+      const { db } = getDb();
+      const { item, error } = resolveItemArg(db, userId, id);
+      if (error) return error;
+      const anchor = resolveItemArg(db, userId, anchor_id);
+      if (anchor.error) return anchor.error;
+      addSmartMatch(db, userId, item.id, anchor.item.id, reason ?? null, SOURCE);
+      return smartResult(item.id);
+    },
+  );
+
+  server.registerTool(
+    "remove_smart_match",
+    {
+      title: "Remove a match from a smart due date",
+      description:
+        "Say an item isn't a match for a smart due date after all (\"Trip to B&Q\" isn't a trip). " +
+        "It stops counting and is remembered as removed, and the date is worked out again from the rest. " +
+        "id and anchor_id accept short refs or internal ids; a match in a list the user can't open has no ref, so pass its anchorId from smart.matches. " +
+        "Returns { item, smart } like set_smart_due.",
+      inputSchema: { id: z.string(), anchor_id: z.string() },
+    },
+    async ({ id, anchor_id }) => {
+      const { db } = getDb();
+      const { item, error } = resolveItemArg(db, userId, id);
+      if (error) return error;
+      // A match in a list they can't open is still theirs to remove, by its id.
+      const anchor = resolveItemArg(db, userId, anchor_id);
+      const anchorId = anchor.error ? anchor_id : anchor.item.id;
+      if (!getSmartDue(db, userId, item.id)?.matches.some((m) => m.anchorId === anchorId)) {
+        return errorText(`${anchor_id} isn't one of ${id}'s matches — no change was made.`);
+      }
+      removeSmartMatch(db, userId, item.id, anchorId, SOURCE);
+      return smartResult(item.id);
     },
   );
 
@@ -2194,14 +2286,15 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           .boolean()
           .optional()
           .describe("Viewers and commenters only: they see just the items assigned to you (the user), not the rest of the list."),
+        only_within: z.enum(ONLY_WITHIN).nullable().optional().describe("With only_mine: today or week shows them only those of your items in your today (due today, overdue, or finished today) or your week (Monday to Sunday), by your clock; null shows every day. Leave it out to keep it as it is."),
       },
     },
-    async ({ list_id, person, role, only_mine }) => {
+    async ({ list_id, person, role, only_mine, only_within }) => {
       const { db } = getDb();
       const project = getProject(db, userId, list_id);
       if (!project) return notFound("list", list_id);
-      const member = inviteMember(db, userId, list_id, person, SOURCE, role, { onlyMine: only_mine });
-      await sendInviteNotification(db, ctx.baseUrl, userId, project.name, member.email, "list", role, only_mine);
+      const member = inviteMember(db, userId, list_id, person, SOURCE, role, { onlyMine: only_mine, within: only_within });
+      await sendInviteNotification(db, ctx.baseUrl, userId, project.name, member.email, "list", role, only_mine, only_within);
       return json(member);
     },
   );
@@ -2223,12 +2316,13 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           .boolean()
           .optional()
           .describe("Viewers and commenters only: they see just the items assigned to you (the user), not the rest of the list."),
+        only_within: z.enum(ONLY_WITHIN).nullable().optional().describe("With only_mine: today or week shows them only those of your items in your today (due today, overdue, or finished today) or your week (Monday to Sunday), by your clock; null shows every day. Leave it out to keep it as it is."),
       },
     },
-    async ({ list_id, user_id, role, only_mine }) => {
+    async ({ list_id, user_id, role, only_mine, only_within }) => {
       const { db } = getDb();
       if (!getProject(db, userId, list_id)) return notFound("list", list_id);
-      setMemberRole(db, userId, list_id, user_id, role, SOURCE, only_mine);
+      setMemberRole(db, userId, list_id, user_id, role, SOURCE, only_mine, only_within);
       return json({ ok: true });
     },
   );
@@ -2452,18 +2546,24 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Each place is a list_id (owner only; role editor, commenter or viewer) or a space_id (admins only; " +
         "role member, commenter or viewer). Each invitee gets one push and one email naming every place; " +
         "people already in a place hear only of that place. Use it instead of invite_member / invite_space_member " +
-        "when the user names more than one place or person. A place's only_mine (viewer or commenter) shows them only the user's items there. " +
+        "when the user names more than one place or person. A place's only_mine (viewer or commenter) shows them only the user's items there, and its only_within (today or week) only those in the user's today or week. " +
         "Check with the user before inviting someone they didn't name.",
       inputSchema: {
         people: z.array(z.string().min(1)).min(1),
         places: z
           .array(
             z.union([
-              z.object({ list_id: z.string(), role: z.enum(LIST_ROLES).optional(), only_mine: z.boolean().optional() }),
+              z.object({
+                list_id: z.string(),
+                role: z.enum(LIST_ROLES).optional(),
+                only_mine: z.boolean().optional(),
+                only_within: z.enum(ONLY_WITHIN).nullable().optional(),
+              }),
               z.object({
                 space_id: z.string(),
                 role: z.enum(["member", "commenter", "viewer"]).optional(),
                 only_mine: z.boolean().optional(),
+                only_within: z.enum(ONLY_WITHIN).nullable().optional(),
               }),
             ]),
           )
@@ -2477,14 +2577,14 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       for (const p of places) {
         if ("list_id" in p) {
           if (!getProject(db, userId, p.list_id)) return notFound("list", p.list_id);
-          resolved.push({ kind: "list", id: p.list_id, role: p.role ?? "editor", onlyMine: p.only_mine });
+          resolved.push({ kind: "list", id: p.list_id, role: p.role ?? "editor", onlyMine: p.only_mine, within: p.only_within });
         } else {
           if (!spaces.some((s) => s.id === p.space_id)) return notFound("space", p.space_id);
-          resolved.push({ kind: "space", id: p.space_id, role: p.role ?? "member", onlyMine: p.only_mine });
+          resolved.push({ kind: "space", id: p.space_id, role: p.role ?? "member", onlyMine: p.only_mine, within: p.only_within });
         }
       }
       const { sent, places: invited } = invitePeople(db, userId, { people, places: resolved }, SOURCE);
-      const named = invited.map(({ name, kind, role, onlyMine }) => ({ name, kind, role, onlyMine }));
+      const named = invited.map(({ name, kind, role, onlyMine, within }) => ({ name, kind, role, onlyMine, within }));
       const inviterName = getUserName(db, userId) ?? "Someone";
       const emails = new Set(sent.flatMap((s) => (s.member.email ? [s.member.email] : [])));
       for (const to of emails) {
@@ -2496,6 +2596,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           kind: named[0].kind,
           role: named[0].role,
           onlyMine: named[0].onlyMine,
+          within: named[0].within,
           places: named,
         });
       }
@@ -2521,14 +2622,15 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           .boolean()
           .optional()
           .describe("Viewers and commenters only: they see just the items assigned to you (the user), not the rest of the list."),
+        only_within: z.enum(ONLY_WITHIN).nullable().optional().describe("With only_mine: today or week shows them only those of your items in your today (due today, overdue, or finished today) or your week (Monday to Sunday), by your clock; null shows every day. Leave it out to keep it as it is."),
       },
     },
-    async ({ space_id, person, role, only_mine }) => {
+    async ({ space_id, person, role, only_mine, only_within }) => {
       const { db } = getDb();
       const space = listSpaces(db, userId).find((s) => s.id === space_id);
       if (!space) return notFound("space", space_id);
-      const member = inviteSpaceMember(db, userId, space_id, person, SOURCE, role, { onlyMine: only_mine });
-      await sendInviteNotification(db, ctx.baseUrl, userId, space.name, member.email, "space", role, only_mine);
+      const member = inviteSpaceMember(db, userId, space_id, person, SOURCE, role, { onlyMine: only_mine, within: only_within });
+      await sendInviteNotification(db, ctx.baseUrl, userId, space.name, member.email, "space", role, only_mine, only_within);
       return json(member);
     },
   );
@@ -2569,12 +2671,13 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           .boolean()
           .optional()
           .describe("Viewers and commenters only: they see just the items assigned to you (the user), not the rest of the list."),
+        only_within: z.enum(ONLY_WITHIN).nullable().optional().describe("With only_mine: today or week shows them only those of your items in your today (due today, overdue, or finished today) or your week (Monday to Sunday), by your clock; null shows every day. Leave it out to keep it as it is."),
       },
     },
-    async ({ space_id, user_id, role, only_mine }) => {
+    async ({ space_id, user_id, role, only_mine, only_within }) => {
       const { db } = getDb();
       if (!isJoined(db, space_id)) return notFound("space", space_id);
-      setSpaceMemberRole(db, userId, space_id, user_id, role, SOURCE, only_mine);
+      setSpaceMemberRole(db, userId, space_id, user_id, role, SOURCE, only_mine, only_within);
       return json({ ok: true });
     },
   );

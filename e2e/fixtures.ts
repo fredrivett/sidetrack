@@ -3,12 +3,15 @@ import { readFileSync } from "node:fs";
 import { test as base, expect, type BrowserContext } from "@playwright/test";
 import { auth } from "@/auth/better-auth";
 import { getDb } from "@/core/db";
+import { setDayNote } from "@/core/dayNotes";
 import { addItem } from "@/core/items";
 import { acceptInvite, inviteMember } from "@/core/members";
 import { createProject } from "@/core/projects";
 import { proposeFromPhoto, receiveSourcePhoto, type ProposedLine } from "@/core/sources";
 import { createSpace, setProjectSpace } from "@/core/spaces";
 import type { ListRole } from "@/core/schema";
+import { setTimeZone } from "@/core/users";
+import { dayOf } from "@/lib/time";
 
 export { expect };
 
@@ -74,12 +77,14 @@ export type User = {
   password: string;
   /** Adds a list with these items, as if the user had made it. */
   addList(name: string, items?: string[]): { id: string };
-  /** Adds an item to one of their lists, assigned to these people. */
-  addItem(listId: string, title: string, assigneeIds?: string[]): void;
+  /** Adds an item to one of their lists, assigned to these people, due on a day ("YYYY-MM-DD"). */
+  addItem(listId: string, title: string, assigneeIds?: string[], dueDate?: string): void;
   /** Adds a Space of theirs, with these lists of theirs in it. */
   addSpace(name: string, listIds?: string[]): { id: string };
   /** A photo an agent read these lines off, uploaded and waiting for review. */
   addPhoto(lines: ProposedLine[]): { id: string };
+  /** Their note about today, written in the suite's time zone. */
+  setDayNote(text: string): void;
 };
 
 /**
@@ -107,8 +112,8 @@ export const test = base.extend<{ user: User }>({
         for (const title of items) addItem(db, response.user.id, { projectId: project.id, title }, SOURCE);
         return { id: project.id };
       },
-      addItem(listId, title, assigneeIds = []) {
-        addItem(db, response.user.id, { projectId: listId, title, assigneeIds }, SOURCE);
+      addItem(listId, title, assigneeIds = [], dueDate) {
+        addItem(db, response.user.id, { projectId: listId, title, assigneeIds, dueDate }, SOURCE);
       },
       addSpace(name, listIds = []) {
         const space = createSpace(db, response.user.id, { name }, SOURCE);
@@ -119,6 +124,10 @@ export const test = base.extend<{ user: User }>({
         const { sourceId, uploadToken } = proposeFromPhoto(db, response.user.id, { lines }, "Claude Code");
         receiveSourcePhoto(db, uploadToken, readFileSync("public/apple-touch-icon.png"));
         return { id: sourceId };
+      },
+      setDayNote(text) {
+        setTimeZone(db, response.user.id, "Europe/London");
+        setDayNote(db, response.user.id, dayOf(Date.now(), "Europe/London"), text);
       },
     });
   },

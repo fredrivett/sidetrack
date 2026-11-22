@@ -21,7 +21,25 @@ export interface Change {
   itemId?: string;
   /** Not for someone shown only part of the list, such as a label's change. */
   wholeOnly?: true;
+  /**
+   * The item's row (or its absence, once deleted) shows all of the change,
+   * to anyone it didn't notify: their board can read just that row instead
+   * of reloading (see /api/items).
+   */
+  rows?: true;
+  /** The people it notified, whose inbox has something new. */
+  notified?: string[];
 }
+
+/**
+ * What a batch changed for one viewer: the items it was about, with any it
+ * showed them or took away from a list they see only part of (nesting one of
+ * theirs brings its new checklist); whether reading those rows shows all of
+ * it (each change has `rows` and notified nobody of them); and the batch's
+ * first change number, so a page can tell a batch of only its own saves.
+ * Null when it was about more than items, such as a list.
+ */
+export type Seen = { items: string[]; rows: boolean; first: number } | null;
 
 /** A batch of changes, and the number of the last one in it (see changeSeq). */
 type Listener = (changes: Change[], seq: number) => void;
@@ -90,12 +108,13 @@ export function onChanges(listener: Listener): () => void {
  * account and Space changes by the people they share lists or a Space with,
  * whose names and avatars show on those lists (Space changes have no list). A list they have just lost, deleted or
  * removed from, counts too, so it leaves their board. onChange gets the
- * batch's number (changeSeq). Returns the unsubscribe function.
+ * batch's number (changeSeq) and what it changed for them (Seen). Returns
+ * the unsubscribe function.
  */
 export function watchChanges(
   db: Db,
   userId: string,
-  onChange: (seq: number) => void,
+  onChange: (seq: number, seen: Seen) => void,
 ): () => void {
   let before = audience(db, userId);
   let beforeItems = visibleItems(db, userId, before.partial);
@@ -110,7 +129,7 @@ export function watchChanges(
       same && !changes.some((c) => c.projectId !== null && partial(c.projectId))
         ? beforeItems
         : visibleItems(db, userId, after.partial);
-    const affected = changes.some(
+    const affected = changes.filter(
       ({ actor, projectId, itemId, wholeOnly }) =>
         actor === userId ||
         (projectId === null
@@ -121,9 +140,19 @@ export function watchChanges(
             (!partial(projectId) ||
               (!wholeOnly && (!itemId || beforeItems.has(itemId) || afterItems.has(itemId))))),
     );
+    const ids = new Set(affected.flatMap((c) => (c.itemId ? [c.itemId] : [])));
+    for (const id of beforeItems) if (!afterItems.has(id)) ids.add(id);
+    for (const id of afterItems) if (!beforeItems.has(id)) ids.add(id);
     before = after;
     beforeItems = afterItems;
-    if (affected) onChange(seq);
+    if (affected.length === 0) return;
+    if (!affected.every((c) => c.itemId)) return onChange(seq, null);
+    onChange(seq, {
+      items: [...ids],
+      rows: affected.every((c) => c.rows && !c.notified?.includes(userId)),
+      // Each change in the batch has the next number (announceChange).
+      first: seq - changes.length + 1,
+    });
   };
   return onChanges(listener);
 }

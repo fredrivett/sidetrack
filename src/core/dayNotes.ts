@@ -2,13 +2,18 @@
 // what they want from it ("not feeling well", "keen to get through a lot").
 // One per person per day, by their 4am turnover. The Agenda greeting is
 // written with it (agendaBrief.ts), so Sidetrack can suggest a lighter or a
-// fuller day; it only ever suggests. Per person and seen by nobody else, so
-// not audited, like greeting prefs.
+// fuller day; it only ever suggests. Per person and not audited, like
+// greeting prefs: nobody else sees it unless its writer shares their day
+// with someone and chooses to include its words or its mood (sharedDayNote).
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNotNull, or } from "drizzle-orm";
+import { type DayTag, splitDayNote } from "../lib/dayTags";
 import { cleanNote } from "../lib/greetingPrefs";
+import { dayOf } from "../lib/time";
+import { users } from "./auth-schema";
 import type { Db } from "./db";
-import { dayNotes } from "./schema";
+import { validZone } from "./db-functions";
+import { dayNotes, projectMembers, spaceMembers } from "./schema";
 
 /** The user's note for `day` (YYYY-MM-DD), or null when they haven't written one. */
 export function getDayNote(db: Db, userId: string, day: string): string | null {
@@ -30,7 +35,9 @@ export function setDayNote(db: Db, userId: string, day: string, raw: string): st
   const text = cleanNote(raw);
   const mine = and(eq(dayNotes.userId, userId), eq(dayNotes.day, day));
   if (!text) {
-    // audit-exempt: one person's own note, seen by nobody else (see above).
+    // audit-exempt: one person's own note, seen only through a day share
+    // they opted it into (see above). Not announced: a partner's Check-ins
+    // picks it up on their next reload.
     db.delete(dayNotes).where(mine).run();
     return null;
   }
@@ -41,4 +48,41 @@ export function setDayNote(db: Db, userId: string, day: string, raw: string): st
     .onConflictDoUpdate({ target: [dayNotes.userId, dayNotes.day], set: { text, updatedAt } })
     .run();
   return text;
+}
+
+/**
+ * What `viewerId` may see of `personId`'s note for their own today: its
+ * words, its mood (tags), both or neither, as `personId` chose when sharing
+ * their day with them (an accepted membership limited to their items and a
+ * window, with shareNote or shareMood). Whichever share allows more wins.
+ */
+export function sharedDayNote(
+  db: Db,
+  viewerId: string,
+  personId: string,
+  now = Date.now(),
+): { note: string | null; mood: DayTag[] } {
+  const shares = [projectMembers, spaceMembers].flatMap((m) =>
+    db
+      .select({ note: m.shareNote, mood: m.shareMood })
+      .from(m)
+      .where(
+        and(
+          eq(m.userId, viewerId),
+          eq(m.onlyAssignedTo, personId),
+          eq(m.status, "accepted"),
+          isNotNull(m.onlyWithin),
+          or(eq(m.shareNote, true), eq(m.shareMood, true)),
+        ),
+      )
+      .all(),
+  );
+  const words = shares.some((s) => s.note);
+  const mood = shares.some((s) => s.mood);
+  if (!words && !mood) return { note: null, mood: [] };
+  const zone = db.select({ tz: users.timeZone }).from(users).where(eq(users.id, personId)).get()?.tz;
+  const text = getDayNote(db, personId, dayOf(now, validZone(zone)));
+  if (!text) return { note: null, mood: [] };
+  const { tags, rest } = splitDayNote(text);
+  return { note: words && rest ? rest : null, mood: mood ? tags : [] };
 }

@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { roleWords } from "../lib/roles";
+import { roleWords, whoseWords } from "../lib/roles";
 import { nanoid } from "nanoid";
 import { getEnv } from "../lib/env";
 import { formatItemRef } from "../lib/itemRef";
@@ -14,7 +14,7 @@ import type { Db } from "./db";
 import { SYSTEM_ACTOR } from "./audit";
 import { duePart, type Part, plainText } from "./describe";
 import { autoFollow, followersOf } from "./follows";
-import type { ChangeEvent, ItemAt, PersonAt } from "./events";
+import type { ChangeEvent, DueAt, ItemAt, PersonAt } from "./events";
 import { isLooking } from "./presence";
 import { remindDue } from "./reminders";
 import { forgetPushSubscriptions, pushTargets } from "./push";
@@ -27,6 +27,7 @@ import {
   NOTIFICATION_REASONS,
   type NotificationLevel,
   type ListRole,
+  type OnlyWithin,
   type NotificationReason,
   type SpaceRole,
   notificationSettings,
@@ -111,6 +112,15 @@ function finishedParent(db: Db, itemId: string): string | null {
   return parentOpen && !siblingOpen ? parentId : null;
 }
 
+/**
+ * Whether a smart due date's move asks for attention: it got a date, or one
+ * sooner than before. A later date, or none, can wait to be noticed.
+ */
+function movedEarlier(due: DueAt, was: DueAt): boolean {
+  if (!due.dueDate) return false;
+  return !was.dueDate || due.dueDate < (was.dueFrom ?? was.dueDate);
+}
+
 /** Who `event` concerns and why, before the checks every rule shares. */
 function rule(
   db: Db,
@@ -170,7 +180,7 @@ function rule(
       return onItem(event.itemId, event.projectId, [
         ...as("assigned", added),
         ...as("unassigned", c.assignees?.removed.map((a) => a.userId) ?? []),
-        ...(c.due ? followers(event.itemId) : []),
+        ...(c.due && (!c.smartDue || movedEarlier(c.due, c.smartDue.was)) ? followers(event.itemId) : []),
         // Reworded: worth knowing, not worth a buzz unless they asked.
         ...(c.title || c.description
           ? followersOf(db, event.itemId).map((userId) => ({ userId, reason: "activity" as const }))
@@ -328,9 +338,9 @@ export function writeNotifications(
     agent: string | null;
     event: ChangeEvent;
   },
-): void {
+): string[] {
   const r = rule(db, change.event, change.actor);
-  if (!r) return;
+  if (!r) return [];
   // One each, for the strongest reason (NOTIFICATION_REASONS is in order).
   const strength = (reason: NotificationReason) => NOTIFICATION_REASONS.indexOf(reason);
   const best = new Map<string, NotificationReason>();
@@ -386,8 +396,9 @@ export function writeNotifications(
       },
     ];
   });
-  if (rows.length === 0) return;
+  if (rows.length === 0) return [];
   db.insert(notifications).values(rows).run();
+  return rows.map((n) => n.userId);
 }
 
 /** How directly a reason concerns its recipient. */
@@ -817,6 +828,9 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           if (r.reason === "assigned") return say([who, t(" assigned you "), item]);
           if (r.reason === "unassigned") return say([who, t(" took you off "), item]);
           if (r.reason === "activity") return say([who, t(" edited "), item]);
+          if (r.actorId === SYSTEM_ACTOR && event.changes.smartDue && event.changes.due?.dueDate) {
+            return say([item, t(" is now due "), duePart({ ...event.changes.due, dueDate: event.changes.due.dueDate })]);
+          }
           return event.changes.due?.dueDate
             ? say([who, t(" set "), item, t(" due "), duePart({ ...event.changes.due, dueDate: event.changes.due.dueDate })])
             : say([who, t(" cleared the due date on "), item]);
@@ -862,9 +876,9 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
     // What someone joined or was invited as, when it's less than editing.
     // and whose items they see, when it's only someone's.
     const whose = (only: PersonAt) => (only.userId === r.userId ? "your" : `${only.name}'s`);
-    const asRole = (role: ListRole | SpaceRole | undefined, only?: PersonAt): Part[] =>
+    const asRole = (role: ListRole | SpaceRole | undefined, only?: PersonAt, within?: OnlyWithin): Part[] =>
       role && role !== "editor" && role !== "member"
-        ? [t(` as ${roleWords(role)}${only ? ` of ${whose(only)} items` : ""}`)]
+        ? [t(` as ${roleWords(role)}${only ? ` of ${whoseWords(whose(only), within)}` : ""}`)]
         : [];
     // Someone else invited: told to those already in the list or Space, by
     // its current name, while they still are.
@@ -893,7 +907,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
             { text: event.member.name, em: "person" },
             t(" to "),
             place,
-            ...asRole(event.role, event.onlyAssignedTo),
+            ...asRole(event.role, event.onlyAssignedTo, event.onlyWithin),
           ],
           snippet: null,
         },
@@ -914,7 +928,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
             who,
             t(" invited you to "),
             { text: name, em: "place", quote: true },
-            ...asRole(event.role, event.onlyAssignedTo),
+            ...asRole(event.role, event.onlyAssignedTo, event.onlyWithin),
           ],
           snippet: null,
         },
@@ -949,7 +963,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
             who,
             t(` made you ${roleWords(event.role)} of `),
             place,
-            ...(event.onlyAssignedTo ? [t(`, seeing only ${whose(event.onlyAssignedTo)} items`)] : []),
+            ...(event.onlyAssignedTo ? [t(`, seeing only ${whoseWords(whose(event.onlyAssignedTo), event.onlyWithin)}`)] : []),
             ...(event.seesAll ? [t(", seeing all of it")] : []),
           ],
           snippet: null,
@@ -971,7 +985,7 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
             ? list.space
               ? [who, t(" added "), place, t(" to "), { text: list.space, em: "place", quote: true }]
               : [who, t(" added "), place]
-            : [person, t(" joined "), place, ...(event.type === "member.joined" ? asRole(event.role, event.onlyAssignedTo) : [])];
+            : [person, t(" joined "), place, ...(event.type === "member.joined" ? asRole(event.role, event.onlyAssignedTo, event.onlyWithin) : [])];
       return [
         {
           ...base,
@@ -999,10 +1013,10 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
                   who,
                   t(` made you ${roleWords(event.role)} of `),
                   space,
-                  ...(event.onlyAssignedTo ? [t(`, seeing only ${whose(event.onlyAssignedTo)} items`)] : []),
+                  ...(event.onlyAssignedTo ? [t(`, seeing only ${whoseWords(whose(event.onlyAssignedTo), event.onlyWithin)}`)] : []),
                   ...(event.seesAll ? [t(", seeing all of it")] : []),
                 ]
-              : [person, t(" joined "), space, ...asRole(event.role, event.onlyAssignedTo)],
+              : [person, t(" joined "), space, ...asRole(event.role, event.onlyAssignedTo, event.onlyWithin)],
           snippet: null,
         },
       ];

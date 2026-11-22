@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { nanoid } from "nanoid";
 import { resolve } from "node:path";
+import { registerDbFunctions } from "./db-functions";
 import * as appSchema from "./schema";
 import * as authSchema from "./auth-schema";
 
@@ -18,6 +19,7 @@ const schema = { ...appSchema, ...authSchema };
 export function createTestDb() {
   const sqlite = new Database(":memory:");
   sqlite.pragma("foreign_keys = ON");
+  registerDbFunctions(sqlite);
   const db = drizzle(sqlite, { schema });
   migrate(db, {
     migrationsFolder: resolve(process.cwd(), "src/core/migrations"),

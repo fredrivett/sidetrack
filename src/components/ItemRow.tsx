@@ -64,7 +64,7 @@ import { AssigneeOptions } from "./AssigneeOptions";
 import { useCommentCount } from "./comment-counts";
 import { LabelBadge, useListLabels } from "./Labels";
 import { MoveToListContextMenu } from "./MoveItem";
-import { DueBadge } from "./DueBadge";
+import { DueBadge, WaitingBadge } from "./DueBadge";
 import { PrLink } from "./PrLink";
 import { ProjectIcon } from "./ProjectIcon";
 import { RepeatBadge } from "./RepeatBadge";
@@ -432,7 +432,7 @@ function ItemRowView({
                 {context}
               </span>
             )}
-            {(list || item.labels.length > 0 || item.dueDate || repeat) && (
+            {(list || item.labels.length > 0 || item.dueDate || item.smartRule || repeat) && (
               <span className="flex flex-wrap items-center gap-1">
                 {list && (
                   <span className="inline-flex max-w-full items-center gap-1 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] text-neutral-500 dark:bg-neutral-800">
@@ -445,8 +445,10 @@ function ItemRowView({
                     <span className="truncate">{list.name}</span>
                   </span>
                 )}
-                {item.dueDate && (
-                  <DueBadge due={item.dueDate} from={item.dueFrom} done={completed} />
+                {item.dueDate ? (
+                  <DueBadge due={item.dueDate} from={item.dueFrom} done={completed} smart={item.smartRule} />
+                ) : (
+                  item.smartRule && <WaitingBadge rule={item.smartRule} />
                 )}
                 {repeat && (
                   <RepeatBadge repeat={repeat} completedAt={item.completedAt} />

@@ -18,11 +18,11 @@ import { ItemRow } from "./ItemRow";
 // The server actions pull in server-only modules (next/cache, the DB); the menu
 // render only needs them to exist as callable stubs.
 vi.mock("@/app/actions", () => ({
-  completeItemAction: vi.fn(),
-  uncompleteItemAction: vi.fn(),
-  deleteItemAction: vi.fn(),
+  completeItemAction: vi.fn(async () => {}),
+  uncompleteItemAction: vi.fn(async () => {}),
+  deleteItemAction: vi.fn(async () => {}),
   updateItemAction: vi.fn(),
-  setItemParentAction: vi.fn(),
+  setItemParentAction: vi.fn(async () => {}),
 }));
 
 vi.mock("sonner", () => ({
@@ -82,6 +82,8 @@ const item: Item = {
   repeatUnit: null,
   repeatOn: null,
   repeatDay: null,
+  smartRule: null,
+  smartLead: null,
   position: "a0",
   number: 42,
   completedAt: null,

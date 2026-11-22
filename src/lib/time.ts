@@ -194,6 +194,11 @@ export function startOfDayIn(timeZone: string, now = Date.now()): number {
   return turnoverIn(dayOf(now, timeZone), timeZone);
 }
 
+/** The next turnover in a named IANA zone after `now`: 4am on its next day there. */
+export function nextDayStartIn(timeZone: string, now = Date.now()): number {
+  return turnoverIn(addDays(dayOf(now, timeZone), 1), timeZone);
+}
+
 /** startOfWeek in a named IANA zone, like startOfDayIn: 4am on its Monday. */
 export function startOfWeekIn(timeZone: string, now = Date.now()): number {
   return turnoverIn(mondayOf(dayOf(now, timeZone)), timeZone);

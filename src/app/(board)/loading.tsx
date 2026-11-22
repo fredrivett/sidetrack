@@ -9,7 +9,7 @@ export default async function Loading() {
   const view = (await headers()).get("x-board-view");
   return (
     <BoardSkeleton
-      view={view === "board" || view === "done" || view === "archived" ? view : "brief"}
+      view={view === "board" || view === "done" || view === "archived" || view === "check-ins" ? view : "brief"}
     />
   );
 }

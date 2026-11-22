@@ -14,6 +14,11 @@ import type { StoredGreeting } from "./agendaGreeting";
 import { apiKeys, users } from "./auth-schema";
 import type { ChangeEvent } from "./events";
 
+/** How far a membership limited to someone's items reaches in time, by
+ * that person's clock: their today, or their week. */
+export const ONLY_WITHIN = ["today", "week"] as const;
+export type OnlyWithin = (typeof ONLY_WITHIN)[number];
+
 // A list's lifecycle (a "project" in code; "list" to people and agents).
 // active lists are on the board; archived lists leave it, and every other
 // view, for the Archived view, keeping their items until they're restored.
@@ -142,6 +147,13 @@ export const spaceMembers = sqliteTable(
     // invited them ("only my tasks"). Null shows everything. Only viewers
     // and commenters are limited; see hasItemAccess in access.ts.
     onlyAssignedTo: text("only_assigned_to"),
+    // With onlyAssignedTo, only that person's items in this stretch of their
+    // own days: "today" or "week" (Monday to Sunday). Null is every day.
+    onlyWithin: text("only_within", { enum: ONLY_WITHIN }),
+    // With onlyWithin, whether they also see that person's day note (the
+    // words) and mood (its tags, dayTags.ts) on Check-ins. Off unless chosen.
+    shareNote: integer("share_note", { mode: "boolean" }).notNull().default(false),
+    shareMood: integer("share_mood", { mode: "boolean" }).notNull().default(false),
     // Where the Space sits among this member's own trays on their board, as a
     // fractional index, so reordering moves it only for whoever did it. Set
     // to the end when they create or join it. Null for memberships from
@@ -237,6 +249,13 @@ export const projectMembers = sqliteTable(
     // invited them ("only my tasks"). Null shows everything. Only viewers
     // and commenters are limited; see hasItemAccess in access.ts.
     onlyAssignedTo: text("only_assigned_to"),
+    // With onlyAssignedTo, only that person's items in this stretch of their
+    // own days: "today" or "week" (Monday to Sunday). Null is every day.
+    onlyWithin: text("only_within", { enum: ONLY_WITHIN }),
+    // With onlyWithin, whether they also see that person's day note (the
+    // words) and mood (its tags, dayTags.ts) on Check-ins. Off unless chosen.
+    shareNote: integer("share_note", { mode: "boolean" }).notNull().default(false),
+    shareMood: integer("share_mood", { mode: "boolean" }).notNull().default(false),
     createdAt: integer("created_at")
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
@@ -332,6 +351,13 @@ export const items = sqliteTable(
     // The day of the month (1 to 31) a monthly rule keeps to ("on the 1st"),
     // whenever it's done; null otherwise, and always alongside repeat_on.
     repeatDay: integer("repeat_day"),
+    // A smart due date, in the person's words ("before our next trip"), or
+    // null for a date someone set. Its due date is worked out from its
+    // matches (item_smart_matches, core/smartDue.ts): the earliest one's
+    // start, smart_lead days before. No matches: no date, waiting for one.
+    smartRule: text("smart_rule"),
+    // Days before the earliest match it's due: 0 on the day. Set with smart_rule.
+    smartLead: integer("smart_lead"),
     completedAt: integer("completed_at"),
     createdAt: integer("created_at")
       .notNull()
@@ -342,6 +368,27 @@ export const items = sqliteTable(
     index("items_parent").on(t.parentId),
     uniqueIndex("items_project_number").on(t.projectId, t.number),
   ],
+);
+
+// The items a smart due date hangs off (items.smart_rule): "Lisbon flights"
+// for "before our next trip". `removed` is someone saying it isn't one, which
+// keeps it from being matched again. Goes with either item.
+export const itemSmartMatches = sqliteTable(
+  "item_smart_matches",
+  {
+    itemId: text("item_id")
+      .notNull()
+      .references(() => items.id, { onDelete: "cascade" }),
+    anchorId: text("anchor_id")
+      .notNull()
+      .references(() => items.id, { onDelete: "cascade" }),
+    // Why it fits the rule, in a few words ("a trip"); null when someone
+    // picked it themselves.
+    reason: text("reason"),
+    removed: integer("removed", { mode: "boolean" }).notNull().default(false),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.itemId, t.anchorId] }), index("item_smart_matches_anchor").on(t.anchorId)],
 );
 
 // The refs an item had in lists it has since moved out of, so `OLD-12` keeps

@@ -1,12 +1,12 @@
 // The Agenda's Get started stack: a few steps that make Sidetrack part of
 // someone's day. Each step's progress is read from what the user has done
-// (their lists, who they share with, two-factor sign-in, the audit log, their
-// API keys and push devices), so it can't drift from the data and people who did a step before
+// (their lists and items, who they share with, two-factor sign-in, the audit
+// log, their API keys and push devices), so it can't drift from the data and people who did a step before
 // the stack existed get it ticked. The one fact nothing else records, that the app was installed,
 // is an audited `profile.installed` event. How the stack is left (which cards
 // went to the back, whether it's collapsed) is view state on the user's row.
 
-import { and, count, eq, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
+import { type SQL, and, count, eq, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { apiKeys, users } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
@@ -20,7 +20,15 @@ import {
   type InstallPlatform,
 } from "../lib/getStarted";
 import { handleFor } from "./members";
-import { auditLog, projectMembers, projects, pushSubscriptions, spaceMembers } from "./schema";
+import {
+  auditLog,
+  items,
+  labels,
+  projectMembers,
+  projects,
+  pushSubscriptions,
+  spaceMembers,
+} from "./schema";
 
 /** Lists a user needs before "Set up your lists" is done. */
 export const GET_STARTED_MIN_LISTS = 2;
@@ -139,8 +147,32 @@ function pendingInvitees(db: Db, userId: string): string[] {
   return [...new Set(people.map((p) => handleFor(p, p.id)))];
 }
 
-/** Where the user is with each step, and which card to show first. */
-export function getGetStarted(db: Db, userId: string): GetStarted {
+/**
+ * Whether an item the user added, or one in a list they own, matches `where`:
+ * the board they've set up, not just lists they were invited to.
+ */
+function hasItem(db: Db, userId: string, where: SQL): boolean {
+  return (
+    db
+      .select({ id: items.id })
+      .from(items)
+      .innerJoin(projects, eq(projects.id, items.projectId))
+      .where(and(or(eq(items.createdBy, userId), eq(projects.userId, userId)), where))
+      .limit(1)
+      .get() !== undefined
+  );
+}
+
+/**
+ * Where the user is with each step, and which card to show first. `push` says
+ * whether this server can send notifications (VAPID keys set); without it the
+ * notifications step isn't offered.
+ */
+export function getGetStarted(
+  db: Db,
+  userId: string,
+  { push = true }: { push?: boolean } = {},
+): GetStarted {
   const lists =
     db.select({ n: count() }).from(projects).where(eq(projects.userId, userId)).get()?.n ?? 0;
   const installed = installedPlatforms(db, userId);
@@ -177,6 +209,26 @@ export function getGetStarted(db: Db, userId: string): GetStarted {
 
   const done: Record<GetStartedStep, boolean> = {
     lists: lists >= GET_STARTED_MIN_LISTS,
+    date: hasItem(db, userId, isNotNull(items.dueDate)),
+    repeat: hasItem(db, userId, isNotNull(items.repeatEvery)),
+    // A label on an item, or one made in List details before using it.
+    label:
+      hasItem(db, userId, ne(items.labels, sql`'[]'`)) ||
+      db
+        .select({ id: labels.id })
+        .from(labels)
+        .innerJoin(projects, eq(projects.id, labels.projectId))
+        .where(eq(projects.userId, userId))
+        .limit(1)
+        .get() !== undefined,
+    // Any device, phone or computer. Unticks if they turn them all off.
+    notifications:
+      db
+        .select({ endpoint: pushSubscriptions.endpoint })
+        .from(pushSubscriptions)
+        .where(eq(pushSubscriptions.userId, userId))
+        .limit(1)
+        .get() !== undefined,
     // Unticks if they turn it off again.
     secure:
       db
@@ -189,13 +241,21 @@ export function getGetStarted(db: Db, userId: string): GetStarted {
     share: isSharing(db, userId),
     agent,
   };
+  // Repeating builds on dates, so it waits for one; a step that's done
+  // always shows, ticked.
+  const steps = GET_STARTED_STEPS.filter(
+    (step) =>
+      done[step] ||
+      (step === "repeat" ? done.date : step === "notifications" ? push : true),
+  );
   const saved = readSaved(db, userId);
-  const open = GET_STARTED_STEPS.filter((step) => !done[step]);
+  const open = steps.filter((step) => !done[step]);
   const queue = [
     ...open.filter((step) => !saved.later.includes(step)),
     ...saved.later.filter((step) => open.includes(step)),
   ];
   return {
+    steps,
     done,
     queue,
     collapsed: saved.collapsed,

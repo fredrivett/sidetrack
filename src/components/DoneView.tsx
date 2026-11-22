@@ -4,7 +4,6 @@ import { useEffect, useRef } from "react";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
 import { dayLabel } from "@/lib/time";
-import { type ItemFilters, matchesFilters } from "@/lib/filters";
 import { Button } from "@/components/ui/button";
 import { ItemDetailDialog } from "./ItemDetailDialog";
 import { ItemRow } from "./ItemRow";
@@ -17,8 +16,8 @@ import { useItemDetailDialog } from "./use-item-detail-dialog";
  * heading per day. The board's items cover this week; older ones load in
  * pages as the end of the list scrolls into view (see Kanban), and `since`
  * is how far back they reach. Sub-items show as their own rows, naming
- * their parent. The header's person and due filters narrow it; its finished
- * ones don't, since everything here is finished.
+ * their parent. The header's filters don't apply: this is the record of
+ * everything finished.
  */
 export function DoneView({
   projects,
@@ -26,7 +25,6 @@ export function DoneView({
   assigneesByProject,
   prLinksByItem,
   viewerId,
-  filters,
   since,
   more,
   loading,
@@ -41,7 +39,6 @@ export function DoneView({
   assigneesByProject: Record<string, AssigneeView[]>;
   prLinksByItem: Record<string, ItemPrLink[]>;
   viewerId: string;
-  filters: ItemFilters;
   /** Items finished at or after this are all loaded. */
   since: number;
   /** Whether older finished items remain to load. */
@@ -55,8 +52,7 @@ export function DoneView({
   onOpenItem?: (item: Item) => void;
 }) {
   // Day labels depend on the viewer's clock, so rows wait for the browser.
-  const today = useToday();
-  const known = today !== null;
+  const known = useToday() !== null;
 
   const all = projects.flatMap((p) => itemsByProject[p.id] ?? []);
   const byId = new Map(all.map((i) => [i.id, i]));
@@ -69,11 +65,8 @@ export function DoneView({
         i.completedAt !== null && i.completedAt >= since,
     )
     .sort((a, b) => b.completedAt - a.completedAt || b.id.localeCompare(a.id));
-  const shown = done.filter((i) =>
-    matchesFilters(i, i.parentId ? byId.get(i.parentId) : undefined, filters, today),
-  );
   const days: Array<[string, Item[]]> = [];
-  for (const item of shown) {
+  for (const item of done) {
     const label = dayLabel(item.completedAt);
     const last = days.at(-1);
     if (last?.[0] === label) last[1].push(item);
@@ -137,10 +130,8 @@ export function DoneView({
             </>
           ) : known && (more || loading)
             ? "Loading…"
-            : known && shown.length === 0
-              ? done.length === 0
-                ? "Nothing finished yet."
-                : "Nothing here for your filters."
+            : known && done.length === 0
+              ? "Nothing finished yet."
               : known && "That's everything."}
         </div>
       </div>

@@ -255,6 +255,7 @@ const TABLE_AUDIT: Record<string, "audited" | `exempt: ${string}`> = {
   items: "audited",
   item_pr_links: "audited",
   item_ref_aliases: "audited",
+  item_smart_matches: "audited",
   labels: "audited",
   api_keys: "audited",
   agent_sessions: "audited",

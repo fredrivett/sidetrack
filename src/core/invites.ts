@@ -12,7 +12,7 @@ import {
   type MemberView,
 } from "./members";
 import { getProject } from "./projects";
-import { projects, spaces, type ListRole, type SpaceRole } from "./schema";
+import { type ListRole, type OnlyWithin, projects, spaces, type SpaceRole } from "./schema";
 import { inviteSpaceMember, listSpaceMembers, type SpaceMemberView } from "./spaces";
 
 /** A place one invite covers, and what the people invited can do there. */
@@ -22,6 +22,11 @@ export type InvitePlace = (
 ) & {
   /** They'll see only the items assigned to whoever's inviting them. */
   onlyMine?: boolean;
+  /** With onlyMine, only those in the inviter's today or week. */
+  within?: OnlyWithin | null;
+  /** With within, whether they also see the inviter's day note's words and mood. */
+  shareNote?: boolean;
+  shareMood?: boolean;
 };
 
 /** Who was invited where: one per person and place. */
@@ -67,12 +72,12 @@ export function invitePeople(
           ? {
               kind: "list",
               placeId: place.id,
-              member: inviteMember(tx as unknown as Db, userId, place.id, person, source, place.role, { inviteId, onlyMine: place.onlyMine }),
+              member: inviteMember(tx as unknown as Db, userId, place.id, person, source, place.role, { inviteId, onlyMine: place.onlyMine, within: place.within, shareNote: place.shareNote, shareMood: place.shareMood }),
             }
           : {
               kind: "space",
               placeId: place.id,
-              member: inviteSpaceMember(tx as unknown as Db, userId, place.id, person, source, place.role, { inviteId, onlyMine: place.onlyMine }),
+              member: inviteSpaceMember(tx as unknown as Db, userId, place.id, person, source, place.role, { inviteId, onlyMine: place.onlyMine, within: place.within, shareNote: place.shareNote, shareMood: place.shareMood }),
             },
       ),
     ),

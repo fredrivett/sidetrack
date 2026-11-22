@@ -1,7 +1,7 @@
 // What each list and Space role is called, and what it lets someone do, in
 // the words the app and its activity use. Framework-agnostic.
 
-import type { ListRole, SpaceRole } from "../core/schema";
+import type { ListRole, OnlyWithin, SpaceRole } from "../core/schema";
 
 type Role = ListRole | SpaceRole;
 
@@ -16,6 +16,12 @@ const NAMES: Record<Role, string> = {
 /** "Can view": the role as a choice in a menu. */
 export function roleName(role: Role): string {
   return NAMES[role];
+}
+
+/** What someone limited to `whose` ("@lorna's", "your") items sees of
+ * them: "@lorna's items", or with a window, "@lorna's day" or "week". */
+export function whoseWords(whose: string, within?: OnlyWithin | null): string {
+  return `${whose} ${within === "today" ? "day" : within === "week" ? "week" : "items"}`;
 }
 
 /** "a viewer": the role as a sentence names it. */

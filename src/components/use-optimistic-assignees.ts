@@ -10,7 +10,7 @@ import { runAction } from "./run-action";
  * way of changing assignees (ticks in the picker, the I shortcut) reads and
  * writes this one copy, so a change made before the last one has come back
  * builds on it instead of on the stale server set and dropping someone.
- * Once a change lands, the refreshed items take over again.
+ * Once a change lands, the saved rows (useSavedItems) take over again.
  *
  * The server gets who was added and who was taken off, not the whole set, so
  * a change made from another screen's copy (a row and a dialog, or two

@@ -15,9 +15,12 @@ process.once("SIGTERM", () => shutdown.abort());
 
 /**
  * Live updates: a Server-Sent Events stream that sends an event whenever
- * something the viewer sees changes (see watchChanges). It carries only the
+ * something the viewer sees changes (see watchChanges). It carries the
  * change's number (changeSeq), so a page that hears a number newer than the
- * one it was rendered with reloads what it shows (LiveUpdates).
+ * one it was rendered with catches up (LiveUpdates). When the change was
+ * about items alone it's `{"seq","items","rows"}` (Seen): a page can then
+ * read just those rows (/api/items) when `rows` says they show all of it.
+ * A page from before this reads that as no number, and reloads.
  */
 export async function GET(request: Request) {
   const session = await getCurrentSession();
@@ -27,7 +30,9 @@ export async function GET(request: Request) {
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       const send = (chunk: string) => controller.enqueue(encoder.encode(chunk));
-      const unwatch = watchChanges(getDb().db, session.user.id, (seq) => send(`data: ${seq}\n\n`));
+      const unwatch = watchChanges(getDb().db, session.user.id, (seq, seen) =>
+        send(`data: ${seen ? JSON.stringify({ seq, ...seen }) : seq}\n\n`),
+      );
       // The board holds this open only while it's on screen, so while it's
       // open, notifications go to the inbox without a push.
       const away = markLooking(session.user.id);

@@ -30,17 +30,13 @@ import {
   startTransition,
   useTransition,
 } from "react";
-import {
-  addItemAction,
-  getItemSourceAction,
-  listAuditAction,
-  updateItemAction,
-} from "@/app/actions";
+import { getItemSourceAction, listAuditAction } from "@/app/actions";
 import type { AuditEntryWithActor } from "@/core/audit";
 import type { LabelEmoji } from "@/core/labels";
 import type { AssigneeView } from "@/core/members";
 import type { AgentSession, Item, ItemPrLink } from "@/core/schema";
 import { toggleAssignee } from "@/lib/assignees";
+import { useItemSaves } from "./item-saves";
 import { formatItemRef } from "@/lib/itemRef";
 import { modifierSymbol } from "@/lib/keyboard";
 import { repeatOf } from "@/lib/repeat";
@@ -73,8 +69,9 @@ import { EditableText } from "./EditableText";
 import { useDraft } from "./use-draft";
 import { ItemComments } from "./ItemComments";
 import { LabelBadge, LabelChips, useListLabels } from "./Labels";
-import { DueBadge } from "./DueBadge";
+import { DueBadge, WaitingBadge } from "./DueBadge";
 import { RepeatBadge } from "./RepeatBadge";
+import { SmartDuePanel } from "./SmartDuePanel";
 import { useListAccess } from "./list-access";
 import { MoveToListPicker, useMoveItem } from "./MoveItem";
 import { AssigneeChip, CHIP, DueChip, EMPTY_CHIP, Field, RepeatChip } from "./DialogFields";
@@ -346,13 +343,14 @@ function Checklist({
     }
   }, [rows]);
 
+  const saves = useItemSaves();
   function add() {
     const title = draft.trim();
     if (!title) return;
     setDraft("");
     const save = queue.current.then(async () => {
       const added = await runAction(
-        addItemAction({ projectId: parent.projectId, title, parentId: parent.id }),
+        saves.addSubItem(parent.id, title),
         `add “${title}”`,
       );
       // Put a failed line back, unless another is already being typed.
@@ -490,7 +488,11 @@ function ReadOnlyFields({
       )}
       {any && (
         <div className="flex flex-wrap items-center gap-1.5">
-          {item.dueDate && <DueBadge due={item.dueDate} from={item.dueFrom} done={done} />}
+          {item.dueDate ? (
+            <DueBadge due={item.dueDate} from={item.dueFrom} done={done} smart={item.smartRule} />
+          ) : (
+            item.smartRule && <WaitingBadge rule={item.smartRule} />
+          )}
           {repeat && <RepeatBadge repeat={repeat} completedAt={item.completedAt} />}
           {assigned.length > 0 && (
             <span className="inline-flex items-center gap-1.5 text-xs text-neutral-500">
@@ -599,6 +601,7 @@ export function ItemDetailView({
   const canEdit = access === "edit";
   const listLabels = useListLabels(item.projectId);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const saves = useItemSaves();
   const [assignOpen, setAssignOpen] = useState(false);
   // A sub-item's assignee picker in the checklist, when one is open.
   const [childPickerFor, setChildPickerFor] = useState<string | null>(null);
@@ -624,7 +627,7 @@ export function ItemDetailView({
     startLabels(async () => {
       showLabels(names);
       await runAction(
-        updateItemAction(item.id, {
+        saves.updateItem(item.id, {
           labels: names,
           labelEmoji: added && emoji ? { [added.name]: emoji } : undefined,
         }),
@@ -791,7 +794,7 @@ export function ItemDetailView({
             value={item.title}
             draftKey={`item:${item.id}:title`}
             onSave={(next) =>
-              runAction(updateItemAction(item.id, { title: next }), `rename “${item.title}”`)
+              runAction(saves.updateItem(item.id, { title: next }), `rename “${item.title}”`)
             }
             required
             className={`block w-full break-words text-base leading-6 font-medium ${
@@ -821,7 +824,7 @@ export function ItemDetailView({
           draftKey={`item:${item.id}:description`}
           onSave={(next) =>
             runAction(
-              updateItemAction(item.id, { description: next || null }),
+              saves.updateItem(item.id, { description: next || null }),
               `save the description of “${item.title}”`,
             )
           }
@@ -842,21 +845,30 @@ export function ItemDetailView({
             onChange={(due) =>
               start(async () => {
                 await runAction(
-                  updateItemAction(item.id, due ?? { dueDate: null }),
+                  saves.updateItem(item.id, due ?? { dueDate: null }),
                   `change the due date of “${item.title}”`,
                 );
               })
+            }
+            smart={
+              repeatOf(item)
+                ? undefined
+                : {
+                    rule: item.smartRule,
+                    panel: (onPlain) => <SmartDuePanel item={item} disabled={pending} onPlain={onPlain} />,
+                  }
             }
           />
           <RepeatChip
             key={`repeat:${item.id}`}
             repeat={repeatOf(item)}
             completedAt={item.completedAt}
-            disabled={pending}
+            // A smart due date can't repeat yet (core/smartDue.ts).
+            disabled={pending || item.smartRule !== null}
             onChange={(repeat) =>
               start(async () => {
                 await runAction(
-                  updateItemAction(item.id, { repeat }),
+                  saves.updateItem(item.id, { repeat }),
                   `change how “${item.title}” repeats`,
                 );
               })

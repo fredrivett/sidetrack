@@ -104,7 +104,7 @@ export function CommandPalette({
     { label: "New list", icon: <ListPlus />, shortcut: "⇧C", action: onNewList },
     { label: "Go to Brief", icon: <Sunrise />, shortcut: "1", action: () => onSwitchView("brief") },
     { label: "Go to Board", icon: <Columns3 />, shortcut: "2", action: () => onSwitchView("board") },
-    { label: "Go to Done", icon: <CircleCheck />, shortcut: "3", action: () => onSwitchView("done") },
+    { label: "Go to Done items", icon: <CircleCheck />, action: () => onSwitchView("done") },
     { label: "Go to Archived", icon: <Archive />, action: () => onSwitchView("archived") },
     { label: "Show activity", icon: <History />, action: onShowActivity },
     { label: "Keyboard shortcuts", icon: <Keyboard />, shortcut: "?", action: onShowShortcuts },

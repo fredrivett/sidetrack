@@ -4,7 +4,7 @@ import { hasItemAccess, hasProjectAccess, listAccess, requireListAccess } from "
 import { users } from "./auth-schema";
 import { type AuditOrigin, recordAudit, SYSTEM_ACTOR } from "./audit";
 import { ensureLabels, type LabelEmoji, normalizeLabelNames } from "./labels";
-import { announceChange } from "./changes";
+import { announceChange, changeSeq } from "./changes";
 import type { Db } from "./db";
 import type { ChangeEvent, ItemChanges, PersonAt, SourceAt } from "./events";
 import { getTimeZone } from "./users";
@@ -19,7 +19,8 @@ import {
 import { dayOf, isDay, sameDue } from "../lib/time";
 import { ITEM_SORTS, type ItemSort } from "../lib/itemSorts";
 import { parseRef, resolvePosition } from "./fracidx";
-import { agentSessions, type Item, items, projects } from "./schema";
+import { agentSessions, type Item, itemSmartMatches, items, projects } from "./schema";
+import { recalibrate, smartDependents } from "./smartDue";
 
 // Items are accessed transitively through their project. Every read joins the
 // projects table so a user only ever sees items in projects they have access
@@ -328,6 +329,9 @@ function reopenParentIfDone(
       forSubItem: true,
     },
   });
+  // Open again: its own smart date may have moved while done, and smart
+  // dates can hang off it again.
+  recalibrate(tx, [parent.id]);
 }
 
 // Human-readable label for an assignee in an audit detail: their `@username`,
@@ -505,6 +509,55 @@ export function getItemWithSubItems(db: Db, userId: string, id: string): Item[] 
   return item ? [item, ...childrenOf(db, item.id)] : [];
 }
 
+/**
+ * Rows a save or a live update hands the board instead of reloading it: the
+ * items as of change number `seq`, and the ids it asked for that `userId`
+ * can't see, deleted or out of their reach. `seq` is read before the rows,
+ * so the rows show at least every change up to it (changeSeq).
+ */
+export interface Saved {
+  seq: number;
+  items: Item[];
+  gone: string[];
+  /**
+   * For a save: the change number before it, so the changes after it up to
+   * `seq` are the save's own (LiveUpdates skips their echo).
+   */
+  from?: number;
+  /** For a save: those of `items` the viewer follows, which assigning themselves or adding one can start. */
+  followed?: string[];
+}
+
+/**
+ * The ids of the item's checklist, the parent and its sub-items, as the
+ * board holds them: every row an item save can change (ticking, reopening
+ * and nesting reach the parent or its sub-items), and what keeps a finished
+ * checklist on the board whole (listItems' completedSince).
+ */
+export function groupIds(db: Db, userId: string, id: string): string[] {
+  const item = getItem(db, userId, id);
+  if (!item) return [id];
+  return getItemWithSubItems(db, userId, item.parentId ?? item.id).map((i) => i.id);
+}
+
+/** Read `ids` back for the board, as `Saved`. */
+export function readItems(db: Db, userId: string, ids: Iterable<string>): Saved {
+  const seq = changeSeq();
+  const found: Item[] = [];
+  const gone: string[] = [];
+  for (const id of new Set(ids)) {
+    const item = getItem(db, userId, id);
+    if (item) found.push(item);
+    else gone.push(id);
+  }
+  return { seq, items: found, gone };
+}
+
+/** readItems for the whole checklist of each of `ids` (groupIds). */
+export function readGroups(db: Db, userId: string, ids: string[]): Saved {
+  return readItems(db, userId, ids.flatMap((id) => groupIds(db, userId, id)));
+}
+
 export function getItem(db: Db, userId: string, id: string): Item | undefined {
   return db
     .select({ items })
@@ -622,6 +675,12 @@ export function updateItem(
       Object.assign(next, d);
       changes.due = d;
     }
+    // A date someone sets is theirs: it stops being worked out for them.
+    if (existing.smartRule !== null) {
+      next.smartRule = null;
+      next.smartLead = null;
+      changes.smart = null;
+    }
   }
   if (patch.repeat !== undefined) {
     const r = assertRepeat(patch.repeat);
@@ -632,6 +691,9 @@ export function updateItem(
       r?.on !== was?.on ||
       r?.day !== was?.day
     ) {
+      if (r && existing.smartRule !== null && next.smartRule !== null) {
+        throw new Error("an item with a smart due date can't repeat yet");
+      }
       next.repeatEvery = r?.every ?? null;
       next.repeatUnit = r?.unit ?? null;
       next.repeatOn = r?.on ?? null;
@@ -646,6 +708,9 @@ export function updateItem(
       ensureLabels(tx as unknown as Db, existing.projectId, next.labels, patch.labelEmoji);
     }
     tx.update(items).set(next).where(eq(items.id, id)).run();
+    if (changes.smart === null) {
+      tx.delete(itemSmartMatches).where(eq(itemSmartMatches.itemId, id)).run();
+    }
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,
@@ -658,6 +723,7 @@ export function updateItem(
         ...(from && { from }),
       },
     });
+    if (changes.due) recalibrate(tx as unknown as Db, [id]);
   });
 
   return getItemOrThrow(db, userId, id);
@@ -682,6 +748,7 @@ export function completeItem(
   // last open sub-item completes the parent, each logged on its own so every
   // item's history says when it was done.
   const now = Date.now();
+  let endedSessions = false;
   db.transaction((tx) => {
     const parent = existing.parentId
       ? getItem(tx as unknown as Db, userId, existing.parentId)
@@ -696,13 +763,16 @@ export function completeItem(
       childrenOf(tx as unknown as Db, parent.id).every(
         (c) => c.id === id || c.completedAt !== null,
       );
-    for (const it of [existing, ...openChildren, ...(parentDone ? [parent] : [])]) {
+    const done = [existing, ...openChildren, ...(parentDone ? [parent] : [])];
+    for (const it of done) {
       tx.update(items).set({ completedAt: now }).where(eq(items.id, it.id)).run();
       // Finished work needs no agent: end any open sessions with the item.
-      tx.update(agentSessions)
+      const ended = tx
+        .update(agentSessions)
         .set({ finishedAt: now })
         .where(and(eq(agentSessions.itemId, it.id), isNull(agentSessions.finishedAt)))
         .run();
+      if (ended.changes > 0) endedSessions = true;
       recordAudit(tx as unknown as Db, {
         actor: userId,
         source,
@@ -724,7 +794,12 @@ export function completeItem(
         },
       });
     }
+    // Done, they're no longer what smart dates hang off.
+    recalibrate(tx as unknown as Db, done.map((it) => it.id));
   });
+  // The agents shown working on it stop, which its row doesn't show: open
+  // boards reload rather than read the row (Change.rows).
+  if (endedSessions) announceChange({ actor: userId, projectId: existing.projectId });
   return getItemOrThrow(db, userId, id);
 }
 
@@ -744,7 +819,6 @@ export function uncompleteItem(
   // under a parent in Done. Reopening a parent leaves its sub-items as they are.
   const parent = existing.parentId ? getItem(db, userId, existing.parentId) : undefined;
   db.transaction((tx) => {
-    if (parent) reopenParentIfDone(tx as unknown as Db, userId, parent, source);
     tx.update(items)
       .set({ completedAt: null })
       .where(eq(items.id, id))
@@ -759,6 +833,12 @@ export function uncompleteItem(
         projectId: existing.projectId,
       },
     });
+    // After it's open, so smart dates hanging off both it and the parent
+    // are worked out once, with both open.
+    if (parent) reopenParentIfDone(tx as unknown as Db, userId, parent, source);
+    // Open again, its own smart date may have moved while it was done, and
+    // smart dates can hang off it again (its parent's: reopenParentIfDone).
+    recalibrate(tx as unknown as Db, [id]);
   });
   return getItemOrThrow(db, userId, id);
 }
@@ -861,6 +941,9 @@ export function reopenDueRepeats(
       if (parent) {
         reopenParentIfDone(tx as unknown as Db, SYSTEM_ACTOR, parent, "system");
       }
+      // Open and due again, smart dates can hang off them again.
+      // Its own smart date and its sub-items' may have moved while done.
+      recalibrate(tx as unknown as Db, [it.id, ...childrenOf(tx as unknown as Db, it.id).map((c) => c.id)]);
     });
   }
   return reopened;
@@ -926,7 +1009,9 @@ export function setItemsCollapsed(
   // item, so it stays out of the item's history and the activity feed.
   db.update(items).set({ collapsed }).where(inArray(items.id, changed.map((c) => c.id))).run();
   // Unaudited, so announced here: everyone with the list open sees it fold.
-  for (const { id, projectId } of changed) announceChange({ actor: userId, projectId, itemId: id });
+  for (const { id, projectId } of changed) {
+    announceChange({ actor: userId, projectId, itemId: id, rows: true });
+  }
 }
 
 export { ITEM_SORTS, type ItemSort } from "../lib/itemSorts";
@@ -1058,6 +1143,9 @@ export function deleteItem(
   // leaving it to the foreign key's cascade, so each one's history ends.
   db.transaction((tx) => {
     const children = childrenOf(tx as unknown as Db, id);
+    const gone = [...children, existing].map((it) => it.id);
+    // Smart dates that hang off them, worked out again once they're gone.
+    const dependents = smartDependents(tx as unknown as Db, gone);
     for (const it of [...children, existing]) {
       tx.delete(items).where(eq(items.id, it.id)).run();
       recordAudit(tx as unknown as Db, {
@@ -1073,6 +1161,7 @@ export function deleteItem(
         },
       });
     }
+    recalibrate(tx as unknown as Db, dependents);
   });
 }
 

@@ -150,9 +150,12 @@ it("keeps every change in the page", async () => {
     /working/,
   );
 
-  // Done has what's finished, newest first, including the spam fix just
+  // Done, in the account menu, has what's finished, newest first, including the spam fix just
   // ticked and a sub-item finished yesterday, under its parent's name.
-  fireEvent.click(screen.getByRole("button", { name: "Done" }));
+  const account = screen.getByRole("button", { name: "Account" });
+  fireEvent.pointerDown(account);
+  fireEvent.click(account);
+  fireEvent.click(screen.getByRole("menuitem", { name: "Done items" }));
   const done = screen.getAllByRole("checkbox").map((box) => box.closest(".group")?.textContent ?? "");
   expect(done[0]).toMatch(/Fix signup email going to spam/);
   expect(done.some((t) => /Write the script.*Launch › Record the demo video/.test(t))).toBe(true);

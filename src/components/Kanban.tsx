@@ -21,19 +21,19 @@ import {
   setBoardFiltersAction,
   setTimeZoneAction,
 } from "@/app/actions";
-import type { Item, ItemPrLink, Label, ListAccess, NotificationLevel, Project } from "@/core/schema";
+import type { Item, ItemPrLink, Label, ListAccess, NotificationLevel, OnlyWithin, Project } from "@/core/schema";
 import type { NotificationView } from "@/core/notifications";
 import type { PendingSpaceInviteView, SpaceView } from "@/core/spaces";
 import { type ItemFilters, matchesFilters } from "@/lib/filters";
 import { isEditableTarget, matchesShortcut } from "@/lib/keyboard";
 import { LOCALE_COOKIE } from "@/lib/time";
-import { CircleCheck, MessageSquarePlus, SquareKanban, Sunrise } from "lucide-react";
+import { HeartHandshake, MessageSquarePlus, SquareKanban, Sunrise } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AddProjectButton } from "./AddProjectButton";
 import { AuditDialog } from "./AuditDialog";
-import { BoardHeader, HeaderRule, BoardMain, BoardRail } from "./BoardLayout";
+import { BoardHeader, BoardMain, BoardRail, MenuViewTitle } from "./BoardLayout";
 import { CommandPalette } from "./CommandPalette";
 import { AgendaView } from "./AgendaView";
 import { DoneView } from "./DoneView";
@@ -53,7 +53,9 @@ import { ProjectColumn } from "./ProjectColumn";
 import { PullToSearch } from "./PullToSearch";
 import { runAction } from "./run-action";
 import { ShareDialog } from "./ShareDialog";
+import { CheckInsView, type CheckIn } from "./CheckInsView";
 import { InviteDialog } from "./InviteDialog";
+import { ShareDayDialog } from "./ShareDayDialog";
 import { InstallReporter } from "./GetStarted";
 import type { GetStarted } from "@/lib/getStarted";
 import { SpaceMenu } from "./SpaceMenu";
@@ -64,14 +66,17 @@ import { useStoredState } from "./use-stored-state";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
 import { useSameContent } from "./use-same-content";
 import { LabelsContext } from "./Labels";
+import { LiveUpdates } from "./LiveUpdates";
 import { ListAccessContext } from "./list-access";
 import { RemoveListContext, useOptimisticLists } from "./use-list-saves";
 import {
-  applyItemChange,
-  type ItemChange,
+  applySaved,
+  isSaved,
   ItemChangesContext,
   useOptimisticItems,
+  useSavedItems,
 } from "./use-optimistic-items";
+import { defaultItemSaves, type ItemSaves, ItemSavesContext } from "./item-saves";
 import { assigneeName, type AvatarUser } from "./UserAvatar";
 import { UserMenu } from "./UserMenu";
 import { createSelection, NAV_KEYS, SelectedItemContext, stepItemRow } from "./useItemShortcuts";
@@ -86,20 +91,22 @@ export type ProjectView = Project & {
   /** What the viewer can do on it: edit, comment or only view. */
   access: ListAccess;
   /** Whose items the viewer sees, when they see only someone's (\`Lorna\`); null for the whole list. */
-  onlyItemsOf: string | null;
+  onlyItemsOf: { name: string; within: OnlyWithin | null } | null;
   refPrefix: string;
   /** Offered to the admin while the list has no repository: see suggestedRepositories. */
   suggestedRepository?: string;
 };
 
-/** The header's views, each at its own path (/brief, /board, /done); / opens the Brief. */
+/** The header's views, each at its own path (/brief, /board); / opens the Brief. */
 const BOARD_VIEWS = [
   ["brief", "Brief", Sunrise],
   ["board", "Board", SquareKanban],
-  ["done", "Done", CircleCheck],
+  ["check-ins", "Check-ins", HeartHandshake],
 ] as const;
-/** The switch's views, plus Archived, which the account menu opens. */
-export type BoardView = (typeof BOARD_VIEWS)[number][0] | "archived";
+/** The switch's views, plus Done and Archived, which the account menu opens (/done, /archived). */
+export type BoardView = (typeof BOARD_VIEWS)[number][0] | "done" | "archived";
+
+const NO_CHECK_INS: CheckIn[] = [];
 
 /** How many more older finished items the Done view loads at a time. */
 const DONE_PAGE = 50;
@@ -135,6 +142,8 @@ export function Kanban({
   trayOrder,
   pendingSpaceInvites,
   pendingPhotos,
+  checkIns = NO_CHECK_INS,
+  refreshAt = null,
   initialCollapsedTrays,
   initialListId,
   initialItemId,
@@ -145,8 +154,13 @@ export function Kanban({
   filters: savedFilters,
   aiEnabled,
   feedbackEnabled = false,
+  seq,
 }: {
   viewerId: string;
+  /** The days people share with the viewer: their lists stay off the board. */
+  checkIns?: CheckIn[];
+  /** When a day shown here turns over (the sharer's 4am), to reload then. */
+  refreshAt?: number | null;
   /** The viewer's own display fields, for the avatar on the Account button. */
   viewer: AvatarUser | null;
   /** The timezone saved for the viewer, kept in step with their browser. */
@@ -200,6 +214,8 @@ export function Kanban({
   aiEnabled: boolean;
   /** Whether this deployment takes feedback (FEEDBACK_LIST_ID). */
   feedbackEnabled?: boolean;
+  /** The number of the last change the page was rendered with (changeSeq). */
+  seq: number;
 }) {
   const railRef = useRef<HTMLDivElement>(null);
 
@@ -288,16 +304,52 @@ export function Kanban({
     return merged;
   }, [serverItemsByProject, older, found, search]);
 
+  // Items a notification or ?item= opens can be anywhere the viewer can open:
+  // an archived list, or Done from before this week, which is fetched.
+  const [fetchedItems, setFetchedItems] = useState<Item[]>(initialItemExtra);
+  // Rows item saves and live updates hand back, over the server's (see
+  // useSavedItems). The Done view's older pages, ⌘K's matches and the
+  // fetched items are copies no refresh replaces, so the rows go into them
+  // too; otherwise an older item would show as it was until they're read
+  // again.
+  const saved = useSavedItems(allItemsByProject, seq, completedSince);
+  const { merge: mergeSaved } = saved;
+  const merge = useCallback(
+    (rows: unknown) => {
+      mergeSaved(rows);
+      if (!isSaved(rows)) return;
+      setOlder((o) => o && { ...o, items: applySaved(o.items, rows) });
+      setFound((f) => f && { ...f, items: applySaved(f.items, rows) });
+      setFetchedItems((had) => applySaved(had, rows));
+    },
+    [mergeSaved],
+  );
+  const shownFollowed = useMemo(
+    () =>
+      saved.followed.length ? [...new Set([...followedItemIds, ...saved.followed])] : followedItemIds,
+    [followedItemIds, saved.followed],
+  );
+  const liveRows = useMemo(
+    () => ({ asOf: saved.asOf, own: saved.own, merge }),
+    [saved.asOf, saved.own, merge],
+  );
   // Every view reads items and lists from here, so a change shown ahead of the
   // server (a tick, a delete, a move) shows at once wherever it appears.
-  // The Done view's older pages are a copy the refresh doesn't replace, so a
-  // saved change is applied to them too; otherwise a deleted or moved older
-  // item would show as it was until they're read again.
-  const applyToOlder = useCallback((change: ItemChange) => {
-    setOlder((o) => o && { ...o, items: applyItemChange(o.items, change) });
-    setFound((f) => f && { ...f, items: applyItemChange(f.items, change) });
-  }, []);
-  const [itemsByProject, itemChanges] = useOptimisticItems(allItemsByProject, applyToOlder);
+  const [itemsByProject, itemChanges] = useOptimisticItems(saved.items, merge);
+  const itemSaves = useMemo<ItemSaves>(() => {
+    const merged =
+      <A extends unknown[]>(save: (...args: A) => Promise<unknown>) =>
+      (...args: A) =>
+        save(...args).then(merge);
+    return {
+      ...defaultItemSaves,
+      updateItem: merged(defaultItemSaves.updateItem),
+      reorderItem: merged(defaultItemSaves.reorderItem),
+      setItemParent: merged(defaultItemSaves.setItemParent),
+      setItemsCollapsed: merged(defaultItemSaves.setItemsCollapsed),
+      addSubItem: merged(defaultItemSaves.addSubItem),
+    };
+  }, [merge]);
   const [projects, removeList] = useOptimisticLists(serverProjects);
   const [view, setView] = useState<BoardView>(initialView);
   // The view asked for, which the tabs show at once while the view itself
@@ -380,6 +432,8 @@ export function Kanban({
   const [newList, setNewList] = useState({ open: false, spaceId: "" });
   // Kept for this tab, so Invite people and its draft come back after a reload.
   const [inviting, setInviting] = useStoredState("inviting", false, "session");
+  // Share my day: open with who it's for, "" for nobody yet.
+  const [sharingDay, setSharingDay] = useStoredState<string | null>("sharing-day", null, "session");
   // Kept for this tab, so Share and its draft come back after a reload.
   const [share, setShare] = useStoredState("share", SHARE_CLOSED, "session");
 
@@ -536,9 +590,6 @@ export function Kanban({
       (subItems > 0 && matchesFilters(bare, item, shownFilters, today))
     );
   };
-  // Items a notification or ?item= opens can be anywhere the viewer can open:
-  // an archived list, or Done from before this week, which is fetched.
-  const [fetchedItems, setFetchedItems] = useState<Item[]>(initialItemExtra);
   const loadedItems = projects.flatMap((p) => itemsByProject[p.id] ?? []);
   const detailItems = [
     ...loadedItems,
@@ -634,7 +685,8 @@ export function Kanban({
 
   // Global shortcuts: ⌘K / Ctrl+K toggles the command palette, even from a
   // field. Then Linear-style bare keys: / → palette, C → new item, ⇧C → new
-  // list, F → Filter, N → notifications, 1–3 → the header's views, ! → Send
+  // list, F → Filter (where the filters apply: the board's columns), N →
+  // notifications, 1–2 → the header's views, ! → Send
   // feedback (where it's on), ? → the list of shortcuts (ShortcutsDialog,
   // which lists any new one too). Those are skipped while typing in a field,
   // and when a command modifier is held so we don't shadow ⌘C / Ctrl+C copy.
@@ -702,7 +754,7 @@ export function Kanban({
         return;
       }
       const nextView = BOARD_VIEWS[Number(e.key) - 1]?.[0];
-      if (matchesShortcut(e, { key: "f" })) {
+      if (matchesShortcut(e, { key: "f" }) && filtersApply(chosenView.get())) {
         e.preventDefault();
         setFilterOpen((o) => !o);
       } else if (matchesShortcut(e, { key: "n" })) {
@@ -716,7 +768,7 @@ export function Kanban({
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [openNewItem, switchView, feedbackEnabled, selection]);
+  }, [openNewItem, switchView, feedbackEnabled, selection, chosenView]);
 
   // Moving the pointer hands the shortcuts back to the hovered item. Scrolling
   // to the selection moves rows under a still pointer without moving it.
@@ -774,31 +826,37 @@ export function Kanban({
 
   // Kept the same across refreshes that don't change it, like the labels.
   const accessByProject = useSameContent(
-    Object.fromEntries(projects.map((p) => [p.id, p.access])),
+    Object.fromEntries(
+      [...projects, ...checkIns.flatMap((c) => c.lists)].map((p) => [p.id, p.access]),
+    ),
   );
 
   return (
-    <FollowsProvider followedItemIds={followedItemIds}>
+    <FollowsProvider followedItemIds={shownFollowed}>
     <SelectedItemContext value={selection}>
     <NotificationLevelsProvider levels={notificationLevels}>
     <ItemChangesContext value={itemChanges}>
+    <ItemSavesContext value={itemSaves}>
     <LabelsContext value={sameLabels}>
     <ListAccessContext value={accessByProject}>
     <RemoveListContext value={removeList}>
     <BoardDrag groups={moveTargets}>
+      <LiveUpdates seq={seq} rows={liveRows} refreshAt={refreshAt} />
       <BoardMain>
         <BoardHeader
           nav={<ViewTabs view={view} chosen={chosenView} onSwitch={switchView} />}
         >
-          <FilterMenu
-            open={filterOpen}
-            onOpenChange={setFilterOpen}
-            filters={shownFilters}
-            onChange={changeFilters}
-            people={people}
-            labels={labelChoices}
-            viewerId={viewerId}
-          />
+          {filtersApply(view) && (
+            <FilterMenu
+              open={filterOpen}
+              onOpenChange={setFilterOpen}
+              filters={shownFilters}
+              onChange={changeFilters}
+              people={people}
+              labels={labelChoices}
+              viewerId={viewerId}
+            />
+          )}
           {feedbackEnabled && (
             <Tooltip>
               <TooltipTrigger
@@ -856,10 +914,10 @@ export function Kanban({
               );
             }}
           />
-          <HeaderRule />
           <UserMenu
             user={viewer}
             archivedCount={archived.length}
+            onShowDone={() => switchView("done")}
             onShowArchived={() => switchView("archived")}
             onShowActivity={() => setAudit({ open: true })}
             onInvite={() => setInviting(true)}
@@ -882,6 +940,7 @@ export function Kanban({
               shareable: active.filter((p) => p.isOwner).map(({ id, name }) => ({ id, name })),
               onShare: openShare,
               onAddList: () => setNewList({ open: true, spaceId: "" }),
+              onAddItem: (dueToday) => openNewItem(undefined, dueToday),
             }}
             // Greets in the viewer's day, so waits for their browser's timezone.
             greet={timeZone !== null}
@@ -899,34 +958,39 @@ export function Kanban({
             assigneesByProject={assigneesByProject}
             prLinksByItem={prLinksByItem}
             viewerId={viewerId}
-            filters={shownFilters}
           />
-        ) : view === "done" ? (
-          <DoneView
-            projects={active}
+        ) : view === "check-ins" ? (
+          <CheckInsView
+            checkIns={checkIns}
             itemsByProject={itemsByProject}
             assigneesByProject={assigneesByProject}
             prLinksByItem={prLinksByItem}
             viewerId={viewerId}
-            filters={shownFilters}
-            since={older?.since ?? completedSince}
-            more={older?.more ?? true}
-            loading={loadingDone}
-            failed={doneFailed}
-            onLoadMore={loadMoreDone}
-            onRetry={retryDone}
+            onShareDay={(person) => setSharingDay(person ?? "")}
           />
+        ) : view === "done" ? (
+          // Opened from the account menu, like Archived lists.
+          <>
+            <MenuViewTitle title="Done items" onBack={() => switchView("board")} />
+            <DoneView
+              projects={active}
+              itemsByProject={itemsByProject}
+              assigneesByProject={assigneesByProject}
+              prLinksByItem={prLinksByItem}
+              viewerId={viewerId}
+              since={older?.since ?? completedSince}
+              more={older?.more ?? true}
+              loading={loadingDone}
+              failed={doneFailed}
+              onLoadMore={loadMoreDone}
+              onRetry={retryDone}
+            />
+          </>
         ) : view === "archived" ? (
           // The one place archived lists and their items show. No rail ref:
-          // ?p= follows the board's lists only. None of the switch's views is
-          // on, so a title says where this is.
+          // ?p= follows the board's lists only.
           <>
-            <div className="flex items-center justify-between gap-2 px-3 pt-3 sm:px-4">
-              <h2 className="text-sm font-semibold">Archived lists</h2>
-              <Button variant="outline" size="sm" onClick={() => switchView("board")}>
-                Back to board
-              </Button>
-            </div>
+            <MenuViewTitle title="Archived lists" onBack={() => switchView("board")} />
             <BoardRail>
               {archived.length === 0 ? (
                 <div className="m-auto text-sm text-neutral-500">
@@ -1100,16 +1164,32 @@ export function Kanban({
           onOpenChange={setInviting}
           groups={inviteGroups}
         />
+        <ShareDayDialog
+          open={sharingDay !== null}
+          person={sharingDay || null}
+          onOpenChange={(open) => !open && setSharingDay(null)}
+          groups={inviteGroups}
+        />
       </BoardMain>
     </BoardDrag>
     </RemoveListContext>
     </ListAccessContext>
     </LabelsContext>
+    </ItemSavesContext>
     </ItemChangesContext>
     </NotificationLevelsProvider>
     </SelectedItemContext>
     </FollowsProvider>
   );
+}
+
+/**
+ * Whether the header's filters apply to a view: the board's columns, and
+ * Archived's, which are the same. The Brief already shows only the viewer's
+ * own, grouped by when it's due, and Done is a record of everything finished.
+ */
+function filtersApply(view: BoardView) {
+  return view === "board" || view === "archived";
 }
 
 /** The view the tabs show, for useSyncExternalStore. */
@@ -1132,7 +1212,7 @@ function chosenStore(initial: BoardView) {
 }
 
 /**
- * The Brief, Board and Done switch, with an underline under the current view
+ * The Brief and Board switch, with an underline under the current view
  * that slides to the next. Its own component so measuring the underline
  * re-renders only the tabs, not the board under them.
  */

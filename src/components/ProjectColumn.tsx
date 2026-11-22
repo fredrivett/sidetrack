@@ -5,6 +5,7 @@ import { type ReactNode, useState } from "react";
 import { updateProjectAction } from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink } from "@/core/schema";
+import { whoseWords } from "@/lib/roles";
 import type { SpaceView } from "@/core/spaces";
 import { filtersByDue, type ItemFilters, matchesFilters, shownInGroups } from "@/lib/filters";
 import { nestItems } from "@/lib/itemTree";
@@ -173,7 +174,8 @@ export function ProjectColumn({
                     {project.access === "comment" ? <MessageSquare className="size-3" /> : <Eye className="size-3" />}
                     {project.access === "comment" ? "Can comment" : "View only"}
                     {/* Whose items, by first name: it's a badge, not a sentence. */}
-                    {project.onlyItemsOf && `, ${project.onlyItemsOf.split(" ")[0]}’s items`}
+                    {project.onlyItemsOf &&
+                      `, ${whoseWords(`${project.onlyItemsOf.name.split(" ")[0]}’s`, project.onlyItemsOf.within)}`}
                   </span>
                 )}
                 {!project.isOwner && !inSpace && (

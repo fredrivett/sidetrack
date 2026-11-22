@@ -1,4 +1,4 @@
-import { BoardHeader, BoardMain, HeaderRule, BoardRail, ColumnCard } from "./BoardLayout";
+import { BoardHeader, BoardMain, BoardRail, ColumnCard } from "./BoardLayout";
 import type { BoardView } from "./Kanban";
 
 // The board page while it loads: the real frame from BoardLayout with grey
@@ -172,16 +172,17 @@ function DoneBody() {
 export function BoardSkeleton({ view }: { view: BoardView }) {
   return (
     <BoardMain>
-      <BoardHeader nav={<Bone className="h-7 w-[90px] rounded-md sm:w-[219px] touch:h-9 touch:w-[108px] touch:sm:w-[234px]" />}>
-        {/* Filter (with no filters on), Notifications, Account (Kanban),
-            measured. Square on phones, like the header's buttons there
-            (BoardHeader). */}
-        <Bone className="h-7 w-7 rounded-md sm:w-[98px] touch:h-9 touch:w-9 touch:sm:w-20" />
-        <Bone className="h-7 w-7 rounded-md sm:w-9 touch:h-9 touch:w-9 touch:sm:w-[42px]" />
-        <HeaderRule />
+      <BoardHeader nav={<Bone className="h-7 w-[60px] rounded-md sm:w-[147px] touch:h-9 touch:w-[72px] touch:sm:w-[157px]" />}>
+        {/* Filter (with no filters on, and only where the board shows them:
+            Kanban's filtersApply), Notifications, Account (Kanban), measured.
+            Square on phones, like the header's buttons there (BoardHeader). */}
+        {(view === "board" || view === "archived") && (
+          <Bone className="h-7 w-7 rounded-md sm:w-[90px] touch:h-9 touch:w-9 touch:sm:w-20" />
+        )}
+        <Bone className="h-7 w-7 rounded-md touch:h-9 touch:w-9 touch:sm:w-[42px]" />
         <Bone className="size-7 rounded-full touch:size-9" />
       </BoardHeader>
-      {view === "brief" || view === "done" ? (
+      {view === "brief" || view === "done" || view === "check-ins" ? (
         <>
           <span className="sr-only" role="status">
             {view === "brief" ? "Loading your Brief…" : "Loading what's done…"}

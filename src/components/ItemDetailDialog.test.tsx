@@ -2,25 +2,25 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
-import { addItemAction, setItemParentAction, updateItemAction } from "@/app/actions";
+import { addSubItemAction, setItemParentAction, updateItemAction } from "@/app/actions";
 import type { Item } from "@/core/schema";
 import { isReplaySafe } from "@/lib/replayPrivacy";
 import { ItemDetailDialog } from "./ItemDetailDialog";
 
 // Server actions pull in server-only modules; the dialog only needs callable stubs.
 vi.mock("@/app/actions", () => ({
-  addItemAction: vi.fn(),
+  addSubItemAction: vi.fn(),
   listAuditAction: vi.fn(),
   listCommentsAction: vi.fn(async () => ({ comments: [], mentionable: [] })),
   getItemSourceAction: vi.fn(async () => null),
   addCommentAction: vi.fn(),
   updateCommentAction: vi.fn(),
   deleteCommentAction: vi.fn(),
-  completeItemAction: vi.fn(),
-  uncompleteItemAction: vi.fn(),
-  deleteItemAction: vi.fn(),
+  completeItemAction: vi.fn(async () => {}),
+  uncompleteItemAction: vi.fn(async () => {}),
+  deleteItemAction: vi.fn(async () => {}),
   updateItemAction: vi.fn(),
-  setItemParentAction: vi.fn(),
+  setItemParentAction: vi.fn(async () => {}),
 }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
@@ -71,6 +71,8 @@ const item: Item = {
   repeatUnit: null,
   repeatOn: null,
   repeatDay: null,
+  smartRule: null,
+  smartLead: null,
   position: "a0",
   number: 42,
   completedAt: null,
@@ -306,7 +308,7 @@ describe("ItemDetailDialog due date picker", () => {
 describe("ItemDetailDialog checklist", () => {
   it("shows a new line at once while it saves, and puts it back in the input if it fails", async () => {
     let fail!: () => void;
-    vi.mocked(addItemAction).mockReturnValueOnce(
+    vi.mocked(addSubItemAction).mockReturnValueOnce(
       new Promise((_, reject) => (fail = () => reject(new Error("Failed to fetch")))),
     );
     renderDialog();
@@ -327,7 +329,7 @@ describe("ItemDetailDialog checklist", () => {
 
   it("shows a saved line once when it arrives while the next line still saves", async () => {
     let finishSecond!: () => void;
-    vi.mocked(addItemAction)
+    vi.mocked(addSubItemAction)
       .mockResolvedValueOnce(undefined as never)
       .mockReturnValueOnce(new Promise((resolve) => (finishSecond = () => resolve(undefined as never))));
     const { refresh } = renderDialog();

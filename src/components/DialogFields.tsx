@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, ExternalLink, Repeat as RepeatIcon, UserRound } from "lucide-react";
+import { CalendarDays, ExternalLink, Repeat as RepeatIcon, Sparkles, UserRound } from "lucide-react";
 import { useState } from "react";
 import type { AssigneeView } from "@/core/members";
 import type { Repeat } from "@/lib/repeat";
@@ -66,6 +66,7 @@ export function DueChip({
   onChange,
   open,
   setOpen,
+  smart,
 }: {
   due: Due | null;
   /** `due` is Jev's suggestion. */
@@ -78,27 +79,75 @@ export function DueChip({
   /** Open, as the D shortcut leaves it. */
   open: boolean;
   setOpen: (open: boolean) => void;
+  /**
+   * For a saved item, its smart due date's rule (null: a plain date) and
+   * the Smart tab, which the popover opens on while it has one.
+   */
+  smart?: { rule: string | null; panel: (onPlain: () => void) => React.ReactNode };
 }) {
+  // The tab picked since it opened; until then, Smart for a smart date,
+  // however it opened (the D shortcut opens it through `open`).
+  const [picked, setPicked] = useState<"date" | "smart" | null>(null);
+  if (!open && picked !== null) setPicked(null);
+  const tab = picked ?? (smart?.rule ? "smart" : "date");
+  const setTab = setPicked;
+  const waiting = smart?.rule && !due;
   return (
     <Popover open={open} onOpenChange={(next) => setOpen(next && !disabled)}>
       <PopoverTrigger
         aria-disabled={disabled || undefined}
-        title={suggested ? SUGGESTED_TITLE : undefined}
-        className={due ? (suggested ? SUGGESTED_CHIP : cn(CHIP, tone)) : EMPTY_CHIP}
+        title={smart?.rule ? `Smart: ${smart.rule}` : suggested ? SUGGESTED_TITLE : undefined}
+        className={
+          due ? (suggested ? SUGGESTED_CHIP : cn(CHIP, tone)) : waiting ? CHIP : EMPTY_CHIP
+        }
       >
-        <CalendarDays />
-        {due ? <DueChipLabel due={due} done={done} /> : <span data-replay-safe>Due date</span>}
+        {smart?.rule ? <Sparkles /> : <CalendarDays />}
+        {due ? (
+          <DueChipLabel due={due} done={done} />
+        ) : waiting ? (
+          <span data-replay-safe className="truncate">
+            <span className="text-muted-foreground">Waiting: </span>
+            {smart.rule}
+          </span>
+        ) : (
+          <span data-replay-safe>Due date</span>
+        )}
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 max-w-[calc(100vw-2rem)] p-2">
-        <DueDatePicker
-          due={due}
-          done={done}
-          disabled={disabled}
-          onChange={(next) => {
-            setOpen(false);
-            onChange(next);
-          }}
-        />
+      <PopoverContent align="start" className="w-80 max-w-[calc(100vw-2rem)] space-y-2 p-2">
+        {smart && (
+          <div
+            data-replay-safe
+            role="tablist"
+            aria-label="Due date kind"
+            className="flex w-max gap-0.5 rounded-md bg-muted p-0.5"
+          >
+            {(["date", "smart"] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                role="tab"
+                aria-selected={tab === t}
+                onClick={() => setTab(t)}
+                className="rounded px-2.5 py-0.5 text-xs text-muted-foreground aria-selected:bg-background aria-selected:text-foreground aria-selected:shadow-xs"
+              >
+                {t === "date" ? "Date" : "Smart"}
+              </button>
+            ))}
+          </div>
+        )}
+        {smart && tab === "smart" ? (
+          smart.panel(() => setTab("date"))
+        ) : (
+          <DueDatePicker
+            due={due}
+            done={done}
+            disabled={disabled}
+            onChange={(next) => {
+              setOpen(false);
+              onChange(next);
+            }}
+          />
+        )}
       </PopoverContent>
     </Popover>
   );

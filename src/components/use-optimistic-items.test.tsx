@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import { useEffect } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
@@ -11,7 +11,7 @@ import {
 } from "@/app/actions";
 import type { Item } from "@/core/schema";
 import { nestItems } from "@/lib/itemTree";
-import { type ItemChanges, useOptimisticItems } from "./use-optimistic-items";
+import { type ItemChanges, useOptimisticItems, useSavedItems } from "./use-optimistic-items";
 
 vi.mock("@/app/actions", () => ({
   completeItemAction: vi.fn(),
@@ -42,6 +42,8 @@ const base: Item = {
   repeatUnit: null,
   repeatOn: null,
   repeatDay: null,
+  smartRule: null,
+  smartLead: null,
   position: "a0",
   number: 1,
   completedAt: null,
@@ -51,9 +53,12 @@ const parent = { ...base, id: "parent", title: "Parent" };
 const open = { ...base, id: "open", title: "Open child", parentId: "parent" };
 const other = { ...base, id: "other", title: "Other" };
 
+/** These tests' actions return nothing to merge. */
+const ignoreSaved = () => {};
+
 /** Lists each item with whether it shows as done; clicking one toggles it. */
 function Board({ items }: { items: Item[] }) {
-  const [byProject, { setCompleted }] = useOptimisticItems({ p1: items });
+  const [byProject, { setCompleted }] = useOptimisticItems({ p1: items }, ignoreSaved);
   return (
     <>
       {byProject.p1.map((i) => (
@@ -179,7 +184,7 @@ describe("useOptimisticItems: ticks", () => {
  * finished ones ticked.
  */
 function Tree({ items, onChanges }: { items: Item[]; onChanges: (c: ItemChanges) => void }) {
-  const [byProject, c] = useOptimisticItems({ p1: items });
+  const [byProject, c] = useOptimisticItems({ p1: items }, ignoreSaved);
   useEffect(() => onChanges(c), [c, onChanges]);
   const label = (i: Item) => `${i.title}${i.completedAt === null ? "" : " ✓"}`;
   return (
@@ -280,5 +285,86 @@ describe("useOptimisticItems: deletes and moves", () => {
       tick.resolve();
       save.resolve();
     });
+  });
+});
+
+describe("useSavedItems", () => {
+  const a = { ...base, id: "a", title: "A", position: "a1" };
+  const b = { ...base, id: "b", title: "B", position: "a2" };
+  const c = { ...base, id: "c", title: "C", position: "a3" };
+  const titles = (byProject: Record<string, Item[]>) => byProject.p1.map((i) => i.title);
+  const hook = (items: Item[], seq: number, since = 0) =>
+    renderHook(({ items, seq }) => useSavedItems({ p1: items }, seq, since), {
+      initialProps: { items, seq },
+    });
+
+  it("shows a saved row until the server renders one as new", () => {
+    const { result, rerender } = hook([a, b, c], 10);
+    act(() => result.current.merge({ seq: 12, items: [{ ...a, position: "a4" }], gone: ["b"] }));
+    expect(titles(result.current.items)).toEqual(["C", "A"]);
+    // A refresh read before the save still shows its rows, not the old ones.
+    rerender({ items: [a, b, c], seq: 11 });
+    expect(titles(result.current.items)).toEqual(["C", "A"]);
+    // One read after it wins, whatever it says.
+    rerender({ items: [b, a, c], seq: 12 });
+    expect(titles(result.current.items)).toEqual(["B", "A", "C"]);
+  });
+
+  it("keeps the newer row when an older one lands after it", () => {
+    const { result } = hook([a, b], 10);
+    act(() => result.current.merge({ seq: 15, items: [{ ...a, title: "new" }], gone: [] }));
+    act(() => result.current.merge({ seq: 13, items: [{ ...a, title: "old" }], gone: [] }));
+    expect(titles(result.current.items)).toEqual(["new", "B"]);
+  });
+
+  it("keeps the others' order when a row moves, as the Done view's older ones aren't in position order", () => {
+    const older = { ...base, id: "z", title: "Older", position: "a0", completedAt: 1 };
+    const { result } = hook([b, c, older], 10);
+    act(() => result.current.merge({ seq: 11, items: [{ ...b, position: "a5" }], gone: [] }));
+    expect(titles(result.current.items)).toEqual(["C", "Older", "B"]);
+  });
+
+  it("adds a new row in position order, and ignores what isn't a saved result", () => {
+    const { result } = hook([a, c], 10);
+    act(() => result.current.merge(undefined));
+    act(() => result.current.merge({ seq: 11, items: [b], gone: [] }));
+    expect(titles(result.current.items)).toEqual(["A", "B", "C"]);
+  });
+
+  it("adds a finished checklist whole, as the board shows it, and leaves out one finished before the board's", () => {
+    // The board shows what's open or finished since 100.
+    const parent = { ...base, id: "p", title: "Parent", position: "a5", completedAt: 50 };
+    const line = { ...base, id: "l", title: "Line", position: "a6", parentId: "p", completedAt: 40 };
+    const { result } = hook([a], 10, 100);
+    act(() => result.current.merge({ seq: 11, items: [parent, line], gone: [] }));
+    expect(titles(result.current.items)).toEqual(["A"]);
+    // A line reopened: back come its parent and finished siblings.
+    const reopened = { ...base, id: "r", title: "Reopened", position: "a7", parentId: "p" };
+    act(() => result.current.merge({ seq: 12, items: [parent, line, reopened], gone: [] }));
+    expect(titles(result.current.items)).toEqual(["A", "Parent", "Line", "Reopened"]);
+  });
+
+  it("puts an older item back in its place once it's reopened", () => {
+    const older = { ...base, id: "z", title: "Older", position: "a0", completedAt: 50 };
+    const { result } = hook([a, b, older], 10, 100);
+    act(() => result.current.merge({ seq: 11, items: [{ ...older, completedAt: null }], gone: [] }));
+    expect(titles(result.current.items)).toEqual(["Older", "A", "B"]);
+  });
+
+  it("says what the board's saves made it follow, until the server renders as new", () => {
+    const { result, rerender } = hook([a], 10);
+    act(() => result.current.merge({ seq: 12, items: [a], gone: [], from: 11, followed: ["a"] }));
+    expect(result.current.followed).toEqual(["a"]);
+    rerender({ items: [a], seq: 12 });
+    expect(result.current.followed).toEqual([]);
+  });
+
+  it("tells its own saves' changes from anyone else's", () => {
+    const { result } = hook([a], 10);
+    act(() => result.current.merge({ seq: 14, items: [a], gone: [], from: 12 }));
+    expect(result.current.own(13, 14)).toBe(true);
+    // A batch with a change from before the save is someone else's too.
+    expect(result.current.own(12, 14)).toBe(false);
+    expect(result.current.own(13, 15)).toBe(false);
   });
 });

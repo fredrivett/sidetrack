@@ -14,6 +14,7 @@ import {
 } from "@/core/agentWebhooks";
 import {
   endAgentSession as endAgentSessionCore,
+  listOpenAgentSessions as listOpenAgentSessionsCore,
   requestWork as requestWorkCore,
   stopRequest as stopRequestCore,
 } from "@/core/agentSessions";
@@ -61,7 +62,15 @@ import {
   mentionNotice as mentionNoticeCore,
   updateComment as updateCommentCore,
 } from "@/core/comments";
-import { getDb } from "@/core/db";
+import { changeSeq } from "@/core/changes";
+import { type Db, getDb } from "@/core/db";
+import {
+  addSmartMatch as addSmartMatchCore,
+  findSmartCandidates as findSmartCandidatesCore,
+  getSmartDue as getSmartDueCore,
+  removeSmartMatch as removeSmartMatchCore,
+  setSmartRule as setSmartRuleCore,
+} from "@/core/smartDue";
 import {
   addFeedbackFollowUp as addFeedbackFollowUpCore,
   submitFeedback as submitFeedbackCore,
@@ -73,8 +82,11 @@ import {
   deleteItem as deleteItemCore,
   getItem as getItemCore,
   getItemWithSubItems as getItemWithSubItemsCore,
+  groupIds as groupIdsCore,
   type ItemSort,
   listDoneBefore as listDoneBeforeCore,
+  readItems as readItemsCore,
+  type Saved,
   reorderItem as reorderItemCore,
   setItemOrder as setItemOrderCore,
   setItemParent as setItemParentCore,
@@ -108,7 +120,7 @@ import {
   markNotificationsRead as markNotificationsReadCore,
   setNotificationLevel as setNotificationLevelCore,
 } from "@/core/notifications";
-import { setFollowing as setFollowingCore } from "@/core/follows";
+import { followersOf as followersOfCore, setFollowing as setFollowingCore } from "@/core/follows";
 import {
   type PushSubscriptionInput,
   forgetPushSubscriptions as forgetPushSubscriptionsCore,
@@ -116,7 +128,7 @@ import {
   removePushSubscription as removePushSubscriptionCore,
   savePushSubscription as savePushSubscriptionCore,
 } from "@/core/push";
-import type { AuditSource, ListRole, NotificationLevel, ProjectStatus, SpaceColor, SpaceRole } from "@/core/schema";
+import type { AuditSource, ListRole, NotificationLevel, OnlyWithin, ProjectStatus, SpaceColor, SpaceRole } from "@/core/schema";
 import { invitePeople as invitePeopleCore, type InvitePlace } from "@/core/invites";
 import {
   acceptSpaceInvite as acceptSpaceInviteCore,
@@ -174,6 +186,19 @@ const SOURCE: AuditSource = "web";
 
 function refresh() {
   revalidatePath("/");
+}
+
+/**
+ * The rows of `ids` for the board to put in, instead of reloading it all
+ * (useSavedItems), for a save made after change number `from` (read just
+ * before it, so the changes after it are the save's own). Says which of them
+ * the viewer follows: assigning themselves or adding an item makes them
+ * follow it, which no row shows.
+ */
+function savedRows(db: Db, userId: string, from: number, ids: string[]): Saved {
+  const saved = readItemsCore(db, userId, ids);
+  const followed = saved.items.flatMap((i) => (followersOfCore(db, i.id).includes(userId) ? [i.id] : []));
+  return { ...saved, from, followed };
 }
 
 export async function createProjectAction(input: {
@@ -285,12 +310,14 @@ export async function inviteMemberAction(
   role: ListRole = "editor",
   /** They'll see only the items assigned to you. */
   onlyMine = false,
+  /** With onlyMine, only those in your today or week. */
+  within: OnlyWithin | null = null,
 ) {
   const session = await getCurrentSession();
   if (!session) redirect("/login");
   const userId = session.user.id;
   const { db } = getDb();
-  const member = inviteMemberCore(db, userId, projectId, person, SOURCE, role, { onlyMine });
+  const member = inviteMemberCore(db, userId, projectId, person, SOURCE, role, { onlyMine, within });
 
   // Notify the invitee by email, once the invite has answered: it's
   // best-effort (the in-app banner is the source of truth, so notifyInvite
@@ -304,6 +331,7 @@ export async function inviteMemberAction(
       url: await appBaseUrl(),
       role,
       onlyMine,
+      within,
     };
     after(() => notifyInvite(invite));
   }
@@ -335,7 +363,7 @@ export async function invitePeopleAction(people: string[], places: InvitePlace[]
       url,
       kind: named[0]?.kind,
       role: named[0]?.role,
-      places: named.map(({ name, kind, role, onlyMine }) => ({ name, kind, role, onlyMine })),
+      places: named.map(({ name, kind, role, onlyMine, within }) => ({ name, kind, role, onlyMine, within })),
     };
     after(() => notifyInvite(invite));
   }
@@ -349,10 +377,11 @@ export async function setMemberRoleAction(
   targetUserId: string,
   role: ListRole,
   onlyMine?: boolean,
+  within?: OnlyWithin | null,
 ) {
   const userId = await requireUserId();
   const { db } = getDb();
-  setMemberRoleCore(db, userId, projectId, targetUserId, role, SOURCE, onlyMine);
+  setMemberRoleCore(db, userId, projectId, targetUserId, role, SOURCE, onlyMine, within);
   refresh();
 }
 
@@ -430,11 +459,13 @@ export async function inviteSpaceMemberAction(
   role: Exclude<SpaceRole, "admin"> = "member",
   /** They'll see only the items assigned to you. */
   onlyMine = false,
+  /** With onlyMine, only those in your today or week. */
+  within: OnlyWithin | null = null,
 ) {
   const session = await getCurrentSession();
   if (!session) redirect("/login");
   const { db } = getDb();
-  const member = inviteSpaceMemberCore(db, session.user.id, spaceId, person, SOURCE, role, { onlyMine });
+  const member = inviteSpaceMemberCore(db, session.user.id, spaceId, person, SOURCE, role, { onlyMine, within });
   // Best-effort and after answering, like a list invite.
   const space = listSpacesCore(db, session.user.id).find((s) => s.id === spaceId);
   if (member.email && space) {
@@ -446,6 +477,7 @@ export async function inviteSpaceMemberAction(
       kind: "space" as const,
       role,
       onlyMine,
+      within,
     };
     after(() => notifyInvite(invite));
   }
@@ -466,10 +498,11 @@ export async function setSpaceMemberRoleAction(
   targetUserId: string,
   role: SpaceRole,
   onlyMine?: boolean,
+  within?: OnlyWithin | null,
 ) {
   const userId = await requireUserId();
   const { db } = getDb();
-  setSpaceMemberRoleCore(db, userId, spaceId, targetUserId, role, SOURCE, onlyMine);
+  setSpaceMemberRoleCore(db, userId, spaceId, targetUserId, role, SOURCE, onlyMine, within);
   refresh();
 }
 
@@ -591,7 +624,58 @@ export async function updateItemAction(
   const labelEmoji = projectId
     ? await withAutoLabelEmoji(db, userId, projectId, patch.labels, patch.labelEmoji)
     : patch.labelEmoji;
-  const it = updateItemCore(db, userId, id, { ...patch, labelEmoji }, SOURCE);
+  const from = changeSeq();
+  updateItemCore(db, userId, id, { ...patch, labelEmoji }, SOURCE);
+  // Labels can make new ones on the list, which the rows don't carry.
+  if (patch.labels === undefined) return savedRows(db, userId, from, [id]);
+  refresh();
+}
+
+/** A checklist line added from the item's dialog, with its parent (it can reopen it). */
+export async function addSubItemAction(parentId: string, title: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const parent = getItemCore(db, userId, parentId);
+  if (!parent) throw new Error(`item not found: ${parentId}`);
+  const from = changeSeq();
+  const it = addItemCore(db, userId, { projectId: parent.projectId, title, parentId }, SOURCE);
+  return savedRows(db, userId, from, [it.id, parentId]);
+}
+
+/** Give an item a smart due date, change its rule or lead, or (null) make it plain again. */
+export async function setSmartRuleAction(id: string, rule: { rule: string; lead: number } | null) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const it = setSmartRuleCore(db, userId, id, rule, SOURCE);
+  refresh();
+  return it;
+}
+
+export async function getSmartDueAction(id: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  return getSmartDueCore(db, userId, id);
+}
+
+export async function findSmartCandidatesAction(id: string, query: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  return findSmartCandidatesCore(db, userId, id, query);
+}
+
+export async function addSmartMatchAction(id: string, anchorId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const it = addSmartMatchCore(db, userId, id, anchorId, null, SOURCE);
+  refresh();
+  return it;
+}
+
+/** Say a match isn't one: it stops counting and isn't matched again. */
+export async function removeSmartMatchAction(id: string, anchorId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const it = removeSmartMatchCore(db, userId, id, anchorId, SOURCE);
   refresh();
   return it;
 }
@@ -599,17 +683,22 @@ export async function updateItemAction(
 export async function completeItemAction(id: string) {
   const userId = await requireUserId();
   const { db } = getDb();
-  const it = completeItemCore(db, userId, id, SOURCE);
-  refresh();
-  return it;
+  // Completing ends the agents' sessions on it, which no row shows.
+  const working = groupIdsCore(db, userId, id).some(
+    (i) => listOpenAgentSessionsCore(db, userId, i).length > 0,
+  );
+  const from = changeSeq();
+  completeItemCore(db, userId, id, SOURCE);
+  if (working) refresh();
+  return savedRows(db, userId, from, groupIdsCore(db, userId, id));
 }
 
 export async function uncompleteItemAction(id: string) {
   const userId = await requireUserId();
   const { db } = getDb();
-  const it = uncompleteItemCore(db, userId, id, SOURCE);
-  refresh();
-  return it;
+  const from = changeSeq();
+  uncompleteItemCore(db, userId, id, SOURCE);
+  return savedRows(db, userId, from, groupIdsCore(db, userId, id));
 }
 
 export async function listDoneBeforeAction(opts: {
@@ -633,16 +722,18 @@ export async function getItemWithSubItemsAction(id: string) {
 export async function reorderItemAction(id: string, ref: string) {
   const userId = await requireUserId();
   const { db } = getDb();
-  const it = reorderItemCore(db, userId, id, ref, SOURCE);
-  refresh();
-  return it;
+  const from = changeSeq();
+  reorderItemCore(db, userId, id, ref, SOURCE);
+  // Only its own position changes.
+  return savedRows(db, userId, from, [id]);
 }
 
 export async function setItemsCollapsedAction(ids: string[], collapsed: boolean) {
   const userId = await requireUserId();
   const { db } = getDb();
+  const from = changeSeq();
   setItemsCollapsedCore(db, userId, ids, collapsed);
-  refresh();
+  return savedRows(db, userId, from, ids);
 }
 
 // The order from before the sort, null when it was already sorted, or false
@@ -671,9 +762,11 @@ export async function setItemParentAction(
 ) {
   const userId = await requireUserId();
   const { db } = getDb();
-  const it = setItemParentCore(db, userId, id, parentId, SOURCE, position);
-  refresh();
-  return it;
+  // The checklist it leaves and the one it joins.
+  const left = groupIdsCore(db, userId, id);
+  const from = changeSeq();
+  setItemParentCore(db, userId, id, parentId, SOURCE, position);
+  return savedRows(db, userId, from, [...left, ...groupIdsCore(db, userId, id)]);
 }
 
 export async function previewMoveItemAction(id: string, projectId: string) {
@@ -717,8 +810,11 @@ export async function moveItemAction(
 export async function deleteItemAction(id: string) {
   const userId = await requireUserId();
   const { db } = getDb();
+  // Its sub-items go with it.
+  const ids = groupIdsCore(db, userId, id);
+  const from = changeSeq();
   deleteItemCore(db, userId, id, SOURCE);
-  refresh();
+  return savedRows(db, userId, from, ids);
 }
 
 /** Add a photo's reviewed lines to the board (the review screen's Add). */
