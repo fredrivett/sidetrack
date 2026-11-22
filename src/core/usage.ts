@@ -1,5 +1,5 @@
-import { and, asc, count, eq, gte, sql } from "drizzle-orm";
-import { users } from "./auth-schema";
+import { and, asc, count, eq, gte, max, sql } from "drizzle-orm";
+import { apiKeys, sessions, users } from "./auth-schema";
 import type { Db } from "./db";
 import { auditLog } from "./schema";
 
@@ -15,13 +15,27 @@ export interface UserUsage {
   createdAt: number;
   /** Changes made on each of `DailyUsage.days`, in the same order. */
   perDay: number[];
+  /** Of `perDay`, the changes made through an agent (MCP). */
+  agentPerDay: number[];
   /** Changes made over the whole range. */
   total: number;
+  /** Of `total`, the changes made through an agent. */
+  agentTotal: number;
+  /** The agents (API key names, as they were) that made them, most used first. */
+  agents: string[];
+  /**
+   * When they were last signed in on the web or used an agent key, or null.
+   * Sessions note their use at most once a day, so a web visit can be up to
+   * a day later than this.
+   */
+  lastSeenAt: number | null;
   /** When they last made a change, ever, or null if they never have. */
   lastActiveAt: number | null;
 }
 
 export interface DailyUsage {
+  /** When it was counted. */
+  now: number;
   /** The days covered, oldest first, as YYYY-MM-DD in `timeZone`. */
   days: string[];
   /** Everyone, most active over the range first, then newest signup first. */
@@ -66,19 +80,60 @@ export function dailyUsage(
   // range on the (actor, ts) index, rather than reading the whole log.
   // Starting from users also leaves out the system actor and deleted people.
   const slots = db
-    .select({ actor: auditLog.actor, slot, n: count() })
+    .select({
+      actor: auditLog.actor,
+      slot,
+      n: count(),
+      agent: sql<number>`sum(${auditLog.source} = 'mcp')`,
+    })
     .from(users)
     .crossJoin(auditLog)
     .where(and(eq(auditLog.actor, users.id), gte(auditLog.ts, since)))
     .groupBy(auditLog.actor, slot)
     .all();
-  const perDay = new Map<string, number[]>();
-  for (const { actor, slot, n } of slots) {
+  const perDay = new Map<string, { all: number[]; agent: number[] }>();
+  for (const { actor, slot, n, agent } of slots) {
     const i = index.get(dayKey(slot * SLOT_MS, format));
     if (i === undefined) continue;
     let counts = perDay.get(actor);
-    if (!counts) perDay.set(actor, (counts = Array(days).fill(0)));
-    counts[i] += n;
+    if (!counts) perDay.set(actor, (counts = { all: Array(days).fill(0), agent: Array(days).fill(0) }));
+    counts.all[i] += n;
+    counts.agent[i] += agent;
+  }
+
+  // Which agents made them, from the same rows (the name is a snapshot, so a
+  // revoked or renamed key still shows as it was).
+  const agents = new Map<string, string[]>();
+  for (const { actor, name } of db
+    .select({ actor: auditLog.actor, name: auditLog.agentName })
+    .from(users)
+    .crossJoin(auditLog)
+    .where(and(eq(auditLog.actor, users.id), gte(auditLog.ts, now - days * DAY_MS), eq(auditLog.source, "mcp")))
+    .groupBy(auditLog.actor, auditLog.agentName)
+    .orderBy(sql`count(*) desc`)
+    .all()) {
+    if (!name) continue;
+    agents.set(actor, [...(agents.get(actor) ?? []), name]);
+  }
+
+  // Sessions and keys are a few rows per person: one pass over each.
+  const seen = new Map<string, number>();
+  const see = (userId: string, ts: number | null) => {
+    if (ts !== null && ts > (seen.get(userId) ?? 0)) seen.set(userId, ts);
+  };
+  for (const { userId, ts } of db
+    .select({ userId: sessions.userId, ts: max(sessions.updatedAt) })
+    .from(sessions)
+    .groupBy(sessions.userId)
+    .all()) {
+    see(userId, ts?.getTime() ?? null);
+  }
+  for (const { userId, ts } of db
+    .select({ userId: apiKeys.userId, ts: max(apiKeys.lastUsedAt) })
+    .from(apiKeys)
+    .groupBy(apiKeys.userId)
+    .all()) {
+    see(userId, ts?.getTime() ?? null);
   }
 
   const rows = db
@@ -97,15 +152,20 @@ export function dailyUsage(
     .orderBy(asc(users.createdAt))
     .all()
     .map((user): UserUsage => {
-      const counts = perDay.get(user.id) ?? Array(days).fill(0);
+      const counts = perDay.get(user.id) ?? { all: Array(days).fill(0), agent: Array(days).fill(0) };
       return {
         ...user,
         createdAt: user.createdAt.getTime(),
-        perDay: counts,
-        total: counts.reduce((sum, n) => sum + n, 0),
+        perDay: counts.all,
+        agentPerDay: counts.agent,
+        total: counts.all.reduce((sum, n) => sum + n, 0),
+        agentTotal: counts.agent.reduce((sum, n) => sum + n, 0),
+        agents: agents.get(user.id) ?? [],
+        // A change is being seen too, and dates it to the minute.
+        lastSeenAt: Math.max(seen.get(user.id) ?? 0, user.lastActiveAt ?? 0) || null,
       };
     })
     .sort((a, b) => b.total - a.total || b.createdAt - a.createdAt);
 
-  return { days: keys, users: rows };
+  return { now, days: keys, users: rows };
 }

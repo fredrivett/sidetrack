@@ -1,19 +1,21 @@
 import { nanoid } from "nanoid";
 import { describe, expect, it } from "vitest";
 import { SYSTEM_ACTOR } from "./audit";
+import { apiKeys, sessions } from "./auth-schema";
 import { auditLog } from "./schema";
 import { createTestDb, createTestUser } from "./test-helpers";
 import { dailyUsage } from "./usage";
 
 type TestDb = ReturnType<typeof createTestDb>["db"];
 
-function change(db: TestDb, actor: string, iso: string) {
+function change(db: TestDb, actor: string, iso: string, agentName?: string) {
   db.insert(auditLog)
     .values({
       id: nanoid(12),
       ts: Date.parse(iso),
       actor,
-      source: "web",
+      source: agentName ? "mcp" : "web",
+      agentName,
       action: "update",
       entityType: "item",
       entityId: "i1",
@@ -51,6 +53,40 @@ describe("dailyUsage", () => {
     ]);
     expect(usage.users.find((u) => u.id === idle)?.lastActiveAt).toBeNull();
     expect(usage.users.find((u) => u.id === bob)?.lastActiveAt).toBe(Date.parse("2026-11-20T12:00:00Z"));
+  });
+
+  it("counts changes made through agents, and when each person was last seen", () => {
+    const { db } = createTestDb();
+    const ann = createTestUser(db, { name: "Ann" });
+    const bob = createTestUser(db, { name: "Bob" });
+    const cat = createTestUser(db, { name: "Cat" });
+    change(db, ann, "2026-11-21T10:00:00Z");
+    change(db, ann, "2026-11-21T11:00:00Z", "Amp");
+    change(db, ann, "2026-11-22T09:00:00Z", "Claude");
+    change(db, ann, "2026-11-22T09:05:00Z", "Claude");
+    // Ann's latest sign-in is older than her last change: the change wins.
+    const at = (iso: string) => new Date(iso);
+    for (const [userId, updated] of [
+      [ann, "2026-11-20T08:00:00Z"],
+      [bob, "2026-11-19T08:00:00Z"],
+      [bob, "2026-11-21T08:00:00Z"],
+    ] as const) {
+      db.insert(sessions)
+        .values({ id: nanoid(), token: nanoid(), userId, createdAt: at("2026-11-01T00:00:00Z"), updatedAt: at(updated), expiresAt: at("2026-12-01T00:00:00Z") })
+        .run();
+    }
+    // Cat only uses an agent key, which made no change.
+    db.insert(apiKeys)
+      .values({ id: nanoid(), userId: cat, name: "Amp", prefix: "sk_x", keyHash: nanoid(), createdAt: at("2026-11-01T00:00:00Z"), lastUsedAt: at("2026-11-22T11:00:00Z") })
+      .run();
+
+    const usage = dailyUsage(db, { days: 2, timeZone: "UTC", now: Date.parse("2026-11-22T12:00:00Z") });
+    const of = (id: string) => usage.users.find((u) => u.id === id) ?? expect.fail(`no row for ${id}`);
+    expect([of(ann).agentPerDay, of(ann).agentTotal, of(ann).total, of(ann).agents]).toEqual([[1, 2], 3, 4, ["Claude", "Amp"]]);
+    expect(of(ann).lastSeenAt).toBe(Date.parse("2026-11-22T09:05:00Z"));
+    expect(of(bob).lastSeenAt).toBe(Date.parse("2026-11-21T08:00:00Z"));
+    expect(of(cat).lastSeenAt).toBe(Date.parse("2026-11-22T11:00:00Z"));
+    expect([of(cat).agentTotal, of(cat).agents]).toEqual([0, []]);
   });
 
   it("splits days at midnight in a time zone off the hour", () => {
