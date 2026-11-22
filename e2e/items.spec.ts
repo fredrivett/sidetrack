@@ -94,3 +94,65 @@ test("adds what an agent read off a photo, after review", async ({ page, user })
   await row(page, "Descale coffee machine").click();
   await expect(page.getByRole("dialog").getByText(/^From a photo/)).toBeVisible();
 });
+
+test("reorders a checklist from the Brief and from the item's dialog", async ({ page, user }) => {
+  const home = user.addList("Home");
+  user.addItem(home.id, "Spring clean", [], undefined, ["Windows", "Oven", "Garage"]);
+  // dnd-kit moves the row on from where the rows are measured, so each key
+  // waits for the drag to say where the row is now (from the moment it's
+  // picked up), and for the rows to be still: the card lifting, rows
+  // sliding aside.
+  const announced = async (text: string) => {
+    await expect(page.getByText(text, { exact: true })).toBeAttached();
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            // Not the page's endless ones, such as a loading pulse.
+            () =>
+              document
+                .getAnimations()
+                .filter((a) => a.effect?.getTiming().iterations !== Infinity).length,
+          ),
+        { intervals: [20] },
+      )
+      .toBe(0);
+  };
+
+  // On the Brief, Garage goes up one, from the keyboard.
+  await page.goto("/brief");
+  const steps = page.locator("[data-parent-id]");
+  await expect(steps).toHaveText(["Windows", "Oven", "Garage"]);
+  await steps.filter({ has: row(page, "Garage") }).focus();
+  await page.keyboard.press("Space");
+  await announced("“Garage” is step 3 of 3.");
+  await page.keyboard.press("ArrowUp");
+  await announced("“Garage” is step 2 of 3.");
+  await page.keyboard.press("Space");
+  await expect(steps).toHaveText(["Windows", "Garage", "Oven"]);
+
+  // In the dialog, Windows goes to the end; Escape on the way only puts it back.
+  await row(page, "Spring clean").click();
+  const dialog = page.getByRole("dialog", { name: "Spring clean" });
+  const lines = dialog.getByRole("button", { name: /^Reorder / });
+  await expect(lines).toHaveText(["Windows", "Garage", "Oven"]);
+  await dialog.getByRole("button", { name: "Reorder Windows" }).focus();
+  await page.keyboard.press("Space");
+  await announced("“Windows” is step 1 of 3.");
+  await page.keyboard.press("Escape");
+  await announced("Put “Windows” back.");
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Space");
+  await announced("“Windows” is step 1 of 3.");
+  await page.keyboard.press("ArrowDown");
+  await announced("“Windows” is step 2 of 3.");
+  await page.keyboard.press("ArrowDown");
+  await announced("“Windows” is step 3 of 3.");
+  await page.keyboard.press("Space");
+  await expect(lines).toHaveText(["Garage", "Oven", "Windows"]);
+
+  // Saved, not only shown.
+  await page.keyboard.press("Escape");
+  await page.reload();
+  await expect(steps).toHaveText(["Garage", "Oven", "Windows"]);
+});

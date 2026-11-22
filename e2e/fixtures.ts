@@ -77,8 +77,14 @@ export type User = {
   password: string;
   /** Adds a list with these items, as if the user had made it. */
   addList(name: string, items?: string[]): { id: string };
-  /** Adds an item to one of their lists, assigned to these people, due on a day ("YYYY-MM-DD"). */
-  addItem(listId: string, title: string, assigneeIds?: string[], dueDate?: string): void;
+  /** Adds an item to one of their lists, assigned to these people, due on a day ("YYYY-MM-DD"), with these sub-items. */
+  addItem(
+    listId: string,
+    title: string,
+    assigneeIds?: string[],
+    dueDate?: string,
+    subItems?: string[],
+  ): void;
   /** Adds a Space of theirs, with these lists of theirs in it. */
   addSpace(name: string, listIds?: string[]): { id: string };
   /** A photo an agent read these lines off, uploaded and waiting for review. */
@@ -112,8 +118,8 @@ export const test = base.extend<{ user: User }>({
         for (const title of items) addItem(db, response.user.id, { projectId: project.id, title }, SOURCE);
         return { id: project.id };
       },
-      addItem(listId, title, assigneeIds = [], dueDate) {
-        addItem(db, response.user.id, { projectId: listId, title, assigneeIds, dueDate }, SOURCE);
+      addItem(listId, title, assigneeIds = [], dueDate, subItems) {
+        addItem(db, response.user.id, { projectId: listId, title, assigneeIds, dueDate, subItems }, SOURCE);
       },
       addSpace(name, listIds = []) {
         const space = createSpace(db, response.user.id, { name }, SOURCE);

@@ -73,6 +73,8 @@ import { DueBadge, WaitingBadge } from "./DueBadge";
 import { RepeatBadge } from "./RepeatBadge";
 import { SmartDuePanel } from "./SmartDuePanel";
 import { useListAccess } from "./list-access";
+import { SortableChecklist } from "./ItemList";
+import type { RowDrag } from "./ItemRow";
 import { MoveToListPicker, useMoveItem } from "./MoveItem";
 import { AssigneeChip, CHIP, DueChip, EMPTY_CHIP, Field, RepeatChip } from "./DialogFields";
 import { InlineCode, Markdown } from "./Markdown";
@@ -363,68 +365,86 @@ function Checklist({
     });
   }
 
+  // A sub-item's line: the row that drags to reorder it, or (`lifted`) the
+  // copy that follows the pointer.
+  function step(child: Item, drag: RowDrag | undefined, lifted = false) {
+    const done = child.completedAt !== null;
+    const childAssigneeIds = assigneesById[child.id] ?? child.assigneeIds;
+    const assigned = assignees.filter((a) => childAssigneeIds.includes(a.userId));
+    return (
+      <div
+        {...drag?.attributes}
+        {...drag?.listeners}
+        ref={drag?.setActivatorNodeRef}
+        aria-label={drag ? `Reorder ${child.title}` : undefined}
+        data-item-ref={lifted ? undefined : formatItemRef(prefix, child.number)}
+        className={`flex items-center gap-2 rounded-md px-1 py-0.5 outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 ${
+          drag ? "touch-manipulation" : ""
+        } ${
+          // While dragged, the line stays behind as the slot it would drop into.
+          drag?.isDragging ? "bg-neutral-100 *:invisible dark:bg-neutral-800/50" : ""
+        }`}
+      >
+        <Checkbox
+          checked={done}
+          onCheckedChange={() => setCompleted(child, !done)}
+          readOnly={readOnly}
+          aria-label={`${readOnly ? (done ? "Done:" : "Not done:") : done ? "Uncomplete" : "Complete"} ${child.title}`}
+        />
+        <button
+          type="button"
+          autoFocus={!lifted && child.id === focusId}
+          onClick={() => onOpenItem(child)}
+          className={`min-w-0 flex-1 truncate text-left text-sm hover:underline ${
+            done ? "text-neutral-400 line-through" : ""
+          }`}
+        >
+          {child.title}
+        </button>
+        {readOnly ? (
+          assigned.length > 0 && <AvatarStack users={assigned} size={18} />
+        ) : (
+        <DropdownMenu
+          open={pickerFor === child.id}
+          onOpenChange={(o) => onPickerFor(o ? child.id : null)}
+        >
+          <DropdownMenuTrigger
+            aria-label={
+              assigned.length
+                ? `${child.title}: assigned to ${assigneeNames(assigned)}. Change assignees`
+                : `Assign ${child.title}`
+            }
+            className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full touch:h-8 touch:min-w-8 text-neutral-300 transition hover:bg-neutral-100 hover:text-neutral-600 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+          >
+            {assigned.length ? (
+              <AvatarStack users={assigned} size={18} ringClassName="ring-popover" />
+            ) : (
+              <UserRound className="size-4" />
+            )}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent data-assignee-picker align="end" className="w-52">
+            <AssigneeOptions
+              selected={childAssigneeIds}
+              assignees={assignees}
+              viewerId={viewerId}
+              onChange={(assigneeIds) => onAssign(child.id, assigneeIds)}
+            />
+          </DropdownMenuContent>
+        </DropdownMenu>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-1">
-      {items.map((child) => {
-        const done = child.completedAt !== null;
-        const childAssigneeIds = assigneesById[child.id] ?? child.assigneeIds;
-        const assigned = assignees.filter((a) => childAssigneeIds.includes(a.userId));
-        return (
-          <div
-            key={child.id}
-            data-item-ref={formatItemRef(prefix, child.number)}
-            className="flex items-center gap-2 px-1 py-0.5"
-          >
-            <Checkbox
-              checked={done}
-              onCheckedChange={() => setCompleted(child, !done)}
-              readOnly={readOnly}
-              aria-label={`${readOnly ? (done ? "Done:" : "Not done:") : done ? "Uncomplete" : "Complete"} ${child.title}`}
-            />
-            <button
-              type="button"
-              autoFocus={child.id === focusId}
-              onClick={() => onOpenItem(child)}
-              className={`min-w-0 flex-1 truncate text-left text-sm hover:underline ${
-                done ? "text-neutral-400 line-through" : ""
-              }`}
-            >
-              {child.title}
-            </button>
-            {readOnly ? (
-              assigned.length > 0 && <AvatarStack users={assigned} size={18} />
-            ) : (
-            <DropdownMenu
-              open={pickerFor === child.id}
-              onOpenChange={(o) => onPickerFor(o ? child.id : null)}
-            >
-              <DropdownMenuTrigger
-                aria-label={
-                  assigned.length
-                    ? `${child.title}: assigned to ${assigneeNames(assigned)}. Change assignees`
-                    : `Assign ${child.title}`
-                }
-                className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full touch:h-8 touch:min-w-8 text-neutral-300 transition hover:bg-neutral-100 hover:text-neutral-600 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
-              >
-                {assigned.length ? (
-                  <AvatarStack users={assigned} size={18} ringClassName="ring-popover" />
-                ) : (
-                  <UserRound className="size-4" />
-                )}
-              </DropdownMenuTrigger>
-              <DropdownMenuContent data-assignee-picker align="end" className="w-52">
-                <AssigneeOptions
-                  selected={childAssigneeIds}
-                  assignees={assignees}
-                  viewerId={viewerId}
-                  onChange={(assigneeIds) => onAssign(child.id, assigneeIds)}
-                />
-              </DropdownMenuContent>
-            </DropdownMenu>
-            )}
-          </div>
-        );
-      })}
+      <SortableChecklist
+        items={items}
+        disabled={readOnly}
+        lifted={(child) => step(child, undefined, true)}
+      >
+        {(child, drag) => step(child, drag)}
+      </SortableChecklist>
       {adding.map(({ key, title }) => (
         <div
           key={`adding-${key}`}

@@ -47,7 +47,12 @@ function ResponsiveDialog({
   // press outside that closes the dialog.
   function change(
     next: boolean,
-    details: { reason: string; event: Event; cancel: () => void }
+    details: {
+      reason: string
+      event: Event
+      cancel: () => void
+      allowPropagation: () => void
+    }
   ) {
     if (
       details.reason === "outside-press" &&
@@ -55,6 +60,13 @@ function ResponsiveDialog({
       details.event.target.closest("[data-sonner-toaster]")
     ) {
       details.cancel()
+      return
+    }
+    // Escape during a keyboard drag puts the row back: it goes on to
+    // dnd-kit and leaves the dialog open.
+    if (details.reason === "escape-key" && pickedUp(details.event)) {
+      details.cancel()
+      details.allowPropagation()
       return
     }
     onOpenChange(next)
@@ -78,6 +90,21 @@ function ResponsiveDialog({
   )
 }
 
+// A row picked up from the keyboard to drag (dnd-kit's sortable rows, such as
+// the item's checklist): the keys that move or drop it are dnd-kit's, which
+// listens on the document.
+const pickedUp = (event: Event | React.KeyboardEvent) =>
+  event.target instanceof Element &&
+  event.target.closest('[aria-roledescription="sortable"][aria-pressed="true"]') !== null
+
+// Base UI's popup stops the arrow keys there, for its own lists' focus,
+// which would keep a picked-up row from moving.
+function leaveDragKeys(
+  e: React.KeyboardEvent & { preventBaseUIHandler?: () => void }
+) {
+  if (pickedUp(e)) e.preventBaseUIHandler?.()
+}
+
 /** A column: callers give it a fixed header, a scrolling body
  * (`min-h-0 flex-1 overflow-y-auto`) and a fixed footer. */
 function ResponsiveDialogContent({
@@ -94,6 +121,7 @@ function ResponsiveDialogContent({
     <DialogContent
       showCloseButton={false}
       initialFocus={initialFocus}
+      onKeyDown={leaveDragKeys}
       className={cn(
         "flex max-h-[85vh] flex-col gap-0 p-0 sm:max-w-lg",
         className
@@ -104,6 +132,7 @@ function ResponsiveDialogContent({
   ) : (
     <DrawerContent
       initialFocus={initialFocus}
+      onKeyDown={leaveDragKeys}
       // Lift the whole drawer above the on-screen keyboard. The keyboard
       // provider scrolls a field into view within the body, but undoes iOS's
       // own page scroll, so without this a short drawer (Share, New list)
