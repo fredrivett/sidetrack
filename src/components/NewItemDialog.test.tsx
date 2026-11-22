@@ -18,13 +18,23 @@ vi.mock("./ai-read", () => ({ aiRead: vi.fn(() => new Promise(() => {})) }));
 beforeAll(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date(2026, 10, 14, 12));
+  // Reduced motion: the dialog's views swap without animating, which jsdom can't.
   window.matchMedia = ((query: string) => ({
-    matches: false,
+    matches: query.includes("reduced-motion"),
     media: query,
     addEventListener() {},
     removeEventListener() {},
   })) as unknown as typeof window.matchMedia;
   Element.prototype.scrollIntoView = vi.fn();
+  // The dialog's views observe their height as they swap; jsdom has no ResizeObserver.
+  globalThis.ResizeObserver ??= class {
+    observe() {
+      return undefined;
+    }
+    disconnect() {
+      return undefined;
+    }
+  } as unknown as typeof ResizeObserver;
 });
 afterAll(() => vi.useRealTimers());
 afterEach(() => {
@@ -52,6 +62,8 @@ const dialog = (dueToday?: boolean, open = true, people: AssigneeView[] = []) =>
     open={open}
     onOpenChange={() => {}}
     onOpenItem={() => {}}
+    findItem={() => undefined}
+    renderItem={() => null}
     projects={[home]}
     assigneesByProject={{ p1: people }}
     viewerId="me"
@@ -255,7 +267,7 @@ describe("NewItemDialog", () => {
     vi.mocked(aiRead).mockImplementation(() => new Promise(() => {}));
   });
 
-  it("links an item it looks like it repeats, until that's ignored", async () => {
+  it("opens an item it looks like it repeats, with a way back, until that's ignored", async () => {
     vi.mocked(aiRead).mockResolvedValue({
       projectId: "p1",
       duplicate: { id: "i22", ref: "HOM-22", title: "Clean Bathroom" },
@@ -266,12 +278,19 @@ describe("NewItemDialog", () => {
       assigneeId: null,
       titleParts: [],
     });
-    const onOpenItem = vi.fn();
+    const bathroom = { id: "i22", title: "Clean Bathroom" } as Item;
     render(
       <NewItemDialog
         open
         onOpenChange={() => {}}
-        onOpenItem={onOpenItem}
+        onOpenItem={() => {}}
+        findItem={(id) => (id === bathroom.id ? bathroom : undefined)}
+        renderItem={(item, view) => (
+          <div>
+            {view.back}
+            <p>Details of {item.title}</p>
+          </div>
+        )}
         projects={[home]}
         assigneesByProject={{ p1: [] }}
         viewerId="me"
@@ -282,8 +301,12 @@ describe("NewItemDialog", () => {
     const title = () => screen.getByPlaceholderText<HTMLInputElement>("Add a task…");
     fireEvent.change(title(), { target: { value: "clean bathroom" } });
     await act(() => new Promise((r) => setTimeout(r, 500)));
+    // The item slides in, in the same dialog, with a way back to the form.
     fireEvent.click(screen.getByRole("button", { name: "HOM-22 “Clean Bathroom”" }));
-    expect(onOpenItem).toHaveBeenLastCalledWith(expect.objectContaining({ id: "i22" }));
+    expect(screen.getByText("Details of Clean Bathroom")).toBeTruthy();
+    expect(screen.queryByPlaceholderText("Add a task…")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Back to New item" }));
+    expect(title().value).toBe("clean bathroom");
     fireEvent.click(screen.getByRole("button", { name: "Ignore" }));
     expect(document.body.textContent).not.toContain("already on this list");
     // Ignored for this draft only: still ignored as it's edited.

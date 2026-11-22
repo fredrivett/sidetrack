@@ -29,15 +29,19 @@ import { useStoredState } from "@/components/use-stored-state";
 import { Input } from "@/components/ui/input";
 import {
   ResponsiveDialog,
+  ResponsiveDialogBackButton,
   ResponsiveDialogCloseButton,
   ResponsiveDialogContent,
   ResponsiveDialogDescription,
   ResponsiveDialogTitle,
+  ResponsiveDialogViews,
 } from "@/components/ui/responsive-dialog";
 import { useCopy } from "@/components/ui/use-copy";
 import { AssigneeOptions } from "./AssigneeOptions";
 import { CreatableCombobox } from "./CreatableCombobox";
 import { useToday } from "./use-day-start";
+import type { RenderItem } from "./GreetingDialog";
+import { useItemTrail } from "./use-item-detail-dialog";
 import {
   AssigneeChip,
   CHIP,
@@ -167,6 +171,8 @@ export function NewItemDialog({
   open,
   onOpenChange,
   onOpenItem,
+  findItem,
+  renderItem,
   projects,
   assigneesByProject,
   viewerId,
@@ -176,11 +182,12 @@ export function NewItemDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /**
-   * Opens an item: one just added, from its toast, or the open item Jev
-   * says it repeats, by id (it's on the board).
-   */
-  onOpenItem: (item: Item | { id: string }) => void;
+  /** Opens an added item, from its toast. */
+  onOpenItem: (item: Item) => void;
+  /** An item on the board, by id: the one Jev says it repeats, to show. */
+  findItem: (id: string) => Item | undefined;
+  /** An item's details, as a view of this dialog. */
+  renderItem: RenderItem;
   projects: ProjectView[];
   assigneesByProject: Record<string, AssigneeView[]>;
   viewerId: string;
@@ -246,6 +253,11 @@ export function NewItemDialog({
   // Which button the add in flight came from, for its "Adding…".
   const [addingAnother, setAddingAnother] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
+  // An item opened from here, such as the one it looks like it repeats,
+  // slides in with a way back to the form, as the Brief's lists do; none
+  // for the form.
+  const trail = useItemTrail((id) => findItem(id) !== undefined);
+  const shownItem = trail.id ? findItem(trail.id) : undefined;
   const subRef = useRef<HTMLInputElement>(null);
   // Each new step lands above the step input and pushes it down, out of view
   // once the dialog hits its max height, so scroll it back while typing.
@@ -276,6 +288,7 @@ export function NewItemDialog({
       setAssignOpen(false);
       setDueOpen(false);
       setAddedAny(false);
+      trail.reset(null);
     }
   }
 
@@ -433,7 +446,7 @@ export function NewItemDialog({
   const openPicker = useCallback(() => setAssignOpen(true), []);
   const toggleMe = () => setAssigneeIds(toggleAssignee(assigneeIds, viewerId));
   useItemShortcuts({
-    active: open && !pending && !dueOpen,
+    active: open && !pending && !dueOpen && !shownItem,
     onOpenPicker: projectId ? openPicker : () => {},
     onAssignToMe: projectId && canAssignSelf ? toggleMe : undefined,
     onDue: () => setDueOpen(true),
@@ -595,6 +608,22 @@ export function NewItemDialog({
   return (
     <ResponsiveDialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : close())}>
       <ResponsiveDialogContent initialFocus={titleRef}>
+        <ResponsiveDialogViews view={shownItem ? `item:${shownItem.id}` : "form"} direction={trail.direction}>
+        {shownItem ? (
+          renderItem(shownItem, {
+            back: (
+              <ResponsiveDialogBackButton
+                label={(trail.previousId && findItem(trail.previousId)?.title) || "New item"}
+                onClick={trail.back}
+              />
+            ),
+            open,
+            cameFrom: trail.direction === "back" ? trail.left : null,
+            onOpenItem: (next) => trail.goTo(next.id),
+            // Deleted or moved: back to the form.
+            onClose: () => trail.reset(null),
+          })
+        ) : (
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -633,7 +662,7 @@ export function NewItemDialog({
                   Looks like{" "}
                   <button
                     type="button"
-                    onClick={() => onOpenItem(duplicate)}
+                    onClick={() => trail.goTo(duplicate.id)}
                     className="font-medium underline decoration-amber-500/50 underline-offset-2 hover:decoration-current"
                   >
                     {duplicate.ref} “{duplicate.title}”
@@ -894,6 +923,8 @@ export function NewItemDialog({
             </Button>
           </div>
         </form>
+        )}
+        </ResponsiveDialogViews>
       </ResponsiveDialogContent>
     </ResponsiveDialog>
   );

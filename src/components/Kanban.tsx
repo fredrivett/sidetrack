@@ -42,7 +42,7 @@ import { DoneView } from "./DoneView";
 import { FilterMenu } from "./FilterMenu";
 import { InvitesBanner } from "./InvitesBanner";
 import { refreshIfCurrent } from "./LatestDeploy";
-import { ItemDetailDialog } from "./ItemDetailDialog";
+import { ItemDetailDialog, ItemDetailView } from "./ItemDetailDialog";
 import { BoardDrag } from "./BoardDrag";
 import { NewItemDialog } from "./NewItemDialog";
 import { NotificationsInbox } from "./NotificationsInbox";
@@ -682,6 +682,25 @@ export function Kanban({
   const paletteProject = projects.find(
     (p) => p.id === paletteDetail.item?.projectId,
   );
+  // What an item's details show, wherever they open over the board.
+  const detailProps = (item: Item) => ({
+    item,
+    parent: detailItems.find((i) => i.id === item.parentId) ?? null,
+    checklist: detailItems.filter((i) => i.parentId === item.id),
+    // The same rule as the board's dialog (ProjectColumn), within the
+    // item's own list.
+    nestTargets: boardItems.filter(
+      (i) =>
+        i.projectId === item.projectId &&
+        i.parentId === null &&
+        i.completedAt === null &&
+        i.id !== item.id,
+    ),
+    prefix: projects.find((p) => p.id === item.projectId)?.refPrefix ?? "",
+    assignees: assigneesByProject[item.projectId] ?? [],
+    viewerId,
+    prLinks: prLinksByItem[item.id] ?? [],
+  });
 
   // Centre a list in the rail, switching to the board first when needed; the
   // effect below scrolls to ?p= once the rail mounts. A collapsed tray opens
@@ -1174,14 +1193,13 @@ export function Kanban({
         <NewItemDialog
           open={newItem.open}
           onOpenChange={(open) => setNewItem((s) => ({ ...s, open }))}
-          // The item opens in place of New item, not over it; what's typed
-          // stays as a draft for when New item opens again.
-          onOpenItem={(hint) => {
-            const item = detailItems.find((i) => i.id === hint.id) ?? ("projectId" in hint ? hint : null);
-            if (!item) return;
+          // From the toast: the item opens in place of New item, not over it.
+          onOpenItem={(item) => {
             setNewItem((s) => ({ ...s, open: false }));
             paletteDetail.openDetail(item);
           }}
+          findItem={(id) => detailItems.find((i) => i.id === id)}
+          renderItem={(item, view) => <ItemDetailView {...detailProps(item)} {...view} />}
           projects={shown.filter((p) => p.access === "edit")}
           assigneesByProject={assigneesByProject}
           viewerId={viewerId}
@@ -1220,24 +1238,9 @@ export function Kanban({
 
         {paletteDetail.item && paletteProject && (
           <ItemDetailDialog
-            item={paletteDetail.item}
-            parent={detailItems.find((i) => i.id === paletteDetail.item?.parentId) ?? null}
-            checklist={detailItems.filter((i) => i.parentId === paletteDetail.item?.id)}
-            // The same rule as the board's dialog (ProjectColumn), within the
-            // item's own list.
-            nestTargets={boardItems.filter(
-              (i) =>
-                i.projectId === paletteDetail.item?.projectId &&
-                i.parentId === null &&
-                i.completedAt === null &&
-                i.id !== paletteDetail.item?.id,
-            )}
+            {...detailProps(paletteDetail.item)}
             onOpenItem={paletteDetail.goTo}
             history={paletteDetail.history}
-            prefix={paletteProject.refPrefix}
-            assignees={assigneesByProject[paletteProject.id] ?? []}
-            viewerId={viewerId}
-            prLinks={prLinksByItem[paletteDetail.item.id] ?? []}
             open={paletteDetail.open}
             onOpenChange={paletteDetail.onOpenChange}
           />
