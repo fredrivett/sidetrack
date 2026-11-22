@@ -5,6 +5,7 @@ import { changeSeq } from "./changes";
 import { addLabel, listLabels } from "./labels";
 import {
   addItem,
+  cancelItem,
   completeItem,
   deleteItem,
   getItem,
@@ -1602,5 +1603,81 @@ describe("sorting a list", () => {
     expect(() => setItemOrder(db, other, projectId, [], "web")).toThrow(/list not found/);
     expect(() => sortItems(db, userId, projectId, "size" as never, "web")).toThrow(/invalid sort/);
     expect(titles(db, userId, projectId)).toEqual(["b", "a"]);
+  });
+});
+
+describe("cancelItem", () => {
+  function withSteps(steps: string[]) {
+    const s = seedProject();
+    const parent = addItem(s.db, s.userId, { projectId: s.projectId, title: "Notifications" }, "web");
+    const ids = steps.map(
+      (title) => addItem(s.db, s.userId, { projectId: s.projectId, title, parentId: parent.id }, "web").id,
+    );
+    return { ...s, parent, ids };
+  }
+
+  it("closes the item with its reason and replacement, without it counting as done", () => {
+    const { db, userId, projectId } = seedProject();
+    const old = addItem(db, userId, { projectId, title: "Inbox" }, "web");
+    const repl = addItem(db, userId, { projectId, title: "Direct tier" }, "web");
+    cancelItem(db, userId, old.id, { reason: "  replanned ", replacedById: repl.id }, "web");
+    expect(getItem(db, userId, old.id)).toMatchObject({
+      cancelled: true,
+      cancelReason: "replanned",
+      replacedById: repl.id,
+      completedAt: expect.any(Number),
+    });
+    expect(listItems(db, userId, projectId).map((i) => i.title)).toEqual(["Direct tier"]);
+    const [row] = listAudit(db, userId, { projectId }).filter((r) => r.action === "cancel");
+    expect(row).toBeDefined();
+  });
+
+  it("completes the parent when the last open step is cancelled and another was done", () => {
+    const { db, userId, parent, ids } = withSteps(["a", "b"]);
+    completeItem(db, userId, ids[0], "web");
+    cancelItem(db, userId, ids[1], {}, "web");
+    expect(getItem(db, userId, parent.id)).toMatchObject({ cancelled: false, completedAt: expect.any(Number) });
+  });
+
+  it("leaves the parent open when every step was cancelled", () => {
+    const { db, userId, parent, ids } = withSteps(["a", "b"]);
+    cancelItem(db, userId, ids[0], {}, "web");
+    cancelItem(db, userId, ids[1], {}, "web");
+    expect(getItem(db, userId, parent.id)?.completedAt).toBeNull();
+  });
+
+  it("cancels a parent's open steps with it, leaving done ones done", () => {
+    const { db, userId, parent, ids } = withSteps(["a", "b"]);
+    completeItem(db, userId, ids[0], "web");
+    cancelItem(db, userId, parent.id, { reason: "won't do" }, "web");
+    expect(getItem(db, userId, ids[0])?.cancelled).toBe(false);
+    expect(getItem(db, userId, ids[1])).toMatchObject({ cancelled: true, cancelReason: null });
+  });
+
+  it("clears the cancel on reopen, and a step reopening clears its cancelled parent", () => {
+    const { db, userId, parent, ids } = withSteps(["a"]);
+    cancelItem(db, userId, parent.id, { reason: "won't do" }, "web");
+    uncompleteItem(db, userId, ids[0], "web");
+    expect(getItem(db, userId, parent.id)).toMatchObject({ completedAt: null, cancelled: false, cancelReason: null });
+  });
+
+  it("never brings a cancelled repeating item round again", () => {
+    const { db, userId, projectId } = seedProject();
+    const it = addItem(
+      db,
+      userId,
+      { projectId, title: "Water plants", dueDate: "2026-11-12", repeat: { every: 1, unit: "day" } },
+      "web",
+    );
+    cancelItem(db, userId, it.id, {}, "web");
+    expect(reopenDueRepeats(db, userId, { timeZone: "UTC", now: Date.now() + 30 * 86_400_000 })).toBe(0);
+  });
+
+  it("refuses a replacement the user can't see, or the item itself", () => {
+    const { db, userId, projectId } = seedProject();
+    const it = addItem(db, userId, { projectId, title: "x" }, "web");
+    expect(() => cancelItem(db, userId, it.id, { replacedById: "nope" }, "web")).toThrow(/replacement not found/);
+    expect(() => cancelItem(db, userId, it.id, { replacedById: it.id }, "web")).toThrow(/replace itself/);
+    expect(getItem(db, userId, it.id)?.completedAt).toBeNull();
   });
 });

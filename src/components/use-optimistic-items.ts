@@ -12,6 +12,7 @@ import {
   useTransition,
 } from "react";
 import {
+  cancelItemAction,
   completeItemAction,
   deleteItemAction,
   setItemParentAction,
@@ -31,7 +32,15 @@ export interface ItemChanges {
   setCompleted: (item: Item, done: boolean) => void;
   deleteItem: (item: Item) => void;
   setParent: (item: Item, parentId: string | null) => void;
+  /**
+   * Held, not shown ahead: the server checks the replacement, so whatever
+   * asks (the cancel dialog) waits on it, dimmed, and closes once it lands.
+   */
+  cancel: (item: Item, opts: CancelOpts) => Promise<boolean>;
 }
+
+/** `replacedBy`: the ref typed, such as "SDT-87". */
+export type CancelOpts = { reason?: string | null; replacedBy?: string | null };
 
 export type ItemChange =
   | { kind: "complete"; item: Item; done: boolean; at: number }
@@ -45,6 +54,8 @@ const saves = (merge: (saved: unknown) => void) => ({
       (done ? completeItemAction(item.id) : uncompleteItemAction(item.id)).then(merge),
       `${done ? "complete" : "reopen"} “${item.title}”`,
     ),
+  cancel: (item: Item, opts: CancelOpts) =>
+    runAction(cancelItemAction(item.id, opts).then(merge), `cancel “${item.title}”`),
   delete: (item: Item) => runAction(deleteItemAction(item.id).then(merge), `delete “${item.title}”`),
   parent: (item: Item, parentId: string | null) =>
     runAction(setItemParentAction(item.id, parentId).then(merge), `move “${item.title}”`),
@@ -59,6 +70,7 @@ export const ItemChangesContext = createContext<ItemChanges>({
   setCompleted: (item, done) => void unheld.complete(item, done),
   deleteItem: (item) => void unheld.delete(item),
   setParent: (item, parentId) => void unheld.parent(item, parentId),
+  cancel: (item, opts) => unheld.cancel(item, opts),
 });
 export const useItemChanges = () => useContext(ItemChangesContext);
 
@@ -68,13 +80,16 @@ export const useItemChanges = () => useContext(ItemChangesContext);
  * parent's last open sub-item completes the parent, and reopening a sub-item
  * reopens its finished parent.
  */
+/** What reopening sets, as uncompleteItem does: open, and no longer cancelled. */
+const reopened = { completedAt: null, cancelled: false, cancelReason: null, replacedById: null };
+
 function complete(list: Item[], item: Item, done: boolean, at: number): Item[] {
   const closesParent =
     done &&
     item.parentId !== null &&
     list.every((i) => i.parentId !== item.parentId || i.id === item.id || i.completedAt !== null);
   return list.map((i) => {
-    if (i.id === item.id) return { ...i, completedAt: done ? at : null };
+    if (i.id === item.id) return done ? { ...i, completedAt: at } : { ...i, ...reopened };
     if (closesParent && i.id === item.parentId && i.completedAt === null) {
       return { ...i, completedAt: at };
     }
@@ -82,7 +97,7 @@ function complete(list: Item[], item: Item, done: boolean, at: number): Item[] {
       return { ...i, completedAt: at };
     }
     if (!done && i.id === item.parentId && i.completedAt !== null) {
-      return { ...i, completedAt: null };
+      return { ...i, ...reopened };
     }
     return i;
   });
@@ -334,6 +349,7 @@ export function useOptimisticItems(
       deleteItem: (item) => run({ kind: "delete", item }, () => save.delete(item)),
       setParent: (item, parentId) =>
         run({ kind: "parent", item, parentId }, () => save.parent(item, parentId)),
+      cancel: (item, opts) => save.cancel(item, opts),
     };
   }, [apply, merge]);
   return [optimistic, changes] as const;

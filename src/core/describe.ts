@@ -364,6 +364,13 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
       if (event.from) parts.push(t(" from a photo"));
       return parts;
     }
+    case "item.cancelled": {
+      const parts: Part[] = [t("cancelled "), item(event)];
+      if (event.with) parts.push(t(" with "), item(event.with));
+      if (event.replacedBy) parts.push(t(": replaced by "), item(event.replacedBy));
+      else if (event.reason) parts.push(t(`: ${event.reason}`));
+      return parts;
+    }
     case "item.reopened": {
       const parts: Part[] = [t("reopened "), item(event)];
       if (event.forSubItem) parts.push(t(" for an open sub-item"));

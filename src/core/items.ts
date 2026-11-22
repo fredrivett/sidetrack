@@ -334,7 +334,7 @@ function reopenParentIfDone(
   // reopen itself, below.
   const { changes } = tx
     .update(items)
-    .set({ completedAt: null })
+    .set({ completedAt: null, cancelled: false, cancelReason: null, replacedById: null })
     .where(and(eq(items.id, parent.id), isNotNull(items.completedAt)))
     .run();
   if (changes === 0) return;
@@ -825,6 +825,102 @@ export function completeItem(
   return getItemOrThrow(db, userId, id);
 }
 
+/**
+ * Close an item without it being done: it leaves the board as a ticked item
+ * would, but never counts as finished. Cancelling a parent cancels its open
+ * sub-items. Cancelling a parent's last open sub-item completes the parent
+ * when at least one of its sub-items was done; when every one was cancelled
+ * it stays open, since cancelling every step doesn't finish the job.
+ */
+export function cancelItem(
+  db: Db,
+  userId: string,
+  id: string,
+  opts: { reason?: string | null; replacedById?: string | null },
+  source: AuditOrigin,
+): Item {
+  const existing = getItem(db, userId, id);
+  if (!existing) throw new Error(`item not found: ${id}`);
+  requireListAccess(db, userId, existing.projectId, "edit");
+  if (existing.completedAt !== null) return existing;
+  const reason = opts.reason?.trim() || null;
+  const replacement = opts.replacedById ? getItem(db, userId, opts.replacedById) : undefined;
+  if (opts.replacedById && !replacement) throw new Error(`replacement not found: ${opts.replacedById}`);
+  if (replacement?.id === id) throw new Error("an item can't replace itself");
+
+  const now = Date.now();
+  let endedSessions = false;
+  db.transaction((tx) => {
+    const parent = existing.parentId
+      ? getItem(tx as unknown as Db, userId, existing.parentId)
+      : undefined;
+    const openChildren = childrenOf(tx as unknown as Db, id).filter((c) => c.completedAt === null);
+    const siblings = parent ? childrenOf(tx as unknown as Db, parent.id).filter((c) => c.id !== id) : [];
+    const parentDone =
+      parent &&
+      parent.completedAt === null &&
+      siblings.every((c) => c.completedAt !== null) &&
+      siblings.some((c) => !c.cancelled);
+    for (const it of [existing, ...openChildren]) {
+      const own = it === existing;
+      tx.update(items)
+        .set({
+          completedAt: now,
+          cancelled: true,
+          cancelReason: own ? reason : null,
+          replacedById: own ? (replacement?.id ?? null) : null,
+        })
+        .where(eq(items.id, it.id))
+        .run();
+      const ended = tx
+        .update(agentSessions)
+        .set({ finishedAt: now })
+        .where(and(eq(agentSessions.itemId, it.id), isNull(agentSessions.finishedAt)))
+        .run();
+      if (ended.changes > 0) endedSessions = true;
+      recordAudit(tx as unknown as Db, {
+        actor: userId,
+        source,
+        event: {
+          type: "item.cancelled",
+          itemId: it.id,
+          title: it.title,
+          projectId: existing.projectId,
+          ...(own
+            ? {
+                ...(reason && { reason }),
+                ...(replacement && {
+                  replacedBy: { itemId: replacement.id, title: replacement.title },
+                }),
+              }
+            : { with: { itemId: existing.id, title: existing.title } }),
+        },
+      });
+    }
+    if (parent && parentDone) {
+      tx.update(items).set({ completedAt: now }).where(eq(items.id, parent.id)).run();
+      recordAudit(tx as unknown as Db, {
+        actor: userId,
+        source,
+        event: {
+          type: "item.completed",
+          itemId: parent.id,
+          title: parent.title,
+          projectId: existing.projectId,
+          with: { itemId: existing.id, title: existing.title, as: "last-sub-item" },
+        },
+      });
+    }
+    recalibrate(tx as unknown as Db, [
+      existing.id,
+      ...openChildren.map((c) => c.id),
+      ...(parentDone ? [parent.id] : []),
+    ]);
+  });
+  if (endedSessions) announceChange({ actor: userId, projectId: existing.projectId });
+  return getItemOrThrow(db, userId, id);
+}
+
 export function uncompleteItem(
   db: Db,
   userId: string,
@@ -842,7 +938,7 @@ export function uncompleteItem(
   const parent = existing.parentId ? getItem(db, userId, existing.parentId) : undefined;
   db.transaction((tx) => {
     tx.update(items)
-      .set({ completedAt: null })
+      .set({ completedAt: null, cancelled: false, cancelReason: null, replacedById: null })
       .where(eq(items.id, id))
       .run();
     recordAudit(tx as unknown as Db, {
@@ -896,6 +992,8 @@ export function reopenDueRepeats(
         ne(projects.status, "archived"),
         isNotNull(items.repeatUnit),
         isNotNull(items.completedAt),
+        // Cancelled, it doesn't come round again.
+        eq(items.cancelled, false),
       ),
     )
     .all()

@@ -135,6 +135,16 @@ export type ChangeEvent =
       from?: SourceAt;
     } & ItemAt)
   | ({
+      type: "item.cancelled";
+      projectId: string;
+      /** In the person's words, such as "won't do". */
+      reason?: string;
+      /** The item that did the work instead. */
+      replacedBy?: ItemAt;
+      /** The parent it was cancelled with. */
+      with?: ItemAt;
+    } & ItemAt)
+  | ({
       type: "item.reopened";
       projectId: string;
       /** Reopened because a sub-item opened under it. */
@@ -474,6 +484,8 @@ export function auditColumns(event: ChangeEvent): {
       return { action: "update", entityType: "item", entityId: event.itemId, projectId: event.projectId };
     case "item.completed":
       return { action: "complete", entityType: "item", entityId: event.itemId, projectId: event.projectId };
+    case "item.cancelled":
+      return { action: "cancel", entityType: "item", entityId: event.itemId, projectId: event.projectId };
     case "item.reopened":
       return { action: "uncomplete", entityType: "item", entityId: event.itemId, projectId: event.projectId };
     case "item.reordered":

@@ -35,6 +35,7 @@ export const AUDIT_ACTIONS = [
   "create",
   "update",
   "complete",
+  "cancel",
   "uncomplete",
   "reorder",
   "delete",
@@ -361,7 +362,18 @@ export const items = sqliteTable(
     smartRule: text("smart_rule"),
     // Days before the earliest match it's due: 0 on the day. Set with smart_rule.
     smartLead: integer("smart_lead"),
+    // When it was closed: ticked off, or cancelled (below). Everything that
+    // hides closed items reads this alone; only what counts finished work
+    // also checks `cancelled`.
     completedAt: integer("completed_at"),
+    // Closed without being done (cancelItem in items.ts), with an optional
+    // reason in the person's words and the item that did the work instead.
+    // All three are cleared when it reopens.
+    cancelled: integer("cancelled", { mode: "boolean" }).notNull().default(false),
+    cancelReason: text("cancel_reason"),
+    replacedById: text("replaced_by_id").references((): AnySQLiteColumn => items.id, {
+      onDelete: "set null",
+    }),
     createdAt: integer("created_at")
       .notNull()
       .default(sql`(unixepoch() * 1000)`),

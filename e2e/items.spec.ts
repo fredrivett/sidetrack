@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 import { getDb } from "@/core/db";
 import { listItems } from "@/core/items";
+import { getProject } from "@/core/projects";
 import { expect, test } from "./fixtures";
 
 /** An item's title on the board, which opens it. */
@@ -156,4 +157,31 @@ test("reorders a checklist from the Brief and from the item's dialog", async ({ 
   await page.keyboard.press("Escape");
   await page.reload();
   await expect(steps).toHaveText(["Garage", "Oven", "Windows"]);
+});
+
+test("cancels an item with its replacement, and reopens it", async ({ page, user }) => {
+  const home = user.addList("Home", ["Water plants", "Water the garden"]);
+  const { db } = getDb();
+  const [, garden] = listItems(db, user.id, home.id);
+  const prefix = getProject(db, user.id, home.id)?.prefix;
+  await page.goto("/board");
+  await row(page, "Water plants").click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Cancel…" }).click();
+  const cancel = page.getByRole("dialog", { name: /Cancel “Water plants”/ });
+  await cancel.getByLabel("Why (optional)").fill("Doing the whole garden");
+  await cancel.getByLabel("Replaced by (optional)").fill(`${prefix}-${garden.number}`);
+  await cancel.getByRole("button", { name: "Cancel item" }).click();
+  await expect(cancel).toBeHidden();
+  await page.keyboard.press("Escape");
+
+  // Saved: after a reload it's still cancelled, naming its replacement.
+  await page.reload();
+  const cancelled = page.locator("[data-item-row]").filter({ hasText: "Water plants" });
+  await expect(cancelled.getByText("Cancelled")).toBeVisible();
+  await expect(cancelled.getByText(`${prefix}-${garden.number}`)).toBeVisible();
+  const reopen = cancelled.getByRole("checkbox", { name: "Reopen" });
+  await reopen.uncheck();
+  await expect(cancelled.getByRole("checkbox", { name: "Complete" })).not.toBeChecked();
+  await expect(cancelled.getByText("Cancelled")).toBeHidden();
 });
