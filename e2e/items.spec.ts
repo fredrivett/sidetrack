@@ -169,6 +169,8 @@ test("cancels an item with its replacement, and reopens it", async ({ page, user
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: "Cancel…" }).click();
   const cancel = page.getByRole("dialog", { name: /Cancel “Water plants”/ });
+  // Opens ready to type the reason.
+  await expect(cancel.getByLabel("Why (optional)")).toBeFocused();
   await cancel.getByLabel("Why (optional)").fill("Doing the whole garden");
   await cancel.getByLabel("Replaced by (optional)").fill(`${prefix}-${garden.number}`);
   await cancel.getByRole("button", { name: "Cancel item" }).click();

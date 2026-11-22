@@ -2,7 +2,7 @@
 
 import { ArrowRight, CircleX } from "lucide-react";
 import { unstable_rethrow } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { getReplacementAction } from "@/app/actions";
 import type { Item } from "@/core/schema";
 import { Button } from "./ui/button";
@@ -35,6 +35,8 @@ export function CancelItemDialog({
 }) {
   const changes = useItemChanges();
   const [saving, start] = useTransition();
+  // Typing a reason is the usual next step, so it starts there, not on ×.
+  const reasonRef = useRef<HTMLInputElement>(null);
   const reasonDraft = useDraft(`item:${item.id}:cancel-reason`);
   const replacedByDraft = useDraft(`item:${item.id}:replaced-by`);
 
@@ -56,7 +58,7 @@ export function CancelItemDialog({
 
   return (
     <ResponsiveDialog open={open} onOpenChange={change}>
-      <ResponsiveDialogContent>
+      <ResponsiveDialogContent initialFocus={reasonRef}>
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -78,6 +80,7 @@ export function CancelItemDialog({
             <label className="block space-y-1">
               <span className="text-xs text-neutral-500">Why (optional)</span>
               <Input
+                ref={reasonRef}
                 value={reasonDraft.value}
                 onChange={(e) => reasonDraft.set(e.target.value)}
                 placeholder="Won't do"
