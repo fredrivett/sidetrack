@@ -1,4 +1,4 @@
-import { and, asc, count, eq, gte, isNull, max, sql } from "drizzle-orm";
+import { and, asc, count, eq, gte, inArray, isNull, max, sql } from "drizzle-orm";
 import { apiKeys, sessions, users } from "./auth-schema";
 import type { Db } from "./db";
 import { auditLog, items, projectMembers, projects } from "./schema";
@@ -13,6 +13,8 @@ export interface UserUsage {
   email: string;
   image: string | null;
   createdAt: number;
+  /** The day they joined, YYYY-MM-DD in the viewer's time zone, like `DailyUsage.days`. */
+  joinedOn: string;
   /** Changes made on each of `DailyUsage.days`, in the same order. */
   perDay: number[];
   /** Of `perDay`, the changes made through an agent (MCP). */
@@ -40,7 +42,7 @@ export interface UserUsage {
     push: boolean;
     emailIn: boolean;
     calendars: boolean;
-    /** Someone has joined one of their lists, they've joined someone else's, or they share a Space. */
+    /** Someone has joined one of their active lists, they've joined someone else's, or they share a Space. */
     sharing: boolean;
     twoFactor: boolean;
   };
@@ -104,7 +106,9 @@ export function dailyUsage(
     })
     .from(users)
     .crossJoin(auditLog)
-    .where(and(eq(auditLog.actor, users.id), gte(auditLog.ts, since)))
+    // Only what they did themselves: the GitHub integration makes changes in
+    // their name while they're away.
+    .where(and(eq(auditLog.actor, users.id), gte(auditLog.ts, since), inArray(auditLog.source, ["web", "mcp"])))
     // By agent name too, so the agents come from the counted days only.
     .groupBy(auditLog.actor, slot, auditLog.agentName)
     .all();
@@ -150,7 +154,7 @@ export function dailyUsage(
     see(userId, ts?.getTime() ?? null);
   }
 
-  // Lists have no index by owner, so their counts are one pass each.
+  // Counted for everyone in one grouped pass each, rather than once per person.
   const lists = new Map(
     db
       .select({
@@ -171,7 +175,7 @@ export function dailyUsage(
       .selectDistinct({ userId: projects.userId })
       .from(projectMembers)
       .innerJoin(projects, eq(projects.id, projectMembers.projectId))
-      .where(eq(projectMembers.status, "accepted"))
+      .where(and(eq(projectMembers.status, "accepted"), eq(projects.status, "active")))
       .all()
       .map(({ userId }) => userId),
   );
@@ -186,10 +190,10 @@ export function dailyUsage(
       createdAt: users.createdAt,
       // Each person's last change, from the (actor, ts) index. Spelled out:
       // drizzle leaves out the table name, and "id" in here is audit_log's.
-      lastActiveAt: sql<number | null>`(select max("ts") from "audit_log" where "actor" = "users"."id")`,
+
       // Their last change made by them, on the web or through an agent: the
       // GitHub integration's changes are made in their name while they're away.
-      lastOwnChangeAt: sql<number | null>`(select max("ts") from "audit_log"
+      lastActiveAt: sql<number | null>`(select max("ts") from "audit_log"
         where "actor" = "users"."id" and "source" in ('web', 'mcp'))`,
       // What they've set up, each a lookup by user on its table's index.
       // Spelled out for the same reason.
@@ -198,7 +202,8 @@ export function dailyUsage(
       emailIn: sql<number>`exists (select 1 from "email_addresses" where "user_id" = "users"."id")`,
       calendars: sql<number>`exists (select 1 from "calendar_accounts" where "user_id" = "users"."id")`,
       sharing: sql<number>`(
-        exists (select 1 from "project_members" where "user_id" = "users"."id" and "status" = 'accepted')
+        exists (select 1 from "project_members" join "projects" on "projects"."id" = "project_members"."project_id"
+          where "project_members"."user_id" = "users"."id" and "project_members"."status" = 'accepted' and "projects"."status" = 'active')
         or exists (select 1 from "space_members" as "mine" join "space_members" as "other"
           on "other"."space_id" = "mine"."space_id" and "other"."user_id" != "mine"."user_id"
           where "mine"."user_id" = "users"."id" and "mine"."status" = 'accepted' and "other"."status" = 'accepted')
@@ -208,17 +213,17 @@ export function dailyUsage(
     .from(users)
     .orderBy(asc(users.createdAt))
     .all()
-    .map(({ agentKeys, push, emailIn, calendars, sharing, twoFactor, lastOwnChangeAt, ...user }): UserUsage => {
+    .map(({ agentKeys, push, emailIn, calendars, sharing, twoFactor, ...user }): UserUsage => {
       const counts = perDay.get(user.id) ?? { all: Array(days).fill(0), agent: Array(days).fill(0) };
       return {
         ...user,
         createdAt: user.createdAt.getTime(),
+        joinedOn: dayKey(user.createdAt.getTime(), format),
         perDay: counts.all,
         agentPerDay: counts.agent,
         total: counts.all.reduce((sum, n) => sum + n, 0),
         agentTotal: counts.agent.reduce((sum, n) => sum + n, 0),
         agents: agents.get(user.id) ?? [],
-        // A change is being seen too, and dates it to the minute.
         lists: lists.get(user.id)?.lists ?? 0,
         openItems: lists.get(user.id)?.open ?? 0,
         features: {
@@ -229,10 +234,60 @@ export function dailyUsage(
           sharing: Boolean(sharing) || sharedOwners.has(user.id),
           twoFactor: Boolean(twoFactor),
         },
-        lastSeenAt: Math.max(seen.get(user.id) ?? 0, lastOwnChangeAt ?? 0) || null,
+        // A change is being seen too, and dates it to the minute.
+        lastSeenAt: Math.max(seen.get(user.id) ?? 0, user.lastActiveAt ?? 0) || null,
       };
     })
     .sort((a, b) => b.total - a.total || b.createdAt - a.createdAt);
 
   return { now, days: keys, users: rows };
+}
+
+export interface Cohort {
+  /** The first day of the sign-up week, YYYY-MM-DD. */
+  week: string;
+  /** How many people joined that week. */
+  joined: number;
+  /**
+   * For each week since they joined (0 is the week of joining, counted from
+   * each person's own sign-up day): of the people that week has ended for
+   * (`of`, ending today counts), how many made a change in it (`kept`).
+   * Null while it hasn't ended for any of them.
+   */
+  active: ({ kept: number; of: number } | null)[];
+}
+
+/**
+ * Sign-up cohorts: the last `weeks` weeks of `usage.days` (7-day blocks ending
+ * today, oldest first), each with how many people joined and how many kept
+ * making changes in the weeks after. A person counts towards a week only once
+ * it has ended for them (or ends today), so a cohort's latest cell isn't dragged down by
+ * days still to come.
+ */
+export function cohorts(usage: DailyUsage, weeks: number): Cohort[] {
+  const { days } = usage;
+  const last = days.length - 1;
+  const dayIndex = new Map(days.map((day, i) => [day, i]));
+  const joined = usage.users.flatMap((user) => {
+    const start = dayIndex.get(user.joinedOn);
+    return start === undefined ? [] : [{ user, start }];
+  });
+  // Only whole weeks inside the range.
+  weeks = Math.min(weeks, Math.floor(days.length / 7));
+  return Array.from({ length: weeks }, (_, w) => {
+    const from = days.length - 7 * (weeks - w);
+    const members = joined.filter(({ start }) => start >= from && start < from + 7);
+    const active = Array.from({ length: weeks - w }, (_, k) => {
+      let done = 0;
+      let kept = 0;
+      for (const { user, start } of members) {
+        const end = start + 7 * k + 6;
+        if (end > last) continue;
+        done++;
+        if (user.perDay.slice(start + 7 * k, end + 1).some(Boolean)) kept++;
+      }
+      return done ? { kept, of: done } : null;
+    });
+    return { week: days[from], joined: members.length, active };
+  });
 }

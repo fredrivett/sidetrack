@@ -6,7 +6,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { requireAdmin } from "@/auth/session";
 import { getDb } from "@/core/db";
 import { isLooking } from "@/core/presence";
-import { dailyUsage } from "@/core/usage";
+import { cohorts, dailyUsage } from "@/core/usage";
 import { getTimeZone } from "@/core/users";
 
 export const dynamic = "force-dynamic";
@@ -65,7 +65,7 @@ function percent(part: number, whole: number): string {
 /** A headline number, with what it's out of and, optionally, a small chart. */
 function Stat({ label, value, note, children }: { label: string; value: string | number; note?: string; children?: React.ReactNode }) {
   return (
-    <div className="flex flex-col justify-between gap-3 rounded-xl border border-border bg-background p-4 shadow-sm">
+    <div className="flex flex-col justify-between gap-3 bg-background p-4">
       <div>
         <div className="text-xs font-medium text-muted-foreground">{label}</div>
         <div className="mt-1 flex items-baseline gap-2">
@@ -87,7 +87,7 @@ function Bars({ values, labels, label }: { values: number[]; labels: string[]; l
         <span
           key={labels[i]}
           title={labels[i]}
-          className={i === values.length - 1 ? "flex-1 rounded-[1px] bg-foreground" : "flex-1 rounded-[1px] bg-muted-foreground/40"}
+          className={i === values.length - 1 ? "flex-1 bg-foreground" : "flex-1 bg-muted-foreground/40"}
           style={{ height: n ? `${Math.max(8, (100 * n) / top)}%` : "2px" }}
         />
       ))}
@@ -111,7 +111,7 @@ function Features({ features }: { features: UserUsage["features"] }) {
       {on.map(({ Icon, label, agent }) => (
         <span key={label} title={label} className={agent ? "text-violet-600 dark:text-violet-300" : undefined}>
           <Icon className="size-3" aria-hidden />
-          <span className="sr-only">{label}</span>
+          <span className="sr-only">, {label}</span>
         </span>
       ))}
     </span>
@@ -120,19 +120,19 @@ function Features({ features }: { features: UserUsage["features"] }) {
 
 /** A plain square, as in the grid, for the legend. */
 function Swatch({ style }: { style: React.CSSProperties }) {
-  return <span className="inline-block rounded-[2px]" style={{ width: SQUARE, height: SQUARE, ...style }} />;
+  return <span className="inline-block" style={{ width: SQUARE, height: SQUARE, ...style }} />;
 }
 
 export default async function AdminPage() {
   const adminId = await requireAdmin();
   const { db } = getDb();
   const timeZone = getTimeZone(db, adminId) ?? "UTC";
-  const { now, days, users } = dailyUsage(db, { days: DAYS, timeZone });
+  const usage = dailyUsage(db, { days: DAYS, timeZone });
+  const { now, days, users } = usage;
   // A loop, not Math.max(...all): spreading 90 counts per person runs out of
   // stack at a thousand or so people.
   let busiest = 1;
   for (const user of users) for (const n of user.perDay) if (n > busiest) busiest = n;
-  const dayOf = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
   const activeIn = (n: number) => users.filter((u) => u.perDay.slice(-n).some(Boolean)).length;
   const share = (n: number) => (users.length ? `${Math.round((100 * n) / users.length)}% of people` : undefined);
   const dailyActive = days.map((_, i) => users.filter((u) => u.perDay[i] > 0).length);
@@ -142,12 +142,9 @@ export default async function AdminPage() {
     const from = DAYS - 7 * (WEEKS - w);
     return users.filter((u) => u.perDay.slice(from, from + 7).some(Boolean)).length;
   });
-  // The same calendar weeks, by the day each person joined.
-  const joinedOn = users.map((u) => dayOf.format(u.createdAt));
-  const signups = Array.from({ length: WEEKS }, (_, w) => {
-    const from = DAYS - 7 * (WEEKS - w);
-    return joinedOn.filter((day) => day >= days[from] && day <= days[from + 6]).length;
-  });
+  // Who joined in those same weeks, and how many kept going.
+  const weeks = cohorts(usage, WEEKS);
+  const signups = weeks.map((c) => c.joined);
   const newPeople = users.filter((u) => now - u.createdAt < 30 * DAY_MS).length;
   const total = users.reduce((sum, u) => sum + u.total, 0);
   const agentTotal = users.reduce((sum, u) => sum + u.agentTotal, 0);
@@ -163,7 +160,7 @@ export default async function AdminPage() {
             <LogoMark />
             Sidetrack
           </Link>
-          <span className="rounded-full border border-border px-2 py-0.5 text-xs font-medium text-muted-foreground">Admin</span>
+          <span className="border border-border px-2 py-0.5 text-xs font-medium text-muted-foreground">Admin</span>
           <Link
             href="/"
             className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:underline"
@@ -182,7 +179,8 @@ export default async function AdminPage() {
           </p>
         </header>
 
-        <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {/* One strip, 1px lines between the stats. */}
+        <section className="grid grid-cols-2 gap-px border border-border bg-border lg:grid-cols-4">
           <Stat label="People" value={users.length} note={newPeople ? `+${newPeople} in 30 days` : undefined}>
             <Bars
               values={signups}
@@ -210,13 +208,13 @@ export default async function AdminPage() {
             note={`of ${total} change${total === 1 ? "" : "s"}`}
           >
             {/* The split itself, app then agents. */}
-            <div className="flex h-2 overflow-hidden rounded-full bg-muted-foreground/40" aria-hidden>
+            <div className="flex h-2 overflow-hidden bg-muted-foreground/40" aria-hidden>
               <span className="ml-auto bg-violet-600 dark:bg-violet-400" style={{ width: `${total ? (100 * agentTotal) / total : 0}%` }} />
             </div>
           </Stat>
         </section>
 
-        <section className="overflow-hidden rounded-xl border border-border bg-background shadow-sm">
+        <section className="overflow-hidden border border-border bg-background">
           <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-border px-4 py-3">
             <h2 className="text-sm font-semibold">People</h2>
             <div
@@ -267,7 +265,7 @@ export default async function AdminPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {users.map((user) => {
-                  const joined = dayOf.format(user.createdAt);
+                  const joined = user.joinedOn;
                   const here = isLooking(user.id);
                   return (
                     <tr key={user.id} className="group">
@@ -315,8 +313,8 @@ export default async function AdminPage() {
                             <div className="truncate text-xs text-muted-foreground">
                               {here ? <span className="text-green-700 dark:text-green-400">Here now</span> : seenLabel(user.lastSeenAt, now)}
                             </div>
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                              <span className="truncate">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                              <span className="whitespace-nowrap">
                                 {user.lists} list{user.lists === 1 ? "" : "s"} · {user.openItems} open
                               </span>
                               <Features features={user.features} />
@@ -342,7 +340,7 @@ export default async function AdminPage() {
                             return (
                               <span key={day} title={label} className="flex h-5 items-center">
                                 <span
-                                  className={n ? "rounded-[2px]" : "rounded-[2px] bg-muted-foreground/15"}
+                                  className={n ? undefined : "bg-muted-foreground/15"}
                                   style={{
                                     width: SQUARE,
                                     height: SQUARE,
@@ -358,6 +356,80 @@ export default async function AdminPage() {
                     </tr>
                   );
                 })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="overflow-hidden border border-border bg-background">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-b border-border px-4 py-3">
+            <h2 className="text-sm font-semibold">Retention</h2>
+            <p className="text-xs text-muted-foreground">
+              Of the people who joined each week, the share who made a change 1, 2, 3… weeks on.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="text-xs text-muted-foreground">
+                  <th className="sticky left-0 z-10 border-r border-b border-border bg-background px-4 py-2 text-left font-medium whitespace-nowrap">
+                    Joined
+                  </th>
+                  <th className="border-r border-b border-border px-3 py-2 text-right font-medium">People</th>
+                  {weeks.map((_, k) => (
+                    <th
+                      key={k}
+                      className="border-r border-b border-border px-2 py-2 text-center font-medium whitespace-nowrap last:border-r-0"
+                    >
+                      {k === 0 ? "Wk 0" : `+${k}`}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {weeks.map((cohort) => (
+                  <tr key={cohort.week}>
+                    <td className="sticky left-0 z-10 border-r border-b border-border bg-background px-4 py-0 whitespace-nowrap text-muted-foreground">
+                      Week of{" "}
+                      {new Date(`${cohort.week}T00:00:00Z`).toLocaleDateString("en-GB", { timeZone: "UTC", day: "numeric", month: "short" })}
+                    </td>
+                    <td className="border-r border-b border-border px-3 py-0 text-right font-medium tabular-nums">{cohort.joined || "–"}</td>
+                    {weeks.map((_, k) => {
+                      const cell = cohort.joined ? cohort.active[k] : undefined;
+                      const share = cell ? cell.kept / cell.of : cell;
+                      const title =
+                        cell === null
+                          ? "This week isn't over yet"
+                          : cell === undefined
+                            ? undefined
+                            : `${cell.kept} of ${cell.of}${cell.of < cohort.joined ? `; the other ${cohort.joined - cell.of} haven't finished this week` : ""}`;
+                      // Flush cells, darker for more of them still around, numbers on top.
+                      return (
+                        <td
+                          key={k}
+                          title={title}
+                          className={
+                            cell === undefined
+                              ? "border-r border-b border-border p-0 last:border-r-0"
+                              : "h-9 min-w-14 border-r border-b border-border p-0 text-center text-xs tabular-nums last:border-r-0"
+                          }
+                          style={share ? { backgroundColor: `color-mix(in oklab, var(--foreground) ${Math.round(6 + 84 * share)}%, var(--background))` } : undefined}
+                        >
+                          {cell === null ? (
+                            <span className="text-muted-foreground">…</span>
+                          ) : cell === undefined ? null : (
+                            <span
+                              // Light text only on fills dark enough to keep it readable.
+                              className={cell.kept / cell.of > 0.55 ? "font-medium text-background" : cell.kept === 0 ? "text-muted-foreground" : ""}
+                            >
+                              {percent(cell.kept, cell.of)}
+                            </span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
