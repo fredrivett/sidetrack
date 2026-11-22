@@ -221,6 +221,7 @@ export function CheckInsView({
         <ItemDetailDialog
           item={detail.item}
           parent={all.find((i) => i.id === detail.item?.parentId) ?? null}
+          parentTitle={under(detail.item) || undefined}
           checklist={all.filter((i) => i.parentId === detail.item?.id)}
           // Nothing to nest under here: Check-ins follows a day, it doesn't plan one.
           nestTargets={[]}

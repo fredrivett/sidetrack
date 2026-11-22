@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { listAudit } from "./audit";
 import { addLabel, listLabels, updateLabel } from "./labels";
 import { createTestDb, createTestUser } from "./test-helpers";
-import { addItem, getItem, getItemWithSubItems, hiddenParentTitles, listDoneBefore, listItems, listSubItems, setItemParent } from "./items";
+import { addItem, getItem, getItemWithSubItems, hiddenParentTitles, readGroups, listDoneBefore, listItems, listSubItems, setItemParent } from "./items";
 import { countCommentsByItem, listComments, listMentionable, listRecentComments } from "./comments";
 import { buildAgendaBrief } from "./agendaBrief";
 import { resolveItemRef } from "./itemRef";
@@ -654,6 +654,9 @@ describe("a membership shown only someone's today or week", () => {
 
     // Nor through the item's own view, or its history.
     expect(getItemWithSubItems(db, jo, chores.id)).toEqual([]);
+    // Her sub-item there still updates live for Jo, as a group of its own.
+    const bit = listItems(db, jo, home.id).filter((i) => i.title === "Lorna's bit").map((i) => i.id);
+    expect(readGroups(db, jo, bit).items.map((i) => i.title)).toEqual(["Lorna's bit"]);
     expect(listAudit(db, jo, { itemId: task.id }).map((r) => plainText(r.parts ?? [])).join()).not.toContain("Fred helps");
     // Her undated item doesn't land in her day by Fred's sub-item under it.
     const undated = addItem(db, fred, { projectId: home.id, title: "Lorna undated", assigneeIds: [lorna] }, "web");

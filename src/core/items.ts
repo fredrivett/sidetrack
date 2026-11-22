@@ -557,7 +557,9 @@ export interface Saved {
 export function groupIds(db: Db, userId: string, id: string): string[] {
   const item = getItem(db, userId, id);
   if (!item) return [id];
-  return getItemWithSubItems(db, userId, item.parentId ?? item.id).map((i) => i.id);
+  // A sub-item whose item they can't see (limitedSees) is a group of its own.
+  const group = getItemWithSubItems(db, userId, item.parentId ?? item.id);
+  return group.length ? group.map((i) => i.id) : [item.id];
 }
 
 /** Read `ids` back for the board, as `Saved`. */

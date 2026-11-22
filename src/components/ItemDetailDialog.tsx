@@ -519,6 +519,8 @@ type ItemDetailProps = {
   item: Item;
   /** For a sub-item, the task it belongs to. */
   parent: Item | null;
+  /** For a sub-item whose task the viewer can't see (hiddenParentTitles): just its title. */
+  parentTitle?: string;
   /** This item's sub-items, in order. */
   checklist: Item[];
   /** Tasks this item can become a sub-item of: the list's other open
@@ -577,6 +579,7 @@ export function ItemDetailDialog({
 export function ItemDetailView({
   item,
   parent,
+  parentTitle,
   checklist,
   nestTargets,
   onOpenItem,
@@ -938,6 +941,11 @@ export function ItemDetailView({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+          ) : parentTitle ? (
+            <span title="Sub-item of" className={CHIP}>
+              <IndentIncrease />
+              <span className="max-w-48 truncate">{parentTitle}</span>
+            </span>
           ) : (
             // The touch way to nest an existing task, where there's no
             // row menu: an item with sub-items can't become one.
@@ -974,7 +982,7 @@ export function ItemDetailView({
     <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-4">
       <AgentWork item={item} assignees={assignees} />
 
-      {!parent && (
+      {!parent && !item.parentId && (
         <Field
           label={
             checklist.length
