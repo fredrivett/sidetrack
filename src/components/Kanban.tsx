@@ -985,7 +985,8 @@ export function Kanban({
               </TooltipContent>
             </Tooltip>
           )}
-          <PostsMenu className="min-[900px]:hidden" />
+          {/* On phones they're in the account menu: the header has no room. */}
+          <PostsMenu className="max-sm:hidden min-[900px]:hidden" />
           <NotificationsInbox
             open={inboxOpen}
             onOpenChange={setInboxOpen}
