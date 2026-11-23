@@ -121,6 +121,63 @@ function Fold({ id, collapsed, children }: { id: string; collapsed: boolean; chi
 }
 
 /**
+ * What's late, in a faint red card, in the red of an overdue due chip, so it
+ * stands apart, that folds away; -mx-2 keeps its rows in line with the
+ * others. `id` is its rows', which a heading's button controls.
+ */
+export function OverdueCard({
+  id,
+  count,
+  collapsed,
+  onToggle,
+  heading: Heading = "h2",
+  children,
+}: {
+  id: string;
+  /** How many of it are still open. */
+  count: number;
+  collapsed: boolean;
+  onToggle: () => void;
+  heading?: "h2" | "h3";
+  children: ReactNode;
+}) {
+  return (
+    // Its border is opaque, mixed to look as it would at 70% (35% in dark): a
+    // see-through one over its see-through background fringes cyan at the
+    // rounded corners in Chromium.
+    <section className="-mx-2 rounded-2xl border border-[color-mix(in_oklab,var(--color-red-200)_70%,white)] bg-red-50/60 px-2 py-1 dark:border-[color-mix(in_oklab,var(--color-red-900)_35%,var(--color-neutral-950))] dark:bg-red-950/20">
+      <Heading className="text-xs font-medium">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={!collapsed}
+          aria-controls={id}
+          className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-red-700 outline-none hover:text-red-800 focus-visible:ring-2 focus-visible:ring-red-300 dark:text-red-400 dark:hover:text-red-300 dark:focus-visible:ring-red-800"
+        >
+          Overdue
+          <span className="tabular-nums text-red-700/60 dark:text-red-400/60">{count}</span>
+          <FoldChevron collapsed={collapsed} className="size-3.5" />
+        </button>
+      </Heading>
+      <Fold id={id} collapsed={collapsed}>
+        {children}
+      </Fold>
+    </section>
+  );
+}
+
+function FoldChevron({ collapsed, className }: { collapsed: boolean; className: string }) {
+  return (
+    <ChevronDown
+      aria-hidden="true"
+      className={`ml-auto ${className} transition-transform duration-300 ease-out motion-reduce:transition-none ${
+        collapsed ? "" : "rotate-180"
+      }`}
+    />
+  );
+}
+
+/**
  * One scroll across every active list, from what's late to what has no date:
  * Overdue, Today, Tomorrow, This week (This weekend on a Saturday or
  * Sunday), Next week, Later, then No date (see agendaSection). Every open
@@ -233,14 +290,7 @@ export function AgendaView({
       {rows}
     </Fold>
   );
-  const chevron = (collapsed: boolean, size: string) => (
-    <ChevronDown
-      aria-hidden="true"
-      className={`ml-auto ${size} transition-transform duration-300 ease-out motion-reduce:transition-none ${
-        collapsed ? "" : "rotate-180"
-      }`}
-    />
-  );
+  const chevron = (collapsed: boolean, size: string) => <FoldChevron collapsed={collapsed} className={size} />;
   // The row of the item a greeting chip is hovered or focused on.
   const [lit, setLit] = useState<string | null>(null);
   const lightable = (item: Item & { children: Item[] }, row: React.ReactNode): Entry => ({
@@ -516,29 +566,15 @@ export function AgendaView({
 
         {sections.map(([label, rows]) =>
           label === "Overdue" ? (
-            // A faint red card, in the red of an overdue due chip, so what's late
-            // stands apart; -mx-2 keeps its rows in line with the others.
-            <section
+            <OverdueCard
               key={label}
-              className="-mx-2 rounded-2xl border border-red-200/70 bg-red-50/60 px-2 py-1 dark:border-red-900/35 dark:bg-red-950/20"
+              id={overdueId}
+              count={openCount(rows)}
+              collapsed={overdueCollapsed}
+              onToggle={toggleOverdue}
             >
-              <h2 className="text-xs font-medium">
-                <button
-                  type="button"
-                  onClick={toggleOverdue}
-                  aria-expanded={!overdueCollapsed}
-                  aria-controls={overdueId}
-                  className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-red-700 outline-none hover:text-red-800 focus-visible:ring-2 focus-visible:ring-red-300 dark:text-red-400 dark:hover:text-red-300 dark:focus-visible:ring-red-800"
-                >
-                  {label}
-                  <span className="tabular-nums text-red-700/60 dark:text-red-400/60">
-                    {openCount(rows)}
-                  </span>
-                  {chevron(overdueCollapsed, "size-3.5")}
-                </button>
-              </h2>
-              {fold(overdueId, overdueCollapsed, renderRows(label, rows))}
-            </section>
+              {renderRows(label, rows)}
+            </OverdueCard>
           ) : label === "No date" ? (
             // Larger than the dated sections' labels, and folds away: undated
             // items are the backlog, not today's work.

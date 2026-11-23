@@ -91,6 +91,7 @@ export default async function Home({
       image: l.image,
       within: l.within,
       day: l.day ?? "",
+      today: l.today ?? "",
       ...sharedDayNote(db, userId, l.personId),
       lists: [],
       alsoItemIds: dayOnWholeLists(db, userId, l.personId, l.within),

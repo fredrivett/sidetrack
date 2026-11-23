@@ -323,7 +323,7 @@ describe("a membership shown only someone's items", () => {
     expect(rows).toHaveLength(listNotifications(db, jo).length);
     expect(Object.keys(countCommentsByItem(db, vic))).toEqual([party.id]);
     expect(listItems(db, jo, list.id).map((i) => i.title).sort()).toEqual(["Garden", "Mow", "Pack towel", "Swim"]);
-    expect([...limitedListsById(db, jo)]).toEqual([[list.id, { personId: lorna, username: "lorna", name: "Lorna", image: null, within: null, day: null, turnsAt: null }]]);
+    expect([...limitedListsById(db, jo)]).toEqual([[list.id, { personId: lorna, username: "lorna", name: "Lorna", image: null, within: null, day: null, today: null, turnsAt: null }]]);
     expect(limitedListsById(db, vic).size).toBe(0);
     // Nor can she act on what she can't see.
     expect(() => addComment(db, jo, party.id, "hi", "web")).toThrow(/not found/);
@@ -488,7 +488,7 @@ describe("a membership shown only someone's today or week", () => {
     const { db, lorna, jo, list, seen } = setup("week");
     expect([...limitedListsById(db, jo)]).toEqual([
       // Her next 4am, in London, when what Jo's shown changes.
-      [list.id, { personId: lorna, username: "lorna", name: "Lorna", image: null, within: "week", day: "2026-11-16", turnsAt: Date.parse("2026-11-20T04:00:00Z") }],
+      [list.id, { personId: lorna, username: "lorna", name: "Lorna", image: null, within: "week", day: "2026-11-16", today: "2026-11-19", turnsAt: Date.parse("2026-11-20T04:00:00Z") }],
     ]);
     expect(seen()).toEqual([
       "Done early", "Done yesterday", "Due today", "Kitchen", "Overdue", "Sunday", "This week span", "Tidy", "Tomorrow",
