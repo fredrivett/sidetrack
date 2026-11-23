@@ -344,7 +344,10 @@ function Composer({
         placeholder="Leave a comment…"
         maxLength={COMMENT_MAX}
         aria-label="Add a comment"
-        className={`flex field-sizing-content max-h-60 w-full resize-none bg-transparent px-3 py-1.5 text-base outline-none transition-colors placeholder:text-muted-foreground focus:min-h-16 focus:pb-0 md:text-sm ${empty ? "min-h-9" : "min-h-16 pb-0"}`}
+        // Collapsed, it's as tall as an Input (--h, inside the box's border)
+        // with its one line centred. Expanding grows it downwards only: the
+        // top padding stays, so the text doesn't move.
+        className={`flex field-sizing-content max-h-60 w-full resize-none bg-transparent px-2.5 pt-[calc((var(--h)-2px-1lh)/2)] pb-0 text-base outline-none transition-colors [--h:--spacing(8)] placeholder:text-muted-foreground focus:min-h-16 touch:[--h:--spacing(10)] md:text-sm ${empty ? "min-h-[calc(var(--h)-2px)]" : "min-h-16"}`}
       />
       <div
         className={`justify-end px-2 pb-2 ${empty && !saving ? "hidden group-focus-within/composer:flex" : "flex"}`}
