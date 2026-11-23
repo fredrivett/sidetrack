@@ -526,6 +526,13 @@
       "when": 1795388195232,
       "tag": "0074_invitations_accepted_by",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "6",
+      "when": 1795430769499,
+      "tag": "0075_day_shares",
+      "breakpoints": true
     }
   ]
 }

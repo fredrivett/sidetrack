@@ -72,6 +72,8 @@ export const AUDIT_ENTITIES = [
   "source",
   // An invite by email to someone not on Sidetrack yet (invitations).
   "invitation",
+  // A day shared without places of its own (dayShares); no project.
+  "day_share",
 ] as const;
 export type AuditEntity = (typeof AUDIT_ENTITIES)[number];
 
@@ -987,6 +989,34 @@ export const invitations = sqliteTable(
     index("invitations_inviter").on(t.inviterId, t.createdAt),
     // Who invited someone, for their profile (invitedBy).
     index("invitations_accepted_by").on(t.acceptedBy),
+  ],
+);
+
+// A day shared with someone who already sees lists of the sharer's whole
+// (dayShares.ts), without picking any place for it: what they see of it is
+// their day on those lists (dayOnWholeLists), so it needs no membership. A
+// day shared from places picked is those memberships instead (only_within
+// on project_members and space_members). One per sharer and viewer; pending
+// until the viewer accepts; stopping, declining or leaving deletes it.
+export const dayShares = sqliteTable(
+  "day_shares",
+  {
+    id: text("id").primaryKey(),
+    sharerId: text("sharer_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    viewerId: text("viewer_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    status: text("status").$type<MembershipStatus>().notNull().default("pending"),
+    within: text("within", { enum: ONLY_WITHIN }).notNull(),
+    shareNote: integer("share_note", { mode: "boolean" }).notNull().default(false),
+    shareMood: integer("share_mood", { mode: "boolean" }).notNull().default(false),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    uniqueIndex("day_shares_sharer_viewer").on(t.sharerId, t.viewerId),
+    index("day_shares_viewer").on(t.viewerId, t.status),
   ],
 );
 

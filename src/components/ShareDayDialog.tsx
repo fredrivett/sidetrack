@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { HeartHandshake, Mail } from "lucide-react";
 import { unstable_rethrow } from "next/navigation";
-import { inviteByEmailAction, invitePeopleAction } from "@/app/actions";
+import { inviteByEmailAction, invitePeopleAction, alreadySharedAction, shareDayAction } from "@/app/actions";
 import type { InvitePlace } from "@/core/invites";
 import type { OnlyWithin } from "@/core/schema";
 import { toast } from "sonner";
@@ -17,7 +17,8 @@ import {
   ResponsiveDialogDescription,
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
-import { PlacePicker, pickedPlaces, type PlaceGroup } from "./PlacePicker";
+import { BRANCH, PlacePicker, pickedPlaces, type PlaceGroup, TRUNK } from "./PlacePicker";
+import { ProjectIcon } from "./ProjectIcon";
 import { useDraft } from "./use-draft";
 import { useStoredState } from "./use-stored-state";
 
@@ -36,8 +37,11 @@ function namesOf(names: string[]): string {
  * Share your today or week with one person, across the lists and Spaces you
  * pick: they see only your items there, in that window, on their Check-ins,
  * and can comment. Nothing is shared until you pick it, so a personal list
- * stays yours. Underneath it's an invite to each place, limited to your
- * items and the window, which they accept as usual.
+ * stays yours. The lists they already see whole show ticked and locked:
+ * your day there is included anyway (dayOnWholeLists), so with any of those
+ * you needn't pick more (shareDay). Underneath, a place picked is an invite
+ * to it, limited to your items and the window; they accept the whole day at
+ * once, on Check-ins.
  */
 export function ShareDayDialog({
   open,
@@ -61,9 +65,40 @@ export function ShareDayDialog({
   const [stranger, setStranger] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const personRef = useRef<HTMLInputElement>(null);
-  const chosen = pickedPlaces(groups, picked);
   const who = draft.value.trim();
-  const ready = who !== "" && chosen.length > 0;
+  // The lists they already see whole that you're on, for who's typed now.
+  type Already = Awaited<ReturnType<typeof alreadySharedAction>>;
+  const [already, setAlready] = useState<{ for: string } & Already | null>(null);
+  const shared = already?.for === who ? already.lists : [];
+  const sharedSpaces = already?.for === who ? already.spaces : [];
+  useEffect(() => {
+    if (!open || !who) return;
+    let stale = false;
+    const t = setTimeout(async () => {
+      let found: Already = { spaces: [], lists: [] };
+      try {
+        found = await alreadySharedAction(who);
+      } catch (err) {
+        // Only advice: without it, they pick places as before.
+        unstable_rethrow(err);
+      }
+      if (!stale) setAlready({ for: who, ...found });
+    }, 250);
+    return () => {
+      stale = true;
+      clearTimeout(t);
+    };
+  }, [open, who]);
+  // Those aren't theirs to pick: they're shown as included instead.
+  // A Space they're in already can't be picked whole either.
+  const sharedIds = new Set([...shared, ...sharedSpaces].map((l) => l.id));
+  const pickable = groups
+    .map((g) => ({ ...g, admin: g.admin && !sharedIds.has(g.id), lists: g.lists.filter((l) => !sharedIds.has(l.id)) }))
+    .filter((g) => g.admin || g.lists.length > 0);
+  const chosen = pickedPlaces(pickable, picked);
+  const invitingNow = stranger !== null && stranger === who;
+  // Something has to be shared: a place picked, or one already shared (not by email: they share nothing yet).
+  const ready = who !== "" && (chosen.length > 0 || (!invitingNow && shared.length > 0));
   // Sharing back fills in who with; anything typed already stays.
   const { set: setPerson } = draft;
   useEffect(() => {
@@ -89,14 +124,16 @@ export function ShareDayDialog({
           : { kind: "space", id: p.id, role: "commenter", onlyMine: true, within: kept.within, shareNote: kept.note, shareMood: kept.mood },
       );
     // Inviting someone not on Sidetrack yet, once they've said to.
-    const inviting = stranger !== null && stranger === who;
+    const inviting = invitingNow;
     setError(null);
     start(async () => {
       let refused: string | undefined;
       try {
         const res: { error: string; notOnSidetrack?: string[] } | undefined = inviting
           ? await inviteByEmailAction(who, places)
-          : await invitePeopleAction([who], places);
+          : places.length === 0
+            ? await shareDayAction(who, { within: kept.within, note: kept.note, mood: kept.mood })
+            : await invitePeopleAction([who], places);
         if (res?.notOnSidetrack?.length) return setStranger(who);
         refused = res?.error;
       } catch (err) {
@@ -113,8 +150,6 @@ export function ShareDayDialog({
   }
 
   const span = kept.within === "today" ? "day" : "week";
-  // Still the address that had no account; typing someone else starts over.
-  const invitingNow = stranger !== null && stranger === who;
 
   return (
     // It stays open while it saves, so a failure shows where they're looking.
@@ -129,8 +164,8 @@ export function ShareDayDialog({
             <ResponsiveDialogCloseButton className="ml-auto shrink-0" />
           </div>
           <ResponsiveDialogDescription className="text-xs text-neutral-500">
-            On their Check-ins, they’ll see your items on the lists you pick and on lists you
-            already share with them, and can comment on the lists you pick. Nothing else on those.
+            On their Check-ins, once they accept, they’ll see your items on lists you already share
+            with them and the ones you pick, and can comment on those you pick. Nothing else on those.
           </ResponsiveDialogDescription>
         </div>
 
@@ -180,8 +215,42 @@ export function ShareDayDialog({
                 </Button>
               ))}
             </div>
+            {shared.length > 0 && !invitingNow && (
+              <section aria-label="Already shared, included">
+                <h3 className="px-2 pb-1 text-xs font-medium text-neutral-500">Already shared, included</h3>
+                <ul className="space-y-0.5">
+                  {sharedSpaces.map((sp) => {
+                    const inIt = shared.filter((l) => l.spaceId === sp.id);
+                    return (
+                      <li key={sp.id}>
+                        <LockedRow place={{ ...sp, homepageUrl: null }} space />
+                        {/* Its lists hang off it on a tree line, as in the picker below. */}
+                        <ul className="mt-0.5 space-y-0.5 pl-7">
+                          {inIt.map((l, i) => (
+                            <li
+                              key={l.id}
+                              className={`${BRANCH} ${i === 0 ? "before:-top-2.5 before:h-[31px]" : "before:-top-0.5 before:h-[23px]"} ${i < inIt.length - 1 ? TRUNK : ""}`}
+                            >
+                              <LockedRow place={l} />
+                            </li>
+                          ))}
+                        </ul>
+                      </li>
+                    );
+                  })}
+                  {shared
+                    .filter((l) => !l.spaceId)
+                    .map((l) => (
+                      <li key={l.id}>
+                        <LockedRow place={l} />
+                      </li>
+                    ))}
+                </ul>
+                <h3 className="px-2 pt-3 pb-1 text-xs font-medium text-neutral-500">Also share from</h3>
+              </section>
+            )}
             <PlacePicker
-              groups={groups}
+              groups={pickable}
               picked={picked}
               onToggle={(k, on) =>
                 setKept((c) => ({ ...c, places: on ? [...new Set([...c.places, k])] : c.places.filter((x) => x !== k) }))
@@ -239,11 +308,11 @@ export function ShareDayDialog({
               </p>
             ) : (
               <p className="line-clamp-2 min-w-0 flex-1 text-xs text-neutral-500">
-                {chosen.length === 0
-                  ? "Choose where your day comes from."
-                  : !who
-                    ? "Add who to share it with."
-                    : `${who} will see your ${span} on ${namesOf(chosen.map((c) => c.name))}.`}
+                {!who
+                  ? "Add who to share it with."
+                  : chosen.length + shared.length === 0
+                    ? "Choose where your day comes from."
+                    : `${who} will see your ${span} on ${namesOf([...shared, ...chosen].map((c) => c.name))}.`}
               </p>
             )}
             <Button type="submit" size="sm" aria-disabled={!ready || pending || undefined}>
@@ -254,5 +323,23 @@ export function ShareDayDialog({
         </form>
       </ResponsiveDialogContent>
     </ResponsiveDialog>
+  );
+}
+
+/** A place they already see whole: ticked, and not theirs to untick here. */
+function LockedRow({
+  place,
+  space = false,
+}: {
+  place: { name: string; icon: string | null; homepageUrl: string | null };
+  space?: boolean;
+}) {
+  return (
+    <div className="flex min-h-10 items-center gap-2.5 rounded-lg px-2 py-1 text-sm">
+      <Checkbox checked aria-disabled aria-label={`Already shared: ${place.name}`} />
+      <ProjectIcon icon={place.icon} homepageUrl={place.homepageUrl} name={place.name} size={16} />
+      <span className={`truncate text-neutral-600 dark:text-neutral-400 ${space ? "font-medium" : ""}`}>{place.name}</span>
+      {space && <span className="shrink-0 text-xs text-neutral-500">Whole Space</span>}
+    </div>
   );
 }
