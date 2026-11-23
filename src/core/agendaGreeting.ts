@@ -9,7 +9,7 @@
 
 import { and as both, eq, inArray } from "drizzle-orm";
 import { type GreetingPick, type Moment, pickGreeting, scoreGreeting } from "../lib/greetingJev";
-import { WRITER_MODEL, writeGreeting } from "../lib/greetingWriter";
+import { GREETING_MODEL, writeGreeting } from "../lib/greetingWriter";
 import { addDays, dayOf } from "../lib/time";
 import { type GreetingLength, type GreetingPrefs, LENGTH_LIMITS } from "../lib/greetingPrefs";
 import { type AgendaBrief, type BriefItem, buildAgendaBrief, type PartOfDay } from "./agendaBrief";
@@ -170,7 +170,7 @@ function traceOf(
           })
           .sort((a, b) => b.score - a.score)
       : null,
-    model: why ? null : WRITER_MODEL,
+    model: why ? null : GREETING_MODEL,
     prefs: { length: prefs.length, note: prefs.note !== "" },
   };
 }
