@@ -109,6 +109,8 @@ export function UserMenu({
             // The dot is decoration: the menu's first row, What's new, says
             // how many there are.
             aria-label="Account"
+            // BoardHeader spaces it by this.
+            data-account
             className="relative shrink-0 rounded-full outline-none transition-opacity hover:opacity-80 focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             {user ? (
