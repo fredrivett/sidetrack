@@ -354,10 +354,25 @@ export function Kanban({
   // again.
   const saved = useSavedItems(allItemsByProject, seq, completedSince);
   const { merge: mergeSaved } = saved;
+  // Which items are on a day on Check-ins is worked out on the server
+  // (dayOnWholeLists, mySharedDay), so rows that are on one, or are someone's
+  // whose day it is, may have moved in or out of it: Check-ins reloads for
+  // them (below), rather than the page after every tick elsewhere.
+  const onDays = useMemo(
+    () => ({
+      people: new Set([...checkIns.map((c) => c.personId), ...(myDay?.shares.length ? [viewerId] : [])]),
+      items: new Set([...checkIns.flatMap((c) => c.alsoItemIds), ...(myDay?.itemIds ?? [])]),
+    }),
+    [checkIns, myDay, viewerId],
+  );
+  const daysStale = useRef(false);
   // Shows rows at once: a live update's, which shouldn't wait for anything.
   const merge = useCallback(
     (rows: unknown) => {
       if (!isSaved(rows)) return;
+      if (rows.items.some((i) => onDays.items.has(i.id) || i.assigneeIds.some((a) => onDays.people.has(a)))) {
+        daysStale.current = true;
+      }
       mergeSaved(rows);
       // Each copy is kept as it was when the rows aren't in it, so it
       // doesn't re-render every list for a change it doesn't show.
@@ -365,7 +380,7 @@ export function Kanban({
       setFound((f) => f && keep(f, applySaved(f.items, rows)));
       setFetchedItems((had) => applySaved(had, rows));
     },
-    [mergeSaved],
+    [mergeSaved, onDays],
   );
   // A save's rows, in a transition: they then land in the same render that
   // stops showing its change ahead, rather than one of their own first (an
@@ -437,6 +452,12 @@ export function Kanban({
   }, [view]);
 
   const router = useRouter();
+  // Check-ins, on screen or once it's opened, reloads for rows on a day (merge).
+  useEffect(() => {
+    if (view !== "check-ins" || !daysStale.current) return;
+    daysStale.current = false;
+    void refreshIfCurrent(router);
+  }, [view, saved.items, router]);
   // Drafts left here by someone else, or for a week, go (use-draft.ts).
   useEffect(() => claimDrafts(viewerId), [viewerId]);
   // Agents work out "today" in the viewer's timezone (list_today), so save

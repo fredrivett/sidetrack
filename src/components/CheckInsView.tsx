@@ -40,7 +40,10 @@ export type CheckIn = {
   /** What they wrote about today, and the mood they tapped, when they chose to share it. */
   note: string | null;
   mood: DayTag[];
+  /** The lists shared just for their day: only their items in it show. */
   lists: ProjectView[];
+  /** Their items in it on lists the viewer sees whole (dayOnWholeLists). */
+  alsoItemIds: string[];
 };
 
 /** The viewer's own day, as Check-ins shows it, and who they share it with. */
@@ -101,12 +104,18 @@ export function CheckInsView({
   /** Opens Share my day, with someone to share it with already filled in. */
   onShareDay: (person?: string) => void;
 }) {
-  const theirs = checkIns.flatMap((c) => c.lists.flatMap((l) => itemsByProject[l.id] ?? []));
-  const mineIds = new Set(myDay.itemIds);
-  const mine = Object.values(itemsByProject)
-    .flat()
-    .filter((i) => mineIds.has(i.id));
-  const all = [...theirs, ...mine];
+  const byIds = (ids: string[]) => {
+    const wanted = new Set(ids);
+    return Object.values(itemsByProject)
+      .flat()
+      .filter((i) => wanted.has(i.id));
+  };
+  // Theirs on the lists shared for it, then on the lists the viewer sees whole.
+  const itemsOf = (c: CheckIn) => [...c.lists.flatMap((l) => itemsByProject[l.id] ?? []), ...byIds(c.alsoItemIds)];
+  const theirs = checkIns.flatMap(itemsOf);
+  const mine = byIds(myDay.itemIds);
+  // An item on more than one day (a joint one) once.
+  const all = [...new Map([...theirs, ...mine].map((i) => [i.id, i])).values()];
   const projectOf = new Map([
     ...projectsById,
     ...checkIns.flatMap((c) => c.lists.map((l) => [l.id, l] as const)),
@@ -190,7 +199,7 @@ export function CheckInsView({
           ) : (
             <div className="space-y-4">
               {checkIns.map((c) => {
-                const items = c.lists.flatMap((l) => itemsByProject[l.id] ?? []);
+                const items = itemsOf(c);
                 const span = c.within === "today" ? "day" : "week";
                 return (
                   <DayCard
@@ -202,7 +211,7 @@ export function CheckInsView({
                     note={c.note}
                     mood={c.mood}
                     items={items}
-                    groups={groups(items, c.lists.length > 1)}
+                    groups={groups(items, new Set(items.map((i) => i.projectId)).size > 1)}
                     empty={`Nothing on ${c.within === "today" ? "today" : "this week"} yet.`}
                     footer={
                       c.username && !sharesBack.has(c.personId) ? (

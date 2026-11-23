@@ -11,7 +11,7 @@ import {
 import { changeSeq } from "@/core/changes";
 import { countCommentsByItem } from "@/core/comments";
 import { sharedDayNote } from "@/core/dayNotes";
-import { myDayView } from "@/core/dayShares";
+import { dayOnWholeLists, myDayView } from "@/core/dayShares";
 import { listInvitations } from "@/core/invitations";
 import { listLabels } from "@/core/labels";
 import { getDb } from "@/core/db";
@@ -93,6 +93,7 @@ export default async function Home({
       day: l.day ?? "",
       ...sharedDayNote(db, userId, l.personId),
       lists: [],
+      alsoItemIds: dayOnWholeLists(db, userId, l.personId, l.within),
     };
     c.lists.push(p);
     checkIns.set(l.personId, c);
