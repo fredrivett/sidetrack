@@ -270,7 +270,7 @@ describe("NewItemDialog", () => {
   it("opens an item it looks like it repeats, with a way back, until that's ignored", async () => {
     vi.mocked(aiRead).mockResolvedValue({
       projectId: "p1",
-      duplicate: { id: "i22", ref: "HOM-22", title: "Clean Bathroom" },
+      duplicate: { id: "i22", ref: "HOM-22", title: "Clean Bathroom", topLevel: true },
       parent: null,
       due: null,
       repeat: null,
@@ -302,7 +302,7 @@ describe("NewItemDialog", () => {
     fireEvent.change(title(), { target: { value: "clean bathroom" } });
     await act(() => new Promise((r) => setTimeout(r, 500)));
     // The item slides in, in the same dialog, with a way back to the form.
-    fireEvent.click(screen.getByRole("button", { name: "HOM-22 “Clean Bathroom”" }));
+    fireEvent.click(screen.getByRole("button", { name: /HOM-22 “Clean Bathroom”/ }));
     expect(screen.getByText("Details of Clean Bathroom")).toBeTruthy();
     expect(screen.queryByPlaceholderText("Add a task…")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Back to New item" }));
@@ -313,6 +313,33 @@ describe("NewItemDialog", () => {
     fireEvent.change(title(), { target: { value: "clean the bathroom" } });
     await act(() => new Promise((r) => setTimeout(r, 500)));
     expect(document.body.textContent).not.toContain("already on this list");
+    vi.mocked(aiRead).mockReset();
+    vi.mocked(aiRead).mockImplementation(() => new Promise(() => {}));
+  });
+
+  it("adds under the item it looks like it repeats, when it's a step of it instead", async () => {
+    vi.mocked(aiRead).mockResolvedValue({
+      projectId: "p1",
+      duplicate: { id: "i8", ref: "HOM-8", title: "Sort through plants", topLevel: true },
+      parent: null,
+      due: null,
+      repeat: null,
+      label: null,
+      assigneeId: null,
+      titleParts: [],
+    });
+    render(dialog());
+    fireEvent.change(screen.getByPlaceholderText("Add a task…"), {
+      target: { value: "Sort out dying monstera" },
+    });
+    await act(() => new Promise((r) => setTimeout(r, 500)));
+    fireEvent.click(screen.getByRole("button", { name: "Add as sub-item" }));
+    expect(document.body.textContent).not.toContain("already on this list");
+    expect(screen.getByRole("button", { name: "Don't add as a sub-item" })).toBeTruthy();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: /Add item/ })));
+    expect(vi.mocked(addItemAction)).toHaveBeenLastCalledWith(
+      expect.objectContaining({ title: "Sort out dying monstera", parentId: "i8" }),
+    );
     vi.mocked(aiRead).mockReset();
     vi.mocked(aiRead).mockImplementation(() => new Promise(() => {}));
   });
