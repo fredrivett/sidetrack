@@ -164,6 +164,8 @@ test("shares your day, which shows on their Check-ins, not their board", async (
   await joPage.goto("/board");
   await expect(joPage.getByText("No lists yet")).toBeVisible();
   await joPage.goto("/check-ins");
+  // Under when it was due, as the Brief groups it.
+  await expect(day.getByRole("button", { name: /^Overdue ?\d+$/ })).toHaveAttribute("aria-expanded", "true");
   await expect(day.getByText("Overdue swim")).toBeVisible();
   await expect(day.getByText("0 of 1 done")).toBeVisible();
   // The mood she chose to share, not the words she didn't.

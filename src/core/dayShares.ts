@@ -452,6 +452,7 @@ export function daysSharedWhole(db: Db, viewerId: string, now = Date.now()) {
         image: r.image,
         within: r.within,
         day: dayOf(r.within === "week" ? startOfWeekIn(zone, now) : now, zone),
+        today: dayOf(now, zone),
         turnsAt: nextDayStartIn(zone, now),
       };
     });
@@ -532,6 +533,7 @@ export function myDayView(db: Db, userId: string, now = Date.now()) {
   return {
     within,
     day: seen ? dayOf(within === "week" ? startOfWeekIn(zone, now) : now, zone) : "",
+    today: dayOf(now, zone),
     note: (seen?.note && rest) || null,
     mood: seen?.mood ? tags : [],
     itemIds: seen?.itemIds ?? [],

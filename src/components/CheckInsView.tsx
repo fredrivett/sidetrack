@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition, type ReactNode } from "react";
+import { useId, useState, useTransition, type ReactNode } from "react";
 import { Ellipsis, HeartHandshake, Mail, Plus, Quote } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -18,6 +18,7 @@ import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink, OnlyWithin } from "@/core/schema";
 import type { DayTag } from "@/lib/dayTags";
 import { nestItems } from "@/lib/itemTree";
+import { AGENDA_SECTIONS, agendaSection, type AgendaSection, weekday } from "@/lib/time";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -29,8 +30,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { OverdueCard } from "./AgendaView";
 import { ItemDetailDialog } from "./ItemDetailDialog";
-import { ItemGroupView, withHiddenParents } from "./ItemList";
+import { isHiddenParent, ItemGroupView, withHiddenParents } from "./ItemList";
 import { UserAvatar } from "./UserAvatar";
 import type { ProjectView } from "./Kanban";
 import { runAction } from "./run-action";
@@ -45,6 +47,8 @@ export type CheckIn = {
   within: OnlyWithin;
   /** Their day (YYYY-MM-DD) it counts from: today, or the week's Monday. */
   day: string;
+  /** Their today, by their clock: what its items' due dates read from. */
+  today: string;
   /** What they wrote about today, and the mood they tapped, when they chose to share it. */
   note: string | null;
   mood: DayTag[];
@@ -59,6 +63,7 @@ export type MyDay = {
   within: OnlyWithin;
   /** Their day (YYYY-MM-DD): today, or the week's Monday. */
   day: string;
+  today: string;
   note: string | null;
   mood: DayTag[];
   /** Their items in the day they share (mySharedDay). */
@@ -68,7 +73,7 @@ export type MyDay = {
   invited: InvitationView[];
 };
 
-const NO_ONE: MyDay = { within: "today", day: "", note: null, mood: [], itemIds: [], shares: [], invited: [] };
+const NO_ONE: MyDay = { within: "today", day: "", today: "", note: null, mood: [], itemIds: [], shares: [], invited: [] };
 
 const dayName = (day: string) =>
   day ? new Date(`${day}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }) : "";
@@ -140,12 +145,24 @@ export function CheckInsView({
   // and, on the viewer's own card, ones they can see but aren't in their day.
   const titles = { ...Object.fromEntries(Object.values(itemsByProject).flat().map((i) => [i.id, i.title])), ...parentTitles };
 
-  const groups = (items: Item[], many: boolean) =>
+  // Grouped by when they're due, by the sharer's clock, as the Brief groups
+  // them (agendaSection); a group goes where its soonest open item does,
+  // and once it's finished, under Done.
+  const groups = (items: Item[], many: boolean, today: string) =>
     // Someone else's item holding sub-items of theirs shows by its title alone.
     nestItems(withHiddenParents(items, titles)).map((group) => {
       const list = projectOf.get(group.projectId);
+      const open = [group, ...group.children].filter((i) => i.completedAt === null && !isHiddenParent(i));
+      const soonest = open
+        .flatMap((i) => {
+          // An undated sub-item is planned with its dated item.
+          const section = agendaSection(!i.dueDate && group.dueDate ? { ...i, dueDate: group.dueDate, dueFrom: group.dueFrom } : i, undefined, today);
+          return section ? [{ section, due: i.dueDate ?? group.dueDate ?? "" }] : [];
+        })
+        .sort((a, b) => AGENDA_SECTIONS.indexOf(a.section) - AGENDA_SECTIONS.indexOf(b.section) || a.due.localeCompare(b.due))[0];
       return {
-        done: group.completedAt !== null,
+        section: group.completedAt === null ? (soonest?.section ?? "No date") : null,
+        due: soonest?.due ?? "",
         node: (
           <ItemGroupView
             key={group.id}
@@ -174,7 +191,8 @@ export function CheckInsView({
             note={myDay.note}
             mood={myDay.mood}
             items={mine}
-            groups={groups(mine, new Set(mine.map((i) => i.projectId)).size > 1)}
+            today={myDay.today}
+            groups={groups(mine, new Set(mine.map((i) => i.projectId)).size > 1, myDay.today)}
             empty={myDay.shares.length ? "Nothing of yours is due in it yet." : "Share your day and what’s due on it shows here, as they see it."}
             footer={
               <div className="space-y-1 border-t border-stone-100 px-4 py-3 dark:border-stone-800/60">
@@ -226,7 +244,8 @@ export function CheckInsView({
                     note={c.note}
                     mood={c.mood}
                     items={items}
-                    groups={groups(items, new Set(items.map((i) => i.projectId)).size > 1)}
+                    today={c.today}
+                    groups={groups(items, new Set(items.map((i) => i.projectId)).size > 1, c.today)}
                     empty={`Nothing on ${c.within === "today" ? "today" : "this week"} yet.`}
                     footer={
                       c.username && !sharesBack.has(c.personId) ? (
@@ -278,6 +297,7 @@ function DayCard({
   note,
   mood,
   items,
+  today,
   groups,
   empty,
   footer,
@@ -291,7 +311,9 @@ function DayCard({
   note: string | null;
   mood: DayTag[];
   items: Item[];
-  groups: { done: boolean; node: ReactNode }[];
+  today: string;
+  /** Each item group, by the section it's in: null once it's done. */
+  groups: { section: AgendaSection | null; due: string; node: ReactNode }[];
   empty: string;
   footer: ReactNode;
 }) {
@@ -300,8 +322,15 @@ function DayCard({
   const ids = new Set(items.map((i) => i.id));
   const top = items.filter((i) => i.parentId === null || !ids.has(i.parentId));
   const done = top.filter((i) => i.completedAt !== null).length;
-  const open = groups.filter((g) => !g.done);
-  const finished = groups.filter((g) => g.done);
+  // Each section runs by due day, ties keeping list order (as the Brief does).
+  const sections = AGENDA_SECTIONS.map(
+    (label) => [label, groups.filter((g) => g.section === label).sort((a, b) => a.due.localeCompare(b.due))] as const,
+  ).filter(([, rows]) => rows.length > 0);
+  const finished = groups.filter((g) => g.section === null);
+  // Overdue folds away as on the Brief, for this visit only: it's their day,
+  // not the viewer's to keep tidy.
+  const [overdueCollapsed, setOverdueCollapsed] = useState(false);
+  const overdueId = useId();
   return (
     <section
       aria-label={label}
@@ -365,11 +394,27 @@ function DayCard({
           <p className="text-xs text-neutral-500">{empty}</p>
         ) : (
           <>
-            {open.length > 0 && (
-              <div className="space-y-1.5">
-                <h3 className="text-[11px] font-medium tracking-wide text-neutral-400 uppercase">To do</h3>
-                {open.map((g) => g.node)}
-              </div>
+            {sections.map(([section, rows]) =>
+              section === "Overdue" ? (
+                <OverdueCard
+                  key={section}
+                  id={overdueId}
+                  count={rows.length}
+                  collapsed={overdueCollapsed}
+                  onToggle={() => setOverdueCollapsed((c) => !c)}
+                  heading="h3"
+                >
+                  {rows.map((g) => g.node)}
+                </OverdueCard>
+              ) : (
+                <div key={section} className="space-y-1.5">
+                  <h3 className="text-[11px] font-medium tracking-wide text-neutral-400 uppercase">
+                    {/* At the weekend, what's left of the week is the weekend. */}
+                    {section === "This week" && today && weekday(today) % 6 === 0 ? "This weekend" : section}
+                  </h3>
+                  {rows.map((g) => g.node)}
+                </div>
+              ),
             )}
             {finished.length > 0 && (
               <div className="space-y-1.5">

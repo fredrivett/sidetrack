@@ -200,6 +200,8 @@ export function limitedListsById(
     within: OnlyWithin | null;
     /** Their day (YYYY-MM-DD) the window counts from, with turnsAt when it moves on. */
     day: string | null;
+    /** Their today, by their clock. */
+    today: string | null;
     turnsAt: number | null;
   }
 > {
@@ -246,6 +248,7 @@ export function limitedListsById(
           // st_today's zone: theirs, else UTC.
           // Today, or the Monday a week share starts from.
           day: within ? dayOf(within === "week" ? startOfWeekIn(validZone(person?.timeZone)) : Date.now(), validZone(person?.timeZone)) : null,
+          today: within ? dayOf(Date.now(), validZone(person?.timeZone)) : null,
           turnsAt: within ? nextDayStartIn(validZone(person?.timeZone)) : null,
         },
       ];
