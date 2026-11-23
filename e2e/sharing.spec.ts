@@ -190,6 +190,43 @@ test("shares your day, which shows on their Check-ins, not their board", async (
   await context.close();
 });
 
+test("shares your day on lists you already share with them too, without picking them", async ({ page, user, browser, baseURL }) => {
+  const gym = user.addList("Gym");
+  user.addItem(gym.id, "Overdue swim", [user.id], "2020-01-06");
+  const jo = await createPerson();
+  const errands = jo.shareList("Errands", [], user.id, user.username, "editor");
+  user.addItem(errands.id, "Post the parcel", [user.id], "2020-01-06");
+  user.addItem(errands.id, "Some day errand", [user.id]);
+  await page.goto("/check-ins");
+  await page.getByRole("button", { name: "Share my day" }).click();
+  const dialog = page.getByRole("dialog", { name: "Share my day" });
+  await dialog.getByLabel("Who to share your day with").fill(jo.username);
+  await dialog.getByRole("checkbox", { name: "Share from Gym" }).click();
+  await dialog.getByRole("button", { name: "Share my day" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Your day" }).getByText("Post the parcel")).toBeVisible();
+
+  const context = await browser.newContext();
+  await jo.signIn(context, baseURL ?? "");
+  const joPage = await context.newPage();
+  await joPage.goto("/brief");
+  await joPage.getByRole("button", { name: "Accept" }).click();
+  await joPage.goto("/check-ins");
+  const day = joPage.getByRole("region", { name: "E2E User’s day" });
+  await expect(day.getByText("Overdue swim")).toBeVisible();
+  await expect(day.getByText("Post the parcel")).toBeVisible();
+  await expect(day.getByText("0 of 2 done")).toBeVisible();
+  await expect(day.getByText("Some day errand")).toHaveCount(0);
+
+  // Due today now, it joins her card live, though only its row changed.
+  await page.goto("/board");
+  await page.getByRole("button", { name: "Some day errand", exact: true }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Due date" }).click();
+  await page.getByRole("menuitem", { name: "Today" }).click();
+  await expect(day.getByText("Some day errand")).toBeVisible();
+  await context.close();
+});
+
 test("shares your day on someone else's list you edit, not one you only comment on", async ({ page, user }) => {
   const fred = await createPerson();
   const home = fred.shareList("Fred's home", [], user.id, user.username, "editor");

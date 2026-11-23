@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { users } from "./auth-schema";
 import { setDayNote, sharedDayNote } from "./dayNotes";
-import { listDayShares, myDayView, stopDayShare, updateDayShare } from "./dayShares";
+import { dayOnWholeLists, listDayShares, myDayView, stopDayShare, updateDayShare } from "./dayShares";
 import { nanoid } from "nanoid";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { listAudit } from "./audit";
@@ -685,6 +685,39 @@ describe("a membership shown only someone's today or week", () => {
     expect(listAudit(db, fred, { projectId: home.id }).map((r) => plainText(r.parts ?? []))).toContainEqual(
       expect.stringContaining("stopped sharing their day with 1 person"),
     );
+  });
+
+  it("shows her day on the lists Fred already sees whole too, without her picking them", () => {
+    const { db, lorna, fred, jo, list, seen } = setup("today");
+    // She shares her day with Fred from Gym; Week, which he edits, isn't picked.
+    const gym = createProject(db, lorna, { name: "Gym" }, "web");
+    addItem(db, lorna, { projectId: gym.id, title: "Gym today", assigneeIds: [lorna], dueDate: "2026-11-19" }, "web");
+    inviteMember(db, lorna, gym.id, "fred", "web", "viewer", { onlyMine: true, within: "today" });
+    acceptInvite(db, fred, gym.id, "web");
+    // His own list she's on, which Jo can't see.
+    const home = createProject(db, fred, { name: "Home" }, "web");
+    inviteMember(db, fred, home.id, "lorna", "web", "editor");
+    acceptInvite(db, lorna, home.id, "web");
+    addItem(db, fred, { projectId: home.id, title: "Lorna's errand", assigneeIds: [lorna], dueDate: "2026-11-19" }, "web");
+    addItem(db, fred, { projectId: home.id, title: "Fred's errand", assigneeIds: [fred], dueDate: "2026-11-19" }, "web");
+    const title = (id: string) => getItem(db, lorna, id)?.title;
+    const onWhole = (viewer: string) => dayOnWholeLists(db, viewer, lorna, "today").map(title).sort();
+
+    // Her today on Week and Home, as Jo's limited share sees it on Week: not
+    // Fred's items, nor hers due later.
+    expect(onWhole(fred)).toEqual([...seen(), "Lorna's errand"].sort());
+    // Jo sees no list whole: nothing more than what's shared with her.
+    expect(onWhole(jo)).toEqual([]);
+    // Her own Check-ins show her what each of them sees.
+    expect(myDayView(db, lorna).itemIds.map(title).sort()).toEqual([...seen(), "Gym today", "Lorna's errand"].sort());
+    // An archived list isn't on anyone's day.
+    updateProject(db, lorna, list.id, { status: "archived" }, "web");
+    expect(onWhole(fred)).toEqual(["Lorna's errand"]);
+    // With Gym, her one pick for Fred, archived too, he has no card for her,
+    // so her own Check-ins don't claim he sees her errand.
+    updateProject(db, lorna, list.id, { status: "active" }, "web");
+    updateProject(db, lorna, gym.id, { status: "archived" }, "web");
+    expect(myDayView(db, lorna).itemIds.map(title).sort()).toEqual([...seen(), "Gym today"].sort());
   });
 
   it("is kept with a role change, cleared with the limit, and needs one", () => {

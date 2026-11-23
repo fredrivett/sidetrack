@@ -129,8 +129,8 @@ export function ShareDayDialog({
             <ResponsiveDialogCloseButton className="ml-auto shrink-0" />
           </div>
           <ResponsiveDialogDescription className="text-xs text-neutral-500">
-            They’ll see your items on the lists you pick, on their Check-ins, and can comment.
-            Nothing else on those lists, and nothing you don’t pick.
+            On their Check-ins, they’ll see your items on the lists you pick and on lists you
+            already share with them, and can comment on the lists you pick. Nothing else on those.
           </ResponsiveDialogDescription>
         </div>
 

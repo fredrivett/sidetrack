@@ -8,7 +8,7 @@
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { splitDayNote } from "../lib/dayTags";
 import { dayOf, startOfWeekIn } from "../lib/time";
-import { inDayOf } from "./access";
+import { hasProjectAccess, hasWholeListAccess, inDayOf } from "./access";
 import { getDayNote } from "./dayNotes";
 import { listInvitations } from "./invitations";
 import { validZone } from "./db-functions";
@@ -173,7 +173,8 @@ export function stopDayShare(db: Db, userId: string, personId: string, source: A
  * What the user's partners see of their day, at most: those who've accepted
  * (anyone's, before anyone has, since a pending share shows nothing yet), by
  * the widest window, with the note's words or mood when any of them sees
- * those, and the ids of the user's own items in it. Null when they share
+ * those, and the ids of the user's own items in it, on the places shared and
+ * the lists a partner sees whole (dayOnWholeLists). Null when they share
  * their day with nobody.
  */
 export function mySharedDay(db: Db, userId: string, shares = listDayShares(db, userId)) {
@@ -181,21 +182,49 @@ export function mySharedDay(db: Db, userId: string, shares = listDayShares(db, u
   const counted = shares.some((s) => !s.pending) ? shares.filter((s) => !s.pending) : shares;
   const within: OnlyWithin = counted.some((s) => s.within === "week") ? "week" : "today";
   // Where they've accepted, likewise: a pending place shows nothing yet.
-  const places = counted.flatMap((s) => (s.pending ? s.places : s.places.filter((p) => !p.pending)));
-  const listIds = new Set(places.filter((p) => p.kind === "list").map((p) => p.id));
-  const spaceIds = places.filter((p) => p.kind === "space").map((p) => p.id);
-  const where = [
-    sql`${projects.id} in (${sql.join([...listIds, ""].map((id) => sql`${id}`), sql`, `)})`,
-    ...(spaceIds.length ? [inArray(projects.spaceId, spaceIds)] : []),
-  ];
-  const itemIds = db
+  const placesOf = (s: DayShare) => (s.pending ? s.places : s.places.filter((p) => !p.pending));
+  const shared = db
     .select({ id: items.id })
     .from(items)
     .innerJoin(projects, eq(projects.id, items.projectId))
-    .where(and(sql`(${sql.join(where, sql` or `)})`, inDayOf(userId, within)))
+    .where(and(inPlaces(counted.flatMap(placesOf)), inDayOf(userId, within)))
     .all()
     .map((r) => r.id);
+  // And on the lists each of them sees whole anyway, for those it gives a
+  // card on Check-ins: a list it covers that's active and they see only part of.
+  const carded = counted.filter(
+    (s) =>
+      !!db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(and(inPlaces(placesOf(s)), eq(projects.status, "active"), sql`not (${hasWholeListAccess(s.personId)})`))
+        .get(),
+  );
+  const itemIds = [...new Set([...shared, ...carded.flatMap((s) => dayOnWholeLists(db, s.personId, userId, within))])];
   return { within, note: counted.some((s) => s.note), mood: counted.some((s) => s.mood), itemIds };
+}
+
+/** Lists in any of these places (`projects` in scope). */
+function inPlaces(places: DayShare["places"]) {
+  const listIds = places.filter((p) => p.kind === "list").map((p) => p.id);
+  const spaceIds = places.filter((p) => p.kind === "space").map((p) => p.id);
+  return sql`(${projects.id} in (${sql.join([...listIds, ""].map((id) => sql`${id}`), sql`, `)})${spaceIds.length ? sql` or ${inArray(projects.spaceId, spaceIds)}` : sql``})`;
+}
+
+/**
+ * Ids of `personId`'s items in their `within` on the active lists `viewerId`
+ * sees whole, which their day shared with the viewer shows too, without
+ * picking those lists: the viewer sees those items anyway, so leaving them
+ * off would hide nothing, only make the day look emptier than it is.
+ */
+export function dayOnWholeLists(db: Db, viewerId: string, personId: string, within: OnlyWithin): string[] {
+  return db
+    .select({ id: items.id })
+    .from(items)
+    .innerJoin(projects, eq(projects.id, items.projectId))
+    .where(and(eq(projects.status, "active"), hasWholeListAccess(viewerId), hasProjectAccess(personId), inDayOf(personId, within)))
+    .all()
+    .map((r) => r.id);
 }
 
 /**
