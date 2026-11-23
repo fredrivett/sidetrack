@@ -1,4 +1,4 @@
-import { and, asc, count, eq, sql } from "drizzle-orm";
+import { and, asc, count, eq, isNull, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { normalizeProjectIcon } from "../lib/projectIcon";
 import { hasProjectAccess } from "./access";
@@ -855,7 +855,8 @@ export function listPendingSpaceInvites(
     })
     .from(spaceMembers)
     .innerJoin(spaces, eq(spaces.id, spaceMembers.spaceId))
-    .where(and(eq(spaceMembers.userId, userId), eq(spaceMembers.status, "pending")))
+    // Someone's day is accepted as one, on Check-ins (pendingDayShares).
+    .where(and(eq(spaceMembers.userId, userId), eq(spaceMembers.status, "pending"), isNull(spaceMembers.onlyWithin)))
     .orderBy(asc(spaceMembers.createdAt))
     .all();
 }

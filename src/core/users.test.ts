@@ -3,7 +3,7 @@ import { createTestDb, createTestUser } from "./test-helpers";
 import { NO_FILTERS } from "../lib/filters";
 import {
   getSeenPosts,
-  markPostSeen,
+  markPostsSeen,
   getNoDateFoldedLists,
   getOverdueCollapsed,
   getBoardFilters,
@@ -103,13 +103,18 @@ describe("seen changelog posts", () => {
     const me = createTestUser(db);
     const other = createTestUser(db);
     expect(getSeenPosts(db, me)).toEqual([]);
-    markPostSeen(db, me, "brief");
-    markPostSeen(db, me, "repeats");
-    markPostSeen(db, me, "brief");
+    markPostsSeen(db, me, ["brief"]);
+    markPostsSeen(db, me, ["repeats"]);
+    markPostsSeen(db, me, ["brief"]);
     expect(getSeenPosts(db, me)).toEqual(["repeats", "brief"]);
+    // All at once (Mark all as read), keeping the ones already seen.
+    markPostsSeen(db, me, ["labels", "repeats", "labels"]);
+    expect(getSeenPosts(db, me)).toEqual(["brief", "labels", "repeats"]);
     expect(getSeenPosts(db, other)).toEqual([]);
-    expect(() => markPostSeen(db, me, "../brief")).toThrow();
-    expect(() => markPostSeen(db, me, "x".repeat(101))).toThrow();
+    // One bad slug saves none of them.
+    expect(() => markPostsSeen(db, me, ["dates", "../brief"])).toThrow();
+    expect(() => markPostsSeen(db, me, ["x".repeat(101)])).toThrow();
+    expect(getSeenPosts(db, me)).toEqual(["brief", "labels", "repeats"]);
     // A saved value of the wrong shape reads as nothing seen.
     db.update(users).set({ seenPosts: { brief: true } }).where(eq(users.id, me)).run();
     expect(getSeenPosts(db, me)).toEqual([]);

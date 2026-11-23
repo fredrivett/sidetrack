@@ -138,13 +138,16 @@ export function getSeenPosts(db: Db, userId: string): string[] {
 const SEEN_POSTS_MAX = 200;
 
 /**
- * Mark a post seen, so it leaves the user's stack on the Brief. Not audited,
- * like folding a section: it's how they view the Brief, not a change to
- * anything shared.
+ * Mark posts seen (one read, or all at once), so they leave the user's stack
+ * on the Brief. Not audited, like folding a section: it's how they view the
+ * Brief, not a change to anything shared.
  */
-export function markPostSeen(db: Db, userId: string, slug: string): void {
-  if (typeof slug !== "string" || !/^[a-z0-9-]{1,100}$/.test(slug)) throw new Error("Not a post");
-  const seen = [...getSeenPosts(db, userId).filter((s) => s !== slug), slug].slice(-SEEN_POSTS_MAX);
+export function markPostsSeen(db: Db, userId: string, slugs: string[]): void {
+  if (!Array.isArray(slugs) || slugs.length > SEEN_POSTS_MAX) throw new Error("Not posts");
+  for (const slug of slugs)
+    if (typeof slug !== "string" || !/^[a-z0-9-]{1,100}$/.test(slug)) throw new Error("Not a post");
+  const fresh = [...new Set(slugs)];
+  const seen = [...getSeenPosts(db, userId).filter((s) => !fresh.includes(s)), ...fresh].slice(-SEEN_POSTS_MAX);
   // audit-exempt: view state, not a change to anything shown to others.
   db.update(users).set({ seenPosts: seen }).where(eq(users.id, userId)).run();
   // Unaudited, so announced here: the user's other tabs and devices follow.

@@ -3,8 +3,16 @@
 import { useId, useState, useTransition, type ReactNode } from "react";
 import { Ellipsis, HeartHandshake, Mail, Plus, Quote } from "lucide-react";
 import { toast } from "sonner";
-import { cancelInvitationAction, resendInvitationAction, stopDayShareAction, updateDayShareAction } from "@/app/actions";
-import type { DayShare } from "@/core/dayShares";
+import {
+  acceptDayShareAction,
+  cancelInvitationAction,
+  declineDayShareAction,
+  leaveDayShareAction,
+  resendInvitationAction,
+  stopDayShareAction,
+  updateDayShareAction,
+} from "@/app/actions";
+import type { DayShare, DayShareInvite } from "@/core/dayShares";
 import type { InvitationView } from "@/core/invitations";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink, OnlyWithin } from "@/core/schema";
@@ -86,6 +94,7 @@ function seesWords(s: DayShare): string {
 export function CheckInsView({
   checkIns,
   myDay = NO_ONE,
+  dayShareInvites = [],
   viewer,
   itemsByProject,
   projectsById,
@@ -97,6 +106,8 @@ export function CheckInsView({
 }: {
   checkIns: CheckIn[];
   myDay?: MyDay;
+  /** Shared days waiting for the viewer to accept. */
+  dayShareInvites?: DayShareInvite[];
   viewer: { name: string; username: string | null; image: string | null };
   itemsByProject: Record<string, Item[]>;
   /** The viewer's lists, to show their own items with. */
@@ -210,7 +221,10 @@ export function CheckInsView({
 
         <div className="min-w-0 space-y-2">
           <h2 className="px-1 text-xs font-medium text-neutral-500">Following</h2>
-          {checkIns.length === 0 ? (
+          {dayShareInvites.map((d) => (
+            <DayShareInviteRow key={d.personId} invite={d} />
+          ))}
+          {checkIns.length === 0 && dayShareInvites.length > 0 ? null : checkIns.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-stone-200 px-4 py-8 text-center text-sm text-neutral-500 dark:border-stone-800">
               Nobody shares their day with you yet. When someone does, it shows here.
             </div>
@@ -226,6 +240,7 @@ export function CheckInsView({
                     title={`${c.name}’s ${span}`}
                     person={{ userId: c.personId, displayUsername: c.username, name: c.name, email: null, image: c.image }}
                     sub={c.within === "today" ? dayName(c.day) : `Week of ${dayName(c.day)}`}
+                    menu={<StopSeeingMenu personId={c.personId} name={c.name} span={span} />}
                     note={c.note}
                     mood={c.mood}
                     items={items}
@@ -278,6 +293,7 @@ function DayCard({
   title,
   person,
   sub,
+  menu,
   note,
   mood,
   items,
@@ -290,6 +306,8 @@ function DayCard({
   title: string;
   person: { userId: string; displayUsername: string | null; name: string; email: null; image: string | null };
   sub: string;
+  /** The card's ⋯ menu, for someone else's day. */
+  menu?: ReactNode;
   note: string | null;
   mood: DayTag[];
   items: Item[];
@@ -324,6 +342,7 @@ function DayCard({
           <p className="truncate font-display text-[22px] leading-tight text-neutral-900 italic dark:text-neutral-100">{title}</p>
           <p className="text-xs text-neutral-500">{sub}</p>
         </div>
+        {menu && <div className="ml-auto shrink-0">{menu}</div>}
       </header>
       {(mood.length > 0 || note) && (
         <div className="space-y-2 border-b border-stone-100 bg-stone-50/60 px-4 py-3 dark:border-stone-800/60 dark:bg-neutral-900/40">
@@ -528,6 +547,80 @@ export function InvitedRow({ invitation: i }: { invitation: InvitationView }) {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+    </div>
+  );
+}
+
+/**
+ * Someone else's day card's ⋯ menu: stop seeing it, which ends the share
+ * (they'd have to share it again). Holds the menu while it saves.
+ */
+function StopSeeingMenu({ personId, name, span }: { personId: string; name: string; span: string }) {
+  const [saving, start] = useTransition();
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label={`${name}’s ${span} options`}
+        aria-disabled={saving || undefined}
+        className="rounded p-1 text-neutral-500 hover:bg-white/60 aria-disabled:pointer-events-none aria-disabled:opacity-50 dark:hover:bg-neutral-800"
+      >
+        <Ellipsis aria-hidden className="size-4" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-52">
+        <DropdownMenuItem
+          variant="destructive"
+          onClick={() =>
+            !saving &&
+            start(async () => {
+              await runAction(leaveDayShareAction(personId), `stop seeing ${name}’s ${span}`);
+            })
+          }
+        >
+          Stop seeing {name}’s {span}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/**
+ * Someone's shared day waiting for the viewer to accept: one accept covers
+ * it all, the places it adds included. Holds the row while it saves.
+ */
+function DayShareInviteRow({ invite: d }: { invite: DayShareInvite }) {
+  const [saving, start] = useTransition();
+  const span = d.within === "today" ? "day" : "week";
+  const answer = (action: () => Promise<unknown>, what: string) =>
+    !saving &&
+    start(async () => {
+      await runAction(action(), what);
+    });
+  return (
+    <div
+      role="group"
+      aria-label={`${d.name}’s ${span}, waiting for you`}
+      aria-disabled={saving || undefined}
+      aria-busy={saving || undefined}
+      className="flex flex-wrap items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm aria-disabled:opacity-60 dark:border-amber-900 dark:bg-amber-950/40"
+    >
+      <UserAvatar user={{ userId: d.personId, displayUsername: d.username, name: d.name, email: null, image: d.image }} size={28} />
+      <span className="min-w-0 flex-1 basis-48 text-amber-900 dark:text-amber-200">
+        <span className="font-medium">{d.name}</span> wants to share {d.within === "today" ? "today" : "this week"} with you
+        {d.places.length > 0 && <span className="block text-xs opacity-80">and lets you comment on {d.places.join(", ")}</span>}
+      </span>
+      <div className="ml-auto flex shrink-0 gap-2">
+        <Button size="sm" aria-disabled={saving || undefined} onClick={() => answer(() => acceptDayShareAction(d.personId), `accept ${d.name}’s ${span}`)}>
+          Accept
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          aria-disabled={saving || undefined}
+          onClick={() => answer(() => declineDayShareAction(d.personId), `decline ${d.name}’s ${span}`)}
+        >
+          Decline
+        </Button>
+      </div>
     </div>
   );
 }

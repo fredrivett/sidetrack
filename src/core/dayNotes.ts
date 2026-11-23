@@ -13,7 +13,7 @@ import { dayOf } from "../lib/time";
 import { users } from "./auth-schema";
 import type { Db } from "./db";
 import { validZone } from "./db-functions";
-import { dayNotes, projectMembers, spaceMembers } from "./schema";
+import { dayNotes, dayShares, projectMembers, spaceMembers } from "./schema";
 
 /** The user's note for `day` (YYYY-MM-DD), or null when they haven't written one. */
 export function getDayNote(db: Db, userId: string, day: string): string | null {
@@ -77,6 +77,13 @@ export function sharedDayNote(
       )
       .all(),
   );
+  // And a day shared without places of its own, once accepted.
+  const own = db
+    .select({ note: dayShares.shareNote, mood: dayShares.shareMood })
+    .from(dayShares)
+    .where(and(eq(dayShares.viewerId, viewerId), eq(dayShares.sharerId, personId), eq(dayShares.status, "accepted")))
+    .get();
+  if (own) shares.push(own);
   const words = shares.some((s) => s.note);
   const mood = shares.some((s) => s.mood);
   if (!words && !mood) return { note: null, mood: [] };

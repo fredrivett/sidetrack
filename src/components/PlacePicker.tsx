@@ -27,9 +27,9 @@ export const placeKey = (p: { kind: string; id: string }) => `${p.kind}:${p.id}`
 // middle from the gap above; the first list's reaches up into the Space's
 // row to 4px under its checkbox (which ends 12px above the row's foot), so
 // the line hangs off it whether or not the row is shaded.
-const BRANCH =
+export const BRANCH =
   "relative before:absolute before:-left-[13px] before:w-[13px] before:rounded-bl-lg before:border-b-2 before:border-l-2 before:border-neutral-200 dark:before:border-neutral-700";
-const TRUNK =
+export const TRUNK =
   "after:absolute after:top-0 after:-bottom-0.5 after:-left-[13px] after:border-l-2 after:border-neutral-200 dark:after:border-neutral-700";
 
 /** The places in `groups` that are picked, in the order they're shown: each Space, then its lists. */

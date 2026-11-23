@@ -1,4 +1,4 @@
-import { listDayShares, stopDayShare, updateDayShare } from "@/core/dayShares";
+import { acceptDayShare, alreadyShared, declineDayShare, leaveDayShare, listDayShares, pendingDayShares, shareDay, stopDayShare, updateDayShare } from "@/core/dayShares";
 import { listAccessById } from "@/core/access";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -62,6 +62,7 @@ import { projectRefPrefixes, resolveItemRef } from "@/core/itemRef";
 import {
   acceptInvite,
   declineInvite,
+  findUserByHandle,
   getUserName,
   inviteMember,
   setMemberRole,
@@ -2380,12 +2381,13 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       title: "List who sees the user's day",
       description:
         "The people the user shares their day with (Share my day): each with today or week, whether they see the user's day note " +
-        "and mood, whether they've accepted, and the lists and Spaces it covers. person_id is what update_day_share and stop_day_share take.",
+        "and mood, whether they've accepted, and the lists and Spaces it covers. without_places: it was shared with no places picked (share_day), " +
+        "so it shows the user's day on the lists that person already sees whole. person_id is what update_day_share and stop_day_share take.",
       inputSchema: {},
     },
     async () => {
       const { db } = getDb();
-      return json(listDayShares(db, userId).map((s) => ({ person_id: s.personId, username: s.username, name: s.name, within: s.within, note: s.note, mood: s.mood, pending: s.pending, places: s.places })));
+      return json(listDayShares(db, userId).map((s) => ({ person_id: s.personId, username: s.username, name: s.name, within: s.within, note: s.note, mood: s.mood, pending: s.pending, places: s.places, without_places: s.withoutPlaces })));
     },
   );
 
@@ -2425,6 +2427,58 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       return json({ ok: true });
     },
   );
+
+  server.registerTool(
+    "lists_shared_whole",
+    {
+      title: "List what someone already sees of the user's day",
+      description:
+        "The Spaces both the user and person (a username or email) are in, which person sees whole, and the active lists person already sees whole " +
+        "that the user is on too. Sharing the user's day with them shows the user's items in it on these without picking them, as Share my day lists them under already shared. " +
+        "Returns { spaces: [{ id, name }], lists: [{ id, name, spaceId }] }, spaceId set for a list in one of those spaces; empty when they share nothing or have no account.",
+      inputSchema: { person: z.string().min(1) },
+    },
+    async ({ person }) => {
+      const { db } = getDb();
+      const target = findUserByHandle(db, person);
+      return json(target ? alreadyShared(db, userId, target.id) : { spaces: [], lists: [] });
+    },
+  );
+
+  server.registerTool(
+    "share_day",
+    {
+      title: "Share the user's day without picking places",
+      description:
+        "Share the user's today or week (within) with person, a username or email, without picking any list or Space: they'll see " +
+        "the user's items in it on the lists they already see whole (lists_shared_whole), and the day note's words (note) or mood (mood) if set, " +
+        "on their Check-ins once they accept. Refused when they share no lists, or already see the user's day. To share it from lists or " +
+        "Spaces they can't see yet, use invite_people with only_mine and within on each place instead. Act only when the user asked to share their day with them.",
+      inputSchema: {
+        person: z.string().min(1),
+        within: z.enum(ONLY_WITHIN),
+        note: z.boolean().optional(),
+        mood: z.boolean().optional(),
+      },
+    },
+    async ({ person, within, note, mood }) => {
+      const { db } = getDb();
+      const shared = shareDay(db, userId, { person, within, note, mood }, SOURCE);
+      return json({ person_id: shared.personId, lists: shared.lists });
+    },
+  );
+
+  for (const [name, title, run, says] of [
+    ["accept_day_share", "Accept someone's shared day", acceptDayShare, "Accept the shared day person_id (from list_pending_invites' days) is waiting for the user to accept, every list and Space it covers at once: it then shows on their Check-ins."],
+    ["decline_day_share", "Decline someone's shared day", declineDayShare, "Decline the shared day person_id (from list_pending_invites' days) is waiting for the user to accept, every part of it."],
+    ["leave_day_share", "Stop seeing someone's day", leaveDayShare, "Stop seeing person_id's day on the user's Check-ins: it ends, as if they'd stopped sharing it, and the user leaves the places shared just for it (not lists they're in whole). Act only when the user asked."],
+  ] as const) {
+    server.registerTool(name, { title, description: says, inputSchema: { person_id: z.string().min(1) } }, async ({ person_id }) => {
+      const { db } = getDb();
+      run(db, userId, person_id, SOURCE);
+      return json({ ok: true });
+    });
+  }
 
   // The email for an invite to join, with its link: sent before answering, like invite_people's.
   const sendJoinInvite = (sent: SentInvitation) =>
@@ -2547,7 +2601,9 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Returns { spaces, lists }: a Space invite has spaceId, spaceName and createdAt; " +
         "a list invite has listId, listName, ownerName and createdAt. " +
         "Accept with accept_invite or dismiss with decline_invite, passing a Space invite's spaceId as space_id " +
-        "or a list invite's listId as list_id. Joining a Space shares every list in it with the user.",
+        "or a list invite's listId as list_id. Joining a Space shares every list in it with the user. " +
+        "days: people sharing their day with the user, each with personId, name, within and the places it adds (none when it's on lists they share); " +
+        "accept_day_share or decline_day_share with personId as person_id answers it all at once.",
       inputSchema: {},
     },
     async () => {
@@ -2555,6 +2611,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       return json({
         spaces: listPendingSpaceInvites(db, userId),
         lists: listPendingInvites(db, userId),
+        days: pendingDayShares(db, userId),
       });
     },
   );

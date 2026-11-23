@@ -11,7 +11,7 @@ import {
 import { changeSeq } from "@/core/changes";
 import { countCommentsByItem } from "@/core/comments";
 import { sharedDayNote } from "@/core/dayNotes";
-import { dayOnWholeLists, myDayView } from "@/core/dayShares";
+import { daysSharedWhole, dayOnWholeLists, myDayView, pendingDayShares } from "@/core/dayShares";
 import { listInvitations } from "@/core/invitations";
 import { listLabels } from "@/core/labels";
 import { getDb } from "@/core/db";
@@ -99,6 +99,23 @@ export default async function Home({
     c.lists.push(p);
     checkIns.set(l.personId, c);
   }
+  // And days shared without places of their own: on the lists the viewer sees whole.
+  const sharedWhole = daysSharedWhole(db, userId);
+  for (const d of sharedWhole) {
+    if (checkIns.has(d.personId)) continue;
+    checkIns.set(d.personId, {
+      personId: d.personId,
+      username: d.username,
+      name: d.name,
+      image: d.image,
+      within: d.within,
+      day: d.day,
+      today: d.today,
+      ...sharedDayNote(db, userId, d.personId),
+      lists: [],
+      alsoItemIds: dayOnWholeLists(db, userId, d.personId, d.within),
+    });
+  }
   // The viewer's own day, as the people they share it with see it.
   const myDay = myDayView(db, userId);
   const pendingInvites = listPendingInvites(db, userId);
@@ -172,11 +189,12 @@ export default async function Home({
             pendingPhotos={listPendingSources(db, userId)}
             checkIns={[...checkIns.values()]}
             myDay={myDay}
+            dayShareInvites={pendingDayShares(db, userId)}
             // Invite a friend's, which share nothing; Check-ins lists those sharing a day.
             friendInvites={listInvitations(db, userId).filter((i) => i.places.length === 0)}
             parentTitles={hiddenParentTitles(db, userId)}
             // Someone's day it shows only part of turns over: what's on it changes.
-            refreshAt={Math.min(...[...limited.values()].map((l) => l.turnsAt ?? Infinity)) || null}
+            refreshAt={Math.min(...[...limited.values(), ...sharedWhole].map((l) => l.turnsAt ?? Infinity)) || null}
             initialListId={typeof p === "string" ? p : null}
             initialItemId={typeof item === "string" ? item : null}
             // A link elsewhere (Profile's Invites) can open one of the board's invite dialogs.

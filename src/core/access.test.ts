@@ -1,7 +1,21 @@
 import { eq } from "drizzle-orm";
 import { users } from "./auth-schema";
 import { setDayNote, sharedDayNote } from "./dayNotes";
-import { dayOnWholeLists, listDayShares, myDayView, stopDayShare, updateDayShare } from "./dayShares";
+import {
+  acceptDayShare,
+  daysSharedWhole,
+  dayOnWholeLists,
+  declineDayShare,
+  leaveDayShare,
+  listDayShares,
+  alreadyShared,
+  listsSharedWhole,
+  myDayView,
+  pendingDayShares,
+  shareDay,
+  stopDayShare,
+  updateDayShare,
+} from "./dayShares";
 import { nanoid } from "nanoid";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { listAudit } from "./audit";
@@ -27,7 +41,8 @@ import { addComment, mentionNotice } from "./comments";
 import { plainText } from "./describe";
 import { listFollowedItemIds } from "./follows";
 import { completeItem, deleteItem, setItemsCollapsed, updateItem } from "./items";
-import { acceptInvite, inviteMember, listAssignees, listMembers, removeMember, setMemberRole } from "./members";
+import { acceptInvite, inviteMember, listAssignees, listMembers, listPendingInvites, removeMember, setMemberRole } from "./members";
+import { invitePeople } from "./invites";
 import { linkItemToPr, listItemsForPr, setPrState } from "./prLinks";
 import { updateProject } from "./projects";
 import {
@@ -718,6 +733,81 @@ describe("a membership shown only someone's today or week", () => {
     updateProject(db, lorna, list.id, { status: "active" }, "web");
     updateProject(db, lorna, gym.id, { status: "archived" }, "web");
     expect(myDayView(db, lorna).itemIds.map(title).sort()).toEqual([...seen(), "Gym today"].sort());
+  });
+
+  it("shares her day with Fred, on the list he already sees whole, with nothing picked, once he accepts", () => {
+    const { db, lorna, fred, jo, list, seen } = setup("today");
+    const kim = createTestUser(db, { username: "kim" });
+    setDayNote(db, lorna, "2026-11-19", "Tired — private words");
+    const title = (id: string) => getItem(db, lorna, id)?.title;
+    const said = (userId: string) => listAudit(db, userId).map((r) => plainText(r.parts ?? []));
+    // Nothing to show Kim without picking a place, nor anyone twice.
+    expect(listsSharedWhole(db, lorna, kim)).toEqual([]);
+    expect(() => shareDay(db, lorna, { person: "kim", within: "today" }, "web")).toThrow(/don't share any lists/);
+    expect(() => shareDay(db, lorna, { person: "jo", within: "today" }, "web")).toThrow(/already share your day/);
+    expect(listsSharedWhole(db, lorna, fred).map((l) => l.name)).toEqual(["Week"]);
+
+    shareDay(db, lorna, { person: "fred", within: "today", mood: true }, "web");
+    expect(() => shareDay(db, lorna, { person: "fred", within: "week" }, "web")).toThrow(/already share your day/);
+    // Pending: on her list as waiting, on his Check-ins to accept, not yet a card.
+    expect(listDayShares(db, lorna).find((s) => s.personId === fred)).toMatchObject({ pending: true, withoutPlaces: true, places: [], mood: true });
+    expect(pendingDayShares(db, fred).map((d) => [d.name, d.within, d.places])).toEqual([["Lorna", "today", []]]);
+    expect(daysSharedWhole(db, fred)).toEqual([]);
+    expect(sharedDayNote(db, fred, lorna)).toEqual({ note: null, mood: [] });
+    expect(listNotifications(db, fred).map((n) => plainText(n.parts))).toContainEqual("Lorna wants to share today with you");
+    expect(said(lorna)).toContainEqual("shared today with @fred, with the day mood");
+
+    acceptDayShare(db, fred, lorna, "web");
+    expect(pendingDayShares(db, fred)).toEqual([]);
+    expect(daysSharedWhole(db, fred).map((d) => [d.name, d.within, d.day])).toEqual([["Lorna", "today", "2026-11-19"]]);
+    expect(sharedDayNote(db, fred, lorna)).toEqual({ note: null, mood: ["Tired"] });
+    // Her own Check-ins show what he sees: her today on Week, as Jo's share does.
+    expect(myDayView(db, lorna).itemIds.map(title).sort()).toEqual(seen());
+    expect(listNotifications(db, lorna).map((n) => plainText(n.parts))).toContainEqual("Fred accepted your shared day");
+
+    updateDayShare(db, lorna, fred, { within: "week", note: true }, "web");
+    expect(daysSharedWhole(db, fred)[0].within).toBe("week");
+    expect(sharedDayNote(db, fred, lorna).note).toBe("private words");
+    expect(said(lorna)).toContainEqual("changed what @fred sees of their day, to this week, with the day note");
+
+    // He stops seeing it: it ends for both, and he keeps Week whole.
+    leaveDayShare(db, fred, lorna, "web");
+    expect(listDayShares(db, lorna).map((s) => s.name)).toEqual(["Jo"]);
+    expect(daysSharedWhole(db, fred)).toEqual([]);
+    expect(listItems(db, fred, list.id).length).toBeGreaterThan(0);
+    expect(said(fred)).toContainEqual("stopped seeing @lorna's day");
+    // Shared again, he can decline it.
+    shareDay(db, lorna, { person: "fred", within: "today" }, "web");
+    declineDayShare(db, fred, lorna, "web");
+    expect(listDayShares(db, lorna).map((s) => s.name)).toEqual(["Jo"]);
+
+    // A Space they're both in shows whole, its lists under it; one Jo sees only Lorna's day in doesn't.
+    const fam = createSpace(db, lorna, { name: "Fam" }, "web");
+    inviteSpaceMember(db, lorna, fam.id, "fred", "web", "member");
+    acceptSpaceInvite(db, fred, fam.id, "web");
+    inviteSpaceMember(db, lorna, fam.id, "jo", "web", "commenter", { onlyMine: true, within: "today" });
+    const chores = createProject(db, lorna, { name: "Chores" }, "web");
+    setProjectSpace(db, lorna, chores.id, fam.id, "web");
+    const shown = alreadyShared(db, lorna, fred);
+    expect(shown.spaces.map((sp) => sp.id)).toEqual([fam.id]);
+    expect(shown.lists.map((l) => [l.id, l.spaceId])).toEqual([
+      [chores.id, fam.id],
+      [list.id, null],
+    ]);
+    expect(alreadyShared(db, lorna, jo).spaces).toEqual([]);
+  });
+
+  it("asks Fred to accept her day once, places she picks for it included, not on his board's invites", () => {
+    const { db, lorna, fred } = setup("today");
+    const gym = createProject(db, lorna, { name: "Gym" }, "web");
+    addItem(db, lorna, { projectId: gym.id, title: "Gym today", assigneeIds: [lorna], dueDate: "2026-11-19" }, "web");
+    invitePeople(db, lorna, { people: ["fred"], places: [{ kind: "list", id: gym.id, role: "commenter", onlyMine: true, within: "today" }] }, "web");
+    expect(listPendingInvites(db, fred)).toEqual([]);
+    expect(pendingDayShares(db, fred).map((d) => [d.name, d.places])).toEqual([["Lorna", ["Gym"]]]);
+    acceptDayShare(db, fred, lorna, "web");
+    expect(pendingDayShares(db, fred)).toEqual([]);
+    expect(listItems(db, fred, gym.id).map((i) => i.title)).toEqual(["Gym today"]);
+    expect(() => acceptDayShare(db, fred, lorna, "web")).toThrow(/no shared day waiting/);
   });
 
   it("is kept with a role change, cleared with the limit, and needs one", () => {
