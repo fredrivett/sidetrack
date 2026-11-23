@@ -133,6 +133,8 @@ describe("checkWriterOutput", () => {
     ["a title spelled out", "Call the bank, then {{item:2}}."],
     ["more than three sentences", "{{item:1}} first. Then this. Then that. And more."],
     ["no item when it was given some", "A gentle Wednesday."],
+    ["greeting again", "Good afternoon, {{item:1}} is today's."],
+    ["talking about the greeting", "Good morning sits above, so start with the day: {{item:1}} is due."],
     ["nothing", "  "],
   ])("rejects %s", (_, text) => {
     expect(checkWriterOutput(text, input)).toBeNull();
@@ -179,6 +181,10 @@ describe("checkWriterOutput", () => {
     const parts = parseGreeting(out ?? "");
     expect(parts.map((p) => p.kind)).toEqual(["item", "text", "action", "text", "item", "text", "others", "text"]);
     expect(parts.some((p) => "text" in p && p.text.includes("{"))).toBe(false);
+  });
+
+  it("lets a good morning come up mid-sentence", () => {
+    expect(checkWriterOutput("{{item:1}} first makes it a good morning.", input)).not.toBeNull();
   });
 
   it("lets the evening be late", () => {
