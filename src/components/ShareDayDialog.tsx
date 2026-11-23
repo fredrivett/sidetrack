@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { HeartHandshake, Mail } from "lucide-react";
+import { Check, HeartHandshake, Mail } from "lucide-react";
 import { unstable_rethrow } from "next/navigation";
 import { inviteByEmailAction, invitePeopleAction, alreadySharedAction, shareDayAction } from "@/app/actions";
 import type { InvitePlace } from "@/core/invites";
@@ -326,7 +326,11 @@ export function ShareDayDialog({
   );
 }
 
-/** A place they already see whole: ticked, and not theirs to untick here. */
+/**
+ * A place they already see whole: a bare grey tick, not a checkbox, and
+ * labelled, so it can't be mistaken for a place picked here, which can be
+ * unticked.
+ */
 function LockedRow({
   place,
   space = false,
@@ -335,11 +339,14 @@ function LockedRow({
   space?: boolean;
 }) {
   return (
-    <div className="flex min-h-10 items-center gap-2.5 rounded-lg px-2 py-1 text-sm">
-      <Checkbox checked aria-disabled aria-label={`Already shared: ${place.name}`} />
-      <ProjectIcon icon={place.icon} homepageUrl={place.homepageUrl} name={place.name} size={16} />
-      <span className={`truncate text-neutral-600 dark:text-neutral-400 ${space ? "font-medium" : ""}`}>{place.name}</span>
-      {space && <span className="shrink-0 text-xs text-neutral-500">Whole Space</span>}
+    <div className="flex min-h-10 items-center justify-between gap-2 rounded-lg px-2 py-1 text-sm">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <Check aria-hidden className="size-4 shrink-0 text-neutral-400" strokeWidth={2.5} />
+        <ProjectIcon icon={place.icon} homepageUrl={place.homepageUrl} name={place.name} size={16} />
+        <span className={`truncate text-neutral-500 ${space ? "font-medium" : ""}`}>{place.name}</span>
+        {space && <span className="shrink-0 text-xs text-neutral-400">Whole Space</span>}
+      </div>
+      <span className="shrink-0 px-2 text-xs text-neutral-500">Already shared</span>
     </div>
   );
 }
