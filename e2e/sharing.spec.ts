@@ -239,7 +239,10 @@ test("shares your day with someone you already share lists with, picking nothing
   const dialog = page.getByRole("dialog", { name: "Share my day" });
   await dialog.getByLabel("Who to share your day with").fill(jo.username);
   // What they already see is ticked and locked, and enough to share.
-  await expect(dialog.getByRole("checkbox", { name: "Already shared: Errands" })).toBeChecked();
+  const already = dialog.getByRole("region", { name: "Already shared, included" });
+  await expect(already.getByText("Errands")).toBeVisible();
+  // Shown, not offered: nothing there to untick.
+  await expect(already.getByRole("checkbox")).toHaveCount(0);
   await dialog.getByRole("button", { name: "Share my day" }).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.getByText("Invite pending")).toBeVisible();
