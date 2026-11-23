@@ -655,26 +655,50 @@ export function NewItemDialog({
             {duplicate && (
               <div
                 data-item-ref={duplicate.ref}
-                className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-amber-500/12 px-2.5 py-1.5 text-xs text-amber-800 dark:text-amber-300"
+                className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 rounded-lg bg-amber-500/12 px-2.5 py-1.5 text-xs text-amber-800 dark:text-amber-300"
               >
-                <span className="size-1.5 shrink-0 rounded-full bg-amber-500" />
-                <span className="min-w-0 flex-1">
-                  Looks like{" "}
-                  <button
-                    type="button"
-                    onClick={() => trail.goTo(duplicate.id)}
-                    className="font-medium underline decoration-amber-500/50 underline-offset-2 hover:decoration-current"
-                  >
-                    {duplicate.ref} “{duplicate.title}”
-                  </button>{" "}
-                  is already on this list.
-                </span>
-                <PartButton
-                  disabled={pending}
-                  onClick={() => setPicked((cur) => ({ ...cur, duplicateIgnored: duplicate.id }))}
+                {/* The whole sentence is the button: a button can't wrap
+                    inline in text, so a long title would sit in a centred
+                    block of its own. */}
+                <button
+                  type="button"
+                  onClick={() => trail.goTo(duplicate.id)}
+                  className="group flex min-w-0 flex-[1_1_12rem] items-start gap-2 text-left"
                 >
-                  Ignore
-                </PartButton>
+                  <span className="mt-[5px] size-1.5 shrink-0 rounded-full bg-amber-500" />
+                  <span className="min-w-0">
+                    Looks like{" "}
+                    <span className="font-medium underline decoration-amber-500/50 underline-offset-2 group-hover:decoration-current">
+                      {duplicate.ref} “{duplicate.title}”
+                    </span>{" "}
+                    is already on this list.
+                  </span>
+                </button>
+                <div className="ml-auto flex shrink-0 gap-1.5">
+                  {/* Not the same task but a step of it: put it under it. */}
+                  {duplicate.topLevel && !hasChecklist && (
+                    <PartButton
+                      disabled={pending}
+                      onClick={() =>
+                        setPicked((cur) => ({
+                          ...cur,
+                          parent: { projectId, item: duplicate },
+                          duplicateIgnored: duplicate.id,
+                        }))
+                      }
+                    >
+                      <IndentIncrease className="size-3.5" />
+                      Add as sub-item
+                    </PartButton>
+                  )}
+                  <PartButton
+                    disabled={pending}
+                    onClick={() => setPicked((cur) => ({ ...cur, duplicateIgnored: duplicate.id }))}
+                  >
+                    <X className="size-3.5" />
+                    Ignore
+                  </PartButton>
+                </div>
               </div>
             )}
             {/* Unstyled, like the title above; no one to mention. */}

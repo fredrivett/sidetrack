@@ -172,7 +172,10 @@ export const AI_READS = {
         const prefix = projectRefPrefixes(db, userId)[projectId] ?? found.project.prefix;
         const hint = (id: string | null) => {
           const it = found.items.find((i) => i.id === id);
-          return it ? { id: it.id, ref: formatItemRef(prefix, it.number), title: it.title } : null;
+          // Only a top-level item can take sub-items.
+          return it
+            ? { id: it.id, ref: formatItemRef(prefix, it.number), title: it.title, topLevel: !it.parentId }
+            : null;
         };
         return {
           projectId,

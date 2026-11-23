@@ -248,7 +248,7 @@ export function PartButton({
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex h-6 shrink-0 items-center rounded-md bg-background px-2 font-medium text-foreground ring-1 ring-border hover:bg-muted disabled:opacity-50 touch:h-8"
+      className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md bg-background px-2 font-medium text-foreground ring-1 ring-border hover:bg-muted disabled:opacity-50 touch:h-8"
     >
       {children}
     </button>
