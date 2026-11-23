@@ -83,13 +83,15 @@ export function BoardRail({
   // On phones the sides are 4vw, the gap either side of a centred column, so
   // the first and last columns centre like the rest; with p-3 they'd stop
   // short, out of line with the Space tray's header, which assumes centred.
+  // Wider screens show several columns, so they snap to the left edge, inside
+  // the padding, rather than centring one and cutting off the one before.
   // The bottom clears the home indicator in an installed iOS app; Space trays
   // (sections) clear it inside themselves instead, so their tint runs down
   // under it rather than stopping short above a bare band.
   return (
     <div
       ref={ref}
-      className="kanban-rail flex flex-1 snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-hidden p-3 max-sm:px-[4vw] pb-[max(0.75rem,env(safe-area-inset-bottom))] has-[>section]:pb-3"
+      className="kanban-rail flex flex-1 snap-x snap-mandatory gap-3 overflow-x-auto sm:scroll-px-3 overflow-y-hidden p-3 max-sm:px-[4vw] pb-[max(0.75rem,env(safe-area-inset-bottom))] has-[>section]:pb-3"
     >
       {children}
     </div>
@@ -112,7 +114,7 @@ export function ColumnCard({
   // (DraggableItemList).
   return (
     <article
-      className="flex h-full snap-center shrink-0 flex-col gap-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white p-3 pt-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 w-[var(--column-width,92vw)] sm:w-80 transition-shadow data-[drop-target]:ring-2 data-[drop-target]:ring-neutral-900 dark:data-[drop-target]:ring-neutral-100"
+      className="flex h-full snap-center sm:snap-start shrink-0 flex-col gap-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white p-3 pt-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 w-[var(--column-width,92vw)] sm:w-80 transition-shadow data-[drop-target]:ring-2 data-[drop-target]:ring-neutral-900 dark:data-[drop-target]:ring-neutral-100"
       {...props}
     >
       <header className="flex items-start gap-2 shrink-0 pl-[5px] pr-[7px]">{header}</header>

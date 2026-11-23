@@ -17,7 +17,7 @@ export function AddProjectButton({
     // one, and its click bubbles up to here.
     <div
       onClick={onClick}
-      className="group/add-list flex h-full min-h-32 w-72 shrink-0 cursor-pointer snap-center flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-neutral-300 transition-colors hover:border-neutral-400 dark:border-neutral-700 dark:hover:border-neutral-500"
+      className="group/add-list flex h-full min-h-32 w-72 shrink-0 cursor-pointer snap-center sm:snap-start flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-neutral-300 transition-colors hover:border-neutral-400 dark:border-neutral-700 dark:hover:border-neutral-500"
     >
       {/* The same button as an empty list's Add item, in its hover state while
           the column is hovered. */}

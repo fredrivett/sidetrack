@@ -138,7 +138,9 @@ export function SpaceTray({
           to instead of the board, so swiping wouldn't step between lists.
           grid-rows-1 caps the row at the tray's height: without a scroll
           container's zero minimum, an auto row grows to the longest list,
-          so a list never overflows its own body and can't scroll. */}
+          so a list never overflows its own body and can't scroll. Wider
+          than a phone, a column snaps with the tray's p-2 still showing to
+          its left, where it sits when the tray starts at the board's edge. */}
       <div
         className={`grid min-h-0 flex-1 grid-rows-1 transition-[grid-template-columns] ${ease} ${
           collapsed ? "grid-cols-[0fr]" : "grid-cols-[1fr]"
@@ -146,7 +148,7 @@ export function SpaceTray({
       >
         <div
           inert={collapsed}
-          className={`flex min-w-0 gap-3 overflow-clip pt-1.5 transition-opacity ${ease} ${
+          className={`flex min-w-0 gap-3 overflow-clip pt-1.5 sm:[&>*]:scroll-ml-2 transition-opacity ${ease} ${
             collapsed ? "opacity-0 [&>*]:snap-align-none" : "opacity-100"
           }`}
         >

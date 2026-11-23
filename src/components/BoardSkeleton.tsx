@@ -115,7 +115,7 @@ function BoardBody() {
       {/* The frame of AddProjectButton, which always ends the rail. */}
       <span
         aria-hidden="true"
-        className="h-full min-h-32 w-72 shrink-0 snap-center rounded-2xl border-2 border-dashed border-neutral-300 dark:border-neutral-700"
+        className="h-full min-h-32 w-72 shrink-0 snap-center sm:snap-start rounded-2xl border-2 border-dashed border-neutral-300 dark:border-neutral-700"
       />
     </BoardRail>
   );
