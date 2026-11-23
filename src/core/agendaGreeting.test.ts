@@ -285,7 +285,7 @@ describe("greetingFor", () => {
         day: "2026-11-18",
         partOfDay: "morning",
         why: null,
-        model: "claude-haiku-5-5",
+        model: "claude-sonnet-5-5",
         looked: { dueToday: 1, slipped: 0 },
         moments: [{ moment: "plan", score: 0.9, said: true, why: "Scored 0.6 or more" }],
         items: [{ id: loft.id, title: "Sort the loft", score: 0.9, named: true, other: false }],
