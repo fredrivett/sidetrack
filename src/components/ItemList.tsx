@@ -241,6 +241,10 @@ export function withHiddenParents(items: Item[], titles: Record<string, string>)
       repeatUnit: null,
       repeatOn: null,
       completedAt: done,
+      // Cancelled only when every sub-item on view was, not as its first was.
+      cancelled: subs.every((i) => i.cancelled),
+      cancelReason: null,
+      replacedById: null,
       collapsed: false,
       hiddenParent: true,
     };

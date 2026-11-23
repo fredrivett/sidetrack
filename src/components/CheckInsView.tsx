@@ -147,7 +147,7 @@ export function CheckInsView({
 
   // Grouped by when they're due, by the sharer's clock, as the Brief groups
   // them (agendaSection); a group goes where its soonest open item does,
-  // and once it's finished, under Done.
+  // and once it's finished, under Done, or Cancelled if it was cancelled.
   const groups = (items: Item[], many: boolean, today: string) =>
     // Someone else's item holding sub-items of theirs shows by its title alone.
     nestItems(withHiddenParents(items, titles)).map((group) => {
@@ -163,6 +163,7 @@ export function CheckInsView({
       return {
         section: group.completedAt === null ? (soonest?.section ?? "No date") : null,
         due: soonest?.due ?? "",
+        cancelled: group.cancelled,
         node: (
           <ItemGroupView
             key={group.id}
@@ -182,7 +183,7 @@ export function CheckInsView({
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto grid w-full max-w-5xl items-start gap-6 px-3 pt-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[900px]:grid-cols-2 min-[900px]:pt-12">
         <div className="min-w-0 space-y-2">
-          <h2 className="px-1 text-xs font-medium text-neutral-500">What you share</h2>
+          <h2 className="px-1 text-xs font-medium text-neutral-500">What you’re sharing</h2>
           <DayCard
             label="Your day"
             title={myDay.within === "week" ? "Your week" : "Your day"}
@@ -287,7 +288,7 @@ export function CheckInsView({
   );
 }
 
-/** One day, as a card: who and when, their note and mood, progress, then to do and done. */
+/** One day, as a card: who and when, their note and mood, progress, then to do, done and cancelled. */
 function DayCard({
   label,
   title,
@@ -312,8 +313,8 @@ function DayCard({
   mood: DayTag[];
   items: Item[];
   today: string;
-  /** Each item group, by the section it's in: null once it's done. */
-  groups: { section: AgendaSection | null; due: string; node: ReactNode }[];
+  /** Each item group, by the section it's in: null once it's closed, done or cancelled. */
+  groups: { section: AgendaSection | null; due: string; cancelled: boolean; node: ReactNode }[];
   empty: string;
   footer: ReactNode;
 }) {
@@ -321,12 +322,16 @@ function DayCard({
   // item isn't in their day (shown under a stand-in, withHiddenParents).
   const ids = new Set(items.map((i) => i.id));
   const top = items.filter((i) => i.parentId === null || !ids.has(i.parentId));
-  const done = top.filter((i) => i.completedAt !== null).length;
+  // Cancelled items are listed, but left out of progress, as on the board:
+  // they weren't done, and cancelling one shouldn't keep the day from All done.
+  const planned = top.filter((i) => !i.cancelled);
+  const done = planned.filter((i) => i.completedAt !== null).length;
   // Each section runs by due day, ties keeping list order (as the Brief does).
   const sections = AGENDA_SECTIONS.map(
     (label) => [label, groups.filter((g) => g.section === label).sort((a, b) => a.due.localeCompare(b.due))] as const,
   ).filter(([, rows]) => rows.length > 0);
-  const finished = groups.filter((g) => g.section === null);
+  const finished = groups.filter((g) => g.section === null && !g.cancelled);
+  const cancelled = groups.filter((g) => g.section === null && g.cancelled);
   // Overdue folds away as on the Brief, for this visit only: it's their day,
   // not the viewer's to keep tidy.
   const [overdueCollapsed, setOverdueCollapsed] = useState(false);
@@ -370,23 +375,23 @@ function DayCard({
         <div className="space-y-1.5">
           <div className="flex items-baseline justify-between text-xs">
             <span className="font-medium text-neutral-700 dark:text-neutral-300">
-              {top.length === 0 ? "Nothing planned yet" : done === top.length ? "All done" : "Progress"}
+              {planned.length === 0 ? "Nothing planned yet" : done === planned.length ? "All done" : "Progress"}
             </span>
             <span className="tabular-nums text-neutral-500">
-              {done} of {top.length} done
+              {done} of {planned.length} done
             </span>
           </div>
           <div
             role="progressbar"
             aria-label={`${label}: progress`}
             aria-valuemin={0}
-            aria-valuemax={top.length}
+            aria-valuemax={planned.length}
             aria-valuenow={done}
             className="h-1.5 overflow-hidden rounded-full bg-stone-100 dark:bg-stone-800"
           >
             <div
               className="h-full rounded-full bg-emerald-500 transition-[width] duration-500 dark:bg-emerald-400"
-              style={{ width: `${top.length ? Math.round((done / top.length) * 100) : 0}%` }}
+              style={{ width: `${planned.length ? Math.round((done / planned.length) * 100) : 0}%` }}
             />
           </div>
         </div>
@@ -420,6 +425,12 @@ function DayCard({
               <div className="space-y-1.5">
                 <h3 className="text-[11px] font-medium tracking-wide text-neutral-400 uppercase">Done</h3>
                 {finished.map((g) => g.node)}
+              </div>
+            )}
+            {cancelled.length > 0 && (
+              <div className="space-y-1.5">
+                <h3 className="text-[11px] font-medium tracking-wide text-neutral-400 uppercase">Cancelled</h3>
+                {cancelled.map((g) => g.node)}
               </div>
             )}
           </>
