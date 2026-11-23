@@ -22,6 +22,7 @@ import {
   auditLog,
   type AuditSource,
   comments,
+  dayShares,
   items,
   NOTIFICATION_LEVELS,
   NOTIFICATION_REASONS,
@@ -300,6 +301,11 @@ function rule(
         groupKey: `space:${event.space.spaceId}`,
         spaceId: event.space.spaceId,
       };
+    // A day shared without places: the viewer, to accept; then the sharer, told they did.
+    case "day_share.invited":
+      return { to: as("invited", [event.viewer.userId]), groupKey: `day_share:${event.shareId}` };
+    case "day_share.joined":
+      return { to: as("joined", [event.sharer.userId]), groupKey: `day_share:${event.shareId}` };
     case "member.role":
       return {
         to: as("role", [event.member.userId]),
@@ -745,6 +751,18 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           .all()
       : []),
   ].map((m) => m.id));
+  // Day shares still waiting: one answered, stopped or declined goes.
+  const dayInvites = events.flatMap((e) => (e.type === "day_share.invited" ? [e.shareId] : []));
+  const dayWaiting = new Set(
+    (dayInvites.length
+      ? db
+          .select({ id: dayShares.id })
+          .from(dayShares)
+          .where(and(inArray(dayShares.id, dayInvites), eq(dayShares.status, "pending")))
+          .all()
+      : []
+    ).map((d) => d.id),
+  );
 
   return rows.flatMap((r): NotificationView[] => {
     // A due reminder: the item as it is now, while they can open it.
@@ -928,7 +946,8 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
         {
           ...base,
           title: name,
-          url: "/",
+          // Someone's day is accepted on Check-ins, as one.
+          url: event.onlyWithin ? "/check-ins" : "/",
           invite: { who: null, place: name },
           parts: [
             who,
@@ -1023,6 +1042,30 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
                   ...(event.seesAll ? [t(", seeing all of it")] : []),
                 ]
               : [person, t(" joined "), space, ...asRole(event.role, event.onlyAssignedTo, event.onlyWithin)],
+          snippet: null,
+        },
+      ];
+    }
+    // A day shared without places: to accept on Check-ins while it waits, then that they did.
+    if (event.type === "day_share.invited") {
+      if (!dayWaiting.has(event.shareId)) return [];
+      return [
+        {
+          ...base,
+          title: "Check-ins",
+          url: "/check-ins",
+          parts: [who, t(` wants to share ${event.within === "week" ? "this week" : "today"} with you`)],
+          snippet: null,
+        },
+      ];
+    }
+    if (event.type === "day_share.joined") {
+      return [
+        {
+          ...base,
+          title: "Check-ins",
+          url: "/check-ins",
+          parts: [person, t(" accepted your shared day")],
           snippet: null,
         },
       ];

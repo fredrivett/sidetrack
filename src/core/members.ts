@@ -830,6 +830,8 @@ export function listPendingInvites(
       and(
         eq(projectMembers.userId, userId),
         eq(projectMembers.status, "pending"),
+        // Someone's day is accepted as one, on Check-ins (pendingDayShares).
+        isNull(projectMembers.onlyWithin),
       ),
     )
     .orderBy(asc(projectMembers.createdAt))

@@ -156,12 +156,14 @@ test("shares your day, which shows on their Check-ins, not their board", async (
   const context = await browser.newContext();
   await jo.signIn(context, baseURL ?? "");
   const joPage = await context.newPage();
-  await joPage.goto("/brief");
-  await joPage.getByRole("button", { name: "Accept" }).click();
+  // Her day waits on his Check-ins, not his board's invites.
+  await joPage.goto("/check-ins");
+  await joPage.getByRole("group", { name: "E2E User’s day, waiting for you" }).getByRole("button", { name: "Accept" }).click();
+  const day = joPage.getByRole("region", { name: "E2E User’s day" });
+  await expect(day).toBeVisible();
   await joPage.goto("/board");
   await expect(joPage.getByText("No lists yet")).toBeVisible();
   await joPage.goto("/check-ins");
-  const day = joPage.getByRole("region", { name: "E2E User’s day" });
   await expect(day.getByText("Overdue swim")).toBeVisible();
   await expect(day.getByText("0 of 1 done")).toBeVisible();
   // The mood she chose to share, not the words she didn't.
@@ -209,9 +211,8 @@ test("shares your day on lists you already share with them too, without picking 
   const context = await browser.newContext();
   await jo.signIn(context, baseURL ?? "");
   const joPage = await context.newPage();
-  await joPage.goto("/brief");
-  await joPage.getByRole("button", { name: "Accept" }).click();
   await joPage.goto("/check-ins");
+  await joPage.getByRole("group", { name: "E2E User’s day, waiting for you" }).getByRole("button", { name: "Accept" }).click();
   const day = joPage.getByRole("region", { name: "E2E User’s day" });
   await expect(day.getByText("Overdue swim")).toBeVisible();
   await expect(day.getByText("Post the parcel")).toBeVisible();
@@ -224,6 +225,39 @@ test("shares your day on lists you already share with them too, without picking 
   await page.getByRole("menuitem", { name: "Due date" }).click();
   await page.getByRole("menuitem", { name: "Today" }).click();
   await expect(day.getByText("Some day errand")).toBeVisible();
+  await context.close();
+});
+
+test("shares your day with someone you already share lists with, picking nothing", async ({ page, user, browser, baseURL }) => {
+  const jo = await createPerson();
+  const errands = jo.shareList("Errands", [], user.id, user.username, "editor");
+  user.addItem(errands.id, "Post the parcel", [user.id], "2020-01-06");
+  await page.goto("/check-ins");
+  await page.getByRole("button", { name: "Share my day" }).click();
+  const dialog = page.getByRole("dialog", { name: "Share my day" });
+  await dialog.getByLabel("Who to share your day with").fill(jo.username);
+  // What they already see is ticked and locked, and enough to share.
+  await expect(dialog.getByRole("checkbox", { name: "Already shared: Errands" })).toBeChecked();
+  await dialog.getByRole("button", { name: "Share my day" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByText("Invite pending")).toBeVisible();
+
+  const context = await browser.newContext();
+  await jo.signIn(context, baseURL ?? "");
+  const joPage = await context.newPage();
+  await joPage.goto("/check-ins");
+  await joPage.getByRole("group", { name: "E2E User’s day, waiting for you" }).getByRole("button", { name: "Accept" }).click();
+  const day = joPage.getByRole("region", { name: "E2E User’s day" });
+  await expect(day.getByText("Post the parcel")).toBeVisible();
+  await joPage.reload();
+  await expect(day.getByText("Post the parcel")).toBeVisible();
+
+  // He stops seeing it: it ends for her too, and he keeps Errands.
+  await joPage.getByRole("button", { name: "E2E User’s day options" }).click();
+  await joPage.getByRole("menuitem", { name: "Stop seeing E2E User’s day" }).click();
+  await expect(joPage.getByText("Nobody shares their day with you yet.")).toBeVisible();
+  await page.reload();
+  await expect(page.getByText("Only you see this.")).toBeVisible();
   await context.close();
 });
 

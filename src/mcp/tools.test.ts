@@ -90,6 +90,7 @@ describe("tool output", () => {
     expect(invites.data).toEqual({
       spaces: [expect.objectContaining({ spaceId: space.id, spaceName: "Household" })],
       lists: [expect.objectContaining({ listId: list.id, listName: "Home" })],
+      days: [],
     });
     expect((invites.data.lists as object[])[0]).not.toHaveProperty("projectName");
   });

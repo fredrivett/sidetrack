@@ -109,6 +109,7 @@ import {
 import {
   acceptInvite as acceptInviteCore,
   declineInvite as declineInviteCore,
+  findUserByHandle as findUserByHandleCore,
   inviteMember as inviteMemberCore,
   setMemberRole as setMemberRoleCore,
   listMembers as listMembersCore,
@@ -180,7 +181,15 @@ import {
   setUploadedAvatar as setUploadedAvatarCore,
   setUsername as setUsernameCore,
 } from "@/core/users";
-import { stopDayShare as stopDayShareCore, updateDayShare as updateDayShareCore } from "@/core/dayShares";
+import {
+  acceptDayShare as acceptDayShareCore,
+  declineDayShare as declineDayShareCore,
+  leaveDayShare as leaveDayShareCore,
+  alreadyShared as alreadySharedCore,
+  shareDay as shareDayCore,
+  stopDayShare as stopDayShareCore,
+  updateDayShare as updateDayShareCore,
+} from "@/core/dayShares";
 import { setDayNote as setDayNoteCore } from "@/core/dayNotes";
 import {
   addFromSource as addFromSourceCore,
@@ -509,6 +518,54 @@ export async function stopDayShareAction(personId: string) {
   const userId = await requireUserId();
   const { db } = getDb();
   stopDayShareCore(db, userId, personId, SOURCE);
+  refresh();
+}
+
+/**
+ * The Spaces and lists `person` (a username or email) already sees whole
+ * that you're in: what your day shared with them shows without picking any
+ * place. Empty for someone with no account.
+ */
+export async function alreadySharedAction(person: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const target = findUserByHandleCore(db, person);
+  return target ? alreadySharedCore(db, userId, target.id) : { spaces: [], lists: [] };
+}
+
+/** Share your day with someone you already share lists with, without picking places. Returns why it was refused. */
+export async function shareDayAction(person: string, share: { within: OnlyWithin; note: boolean; mood: boolean }) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  try {
+    shareDayCore(db, userId, { person, ...share }, SOURCE);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Couldn't share your day." };
+  }
+  refresh();
+}
+
+/** Accept someone's shared day, every part of it at once. */
+export async function acceptDayShareAction(personId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  acceptDayShareCore(db, userId, personId, SOURCE);
+  refresh();
+}
+
+/** Decline someone's shared day. */
+export async function declineDayShareAction(personId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  declineDayShareCore(db, userId, personId, SOURCE);
+  refresh();
+}
+
+/** Stop seeing someone's day: it ends, as if they'd stopped sharing it. */
+export async function leaveDayShareAction(personId: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  leaveDayShareCore(db, userId, personId, SOURCE);
   refresh();
 }
 

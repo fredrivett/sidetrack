@@ -439,6 +439,15 @@ export type AccountEvent =
       completed: number;
       skipped: number;
     }
+  /** A day shared without places of its own (dayShares.ts), by its sharer:
+   * with whom, how much, and whether with the day note's words or mood. */
+  | { type: "day_share.invited"; shareId: string; viewer: PersonAt; within: OnlyWithin; shareNote?: true; shareMood?: true }
+  /** By the viewer. */
+  | { type: "day_share.joined" | "day_share.declined"; shareId: string; sharer: PersonAt }
+  /** By the sharer: only what changed. */
+  | { type: "day_share.updated"; shareId: string; viewer: PersonAt; within?: OnlyWithin; shareNote?: boolean; shareMood?: boolean }
+  /** Stopped by the sharer, or left by the viewer. */
+  | { type: "day_share.removed"; shareId: string; sharer: PersonAt; viewer: PersonAt; how: "stopped" | "left" }
   /** An invite by email for someone not on Sidetrack yet (invitations.ts):
    * the places it shares, named as they were, and the window when it's
    * their day. None for Invite a friend. */
@@ -628,6 +637,14 @@ export function auditColumns(event: ChangeEvent): {
       return account("delete", "email_address", event.addressId);
     case "source.added":
       return account("create", "source", event.sourceId);
+    case "day_share.invited":
+      return account("create", "day_share", event.shareId);
+    case "day_share.joined":
+    case "day_share.updated":
+      return account("update", "day_share", event.shareId);
+    case "day_share.declined":
+    case "day_share.removed":
+      return account("delete", "day_share", event.shareId);
     case "invitation.sent":
       return account("create", "invitation", event.invitationId);
     case "invitation.resent":

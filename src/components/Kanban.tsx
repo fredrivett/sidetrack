@@ -57,6 +57,7 @@ import { PullToSearch } from "./PullToSearch";
 import { runAction } from "./run-action";
 import { ShareDialog } from "./ShareDialog";
 import { CheckInsView, type CheckIn, type MyDay } from "./CheckInsView";
+import type { DayShareInvite } from "@/core/dayShares";
 import { InviteDialog } from "./InviteDialog";
 import { InviteFriendDialog } from "./InviteFriendDialog";
 import type { InvitationView } from "@/core/invitations";
@@ -113,6 +114,7 @@ const BOARD_VIEWS = [
 export type BoardView = (typeof BOARD_VIEWS)[number][0] | "done" | "archived";
 
 const NO_CHECK_INS: CheckIn[] = [];
+const NO_DAY_SHARE_INVITES: DayShareInvite[] = [];
 
 /** How many more older finished items the Done view loads at a time. */
 const DONE_PAGE = 50;
@@ -160,6 +162,7 @@ export function Kanban({
   pendingPhotos,
   checkIns = NO_CHECK_INS,
   myDay,
+  dayShareInvites = NO_DAY_SHARE_INVITES,
   friendInvites = NO_INVITES,
   parentTitles = NO_TITLES,
   refreshAt = null,
@@ -182,6 +185,8 @@ export function Kanban({
   checkIns?: CheckIn[];
   /** The viewer's own shared day and who sees it, for Check-ins. */
   myDay?: MyDay;
+  /** Shared days waiting for the viewer to accept, on Check-ins. */
+  dayShareInvites?: DayShareInvite[];
   /** Invites sent from Invite a friend that nobody has accepted yet. */
   friendInvites?: InvitationView[];
   /** Titles of items, not theirs to see, that hold sub-items they see (hiddenParentTitles). */
@@ -1092,6 +1097,7 @@ export function Kanban({
           <CheckInsView
             checkIns={checkIns}
             myDay={myDay}
+            dayShareInvites={dayShareInvites}
             viewer={{ name: viewer?.name || (viewer?.displayUsername ? `@${viewer.displayUsername}` : "You"), username: viewer?.displayUsername ?? null, image: viewer?.image ?? null }}
             projectsById={new Map(projects.map((p) => [p.id, p]))}
             itemsByProject={itemsByProject}

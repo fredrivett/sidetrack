@@ -653,6 +653,28 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
       const said = did.length > 1 ? `${did.slice(0, -1).join(", ")} and ${did.at(-1)}` : did[0];
       return [t(`${said || "added nothing"} from a photo of a page`)];
     }
+    case "day_share.invited":
+      return [
+        t(`shared ${event.within === "week" ? "this week" : "today"} with `),
+        person(event.viewer),
+        ...(event.shareNote || event.shareMood ? noteText(event.shareNote, event.shareMood) : []),
+      ];
+    case "day_share.joined":
+      return [t("accepted "), person(event.sharer), t("'s shared day")];
+    case "day_share.declined":
+      return [t("declined "), person(event.sharer), t("'s shared day")];
+    case "day_share.updated":
+      return [
+        t("changed what "),
+        person(event.viewer),
+        t(" sees of their day"),
+        ...(event.within ? [t(event.within === "week" ? ", to this week" : ", to today")] : []),
+        ...noteText(event.shareNote, event.shareMood),
+      ];
+    case "day_share.removed":
+      return event.how === "left"
+        ? [t("stopped seeing "), person(event.sharer), t("'s day")]
+        : [t("stopped sharing their day with "), person(event.viewer)];
     case "invitation.sent": {
       const to: Part = { text: event.email, em: "person" };
       if (!event.places.length) return [t("invited "), to, t(" to Sidetrack")];
