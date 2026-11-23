@@ -168,7 +168,7 @@ import {
 import {
   AVATAR_MAX_BYTES,
   setOverdueCollapsed as setOverdueCollapsedCore,
-  markPostSeen as markPostSeenCore,
+  markPostsSeen as markPostsSeenCore,
   setNoDateCollapsed as setNoDateCollapsedCore,
   setNoDateListFolded as setNoDateListFoldedCore,
   setAgendaReadAt as setAgendaReadAtCore,
@@ -1092,11 +1092,11 @@ export async function setOverdueCollapsedAction(collapsed: boolean) {
   refresh();
 }
 
-/** Mark a changelog post read or dismissed, for the signed-in user's Brief. */
-export async function markPostSeenAction(slug: string) {
+/** Mark changelog posts read or dismissed (one, or all at once), for the signed-in user. */
+export async function markPostsSeenAction(slugs: string[]) {
   const userId = await requireUserId();
   const { db } = getDb();
-  markPostSeenCore(db, userId, slug);
+  markPostsSeenCore(db, userId, slugs);
   refresh();
 }
 

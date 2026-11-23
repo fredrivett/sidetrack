@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, ChartColumn, Check, CircleCheck, CircleUserRound, History, Loader2, LogOut, Mail, Moon, Sun, SunMoon, UserPlus } from "lucide-react";
+import { Archive, ChartColumn, Check, CircleCheck, CircleUserRound, History, Loader2, LogOut, Mail, Megaphone, Moon, Sun, SunMoon, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import posthog from "posthog-js";
@@ -24,6 +24,7 @@ import {
 import { SETTINGS_PAGES } from "@/components/settings-pages";
 import { assigneeName, UserAvatar, type AvatarUser } from "@/components/UserAvatar";
 import { signOut } from "@/auth/client";
+import { PostsMenuItems, useUnseenPosts } from "./PostCard";
 import { forgetDrafts } from "./use-draft";
 import { RELEASE } from "@/lib/release";
 import { parseTheme, setTheme, THEMES, type Theme } from "@/lib/theme";
@@ -39,7 +40,9 @@ const THEME_OPTIONS: Record<Theme, { label: string; Icon: typeof Sun }> = {
 /**
  * The avatar's menu: who's signed in, settings and theme, inviting people
  * (to places, or a friend to Sidetrack),
- * Activity, Done and Archived lists, sign out and the build.
+ * Activity, Done and Archived lists, sign out and the build. On phones, where
+ * the header has no room for their button, it leads with What's new while
+ * there are posts the viewer hasn't read, and the avatar carries their dot.
  */
 export function UserMenu({
   user,
@@ -90,6 +93,7 @@ export function UserMenu({
   // The full SHA, for pasting into a bug report, an agent thread, or `git show`.
   const release = useCopy(RELEASE);
 
+  const unseenPosts = useUnseenPosts();
   const theme = useTheme();
   const ThemeIcon = THEME_OPTIONS[theme].Icon;
 
@@ -102,13 +106,21 @@ export function UserMenu({
           // size="sm" buttons.
           <button
             type="button"
+            // The dot is decoration: the menu's first row, What's new, says
+            // how many there are.
             aria-label="Account"
-            className="shrink-0 rounded-full outline-none transition-opacity hover:opacity-80 focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="relative shrink-0 rounded-full outline-none transition-opacity hover:opacity-80 focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             {user ? (
               <UserAvatar user={user} size={28} className="touch:size-9! touch:text-lg!" />
             ) : (
               <CircleUserRound className="size-7 text-muted-foreground touch:size-9" />
+            )}
+            {unseenPosts > 0 && (
+              <span
+                aria-hidden
+                className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-red-500 ring-2 ring-background sm:hidden"
+              />
             )}
           </button>
         }
@@ -132,6 +144,26 @@ export function UserMenu({
             </div>
             <DropdownMenuSeparator />
           </>
+        )}
+        {/* One row however many there are, so they don't push the rest down
+            until read. */}
+        {unseenPosts > 0 && (
+          <div className="sm:hidden">
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <Megaphone />
+                What&apos;s new
+                <DropdownMenuShortcut className="flex items-center gap-1.5 tracking-normal">
+                  <span aria-hidden className="size-1.5 rounded-full bg-red-500" />
+                  {unseenPosts}
+                </DropdownMenuShortcut>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-72 max-w-[calc(100vw-1rem)] p-1.5">
+                <PostsMenuItems />
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            <DropdownMenuSeparator />
+          </div>
         )}
         <DropdownMenuGroup>
           <DropdownMenuLabel className="px-2.5">Settings</DropdownMenuLabel>

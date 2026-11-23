@@ -1,9 +1,9 @@
 "use client";
 
-import { Megaphone, X } from "lucide-react";
+import { CheckCheck, Megaphone, X } from "lucide-react";
 import Link from "next/link";
 import { createContext, use, useOptimistic, useTransition } from "react";
-import { markPostSeenAction } from "@/app/actions";
+import { markPostsSeenAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -23,17 +23,23 @@ import { cn } from "@/lib/utils";
 import { runAction } from "./run-action";
 import { useStoredState } from "./use-stored-state";
 
-type Posts = { unseen: ChangelogPost[]; read: (slug: string) => void; dismiss: (slug: string) => void };
+type Posts = {
+  unseen: ChangelogPost[];
+  read: (slug: string) => void;
+  /** Marks these posts seen without opening them: ✕ on one, Mark all as read. */
+  dismiss: (...slugs: string[]) => void;
+};
 const PostsContext = createContext<Posts>({ unseen: [], read: () => {}, dismiss: () => {} });
 
 /**
  * The changelog posts the viewer hasn't seen, for the Brief's sidebar card
- * (PostStack) and the phone header's menu (PostsMenu), with the dialog either
- * opens to read one. Closing it, or ✕, marks the post seen at once so the next
- * comes forward, and puts it back with a toast if the save fails.
+ * (PostStack) and the menus that list them (PostsMenuItems), with the dialog
+ * any of them opens to read one. Closing it, ✕ or Mark all as read marks posts
+ * seen at once so the next comes forward, and puts them back with a toast if
+ * the save fails.
  */
 export function PostsProvider({ posts, children }: { posts: ChangelogPost[]; children: React.ReactNode }) {
-  const [seen, showSeen] = useOptimistic<string[], string>([], (had, slug) => [...had, slug]);
+  const [seen, showSeen] = useOptimistic<string[], string[]>([], (had, slugs) => [...had, ...slugs]);
   const [, start] = useTransition();
   // Which post is open, kept for the tab like other dialogs, so a reload
   // brings it back.
@@ -41,10 +47,13 @@ export function PostsProvider({ posts, children }: { posts: ChangelogPost[]; chi
 
   const unseen = posts.filter((p) => !seen.includes(p.slug));
   const open = posts.find((p) => p.slug === reading);
-  const dismiss = (slug: string) =>
+  const dismiss = (...slugs: string[]) =>
     start(async () => {
-      showSeen(slug);
-      await runAction(markPostSeenAction(slug), "mark that post read");
+      showSeen(slugs);
+      await runAction(
+        markPostsSeenAction(slugs),
+        slugs.length === 1 ? "mark that post read" : "mark those posts read",
+      );
     });
 
   return (
@@ -73,7 +82,7 @@ export function PostsProvider({ posts, children }: { posts: ChangelogPost[]; chi
                 href="/changelog"
                 className="mt-4 inline-block text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
               >
-                Everything that&apos;s changed
+                See everything that&apos;s changed →
               </Link>
             </div>
           </ResponsiveDialogContent>
@@ -140,14 +149,46 @@ export function PostStack({ className }: { className?: string }) {
   );
 }
 
+/** How many posts the viewer hasn't seen, for a dot on what opens them. */
+export function useUnseenPosts() {
+  return use(PostsContext).unseen.length;
+}
+
 /**
- * The unseen posts in the header on phones, where the Brief has no sidebar: a
- * button with a dot, there only while one is unseen, opening a menu of them.
- * Choosing one opens it to read.
+ * The unseen posts as menu rows, each opening to read, then Mark all as read
+ * and a link to the whole changelog. Nothing while none is unseen.
+ */
+export function PostsMenuItems() {
+  const { unseen, read, dismiss } = use(PostsContext);
+  if (unseen.length === 0) return null;
+  return (
+    <>
+      {unseen.map((post) => (
+        <DropdownMenuItem key={post.slug} className="gap-3 py-1.5" onClick={() => read(post.slug)}>
+          {post.image && <PostDrawing image={post.image} className="w-14" />}
+          <span className="min-w-0 text-sm font-medium">{post.title}</span>
+        </DropdownMenuItem>
+      ))}
+      <DropdownMenuSeparator className="-mx-1.5" />
+      <DropdownMenuItem onClick={() => dismiss(...unseen.map((p) => p.slug))}>
+        <CheckCheck />
+        Mark all as read
+      </DropdownMenuItem>
+      <DropdownMenuItem render={<Link href="/changelog" />} className="text-xs text-muted-foreground">
+        See everything that&apos;s changed →
+      </DropdownMenuItem>
+    </>
+  );
+}
+
+/**
+ * The unseen posts in the header on narrow screens, where the Brief has no
+ * sidebar: a button with a dot, there only while one is unseen, opening a
+ * menu of them. (Phones show them in the account menu, for room.)
  */
 export function PostsMenu({ className }: { className?: string }) {
-  const { unseen, read } = use(PostsContext);
-  if (unseen.length === 0) return null;
+  const unseen = useUnseenPosts();
+  if (unseen === 0) return null;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -155,7 +196,7 @@ export function PostsMenu({ className }: { className?: string }) {
           <Button
             variant="ghost"
             size="sm"
-            aria-label={`New in Sidetrack, ${unseen.length} unread`}
+            aria-label={`New in Sidetrack, ${unseen} unread`}
             className={cn("relative bg-muted text-foreground dark:bg-muted/50", className)}
           >
             <Megaphone />
@@ -168,16 +209,7 @@ export function PostsMenu({ className }: { className?: string }) {
       />
       <DropdownMenuContent align="end" className="w-72 max-w-[calc(100vw-1rem)] p-1.5">
         <p className="px-2 pt-1 pb-1.5 text-xs text-muted-foreground">New in Sidetrack</p>
-        {unseen.map((post) => (
-          <DropdownMenuItem key={post.slug} className="gap-3 py-1.5" onClick={() => read(post.slug)}>
-            {post.image && <PostDrawing image={post.image} className="w-14" />}
-            <span className="min-w-0 text-sm font-medium">{post.title}</span>
-          </DropdownMenuItem>
-        ))}
-        <DropdownMenuSeparator className="-mx-1.5" />
-        <DropdownMenuItem render={<Link href="/changelog" />} className="text-xs text-muted-foreground">
-          Everything that&apos;s changed
-        </DropdownMenuItem>
+        <PostsMenuItems />
       </DropdownMenuContent>
     </DropdownMenu>
   );
