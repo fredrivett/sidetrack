@@ -49,7 +49,7 @@ export function InvitesPanel({ invitedBy, invited }: { invitedBy: InvitePerson |
         ) : (
           <p className="rounded-lg border border-dashed border-border px-4 py-5 text-center text-sm text-muted-foreground">
             Nobody yet.{" "}
-            <Link href="/brief?open=invite-friend" className="font-medium text-foreground hover:underline">
+            <Link href="/brief?open=invite" className="font-medium text-foreground hover:underline">
               Invite a friend
             </Link>
             , or{" "}

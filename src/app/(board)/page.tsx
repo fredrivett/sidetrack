@@ -190,15 +190,15 @@ export default async function Home({
             checkIns={[...checkIns.values()]}
             myDay={myDay}
             dayShareInvites={pendingDayShares(db, userId)}
-            // Invite a friend's, which share nothing; Check-ins lists those sharing a day.
-            friendInvites={listInvitations(db, userId).filter((i) => i.places.length === 0)}
+            // Invite people's; Check-ins lists those sharing a day.
+            joinInvites={listInvitations(db, userId).filter((i) => !i.within)}
             parentTitles={hiddenParentTitles(db, userId)}
             // Someone's day it shows only part of turns over: what's on it changes.
             refreshAt={Math.min(...[...limited.values(), ...sharedWhole].map((l) => l.turnsAt ?? Infinity)) || null}
             initialListId={typeof p === "string" ? p : null}
             initialItemId={typeof item === "string" ? item : null}
             // A link elsewhere (Profile's Invites) can open one of the board's invite dialogs.
-            initialOpen={open === "invite-friend" || open === "share-day" ? open : null}
+            initialOpen={open === "invite" || open === "share-day" ? open : null}
           // A push can link to an item not loaded with the board.
           initialItemExtra={
             typeof item === "string" &&

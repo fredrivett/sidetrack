@@ -136,11 +136,18 @@ import {
   savePushSubscription as savePushSubscriptionCore,
 } from "@/core/push";
 import type { AuditSource, ListRole, NotificationLevel, OnlyWithin, ProjectStatus, SpaceColor, SpaceRole } from "@/core/schema";
-import { emailsWithoutAccounts, invitePeople as invitePeopleCore, type InvitePlace } from "@/core/invites";
+import {
+  emailsWithoutAccounts,
+  invitePeople as invitePeopleCore,
+  type InvitedPlace,
+  type InvitePlace,
+  type SentInvite,
+} from "@/core/invites";
 import {
   acceptInvitation as acceptInvitationCore,
   cancelInvitation as cancelInvitationCore,
   INVITE_DAYS,
+  inviteAnyone as inviteAnyoneCore,
   inviteByEmail as inviteByEmailCore,
   resendInvitation as resendInvitationCore,
   type SentInvitation,
@@ -342,6 +349,10 @@ export async function inviteMemberAction(
   if (!session) redirect("/login");
   const userId = session.user.id;
   const { db } = getDb();
+  // Someone not on Sidetrack yet gets a link to join, which brings them in.
+  if (emailsWithoutAccounts(db, [person]).length) {
+    return inviteByEmailAction(person, [{ kind: "list", id: projectId, role, onlyMine, within }]);
+  }
   let member;
   try {
     member = inviteMemberCore(db, userId, projectId, person, SOURCE, role, { onlyMine, within });
@@ -379,8 +390,9 @@ export async function invitePeopleAction(people: string[], places: InvitePlace[]
   if (!session) redirect("/login");
   const userId = session.user.id;
   const { db } = getDb();
-  // Someone without an account can be invited to Sidetrack instead
-  // (inviteByEmailAction), which the dialog offers.
+  // Share my day asks before inviting someone without an account to
+  // Sidetrack instead (inviteByEmailAction); Invite people doesn't
+  // (inviteAnyoneAction).
   const strangers = emailsWithoutAccounts(db, people);
   if (strangers.length) {
     const who = strangers.length === 1 ? `${strangers[0]} isn't` : `${strangers.join(", ")} aren't`;
@@ -392,15 +404,40 @@ export async function invitePeopleAction(people: string[], places: InvitePlace[]
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Couldn't send the invites." };
   }
-  const { sent, places: named } = invited;
+  await notifyInvited(invited, session.user.name);
+  refresh();
+}
 
-  // One email each, best-effort and after answering, like a single invite.
+/**
+ * Invite people by username or email, to lists and Spaces or, with none,
+ * just to join Sidetrack: an email with no account gets a link to join,
+ * which brings them into the places. All or nothing. Returns why it was
+ * refused, else who was invited and who was emailed a link.
+ */
+export async function inviteAnyoneAction(people: string[], places: InvitePlace[]) {
+  const session = await getCurrentSession();
+  if (!session) redirect("/login");
+  const { db } = getDb();
+  let result;
+  try {
+    result = inviteAnyoneCore(db, session.user.id, { people, places }, SOURCE);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Couldn't send the invites." };
+  }
+  if (result.invited) await notifyInvited(result.invited, session.user.name);
+  for (const sent of result.joinLinks) await sendJoinInvite(sent, session.user.name);
+  refresh();
+  return { emailed: result.joinLinks.map((s) => s.email) };
+}
+
+/** One email each to those invited, naming every place: best-effort and after answering, like a single invite. */
+async function notifyInvited({ sent, places: named }: { sent: SentInvite[]; places: InvitedPlace[] }, inviterName: string) {
   const url = await appBaseUrl();
   const emails = new Map(sent.flatMap((s) => (s.member.email ? [[s.member.userId, s.member.email]] : [])));
   for (const to of emails.values()) {
     const invite = {
       to,
-      inviterName: session.user.name,
+      inviterName,
       projectName: named[0]?.name ?? "",
       url,
       kind: named[0]?.kind,
@@ -409,7 +446,6 @@ export async function invitePeopleAction(people: string[], places: InvitePlace[]
     };
     after(() => notifyInvite(invite));
   }
-  refresh();
 }
 
 /**
@@ -649,6 +685,11 @@ export async function inviteSpaceMemberAction(
   const session = await getCurrentSession();
   if (!session) redirect("/login");
   const { db } = getDb();
+  // Someone not on Sidetrack yet gets a link to join, which brings them in.
+  if (emailsWithoutAccounts(db, [person]).length) {
+    // Refusals (the day's limit, invited already) are returned, so the panel can show why.
+    return inviteByEmailAction(person, [{ kind: "space", id: spaceId, role, onlyMine, within }]);
+  }
   const member = inviteSpaceMemberCore(db, session.user.id, spaceId, person, SOURCE, role, { onlyMine, within });
   // Best-effort and after answering, like a list invite.
   const space = listSpacesCore(db, session.user.id).find((s) => s.id === spaceId);

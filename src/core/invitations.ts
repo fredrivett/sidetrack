@@ -1,5 +1,5 @@
 // Invites by email for someone not on Sidetrack yet: from Share my day,
-// with the places it shares, or Invite a friend, with none. The email's
+// with the places it shares, or Invite people, with any or none. The email's
 // link carries a token, and only its hash is kept, so the link is the only
 // way in: accounts' emails aren't verified, so someone signing up as the
 // address invited proves nothing. Signing up through the link (or opening it
@@ -13,7 +13,7 @@ import { nanoid } from "nanoid";
 import { type AuditOrigin, recordAudit } from "./audit";
 import { users } from "./auth-schema";
 import type { Db } from "./db";
-import { type InvitePlace, invitePeople } from "./invites";
+import { emailsWithoutAccounts, type InvitePlace, invitePeople } from "./invites";
 import { acceptInvite, checkListInvite, findUserByHandle, getUserById, personAt } from "./members";
 import { auditLog, invitations, type OnlyWithin, projects, spaces } from "./schema";
 import { acceptSpaceInvite, checkSpaceInvite } from "./spaces";
@@ -28,7 +28,7 @@ const DAY = 24 * 60 * 60 * 1000;
 export type InvitationView = {
   id: string;
   email: string;
-  /** The places it shares, by their names now; none for Invite a friend. */
+  /** The places it shares, by their names now; none for an invite just to join. */
   places: { kind: "list" | "space"; id: string; name: string }[];
   /** Set when it shares the user's day: today or this week. */
   within: OnlyWithin | null;
@@ -158,6 +158,36 @@ export function inviteByEmail(
     });
   });
   return { id, email, token, places: names, within: day.within };
+}
+
+/**
+ * Invite people by username or email, to `places` or, with none, just to
+ * join Sidetrack, as Invite people does: an email with no account gets a
+ * link to join that brings them into the places (inviteByEmail), and
+ * everyone else is invited there (invitePeople). All or none, so a refusal,
+ * such as the day's limit, sends nothing.
+ */
+export function inviteAnyone(
+  db: Db,
+  userId: string,
+  input: { people: string[]; places: InvitePlace[] },
+  source: AuditOrigin,
+  now = Date.now(),
+): { invited: ReturnType<typeof invitePeople> | null; joinLinks: SentInvitation[] } {
+  const strangers = emailsWithoutAccounts(db, input.people);
+  const isStranger = new Set(strangers.map((e) => e.toLowerCase()));
+  const others = input.people.map((p) => p.trim()).filter((p) => p && !isStranger.has(p.toLowerCase()));
+  if (others.length === 0 && strangers.length === 0) throw new Error("say who to invite");
+  if (others.length > 0 && input.places.length === 0) {
+    const unknown = others.find((p) => !findUserByHandle(db, p));
+    if (unknown) throw new Error(`no account found for "${unknown}"`);
+    const who = others.length === 1 ? `${others[0]} is` : `${others.join(", ")} are`;
+    throw new Error(`${who} on Sidetrack already; choose a list or Space to invite them to`);
+  }
+  return db.transaction((tx) => ({
+    invited: others.length ? invitePeople(tx as unknown as Db, userId, { people: others, places: input.places }, source) : null,
+    joinLinks: strangers.map((email) => inviteByEmail(tx as unknown as Db, userId, { email, places: input.places }, source, now)),
+  }));
 }
 
 /** Send an invite again, with a new link: the old one stops working, and the new one has its full time. */

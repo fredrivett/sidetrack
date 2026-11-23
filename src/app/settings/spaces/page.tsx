@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { SettingsHeader } from "@/components/SettingsHeader";
 import { SpacesPanel } from "@/components/SpacesPanel";
 import { getDb } from "@/core/db";
+import { listInvitations } from "@/core/invitations";
 import { listSpaces } from "@/core/spaces";
 import { requireUserId } from "@/auth/session";
 
@@ -20,7 +21,7 @@ export default async function SpacesPage() {
         small team. Admins invite and remove people, and choose what each can do: edit
         the lists, or only comment on or view them.
       </SettingsHeader>
-      <SpacesPanel spaces={listSpaces(db, userId)} viewerId={userId} />
+      <SpacesPanel spaces={listSpaces(db, userId)} viewerId={userId} invited={listInvitations(db, userId).filter((i) => !i.within)} />
     </>
   );
 }

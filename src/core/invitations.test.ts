@@ -9,6 +9,7 @@ import {
   invitedBy,
   invitedPeople,
   INVITES_PER_DAY,
+  inviteAnyone,
   inviteByEmail,
   listInvitations,
   resendInvitation,
@@ -161,5 +162,48 @@ describe("inviteByEmail", () => {
     expect(invitedBy(db, fred)).toBeNull();
     expect(invitedPeople(db, fred).map((p) => p.userId)).toEqual([jo]);
     expect(invitedPeople(db, jo).map((p) => p.userId)).toEqual([kim]);
+  });
+});
+
+describe("inviteAnyone", () => {
+  const editorOn = (id: string): InvitePlace => ({ kind: "list", id, role: "editor" });
+  const membersOf = (id: string) =>
+    db.select({ userId: projectMembers.userId, status: projectMembers.status }).from(projectMembers).where(eq(projectMembers.projectId, id)).all();
+
+  it("invites people with accounts there, and emails the rest a link to join that brings them in too", () => {
+    const jo = createTestUser(db, { username: "jo", email: "jo@example.com" });
+    const { invited, joinLinks } = inviteAnyone(db, fred, { people: ["@jo", "Sam@Example.com"], places: [editorOn(home)] }, "web");
+    expect(invited?.sent.map((s) => s.member.userId)).toEqual([jo]);
+    expect(joinLinks).toMatchObject([{ email: "Sam@Example.com", places: ["Home"] }]);
+    expect(membersOf(home)).toEqual([{ userId: jo, status: "pending" }]);
+
+    const sam = createTestUser(db, { email: "sam@example.com" });
+    acceptInvitation(db, joinLinks[0].token, sam, "web");
+    expect(membersOf(home)).toContainEqual({ userId: sam, status: "accepted" });
+  });
+
+  it("with nowhere chosen, emails a link to join that shares nothing, and refuses people already on Sidetrack", () => {
+    createTestUser(db, { username: "jo", email: "jo@example.com" });
+    expect(inviteAnyone(db, fred, { people: ["sam@example.com"], places: [] }, "web")).toMatchObject({ invited: null, joinLinks: [{ places: [] }] });
+    // Someone with an account has nothing to join, whichever way they're named.
+    expect(() => inviteAnyone(db, fred, { people: ["JO@example.com"], places: [] }, "web")).toThrow(/JO@example.com is on Sidetrack already/);
+    expect(() => inviteAnyone(db, fred, { people: ["kim@example.com", "jo"], places: [] }, "web")).toThrow(/jo is on Sidetrack already/);
+    expect(() => inviteAnyone(db, fred, { people: ["nobody"], places: [] }, "web")).toThrow(/no account found for "nobody"/);
+    expect(listInvitations(db, fred).map((i) => i.email)).toEqual(["sam@example.com"]);
+  });
+
+  it("sends one link to an address typed twice in different cases", () => {
+    expect(inviteAnyone(db, fred, { people: ["Sam@Example.com", "sam@example.com"], places: [] }, "web").joinLinks).toHaveLength(1);
+  });
+
+  it("sends nothing when any of it is refused", () => {
+    const jo = createTestUser(db, { username: "jo" });
+    inviteByEmail(db, fred, { email: "sam@example.com", places: [] }, "web");
+    // Sam has an invite already, so neither Jo nor Kim is invited either.
+    expect(() =>
+      inviteAnyone(db, fred, { people: ["jo", "kim@example.com", "sam@example.com"], places: [editorOn(home)] }, "web"),
+    ).toThrow(/invited sam@example.com already/);
+    expect(membersOf(home).some((m) => m.userId === jo)).toBe(false);
+    expect(listInvitations(db, fred).map((i) => i.email)).toEqual(["sam@example.com"]);
   });
 });

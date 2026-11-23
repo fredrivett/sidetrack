@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, ChartColumn, Check, CircleCheck, CircleUserRound, History, Loader2, LogOut, Mail, Megaphone, Moon, Sun, SunMoon, UserPlus } from "lucide-react";
+import { Archive, ChartColumn, Check, CircleCheck, CircleUserRound, History, Loader2, LogOut, Megaphone, Moon, Sun, SunMoon, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import posthog from "posthog-js";
@@ -52,7 +52,6 @@ export function UserMenu({
   onShowActivity,
   onTry,
   onInvite,
-  onInviteFriend,
   admin = false,
 }: {
   user: AvatarUser | null;
@@ -69,10 +68,8 @@ export function UserMenu({
    * do instead, as there's no account to open them on.
    */
   onTry?: () => void;
-  /** Opens Invite people, for several lists and Spaces at once. */
+  /** Opens Invite people: to lists and Spaces, or by email just to join Sidetrack. */
   onInvite: () => void;
-  /** Opens Invite a friend: an email to join Sidetrack, sharing nothing. */
-  onInviteFriend?: () => void;
   /** Whether they can open /admin (ADMIN_USER_IDS); shows its link. */
   admin?: boolean;
 }) {
@@ -217,12 +214,6 @@ export function UserMenu({
             <UserPlus />
             Invite people…
           </DropdownMenuItem>
-          {onInviteFriend && (
-            <DropdownMenuItem onClick={onTry ?? onInviteFriend}>
-              <Mail />
-              Invite a friend…
-            </DropdownMenuItem>
-          )}
           <DropdownMenuItem onClick={onShowActivity}>
             <History />
             Activity

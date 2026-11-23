@@ -248,7 +248,7 @@ export interface JoinInviteEmail {
   inviterName: string;
   /** The invite's own link, which is how they join. */
   url: string;
-  /** The places it shares; none for Invite a friend. */
+  /** The places it shares; none for an invite just to join. */
   places: string[];
   /** Set when it shares the inviter's day: today or this week. */
   within: OnlyWithin | null;

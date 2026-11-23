@@ -963,7 +963,7 @@ export const dayNotes = sqliteTable(
 );
 
 // An invite by email for someone not on Sidetrack yet (invitations.ts):
-// from Share my day, with the places it shares, or Invite a friend, with
+// from Share my day, with the places it shares, or Invite people, with places or
 // none. Its link carries a token, of which only the hash is kept. Signing up
 // through the link, or opening it signed in, makes the memberships `places`
 // describes, as if invited then (invitePeople), already accepted. Accepted
