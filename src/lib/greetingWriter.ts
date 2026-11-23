@@ -165,6 +165,12 @@ export function reviewWriterOutput(raw: string, input: WriterInput): { text: str
   if (/\boverdue\b|\blate\b/i.test(text.replace(hourLate, ""))) {
     return { rejected: "It called something overdue or late" };
   }
+  // The page says "Good morning, Fred." first, so opening with a greeting
+  // repeats it, or worse, recites the prompt ("Good morning sits above, so…").
+  // Mid-sentence is fine: "a good morning to get started".
+  if (/^(?:good (?:morning|afternoon|evening)|hi|hello|hey)\b/i.test(text)) {
+    return { rejected: "It greeted the reader again" };
+  }
   const TOKEN = /\{\{([^{}]*)\}\}/g;
   const named = new Set<number>();
   let bad = false;
