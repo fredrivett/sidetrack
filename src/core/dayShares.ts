@@ -12,7 +12,7 @@
 import { nanoid } from "nanoid";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { splitDayNote } from "../lib/dayTags";
-import { dayOf, nextDayStartIn, startOfWeekIn } from "../lib/time";
+import { dayOf, nextDayStartIn, startOfDayIn, startOfWeekIn } from "../lib/time";
 import { hasProjectAccess, hasWholeListAccess, inDayOf } from "./access";
 import { getDayNote } from "./dayNotes";
 import { getWrapUp, seenWrapUp } from "./dayWrapUps";
@@ -446,13 +446,15 @@ export function daysSharedWhole(db: Db, viewerId: string, now = Date.now()) {
     .all()
     .map((r) => {
       const zone = validZone(r.timeZone);
+      const startsAt = r.within === "week" ? startOfWeekIn(zone, now) : startOfDayIn(zone, now);
       return {
         personId: r.personId,
         username: r.username,
         name: r.name || (r.username ? `@${r.username}` : "someone"),
         image: r.image,
         within: r.within,
-        day: dayOf(r.within === "week" ? startOfWeekIn(zone, now) : now, zone),
+        day: dayOf(startsAt, zone),
+        startsAt,
         today: dayOf(now, zone),
         turnsAt: nextDayStartIn(zone, now),
       };
@@ -530,11 +532,13 @@ export function myDayView(db: Db, userId: string, now = Date.now()) {
   const within: OnlyWithin = seen?.within ?? "today";
   const zone = validZone(db.select({ tz: users.timeZone }).from(users).where(eq(users.id, userId)).get()?.tz);
   const today = dayOf(now, zone);
+  const startsAt = within === "week" ? startOfWeekIn(zone, now) : startOfDayIn(zone, now);
   const text = seen && (seen.note || seen.mood) ? getDayNote(db, userId, today) : null;
   const { tags, rest } = text ? splitDayNote(text) : { tags: [], rest: "" };
   return {
     within,
-    day: seen ? dayOf(within === "week" ? startOfWeekIn(zone, now) : now, zone) : "",
+    day: seen ? dayOf(startsAt, zone) : "",
+    startsAt,
     today,
     note: (seen?.note && rest) || null,
     mood: seen?.mood ? tags : [],

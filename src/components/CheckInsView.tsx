@@ -48,6 +48,8 @@ export type CheckIn = {
   within: OnlyWithin;
   /** Their day (YYYY-MM-DD) it counts from: today, or the week's Monday. */
   day: string;
+  /** When `day` began, by their clock. */
+  startsAt: number;
   /** Their today, by their clock: what its items' due dates read from. */
   today: string;
   /** What they wrote about today, and the mood they tapped, when they chose to share it. */
@@ -66,6 +68,8 @@ export type MyDay = {
   within: OnlyWithin;
   /** Their day (YYYY-MM-DD): today, or the week's Monday. */
   day: string;
+  /** When `day` began, by their clock. */
+  startsAt: number;
   today: string;
   note: string | null;
   mood: DayTag[];
@@ -77,7 +81,7 @@ export type MyDay = {
   invited: InvitationView[];
 };
 
-const NO_ONE: MyDay = { within: "today", day: "", today: "", note: null, mood: [], wrapUp: null, itemIds: [], shares: [], invited: [] };
+const NO_ONE: MyDay = { within: "today", day: "", startsAt: 0, today: "", note: null, mood: [], wrapUp: null, itemIds: [], shares: [], invited: [] };
 
 const dayName = (day: string) =>
   day ? new Date(`${day}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }) : "";
@@ -198,6 +202,7 @@ export function CheckInsView({
             wrapUp={myDay.wrapUp}
             items={mine}
             today={myDay.today}
+            startsAt={myDay.startsAt}
             groups={groups(mine, new Set(mine.map((i) => i.projectId)).size > 1, myDay.today)}
             empty={myDay.shares.length ? "Nothing of yours is due in it yet." : "Share your day and what’s due on it shows here, as they see it."}
             footer={
@@ -252,6 +257,7 @@ export function CheckInsView({
                     wrapUp={c.wrapUp}
                     items={items}
                     today={c.today}
+                    startsAt={c.startsAt}
                     groups={groups(items, new Set(items.map((i) => i.projectId)).size > 1, c.today)}
                     empty={`Nothing on ${c.within === "today" ? "today" : "this week"} yet.`}
                     footer={
@@ -306,6 +312,7 @@ function DayCard({
   wrapUp,
   items,
   today,
+  startsAt,
   groups,
   empty,
   footer,
@@ -322,18 +329,18 @@ function DayCard({
   wrapUp: SeenWrapUp | null;
   items: Item[];
   today: string;
+  /** When the day (or week) began: items finished before it aren't part of its progress. */
+  startsAt: number;
   /** Each item group, by the section it's in: null once it's closed, done or cancelled. */
   groups: { section: AgendaSection | null; due: string; cancelled: boolean; node: ReactNode }[];
   empty: string;
   footer: ReactNode;
 }) {
-  // Each of their items counts once: a top-level one, or a sub-item whose
-  // item isn't in their day (shown under a stand-in, withHiddenParents).
-  const ids = new Set(items.map((i) => i.id));
-  const top = items.filter((i) => i.parentId === null || !ids.has(i.parentId));
+  // Every item in it counts, sub-items as much as their items, except ones
+  // finished before the day began: a step done last week isn't today's.
   // Cancelled items are listed, but left out of progress, as on the board:
   // they weren't done, and cancelling one shouldn't keep the day from All done.
-  const planned = top.filter((i) => !i.cancelled);
+  const planned = items.filter((i) => !i.cancelled && (i.completedAt === null || i.completedAt >= startsAt));
   const done = planned.filter((i) => i.completedAt !== null).length;
   // Each section runs by due day, ties keeping list order (as the Brief does).
   const sections = AGENDA_SECTIONS.map(
@@ -435,7 +442,7 @@ function DayCard({
             />
           </div>
         </div>
-        {top.length === 0 ? (
+        {items.length === 0 ? (
           <p className="text-xs text-neutral-500">{empty}</p>
         ) : (
           <>

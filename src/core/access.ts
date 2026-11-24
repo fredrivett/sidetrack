@@ -2,7 +2,7 @@ import { and, eq, inArray, or, type SQL, sql } from "drizzle-orm";
 import { users } from "./auth-schema";
 import type { Db } from "./db";
 import { validZone } from "./db-functions";
-import { dayOf, nextDayStartIn, startOfWeekIn } from "../lib/time";
+import { dayOf, nextDayStartIn, startOfDayIn, startOfWeekIn } from "../lib/time";
 import {
   items,
   type ListAccess,
@@ -200,6 +200,8 @@ export function limitedListsById(
     within: OnlyWithin | null;
     /** Their day (YYYY-MM-DD) the window counts from, with turnsAt when it moves on. */
     day: string | null;
+    /** When `day` began, by their clock. */
+    startsAt: number | null;
     /** Their today, by their clock. */
     today: string | null;
     turnsAt: number | null;
@@ -237,6 +239,8 @@ export function limitedListsById(
     rows.map((r) => {
       const person = names.get(r.limitedTo);
       const within = r.within || null;
+      const zone = validZone(person?.timeZone);
+      const startsAt = within ? (within === "week" ? startOfWeekIn(zone) : startOfDayIn(zone)) : null;
       return [
         r.id,
         {
@@ -247,9 +251,10 @@ export function limitedListsById(
           within,
           // st_today's zone: theirs, else UTC.
           // Today, or the Monday a week share starts from.
-          day: within ? dayOf(within === "week" ? startOfWeekIn(validZone(person?.timeZone)) : Date.now(), validZone(person?.timeZone)) : null,
-          today: within ? dayOf(Date.now(), validZone(person?.timeZone)) : null,
-          turnsAt: within ? nextDayStartIn(validZone(person?.timeZone)) : null,
+          day: startsAt === null ? null : dayOf(startsAt, zone),
+          startsAt,
+          today: within ? dayOf(Date.now(), zone) : null,
+          turnsAt: within ? nextDayStartIn(zone) : null,
         },
       ];
     }),
