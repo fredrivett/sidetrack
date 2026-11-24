@@ -34,7 +34,7 @@ export function DoneView({
   onOpenItem,
 }: {
   /** The lists on the board; archived lists stay out. */
-  projects: Pick<ProjectView, "id" | "name" | "refPrefix">[];
+  projects: Pick<ProjectView, "id" | "name" | "refPrefix" | "icon" | "homepageUrl">[];
   itemsByProject: Record<string, Item[]>;
   assigneesByProject: Record<string, AssigneeView[]>;
   prLinksByItem: Record<string, ItemPrLink[]>;
@@ -112,7 +112,8 @@ export function DoneView({
                     assignees={assigneesByProject[item.projectId] ?? []}
                     viewerId={viewerId}
                     prLinks={prLinksByItem[item.id] ?? []}
-                    context={[project?.name, parent?.title].filter(Boolean).join(" › ")}
+                    context={parent?.title}
+                    list={project}
                     onOpenDetail={() => (onOpenItem ?? detail.openDetail)(item)}
                   />
                 );
