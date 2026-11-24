@@ -25,6 +25,10 @@ vi.mock("@/app/actions", () => ({
   listDoneBeforeAction: vi.fn(),
   completeItemAction: vi.fn(),
   setTimeZoneAction: vi.fn(() => Promise.resolve()),
+  // What an item's dialog loads as it opens.
+  listCommentsAction: vi.fn(async () => ({ comments: [], mentionable: [] })),
+  getItemSourceAction: vi.fn(async () => null),
+  listAuditAction: vi.fn(async () => []),
 }));
 // The Agenda's greeting; it never arrives here.
 vi.mock("./ai-read", () => ({ aiRead: vi.fn(() => new Promise(() => {})) }));
@@ -370,8 +374,9 @@ describe("Kanban, re-rendering rows", () => {
     expect(document.activeElement).not.toBe(assign);
   });
 
-  // A tick on a big board re-renders its own list, not all of them.
-  describe("ticking an item", () => {
+  // A tick, or opening an item, on a big board re-renders its own list, not
+  // all of them.
+  describe("one list's change", () => {
     const lists = [list("a", "Home", "active", null), ...work];
     const home = item(1, { projectId: "a", title: "Water plants" });
     const ticked = { ...home, completedAt: 1 };
@@ -391,6 +396,17 @@ describe("Kanban, re-rendering rows", () => {
     it("re-renders only the ticked item's list", async () => {
       render(board(lists, [], { a: [home], b: [item(2)] }));
       await tick();
+      expect(columnRenders("a")).toBeGreaterThan(0);
+      expect(columnRenders("b")).toBe(0);
+    });
+
+    it("re-renders only the list whose item opens and closes", async () => {
+      render(board(lists, [], { a: [home], b: [item(2)] }));
+      vi.mocked(useCollapsedItems).mockClear();
+      fireEvent.click(screen.getByRole("button", { name: "Water plants" }));
+      expect(screen.getByRole("dialog", { name: /Water plants/ })).toBeTruthy();
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
       expect(columnRenders("a")).toBeGreaterThan(0);
       expect(columnRenders("b")).toBe(0);
     });
@@ -421,5 +437,20 @@ describe("Kanban, re-rendering rows", () => {
     expect(screen.queryByRole("option", { name: /Task 2/ })).toBeNull();
     fireEvent.change(search, { target: { value: "Task 2" } });
     expect(screen.getByRole("option", { name: /Task 2/ })).toBeTruthy();
+  });
+
+  // A big board offers only the best matches, not every item that matches.
+  it("shows the palette's best item matches, even from far down a long list", () => {
+    render(board(work, [], { b: Array.from({ length: 100 }, (_, i) => item(i + 1)) }));
+    fireEvent.keyDown(document, { key: "k", ctrlKey: true });
+    const search = screen.getByPlaceholderText("Search commands, lists, items…");
+    fireEvent.change(search, { target: { value: "Task" } });
+    const items = () => within(screen.getByRole("group", { name: "Items" })).getAllByRole("option");
+    expect(items()).toHaveLength(30);
+    // A better match than any shown so far comes in first, and is the one
+    // Enter opens.
+    fireEvent.change(search, { target: { value: "Task 97" } });
+    expect(items()[0].textContent).toContain("Task 97");
+    expect(screen.getByRole("option", { selected: true }).textContent).toContain("Task 97");
   });
 });
