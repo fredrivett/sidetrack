@@ -685,6 +685,15 @@ describe("a membership shown only someone's today or week", () => {
     const undated = addItem(db, fred, { projectId: home.id, title: "Lorna undated", assigneeIds: [lorna] }, "web");
     add("Fred's today", fred, undated.id);
     expect(seen()).not.toContain("Lorna undated");
+    // An unassigned step goes with its item: under a joint one of hers it's
+    // hers, and brings it into her day, though it's due at the weekend; under
+    // Fred's it stays his.
+    const hall = addItem(db, fred, { projectId: home.id, title: "Sort the hall", assigneeIds: [fred, lorna], dueFrom: "2026-11-21", dueDate: "2026-11-22" }, "web");
+    addItem(db, fred, { projectId: home.id, title: "List what to store", parentId: hall.id, dueDate: today }, "web");
+    addItem(db, fred, { projectId: home.id, title: "Fred's loose step", parentId: chores.id, dueDate: today }, "web");
+    expect(seen()).toEqual(expect.arrayContaining(["Sort the hall", "List what to store"]));
+    expect(seen()).not.toContain("Fred's loose step");
+    expect(myDayView(db, lorna).itemIds.map(title)).toEqual(expect.arrayContaining(["Sort the hall", "List what to store"]));
 
     // She manages it like any day share of hers; Fred can still remove Jo.
     expect(listDayShares(db, lorna).find((s) => s.name === "Jo")?.places.map((p) => p.name)).toEqual(["Week", "Home"]);
