@@ -454,18 +454,21 @@ export function isOnToday(
 /**
  * Whether an item belongs in the Agenda's No date section on `today`: an item
  * with no due date that's open or was finished today (crossed out). A
- * sub-item of a dated parent stays out, since it's planned with its parent.
+ * sub-item of a dated parent stays out, since it's planned with its parent,
+ * and so does Someday: not now, so not on the Agenda, nor its sub-items.
  */
 export function isOnNoDate(
   item: {
     dueDate: string | null;
     completedAt: number | null;
+    somedayAt?: number | null;
   },
-  parent: { dueDate: string | null } | undefined,
+  parent: { dueDate: string | null; somedayAt?: number | null } | undefined,
   today: string,
   timeZone?: string,
 ): boolean {
   if (item.dueDate || parent?.dueDate) return false;
+  if (item.somedayAt != null || parent?.somedayAt != null) return false;
   return item.completedAt === null || dayOf(item.completedAt, timeZone) === today;
 }
 
@@ -491,8 +494,13 @@ export type AgendaSection = (typeof AGENDA_SECTIONS)[number];
  * is planned with its parent (see isOnNoDate).
  */
 export function agendaSection(
-  item: { dueDate: string | null; dueFrom?: string | null; completedAt: number | null },
-  parent: { dueDate: string | null } | undefined,
+  item: {
+    dueDate: string | null;
+    dueFrom?: string | null;
+    completedAt: number | null;
+    somedayAt?: number | null;
+  },
+  parent: { dueDate: string | null; somedayAt?: number | null } | undefined,
   today: string,
   timeZone?: string,
 ): AgendaSection | null {
@@ -506,4 +514,32 @@ export function agendaSection(
   if (start <= sunday) return "This week";
   if (start <= addDays(sunday, 7)) return "Next week";
   return "Later";
+}
+
+type LaterItem = { dueDate: string | null; dueFrom?: string | null; somedayAt?: number | null };
+
+/**
+ * Whether an item folds away under Later at the foot of its list on
+ * `today`: it's Someday, or it's due to start after next week, where the
+ * Agenda's Later begins (agendaSection), so "Later" means the same in both.
+ * Overdue, soon and undated items stay in the list.
+ */
+export function isLater(item: LaterItem, today: string): boolean {
+  if (item.somedayAt != null) return true;
+  return item.dueDate !== null && agendaSection({ ...item, completedAt: null }, undefined, today) === "Later";
+}
+
+/**
+ * isLater for a parent and its sub-items, which fold away together: the
+ * parent is Later and no open sub-item with a date of its own is due
+ * sooner, since that pulls the whole checklist up into the list.
+ */
+export function isLaterGroup(
+  group: LaterItem & { children: Array<LaterItem & { completedAt: number | null }> },
+  today: string,
+): boolean {
+  return (
+    isLater(group, today) &&
+    group.children.every((c) => c.completedAt !== null || c.dueDate === null || isLater(c, today))
+  );
 }

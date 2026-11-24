@@ -853,6 +853,10 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
           if (r.actorId === SYSTEM_ACTOR && event.changes.smartDue && event.changes.due?.dueDate) {
             return say([item, t(" is now due "), duePart({ ...event.changes.due, dueDate: event.changes.due.dueDate })]);
           }
+          if (event.changes.someday) return say([who, t(" moved "), item, t(" to Someday")]);
+          if (event.changes.someday === false && !event.changes.due?.dueDate) {
+            return say([who, t(" took "), item, t(" out of Someday")]);
+          }
           return event.changes.due?.dueDate
             ? say([who, t(" set "), item, t(" due "), duePart({ ...event.changes.due, dueDate: event.changes.due.dueDate })])
             : say([who, t(" cleared the due date on "), item]);

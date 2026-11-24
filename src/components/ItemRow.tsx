@@ -67,7 +67,7 @@ import { AssigneeOptions } from "./AssigneeOptions";
 import { useCommentCount } from "./comment-counts";
 import { LabelBadge, useListLabels } from "./Labels";
 import { MoveToListContextMenu } from "./MoveItem";
-import { DueBadge, WaitingBadge } from "./DueBadge";
+import { DueBadge, SomedayBadge, WaitingBadge } from "./DueBadge";
 import { PrLink } from "./PrLink";
 import { ProjectIcon } from "./ProjectIcon";
 import { RepeatBadge } from "./RepeatBadge";
@@ -250,13 +250,20 @@ function ItemRowView({
     (ids: string[]) => setAssignees(item.id, ids),
     [setAssignees, item.id],
   );
-  // Held: the row dims until the new date lands.
+  // Held: the row dims until the new date lands. Clearing Someday brings it
+  // back undated.
   function setDue(due: Due | null) {
     start(async () => {
       await runAction(
-        saves.updateItem(item.id, due ?? { dueDate: null }),
+        saves.updateItem(item.id, due ?? (item.somedayAt !== null ? { someday: false } : { dueDate: null })),
         `change the due date of “${item.title}”`,
       );
+    });
+  }
+  // Held like a date, since it is one: an answer to "when".
+  function setSomeday() {
+    start(async () => {
+      await runAction(saves.updateItem(item.id, { someday: true }), `move “${item.title}” to Someday`);
     });
   }
   const openPicker = useCallback(() => setAssignOpen(true), []);
@@ -452,7 +459,7 @@ function ItemRowView({
                 <span className="truncate">{context}</span>
               </span>
             )}
-            {(cancelled || list || item.labels.length > 0 || item.dueDate || item.smartRule || repeat) && (
+            {(cancelled || list || item.labels.length > 0 || item.dueDate || item.smartRule || item.somedayAt !== null || repeat) && (
               <span className="flex flex-wrap items-center gap-1">
                 {cancelled && <CancelledChip item={item} />}
                 {list && (
@@ -471,6 +478,7 @@ function ItemRowView({
                 ) : (
                   item.smartRule && <WaitingBadge rule={item.smartRule} />
                 )}
+                {item.somedayAt !== null && <SomedayBadge />}
                 {repeat && (
                   <RepeatBadge repeat={repeat} completedAt={item.completedAt} />
                 )}
@@ -596,11 +604,11 @@ function ItemRowView({
                 className="w-52"
                 onClick={(e) => e.stopPropagation()}
               >
-                <QuickDueItems menu="dropdown" item={item} today={today} onPick={setDue} />
+                <QuickDueItems menu="dropdown" item={item} today={today} onPick={setDue} onSomeday={setSomeday} />
                 <DropdownMenuItem data-replay-safe onClick={onOpenDetail}>
                   Pick a date…
                 </DropdownMenuItem>
-                {item.dueDate && (
+                {(item.dueDate || item.somedayAt !== null) && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem data-replay-safe onClick={() => setDue(null)}>
@@ -680,9 +688,9 @@ function ItemRowView({
               </ContextMenuShortcut>
             </ContextMenuSubTrigger>
             <ContextMenuSubContent className="w-52">
-              <QuickDueItems menu="context" item={item} today={today} onPick={setDue} />
+              <QuickDueItems menu="context" item={item} today={today} onPick={setDue} onSomeday={setSomeday} />
               <ContextMenuItem data-replay-safe onClick={onOpenDetail}>Pick a date…</ContextMenuItem>
-              {item.dueDate && (
+              {(item.dueDate || item.somedayAt !== null) && (
                 <>
                   <ContextMenuSeparator />
                   <ContextMenuItem data-replay-safe onClick={() => setDue(null)}>
@@ -772,31 +780,43 @@ function QuickDueItems({
   item,
   today,
   onPick,
+  onSomeday,
 }: {
   menu: "dropdown" | "context";
   item: Item;
   today: string;
   onPick: (due: Due) => void;
+  onSomeday: () => void;
 }) {
   const MenuItem = menu === "dropdown" ? DropdownMenuItem : ContextMenuItem;
-  return quickDues(today).map(([label, due]) => (
-    <MenuItem data-replay-safe key={label} onClick={() => onPick(due)}>
-      {label}
-      {sameDue(item, due) ? (
-        <Check className="ml-auto" />
-      ) : (
-        // A span's dates; Today and Tomorrow say their day already.
-        due.dueFrom &&
-        (menu === "dropdown" ? (
-          <span className="ml-auto text-xs text-muted-foreground">
-            {spanDates(due.dueFrom, due.dueDate, today)}
-          </span>
+  const someday = item.somedayAt !== null;
+  return [
+    ...quickDues(today).map(([label, due]) => (
+      <MenuItem data-replay-safe key={label} onClick={() => onPick(due)}>
+        {label}
+        {sameDue(item, due) ? (
+          <Check className="ml-auto" />
         ) : (
-          <ContextMenuShortcut>{spanDates(due.dueFrom, due.dueDate, today)}</ContextMenuShortcut>
-        ))
-      )}
-    </MenuItem>
-  ));
+          // A span's dates; Today and Tomorrow say their day already.
+          due.dueFrom &&
+          (menu === "dropdown" ? (
+            <span className="ml-auto text-xs text-muted-foreground">
+              {spanDates(due.dueFrom, due.dueDate, today)}
+            </span>
+          ) : (
+            <ContextMenuShortcut>{spanDates(due.dueFrom, due.dueDate, today)}</ContextMenuShortcut>
+          ))
+        )}
+      </MenuItem>
+    )),
+    // A sub-item goes with its parent, so only a top-level item can wait for Someday.
+    item.parentId === null && (
+      <MenuItem data-replay-safe key="someday" onClick={() => !someday && onSomeday()}>
+        Someday
+        {someday && <Check className="ml-auto" />}
+      </MenuItem>
+    ),
+  ];
 }
 
 const MemoItemRow = memo(ItemRowView, (prev, next) =>

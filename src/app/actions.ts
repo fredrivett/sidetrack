@@ -758,6 +758,7 @@ export async function updateItemAction(
     dueDate?: string | null;
     dueFrom?: string | null;
     repeat?: Repeat | null;
+    someday?: boolean;
   },
 ) {
   const userId = await requireUserId();

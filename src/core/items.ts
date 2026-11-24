@@ -624,6 +624,12 @@ export function updateItem(
      */
     dueFrom?: string | null;
     repeat?: Repeat | null;
+    /**
+     * true sends it to Someday, taking its due date, repeat and smart rule
+     * off; false brings it back undated. A due date or repeat brings it back
+     * too.
+     */
+    someday?: boolean;
   },
   source: AuditOrigin,
   /** The source the change came from, such as a photo of a page. */
@@ -635,6 +641,41 @@ export function updateItem(
 
   const next: Partial<Item> = {};
   const changes: ItemChanges = {};
+  if (patch.someday) {
+    if (patch.dueDate || patch.dueFrom || patch.repeat) {
+      throw new Error("Someday means no due date or repeat: send one or the other");
+    }
+    if (existing.parentId) {
+      throw new Error("only a top-level item can be Someday: a sub-item goes with its parent");
+    }
+    if (existing.somedayAt === null) {
+      next.somedayAt = Date.now();
+      changes.someday = true;
+      // Someday answers "when", so the old answer goes. The audit rows
+      // before this one still say what it was.
+      if (existing.dueDate !== null || existing.dueFrom !== null) {
+        next.dueDate = null;
+        next.dueFrom = null;
+        changes.due = { dueDate: null, dueFrom: null };
+      }
+      if (existing.repeatUnit !== null) {
+        Object.assign(next, { repeatEvery: null, repeatUnit: null, repeatOn: null, repeatDay: null });
+        changes.repeat = null;
+      }
+      if (existing.smartRule !== null) {
+        next.smartRule = null;
+        next.smartLead = null;
+        changes.smart = null;
+      }
+    }
+  } else if (
+    existing.somedayAt !== null &&
+    (patch.someday === false || patch.dueDate || patch.repeat)
+  ) {
+    // Planning it, with a day or a repeat, brings it back.
+    next.somedayAt = null;
+    changes.someday = false;
+  }
   if (patch.title !== undefined) {
     const title = assertTitle(patch.title);
     if (title !== existing.title) {
@@ -1352,7 +1393,9 @@ export function setItemParent(
 
   db.transaction((tx) => {
     tx.update(items)
-      .set({ parentId: parent?.id ?? null, position })
+      // A sub-item goes with its parent, so it leaves Someday as it nests
+      // (the nesting is the change the log records).
+      .set({ parentId: parent?.id ?? null, position, ...(parent && { somedayAt: null }) })
       .where(eq(items.id, id))
       .run();
     recordAudit(tx as unknown as Db, {

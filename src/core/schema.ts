@@ -364,6 +364,12 @@ export const items = sqliteTable(
     smartRule: text("smart_rule"),
     // Days before the earliest match it's due: 0 on the day. Set with smart_rule.
     smartLead: integer("smart_lead"),
+    // When it was sent to Someday: still meant to be done, just not now.
+    // It's an answer to "when", so it never has a due date, repeat or smart
+    // rule alongside (updateItem clears them), and only a top-level item has
+    // one. The board folds it away under Later with what's due after next
+    // week; the Agenda leaves it out. null = not Someday.
+    somedayAt: integer("someday_at"),
     // When it was closed: ticked off, or cancelled (below). Everything that
     // hides closed items reads this alone; only what counts finished work
     // also checks `cancelled`.

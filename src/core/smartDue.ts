@@ -228,8 +228,10 @@ export function setSmartRule(
   }
   db.transaction((tx) => {
     const t = tx as unknown as Db;
+    // A rule plans it, so it leaves Someday.
+    const someday = rule && item.somedayAt !== null ? { someday: false } : {};
     tx.update(items)
-      .set({ smartRule: rule?.rule ?? null, smartLead: rule?.lead ?? null })
+      .set({ smartRule: rule?.rule ?? null, smartLead: rule?.lead ?? null, ...(rule && { somedayAt: null }) })
       .where(eq(items.id, item.id))
       .run();
     if (!rule) {
@@ -238,7 +240,7 @@ export function setSmartRule(
       return;
     }
     const moved = applySmartDue(t, item, rule.lead);
-    recordAudit(t, { actor: userId, source, event: updated(item, { smart: rule, ...moved }) });
+    recordAudit(t, { actor: userId, source, event: updated(item, { smart: rule, ...moved, ...someday }) });
     if (moved) recalibrate(t, [item.id]);
   });
   return after(db, userId, itemId);

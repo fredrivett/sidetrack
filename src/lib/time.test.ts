@@ -5,6 +5,9 @@ import {
   dayOf,
   dueLabel,
   isDay,
+  isLater,
+  isLaterGroup,
+  isOnNoDate,
   isOnToday,
   parseDue,
   quickDues,
@@ -283,5 +286,49 @@ describe("calendar days", () => {
     expect(isOnToday(span("2026-11-09", "2026-11-15"), today, tz)).toBe(true);
     expect(isOnToday(span("2026-11-14", "2026-11-15"), today, tz)).toBe(true);
     expect(isOnToday(span("2026-11-15", "2026-11-16"), today, tz)).toBe(false);
+  });
+});
+
+describe("Later at the foot of a list", () => {
+  const item = (dueDate: string | null, extra: { dueFrom?: string; somedayAt?: number } = {}) => ({
+    dueDate,
+    dueFrom: extra.dueFrom ?? null,
+    somedayAt: extra.somedayAt ?? null,
+  });
+
+  it("folds away what starts after next week, where the Agenda's Later begins", () => {
+    // Tuesday: next week ends Sunday 6 December.
+    const tue = "2026-11-24";
+    expect(isLater(item("2026-12-06"), tue)).toBe(false);
+    expect(isLater(item("2026-12-07"), tue)).toBe(true);
+    // A span counts from its first day: under way or starting next week, it's on.
+    expect(isLater(item("2026-12-20", { dueFrom: "2026-12-06" }), tue)).toBe(false);
+    expect(isLater(item("2026-12-20", { dueFrom: "2026-11-20" }), tue)).toBe(false);
+    // Overdue and undated stay in the list.
+    expect(isLater(item("2026-11-01"), tue)).toBe(false);
+    expect(isLater(item(null), tue)).toBe(false);
+    // On a Monday, next week runs a full week further.
+    expect(isLater(item("2026-12-13"), "2026-11-30")).toBe(false);
+    expect(isLater(item("2026-12-14"), "2026-11-30")).toBe(true);
+  });
+
+  it("folds Someday away, and keeps it off the Agenda with its sub-items", () => {
+    const someday = { ...item(null, { somedayAt: 1 }), completedAt: null };
+    expect(isLater(someday, "2026-11-24")).toBe(true);
+    expect(isOnNoDate(someday, undefined, "2026-11-24")).toBe(false);
+    expect(isOnNoDate({ dueDate: null, completedAt: null }, someday, "2026-11-24")).toBe(false);
+    expect(isOnNoDate({ dueDate: null, completedAt: null }, item(null), "2026-11-24")).toBe(true);
+  });
+
+  it("keeps a checklist in the list while an open line is due sooner", () => {
+    const tue = "2026-11-24";
+    const line = (dueDate: string | null, completedAt: number | null = null) => ({ ...item(dueDate), completedAt });
+    const group = (children: ReturnType<typeof line>[]) => ({ ...item("2026-12-20"), children });
+    expect(isLaterGroup(group([line(null), line("2026-12-10")]), tue)).toBe(true);
+    expect(isLaterGroup(group([line("2026-11-25")]), tue)).toBe(false);
+    // A finished line doesn't hold it up.
+    expect(isLaterGroup(group([line("2026-11-25", 5)]), tue)).toBe(true);
+    // An undated parent stays in the list, whatever its lines.
+    expect(isLaterGroup({ ...item(null), children: [line("2026-12-20")] }, tue)).toBe(false);
   });
 });
