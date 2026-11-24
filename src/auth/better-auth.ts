@@ -236,9 +236,8 @@ export const auth = betterAuth({
           let invitedBy: string | null = null;
           if (invite) {
             try {
-              const inviter = findInvitation(db, invite)?.inviter.username ?? null;
               acceptInvitation(db, invite, user.id, "web");
-              invitedBy = inviter;
+              invitedBy = findInvitation(db, invite)?.inviter.username ?? null;
             } catch (err) {
               console.error("[auth] couldn't accept the invite signed up with:", err);
             } finally {
