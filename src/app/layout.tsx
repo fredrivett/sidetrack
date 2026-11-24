@@ -90,6 +90,19 @@ export default function RootLayout({
         <PhysicalKeyboard />
         <SubmitShortcut />
         <CopyHoveredItemRef />
+        {/* iOS 26+ blurs the top of a Home Screen web app over the page,
+            unless a fixed box at least 90% wide and over 10px tall sits
+            under the top edge's midpoint; then it paints that box's
+            background colour behind the status bar instead (WebKit's
+            LocalFrameView::fixedContainerEdges). This strip is that box for
+            every page, dialog and sheet: on top of everything, so nothing
+            else is picked, while bg-clip-text leaves it painting nothing and
+            pointer-events-none lets taps through. Safari tabs keep their own
+            behaviour. */}
+        <div
+          aria-hidden
+          className="pointer-events-none fixed inset-x-0 top-0 z-[2147483647] hidden h-3 bg-neutral-50 bg-clip-text [@media(display-mode:standalone)]:block dark:bg-neutral-950"
+        />
       </body>
     </html>
   );
