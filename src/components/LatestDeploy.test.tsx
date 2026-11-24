@@ -94,14 +94,30 @@ describe("refreshIfCurrent", () => {
     expect(reload).toHaveBeenCalledOnce();
   });
 
-  // Signed out, there's nothing of theirs on the page to reload for.
+  // Signed out, there's nothing of theirs on the page to reload for, but it
+  // still moves over once hidden.
   it("on a newer deploy, doesn't say so to someone signed out", async () => {
     const { refreshIfCurrent } = await import("./LatestDeploy");
     live = server("bbb");
     session = null;
+    const listen = vi.spyOn(document, "addEventListener");
     const router = { refresh: vi.fn() };
     await refreshIfCurrent(router);
     expect(router.refresh).not.toHaveBeenCalled();
     expect(toast).not.toHaveBeenCalled();
+    expect(listen).toHaveBeenCalledWith("visibilitychange", expect.any(Function));
+    listen.mockRestore();
+  });
+
+  // Only a clear "signed out" hides it: a failed check mustn't hide it from
+  // someone signed in.
+  it("on a newer deploy, still says so when the session check fails", async () => {
+    const { refreshIfCurrent } = await import("./LatestDeploy");
+    live = server("bbb");
+    vi.mocked(fetch).mockImplementation(async (url) =>
+      url === "/api/auth/get-session" ? new Response("Bad gateway", { status: 502 }) : live(),
+    );
+    await refreshIfCurrent({ refresh: vi.fn() });
+    expect(toast).toHaveBeenCalledOnce();
   });
 });
