@@ -56,6 +56,8 @@ import { moveItem, previewMoveItem } from "@/core/move";
 import { getDb } from "@/core/db";
 import { addSmartMatch, getSmartDue, removeSmartMatch, setSmartRule } from "@/core/smartDue";
 import { getTimeZone } from "@/core/users";
+import { closeDay } from "@/core/dayWrapUps";
+import { joinTagged, splitTagged, WRAP_UP_TAGS } from "@/lib/dayTags";
 import { addFromSource, discardSource, getItemSource, getSource, proposeFromPhoto } from "@/core/sources";
 import { nestItems } from "@/lib/itemTree";
 import { projectRefPrefixes, resolveItemRef } from "@/core/itemRef";
@@ -530,6 +532,36 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           ...(it.parentId ? { parentTitle: titles.get(it.parentId) } : {}),
         })),
       });
+    },
+  );
+
+  server.registerTool(
+    "close_day",
+    {
+      title: "Close the day",
+      description:
+        "Closes the user's today with how it went: their accountability update for the people they share their day with, " +
+        "who see it on Check-ins beside the user's note for today (its words if the user shares their note, its mood if they share their mood). " +
+        "Use it only when the user asks you to close or wrap up their day, in their own words; never write it for them unprompted. " +
+        "mood is any of the quick words they'd tap; words is what they said, kept to one line. Both are optional, so a day can be closed with neither. " +
+        "Closing it again changes what it says, not when it was closed. The day turns over at 4am, so at 1am it closes the day before. " +
+        "Returns { day, mood, words, closedAt }; tell the user it's closed and what it says.",
+      inputSchema: {
+        mood: z.array(z.enum(WRAP_UP_TAGS)).optional(),
+        words: z.string().max(1000).optional(),
+      },
+    },
+    async ({ mood, words }) => {
+      const { db } = getDb();
+      const timeZone = getTimeZone(db, userId);
+      // Without it, "today" would be a guess: the wrong day closed.
+      if (!timeZone) {
+        return errorText("The user's timezone isn't known until they open Sidetrack in a browser, so their day can't be closed yet. Nothing was changed.");
+      }
+      const day = dayOf(Date.now(), timeZone);
+      const kept = closeDay(db, userId, day, joinTagged(mood ?? [], words ?? "", WRAP_UP_TAGS));
+      const { tags, rest } = splitTagged(kept.text, WRAP_UP_TAGS);
+      return json({ day, mood: tags, words: rest, closedAt: new Date(kept.closedAt).toISOString() });
     },
   );
 

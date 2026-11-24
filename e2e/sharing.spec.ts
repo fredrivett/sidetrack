@@ -371,3 +371,34 @@ test("your profile's Invites links to inviting a friend and sharing your day", a
   await expect(page.getByRole("dialog", { name: "Share my day" })).toBeVisible();
   await expect(page).toHaveURL(/\/check-ins$/);
 });
+
+test("closes the day with how it went, which shows on their Check-ins", async ({ page, user, browser, baseURL }) => {
+  const list = user.addList("Home");
+  user.addItem(list.id, "Hoover upstairs", [user.id], "2020-01-06");
+  user.setDayNote("Busy — three jobs around the house");
+  const jo = await createPerson();
+  user.shareDayWith(jo, [list.id]);
+  // Evening by her clock: the day can be closed.
+  const evening = new Date();
+  evening.setHours(21, 0, 0, 0);
+  await page.clock.setFixedTime(evening);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Close the day" }).click();
+  const dialog = page.getByRole("dialog", { name: "How did today go?" });
+  await dialog.getByRole("button", { name: "Got a lot done" }).click();
+  await dialog.getByLabel("A few words about today").fill("Did the bottles too");
+  await dialog.getByRole("button", { name: "Done for today" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Day closed at .* Edit how today went$/ })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("button", { name: /^Day closed at / })).toContainText("Got a lot done");
+
+  const context = await browser.newContext();
+  await jo.signIn(context, baseURL ?? "");
+  const joPage = await context.newPage();
+  await joPage.goto("/check-ins");
+  const went = joPage.getByRole("region", { name: "E2E User’s day" }).getByRole("group", { name: "How today went" });
+  await expect(went.getByText("Did the bottles too")).toBeVisible();
+  await expect(went.getByRole("list", { name: "How it went" }).getByText("Got a lot done")).toBeVisible();
+  await context.close();
+});

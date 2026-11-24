@@ -14,6 +14,7 @@ import { addDays, dayOf } from "../lib/time";
 import { type GreetingLength, type GreetingPrefs, LENGTH_LIMITS } from "../lib/greetingPrefs";
 import { type AgendaBrief, type BriefItem, buildAgendaBrief, type PartOfDay } from "./agendaBrief";
 import type { Db } from "./db";
+import type { WrapUp } from "./dayWrapUps";
 import { hasItemAccess } from "./access";
 import { agendaGreetings, items, projects } from "./schema";
 import { getAgendaReadAt, getGreetingPrefs, getProfile } from "./users";
@@ -37,6 +38,8 @@ export interface Greeting {
   note?: string | null;
   /** AI isn't set up, so nothing reads a note: the page doesn't offer one. */
   aiOff?: true;
+  /** How today went, once it's closed (dayWrapUps.ts), as it is now: the greeting read adds it. */
+  wrapUp?: WrapUp | null;
 }
 
 /** How a greeting was worked out: what it looked at and what it decided. */

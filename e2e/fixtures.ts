@@ -124,6 +124,8 @@ export type User = {
   addPhoto(lines: ProposedLine[]): { id: string };
   /** Their note about today, written in the suite's time zone. */
   setDayNote(text: string): void;
+  /** Shares their today on these lists with `person`, words and mood, already accepted. */
+  shareDayWith(person: { id: string; username: string }, listIds: string[]): void;
   /** Invites `email`, who has no account, to see their week on these lists, as
    * Share my day would; returns the emailed link's path. */
   shareWeekByEmail(email: string, listIds: string[]): string;
@@ -170,6 +172,17 @@ export const test = base.extend<{ user: User }>({
       setDayNote(text) {
         setTimeZone(db, response.user.id, "Europe/London");
         setDayNote(db, response.user.id, dayOf(Date.now(), "Europe/London"), text);
+      },
+      shareDayWith(person, listIds) {
+        for (const id of listIds) {
+          inviteMember(db, response.user.id, id, person.username, SOURCE, "viewer", {
+            onlyMine: true,
+            within: "today",
+            shareNote: true,
+            shareMood: true,
+          });
+          acceptInvite(db, person.id, id, SOURCE);
+        }
       },
       shareWeekByEmail(to, listIds) {
         const places = listIds.map((id) => ({ kind: "list" as const, id, role: "commenter" as const, onlyMine: true, within: "week" as const }));

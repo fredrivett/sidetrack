@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, NotebookPen, Plus, RefreshCw, Settings, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
+import { Check, ChevronDown, CircleCheck, Moon, NotebookPen, Plus, RefreshCw, Settings, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -8,11 +8,13 @@ import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import { setAgendaReadAction, setDayNoteAction } from "@/app/actions";
 import type { Greeting } from "@/core/agendaGreeting";
+import type { WrapUp } from "@/core/dayWrapUps";
 import type { Item } from "@/core/schema";
-import { DAY_TAGS, type DayTag, joinDayNote, splitDayNote, toggleDayTag } from "@/lib/dayTags";
+import { DAY_TAGS, type DayTag, joinDayNote, splitDayNote, splitTagged, toggleDayTag, WRAP_UP_TAGS } from "@/lib/dayTags";
 import { parseGreeting } from "@/lib/greeting";
 import { NOTE_MAX } from "@/lib/greetingPrefs";
 import { aiRead } from "./ai-read";
+import { CloseDayDialog } from "./CloseDayDialog";
 import type { FeedbackAbout } from "./FeedbackDialog";
 import { GreetingDialog, type RenderItem } from "./GreetingDialog";
 import { runAction } from "./run-action";
@@ -22,6 +24,15 @@ import { useDraft } from "./use-draft";
 import { useStoredState } from "./use-stored-state";
 
 const READ_MS = 2000;
+
+/** From 6pm to the 4am turnover, by the browser's clock: when a day can be closed. */
+const isEvening = () => {
+  const hour = new Date().getHours();
+  return hour >= 18 || hour < 4;
+};
+
+/** "21:40", as the greeting's own times read. */
+const clockTime = (ts: number) => new Date(ts).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 
 /**
  * A word or phrase in the prose that does something when tapped. A span,
@@ -140,6 +151,10 @@ export function AgendaGreeting({
   // The viewer's note for today: as each greeting brings it, then as they save it.
   const [note, setNote] = useState("");
   const dayNote = splitDayNote(note);
+  // How today went, once it's closed (dayWrapUps.ts), and the dialog that closes it.
+  const [wrapUp, setWrapUp] = useState<WrapUp | null>(null);
+  const [closingDay, setClosingDay] = useState(false);
+  const wrapped = splitTagged(wrapUp?.text ?? "", WRAP_UP_TAGS);
   // The note as last set, for saves in quick succession (taps on its tags).
   const noteNow = useRef("");
   // What's being typed into it, and the tags Jev thinks fit that.
@@ -272,6 +287,7 @@ export function AgendaGreeting({
       (g) => {
         if (!live) return;
         setGreeting(g);
+        setWrapUp(g?.wrapUp ?? null);
         // Not over a change of the viewer's still being saved.
         if (notesSaving.current === 0) {
           noteNow.current = g?.note ?? "";
@@ -696,6 +712,54 @@ export function AgendaGreeting({
           </div>
         </div>
       )}
+      {/* Evenings, the day can be closed with how it went, for whoever
+          follows it on Check-ins; once closed, it says so, to edit. Not tied
+          to AI, as the note is: it's for people, not the greeting. */}
+      {greeting && !isFixed && today && (wrapUp || isEvening()) && (
+            <div className="mt-2 flex min-h-10 items-center rounded-xl bg-stone-100 px-3 py-2 touch:min-h-12 dark:bg-stone-800/50">
+              {wrapUp ? (
+                <button
+                  type="button"
+                  onClick={() => setClosingDay(true)}
+                  aria-label={`Day closed at ${clockTime(wrapUp.closedAt)}. Edit how today went`}
+                  className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-md text-left text-sm text-neutral-600 outline-none hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-stone-300 dark:text-neutral-400 dark:hover:text-neutral-100 dark:focus-visible:ring-stone-600"
+                >
+                  <CircleCheck aria-hidden className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                  <span className="shrink-0">Day closed {clockTime(wrapUp.closedAt)}</span>
+                  {wrapped.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="shrink-0 rounded-full border border-stone-200 bg-white px-1.5 text-[11px] leading-4 text-neutral-600 dark:border-stone-700 dark:bg-neutral-900 dark:text-neutral-300"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                  {wrapped.rest && (
+                    <span className="min-w-0 truncate italic text-neutral-400 dark:text-neutral-500">{wrapped.rest}</span>
+                  )}
+                </button>
+              ) : (
+                <Button
+                  size="xs"
+                  variant="outline"
+                  onClick={() => setClosingDay(true)}
+                  className="border-stone-300 bg-transparent dark:border-stone-700 dark:bg-transparent"
+                >
+                  <Moon aria-hidden />
+                  Close the day
+                </Button>
+              )}
+            </div>
+          )}
+      {today && !isFixed && (
+            <CloseDayDialog
+              open={closingDay}
+              onOpenChange={setClosingDay}
+              today={today}
+              wrapUp={wrapUp}
+              onClosed={setWrapUp}
+            />
+          )}
 
       <GreetingDialog
         open={dialogOpen}

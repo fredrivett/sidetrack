@@ -13,6 +13,7 @@ import { dayOf } from "../lib/time";
 import { users } from "./auth-schema";
 import type { Db } from "./db";
 import { validZone } from "./db-functions";
+import { getWrapUp, type SeenWrapUp, seenWrapUp } from "./dayWrapUps";
 import { dayNotes, dayShares, projectMembers, spaceMembers } from "./schema";
 
 /** The user's note for `day` (YYYY-MM-DD), or null when they haven't written one. */
@@ -51,17 +52,18 @@ export function setDayNote(db: Db, userId: string, day: string, raw: string): st
 }
 
 /**
- * What `viewerId` may see of `personId`'s note for their own today: its
- * words, its mood (tags), both or neither, as `personId` chose when sharing
- * their day with them (an accepted membership limited to their items and a
- * window, with shareNote or shareMood). Whichever share allows more wins.
+ * What `viewerId` may see of `personId`'s note for their own today, and of
+ * how it went once they close it (dayWrapUps.ts): the words, the mood
+ * (tags), both or neither, as `personId` chose when sharing their day with
+ * them (an accepted membership limited to their items and a window, with
+ * shareNote or shareMood). Whichever share allows more wins.
  */
 export function sharedDayNote(
   db: Db,
   viewerId: string,
   personId: string,
   now = Date.now(),
-): { note: string | null; mood: DayTag[] } {
+): { note: string | null; mood: DayTag[]; wrapUp: SeenWrapUp | null } {
   const shares = [projectMembers, spaceMembers].flatMap((m) =>
     db
       .select({ note: m.shareNote, mood: m.shareMood })
@@ -86,10 +88,12 @@ export function sharedDayNote(
   if (own) shares.push(own);
   const words = shares.some((s) => s.note);
   const mood = shares.some((s) => s.mood);
-  if (!words && !mood) return { note: null, mood: [] };
+  if (!words && !mood) return { note: null, mood: [], wrapUp: null };
   const zone = db.select({ tz: users.timeZone }).from(users).where(eq(users.id, personId)).get()?.tz;
-  const text = getDayNote(db, personId, dayOf(now, validZone(zone)));
-  if (!text) return { note: null, mood: [] };
+  const day = dayOf(now, validZone(zone));
+  const wrapUp = seenWrapUp(getWrapUp(db, personId, day), words, mood);
+  const text = getDayNote(db, personId, day);
+  if (!text) return { note: null, mood: [], wrapUp };
   const { tags, rest } = splitDayNote(text);
-  return { note: words && rest ? rest : null, mood: mood ? tags : [] };
+  return { note: words && rest ? rest : null, mood: mood ? tags : [], wrapUp };
 }

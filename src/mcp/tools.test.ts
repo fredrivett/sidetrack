@@ -23,6 +23,9 @@ import { sources } from "@/core/schema";
 import { getSource, listPendingSources, receiveSourcePhoto } from "@/core/sources";
 import { createTestDb, createTestUser } from "@/core/test-helpers";
 import { setTimeZone } from "@/core/users";
+import { getWrapUp } from "@/core/dayWrapUps";
+import { dayWrapUps } from "@/core/schema";
+import { dayOf } from "@/lib/time";
 import { buildServer } from "./server";
 
 // The tools run against a real in-memory DB through a real MCP client, as an
@@ -1106,5 +1109,20 @@ describe("add_from_photo", () => {
     expect((await call("discard_photo", { source_id: dropped.source_id })).data).toEqual({ discarded: true });
     expect(getSource(db, fred, dropped.source_id)).toBeNull();
     expect(listItems(db, fred, life.id)).toHaveLength(1);
+  });
+});
+
+describe("close_day", () => {
+  it("closes the user's today with their moods and words, and refuses without a timezone", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const call = await connectAs(fred);
+    expect((await call("close_day", { mood: ["Tired"], words: "long one" })).error).toMatch(/Nothing was changed/);
+    expect(db.select().from(dayWrapUps).all()).toEqual([]);
+    setTimeZone(db, fred, "Europe/London");
+    const { data } = await call("close_day", { mood: ["Tired", "Good day"], words: " long one " });
+    // Moods come back in their usual order, however they were given.
+    expect(data).toMatchObject({ day: dayOf(Date.now(), "Europe/London"), mood: ["Good day", "Tired"], words: "long one" });
+    expect(getWrapUp(db, fred, data.day as string)?.text).toBe("Good day, Tired — long one");
+    expect((await call("close_day", { mood: ["Busy"] })).error).not.toBeNull();
   });
 });
