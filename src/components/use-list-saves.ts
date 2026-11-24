@@ -30,24 +30,66 @@ export const RemoveListContext = createContext<(removal: Removal) => void>((remo
 export const useRemoveList = () => useContext(RemoveListContext);
 
 /**
- * The board's lists with removals shown ahead of the server. If the save
- * fails, the transition ends without them, so the list comes back and a
- * toast says so.
+ * A list dragged to a new place on the board: before or after another list
+ * (`ref`, null to leave its place), and into another Space's tray when
+ * `spaceId` is set (null for none).
  */
-export function useOptimisticLists<P extends { id: string }>(lists: P[]) {
-  const [optimistic, drop] = useOptimistic(lists, (cur: P[], id: string) =>
-    cur.filter((p) => p.id !== id),
-  );
+export type ListMove = { id: string; ref: string | null; spaceId?: string | null };
+
+type ListChange = { remove: string } | { move: ListMove };
+
+function applyChange<P extends { id: string; spaceId: string | null }>(cur: P[], change: ListChange) {
+  return "remove" in change ? cur.filter((p) => p.id !== change.remove) : moveInLists(cur, change.move);
+}
+
+/** The lists with `move` made: the board's order, as dragging shows it. */
+export function moveInLists<P extends { id: string; spaceId: string | null }>(cur: P[], move: ListMove) {
+  const { id, ref, spaceId } = move;
+  const moved = cur.find((p) => p.id === id);
+  if (!moved) return cur;
+  const next = spaceId === undefined ? moved : { ...moved, spaceId };
+  const rest = cur.filter((p) => p.id !== id);
+  const [side, anchor] = ref?.split(":") ?? [];
+  const at = rest.findIndex((p) => p.id === anchor);
+  if (at === -1) return cur.map((p) => (p.id === id ? next : p));
+  const to = side === "after" ? at + 1 : at;
+  return [...rest.slice(0, to), next, ...rest.slice(to)];
+}
+
+/**
+ * The board's lists with removals and drags shown ahead of the server. If
+ * the save fails, the transition ends without them, so the list comes back
+ * and a toast says so. A dragged list is held, dimmed (`moving`), in its new
+ * place until its save lands.
+ */
+export function useOptimisticLists<P extends { id: string; spaceId: string | null }>(lists: P[]) {
+  const [optimistic, change] = useOptimistic(lists, applyChange<P>);
+  const [moving, markMoving] = useOptimistic([] as string[], (cur, id: string) => [...cur, id]);
   const [, start] = useTransition();
   const removeList = useMemo(
     () => (removal: Removal) =>
       start(async () => {
-        drop(removal.id);
+        change({ remove: removal.id });
         await remove(removal);
       }),
-    [drop],
+    [change],
   );
-  return [optimistic, removeList] as const;
+  // Returns the save, for a dialog that holds until it lands.
+  const moveList = useMemo(
+    () => (move: ListMove, save: () => Promise<unknown>) => {
+      let done!: Promise<unknown>;
+      // start runs the callback at once, so `done` is set before it returns.
+      start(async () => {
+        change({ move });
+        markMoving(move.id);
+        done = save();
+        await done;
+      });
+      return done;
+    },
+    [change, markMoving],
+  );
+  return { lists: optimistic, removeList, moveList, moving } as const;
 }
 
 /**

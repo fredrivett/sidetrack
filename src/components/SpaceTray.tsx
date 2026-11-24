@@ -35,6 +35,7 @@ export function parseCollapsedTrays(value: string | undefined): string[] {
  * leaves their names to jump back to.
  */
 export function SpaceTray({
+  trayId,
   name,
   icon,
   color,
@@ -47,6 +48,8 @@ export function SpaceTray({
   onOpenList,
   children,
 }: {
+  /** "personal" or the Space's id: where a list dragged onto it goes (ListDragging). */
+  trayId?: string;
   name: string;
   icon: string | null;
   /** The Space's colour; null (and Personal) is grey. */
@@ -67,6 +70,7 @@ export function SpaceTray({
   const ease = "duration-300 ease-out motion-reduce:transition-none";
   return (
     <section
+      data-tray-id={trayId}
       aria-label={name}
       aria-busy={saving || undefined}
       style={{ opacity: saving ? 0.7 : 1 }}

@@ -19,7 +19,9 @@ import type { AssigneeView, PendingInviteView } from "@/core/members";
 import {
   getItemWithSubItemsAction,
   listDoneBeforeAction,
+  reorderProjectAction,
   reorderSpaceAction,
+  setProjectSpaceAction,
   setBoardFiltersAction,
   setTimeZoneAction,
 } from "@/app/actions";
@@ -73,7 +75,8 @@ import { useSameContent } from "./use-same-content";
 import { LabelsContext } from "./Labels";
 import { LiveUpdates } from "./LiveUpdates";
 import { ListAccessContext } from "./list-access";
-import { RemoveListContext, useOptimisticLists } from "./use-list-saves";
+import { type ListMove, moveInLists, RemoveListContext, useOptimisticLists } from "./use-list-saves";
+import { flipColumns, ListDragging, MoveListDialog, type TrayView } from "./ListDrag";
 import {
   applySaved,
   isSaved,
@@ -421,7 +424,11 @@ export function Kanban({
       addSubItem: merged(defaultItemSaves.addSubItem),
     };
   }, [mergeSave]);
-  const [projects, removeList] = useOptimisticLists(serverProjects);
+  const { lists: projects, removeList, moveList, moving: movingLists } = useOptimisticLists(serverProjects);
+  // A list being dragged, shown where it would drop (ListDragging), and one
+  // dropped on another Space's tray, waiting there for its move to be confirmed.
+  const [listDrag, setListDrag] = useState<ListMove | null>(null);
+  const [confirmingList, setConfirmingList] = useState<ListMove | null>(null);
   const [view, setView] = useState<BoardView>(initialView);
   // The view asked for, which the tabs show at once while the view itself
   // renders in the background (switchView). Kept outside React state so
@@ -570,6 +577,63 @@ export function Kanban({
       window.history.replaceState(null, "", url.toString());
     }
   }
+  // The board's lists as a list drag shows them: the one in hand where it
+  // would drop, on the tray it would go to.
+  const railLists = listDrag ? moveInLists(active, listDrag) : active;
+  const spaceName = (id: string | null) => spaces.find((s) => s.id === id)?.name ?? null;
+  // A list goes anywhere along its own tray. Onto another, only as its menu's
+  // Move to Space allows (core enforces the same): its owner moves it into a
+  // Space they can add lists to, and its owner or an admin of its Space takes
+  // it out.
+  const canDropList = (listId: string, trayId: string) => {
+    const list = active.find((p) => p.id === listId);
+    if (!list) return false;
+    if (spaces.length === 0 || trayOf(list) === trayId) return true;
+    if (trayId === "personal") {
+      return list.isOwner || spaces.some((s) => s.id === list.spaceId && s.role === "admin");
+    }
+    return list.isOwner && spaces.some((s) => s.id === trayId && (s.role === "admin" || s.role === "member"));
+  };
+  // Held: the column stays dimmed in its new place until it's saved.
+  function saveListMove(move: ListMove) {
+    const list = projects.find((p) => p.id === move.id);
+    if (!list) return Promise.resolve();
+    setListDrag(null);
+    return moveList(move, () =>
+      runAction(
+        (async () => {
+          if (move.spaceId !== undefined) await setProjectSpaceAction(move.id, move.spaceId);
+          if (move.ref) await reorderProjectAction(move.id, move.ref);
+        })(),
+        move.spaceId === undefined
+          ? `move “${list.name}”`
+          : move.spaceId
+            ? `move “${list.name}” into ${spaceName(move.spaceId)}`
+            : `remove “${list.name}” from its Space`,
+      ),
+    );
+  }
+  // Dropped on another tray, it waits there until the move is confirmed.
+  function dropList(move: ListMove | null) {
+    if (!move) setListDrag(null);
+    else if (move.spaceId !== undefined) setConfirmingList(move);
+    else saveListMove(move);
+  }
+  const trayView = (spaceId: string | null): TrayView => {
+    const s = spaces.find((x) => x.id === spaceId);
+    return s
+      ? { spaceId: s.id, name: s.name, icon: s.icon, color: s.color }
+      : { spaceId: null, name: "Personal", icon: null, color: null };
+  };
+  const confirmingFrom = projects.find((p) => p.id === confirmingList?.id);
+  const confirmingMove =
+    confirmingList && confirmingFrom
+      ? {
+          list: confirmingFrom,
+          from: trayView(confirmingFrom.spaceId),
+          to: trayView(confirmingList.spaceId ?? null),
+        }
+      : null;
   // Where an item can move: the board's lists, on their trays (one group
   // without Spaces), in the viewer's order, leaving out lists they can only
   // view or comment on. Nowhere with a single list.
@@ -787,7 +851,7 @@ export function Kanban({
 
   // The columns of a tray, the whole board without Spaces, or the Archived
   // view; the ⋯ menu's moves stay within the group.
-  const columns = (group: ProjectView[]) =>
+  const columns = (group: ProjectView[], draggable = false) =>
     group.map((p, idx) => (
       <ProjectColumn
         key={p.id}
@@ -807,6 +871,8 @@ export function Kanban({
         spaces={spaces}
         filters={shownFilters}
         aiEnabled={aiEnabled}
+        draggable={draggable}
+        held={movingLists.includes(p.id) || confirmingList?.id === p.id}
       />
     ));
 
@@ -970,6 +1036,29 @@ export function Kanban({
     <RemoveListContext value={removeList}>
     <BoardDrag groups={moveTargets}>
       <LiveUpdates seq={seq} rows={liveRows} refreshAt={refreshAt} />
+      <ListDragging
+        nameOf={(id) => projects.find((p) => p.id === id)?.name ?? "list"}
+        canDrop={canDropList}
+        onPreview={setListDrag}
+        onDrop={dropList}
+      />
+      <MoveListDialog
+        request={confirmingMove}
+        viewerId={viewerId}
+        onConfirm={async () => {
+          if (!confirmingList) return;
+          // The sheet holds until the move lands; on failure the list goes
+          // back and a toast says so.
+          await saveListMove(confirmingList);
+          setConfirmingList(null);
+        }}
+        onCancel={() =>
+          flipColumns(() => {
+            setConfirmingList(null);
+            setListDrag(null);
+          })
+        }
+      />
       <BoardMain>
         <BoardHeader
           nav={<ViewTabs view={view} chosen={chosenView} onSwitch={switchView} />}
@@ -1148,18 +1237,19 @@ export function Kanban({
                       : "No lists yet — tap + Add list to start."}
                   </div>
                 )}
-                {columns(active)}
+                {columns(railLists, true)}
                 <AddProjectButton onClick={() => setNewList({ open: true, spaceId: "" })} />
               </>
             ) : (
               trays.map((tray, at) => {
                 const inTray = (p: ProjectView) => trayOf(p) === tray.id;
-                const lists = active.filter(inTray);
+                const lists = railLists.filter(inTray);
                 const spaceId = tray.id === "personal" ? "" : tray.id;
                 const saving = movingTrays.includes(tray.id);
                 return (
                   <SpaceTray
                     key={tray.id}
+                    trayId={tray.id}
                     name={tray.name}
                     icon={tray.icon}
                     color={tray.color}
@@ -1196,7 +1286,7 @@ export function Kanban({
                       />
                     ) : (
                       // Moves stay within the tray, where the new order shows.
-                      columns(lists)
+                      columns(lists, true)
                     )}
                   </SpaceTray>
                 );

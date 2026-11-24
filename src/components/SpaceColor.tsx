@@ -40,6 +40,11 @@ export function spaceTint(color: SpaceColor | null): string {
   return color ? TINT[color] : NO_TINT;
 }
 
+/** A Space's colour a step stronger than its tint: its swatch, or its badge. */
+export function spaceSwatch(color: SpaceColor | null): string {
+  return color ? SWATCH[color] : "bg-white dark:bg-neutral-800";
+}
+
 /** Grey (no colour) and each Space colour, as a row of radio swatches. */
 export function SpaceColorPicker({
   value,

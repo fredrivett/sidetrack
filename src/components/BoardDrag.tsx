@@ -57,7 +57,10 @@ interface BoardDragValue {
   setIncoming: (next: Incoming | null) => void;
   /** Answers for drags of `projectId`'s rows; returns its removal. */
   register: (projectId: string, list: ListDrag) => () => void;
-  /** The list whose row is being, or was last, dragged: it draws the card in hand. */
+  /**
+   * The list whose row is being, or was last, dragged: it draws the card in
+   * hand. LIST_SOURCE for a list itself (ListDrag).
+   */
   source: string | null;
 }
 
@@ -68,6 +71,12 @@ export function useBoardDrag() {
   if (!v) throw new Error("DraggableItemList needs a BoardDrag around it");
   return v;
 }
+
+/**
+ * The `home` of a whole list dragged by its header (ListDrag), so it's
+ * BoardDrag's `source` meanwhile, and answers its own announcements.
+ */
+export const LIST_SOURCE = "list:";
 
 /** The list a row belongs to, wherever it's shown (see DraggableItemList's rows). */
 const homeOf = (active: Active | null | undefined) =>
@@ -321,6 +330,9 @@ export function BoardDrag({
                 "To move an item, press Space. Use the up and down arrows to move it, right to make it a sub-item of the task above and left to move it out of a checklist. Press Space to drop it, or Escape to cancel.",
             },
           }}
+          // A dragged list scrolls the board itself (ListDragging): dnd-kit's
+          // scrolling follows the list's slot, which moves as it's dragged.
+          autoScroll={source !== LIST_SOURCE}
           onDragStart={({ active }) => setSource(homeOf(active) ?? null)}
         >
           {children}
