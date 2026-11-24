@@ -232,15 +232,18 @@ test("sends an item to Someday, under Later, and a date brings it back", async (
   await page.getByRole("menuitem", { name: "Someday" }).click();
   const later = page.getByRole("button", { name: /^Later/ });
   await expect(later).toHaveText("Later1");
-  await expect(row(page, "Redo the garden")).toBeHidden();
+  // Folded away: no row by that name at all, badge or not.
+  await expect(page.getByRole("button", { name: /^Redo the garden/ })).toHaveCount(0);
   await expect(row(page, "Water plants")).toBeVisible();
 
-  // Saved: still folded under Later after a reload, and there when unfolded.
+  // Saved: still folded under Later after a reload, and there when unfolded,
+  // its name carrying the Someday badge.
   await page.reload();
   await later.click();
-  await expect(row(page, "Redo the garden")).toBeVisible();
+  const someday = row(page, "Redo the garden Someday");
+  await expect(someday).toBeVisible();
 
-  await row(page, "Redo the garden").click();
+  await someday.click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: "Someday" }).click();
   await dialog.getByRole("button", { name: "Tomorrow" }).click();
