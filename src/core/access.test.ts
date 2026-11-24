@@ -767,7 +767,10 @@ describe("a membership shown only someone's today or week", () => {
 
     acceptDayShare(db, fred, lorna, "web");
     expect(pendingDayShares(db, fred)).toEqual([]);
-    expect(daysSharedWhole(db, fred).map((d) => [d.name, d.within, d.day])).toEqual([["Lorna", "today", "2026-11-19"]]);
+    // From 4am on her day, by her clock: a day card's progress counts what's finished since.
+    expect(daysSharedWhole(db, fred).map((d) => [d.name, d.within, d.day, d.startsAt])).toEqual([
+      ["Lorna", "today", "2026-11-19", Date.parse("2026-11-19T04:00:00Z")],
+    ]);
     expect(sharedDayNote(db, fred, lorna)).toEqual({ note: null, mood: ["Tired"], wrapUp: null });
     // Her own Check-ins show what he sees: her today on Week, as Jo's share does.
     expect(myDayView(db, lorna).itemIds.map(title).sort()).toEqual(seen());
