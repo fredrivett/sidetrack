@@ -110,7 +110,6 @@ import {
   acceptInvite as acceptInviteCore,
   declineInvite as declineInviteCore,
   findUserByHandle as findUserByHandleCore,
-  inviteMember as inviteMemberCore,
   setMemberRole as setMemberRoleCore,
   listMembers as listMembersCore,
   listSuggestedCollaborators as listSuggestedCollaboratorsCore,
@@ -157,9 +156,7 @@ import {
   createSpace as createSpaceCore,
   declineSpaceInvite as declineSpaceInviteCore,
   deleteSpace as deleteSpaceCore,
-  inviteSpaceMember as inviteSpaceMemberCore,
   listSpaceMembers as listSpaceMembersCore,
-  listSpaces as listSpacesCore,
   listSuggestedSpaceMembers as listSuggestedSpaceMembersCore,
   removeSpaceMember as removeSpaceMemberCore,
   reorderSpace as reorderSpaceCore,
@@ -334,50 +331,6 @@ export async function listSuggestedCollaboratorsAction(projectId: string) {
   const userId = await requireUserId();
   const { db } = getDb();
   return listSuggestedCollaboratorsCore(db, userId, projectId);
-}
-
-export async function inviteMemberAction(
-  projectId: string,
-  person: string,
-  role: ListRole = "editor",
-  /** They'll see only the items assigned to you. */
-  onlyMine = false,
-  /** With onlyMine, only those in your today or week. */
-  within: OnlyWithin | null = null,
-) {
-  const session = await getCurrentSession();
-  if (!session) redirect("/login");
-  const userId = session.user.id;
-  const { db } = getDb();
-  // Someone not on Sidetrack yet gets a link to join, which brings them in.
-  if (emailsWithoutAccounts(db, [person]).length) {
-    return inviteByEmailAction(person, [{ kind: "list", id: projectId, role, onlyMine, within }]);
-  }
-  let member;
-  try {
-    member = inviteMemberCore(db, userId, projectId, person, SOURCE, role, { onlyMine, within });
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : "Couldn't send the invite." };
-  }
-
-  // Notify the invitee by email, once the invite has answered: it's
-  // best-effort (the in-app banner is the source of truth, so notifyInvite
-  // never throws), and a slow mail server mustn't hold up the page's saves.
-  const project = getProjectCore(db, userId, projectId);
-  if (member.email && project) {
-    const invite = {
-      to: member.email,
-      inviterName: session.user.name,
-      projectName: project.name,
-      url: await appBaseUrl(),
-      role,
-      onlyMine,
-      within,
-    };
-    after(() => notifyInvite(invite));
-  }
-
-  refresh();
 }
 
 /**
@@ -671,43 +624,6 @@ export async function listSuggestedSpaceMembersAction(spaceId: string) {
   const userId = await requireUserId();
   const { db } = getDb();
   return listSuggestedSpaceMembersCore(db, userId, spaceId);
-}
-
-export async function inviteSpaceMemberAction(
-  spaceId: string,
-  person: string,
-  role: Exclude<SpaceRole, "admin"> = "member",
-  /** They'll see only the items assigned to you. */
-  onlyMine = false,
-  /** With onlyMine, only those in your today or week. */
-  within: OnlyWithin | null = null,
-) {
-  const session = await getCurrentSession();
-  if (!session) redirect("/login");
-  const { db } = getDb();
-  // Someone not on Sidetrack yet gets a link to join, which brings them in.
-  if (emailsWithoutAccounts(db, [person]).length) {
-    // Refusals (the day's limit, invited already) are returned, so the panel can show why.
-    return inviteByEmailAction(person, [{ kind: "space", id: spaceId, role, onlyMine, within }]);
-  }
-  const member = inviteSpaceMemberCore(db, session.user.id, spaceId, person, SOURCE, role, { onlyMine, within });
-  // Best-effort and after answering, like a list invite.
-  const space = listSpacesCore(db, session.user.id).find((s) => s.id === spaceId);
-  if (member.email && space) {
-    const invite = {
-      to: member.email,
-      inviterName: session.user.name,
-      projectName: space.name,
-      url: await appBaseUrl(),
-      kind: "space" as const,
-      role,
-      onlyMine,
-      within,
-    };
-    after(() => notifyInvite(invite));
-  }
-  refresh();
-  return member;
 }
 
 /** Remove someone from a Space, revoke their invite, or (yourself) leave. */
