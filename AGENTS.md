@@ -301,6 +301,12 @@ that posts inline comments on the diff. It runs on every PR alongside CI — you
 don't invoke it. When it comments, treat its findings like a human reviewer's:
 address them or push back explicitly in the thread, don't silently ignore them.
 
+**Until Cubic is back (its quota is used up until 2026-12-01):** its check
+passes as neutral without reviewing. Meanwhile, have a reviewing subagent
+review every non-trivial change before it merges, and only turn on
+auto-merge once you've dealt with its findings as you would Cubic's. Once
+Cubic posts a review on a PR again, remove this paragraph in a PR of its own.
+
 Agents that open a PR own it until it merges. PRs land through GitHub
 auto-merge (`gh pr merge --auto --merge`), which waits for the required checks
 and for every review thread to be resolved, so follow up on each event.
