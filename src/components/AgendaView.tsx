@@ -182,9 +182,10 @@ function FoldChevron({ collapsed, className }: { collapsed: boolean; className: 
  * Overdue, Today, Tomorrow, This week (This weekend on a Saturday or
  * Sunday), Next week, Later, then No date (see agendaSection). Every open
  * item assigned to the viewer is on it, and on a list nobody else can be
- * assigned on, every unassigned one too (isYours); items finished today stay crossed out in
- * place. Dated sections run by due day, ties keeping board and list order; No date groups its items by list, an undated parent with its
- * undated sub-items under it. Overdue sits in a faint red card the viewer can
+ * assigned on, every unassigned one too (isYours); items finished today
+ * stay crossed out in place. Dated sections run by due day, ties keeping
+ * board and list order; No date groups its items by list, an undated parent
+ * with its undated sub-items under it. Overdue sits in a faint red card the viewer can
  * fold away, which stays folded on every device until they open it again.
  * The header's filters don't apply: it's already only the viewer's, by when
  * it's due, and its greeting reads all of it. A greeting reads the board for the

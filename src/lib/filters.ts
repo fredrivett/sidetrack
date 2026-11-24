@@ -119,9 +119,10 @@ type Ownable = { assigneeIds: string[]; projectId: string };
 /**
  * Whether `item` is the viewer's to think about: assigned to them, or
  * unassigned on a list nobody else can be assigned on (`alone` says which
- * those are; view-only members don't count), where everything is theirs. An unassigned sub-item goes with its parent, so a step
- * under someone else's task stays theirs and one added to the viewer's stays
- * the viewer's. The Agenda and its greeting show only these.
+ * those are; view-only members don't count), where everything is theirs.
+ * An unassigned sub-item goes with its parent, so a step under someone
+ * else's task stays theirs and one added to the viewer's stays the
+ * viewer's. The Agenda and its greeting show only these.
  */
 export function isYours(
   item: Ownable,
