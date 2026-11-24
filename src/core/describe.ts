@@ -323,14 +323,21 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
         const name = names.anchor(a);
         return name === null ? t("an item you can't see") : { text: name, em: "item", quote: true };
       };
-      if (c.smart) {
+      // Someday takes the date, repeat and smart rule with it, which goes
+      // without saying; brought back with a date or repeat, that says so.
+      if (c.someday) changes.push([t("moved to Someday")]);
+      if (c.someday === false && !c.due?.dueDate && !c.repeat) changes.push([t("out of Someday")]);
+      const when = !c.someday;
+      if (!when) {
+        // Nothing more to say about when.
+      } else if (c.smart) {
         changes.push([t(`smart due date ${smartLabel(c.smart.rule, c.smart.lead)}`)]);
       } else if (c.smart === null && !c.due) {
         changes.push([t("no longer a smart due date")]);
       }
       if (c.matched) changes.push([t("matched "), anchor(c.matched)]);
       if (c.unmatched) changes.push([t("unmatched "), anchor(c.unmatched)]);
-      if (c.due) {
+      if (c.due && when) {
         const was = c.smartDue?.was.dueDate;
         changes.push(
           c.due.dueDate
@@ -342,7 +349,7 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
         );
         if (c.smartDue?.anchor) changes.push([t("from "), anchor(c.smartDue.anchor)]);
       }
-      if (c.repeat !== undefined) {
+      if (c.repeat !== undefined && when) {
         changes.push([
           t(c.repeat ? `repeats ${repeatLabel(c.repeat).replace("Every", "every")}` : "no longer repeats"),
         ]);

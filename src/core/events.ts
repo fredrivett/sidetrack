@@ -80,6 +80,8 @@ export interface ItemChanges {
    */
   smartDue?: { was: DueAt; anchor: AnchorAt | null };
   repeat?: Repeat | null;
+  /** Sent to Someday (true), or brought back (false). */
+  someday?: boolean;
 }
 
 /** What updateProject changed, in the order it's described. */

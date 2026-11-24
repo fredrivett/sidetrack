@@ -20,6 +20,7 @@ const item = (id: string, more: Partial<Item> = {}): Item => ({
   repeatDay: null,
   smartRule: null,
   smartLead: null,
+  somedayAt: null,
   cancelled: false,
   cancelReason: null,
   replacedById: null,

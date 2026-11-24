@@ -223,3 +223,31 @@ test("⇧X opens Cancel for the hovered item, and X still ticks it", async ({ pa
   await expect(item.getByRole("checkbox", { name: "Complete" })).not.toBeChecked();
   await expect(item.getByText("Cancelled")).toBeHidden();
 });
+
+test("sends an item to Someday, under Later, and a date brings it back", async ({ page, user }) => {
+  user.addList("Home", ["Water plants", "Redo the garden"]);
+  await page.goto("/board");
+  await row(page, "Redo the garden").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Due date" }).hover();
+  await page.getByRole("menuitem", { name: "Someday" }).click();
+  const later = page.getByRole("button", { name: /^Later/ });
+  await expect(later).toHaveText("Later1");
+  await expect(row(page, "Redo the garden")).toBeHidden();
+  await expect(row(page, "Water plants")).toBeVisible();
+
+  // Saved: still folded under Later after a reload, and there when unfolded.
+  await page.reload();
+  await later.click();
+  await expect(row(page, "Redo the garden")).toBeVisible();
+
+  await row(page, "Redo the garden").click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Someday" }).click();
+  await dialog.getByRole("button", { name: "Tomorrow" }).click();
+  await page.keyboard.press("Escape");
+  await expect(later).toBeHidden();
+  await page.reload();
+  // Back in the list, its name now carrying the date.
+  await expect(page.getByRole("button", { name: "Redo the garden Tomorrow", exact: true })).toBeVisible();
+  await expect(later).toBeHidden();
+});

@@ -461,7 +461,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "- Do not show completed items in the tree.\n" +
         "- A task is a box-drawing branch, e.g. `├── Write the docs`.\n" +
         "- An item's sub-items (its checklist, in `children`) nest one level beneath it, e.g. `│   ├── Kitchen`.\n" +
-        "- A repeating item carries `repeat` ({ every, unit, on?, day? }); a finished one also carries `comesBack`, the day it reopens. Mark a repeating item with its rule, e.g. `├── Water plants (every 3 days)` or `├── Clean the car (every 2 weeks on weekends)`.",
+        "- A repeating item carries `repeat` ({ every, unit, on?, day? }); a finished one also carries `comesBack`, the day it reopens. Mark a repeating item with its rule, e.g. `├── Water plants (every 3 days)` or `├── Clean the car (every 2 weeks on weekends)`.\n" +
+        "- An item with a somedayAt timestamp is on Someday: meant to be done, just not now. Mark it `(someday)`, and don't suggest it as what to do next.",
       inputSchema: {
         include_completed: z.boolean().optional(),
         include_archived: z.boolean().optional(),
@@ -572,7 +573,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       title: "List items with no date",
       description:
         "The No date section of the user's Brief view: tasks with no due date across their active lists (not archived), " +
-        "for planning when to do them. Sub-items of a dated parent are left out, since they are planned with their parent. " +
+        "for planning when to do them. Sub-items of a dated parent are left out, since they are planned with their parent, " +
+        "and so are Someday items (somedayAt set: not now) and their sub-items. " +
         "Items finished today are included, which the user sees crossed out. " +
         "Returns { today, timeZone, lists }, plus a note when the timezone is a UTC fallback; today works as in list_today. " +
         "lists is in board order, each { list, items } with items in list order and an undated parent's undated sub-items nested in children; " +
@@ -1234,6 +1236,10 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Passing due_date without due_from makes it due that day alone. due_from without due_date changes when the span starts and keeps its due_date; " +
         "due_from: null makes it due on its due_date alone. " +
         "repeat sets how often a task comes round again, { every, unit, on?, day? } (see add_item); pass null to stop it repeating. " +
+        "someday: true sends a top-level item to Someday, for something the user still means to do, just not now: " +
+        "it folds away under Later at the foot of its list and leaves the Brief. Someday takes its due date, repeat and smart due date off, " +
+        "so don't pass it with due_date or repeat; tell the user if it had any. someday: false brings it back with no date; " +
+        "giving it a due_date or repeat brings it back too. An item on Someday carries a somedayAt timestamp. " +
         "id accepts the item's short ref (e.g. \"ENG-42\") or its internal id. " +
         "Returns { updated, items } where items is every incomplete item in the item's list in position order " +
         "(so a completed item is in updated but not items).\n" +
@@ -1257,6 +1263,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         due_date: DueDate.nullable().optional(),
         due_from: DueDate.nullable().optional(),
         repeat: Repeat.nullable().optional(),
+        someday: z.boolean().optional(),
       },
     },
     async ({

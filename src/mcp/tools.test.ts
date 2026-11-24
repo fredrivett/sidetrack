@@ -1149,3 +1149,20 @@ describe("close_day", () => {
     expect((await call("close_day", { mood: ["Busy"] })).error).not.toBeNull();
   });
 });
+
+describe("Someday", () => {
+  it("sends an item to Someday by its ref, off the No date list", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const list = createProject(db, fred, { name: "Home" }, "web");
+    addItem(db, fred, { projectId: list.id, title: "Redo the garden", dueDate: "2026-12-01" }, "web");
+    addItem(db, fred, { projectId: list.id, title: "Tidy flat" }, "web");
+    const call = await connectAs(fred);
+
+    const { data } = await call("update_item", { id: "HOM-1", someday: true });
+    expect(data.updated).toMatchObject({ ref: "HOM-1", dueDate: null, somedayAt: expect.any(Number) });
+    const noDate = await call("list_no_date");
+    const titles = (noDate.data.lists as { items: { title: string }[] }[]).flatMap((l) => l.items.map((i) => i.title));
+    expect(titles).toEqual(["Tidy flat"]);
+    expect((await call("update_item", { id: "HOM-1", someday: true, due_date: "2026-12-01" })).error).toMatch(/Someday/);
+  });
+});

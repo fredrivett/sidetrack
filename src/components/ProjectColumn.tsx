@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronsDownUp, ChevronsUpDown, Eye, MessageSquare, Plus } from "lucide-react";
+import { Check, ChevronRight, ChevronsDownUp, ChevronsUpDown, Eye, MessageSquare, Plus } from "lucide-react";
 import { memo, type ReactNode, useState } from "react";
 import { updateProjectAction } from "@/app/actions";
 import type { AssigneeView } from "@/core/members";
@@ -9,18 +9,20 @@ import { whoseWords } from "@/lib/roles";
 import type { SpaceView } from "@/core/spaces";
 import { filtersByDue, type ItemFilters, matchesFilters, shownInGroups } from "@/lib/filters";
 import { nestItems } from "@/lib/itemTree";
+import { isLaterGroup } from "@/lib/time";
 import type { ProjectView } from "./Kanban";
 import { EditableText } from "./EditableText";
 import { ItemDetailDialog } from "./ItemDetailDialog";
 import { DraggableColumnCard } from "./ListDrag";
-import { DraggableItemList, isHiddenParent, ItemGroupView, withHiddenParents } from "./ItemList";
+import { DraggableItemList, isHiddenParent, type ItemGroup, ItemGroupView, withHiddenParents } from "./ItemList";
 import { ProjectDetailDialog } from "./ProjectDetailDialog";
 import { ProjectIconPicker, useListIcon } from "./ProjectIconPicker";
 import { ProjectMenu } from "./ProjectMenu";
 import { StatusBadge } from "./StatusBadge";
 import { SummaryBlock } from "./SummaryBlock";
 import { useCollapsedItems } from "./use-collapsed-items";
-import { useListBounds, useToday } from "./use-day-start";
+import { useLabelDay, useListBounds, useToday } from "./use-day-start";
+import { useStoredState } from "./use-stored-state";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
 import { runAction } from "./run-action";
 import { ListSaveContext, useNewListSave } from "./use-list-saves";
@@ -93,6 +95,19 @@ export const ProjectColumn = memo(function ProjectColumn({
     (i) =>
       i.completedAt === null || (filters.doneToday && i.completedAt >= doneBefore),
   );
+  // What's not for now folds away under Later at the foot of the list:
+  // Someday, and anything due to start after next week (isLaterGroup), the
+  // soonest first, then Someday in list order. It rises back into the list
+  // by itself as its day comes near. Before the browser knows its day, the
+  // split uses the server's guess (useLabelDay), so rows don't jump on load.
+  const { today: splitDay } = useLabelDay();
+  const isLaterNow = (g: (typeof groups)[number]) =>
+    g.completedAt === null && (splitDay ? isLaterGroup(g, splitDay) : g.somedayAt !== null);
+  const later = inList
+    .filter(isLaterNow)
+    .sort((a, b) => (a.dueFrom ?? a.dueDate ?? "\uffff").localeCompare(b.dueFrom ?? b.dueDate ?? "\uffff"));
+  const listed = later.length ? inList.filter((g) => !later.includes(g)) : inList;
+  const [laterOpen, setLaterOpen] = useStoredState(`later-open:${project.id}`, false);
   const done = filters.doneThisWeek
     ? groups
         .filter(
@@ -142,7 +157,7 @@ export const ProjectColumn = memo(function ProjectColumn({
   // at once; it shows only while the list has a parent with sub-items on view.
   const { collapsed: collapsedItems, setCollapsed } = useCollapsedItems(items);
   // Not a stand-in for someone else's item: its folding isn't the viewer's.
-  const parents = inList
+  const parents = (laterOpen ? inList : listed)
     .filter((g) => g.children.length > 0 && shownInList.has(g.id) && !isHiddenParent(g))
     .map((g) => g.id);
   const allCollapsed = parents.every((id) => collapsedItems.has(id));
@@ -325,7 +340,7 @@ export const ProjectColumn = memo(function ProjectColumn({
         ) : (
           !waiting && <DraggableItemList
             projectId={project.id}
-            groups={inList}
+            groups={listed}
             shown={shownInList}
             collapsed={collapsedItems}
             onToggleCollapsed={(id) =>
@@ -337,6 +352,20 @@ export const ProjectColumn = memo(function ProjectColumn({
             prLinksByItem={prLinksByItem}
             onOpenDetail={detail.openDetail}
             onAddItem={project.access === "edit" ? () => onAddItem(project.id) : undefined}
+          />
+        )}
+        {!showDone && !waiting && (
+          <LaterFold
+            projectId={project.id}
+            groups={later.filter((g) => shownInList.has(g.id))}
+            shown={shownInList}
+            open={laterOpen}
+            onToggle={() => setLaterOpen(!laterOpen)}
+            prefix={project.refPrefix}
+            assignees={assignees}
+            viewerId={viewerId}
+            prLinksByItem={prLinksByItem}
+            onOpenDetail={detail.openDetail}
           />
         )}
       </div>
@@ -375,6 +404,53 @@ export const ProjectColumn = memo(function ProjectColumn({
     </ListSaveContext>
   );
 });
+
+/**
+ * The list's Later section: what isn't for now (see isLaterGroup), folded
+ * away under a quiet header with its count, and shown only when there's
+ * some. Not a drop zone: an item's date decides whether it's here.
+ */
+function LaterFold({
+  projectId,
+  groups,
+  open,
+  onToggle,
+  ...row
+}: {
+  projectId: string;
+  groups: ItemGroup[];
+  open: boolean;
+  onToggle: () => void;
+} & Omit<React.ComponentProps<typeof ItemGroupView>, "group">) {
+  if (groups.length === 0) return null;
+  const bodyId = `later-${projectId}`;
+  return (
+    <section className="space-y-1.5 border-t border-neutral-100 pt-2 dark:border-neutral-800">
+      <h3 className="text-xs font-medium">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          aria-controls={bodyId}
+          className="flex w-full items-center gap-1.5 rounded-md px-1 py-0.5 text-left text-neutral-500 outline-none hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-neutral-300 dark:text-neutral-400 dark:hover:text-neutral-100 dark:focus-visible:ring-neutral-600"
+        >
+          <ChevronRight
+            className={`size-3.5 transition-transform duration-200 motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
+          />
+          Later
+          <span className="tabular-nums text-neutral-400 dark:text-neutral-500">{groups.length}</span>
+        </button>
+      </h3>
+      {open && (
+        <div id={bodyId} className="space-y-1.5">
+          {groups.map((g) => (
+            <ItemGroupView key={g.id} group={g} {...row} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
 
 /**
  * A header button that folds away rather than popping out: its width eases

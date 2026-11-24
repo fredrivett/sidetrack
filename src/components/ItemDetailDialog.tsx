@@ -70,7 +70,7 @@ import { EditableText } from "./EditableText";
 import { useDraft } from "./use-draft";
 import { ItemComments } from "./ItemComments";
 import { LabelBadge, LabelChips, useListLabels } from "./Labels";
-import { DueBadge, WaitingBadge } from "./DueBadge";
+import { DueBadge, SomedayBadge, WaitingBadge } from "./DueBadge";
 import { RepeatBadge } from "./RepeatBadge";
 import { SmartDuePanel } from "./SmartDuePanel";
 import { useListAccess } from "./list-access";
@@ -501,7 +501,8 @@ function ReadOnlyFields({
 }) {
   const repeat = repeatOf(item);
   const done = item.completedAt !== null;
-  const any = item.dueDate || repeat || assigned.length > 0 || item.labels.length > 0 || parent;
+  const any =
+    item.dueDate || item.somedayAt !== null || repeat || assigned.length > 0 || item.labels.length > 0 || parent;
   return (
     <div className="space-y-3 pl-8">
       {item.description?.trim() && (
@@ -516,6 +517,7 @@ function ReadOnlyFields({
           ) : (
             item.smartRule && <WaitingBadge rule={item.smartRule} />
           )}
+          {item.somedayAt !== null && <SomedayBadge />}
           {repeat && <RepeatBadge repeat={repeat} completedAt={item.completedAt} />}
           {assigned.length > 0 && (
             <span className="inline-flex items-center gap-1.5 text-xs text-neutral-500">
@@ -880,10 +882,23 @@ export function ItemDetailView({
             onChange={(due) =>
               start(async () => {
                 await runAction(
-                  saves.updateItem(item.id, due ?? { dueDate: null }),
+                  // Clear on Someday brings it back undated.
+                  saves.updateItem(item.id, due ?? (item.somedayAt !== null ? { someday: false } : { dueDate: null })),
                   `change the due date of “${item.title}”`,
                 );
               })
+            }
+            someday={item.somedayAt !== null}
+            onSomeday={
+              item.parentId === null
+                ? () =>
+                    start(async () => {
+                      await runAction(
+                        saves.updateItem(item.id, { someday: true }),
+                        `move “${item.title}” to Someday`,
+                      );
+                    })
+                : undefined
             }
             smart={
               repeatOf(item)

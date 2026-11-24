@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, Sparkles } from "lucide-react";
+import { CalendarDays, Rainbow, Sparkles } from "lucide-react";
 import { dueLabel, dueWord } from "@/lib/time";
 import { useLabelDay } from "./use-day-start";
 
@@ -67,6 +67,16 @@ export function WaitingBadge({ rule }: { rule: string }) {
     >
       <Sparkles className="size-3 shrink-0" />
       <span className="truncate">Waiting: {rule}</span>
+    </span>
+  );
+}
+
+/** An item on Someday: meant to be done, just not now. */
+export function SomedayBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
+      <Rainbow className="size-3" />
+      Someday
     </span>
   );
 }

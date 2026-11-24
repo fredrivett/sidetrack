@@ -31,6 +31,7 @@ import {
   updateProject,
 } from "./projects";
 import { items } from "./schema";
+import { setSmartRule } from "./smartDue";
 import { setTimeZone } from "./users";
 import { nestItems } from "../lib/itemTree";
 import type { Repeat } from "../lib/repeat";
@@ -1679,5 +1680,81 @@ describe("cancelItem", () => {
     expect(() => cancelItem(db, userId, it.id, { replacedById: "nope" }, "web")).toThrow(/replacement not found/);
     expect(() => cancelItem(db, userId, it.id, { replacedById: it.id }, "web")).toThrow(/replace itself/);
     expect(getItem(db, userId, it.id)?.completedAt).toBeNull();
+  });
+});
+
+describe("Someday", () => {
+  const updates = (db: ReturnType<typeof seedProject>["db"], userId: string, id: string) =>
+    listAudit(db, userId)
+      .filter((e) => e.entityId === id && e.action === "update")
+      .map((e) => e.detail)
+      .reverse();
+
+  it("takes the date, repeat and smart rule off in one audited change, and a date brings it back", () => {
+    const { db, userId, projectId } = seedProject();
+    const bins = addItem(
+      db,
+      userId,
+      { projectId, title: "bins", dueDate: "2026-11-20", repeat: { every: 1, unit: "week" } },
+      "web",
+    );
+    const someday = updateItem(db, userId, bins.id, { someday: true }, "web");
+    expect(someday).toMatchObject({ dueDate: null, dueFrom: null, repeatUnit: null, repeatEvery: null });
+    expect(someday.somedayAt).toEqual(expect.any(Number));
+    expect(updates(db, userId, bins.id)).toEqual(["updated bins: moved to Someday"]);
+    // Already Someday: no change, no row.
+    updateItem(db, userId, bins.id, { someday: true }, "web");
+    expect(updates(db, userId, bins.id)).toHaveLength(1);
+
+    expect(updateItem(db, userId, bins.id, { dueDate: "2026-12-01" }, "web")).toMatchObject({
+      somedayAt: null,
+      dueDate: "2026-12-01",
+    });
+    updateItem(db, userId, bins.id, { someday: true }, "web");
+    expect(updateItem(db, userId, bins.id, { someday: false }, "web")).toMatchObject({ somedayAt: null, dueDate: null });
+    updateItem(db, userId, bins.id, { someday: true }, "web");
+    expect(updateItem(db, userId, bins.id, { repeat: { every: 2, unit: "day" } }, "web").somedayAt).toBeNull();
+    expect(updates(db, userId, bins.id)).toEqual([
+      "updated bins: moved to Someday",
+      "updated bins: due 2026-12-01",
+      "updated bins: moved to Someday",
+      "updated bins: out of Someday",
+      "updated bins: moved to Someday",
+      "updated bins: repeats every 2 days",
+    ]);
+  });
+
+  it("drops a smart due date, and giving it one brings it back", () => {
+    const { db, userId, projectId } = seedProject();
+    const book = addItem(db, userId, { projectId, title: "book hotel" }, "web");
+    setSmartRule(db, userId, book.id, { rule: "before our next trip", lead: 7 }, "web");
+    expect(updateItem(db, userId, book.id, { someday: true }, "web").smartRule).toBeNull();
+    const back = setSmartRule(db, userId, book.id, { rule: "before our next trip", lead: 7 }, "web");
+    expect(back).toMatchObject({ somedayAt: null, smartRule: "before our next trip" });
+  });
+
+  it("is for top-level items: a sub-item is refused, and nesting one leaves Someday", () => {
+    const { db, userId, projectId } = seedProject();
+    const parent = addItem(db, userId, { projectId, title: "trip" }, "web");
+    const line = addItem(db, userId, { projectId, title: "pack", parentId: parent.id }, "web");
+    expect(() => updateItem(db, userId, line.id, { someday: true }, "web")).toThrow(/top-level/);
+    expect(() => updateItem(db, userId, parent.id, { someday: true, dueDate: "2026-12-01" }, "web")).toThrow(
+      /Someday/,
+    );
+    expect(getItem(db, userId, parent.id)).toMatchObject({ somedayAt: null, dueDate: null });
+
+    const loose = addItem(db, userId, { projectId, title: "passport" }, "web");
+    updateItem(db, userId, loose.id, { someday: true }, "web");
+    expect(setItemParent(db, userId, loose.id, parent.id, "web").somedayAt).toBeNull();
+  });
+
+  it("leaves No date with its sub-items, while an undated sibling stays", () => {
+    const { db, userId, projectId } = seedProject();
+    const garden = addItem(db, userId, { projectId, title: "redo the garden" }, "web");
+    addItem(db, userId, { projectId, title: "pick plants", parentId: garden.id }, "web");
+    addItem(db, userId, { projectId, title: "tidy flat" }, "web");
+    updateItem(db, userId, garden.id, { someday: true }, "web");
+    const { lists } = listNoDate(db, userId, { timeZone: "UTC" });
+    expect(lists.flatMap((l) => l.items.map((i) => i.title))).toEqual(["tidy flat"]);
   });
 });

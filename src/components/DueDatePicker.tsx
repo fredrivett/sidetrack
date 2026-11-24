@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays } from "lucide-react";
+import { CalendarDays, Rainbow } from "lucide-react";
 import { useRef, useState } from "react";
 import {
   localDate,
@@ -139,17 +139,26 @@ function DueCalendar({
   );
 }
 
-/** Quick due-date buttons, a date picker for anything else, and Clear. */
+/**
+ * Quick due-date buttons, a date picker for anything else, Someday where
+ * the item can have it, and Clear.
+ */
 export function DueDatePicker({
   due,
   done,
   disabled,
   onChange,
+  someday,
+  onSomeday,
 }: {
   due: Due | null;
   done: boolean;
   disabled: boolean;
   onChange: (due: Due | null) => void;
+  /** It's on Someday. */
+  someday?: boolean;
+  /** Sends it to Someday; absent where it can't go (a sub-item). */
+  onSomeday?: () => void;
 }) {
   const today = useToday();
   const quick = today ? quickDues(today) : [];
@@ -179,7 +188,25 @@ export function DueDatePicker({
         </Button>
       ))}
       <DueCalendar due={due} today={today} disabled={disabled} onChange={onChange} />
-      {due && (
+      {onSomeday && (
+        <Button
+          type="button"
+          variant="outline"
+          size="xs"
+          disabled={disabled}
+          aria-pressed={someday ?? false}
+          onClick={() => !someday && onSomeday()}
+          className={
+            someday
+              ? "border-neutral-900 bg-neutral-900 text-white hover:bg-neutral-800 hover:text-white dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900"
+              : ""
+          }
+        >
+          <Rainbow />
+          Someday
+        </Button>
+      )}
+      {(due || someday) && (
         <Button
           type="button"
           variant="ghost"

@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, ExternalLink, Repeat as RepeatIcon, Sparkles, UserRound } from "lucide-react";
+import { CalendarDays, ExternalLink, Rainbow, Repeat as RepeatIcon, Sparkles, UserRound } from "lucide-react";
 import { useState } from "react";
 import type { AssigneeView } from "@/core/members";
 import type { Repeat } from "@/lib/repeat";
@@ -67,6 +67,8 @@ export function DueChip({
   open,
   setOpen,
   smart,
+  someday,
+  onSomeday,
 }: {
   due: Due | null;
   /** `due` is Jev's suggestion. */
@@ -84,6 +86,10 @@ export function DueChip({
    * the Smart tab, which the popover opens on while it has one.
    */
   smart?: { rule: string | null; panel: (onPlain: () => void) => React.ReactNode };
+  /** It's on Someday, shown in place of a date. */
+  someday?: boolean;
+  /** Sends it to Someday; absent where it can't go. */
+  onSomeday?: () => void;
 }) {
   // The tab picked since it opened; until then, Smart for a smart date,
   // however it opened (the D shortcut opens it through `open`).
@@ -98,11 +104,13 @@ export function DueChip({
         aria-disabled={disabled || undefined}
         title={smart?.rule ? `Smart: ${smart.rule}` : suggested ? SUGGESTED_TITLE : undefined}
         className={
-          due ? (suggested ? SUGGESTED_CHIP : cn(CHIP, tone)) : waiting ? CHIP : EMPTY_CHIP
+          due ? (suggested ? SUGGESTED_CHIP : cn(CHIP, tone)) : waiting || someday ? CHIP : EMPTY_CHIP
         }
       >
-        {smart?.rule ? <Sparkles /> : <CalendarDays />}
-        {due ? (
+        {smart?.rule ? <Sparkles /> : someday && !due ? <Rainbow /> : <CalendarDays />}
+        {someday && !due ? (
+          <span data-replay-safe>Someday</span>
+        ) : due ? (
           <DueChipLabel due={due} done={done} />
         ) : waiting ? (
           <span data-replay-safe className="truncate">
@@ -146,6 +154,14 @@ export function DueChip({
               setOpen(false);
               onChange(next);
             }}
+            someday={someday}
+            onSomeday={
+              onSomeday &&
+              (() => {
+                setOpen(false);
+                onSomeday();
+              })
+            }
           />
         )}
       </PopoverContent>

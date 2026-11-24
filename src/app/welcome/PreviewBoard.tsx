@@ -134,6 +134,7 @@ function demo(today: string, now: number) {
       repeatDay: null,
       smartRule: null,
       smartLead: null,
+      somedayAt: null,
       cancelled: false,
       cancelReason: null,
       replacedById: null,
