@@ -4,10 +4,11 @@ import { useEffect, useEffectEvent, useState } from "react";
 
 // Every emoji that goes with a title (a list's icon, a label's emoji) works
 // the same way. Until someone chooses one, it's Jev's top suggestion for the
-// title: shown faded, and replaced as the title is typed or renamed. Once
-// someone chooses one, or chooses none, that always stays. Saved lists and
-// labels store which it is (iconChosen, emojiChosen); a title still being
-// written holds it until it's created.
+// title: shown faded in the views that add or edit it (not on the board),
+// and replaced as the title is typed or renamed. Once someone chooses one,
+// or chooses none, that always stays. Saved lists and labels store which it
+// is (iconChosen, emojiChosen); a title still being written holds it until
+// it's created.
 
 /** Wait for a pause in typing before asking for suggestions. */
 const SUGGEST_DELAY_MS = 400;
