@@ -12,8 +12,9 @@ import { RELEASE } from "@/lib/release";
 // a refresh with a full page load of the new build, which throws away
 // whatever was open: a dialog, a half-typed item, the scroll position. So
 // background refreshes ask the server which deploy it's on first, and a page on
-// an older one stops refreshing, says so, and moves over when the user reloads
-// or when it's next hidden with nothing in progress.
+// an older one stops refreshing, says so (to someone signed in), and moves
+// over when the user reloads or when it's next hidden with nothing in
+// progress.
 //
 // An action that reaches the new build fails, because the new build no longer
 // has that action, and reloads at once: the old page can't save anything. The
@@ -41,6 +42,14 @@ export async function refreshIfCurrent(router: { refresh(): void }) {
   if (live === RELEASE) router.refresh();
   else if (!outdated) {
     outdated = true;
+    document.addEventListener("visibilitychange", reloadIfIdle);
+    // Signed out (the landing page, sign in), there's nothing of theirs to
+    // keep fresh, so it moves over unannounced. Asked only now, and anything
+    // but a clear "signed out" still shows the toast.
+    const signedOut = await fetch("/api/auth/get-session", { cache: "no-store" })
+      .then(async (response) => response.ok && (await response.json()) === null)
+      .catch(() => false);
+    if (signedOut) return;
     toast("Sidetrack has been updated", {
       id: "latest-deploy",
       duration: Infinity,
@@ -54,7 +63,6 @@ export async function refreshIfCurrent(router: { refresh(): void }) {
         onClick: () => location.reload(),
       },
     });
-    document.addEventListener("visibilitychange", reloadIfIdle);
   }
 }
 
