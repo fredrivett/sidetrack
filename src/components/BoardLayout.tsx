@@ -102,9 +102,14 @@ export function BoardRail({
 /** One project column: a header row above a scrolling body. */
 export function ColumnCard({
   header,
+  headerProps,
   children,
   ...props
-}: Omit<ComponentProps<"article">, "className"> & { header: ReactNode }) {
+}: Omit<ComponentProps<"article">, "className"> & {
+  header: ReactNode;
+  /** The header as the handle a list is dragged by (SortableColumnCard). */
+  headerProps?: ComponentProps<"header">;
+}) {
   // pt-2, not p-3: the header row is 32px tall around a 24px icon, so the
   // icon already sits 4px down in it; this keeps it 12px from the top.
   // The header's side insets centre its icon over the item rows' 16px
@@ -112,13 +117,16 @@ export function ColumnCard({
   // put its checkbox centre 17px in (5px + half the 24px icon) and its avatar
   // centre 19px in (7px + half the menu's 24px button).
   // `data-drop-target`: a row from another list is being dragged over it
-  // (DraggableItemList).
+  // (DraggableItemList). `data-placeholder`: the list itself is being
+  // dragged, so it stays behind as the empty slot it would drop into.
   return (
     <article
-      className="flex h-full snap-center sm:snap-start shrink-0 flex-col gap-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white p-3 pt-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 w-[var(--column-width,92vw)] sm:w-80 transition-shadow data-[drop-target]:ring-2 data-[drop-target]:ring-neutral-900 dark:data-[drop-target]:ring-neutral-100"
+      className="flex h-full snap-center sm:snap-start shrink-0 flex-col gap-1.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white p-3 pt-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 w-[var(--column-width,92vw)] sm:w-80 transition-shadow data-[drop-target]:ring-2 data-[drop-target]:ring-neutral-900 dark:data-[drop-target]:ring-neutral-100 data-[placeholder]:border-dashed data-[placeholder]:border-neutral-300 data-[placeholder]:bg-neutral-100 data-[placeholder]:shadow-none data-[placeholder]:*:invisible dark:data-[placeholder]:border-neutral-700 dark:data-[placeholder]:bg-neutral-800/50"
       {...props}
     >
-      <header className="flex items-start gap-2 shrink-0 pl-[5px] pr-[7px]">{header}</header>
+      <header {...headerProps} className="flex items-start gap-2 shrink-0 pl-[5px] pr-[7px]">
+        {header}
+      </header>
       {/* The scroll a long list renders its rows within (useVirtualRows). */}
       <div data-column-scroll className="flex-1 min-h-0 -mx-3 overflow-y-auto px-3">
         {children}

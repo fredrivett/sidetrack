@@ -9,10 +9,10 @@ import { whoseWords } from "@/lib/roles";
 import type { SpaceView } from "@/core/spaces";
 import { filtersByDue, type ItemFilters, matchesFilters, shownInGroups } from "@/lib/filters";
 import { nestItems } from "@/lib/itemTree";
-import { ColumnCard } from "./BoardLayout";
 import type { ProjectView } from "./Kanban";
 import { EditableText } from "./EditableText";
 import { ItemDetailDialog } from "./ItemDetailDialog";
+import { DraggableColumnCard } from "./ListDrag";
 import { DraggableItemList, isHiddenParent, ItemGroupView, withHiddenParents } from "./ItemList";
 import { ProjectDetailDialog } from "./ProjectDetailDialog";
 import { ProjectIconPicker, useListIcon } from "./ProjectIconPicker";
@@ -47,6 +47,8 @@ export const ProjectColumn = memo(function ProjectColumn({
   spaces,
   filters,
   aiEnabled,
+  draggable,
+  held,
 }: {
   project: ProjectView;
   viewerId: string;
@@ -65,6 +67,10 @@ export const ProjectColumn = memo(function ProjectColumn({
   spaces: SpaceView[];
   filters: ItemFilters;
   aiEnabled: boolean;
+  /** Dragged by its header to move it on the board (ListDragging). */
+  draggable: boolean;
+  /** Dragged somewhere, until its move is confirmed and saved. */
+  held: boolean;
 }) {
   // Items arrive in list order, flat. Group sub-items under their parent; the
   // split below is by the top-level item, and its checklist goes with it.
@@ -147,10 +153,13 @@ export const ProjectColumn = memo(function ProjectColumn({
 
   return (
     <ListSaveContext value={listSave}>
-    <ColumnCard
+    <DraggableColumnCard
+      projectId={project.id}
+      // Not while it holds a save, which it's dimmed for.
+      draggable={draggable && !held && !listSave.saving}
       data-project-id={project.id}
-      aria-busy={listSave.saving || undefined}
-      style={{ opacity: listSave.saving ? 0.7 : 1 }}
+      aria-busy={listSave.saving || held || undefined}
+      style={{ opacity: listSave.saving || held ? 0.7 : 1 }}
       header={
         <>
           {/* Icon, title row and ⋯ menu are all 32px tall so they line up. */}
@@ -362,7 +371,7 @@ export const ProjectColumn = memo(function ProjectColumn({
         open={detailsOpen}
         onOpenChange={setDetailsOpen}
       />
-    </ColumnCard>
+    </DraggableColumnCard>
     </ListSaveContext>
   );
 });

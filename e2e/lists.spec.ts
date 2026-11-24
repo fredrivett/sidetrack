@@ -138,3 +138,60 @@ test("switches between the Brief and the board, with Done in the account menu", 
   await page.getByRole("button", { name: "Back to board" }).click();
   await expect(page).toHaveURL(/\/board/);
 });
+
+test("drags a list along its tray, and into a Space once confirmed", async ({ page, user }) => {
+  user.addList("Home", ["Water plants"]);
+  user.addList("Garden", ["Plant jasmine"]);
+  user.addSpace("Work");
+  await page.goto("/board");
+  // The lists on a tray, by name, in order.
+  const listsIn = (tray: string) =>
+    page
+      .getByRole("region", { name: tray })
+      .getByRole("button", { name: /^Add item to / })
+      .evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")?.slice("Add item to ".length)));
+  // Retried as a whole: the board can reload under it (a time zone save).
+  const expectLists = (tray: string, names: string[]) =>
+    expect(async () => expect(await listsIn(tray)).toEqual(names)).toPass();
+  const box = async (name: string) => {
+    const b = await page.getByRole("button", { name: `Add item to ${name}` }).boundingBox();
+    if (!b) throw new Error(`no list ${name}`);
+    return b;
+  };
+  // Picked up by its header's blank space, left of the buttons.
+  const drag = async (name: string, to: { x: number; y: number }) => {
+    const add = await box(name);
+    const from = { x: add.x - 60, y: add.y + add.height / 2 };
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(from.x + 10, from.y, { steps: 2 });
+    await page.mouse.move(to.x, to.y, { steps: 15 });
+    await page.mouse.up();
+  };
+  await expectLists("Personal", ["Home", "Garden"]);
+
+  // Along its tray it moves without asking.
+  const home = await box("Home");
+  await drag("Garden", { x: home.x - 200, y: home.y });
+  await expectLists("Personal", ["Garden", "Home"]);
+
+  // Onto Work's tray it asks first; Cancel puts it back.
+  const work = await page.getByRole("region", { name: "Work" }).boundingBox();
+  const intoWork = { x: (work?.x ?? 0) + (work?.width ?? 0) / 2, y: (work?.y ?? 0) + 60 };
+  await drag("Garden", intoWork);
+  const dialog = page.getByRole("dialog", { name: "Move to Work" });
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
+  await expectLists("Personal", ["Garden", "Home"]);
+  await expectLists("Work", []);
+
+  await drag("Garden", intoWork);
+  await dialog.getByRole("button", { name: "Move", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expectLists("Work", ["Garden"]);
+
+  // Saved, not only shown.
+  await page.reload();
+  await expectLists("Work", ["Garden"]);
+  await expectLists("Personal", ["Home"]);
+});
