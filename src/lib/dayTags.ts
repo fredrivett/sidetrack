@@ -21,26 +21,40 @@ export const DAY_TAGS = {
 
 export type DayTag = keyof typeof DAY_TAGS;
 const TAGS = Object.keys(DAY_TAGS) as DayTag[];
+
+/**
+ * Quick words for how the day went, for its wrap-up (dayWrapUps.ts), kept
+ * the same way: "Got a lot done, Tired — did the bottles".
+ */
+export const WRAP_UP_TAGS = ["Good day", "Got a lot done", "Got through it", "Rough day", "Tired", "Wiped out"] as const;
+export type WrapUpTag = (typeof WRAP_UP_TAGS)[number];
+
 const SEPARATOR = " — ";
 
-/** A note as its tags and the rest, what was typed. A note whose start isn't all tags is all typed. */
-export function splitDayNote(note: string): { tags: DayTag[]; rest: string } {
+/** `note` as its tags (of `all`, in that order) and the rest. A note whose start isn't all tags is all typed. */
+export function splitTagged<T extends string>(note: string, all: readonly T[]): { tags: T[]; rest: string } {
   const at = note.indexOf(SEPARATOR);
   const head = at === -1 ? note : note.slice(0, at);
-  const tags = head.split(",").map((word) => TAGS.find((t) => t.toLowerCase() === word.trim().toLowerCase()));
+  const tags = head.split(",").map((word) => all.find((t) => t.toLowerCase() === word.trim().toLowerCase()));
   if (!head.trim() || tags.some((t) => t === undefined)) return { tags: [], rest: note.trim() };
   return {
-    tags: TAGS.filter((t) => tags.includes(t)),
+    tags: all.filter((t) => tags.includes(t)),
     rest: at === -1 ? "" : note.slice(at + SEPARATOR.length).trim(),
   };
 }
 
-/** The note for `tags` and the typed `rest`, as splitDayNote reads it back. */
-export function joinDayNote(tags: readonly DayTag[], rest: string): string {
-  const head = TAGS.filter((t) => tags.includes(t)).join(", ");
+/** The note for `tags` (of `all`) and the typed `rest`, as splitTagged reads it back. */
+export function joinTagged<T extends string>(tags: readonly T[], rest: string, all: readonly T[]): string {
+  const head = all.filter((t) => tags.includes(t)).join(", ");
   const typed = rest.trim();
   return head && typed ? `${head}${SEPARATOR}${typed}` : head || typed;
 }
+
+/** A day note as its tags and the rest, what was typed. */
+export const splitDayNote = (note: string) => splitTagged(note, TAGS);
+
+/** The note for `tags` and the typed `rest`, as splitDayNote reads it back. */
+export const joinDayNote = (tags: readonly DayTag[], rest: string) => joinTagged(tags, rest, TAGS);
 
 /**
  * `note` with `tag` taken off, or put on; null when putting it on would

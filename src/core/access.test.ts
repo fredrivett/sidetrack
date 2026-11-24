@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { users } from "./auth-schema";
 import { setDayNote, sharedDayNote } from "./dayNotes";
+import { closeDay } from "./dayWrapUps";
 import {
   acceptDayShare,
   daysSharedWhole,
@@ -529,20 +530,27 @@ describe("a membership shown only someone's today or week", () => {
     // Jo has her day, but not her note: nothing of it.
     setDayNote(db, lorna, "2026-11-18", "Unwell — yesterday's");
     setDayNote(db, lorna, "2026-11-19", "Tired, Busy — long day at work");
-    expect(sharedDayNote(db, jo, lorna)).toEqual({ note: null, mood: [] });
+    expect(sharedDayNote(db, jo, lorna)).toEqual({ note: null, mood: [], wrapUp: null });
     // Kim's invite is pending until she accepts.
-    expect(sharedDayNote(db, kim, lorna)).toEqual({ note: null, mood: [] });
+    expect(sharedDayNote(db, kim, lorna)).toEqual({ note: null, mood: [], wrapUp: null });
     acceptInvite(db, kim, home.id, "web");
-    expect(sharedDayNote(db, kim, lorna)).toEqual({ note: null, mood: ["Busy", "Tired"] });
+    expect(sharedDayNote(db, kim, lorna)).toEqual({ note: null, mood: ["Busy", "Tired"], wrapUp: null });
     // A share that allows more wins.
     const away = createProject(db, lorna, { name: "Away" }, "web");
     inviteMember(db, lorna, away.id, "kim", "web", "viewer", { onlyMine: true, within: "week", shareNote: true });
     acceptInvite(db, kim, away.id, "web");
-    expect(sharedDayNote(db, kim, lorna)).toEqual({ note: "long day at work", mood: ["Busy", "Tired"] });
+    expect(sharedDayNote(db, kim, lorna)).toEqual({ note: "long day at work", mood: ["Busy", "Tired"], wrapUp: null });
+    // Once she closes the day, how it went shows beside the note, as much of it as each share allows.
+    closeDay(db, lorna, "2026-11-18", "Rough day — yesterday's close", 1);
+    expect(sharedDayNote(db, kim, lorna).wrapUp).toBeNull();
+    closeDay(db, lorna, "2026-11-19", "Got a lot done, Tired — did the bottles", 5);
+    closeDay(db, lorna, "2026-11-19", "Good day — changed my mind", 9);
+    expect(sharedDayNote(db, kim, lorna).wrapUp).toEqual({ note: "changed my mind", mood: ["Good day"], closedAt: 5 });
+    expect(sharedDayNote(db, jo, lorna).wrapUp).toBeNull();
     // Only while it's a day share: kept to her items for all time, it stops.
     setMemberRole(db, lorna, away.id, kim, "viewer", "web", undefined, null);
     setMemberRole(db, lorna, home.id, kim, "viewer", "web", undefined, null);
-    expect(sharedDayNote(db, kim, lorna)).toEqual({ note: null, mood: [] });
+    expect(sharedDayNote(db, kim, lorna)).toEqual({ note: null, mood: [], wrapUp: null });
   });
 
   it("stops showing her note once the day share ends, even when another day share is set later", () => {
@@ -556,7 +564,7 @@ describe("a membership shown only someone's today or week", () => {
     // Kept to her items for all time, then her week again: not opted in again.
     setMemberRole(db, lorna, home.id, jo, "viewer", "web", undefined, null);
     setMemberRole(db, lorna, home.id, jo, "viewer", "web", undefined, "week");
-    expect(sharedDayNote(db, jo, lorna)).toEqual({ note: null, mood: [] });
+    expect(sharedDayNote(db, jo, lorna)).toEqual({ note: null, mood: [], wrapUp: null });
 
     // In a Space, another admin can't revive it, nor take it over as theirs.
     const space = createSpace(db, lorna, { name: "Fam" }, "web");
@@ -568,8 +576,8 @@ describe("a membership shown only someone's today or week", () => {
     expect(sharedDayNote(db, jo, lorna).note).toBe("private words");
     setSpaceMemberRole(db, sam, space.id, jo, "commenter", "web", true);
     setDayNote(db, sam, "2026-11-19", "Sam's own words");
-    expect(sharedDayNote(db, jo, lorna)).toEqual({ note: null, mood: [] });
-    expect(sharedDayNote(db, jo, sam)).toEqual({ note: null, mood: [] });
+    expect(sharedDayNote(db, jo, lorna)).toEqual({ note: null, mood: [], wrapUp: null });
+    expect(sharedDayNote(db, jo, sam)).toEqual({ note: null, mood: [], wrapUp: null });
   });
 
   it("lists, changes and stops her day shares, and shows her exactly what Jo sees", () => {
@@ -597,7 +605,7 @@ describe("a membership shown only someone's today or week", () => {
     expect(seen()).toContain("Tomorrow");
     expect(myDayView(db, lorna).within).toBe("week");
     expect(myDayView(db, lorna).itemIds.map(title).sort()).toEqual(seen());
-    expect(sharedDayNote(db, jo, lorna)).toEqual({ note: "words", mood: [] });
+    expect(sharedDayNote(db, jo, lorna)).toEqual({ note: "words", mood: [], wrapUp: null });
     expect(listAudit(db, lorna, { projectId: list.id }).map((r) => plainText(r.parts ?? []))).toContainEqual(expect.stringContaining("with the day note"));
     updateDayShare(db, lorna, jo, { note: false }, "web");
     expect(sharedDayNote(db, jo, lorna).note).toBeNull();
@@ -753,14 +761,14 @@ describe("a membership shown only someone's today or week", () => {
     expect(listDayShares(db, lorna).find((s) => s.personId === fred)).toMatchObject({ pending: true, withoutPlaces: true, places: [], mood: true });
     expect(pendingDayShares(db, fred).map((d) => [d.name, d.within, d.places])).toEqual([["Lorna", "today", []]]);
     expect(daysSharedWhole(db, fred)).toEqual([]);
-    expect(sharedDayNote(db, fred, lorna)).toEqual({ note: null, mood: [] });
+    expect(sharedDayNote(db, fred, lorna)).toEqual({ note: null, mood: [], wrapUp: null });
     expect(listNotifications(db, fred).map((n) => plainText(n.parts))).toContainEqual("Lorna wants to share today with you");
     expect(said(lorna)).toContainEqual("shared today with @fred, with the day mood");
 
     acceptDayShare(db, fred, lorna, "web");
     expect(pendingDayShares(db, fred)).toEqual([]);
     expect(daysSharedWhole(db, fred).map((d) => [d.name, d.within, d.day])).toEqual([["Lorna", "today", "2026-11-19"]]);
-    expect(sharedDayNote(db, fred, lorna)).toEqual({ note: null, mood: ["Tired"] });
+    expect(sharedDayNote(db, fred, lorna)).toEqual({ note: null, mood: ["Tired"], wrapUp: null });
     // Her own Check-ins show what he sees: her today on Week, as Jo's share does.
     expect(myDayView(db, lorna).itemIds.map(title).sort()).toEqual(seen());
     expect(listNotifications(db, lorna).map((n) => plainText(n.parts))).toContainEqual("Fred accepted your shared day");

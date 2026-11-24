@@ -195,6 +195,7 @@ import {
   updateDayShare as updateDayShareCore,
 } from "@/core/dayShares";
 import { setDayNote as setDayNoteCore } from "@/core/dayNotes";
+import { closeDay as closeDayCore } from "@/core/dayWrapUps";
 import {
   addFromSource as addFromSourceCore,
   discardSource as discardSourceCore,
@@ -1161,6 +1162,21 @@ export async function setDayNoteAction(text: string) {
   const timeZone = getTimeZoneCore(db, userId);
   if (!timeZone) throw new Error("time zone not known yet");
   return setDayNoteCore(db, userId, dayOf(Date.now(), timeZone), String(text));
+}
+
+/**
+ * Close the signed-in user's today, in their time zone, with how it went;
+ * writing it again changes the words, not when it was closed. Refreshes, so
+ * their own Check-ins card shows it.
+ */
+export async function closeDayAction(text: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const timeZone = getTimeZoneCore(db, userId);
+  if (!timeZone) throw new Error("time zone not known yet");
+  const kept = closeDayCore(db, userId, dayOf(Date.now(), timeZone), String(text));
+  refresh();
+  return kept;
 }
 
 /** Save the browser's timezone for agents' "today". No refresh: nothing shown changes. */

@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { writtenGreetingFor } from "@/core/agendaGreeting";
+import { type Greeting, writtenGreetingFor } from "@/core/agendaGreeting";
 import { listIconContext } from "@/core/autoEmoji";
+import { getWrapUp } from "@/core/dayWrapUps";
 import { listAccessById } from "@/core/access";
 import type { Db } from "@/core/db";
 import { feedbackFollowUps } from "@/core/feedback";
@@ -14,7 +15,7 @@ import { suggestEmoji, suggestLabelEmoji } from "@/lib/emojiSuggest";
 import { getEnv } from "@/lib/env";
 import { formatItemRef } from "@/lib/itemRef";
 import { askAboutDraft, type DraftAnswers } from "@/lib/itemSuggest";
-import { isDay } from "@/lib/time";
+import { dayOf, isDay } from "@/lib/time";
 import { askTitleParts } from "@/lib/titleParse";
 
 // The reads that ask an AI (Jev or Claude), served by /api/ai/[read] rather
@@ -65,7 +66,7 @@ export const AI_READS = {
     const { TYPESAFE_API_KEY, ANTHROPIC_API_KEY } = getEnv();
     // Not ctx.fetch: it's kept for every tab and the next visit, so it's
     // worth finishing after the browser that asked has gone.
-    return writtenGreetingFor(
+    const greeting = await writtenGreetingFor(
       db,
       userId,
       timeZone,
@@ -74,6 +75,10 @@ export const AI_READS = {
       undefined,
       now,
     );
+    // How today went, once they've closed it, for the panel under it. As
+    // it is now, not as the greeting was written.
+    const withWrapUp: Greeting = { ...greeting, wrapUp: getWrapUp(db, userId, dayOf(Date.now(), timeZone)) };
+    return withWrapUp;
   }),
 
   /**

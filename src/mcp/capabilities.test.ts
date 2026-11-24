@@ -104,6 +104,7 @@ const ACTIONS: Record<string, string | Exempt> = {
   markPostsSeenAction: { exempt: "view", note: "the Brief's stack of changelog posts" },
   recordInstallAction: { exempt: "background", note: "the app noticing it's installed" },
   setAgendaReadAction: { exempt: "view", note: "the greeting the user has read in the app" },
+  closeDayAction: "close_day",
   setDayNoteAction: { exempt: "view", note: "only the in-app greeting reads it" },
   setTimeZoneAction: { exempt: "background", note: "synced from the browser" },
   setBoardFiltersAction: { exempt: "view", note: "the board's filters" },

@@ -962,6 +962,28 @@ export const dayNotes = sqliteTable(
   (t) => [primaryKey({ columns: [t.userId, t.day] })],
 );
 
+// How someone's day went, written when they close it (dayWrapUps.ts): an
+// accountability update for the people they share their day with, kept
+// beside the day's note, never over it. One per person per day. Not
+// audited, like day notes: their own words, seen only through a day share
+// they opted them into.
+export const dayWrapUps = sqliteTable(
+  "day_wrap_ups",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // YYYY-MM-DD, the writer's day.
+    day: text("day").notNull(),
+    // Tags then words, as day notes keep them (WRAP_UP_TAGS); may be "".
+    text: text("text").notNull(),
+    // When they closed the day, the first time.
+    closedAt: integer("closed_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.day] })],
+);
+
 // An invite by email for someone not on Sidetrack yet (invitations.ts):
 // from Share my day, with the places it shares, or Invite people, with places or
 // none. Its link carries a token, of which only the hash is kept. Signing up

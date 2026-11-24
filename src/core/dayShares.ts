@@ -15,6 +15,7 @@ import { splitDayNote } from "../lib/dayTags";
 import { dayOf, nextDayStartIn, startOfWeekIn } from "../lib/time";
 import { hasProjectAccess, hasWholeListAccess, inDayOf } from "./access";
 import { getDayNote } from "./dayNotes";
+import { getWrapUp, seenWrapUp } from "./dayWrapUps";
 import { listInvitations } from "./invitations";
 import { validZone } from "./db-functions";
 import { type AuditOrigin, recordAudit } from "./audit";
@@ -528,14 +529,17 @@ export function myDayView(db: Db, userId: string, now = Date.now()) {
   const seen = mySharedDay(db, userId, shares);
   const within: OnlyWithin = seen?.within ?? "today";
   const zone = validZone(db.select({ tz: users.timeZone }).from(users).where(eq(users.id, userId)).get()?.tz);
-  const text = seen && (seen.note || seen.mood) ? getDayNote(db, userId, dayOf(now, zone)) : null;
+  const today = dayOf(now, zone);
+  const text = seen && (seen.note || seen.mood) ? getDayNote(db, userId, today) : null;
   const { tags, rest } = text ? splitDayNote(text) : { tags: [], rest: "" };
   return {
     within,
     day: seen ? dayOf(within === "week" ? startOfWeekIn(zone, now) : now, zone) : "",
-    today: dayOf(now, zone),
+    today,
     note: (seen?.note && rest) || null,
     mood: seen?.mood ? tags : [],
+    // How it went, as they see it, once it's closed.
+    wrapUp: seen ? seenWrapUp(getWrapUp(db, userId, today), seen.note, seen.mood) : null,
     itemIds: seen?.itemIds ?? [],
     shares,
     // People invited by email who haven't joined yet: it's theirs once they do.

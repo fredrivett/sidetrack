@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState, useTransition, type ReactNode } from "react";
-import { Ellipsis, HeartHandshake, Mail, Plus, Quote } from "lucide-react";
+import { CircleCheck, Ellipsis, HeartHandshake, Mail, Plus, Quote } from "lucide-react";
 import { toast } from "sonner";
 import {
   acceptDayShareAction,
@@ -16,6 +16,7 @@ import type { DayShare, DayShareInvite } from "@/core/dayShares";
 import type { InvitationView } from "@/core/invitations";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink, OnlyWithin } from "@/core/schema";
+import type { SeenWrapUp } from "@/core/dayWrapUps";
 import type { DayTag } from "@/lib/dayTags";
 import { nestItems } from "@/lib/itemTree";
 import { AGENDA_SECTIONS, agendaSection, type AgendaSection, weekday } from "@/lib/time";
@@ -52,6 +53,8 @@ export type CheckIn = {
   /** What they wrote about today, and the mood they tapped, when they chose to share it. */
   note: string | null;
   mood: DayTag[];
+  /** How their today went, once they've closed it, as much as they share. */
+  wrapUp: SeenWrapUp | null;
   /** The lists shared just for their day: only their items in it show. */
   lists: ProjectView[];
   /** Their items in it on lists the viewer sees whole (dayOnWholeLists). */
@@ -66,6 +69,7 @@ export type MyDay = {
   today: string;
   note: string | null;
   mood: DayTag[];
+  wrapUp: SeenWrapUp | null;
   /** Their items in the day they share (mySharedDay). */
   itemIds: string[];
   shares: DayShare[];
@@ -73,7 +77,7 @@ export type MyDay = {
   invited: InvitationView[];
 };
 
-const NO_ONE: MyDay = { within: "today", day: "", today: "", note: null, mood: [], itemIds: [], shares: [], invited: [] };
+const NO_ONE: MyDay = { within: "today", day: "", today: "", note: null, mood: [], wrapUp: null, itemIds: [], shares: [], invited: [] };
 
 const dayName = (day: string) =>
   day ? new Date(`${day}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }) : "";
@@ -191,6 +195,7 @@ export function CheckInsView({
             sub={myDay.day ? (myDay.within === "today" ? dayName(myDay.day) : `Week of ${dayName(myDay.day)}`) : "Shared with nobody yet"}
             note={myDay.note}
             mood={myDay.mood}
+            wrapUp={myDay.wrapUp}
             items={mine}
             today={myDay.today}
             groups={groups(mine, new Set(mine.map((i) => i.projectId)).size > 1, myDay.today)}
@@ -244,6 +249,7 @@ export function CheckInsView({
                     menu={<StopSeeingMenu personId={c.personId} name={c.name} span={span} />}
                     note={c.note}
                     mood={c.mood}
+                    wrapUp={c.wrapUp}
                     items={items}
                     today={c.today}
                     groups={groups(items, new Set(items.map((i) => i.projectId)).size > 1, c.today)}
@@ -297,6 +303,7 @@ function DayCard({
   menu,
   note,
   mood,
+  wrapUp,
   items,
   today,
   groups,
@@ -311,6 +318,8 @@ function DayCard({
   menu?: ReactNode;
   note: string | null;
   mood: DayTag[];
+  /** How the day went, once it's closed: shown under the note, never over it. */
+  wrapUp: SeenWrapUp | null;
   items: Item[];
   today: string;
   /** Each item group, by the section it's in: null once it's closed, done or cancelled. */
@@ -360,6 +369,37 @@ function DayCard({
           {mood.length > 0 && (
             <ul aria-label="How today feels" className={`flex flex-wrap gap-1.5 ${note ? "pl-[22px]" : ""}`}>
               {mood.map((tag) => (
+                <li
+                  key={tag}
+                  className="rounded-full border border-stone-300 bg-stone-100 px-2 py-0.5 text-xs text-stone-800 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100"
+                >
+                  {tag}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      {wrapUp && (
+        <div
+          role="group"
+          aria-label="How today went"
+          className="space-y-2 border-b border-stone-100 px-4 py-3 dark:border-stone-800/60"
+        >
+          <p className="flex items-center gap-1.5 text-xs text-neutral-500">
+            <CircleCheck aria-hidden className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+            Wrapped up at{" "}
+            {new Date(wrapUp.closedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+          </p>
+          {wrapUp.note && (
+            <blockquote className="flex gap-2 font-serif text-[15px] leading-relaxed text-neutral-700 dark:text-neutral-300">
+              <Quote aria-hidden className="mt-1 size-3.5 shrink-0 text-stone-400" />
+              <span className="text-pretty">{wrapUp.note}</span>
+            </blockquote>
+          )}
+          {wrapUp.mood.length > 0 && (
+            <ul aria-label="How it went" className={`flex flex-wrap gap-1.5 ${wrapUp.note ? "pl-[22px]" : ""}`}>
+              {wrapUp.mood.map((tag) => (
                 <li
                   key={tag}
                   className="rounded-full border border-stone-300 bg-stone-100 px-2 py-0.5 text-xs text-stone-800 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100"
