@@ -4,7 +4,8 @@ import { useRef, useState, useTransition } from "react";
 import { UserPlus, X } from "lucide-react";
 import { unstable_rethrow } from "next/navigation";
 import { toast } from "sonner";
-import { invitePeopleAction } from "@/app/actions";
+import { inviteAnyoneAction } from "@/app/actions";
+import type { InvitationView } from "@/core/invitations";
 import type { InvitePlace } from "@/core/invites";
 import { LIST_ROLES, SPACE_ROLES, type ListRole, type SpaceRole } from "@/core/schema";
 import { roleName } from "@/lib/roles";
@@ -17,6 +18,7 @@ import {
   ResponsiveDialogDescription,
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
+import { InvitedRow } from "./CheckInsView";
 import { PlacePicker, placeKey as key, type PlaceGroup } from "./PlacePicker";
 import { RoleSelect } from "./RoleSelect";
 import { useDraft } from "./use-draft";
@@ -44,20 +46,28 @@ function namesOf(names: string[]): string {
   return `${names[0]}, ${names[1]} and ${names.length - 2} more`;
 }
 
+/** An email address rather than a username, such as someone not on Sidetrack yet. */
+const isEmail = (handle: string) => handle.includes("@") && !handle.startsWith("@");
+
 /**
  * Invite several people to several places at once: the Spaces the viewer
  * runs and the lists they own, each with its own role. One invite, so
  * everyone it reaches is notified of it together, and each person gets one email.
+ * Places are optional: an email with no account gets a link to join
+ * Sidetrack, bringing them into whatever's chosen, or nothing.
  */
 export function InviteDialog({
   open,
   onOpenChange,
   groups,
+  invited,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Where they can be invited, grouped as on the board. */
   groups: PlaceGroup[];
+  /** Links to join sent from here that nobody has accepted yet, to send again or cancel. */
+  invited: InvitationView[];
 }) {
   const draft = useDraft("invite:people");
   const person = draft.value;
@@ -129,23 +139,27 @@ export function InviteDialog({
   const places = chosen.map((c) => c.place);
   // What's typed but not yet added counts too, so Invite doesn't drop it.
   const everyone = [...new Set([...people, ...person.split(/[\s,]+/).filter(Boolean)])];
-  const ready = everyone.length > 0 && places.length > 0;
+  // Without a place, only an email has something to accept: a link to join.
+  const usernames = everyone.filter((p) => !isEmail(p));
+  // Emails already sent a link to join: sending another is refused, so say so first.
+  const pendingEmails = new Set(invited.map((i) => i.email.toLowerCase()));
+  const already = everyone.filter((p) => pendingEmails.has(p.toLowerCase()));
+  const ready = everyone.length > 0 && already.length === 0 && (places.length > 0 || usernames.length === 0);
 
   function invite() {
     if (!ready || pending) return;
     setError(null);
     start(async () => {
-      let refused: string | undefined;
+      let res: Awaited<ReturnType<typeof inviteAnyoneAction>>;
       try {
-        refused = (await invitePeopleAction(everyone, places))?.error;
+        res = await inviteAnyoneAction(everyone, places);
       } catch (err) {
         unstable_rethrow(err);
-        refused = "Couldn't send the invites. Please try again.";
+        res = { error: "Couldn't send the invites. Please try again." };
       }
-      if (refused) return setError(refused);
-      toast.success(
-        `Invited ${everyone.length === 1 ? everyone[0] : `${everyone.length} people`}`,
-      );
+      if (res.error !== undefined) return setError(res.error);
+      const who = everyone.length === 1 ? everyone[0] : `${everyone.length} people`;
+      toast.success(res.emailed?.length === everyone.length ? `Invite sent to ${who}` : `Invited ${who}`);
       close();
     });
   }
@@ -189,8 +203,8 @@ export function InviteDialog({
             <ResponsiveDialogCloseButton className="ml-auto shrink-0" />
           </div>
           <ResponsiveDialogDescription className="text-xs text-neutral-500">
-            Choose where to invite them and what they can do there. They’ll
-            need a Sidetrack account, and see nothing until they accept.
+            Invite them to lists and Spaces, choosing what they can do there,
+            or just to Sidetrack. Anyone not on Sidetrack yet gets an email to join.
           </ResponsiveDialogDescription>
         </div>
 
@@ -203,27 +217,6 @@ export function InviteDialog({
           className="flex min-h-0 flex-1 flex-col data-pending:opacity-60"
         >
           <div className="shrink-0 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-            {people.length > 0 && (
-              <ul className="mb-2 flex flex-wrap gap-1.5" aria-label="People to invite">
-                {people.map((p) => (
-                  <li
-                    key={p}
-                    className="flex items-center gap-1 rounded-full bg-neutral-100 py-0.5 pr-1 pl-2.5 text-xs dark:bg-neutral-800"
-                  >
-                    {p}
-                    <button
-                      type="button"
-                      aria-label={`Don't invite ${p}`}
-                      aria-disabled={pending || undefined}
-                      onClick={() => !pending && setPeople((c) => c.filter((x) => x !== p))}
-                      className="rounded-full p-0.5 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900 dark:hover:bg-neutral-700 dark:hover:text-neutral-100"
-                    >
-                      <X className="size-3" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
             <Input
               ref={personRef}
               value={person}
@@ -243,6 +236,27 @@ export function InviteDialog({
               autoComplete="off"
               readOnly={pending}
             />
+            {people.length > 0 && (
+              <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="People to invite">
+                {people.map((p) => (
+                  <li
+                    key={p}
+                    className="flex items-center gap-1 rounded-full bg-neutral-100 py-0.5 pr-1 pl-2.5 text-xs dark:bg-neutral-800"
+                  >
+                    {p}
+                    <button
+                      type="button"
+                      aria-label={`Don't invite ${p}`}
+                      aria-disabled={pending || undefined}
+                      onClick={() => !pending && setPeople((c) => c.filter((x) => x !== p))}
+                      className="rounded-full p-0.5 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900 dark:hover:bg-neutral-700 dark:hover:text-neutral-100"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-3">
@@ -267,6 +281,14 @@ export function InviteDialog({
                 return null;
               }}
             />
+            {invited.length > 0 && (
+              <section aria-label="Invited, not joined yet" className="mt-3 space-y-1 border-t border-neutral-200 px-2 pt-3 dark:border-neutral-800">
+                <h3 className="pb-1 text-xs text-neutral-500">Invited, not joined yet</h3>
+                {invited.map((i) => (
+                  <InvitedRow key={i.id} invitation={i} />
+                ))}
+              </section>
+            )}
           </div>
 
           <div className="flex shrink-0 items-center gap-3 border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
@@ -278,11 +300,18 @@ export function InviteDialog({
               // Who hears of it: those invited, and those already in each
               // place who can comment or more (notifications.ts).
               <p className="line-clamp-2 min-w-0 flex-1 text-xs text-neutral-500">
-                {chosen.length === 0
-                  ? "Choose where to invite them."
-                  : everyone.length === 0
-                    ? "Add who to invite."
-                    : `This will notify ${namesOf(everyone)}, and the people already in ${namesOf(chosen.map((c) => c.name))}.`}
+                {everyone.length === 0
+                  ? "Add who to invite."
+                  : already.length > 0
+                    ? `You’ve invited ${namesOf(already)} already. Send it again from Invited, not joined yet.`
+                    : chosen.length === 0
+                      ? usernames.length > 0
+                        ? `Choose where to invite ${namesOf(usernames)}.`
+                        : "We’ll email them a link to join Sidetrack. Nothing of yours is shared."
+                      : // An email may or may not have an account yet; the server decides which.
+                        everyone.length > usernames.length
+                        ? `This will invite ${namesOf(everyone)} to ${namesOf(chosen.map((c) => c.name))}. Anyone not on Sidetrack yet gets an email to join first.`
+                        : `This will notify ${namesOf(everyone)}, and the people already in ${namesOf(chosen.map((c) => c.name))}.`}
               </p>
             )}
             <Button type="submit" size="sm" aria-disabled={!ready || pending || undefined}>

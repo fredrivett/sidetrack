@@ -41,6 +41,7 @@ const ACTIONS: Record<string, string | Exempt> = {
   inviteMemberAction: "invite_member",
   invitePeopleAction: "invite_people",
   inviteByEmailAction: "invite_by_email",
+  inviteAnyoneAction: "invite_people",
   resendInvitationAction: "resend_invitation",
   cancelInvitationAction: "cancel_invitation",
   acceptInvitationAction: { exempt: "credential", note: "redeems an invite link's secret token" },

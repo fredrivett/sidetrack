@@ -450,7 +450,7 @@ export type AccountEvent =
   | { type: "day_share.removed"; shareId: string; sharer: PersonAt; viewer: PersonAt; how: "stopped" | "left" }
   /** An invite by email for someone not on Sidetrack yet (invitations.ts):
    * the places it shares, named as they were, and the window when it's
-   * their day. None for Invite a friend. */
+   * their day. None for an invite just to join. */
   | { type: "invitation.sent"; invitationId: string; email: string; places: string[]; within?: OnlyWithin }
   /** A new link for it, the old one stops working. */
   | { type: "invitation.resent"; invitationId: string; email: string }

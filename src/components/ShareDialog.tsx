@@ -10,6 +10,7 @@ import {
   removeMemberAction,
   setMemberRoleAction,
 } from "@/app/actions";
+import type { InvitationView } from "@/core/invitations";
 import type { CollaboratorView, MemberView } from "@/core/members";
 import { LIST_ROLES, type ListRole } from "@/core/schema";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ import {
   ResponsiveDialogDescription,
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
+import { InvitedRow } from "./CheckInsView";
 import { RoleSelect } from "./RoleSelect";
 import { runAction } from "./run-action";
 import { useDraft } from "./use-draft";
@@ -42,12 +44,16 @@ export function ShareDialog({
   onOpenChange,
   projectId,
   projectName,
+  invited,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectId: string | null;
   projectName: string;
+  /** Links to join that nobody has accepted yet, those for this list shown here. */
+  invited: InvitationView[];
 }) {
+  const joinLinks = invited.filter((i) => i.places.some((p) => p.kind === "list" && p.id === projectId));
   const [members, setMembers] = useState<MemberView[]>([]);
   const [suggestions, setSuggestions] = useState<CollaboratorView[]>([]);
   // Who's being invited, and as what, outlive a reload: the role is part
@@ -213,8 +219,8 @@ export function ShareDialog({
             <ResponsiveDialogCloseButton className="ml-auto shrink-0" />
           </div>
           <ResponsiveDialogDescription className="text-xs text-neutral-500">
-            Invite people by username or email. They’ll need a Sidetrack account
-            and must accept before they can see it.
+            Invite people by username or email, and they’ll see it once they
+            accept. Anyone not on Sidetrack yet gets an email to join.
           </ResponsiveDialogDescription>
         </div>
 
@@ -253,7 +259,7 @@ export function ShareDialog({
         </form>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
-          {members.length === 0 && suggestions.length === 0 && (
+          {members.length === 0 && suggestions.length === 0 && joinLinks.length === 0 && (
             <p className="py-6 text-center text-xs text-neutral-500">
               No collaborators yet.
             </p>
@@ -315,8 +321,15 @@ export function ShareDialog({
               ))}
             </ul>
           )}
+          {joinLinks.length > 0 && (
+            <section aria-label="Invited, not joined yet" className={`space-y-1 px-2 ${members.length > 0 ? "mt-2" : ""}`}>
+              {joinLinks.map((i) => (
+                <InvitedRow key={i.id} invitation={i} />
+              ))}
+            </section>
+          )}
           {suggestions.length > 0 && (
-            <section className={members.length > 0 ? "mt-4" : undefined}>
+            <section className={members.length > 0 || joinLinks.length > 0 ? "mt-4" : undefined}>
               <h3 className="px-2 pb-1 text-xs font-medium text-neutral-500">
                 From your other lists
               </h3>

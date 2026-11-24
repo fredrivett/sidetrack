@@ -336,17 +336,20 @@ test("someone invited by email joins through the link and sees your week", async
   await expect(page.getByRole("region", { name: "Invites" }).getByText(`@n${user.username}`.slice(0, 31))).toBeVisible();
 });
 
-test("invites a friend to Sidetrack, and cancels the invite", async ({ page, user }) => {
+test("invites someone not on Sidetrack yet from Invite people, and cancels the invite", async ({ page, user }) => {
   void user;
   await page.goto("/check-ins");
   await page.getByRole("button", { name: "Account" }).click();
-  await page.getByRole("menuitem", { name: "Invite a friend…" }).click();
-  const dialog = page.getByRole("dialog", { name: "Invite a friend" });
-  await dialog.getByLabel("Their email").fill("friend@example.com");
-  await dialog.getByRole("button", { name: "Send invite" }).click();
+  await expect(page.getByRole("menuitem", { name: "Invite a friend…" })).toHaveCount(0);
+  await page.getByRole("menuitem", { name: "Invite people…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Invite people" });
+  await dialog.getByLabel("Who to invite").fill("friend@example.com");
+  // Nowhere chosen: it's just an invite to join.
+  await expect(dialog.getByText("We’ll email them a link to join Sidetrack. Nothing of yours is shared.")).toBeVisible();
+  await dialog.getByRole("button", { name: "Invite" }).click();
   await expect(dialog).toHaveCount(0);
   await page.getByRole("button", { name: "Account" }).click();
-  await page.getByRole("menuitem", { name: "Invite a friend…" }).click();
+  await page.getByRole("menuitem", { name: "Invite people…" }).click();
   await expect(dialog.getByRole("region", { name: "Invited, not joined yet" }).getByText("friend@example.com")).toBeVisible();
   await dialog.getByRole("button", { name: "Invite to friend@example.com" }).click();
   await page.getByRole("menuitem", { name: "Cancel invite" }).click();
@@ -356,12 +359,26 @@ test("invites a friend to Sidetrack, and cancels the invite", async ({ page, use
   await expect(dialog.getByRole("region", { name: "Invited, not joined yet" })).toHaveCount(0);
 });
 
+test("a list's Share sends someone not on Sidetrack yet a link to join it", async ({ page, user }) => {
+  void user;
+  user.addList("Garden", []);
+  await page.goto("/board");
+  await page.getByRole("button", { name: "List options" }).click();
+  await page.getByRole("menuitem", { name: "Share…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Share “Garden”" });
+  await dialog.getByPlaceholder("username or email").fill("sam@example.com");
+  await dialog.getByRole("button", { name: "Invite", exact: true }).click();
+  await expect(dialog.getByRole("region", { name: "Invited, not joined yet" }).getByText("sam@example.com")).toBeVisible();
+  await page.reload();
+  await expect(dialog.getByRole("region", { name: "Invited, not joined yet" }).getByText("sam@example.com")).toBeVisible();
+});
+
 test("your profile's Invites links to inviting a friend and sharing your day", async ({ page, user }) => {
   void user;
   await page.goto("/settings/profile");
   const invites = page.getByRole("region", { name: "Invites" });
   await invites.getByRole("link", { name: "Invite a friend" }).click();
-  await expect(page.getByRole("dialog", { name: "Invite a friend" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Invite people" })).toBeVisible();
   await expect(page).toHaveURL(/\/brief$/);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);

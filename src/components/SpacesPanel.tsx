@@ -2,6 +2,7 @@
 
 import { Boxes, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import {
   createSpaceAction,
@@ -15,10 +16,12 @@ import {
 } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import type { InvitationView } from "@/core/invitations";
 import type { CollaboratorView } from "@/core/members";
 import { SPACE_ROLES, type SpaceColor, type SpaceRole } from "@/core/schema";
 import { roleName } from "@/lib/roles";
 import type { SpaceMemberView, SpaceView } from "@/core/spaces";
+import { InvitedRow } from "./CheckInsView";
 import { EditableText } from "./EditableText";
 import { ProjectIcon } from "./ProjectIcon";
 import { RoleSelect } from "./RoleSelect";
@@ -40,7 +43,16 @@ const BADGE =
   "rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide";
 
 /** The viewer's Spaces, and a form to start one. */
-export function SpacesPanel({ spaces, viewerId }: { spaces: SpaceView[]; viewerId: string }) {
+export function SpacesPanel({
+  spaces,
+  viewerId,
+  invited,
+}: {
+  spaces: SpaceView[];
+  viewerId: string;
+  /** Links to join that nobody has accepted yet; each card shows its own. */
+  invited: InvitationView[];
+}) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [icon, setIcon] = useState<string | null>(null);
@@ -121,7 +133,13 @@ export function SpacesPanel({ spaces, viewerId }: { spaces: SpaceView[]; viewerI
         </p>
       ) : (
         spaces.map((s) => (
-          <SpaceCard key={s.id} space={s} viewerId={viewerId} onLoaded={onLoaded} />
+          <SpaceCard
+            key={s.id}
+            space={s}
+            viewerId={viewerId}
+            onLoaded={onLoaded}
+            joinLinks={invited.filter((i) => i.places.some((p) => p.kind === "space" && p.id === s.id))}
+          />
         ))
       )}
     </div>
@@ -132,11 +150,14 @@ function SpaceCard({
   space,
   viewerId,
   onLoaded,
+  joinLinks,
 }: {
   space: SpaceView;
   viewerId: string;
   /** Called once its people first load, or fail to. */
   onLoaded: (id: string) => void;
+  /** Links to join it that nobody has accepted yet. */
+  joinLinks: InvitationView[];
 }) {
   const router = useRouter();
   const isAdmin = space.role === "admin";
@@ -172,7 +193,16 @@ function SpaceCard({
     // The card ignores pointers while it holds; this stops keys too.
     if (saving) return;
     start(async () => {
-      if (!(await runAction(action(), what))) return;
+      // A refusal the server explains, such as a join link sent already.
+      let refused: string | undefined;
+      const ok = await runAction(
+        action().then((r) => {
+          refused = (r as { error?: string } | undefined)?.error;
+        }),
+        what,
+      );
+      if (refused) toast.error(refused);
+      if (!ok || refused) return;
       after?.();
       await runAction(load(), `load the people in ${space.name}`);
       router.refresh();
@@ -402,6 +432,13 @@ function SpaceCard({
           );
         })}
       </ul>
+      {joinLinks.length > 0 && (
+        <section aria-label="Invited, not joined yet" className="space-y-1 px-2">
+          {joinLinks.map((i) => (
+            <InvitedRow key={i.id} invitation={i} />
+          ))}
+        </section>
+      )}
       {lastAdmin && members.length > 1 && (
         <p className="px-2 text-xs text-muted-foreground">
           You&rsquo;re the only admin. Make someone else an admin before you leave.

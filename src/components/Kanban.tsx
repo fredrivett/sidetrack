@@ -59,7 +59,6 @@ import { ShareDialog } from "./ShareDialog";
 import { CheckInsView, type CheckIn, type MyDay } from "./CheckInsView";
 import type { DayShareInvite } from "@/core/dayShares";
 import { InviteDialog } from "./InviteDialog";
-import { InviteFriendDialog } from "./InviteFriendDialog";
 import type { InvitationView } from "@/core/invitations";
 import { ShareDayDialog } from "./ShareDayDialog";
 import { InstallReporter } from "./GetStarted";
@@ -163,7 +162,7 @@ export function Kanban({
   checkIns = NO_CHECK_INS,
   myDay,
   dayShareInvites = NO_DAY_SHARE_INVITES,
-  friendInvites = NO_INVITES,
+  joinInvites = NO_INVITES,
   parentTitles = NO_TITLES,
   refreshAt = null,
   initialCollapsedTrays,
@@ -187,8 +186,8 @@ export function Kanban({
   myDay?: MyDay;
   /** Shared days waiting for the viewer to accept, on Check-ins. */
   dayShareInvites?: DayShareInvite[];
-  /** Invites sent from Invite a friend that nobody has accepted yet. */
-  friendInvites?: InvitationView[];
+  /** Links to join sent from Invite people that nobody has accepted yet. */
+  joinInvites?: InvitationView[];
   /** Titles of items, not theirs to see, that hold sub-items they see (hiddenParentTitles). */
   parentTitles?: Record<string, string>;
   /** When a day shown here turns over (the sharer's 4am), to reload then. */
@@ -239,7 +238,7 @@ export function Kanban({
   /** From `?item=`, an item to open on load, as tapping a notification does. */
   initialItemId: string | null;
   /** ?open=: a dialog to open once, from a link elsewhere. */
-  initialOpen?: "invite-friend" | "share-day" | null;
+  initialOpen?: "invite" | "share-day" | null;
   /** ?item= when it isn't on the board (done before this week), with its sub-items. */
   initialItemExtra: Item[];
   notifications: NotificationView[];
@@ -510,7 +509,6 @@ export function Kanban({
   const [newList, setNewList] = useState({ open: false, spaceId: "" });
   // Kept for this tab, so Invite people and its draft come back after a reload.
   const [inviting, setInviting] = useStoredState("inviting", false, "session");
-  const [invitingFriend, setInvitingFriend] = useStoredState("inviting-friend", false, "session");
   // Share my day: open with who it's for, "" for nobody yet.
   const [sharingDay, setSharingDay] = useStoredState<string | null>("sharing-day", null, "session");
   // Kept for this tab, so Share and its draft come back after a reload.
@@ -692,7 +690,7 @@ export function Kanban({
   const paletteDetail = useItemDetailDialog(detailItems, initialItemId, true);
   // ?open= opens its dialog once, from a link such as Profile's Invites.
   useEffect(() => {
-    if (initialOpen === "invite-friend") setInvitingFriend(true);
+    if (initialOpen === "invite") setInviting(true);
     else if (initialOpen === "share-day") setSharingDay("");
     else return;
     const url = new URL(window.location.href);
@@ -1053,7 +1051,6 @@ export function Kanban({
             onShowArchived={() => switchView("archived")}
             onShowActivity={() => setAudit({ open: true })}
             onInvite={() => setInviting(true)}
-            onInviteFriend={() => setInvitingFriend(true)}
             admin={admin}
           />
         </BoardHeader>
@@ -1283,13 +1280,14 @@ export function Kanban({
           onOpenChange={(open) => setShare((s) => ({ ...s, open }))}
           projectId={share.projectId}
           projectName={share.projectName}
+          invited={joinInvites}
         />
         <InviteDialog
           open={inviting}
           onOpenChange={setInviting}
           groups={inviteGroups}
+          invited={joinInvites}
         />
-        <InviteFriendDialog open={invitingFriend} onOpenChange={setInvitingFriend} invited={friendInvites} />
         <ShareDayDialog
           open={sharingDay !== null}
           person={sharingDay || null}

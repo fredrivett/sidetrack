@@ -224,13 +224,14 @@ describe("invite_people", () => {
         places: [{ list_id: list.id, role: "viewer" }, { space_id: space.id, role: "commenter" }],
       });
       expect(sent.error).toBeNull();
-      expect(sent.data).toEqual(
+      expect(sent.data.emailed).toEqual([]);
+      expect(sent.data.invited).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ list_id: list.id, userId: jo, role: "viewer", status: "pending" }),
           expect.objectContaining({ space_id: space.id, userId: jo, role: "commenter", status: "pending" }),
         ]),
       );
-      expect(sent.data).toHaveLength(4);
+      expect(sent.data.invited).toHaveLength(4);
       // Jo is already invited to Life, so this fails, and Kim isn't invited to Garden either.
       const garden = createProject(db, lorna, { name: "Garden" }, "web");
       const again = await call("invite_people", {
@@ -239,6 +240,28 @@ describe("invite_people", () => {
       });
       expect(again.error).toMatch(/already pending/);
       expect((await call("list_members", { list_id: garden.id })).data).toEqual([]);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("emails a link to join to someone without an account, to the places or to nothing", async () => {
+    const lorna = createTestUser(db, { username: "lorna" });
+    const jo = createTestUser(db, { username: "jo" });
+    const list = createProject(db, lorna, { name: "Life" }, "web");
+    const call = await connectAs(lorna);
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const mixed = await call("invite_people", { people: ["jo", "sam@example.com"], places: [{ list_id: list.id }] });
+      expect(mixed.error).toBeNull();
+      expect(mixed.data.invited).toEqual([expect.objectContaining({ list_id: list.id, userId: jo, status: "pending" })]);
+      expect(mixed.data.emailed).toEqual([expect.objectContaining({ email: "sam@example.com", places: ["Life"] })]);
+
+      const plain = await call("invite_people", { people: ["kim@example.com"] });
+      expect(plain.data).toEqual({ invited: [], emailed: [expect.objectContaining({ email: "kim@example.com", places: [] })] });
+      // Someone with an account needs somewhere to be invited to.
+      expect((await call("invite_people", { people: ["jo"] })).error).toMatch(/on Sidetrack already/);
+      expect(((await call("list_invitations")).data as unknown as { email: string }[]).map((i: { email: string }) => i.email).sort()).toEqual(["kim@example.com", "sam@example.com"]);
     } finally {
       log.mockRestore();
     }

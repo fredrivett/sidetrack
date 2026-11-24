@@ -40,7 +40,10 @@ export type InvitedPlace = InvitePlace & { name: string };
 /** The email addresses among `people` that have no account, to invite to Sidetrack instead (invitations.ts). */
 export function emailsWithoutAccounts(db: Db, people: string[]): string[] {
   const emails = people.map((p) => p.trim()).filter((p) => p.includes("@") && !p.startsWith("@"));
-  return [...new Set(emails.filter((e) => !findUserByHandle(db, e)))];
+  // One address typed in two cases is one person: the first spelling is kept.
+  const byAddress = new Map<string, string>();
+  for (const e of emails) if (!byAddress.has(e.toLowerCase())) byAddress.set(e.toLowerCase(), e);
+  return [...byAddress.values()].filter((e) => !findUserByHandle(db, e));
 }
 
 /**

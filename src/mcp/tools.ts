@@ -142,12 +142,13 @@ import { type InviteKind, notifyInvite, notifyJoinInvite, notifyMentions } from 
 import {
   cancelInvitation,
   INVITE_DAYS,
+  inviteAnyone,
   inviteByEmail,
   listInvitations,
   resendInvitation,
   type SentInvitation,
 } from "@/core/invitations";
-import { collaboratorAccess, invitePeople, type InvitePlace } from "@/core/invites";
+import { collaboratorAccess, type InvitePlace } from "@/core/invites";
 import { getEnv } from "@/lib/env";
 import { formatItemRef, workPrTitle } from "@/lib/itemRef";
 import { askAboutDraft } from "@/lib/itemSuggest";
@@ -2319,8 +2320,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       title: "Invite a member",
       description:
         "Invite an existing user to collaborate on a list (owner only). " +
-        "person is a username (\"alice\" or \"@alice\") or an email. The target " +
-        "must already have an account — there is no invite-by-email-to-sign-up. " +
+        "person is a username (\"alice\" or \"@alice\") or an email. For someone without an account, " +
+        "use invite_people, which emails them a link to join that brings them into the list. " +
         "Lands a pending invite they must accept before they gain access. " +
         "role is what they can do once they join: editor (the default) changes everything except owner-only actions " +
         "(delete, prefix, managing members); commenter sees the list and comments on its items; viewer only sees it. " +
@@ -2499,7 +2500,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Invite someone who has no account, by email, to join Sidetrack. With share_day, it shares the user's day with them as " +
         "Share my day does: their items on the given list_ids and space_ids, within today or week, and optionally the day note's " +
         "words (note) and mood (mood); they see it once they join through the emailed link. Without share_day it only invites them. " +
-        "invite_people refuses people without accounts; use this for them. Check with the user before inviting someone they didn't name.",
+        "To invite them to lists or Spaces with roles instead, use invite_people. Check with the user before inviting someone they didn't name.",
       inputSchema: {
         email: z.string().min(3),
         share_day: z
@@ -2792,8 +2793,10 @@ export function registerTools(server: McpServer, ctx: McpContext) {
     {
       title: "Invite people to several places",
       description:
-        "Invite one or more existing users to several lists and Spaces at once, each place with its own role, " +
+        "Invite one or more people to several lists and Spaces at once, each place with its own role, " +
         "as one invite: all of it lands or none does. people are usernames (\"alice\" or \"@alice\") or emails. " +
+        "An email with no account is emailed a link to join Sidetrack that brings them into the places once they join " +
+        "(listed in emailed, and in list_invitations until then); with no places, that's all it does, and only such emails can be given. " +
         "Each place is a list_id (owner only; role editor, commenter or viewer) or a space_id (admins only; " +
         "role member, commenter or viewer). Each invitee gets one push and one email naming every place; " +
         "people already in a place hear only of that place. Use it instead of invite_member / invite_space_member " +
@@ -2818,7 +2821,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
               }),
             ]),
           )
-          .min(1),
+          .default([]),
       },
     },
     async ({ people, places }) => {
@@ -2834,7 +2837,11 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           resolved.push({ kind: "space", id: p.space_id, role: p.role ?? "member", onlyMine: p.only_mine, within: p.only_within });
         }
       }
-      const { sent, places: invited } = invitePeople(db, userId, { people, places: resolved }, SOURCE);
+      const { invited: toPlaces, joinLinks } = inviteAnyone(db, userId, { people, places: resolved }, SOURCE);
+      for (const link of joinLinks) await sendJoinInvite(link);
+      const emailed = joinLinks.map((l) => ({ invitation_id: l.id, email: l.email, places: l.places }));
+      if (!toPlaces) return json({ invited: [], emailed });
+      const { sent, places: invited } = toPlaces;
       const named = invited.map(({ name, kind, role, onlyMine, within }) => ({ name, kind, role, onlyMine, within }));
       const inviterName = getUserName(db, userId) ?? "Someone";
       const emails = new Set(sent.flatMap((s) => (s.member.email ? [s.member.email] : [])));
@@ -2851,7 +2858,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           places: named,
         });
       }
-      return json(sent.map((s) => ({ [s.kind === "list" ? "list_id" : "space_id"]: s.placeId, ...s.member })));
+      return json({ invited: sent.map((s) => ({ [s.kind === "list" ? "list_id" : "space_id"]: s.placeId, ...s.member })), emailed });
     },
   );
 
@@ -2861,7 +2868,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       title: "Invite to a Space",
       description:
         "Invite an existing user to a Space (admins only). person is a username (\"alice\" or \"@alice\") or an email; " +
-        "they must already have an account. Once they accept they see every list in the Space, and role says what else: " +
+        "for someone without an account, use invite_people, which emails them a link to join that brings them in. Once they accept they see every list in the Space, and role says what else: " +
         "member (the default) edits them, commenter comments on their items, viewer only sees them. " +
         "only_mine (viewer or commenter) shows them only the items assigned to the user. " +
         "Check with the user before inviting someone they didn't name.",
