@@ -366,11 +366,20 @@ export interface SignupNotice {
   username: string | null | undefined;
   /** Where this account falls in signup order: the instance's Nth user. */
   userNumber: number;
+  /** The username of whoever's invite they joined through, if any. */
+  invitedBy?: string | null;
+  /** The instance's base URL, for links to people's rows on /admin. */
+  baseUrl?: string;
+}
+
+/** Someone's username, with a link to their row on /admin when the base URL is known. */
+function adminHandle(username: string, baseUrl: string | undefined): string {
+  return baseUrl ? `@${username} (${baseUrl}/admin#@${username.toLowerCase()})` : `@${username}`;
 }
 
 /** Pure-dependency core for the signup notice; app code uses `notifySignup`. */
 export async function deliverSignupNotificationEmail(
-  { to, name, email, username, userNumber }: SignupNotice,
+  { to, name, email, username, userNumber, invitedBy, baseUrl }: SignupNotice,
   deps: EmailDeps,
 ): Promise<void> {
   await deliverEmail(
@@ -378,9 +387,11 @@ export async function deliverSignupNotificationEmail(
       to,
       subject: `Sidetrack signup #${userNumber}: ${name}`,
       text:
-        `${name} just signed up to Sidetrack.\n\nUser #${userNumber}` +
+        `${name} just signed up to Sidetrack${invitedBy ? `, invited by @${invitedBy}` : ""}.` +
+        `\n\nUser #${userNumber}` +
         `\nEmail: ${email}` +
-        (username ? `\nUsername: @${username}` : ""),
+        (username ? `\nUsername: ${adminHandle(username, baseUrl)}` : "") +
+        (invitedBy ? `\nInvited by: ${adminHandle(invitedBy, baseUrl)}` : ""),
       // Replying to the notice writes to the new user, e.g. to welcome them.
       replyTo: email,
       logLine: `[email] no SMTP_URL or RESEND_API_KEY set — new signup: ${email}`,
@@ -396,12 +407,12 @@ export async function deliverSignupNotificationEmail(
  * and swallowed. Sends nothing when SIGNUP_NOTIFY_EMAIL is unset.
  */
 export async function notifySignup(
-  user: Omit<SignupNotice, "to">,
+  user: Omit<SignupNotice, "to" | "baseUrl">,
 ): Promise<void> {
-  const to = getEnv().SIGNUP_NOTIFY_EMAIL;
+  const { SIGNUP_NOTIFY_EMAIL: to, BETTER_AUTH_URL } = getEnv();
   if (!to) return;
   try {
-    await deliverSignupNotificationEmail({ ...user, to }, liveDeps());
+    await deliverSignupNotificationEmail({ ...user, to, baseUrl: BETTER_AUTH_URL?.replace(/\/$/, "") }, liveDeps());
   } catch (err) {
     console.error("[signup] notification email failed:", err);
   }

@@ -331,6 +331,19 @@ describe("deliverSignupNotificationEmail", () => {
     expect(smtp.calls[0].message.text).toContain("@ada");
     expect(smtp.calls[0].message.text).toContain("User #42");
     expect(smtp.calls[0].message.replyTo).toBe("ada@example.com");
+    expect(smtp.calls[0].message.text).not.toContain("Invited by");
+  });
+
+  it("names who invited them, linking both people to their rows on /admin", async () => {
+    const smtp = smtpStub();
+    await deliverSignupNotificationEmail(
+      { to: "fred@example.com", name: "Ada", email: "ada@example.com", username: "ada", userNumber: 3, invitedBy: "Grace", baseUrl: "https://sidetrack.example" },
+      { env: { ...noEnv, SMTP_URL: "smtp://localhost:1025" }, fetchFn: fetchStub({}).fn, log: () => {}, sendSmtp: smtp.fn },
+    );
+    const { text } = smtp.calls[0].message;
+    expect(text).toContain("Ada just signed up to Sidetrack, invited by @Grace.");
+    expect(text).toContain("Username: @ada (https://sidetrack.example/admin#@ada)");
+    expect(text).toContain("Invited by: @Grace (https://sidetrack.example/admin#@grace)");
   });
 
   it("sets the new user as reply-to over Resend too", async () => {

@@ -233,9 +233,12 @@ export const auth = betterAuth({
           // Joined through an invite: accept it, sharing what it shares. A
           // failure (a link used meanwhile) mustn't fail the sign-up.
           const invite = inviteToken(ctx);
+          let invitedBy: string | null = null;
           if (invite) {
             try {
+              const inviter = findInvitation(db, invite)?.inviter.username ?? null;
               acceptInvitation(db, invite, user.id, "web");
+              invitedBy = inviter;
             } catch (err) {
               console.error("[auth] couldn't accept the invite signed up with:", err);
             } finally {
@@ -255,6 +258,7 @@ export const auth = betterAuth({
             username: typeof user.username === "string" ? user.username : null,
             // Set by the users_number trigger in the insert (migration 0051).
             userNumber: getUserNumber(db, user.id) ?? userCount(),
+            invitedBy,
           });
         },
       },
