@@ -181,9 +181,9 @@ function FoldChevron({ collapsed, className }: { collapsed: boolean; className: 
  * One scroll across every active list, from what's late to what has no date:
  * Overdue, Today, Tomorrow, This week (This weekend on a Saturday or
  * Sunday), Next week, Later, then No date (see agendaSection). Every open
- * item assigned to the viewer or to nobody is on it (isYours), and items
- * finished today stay crossed out in place. Dated sections run by due day, ties keeping board and
- * list order; No date groups its items by list, an undated parent with its
+ * item assigned to the viewer is on it, and on a list nobody else can be
+ * assigned on, every unassigned one too (isYours); items finished today stay crossed out in
+ * place. Dated sections run by due day, ties keeping board and list order; No date groups its items by list, an undated parent with its
  * undated sub-items under it. Overdue sits in a faint red card the viewer can
  * fold away, which stays folded on every device until they open it again.
  * The header's filters don't apply: it's already only the viewer's, by when
@@ -330,17 +330,17 @@ export function AgendaView({
   }
   // Items arrive in board order, then list order; a stable sort by due day
   // keeps that order within a day (and leaves No date as it is).
-  // Only what's the viewer's: theirs, or nobody's and added by them
-  // (isYours), as the greeting reads it.
-  const canOpen = (userId: string, projectId: string) =>
-    (assigneesByProject[projectId] ?? []).some((a) => a.userId === userId);
+  // Only what's the viewer's: theirs, or nobody's on a list nobody else can
+  // be assigned on (isYours), as the greeting reads it.
+  const alone = (projectId: string) =>
+    (assigneesByProject[projectId] ?? []).every((a) => a.userId === viewerId || !a.canEdit);
   // A sub-item sorts by its parent's day when it has none of its own.
   const dueOf = (i: Item) => i.dueDate ?? (i.parentId ? byId.get(i.parentId)?.dueDate : null) ?? "";
   const onAgenda = all
     .filter(
       (i) =>
         sectionOf.has(i.id) &&
-        isYours(i, i.parentId ? byId.get(i.parentId) : undefined, viewerId, canOpen),
+        isYours(i, i.parentId ? byId.get(i.parentId) : undefined, viewerId, alone),
     )
     .sort((a, b) => dueOf(a).localeCompare(dueOf(b)));
   const sections = AGENDA_SECTIONS.map(

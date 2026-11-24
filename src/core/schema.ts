@@ -323,8 +323,8 @@ export const items = sqliteTable(
       .notNull()
       .default(sql`'[]'`),
     // Who added it: the person, or the person whose API key an agent used.
-    // An unassigned item is on its creator's Agenda only (isYours). null for
-    // items from before it was kept that had no audit row to fill it from.
+    // null for items from before it was kept that had no audit row to fill
+    // it from.
     createdBy: text("created_by"),
     // Checklists: a sub-item points at its parent, one level deep (a parent
     // has no parent of its own). Positions are scoped to the parent, so a

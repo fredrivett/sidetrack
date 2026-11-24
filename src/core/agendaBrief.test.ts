@@ -17,13 +17,16 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 
-function board() {
+/** Fred's Home list, which Sam is on too when it's `shared`. */
+function board({ shared = false } = {}) {
   const { db } = createTestDb();
   const fred = createTestUser(db, { username: "fred" });
   const sam = createTestUser(db, { username: "sam" });
   const home = createProject(db, fred, { name: "Home" }, "web");
-  inviteMember(db, fred, home.id, "sam", "web");
-  acceptInvite(db, sam, home.id, "web");
+  if (shared) {
+    inviteMember(db, fred, home.id, "sam", "web");
+    acceptInvite(db, sam, home.id, "web");
+  }
   const add = (
     title: string,
     more: { dueDate?: string; dueFrom?: string; assigneeIds?: string[]; parentId?: string } = {},
@@ -36,69 +39,56 @@ function board() {
 const titles = (list: Array<{ title: string }>) => list.map((i) => i.title);
 
 describe("buildAgendaBrief", () => {
-  it("counts the viewer's and unassigned items, and steps only under a parent that's theirs too", () => {
-    const { fred, sam, add, brief } = board();
+  it("on a shared list, counts the viewer's items, and steps only under a parent that's theirs too", () => {
+    const { fred, sam, add, brief } = board({ shared: true });
     const today = "2026-11-18";
     add("Fred's", { dueDate: today, assigneeIds: [fred] });
     add("Nobody's", { dueDate: today });
     const samsParent = add("Sam's", { dueDate: today, assigneeIds: [sam] });
     add("Loose step under Sam's", { dueDate: today, parentId: samsParent.id });
     add("Fred's step under Sam's", { dueDate: today, parentId: samsParent.id, assigneeIds: [fred] });
-    const shared = add("Nobody's with steps", { dueDate: today });
+    const shared = add("Fred's with steps", { dueDate: today, assigneeIds: [fred] });
     add("Step one", { parentId: shared.id });
     add("Step two", { parentId: shared.id, assigneeIds: [sam] });
 
     const b = brief();
-    expect(titles(b.dueToday)).toEqual([
-      "Fred's",
-      "Nobody's",
-      "Fred's step under Sam's",
-      "Nobody's with steps",
-    ]);
+    // Nobody's isn't Fred's, though he added it: Sam is on the list too.
+    expect(titles(b.dueToday)).toEqual(["Fred's", "Fred's step under Sam's", "Fred's with steps"]);
     // Sam's step isn't Fred's to count.
-    expect(b.dueToday.find((i) => i.title === "Nobody's with steps")?.stepsLeft).toBe(1);
+    expect(b.dueToday.find((i) => i.title === "Fred's with steps")?.stepsLeft).toBe(1);
     expect(b.dueToday.find((i) => i.title === "Fred's step under Sam's")?.parent).toBe("Sam's");
   });
 
-  it("counts an unassigned item only for whoever added it, and a step with its parent", () => {
-    const { db, fred, sam, home, add, brief } = board();
+  it("counts unassigned items only where nobody else can be assigned, whoever added them", () => {
+    const { db, fred, sam, home, add, brief } = board({ shared: true });
     const today = "2026-11-18";
-    const bySam = (title: string, more: { parentId?: string; dueDate?: string } = { dueDate: today }) =>
-      addItem(db, sam, { projectId: home.id, title, ...more }, "web");
+    const bySam = (title: string, more: { parentId?: string; assigneeIds?: string[] } = {}) =>
+      addItem(db, sam, { projectId: home.id, title, dueDate: today, ...more }, "web");
     bySam("Sam's errand");
-    const tidy = add("Tidy flat", { dueDate: today });
+    add("Fred's errand", { dueDate: today });
+    const tidy = add("Tidy flat", { dueDate: today, assigneeIds: [fred] });
     bySam("Kitchen", { parentId: tidy.id });
-    const party = bySam("Sam's party");
-    add("Fred's idea for it", { parentId: party.id });
-    add("Assigned to Fred by Sam", { dueDate: today, assigneeIds: [fred] });
+    bySam("Assigned to Fred by Sam", { assigneeIds: [fred] });
 
-    const b = buildAgendaBrief(db, fred, { now: NOW, timeZone: tz, since: null });
-    expect(titles(b.dueToday)).toEqual(["Tidy flat", "Assigned to Fred by Sam"]);
+    const b = brief();
+    expect(titles(b.dueToday)).toEqual(["Tidy flat", "Kitchen", "Assigned to Fred by Sam"]);
     // Sam's step on Fred's task is part of it.
     expect(b.dueToday[0].stepsLeft).toBe(1);
-    const sams = buildAgendaBrief(db, sam, { now: NOW, timeZone: tz, since: null });
-    expect(titles(sams.dueToday)).toEqual(["Sam's errand", "Sam's party"]);
-    // Fred's step on Sam's task is Sam's to count.
-    expect(sams.dueToday[1].stepsLeft).toBe(1);
-    expect(titles(brief().dueToday)).toEqual(titles(b.dueToday));
+    // Nor are the unassigned ones Sam's, his own included.
+    expect(buildAgendaBrief(db, sam, { now: NOW, timeZone: tz, since: null }).dueToday).toEqual([]);
 
-    // A step Sam adds to a task assigned to Fred is Fred's too.
-    const errand = add("Fred's errand", { dueDate: today, assigneeIds: [fred] });
-    bySam("Bring the receipt", { parentId: errand.id });
-    expect(buildAgendaBrief(db, fred, { now: NOW, timeZone: tz, since: null }).dueToday.at(-1)).toMatchObject({
-      title: "Fred's errand",
-      stepsLeft: 1,
-    });
-
-    // Once Sam can't open the list, nobody is left to see their unassigned
-    // items but the people who can: they count for everyone again.
+    // Once Sam leaves, nobody else can be assigned on the list (Jo only
+    // views it) and everything on it is Fred's.
     removeMember(db, fred, home.id, sam, "web");
+    const jo = createTestUser(db, { username: "jo" });
+    inviteMember(db, fred, home.id, "jo", "web", "viewer");
+    acceptInvite(db, jo, home.id, "web");
     expect(titles(brief().dueToday)).toEqual([
       "Sam's errand",
-      "Tidy flat",
-      "Sam's party",
-      "Assigned to Fred by Sam",
       "Fred's errand",
+      "Tidy flat",
+      "Kitchen",
+      "Assigned to Fred by Sam",
     ]);
   });
 
@@ -119,7 +109,10 @@ describe("buildAgendaBrief", () => {
   });
 
   it("looks back to the last read: what the viewer finished and what slipped meanwhile", () => {
-    const { db, fred, sam, add, brief } = board();
+    const { db, fred, sam, add: addAny, brief } = board({ shared: true });
+    // Fred's, so they count with Sam on the list.
+    const add = (title: string, more: { dueDate?: string; parentId?: string } = {}) =>
+      addAny(title, { assigneeIds: [fred], ...more });
     const since = at("2026-11-16"); // Monday
     const beforeRead = add("Done before the read");
     const mineDone = add("Done since");

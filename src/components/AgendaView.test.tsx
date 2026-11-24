@@ -10,6 +10,7 @@ import {
 } from "@/app/actions";
 import { aiRead } from "./ai-read";
 import type { Greeting } from "@/core/agendaGreeting";
+import type { AssigneeView } from "@/core/members";
 import type { FeedbackAbout } from "./FeedbackDialog";
 import type { Item } from "@/core/schema";
 import { AgendaView } from "./AgendaView";
@@ -104,6 +105,7 @@ function renderAgenda(
   overdueCollapsed = false,
   greet = false,
   onFeedback?: (about: FeedbackAbout) => void,
+  assigneesByProject: Record<string, AssigneeView[]> = {},
 ) {
   const itemsByProject: Record<string, Item[]> = {};
   for (const i of items) (itemsByProject[i.projectId] ??= []).push(i);
@@ -111,7 +113,7 @@ function renderAgenda(
     <AgendaView
       projects={projects}
       itemsByProject={itemsByProject}
-      assigneesByProject={{}}
+      assigneesByProject={assigneesByProject}
       prLinksByItem={{}}
       viewerId="me"
       overdueCollapsed={overdueCollapsed}
@@ -186,20 +188,33 @@ describe("AgendaView", () => {
     }
   });
 
-  it("shows only what's the viewer's or nobody's", () => {
+  it("shows only what's the viewer's, and nobody's where nobody else can be assigned", () => {
     const theirs = item("Their launch", null, { assigneeIds: ["them"] });
-    renderAgenda([
-      item("Mine", "2026-11-14", { assigneeIds: ["me"] }),
-      item("Nobody's", "2026-11-14"),
-      item("Joint", "2026-11-14", { assigneeIds: ["them", "me"] }),
-      item("Theirs", "2026-11-14", { assigneeIds: ["them"] }),
-      theirs,
-      // An unassigned step under their task stays theirs; one assigned to me doesn't.
-      item("Their step", null, { parentId: theirs.id }),
-      item("My step", null, { parentId: theirs.id, assigneeIds: ["me"] }),
-    ]);
-    for (const shown of ["Mine", "Nobody's", "Joint", "My step"]) expect(screen.getByText(shown)).toBeTruthy();
-    for (const hidden of ["Theirs", "Their step"]) expect(screen.queryByText(hidden)).toBeNull();
+    const solo = list("p2", "Solo");
+    const person = (userId: string) => ({ userId, canEdit: true }) as AssigneeView;
+    renderAgenda(
+      [
+        item("Mine", "2026-11-14", { assigneeIds: ["me"] }),
+        item("Nobody's", "2026-11-14"),
+        item("Nobody's on my own list", "2026-11-14", { projectId: "p2" }),
+        item("Joint", "2026-11-14", { assigneeIds: ["them", "me"] }),
+        item("Theirs", "2026-11-14", { assigneeIds: ["them"] }),
+        theirs,
+        // An unassigned step under their task stays theirs; one assigned to me doesn't.
+        item("Their step", null, { parentId: theirs.id }),
+        item("My step", null, { parentId: theirs.id, assigneeIds: ["me"] }),
+      ],
+      [home, solo],
+      false,
+      false,
+      undefined,
+      // Someone who only views my own list can't be assigned its items.
+      { p1: [person("me"), person("them")], p2: [person("me"), { ...person("viewer"), canEdit: false }] },
+    );
+    for (const shown of ["Mine", "Nobody's on my own list", "Joint", "My step"]) {
+      expect(screen.getByText(shown)).toBeTruthy();
+    }
+    for (const hidden of ["Nobody's", "Theirs", "Their step"]) expect(screen.queryByText(hidden)).toBeNull();
     cleanup();
 
     // Only theirs: nothing to do, not a filter hiding things.
