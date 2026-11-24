@@ -7,14 +7,22 @@ vi.mock("sonner", () => ({ toast }));
 
 const reload = vi.fn();
 let live: () => Promise<Response>;
+// Better Auth's get-session: the session, or null signed out.
+let session: unknown;
 
 beforeEach(() => {
   // A fresh module each time: once it learns it's out of date, it stays so.
   vi.resetModules();
   reload.mockClear();
   toast.mockClear();
+  session = { user: { id: "u1" } };
   vi.stubGlobal("location", { ...location, reload });
-  vi.stubGlobal("fetch", vi.fn(() => live()));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string) =>
+      url === "/api/auth/get-session" ? Promise.resolve(Response.json(session)) : live(),
+    ),
+  );
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -55,7 +63,8 @@ describe("refreshIfCurrent", () => {
     expect(router.refresh).toHaveBeenCalledOnce();
   });
 
-  // Registers a visibility listener that outlives the module, so it's last.
+  // These register a visibility listener that outlives the module, so
+  // they're last, and only the first checks the reload.
   it("on a newer deploy, says so instead, and reloads once hidden with nothing in progress", async () => {
     const { refreshIfCurrent } = await import("./LatestDeploy");
     live = server("bbb");
@@ -83,5 +92,32 @@ describe("refreshIfCurrent", () => {
 
     setVisibility("hidden");
     expect(reload).toHaveBeenCalledOnce();
+  });
+
+  // Signed out, there's nothing of theirs on the page to reload for, but it
+  // still moves over once hidden.
+  it("on a newer deploy, doesn't say so to someone signed out", async () => {
+    const { refreshIfCurrent } = await import("./LatestDeploy");
+    live = server("bbb");
+    session = null;
+    const listen = vi.spyOn(document, "addEventListener");
+    const router = { refresh: vi.fn() };
+    await refreshIfCurrent(router);
+    expect(router.refresh).not.toHaveBeenCalled();
+    expect(toast).not.toHaveBeenCalled();
+    expect(listen).toHaveBeenCalledWith("visibilitychange", expect.any(Function));
+    listen.mockRestore();
+  });
+
+  // Only a clear "signed out" hides it: a failed check mustn't hide it from
+  // someone signed in.
+  it("on a newer deploy, still says so when the session check fails", async () => {
+    const { refreshIfCurrent } = await import("./LatestDeploy");
+    live = server("bbb");
+    vi.mocked(fetch).mockImplementation(async (url) =>
+      url === "/api/auth/get-session" ? new Response("Bad gateway", { status: 502 }) : live(),
+    );
+    await refreshIfCurrent({ refresh: vi.fn() });
+    expect(toast).toHaveBeenCalledOnce();
   });
 });
