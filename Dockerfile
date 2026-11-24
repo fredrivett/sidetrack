@@ -37,7 +37,8 @@ ENV NEXT_PUBLIC_POSTHOG_KEY=$NEXT_PUBLIC_POSTHOG_KEY
 # - The commit SHA: inlined as NEXT_PUBLIC_RELEASE, which tags every PostHog
 #   capture (the deploy marker). Railway provides RAILWAY_GIT_COMMIT_SHA.
 # - The PostHog personal API key, project ID and API host: enable the
-#   source-map upload.
+#   source-map upload. The project ID and host are also read at runtime, for
+#   /admin's PostHog links, from the runtime environment, not these ARGs.
 # - The Server Actions encryption key: Server Action IDs hash it, and without
 #   one `next build` makes a fresh key (each Docker build starts with no
 #   .next/cache), so every deploy renamed every action and open tabs failed

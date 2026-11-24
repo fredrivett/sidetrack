@@ -158,6 +158,17 @@ describe("parseServerEnv", () => {
     expect(parseServerEnv({}, dev).ADMIN_USER_IDS).toEqual([]);
   });
 
+  it("links to the PostHog project only with its id, on the API host", () => {
+    const dev = { nodeEnv: "development", nextPhase: undefined };
+    expect(parseServerEnv({ POSTHOG_PROJECT_ID: "123" }, dev).POSTHOG_PROJECT_URL).toBe("https://us.posthog.com/project/123");
+    expect(
+      parseServerEnv({ POSTHOG_PROJECT_ID: "123", POSTHOG_API_HOST: "https://eu.posthog.com/" }, dev).POSTHOG_PROJECT_URL,
+    ).toBe("https://eu.posthog.com/project/123");
+    // A blank host, as an empty Docker ARG or `${VAR:-}` gives, keeps the default.
+    expect(parseServerEnv({ POSTHOG_PROJECT_ID: "123", POSTHOG_API_HOST: " " }, dev).POSTHOG_PROJECT_URL).toBe("https://us.posthog.com/project/123");
+    expect(parseServerEnv({ POSTHOG_API_HOST: "https://eu.posthog.com" }, dev).POSTHOG_PROJECT_URL).toBeUndefined();
+  });
+
   it("uploads backups only with every setting and a well-formed key", () => {
     const dev = { nodeEnv: "development", nextPhase: undefined };
     const key = Buffer.alloc(32, 9);
