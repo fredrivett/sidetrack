@@ -19,7 +19,7 @@ import type { Item, ItemPrLink, OnlyWithin } from "@/core/schema";
 import type { SeenWrapUp } from "@/core/dayWrapUps";
 import type { DayTag } from "@/lib/dayTags";
 import { nestItems } from "@/lib/itemTree";
-import { AGENDA_SECTIONS, agendaSection, type AgendaSection, weekday } from "@/lib/time";
+import { addDays, AGENDA_SECTIONS, agendaSection, type AgendaSection, weekday } from "@/lib/time";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -86,6 +86,28 @@ const NO_ONE: MyDay = { within: "today", day: "", startsAt: 0, today: "", note: 
 const dayName = (day: string) =>
   day ? new Date(`${day}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }) : "";
 
+/**
+ * What of a day's items is in it, by the sharer's clock: open and due by
+ * its last day (overdue too; a span from its first day), or finished since
+ * it began. An undated sub-item is due when its item is. On the sharer's
+ * own lists the server sends an item's whole checklist once any of it is in
+ * the day; a step due another day, or finished before it, stays off the card. Its item still
+ * shows, to hold the steps that are in it, but counts only when it's in
+ * the day itself.
+ */
+function dayItems(items: Item[], d: { within: OnlyWithin; day: string; today: string; startsAt: number }) {
+  const last = d.within === "week" ? addDays(d.day, 6) : d.today;
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const inDay = items.filter((i) => {
+    if (i.completedAt !== null) return i.completedAt >= d.startsAt;
+    const parent = i.parentId ? byId.get(i.parentId) : undefined;
+    const due = i.dueDate ? i : parent?.dueDate ? parent : null;
+    return due !== null && (due.dueFrom ?? due.dueDate ?? "") <= last;
+  });
+  const shown = new Set(inDay.flatMap((i) => [i.id, ...(i.parentId ? [i.parentId] : [])]));
+  return { all: items, inDay, shown };
+}
+
 /** "Today · mood and note", what someone sees of the viewer's day. */
 function seesWords(s: DayShare): string {
   if (s.pending) return "Invite pending";
@@ -137,9 +159,10 @@ export function CheckInsView({
   // Theirs on the lists shared for it, then on the lists the viewer sees whole.
   const itemsOf = (c: CheckIn) => [...c.lists.flatMap((l) => itemsByProject[l.id] ?? []), ...byIds(c.alsoItemIds)];
   const theirs = checkIns.flatMap(itemsOf);
-  const mine = byIds(myDay.itemIds);
+  const myItems = byIds(myDay.itemIds);
+  const mine = dayItems(myItems, myDay);
   // An item on more than one day (a joint one) once.
-  const all = [...new Map([...theirs, ...mine].map((i) => [i.id, i])).values()];
+  const all = [...new Map([...theirs, ...myItems].map((i) => [i.id, i])).values()];
   const projectOf = new Map([
     ...projectsById,
     ...checkIns.flatMap((c) => c.lists.map((l) => [l.id, l] as const)),
@@ -156,11 +179,16 @@ export function CheckInsView({
   // Grouped by when they're due, by the sharer's clock, as the Brief groups
   // them (agendaSection); a group goes where its soonest open item does,
   // and once it's finished, under Done, or Cancelled if it was cancelled.
-  const groups = (items: Item[], many: boolean, today: string) =>
+  // Only the groups and steps in the day (`shown`, dayItems) show, nested
+  // from all the items sent, so a checklist's count still covers every step.
+  const groups = ({ all: items, shown }: ReturnType<typeof dayItems>, today: string) => {
+    const many = new Set(items.filter((i) => shown.has(i.id)).map((i) => i.projectId)).size > 1;
     // Someone else's item holding sub-items of theirs shows by its title alone.
-    nestItems(withHiddenParents(items, titles)).map((group) => {
+    return nestItems(withHiddenParents(items, titles))
+      .filter((g) => shown.has(g.id))
+      .map((group) => {
       const list = projectOf.get(group.projectId);
-      const open = [group, ...group.children].filter((i) => i.completedAt === null && !isHiddenParent(i));
+      const open = [group, ...group.children.filter((c) => shown.has(c.id))].filter((i) => i.completedAt === null && !isHiddenParent(i));
       const soonest = open
         .flatMap((i) => {
           // An undated sub-item is planned with its dated item.
@@ -182,10 +210,12 @@ export function CheckInsView({
             viewerId={viewerId}
             prLinksByItem={prLinksByItem}
             onOpenDetail={detail.openDetail}
+            shown={shown}
           />
         ),
       };
     });
+  };
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -200,10 +230,9 @@ export function CheckInsView({
             note={myDay.note}
             mood={myDay.mood}
             wrapUp={myDay.wrapUp}
-            items={mine}
+            items={mine.inDay}
             today={myDay.today}
-            startsAt={myDay.startsAt}
-            groups={groups(mine, new Set(mine.map((i) => i.projectId)).size > 1, myDay.today)}
+            groups={groups(mine, myDay.today)}
             empty={myDay.shares.length ? "Nothing of yours is due in it yet." : "Share your day and what’s due on it shows here, as they see it."}
             footer={
               <div className="space-y-1 border-t border-stone-100 px-4 py-3 dark:border-stone-800/60">
@@ -242,7 +271,7 @@ export function CheckInsView({
           ) : (
             <div className="space-y-4">
               {checkIns.map((c) => {
-                const items = itemsOf(c);
+                const day = dayItems(itemsOf(c), c);
                 const span = c.within === "today" ? "day" : "week";
                 return (
                   <DayCard
@@ -255,10 +284,9 @@ export function CheckInsView({
                     note={c.note}
                     mood={c.mood}
                     wrapUp={c.wrapUp}
-                    items={items}
+                    items={day.inDay}
                     today={c.today}
-                    startsAt={c.startsAt}
-                    groups={groups(items, new Set(items.map((i) => i.projectId)).size > 1, c.today)}
+                    groups={groups(day, c.today)}
                     empty={`Nothing on ${c.within === "today" ? "today" : "this week"} yet.`}
                     footer={
                       c.username && !sharesBack.has(c.personId) ? (
@@ -312,7 +340,6 @@ function DayCard({
   wrapUp,
   items,
   today,
-  startsAt,
   groups,
   empty,
   footer,
@@ -327,20 +354,18 @@ function DayCard({
   mood: DayTag[];
   /** How the day went, once it's closed: shown under the note, never over it. */
   wrapUp: SeenWrapUp | null;
+  /** The items in the day, which its progress counts (dayItems). */
   items: Item[];
   today: string;
-  /** When the day (or week) began: items finished before it aren't part of its progress. */
-  startsAt: number;
   /** Each item group, by the section it's in: null once it's closed, done or cancelled. */
   groups: { section: AgendaSection | null; due: string; cancelled: boolean; node: ReactNode }[];
   empty: string;
   footer: ReactNode;
 }) {
-  // Every item in it counts, sub-items as much as their items, except ones
-  // finished before the day began: a step done last week isn't today's.
+  // Every item in the day counts (dayItems), sub-items as much as their items.
   // Cancelled items are listed, but left out of progress, as on the board:
   // they weren't done, and cancelling one shouldn't keep the day from All done.
-  const planned = items.filter((i) => !i.cancelled && (i.completedAt === null || i.completedAt >= startsAt));
+  const planned = items.filter((i) => !i.cancelled);
   const done = planned.filter((i) => i.completedAt !== null).length;
   // Each section runs by due day, ties keeping list order (as the Brief does).
   const sections = AGENDA_SECTIONS.map(

@@ -53,9 +53,19 @@ const item = (title: string, more: Partial<Item> = {}): Item => ({
 const doneOn = (day: number) => ({ completedAt: new Date(2026, 10, day, 9).getTime() });
 
 describe("CheckInsView", () => {
-  it("counts each item and sub-item in the day's progress, leaving out ones finished before it", () => {
+  it("shows and counts each item and sub-item in the day, leaving out steps due another day or finished before it", () => {
     const plan = item("Sort the hall");
+    // Due at the weekend, with one step due today: it holds that step, uncounted.
+    const pile = item("Sort the storage pile", { dueFrom: "2026-11-28", dueDate: "2026-11-29" });
     const items = [
+      pile,
+      item("Make a list", { parentId: pile.id }),
+      item("Look at storage", { parentId: pile.id, dueDate: null }),
+      item("Due next week", { parentId: plan.id, dueDate: "2026-12-01" }),
+      // Undated under an item due today, overdue, or a span begun today: in it.
+      item("Undated step", { parentId: plan.id, dueDate: null }),
+      item("Late errand", { dueDate: "2026-11-20" }),
+      item("Span", { dueFrom: "2026-11-24", dueDate: "2026-11-30" }),
       plan,
       item("Done last week", { parentId: plan.id, ...doneOn(17) }),
       item("Done today", { parentId: plan.id, ...doneOn(24) }),
@@ -90,8 +100,16 @@ describe("CheckInsView", () => {
       />,
     );
     const day = within(screen.getByRole("region", { name: "Your day" }));
-    // The item, its two steps still in today, and the washing: two of them done.
-    expect(day.getByText("2 of 4 done")).toBeTruthy();
-    expect(day.getByRole("progressbar")).toHaveProperty("ariaValueMax", "4");
+    // The hall and its three steps in today, the washing, the overdue item,
+    // the span, and the pile's step due today: two of them done.
+    expect(day.getByText("2 of 8 done")).toBeTruthy();
+    expect(day.getByRole("progressbar")).toHaveProperty("ariaValueMax", "8");
+    for (const shown of ["Sort the storage pile", "Make a list", "Done today", "Still to do", "Undated step", "Late errand", "Span"]) {
+      expect(day.getByText(shown)).toBeTruthy();
+    }
+    // The pile's checklist still counts both its steps, though one is off the card.
+    expect(day.getByLabelText(/checklist, 0 of 2 done/)).toBeTruthy();
+    // Undated under a weekend item, due next week, or done last week: not today's.
+    for (const hidden of ["Look at storage", "Due next week", "Done last week"]) expect(day.queryByText(hidden)).toBeNull();
   });
 });
