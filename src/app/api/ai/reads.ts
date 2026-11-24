@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { type Greeting, writtenGreetingFor } from "@/core/agendaGreeting";
 import { listIconContext } from "@/core/autoEmoji";
+import { getDayTags } from "@/core/dayNotes";
 import { getWrapUp } from "@/core/dayWrapUps";
 import { listAccessById } from "@/core/access";
 import type { Db } from "@/core/db";
@@ -75,9 +76,14 @@ export const AI_READS = {
       undefined,
       now,
     );
-    // How today went, once they've closed it, for the panel under it. As
-    // it is now, not as the greeting was written.
-    const withWrapUp: Greeting = { ...greeting, wrapUp: getWrapUp(db, userId, dayOf(Date.now(), timeZone)) };
+    // How today went, once they've closed it, for the panel under it, and
+    // their own tags for its note. As they are now, not as the greeting was
+    // written.
+    const withWrapUp: Greeting = {
+      ...greeting,
+      wrapUp: getWrapUp(db, userId, dayOf(Date.now(), timeZone)),
+      dayTags: getDayTags(db, userId).own,
+    };
     return withWrapUp;
   }),
 
@@ -221,11 +227,14 @@ export const AI_READS = {
     },
   ),
 
-  /** The day-note tags that fit what's being typed about today, to suggest. [] when AI is off. */
-  dayTags: read(z.object({ text }), async ({ text: typed }, { fetch }) => {
-    const apiKey = getEnv().TYPESAFE_API_KEY;
+  /**
+   * The day-note tags that fit what's being typed about today, to suggest:
+   * presets, the viewer's own, or new ones. [] when AI is off.
+   */
+  dayTags: read(z.object({ text }), async ({ text: typed }, { db, userId, fetch }) => {
+    const apiKey = getEnv().ANTHROPIC_API_KEY;
     if (!apiKey || !typed.trim()) return [];
-    return suggestDayTags(typed.trim(), apiKey, fetch);
+    return suggestDayTags(typed.trim(), getDayTags(db, userId), apiKey, fetch);
   }),
 
   /**

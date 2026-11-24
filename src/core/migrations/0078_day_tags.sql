@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `day_tags` text;

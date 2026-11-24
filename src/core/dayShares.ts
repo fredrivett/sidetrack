@@ -14,7 +14,7 @@ import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { splitDayNote } from "../lib/dayTags";
 import { dayOf, nextDayStartIn, startOfDayIn, startOfWeekIn } from "../lib/time";
 import { hasProjectAccess, hasWholeListAccess, inDayOf } from "./access";
-import { getDayNote } from "./dayNotes";
+import { getDayNote, getDayTags } from "./dayNotes";
 import { getWrapUp, seenWrapUp } from "./dayWrapUps";
 import { listInvitations } from "./invitations";
 import { validZone } from "./db-functions";
@@ -534,7 +534,7 @@ export function myDayView(db: Db, userId: string, now = Date.now()) {
   const today = dayOf(now, zone);
   const startsAt = within === "week" ? startOfWeekIn(zone, now) : startOfDayIn(zone, now);
   const text = seen && (seen.note || seen.mood) ? getDayNote(db, userId, today) : null;
-  const { tags, rest } = text ? splitDayNote(text) : { tags: [], rest: "" };
+  const { tags, rest } = text ? splitDayNote(text, getDayTags(db, userId).own) : { tags: [], rest: "" };
   return {
     within,
     day: seen ? dayOf(startsAt, zone) : "",

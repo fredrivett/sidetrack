@@ -7,7 +7,7 @@
 // with someone and chooses to include its words or its mood (sharedDayNote).
 
 import { and, eq, isNotNull, or } from "drizzle-orm";
-import { type DayTag, splitDayNote } from "../lib/dayTags";
+import { cleanDayTag, dayTagsFor, MAX_OWN_DAY_TAGS, splitDayNote } from "../lib/dayTags";
 import { cleanNote } from "../lib/greetingPrefs";
 import { dayOf } from "../lib/time";
 import { users } from "./auth-schema";
@@ -51,6 +51,64 @@ export function setDayNote(db: Db, userId: string, day: string, raw: string): st
   return text;
 }
 
+/** The user's own day tags, kept from Claude's suggestions, and the ones they took off. */
+export interface MyDayTags {
+  own: string[];
+  removed: string[];
+}
+
+// Taken off, remembered at most, so Claude stops suggesting them; the oldest go first.
+const MAX_REMOVED = 50;
+
+/** The user's own day tags, read leniently: anything that isn't a tag is dropped. */
+export function getDayTags(db: Db, userId: string): MyDayTags {
+  const raw = db.select({ tags: users.dayTags }).from(users).where(eq(users.id, userId)).get()?.tags as
+    | { own?: unknown; removed?: unknown }
+    | null
+    | undefined;
+  const read = (v: unknown) =>
+    Array.isArray(v) ? [...new Set(v.map((t) => (typeof t === "string" ? cleanDayTag(t) : null)).filter((t) => t !== null))] : [];
+  return { own: read(raw?.own).slice(0, MAX_OWN_DAY_TAGS), removed: read(raw?.removed) };
+}
+
+function writeDayTags(db: Db, userId: string, tags: MyDayTags): void {
+  // audit-exempt: tags for one person's own note, seen only through a day
+  // share they opted its mood into, like the note itself.
+  db.update(users).set({ dayTags: tags }).where(eq(users.id, userId)).run();
+}
+
+/**
+ * Keep `added` as the user's own tags, as they save a note with them: each
+ * that's a tag (cleanDayTag) and not a preset or theirs already, while they
+ * have fewer than MAX_OWN_DAY_TAGS. Returns their own tags as kept.
+ */
+export function keepDayTags(db: Db, userId: string, added: readonly string[]): string[] {
+  const mine = getDayTags(db, userId);
+  const own = [...mine.own];
+  for (const raw of added) {
+    const tag = cleanDayTag(raw);
+    if (!tag || own.length >= MAX_OWN_DAY_TAGS || dayTagsFor(own).some((t) => t.toLowerCase() === tag.toLowerCase())) continue;
+    own.push(tag);
+  }
+  if (own.length === mine.own.length) return own;
+  const removed = mine.removed.filter((r) => !own.some((t) => t.toLowerCase() === r.toLowerCase()));
+  writeDayTags(db, userId, { own, removed });
+  return own;
+}
+
+/**
+ * Take `tag` off the user's own tags, and remember it so Claude doesn't
+ * suggest it again. Returns their own tags as kept.
+ */
+export function removeDayTag(db: Db, userId: string, tag: string): string[] {
+  const mine = getDayTags(db, userId);
+  const gone = mine.own.find((t) => t.toLowerCase() === tag.trim().toLowerCase());
+  if (!gone) return mine.own;
+  const own = mine.own.filter((t) => t !== gone);
+  writeDayTags(db, userId, { own, removed: [...mine.removed.filter((r) => r !== gone), gone].slice(-MAX_REMOVED) });
+  return own;
+}
+
 /**
  * What `viewerId` may see of `personId`'s note for their own today, and of
  * how it went once they close it (dayWrapUps.ts): the words, the mood
@@ -63,7 +121,7 @@ export function sharedDayNote(
   viewerId: string,
   personId: string,
   now = Date.now(),
-): { note: string | null; mood: DayTag[]; wrapUp: SeenWrapUp | null } {
+): { note: string | null; mood: string[]; wrapUp: SeenWrapUp | null } {
   const shares = [projectMembers, spaceMembers].flatMap((m) =>
     db
       .select({ note: m.shareNote, mood: m.shareMood })
@@ -94,6 +152,6 @@ export function sharedDayNote(
   const wrapUp = seenWrapUp(getWrapUp(db, personId, day), words, mood);
   const text = getDayNote(db, personId, day);
   if (!text) return { note: null, mood: [], wrapUp };
-  const { tags, rest } = splitDayNote(text);
+  const { tags, rest } = splitDayNote(text, getDayTags(db, personId).own);
   return { note: words && rest ? rest : null, mood: mood ? tags : [], wrapUp };
 }

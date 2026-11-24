@@ -40,6 +40,8 @@ export interface Greeting {
   aiOff?: true;
   /** How today went, once it's closed (dayWrapUps.ts), as it is now: the greeting read adds it. */
   wrapUp?: WrapUp | null;
+  /** The viewer's own tags for their note (dayNotes.ts), to read it and pick from: the greeting read adds them. */
+  dayTags?: string[];
 }
 
 /** How a greeting was worked out: what it looked at and what it decided. */

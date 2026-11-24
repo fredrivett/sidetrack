@@ -194,7 +194,7 @@ import {
   stopDayShare as stopDayShareCore,
   updateDayShare as updateDayShareCore,
 } from "@/core/dayShares";
-import { setDayNote as setDayNoteCore } from "@/core/dayNotes";
+import { keepDayTags, removeDayTag as removeDayTagCore, setDayNote as setDayNoteCore } from "@/core/dayNotes";
 import { closeDay as closeDayCore } from "@/core/dayWrapUps";
 import {
   addFromSource as addFromSourceCore,
@@ -1155,14 +1155,23 @@ export async function setAgendaReadAction() {
 
 /**
  * The signed-in user's note for today, in their time zone; "" removes it.
- * Returns it as kept. No refresh: only their greeting reads it, and it asks again.
+ * `added` are suggested tags it has that aren't theirs yet, kept as their
+ * own first, so the note reads back with them. Returns the note as kept and
+ * their own tags. No refresh: only their greeting reads it, and it asks again.
  */
-export async function setDayNoteAction(text: string) {
+export async function setDayNoteAction(text: string, added: string[] = []) {
   const userId = await requireUserId();
   const { db } = getDb();
   const timeZone = getTimeZoneCore(db, userId);
   if (!timeZone) throw new Error("time zone not known yet");
-  return setDayNoteCore(db, userId, dayOf(Date.now(), timeZone), String(text));
+  const dayTags = keepDayTags(db, userId, Array.isArray(added) ? added.slice(0, 10).map(String) : []);
+  return { note: setDayNoteCore(db, userId, dayOf(Date.now(), timeZone), String(text)), dayTags };
+}
+
+/** Take one of the signed-in user's own day tags off. Returns their own tags as kept. No refresh, as for the note. */
+export async function removeDayTagAction(tag: string) {
+  const userId = await requireUserId();
+  return removeDayTagCore(getDb().db, userId, String(tag));
 }
 
 /**
