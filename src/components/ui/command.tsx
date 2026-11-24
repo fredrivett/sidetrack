@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Command as CommandPrimitive, useCommandState } from "cmdk"
+import { Command as CommandPrimitive, defaultFilter, useCommandState } from "cmdk"
 import { cn } from "@/lib/utils"
 
 import {
@@ -193,5 +193,6 @@ export {
   CommandItem,
   CommandShortcut,
   CommandSeparator,
+  defaultFilter,
   useCommandState,
 }

@@ -18,7 +18,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { type CSSProperties, type ReactNode, useEffect, useRef, useSyncExternalStore } from "react";
+import { type ComponentProps, type CSSProperties, type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Item } from "@/core/schema";
 import { formatItemRef } from "@/lib/itemRef";
 import {
@@ -29,7 +29,7 @@ import {
   CommandItem,
   CommandList,
   CommandShortcut,
-  useCommandState,
+  defaultFilter,
 } from "@/components/ui/command";
 import { Kbd } from "@/components/ui/kbd";
 import {
@@ -137,7 +137,7 @@ export function CommandPalette({
             focused while the sheet is still sliding in from below; without
             this cap the sheet keeps its full height and the pan pushes its
             top, search field and all, off the screen. */}
-        <Command
+        <SearchCommand
           className="min-h-0 flex-1 bg-transparent in-data-[slot=drawer-content]:max-h-[calc(var(--visible-height)-3.25rem)] in-data-[slot=drawer-content]:pb-2"
           style={
             visibleHeight === undefined
@@ -145,70 +145,77 @@ export function CommandPalette({
               : ({ "--visible-height": `${visibleHeight}px` } as CSSProperties)
           }
         >
-          {/* Uncontrolled: cmdk keeps the search, and it unmounts with the
-              dialog, so every way of closing (Esc, ⌘K, a swipe, a pick)
-              clears it. */}
-          <CommandInput ref={searchRef} placeholder="Search commands, lists, items…" />
-          <ReportSearch onSearch={onSearch} />
-          {/* In the sheet the list takes whatever height the sheet has left,
-              which already sits above the on-screen keyboard. */}
-          <CommandList className="max-h-[min(24rem,60dvh)] in-data-[slot=drawer-content]:max-h-none in-data-[slot=drawer-content]:min-h-0 in-data-[slot=drawer-content]:flex-1">
-            <CommandEmpty>No matches.</CommandEmpty>
-            <CommandGroup heading="Commands">
-              {commands.map((c) => (
-                <CommandItem key={c.label} value={c.label} onSelect={() => run(c.action)}>
-                  {c.icon}
-                  {c.label}
-                  {/* Key hints mean nothing on a phone. */}
-                  {c.shortcut && (
-                    <CommandShortcut className="in-data-[slot=drawer-content]:hidden">{c.shortcut}</CommandShortcut>
-                  )}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-            <CommandGroup heading="Lists">
-              {lists.map((list) => (
-                <CommandItem
-                  key={list.id}
-                  // Values must be unique; the prefix keeps same-named lists apart.
-                  value={`${list.name} ${list.refPrefix}`}
-                  onSelect={() => run(() => onOpenList(list.id))}
-                >
-                  <ProjectIcon
-                    icon={list.icon}
-                    homepageUrl={list.homepageUrl}
-                    name={list.name}
-                    size={16}
-                  />
-                  <span className="truncate">{list.name}</span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-            <WhenSearching>
-              <ItemResults
-                lists={lists}
-                itemsByProject={itemsByProject}
-                onOpenItem={(item) => run(() => onOpenItem(item))}
+          {(search, setSearch) => (
+            <>
+              <CommandInput
+                ref={searchRef}
+                value={search}
+                onValueChange={setSearch}
+                placeholder="Search commands, lists, items…"
               />
-            </WhenSearching>
-          </CommandList>
-          {/* Keyboard hints; phones have no keyboard to hint at. */}
-          <div className="flex items-center justify-end gap-3 border-t px-2 pt-2 pb-1 text-xs text-muted-foreground in-data-[slot=drawer-content]:hidden">
-            <span className="flex items-center gap-1">
-              <Kbd>↑</Kbd>
-              <Kbd>↓</Kbd>
-              to move
-            </span>
-            <span className="flex items-center gap-1">
-              <Kbd>↵</Kbd>
-              to open
-            </span>
-            <span className="flex items-center gap-1">
-              <Kbd>esc</Kbd>
-              to close
-            </span>
-          </div>
-        </Command>
+              <ReportSearch search={search} onSearch={onSearch} />
+              {/* In the sheet the list takes whatever height the sheet has left,
+                  which already sits above the on-screen keyboard. */}
+              <CommandList className="max-h-[min(24rem,60dvh)] in-data-[slot=drawer-content]:max-h-none in-data-[slot=drawer-content]:min-h-0 in-data-[slot=drawer-content]:flex-1">
+                <CommandEmpty>No matches.</CommandEmpty>
+                <CommandGroup heading="Commands">
+                  {commands.map((c) => (
+                    <CommandItem key={c.label} value={c.label} onSelect={() => run(c.action)}>
+                      {c.icon}
+                      {c.label}
+                      {/* Key hints mean nothing on a phone. */}
+                      {c.shortcut && (
+                        <CommandShortcut className="in-data-[slot=drawer-content]:hidden">{c.shortcut}</CommandShortcut>
+                      )}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+                <CommandGroup heading="Lists">
+                  {lists.map((list) => (
+                    <CommandItem
+                      key={list.id}
+                      // Values must be unique; the prefix keeps same-named lists apart.
+                      value={`${list.name} ${list.refPrefix}`}
+                      onSelect={() => run(() => onOpenList(list.id))}
+                    >
+                      <ProjectIcon
+                        icon={list.icon}
+                        homepageUrl={list.homepageUrl}
+                        name={list.name}
+                        size={16}
+                      />
+                      <span className="truncate">{list.name}</span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+                {search.trim() !== "" && (
+                  <ItemResults
+                    search={search}
+                    lists={lists}
+                    itemsByProject={itemsByProject}
+                    onOpenItem={(item) => run(() => onOpenItem(item))}
+                  />
+                )}
+              </CommandList>
+              {/* Keyboard hints; phones have no keyboard to hint at. */}
+              <div className="flex items-center justify-end gap-3 border-t px-2 pt-2 pb-1 text-xs text-muted-foreground in-data-[slot=drawer-content]:hidden">
+                <span className="flex items-center gap-1">
+                  <Kbd>↑</Kbd>
+                  <Kbd>↓</Kbd>
+                  to move
+                </span>
+                <span className="flex items-center gap-1">
+                  <Kbd>↵</Kbd>
+                  to open
+                </span>
+                <span className="flex items-center gap-1">
+                  <Kbd>esc</Kbd>
+                  to close
+                </span>
+              </div>
+            </>
+          )}
+        </SearchCommand>
       </ResponsiveDialogContent>
     </ResponsiveDialog>
   );
@@ -226,9 +233,25 @@ function subscribeVisualViewport(onChange: () => void) {
   return () => vv?.removeEventListener("resize", onChange);
 }
 
+/**
+ * cmdk's root, with the search kept here rather than by cmdk, so the item
+ * results can be worked out from it as it's typed: they're then in place by
+ * the time cmdk scores what it has and picks the first to highlight. Inside
+ * the dialog, so it unmounts with it and every way of closing (Esc, ⌘K, a
+ * swipe, a pick) clears the search.
+ */
+function SearchCommand({
+  children,
+  ...props
+}: Omit<ComponentProps<typeof Command>, "children"> & {
+  children: (search: string, setSearch: (search: string) => void) => ReactNode;
+}) {
+  const [search, setSearch] = useState("");
+  return <Command {...props}>{children(search, setSearch)}</Command>;
+}
+
 /** Passes the search up once typing pauses. */
-function ReportSearch({ onSearch }: { onSearch: (search: string) => void }) {
-  const search = useCommandState((state) => state.search);
+function ReportSearch({ search, onSearch }: { search: string; onSearch: (search: string) => void }) {
   useEffect(() => {
     const timer = setTimeout(() => onSearch(search), 200);
     return () => clearTimeout(timer);
@@ -236,41 +259,50 @@ function ReportSearch({ onSearch }: { onSearch: (search: string) => void }) {
   return null;
 }
 
-/** Renders its children only once something is typed into the palette. */
-function WhenSearching({ children }: { children: ReactNode }) {
-  const searching = useCommandState((state) => state.search.trim() !== "");
-  return searching ? children : null;
-}
+/** How many items the palette shows for a search, best first. */
+const ITEM_RESULTS = 30;
 
 /**
- * The board's items as palette results. Its own component, inside
- * WhenSearching, so the palette works them out only while searching, not on
- * every render of the board behind it.
+ * The board's items as palette results. Its own component, rendered only
+ * while searching, so the palette works them out only then, not on every
+ * render of the board behind it. Only the best matches: scored here as
+ * cmdk would, since cmdk scores, sorts and moves every option it's given on
+ * each key, which on a big board took seconds a keystroke.
  */
 function ItemResults({
+  search,
   lists,
   itemsByProject,
   onOpenItem,
 }: {
+  search: string;
   lists: ProjectView[];
   itemsByProject: Record<string, Item[]>;
   onOpenItem: (item: Item) => void;
 }) {
   const items = lists.flatMap((list) =>
-    (itemsByProject[list.id] ?? []).map((item) => ({ item, list })),
+    (itemsByProject[list.id] ?? []).map((item) => {
+      const ref = formatItemRef(list.refPrefix, item.number);
+      // The ref is board-unique, so it keeps duplicate titles apart and
+      // lets "SID-12" find its item.
+      const value = `${item.title} ${ref}`;
+      return { item, list, ref, value, score: defaultFilter(value, search, [list.name]) };
+    }),
   );
   const titleOf = new Map(items.map(({ item }) => [item.id, item.title]));
+  // The best, picked here; cmdk orders them as it shows them.
+  const best = items
+    .filter((i) => i.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, ITEM_RESULTS);
   return (
     <CommandGroup heading="Items">
-      {items.map(({ item, list }) => {
-        const ref = formatItemRef(list.refPrefix, item.number);
+      {best.map(({ item, list, ref, value }) => {
         const parent = item.parentId ? titleOf.get(item.parentId) : undefined;
         return (
           <CommandItem
             key={item.id}
-            // The ref is board-unique, so it keeps duplicate titles
-            // apart and lets "SID-12" find its item.
-            value={`${item.title} ${ref}`}
+            value={value}
             data-item-ref={ref}
             keywords={[list.name]}
             onSelect={() => onOpenItem(item)}
