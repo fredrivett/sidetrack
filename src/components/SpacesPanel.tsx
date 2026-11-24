@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import {
   createSpaceAction,
   deleteSpaceAction,
-  inviteSpaceMemberAction,
+  inviteAnyoneAction,
   listSpaceMembersAction,
   listSuggestedSpaceMembersAction,
   removeSpaceMemberAction,
@@ -22,6 +22,7 @@ import { SPACE_ROLES, type SpaceColor, type SpaceRole } from "@/core/schema";
 import { roleName } from "@/lib/roles";
 import type { SpaceMemberView, SpaceView } from "@/core/spaces";
 import { InvitedRow } from "./CheckInsView";
+import { everyoneIn, PeopleInput } from "./PeopleInput";
 import { EditableText } from "./EditableText";
 import { ProjectIcon } from "./ProjectIcon";
 import { RoleSelect } from "./RoleSelect";
@@ -164,6 +165,8 @@ function SpaceCard({
   const [members, setMembers] = useState<SpaceMemberView[]>([]);
   const [suggestions, setSuggestions] = useState<CollaboratorView[]>([]);
   const [person, setPerson] = useState("");
+  const [people, setPeople] = useState<string[]>([]);
+  const everyone = everyoneIn(people, person);
   // What the next invite lets them do. Admins are made from members, not
   // invited as admins.
   const [role, setRole] = useState<Exclude<SpaceRole, "admin">>("member");
@@ -283,22 +286,27 @@ function SpaceCard({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            const handle = person.trim();
-            if (handle) {
-              save(() => inviteSpaceMemberAction(space.id, handle, role, role !== "member" && onlyMine), `invite ${handle}`, () =>
-                setPerson(""),
-              );
-            }
+            if (everyone.length === 0) return;
+            // As Invite people does: anyone not on Sidetrack yet gets a link to join that brings them here.
+            const place = { kind: "space", id: space.id, role, onlyMine: role !== "member" && onlyMine } as const;
+            const who = everyone.length === 1 ? everyone[0] : `${everyone.length} people`;
+            save(() => inviteAnyoneAction(everyone, [place]), `invite ${who}`, () => {
+              setPerson("");
+              setPeople([]);
+            });
           }}
-          className="flex gap-2"
+          className="flex items-start gap-2"
         >
-          <Input
-            value={person}
-            onChange={(e) => setPerson(e.target.value)}
-            placeholder="Invite by username or email"
-            autoComplete="off"
-            aria-label={`Invite someone to ${space.name}`}
-          />
+          <div className="min-w-0 flex-1">
+            <PeopleInput
+              people={people}
+              onPeopleChange={setPeople}
+              typed={person}
+              onTypedChange={setPerson}
+              disabled={saving}
+              label={`Invite someone to ${space.name}`}
+            />
+          </div>
           <RoleSelect
             label="What they can do"
             value={role}
@@ -307,7 +315,7 @@ function SpaceCard({
             onChange={setRole}
             onlyMine={{ value: onlyMine, onChange: setOnlyMine }}
           />
-          <Button type="submit" size="sm" disabled={!person.trim()}>
+          <Button type="submit" size="sm" aria-disabled={everyone.length === 0 || undefined}>
             Invite
           </Button>
         </form>
@@ -467,7 +475,7 @@ function SpaceCard({
                   size="xs"
                   variant="outline"
                   onClick={() =>
-                    save(() => inviteSpaceMemberAction(space.id, `@${s.username}`), `invite ${displayName(s)}`)
+                    save(() => inviteAnyoneAction([`@${s.username}`], [{ kind: "space", id: space.id, role: "member" }]), `invite ${displayName(s)}`)
                   }
                   aria-label={`Invite ${displayName(s)} to ${space.name}`}
                 >

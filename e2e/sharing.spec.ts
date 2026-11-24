@@ -7,12 +7,12 @@ test("shares a list as view only", async ({ page, user }) => {
   await page.getByRole("button", { name: "List options" }).click();
   await page.getByRole("menuitem", { name: "Share…" }).click();
   const dialog = page.getByRole("dialog", { name: "Share “Groceries”" });
-  await dialog.getByPlaceholder("username or email").fill(jo.username);
+  await dialog.getByLabel("Who to invite").fill(jo.username);
   await dialog.getByRole("button", { name: "What they can do" }).click();
   await page.getByRole("menuitemradio", { name: /^Can view/ }).click();
   // A reload keeps who's being invited, and as what.
   await page.reload();
-  await expect(dialog.getByPlaceholder("username or email")).toHaveValue(jo.username);
+  await expect(dialog.getByLabel("Who to invite")).toHaveValue(jo.username);
   await expect(dialog.getByRole("button", { name: "What they can do" })).toHaveText("Can view");
   await dialog.getByRole("button", { name: "Invite", exact: true }).click();
   const role = dialog.getByRole("button", { name: `What @${jo.username} can do` });
@@ -52,7 +52,7 @@ test("invites someone to several lists at once", async ({ page, user, browser, b
   await page.getByRole("menuitemradio", { name: /^Can view/ }).click();
   // A reload keeps the dialog and everything in it.
   await page.reload();
-  await expect(dialog.getByRole("button", { name: `Don't invite ${jo.username}` })).toBeVisible();
+  await expect(dialog.getByLabel("Who to invite")).toHaveValue(jo.username);
   await expect(dialog.getByRole("checkbox", { name: "Invite to Groceries" })).toBeChecked();
   await expect(dialog.getByRole("button", { name: "What they can do on Chores" })).toHaveText("Can view");
   await dialog.getByRole("button", { name: "Invite", exact: true }).click();
@@ -85,7 +85,7 @@ test("shares a list so someone sees only your items", async ({ page, user, brows
   await page.getByRole("button", { name: "List options" }).click();
   await page.getByRole("menuitem", { name: "Share…" }).click();
   const dialog = page.getByRole("dialog", { name: "Share “Week”" });
-  await dialog.getByPlaceholder("username or email").fill(jo.username);
+  await dialog.getByLabel("Who to invite").fill(jo.username);
   await dialog.getByRole("button", { name: "What they can do" }).click();
   await page.getByRole("menuitemradio", { name: /^Can view/ }).click();
   await dialog.getByRole("button", { name: "What they can do" }).click();
@@ -366,7 +366,7 @@ test("a list's Share sends someone not on Sidetrack yet a link to join it", asyn
   await page.getByRole("button", { name: "List options" }).click();
   await page.getByRole("menuitem", { name: "Share…" }).click();
   const dialog = page.getByRole("dialog", { name: "Share “Garden”" });
-  await dialog.getByPlaceholder("username or email").fill("sam@example.com");
+  await dialog.getByLabel("Who to invite").fill("sam@example.com");
   await dialog.getByRole("button", { name: "Invite", exact: true }).click();
   await expect(dialog.getByRole("region", { name: "Invited, not joined yet" }).getByText("sam@example.com")).toBeVisible();
   await page.reload();

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { UserPlus, X } from "lucide-react";
+import { UserPlus } from "lucide-react";
 import { unstable_rethrow } from "next/navigation";
 import { toast } from "sonner";
 import { inviteAnyoneAction } from "@/app/actions";
@@ -10,7 +10,6 @@ import type { InvitePlace } from "@/core/invites";
 import { LIST_ROLES, SPACE_ROLES, type ListRole, type SpaceRole } from "@/core/schema";
 import { roleName } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   ResponsiveDialog,
   ResponsiveDialogCloseButton,
@@ -19,6 +18,7 @@ import {
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
 import { InvitedRow } from "./CheckInsView";
+import { everyoneIn, PeopleInput } from "./PeopleInput";
 import { PlacePicker, placeKey as key, type PlaceGroup } from "./PlacePicker";
 import { RoleSelect } from "./RoleSelect";
 import { useDraft } from "./use-draft";
@@ -94,14 +94,6 @@ export function InviteDialog({
     onOpenChange(false);
   }
 
-  // Adds what's typed (one or more handles, split on commas or spaces).
-  function addPeople(text: string) {
-    const handles = text.split(/[\s,]+/).filter(Boolean);
-    if (handles.length === 0) return;
-    setPeople((current) => [...new Set([...current, ...handles])]);
-    draft.set("");
-  }
-
   function toggle(k: string, on: boolean) {
     setKept((c) => ({
       ...c,
@@ -137,8 +129,7 @@ export function InviteDialog({
       })),
   ]);
   const places = chosen.map((c) => c.place);
-  // What's typed but not yet added counts too, so Invite doesn't drop it.
-  const everyone = [...new Set([...people, ...person.split(/[\s,]+/).filter(Boolean)])];
+  const everyone = everyoneIn(people, person);
   // Without a place, only an email has something to accept: a link to join.
   const usernames = everyone.filter((p) => !isEmail(p));
   // Emails already sent a link to join: sending another is refused, so say so first.
@@ -217,46 +208,14 @@ export function InviteDialog({
           className="flex min-h-0 flex-1 flex-col data-pending:opacity-60"
         >
           <div className="shrink-0 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-            <Input
-              ref={personRef}
-              value={person}
-              onChange={(e) => !pending && draft.set(e.target.value)}
-              onKeyDown={(e) => {
-                if (pending) return;
-                if (e.key === "," || (e.key === "Enter" && person.trim())) {
-                  e.preventDefault();
-                  addPeople(person);
-                } else if (e.key === "Backspace" && !person && people.length > 0) {
-                  setPeople((c) => c.slice(0, -1));
-                }
-              }}
-              onBlur={() => !pending && addPeople(person)}
-              placeholder="Usernames or emails"
-              aria-label="Who to invite"
-              autoComplete="off"
-              readOnly={pending}
+            <PeopleInput
+              inputRef={personRef}
+              people={people}
+              onPeopleChange={(next) => setPeople(() => next)}
+              typed={person}
+              onTypedChange={draft.set}
+              disabled={pending}
             />
-            {people.length > 0 && (
-              <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="People to invite">
-                {people.map((p) => (
-                  <li
-                    key={p}
-                    className="flex items-center gap-1 rounded-full bg-neutral-100 py-0.5 pr-1 pl-2.5 text-xs dark:bg-neutral-800"
-                  >
-                    {p}
-                    <button
-                      type="button"
-                      aria-label={`Don't invite ${p}`}
-                      aria-disabled={pending || undefined}
-                      onClick={() => !pending && setPeople((c) => c.filter((x) => x !== p))}
-                      className="rounded-full p-0.5 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900 dark:hover:bg-neutral-700 dark:hover:text-neutral-100"
-                    >
-                      <X className="size-3" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-3">

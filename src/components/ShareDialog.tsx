@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { UserPlus } from "lucide-react";
 import { unstable_rethrow } from "next/navigation";
 import {
-  inviteMemberAction,
+  inviteAnyoneAction,
   listMembersAction,
   listSuggestedCollaboratorsAction,
   removeMemberAction,
@@ -14,7 +14,6 @@ import type { InvitationView } from "@/core/invitations";
 import type { CollaboratorView, MemberView } from "@/core/members";
 import { LIST_ROLES, type ListRole } from "@/core/schema";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   ResponsiveDialog,
   ResponsiveDialogCloseButton,
@@ -23,6 +22,7 @@ import {
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
 import { InvitedRow } from "./CheckInsView";
+import { everyoneIn, PeopleInput } from "./PeopleInput";
 import { RoleSelect } from "./RoleSelect";
 import { runAction } from "./run-action";
 import { useDraft } from "./use-draft";
@@ -65,6 +65,9 @@ export function ShareDialog({
     "editor",
   );
   const [onlyMine, setOnlyMine] = useStoredState(`draft:share:${projectId ?? ""}:only-mine`, false);
+  // Those added as chips, part of the draft too.
+  const [people, setPeople] = useStoredState<string[]>(`draft:share:${projectId ?? ""}:people`, []);
+  const everyone = everyoneIn(people, person);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   // Removing someone takes a second tap: it also takes them off their items.
@@ -139,15 +142,17 @@ export function ShareDialog({
     }
   }
 
-  // Invite by handle, from the form or a suggestion; `fromForm` clears the
-  // input on success.
-  function invite(handle: string, fromForm: boolean) {
-    if (!handle || !projectId) return;
+  // Invite people, from the form or a suggestion, as Invite people does:
+  // anyone not on Sidetrack yet gets a link to join that brings them here.
+  // `fromForm` clears the form on success.
+  function invite(handles: string[], fromForm: boolean) {
+    if (handles.length === 0 || !projectId || pending) return;
     setError(null);
     start(async () => {
       let refused: string | undefined;
       try {
-        refused = (await inviteMemberAction(projectId, handle, role, role !== "editor" && onlyMine))?.error;
+        const place = { kind: "list", id: projectId, role, onlyMine: role !== "editor" && onlyMine } as const;
+        refused = (await inviteAnyoneAction(handles, [place]))?.error;
       } catch (err) {
         unstable_rethrow(err);
         refused = "Couldn't send the invite. Please try again.";
@@ -156,7 +161,10 @@ export function ShareDialog({
         if (latestProjectId.current === projectId) setError(refused);
         return;
       }
-      if (fromForm && latestProjectId.current === projectId) draft.clear();
+      if (fromForm && latestProjectId.current === projectId) {
+        draft.clear();
+        setPeople([]);
+      }
       await reload(projectId);
     });
   }
@@ -204,6 +212,7 @@ export function ShareDialog({
       onOpenChange={(next) => {
         if (!next) {
           draft.clear();
+          setPeople([]);
           setRole("editor");
           setOnlyMine(false);
         }
@@ -227,18 +236,20 @@ export function ShareDialog({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            invite(person.trim(), true);
+            invite(everyone, true);
           }}
           className="shrink-0 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-          <div className="flex gap-2">
-            <Input
-              ref={personRef}
-              value={person}
-              onChange={(e) => draft.set(e.target.value)}
-              placeholder="username or email"
-              autoComplete="off"
-              disabled={pending}
-            />
+          <div className="flex items-start gap-2">
+            <div className="min-w-0 flex-1">
+              <PeopleInput
+                inputRef={personRef}
+                people={people}
+                onPeopleChange={setPeople}
+                typed={person}
+                onTypedChange={draft.set}
+                disabled={pending}
+              />
+            </div>
             <RoleSelect
               label="What they can do"
               value={role}
@@ -248,7 +259,7 @@ export function ShareDialog({
               onChange={setRole}
               onlyMine={{ value: onlyMine, onChange: setOnlyMine }}
             />
-            <Button type="submit" size="sm" disabled={!person.trim() || pending}>
+            <Button type="submit" size="sm" aria-disabled={everyone.length === 0 || pending || undefined}>
               <UserPlus data-icon="inline-start" />
               Invite
             </Button>
@@ -351,7 +362,7 @@ export function ShareDialog({
                       type="button"
                       size="xs"
                       variant="outline"
-                      onClick={() => invite(`@${s.username}`, false)}
+                      onClick={() => invite([`@${s.username}`], false)}
                       disabled={pending}
                       aria-label={`Invite ${displayName(s)}`}
                     >
