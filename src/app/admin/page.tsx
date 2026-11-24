@@ -1,4 +1,4 @@
-import { ArrowLeft, Bell, CalendarDays, KeyRound, Mail, ShieldCheck, Users } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, Bell, CalendarDays, KeyRound, Mail, ShieldCheck, Users } from "lucide-react";
 import type { UserUsage } from "@/core/usage";
 import Link from "next/link";
 import { LogoMark } from "@/components/LogoMark";
@@ -8,6 +8,7 @@ import { getDb } from "@/core/db";
 import { isLooking } from "@/core/presence";
 import { cohorts, dailyUsage } from "@/core/usage";
 import { getTimeZone } from "@/core/users";
+import { getEnv } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
@@ -128,6 +129,9 @@ export default async function AdminPage() {
   const { db } = getDb();
   const timeZone = getTimeZone(db, adminId) ?? "UTC";
   const usage = dailyUsage(db, { days: DAYS, timeZone });
+  // PostHog knows people by their user id (PostHogIdentify), so this opens
+  // their events and replays.
+  const posthog = getEnv().POSTHOG_PROJECT_URL;
   const { now, days, users } = usage;
   // A loop, not Math.max(...all): spreading 90 counts per person runs out of
   // stack at a thousand or so people.
@@ -312,6 +316,21 @@ export default async function AdminPage() {
                             </div>
                             <div className="truncate text-xs text-muted-foreground">
                               {here ? <span className="text-green-700 dark:text-green-400">Here now</span> : seenLabel(user.lastSeenAt, now)}
+                              {posthog && (
+                                <>
+                                  {" · "}
+                                  <a
+                                    href={`${posthog}/person/${encodeURIComponent(user.id)}`}
+                                    target="_blank"
+                                    rel="noreferrer noopener"
+                                    aria-label={`${user.name} in PostHog`}
+                                    className="inline-flex items-center underline-offset-2 hover:text-foreground hover:underline"
+                                  >
+                                    PostHog
+                                    <ArrowUpRight className="size-3" />
+                                  </a>
+                                </>
+                              )}
                             </div>
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
                               <span className="whitespace-nowrap">

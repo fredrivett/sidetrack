@@ -318,6 +318,8 @@ set, nothing is sent anywhere, including to the Sidetrack project.
 | `POSTHOG_HOST` | `https://us.i.posthog.com` | Server ingestion host (`https://eu.i.posthog.com` for EU Cloud) |
 | `NEXT_PUBLIC_POSTHOG_KEY` | unset | **Build-time.** Project key for pageviews, autocapture, browser errors and session replay (on when the PostHog project turns it on). Signed-in people are identified by user id and username. Element text and attributes are masked. Replays mask inputs, images and everything people wrote, and show only the app's own words, marked `data-replay-safe` (see `src/lib/replayPrivacy.ts`) |
 | `NEXT_PUBLIC_POSTHOG_HOST` | `https://us.i.posthog.com` | **Build-time.** Browser ingestion host. The Docker build doesn't pass it through, so Docker builds use the US host |
+| `POSTHOG_PROJECT_ID` | unset | PostHog project ID. With it, `/admin` links each person to their PostHog page: their events and replays |
+| `POSTHOG_API_HOST` | `https://us.posthog.com` | PostHog app host for those links (`https://eu.posthog.com` for EU Cloud; not the `us.i.` ingestion host) |
 
 `NEXT_PUBLIC_POSTHOG_KEY` is built into the browser bundle. **Don't build it
 into an image you publish**, or every instance of that image reports into your

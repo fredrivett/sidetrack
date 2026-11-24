@@ -71,6 +71,10 @@ export interface ServerEnv {
   // verify addresses, so anyone could sign up as a listed email with no
   // account yet. Empty means nobody.
   ADMIN_USER_IDS: string[];
+  // The PostHog project people are identified in (POSTHOG_PROJECT_ID, on
+  // POSTHOG_API_HOST), as its app URL, so /admin can link each person to
+  // their replays. Unset hides the links.
+  POSTHOG_PROJECT_URL: string | undefined;
   // TypeSafe Jev key for AI list-icon suggestions. Unset turns them off.
   TYPESAFE_API_KEY: string | undefined;
   // Anthropic key for the Agenda greeting's writer (greetingWriter.ts), with
@@ -181,6 +185,8 @@ function schemaFor(mode: EnvMode) {
       EMAIL_FROM: optionalTrimmed,
       SIGNUP_NOTIFY_EMAIL: optionalTrimmed,
       ADMIN_USER_IDS: optionalTrimmed,
+      POSTHOG_PROJECT_ID: optionalTrimmed,
+      POSTHOG_API_HOST: optionalTrimmed,
       TYPESAFE_API_KEY: optionalTrimmed,
       ANTHROPIC_API_KEY: optionalTrimmed,
       FEEDBACK_LIST_ID: optionalTrimmed,
@@ -361,6 +367,9 @@ function schemaFor(mode: EnvMode) {
         .split(",")
         .map((id) => id.trim())
         .filter(Boolean),
+      POSTHOG_PROJECT_URL: env.POSTHOG_PROJECT_ID
+        ? `${(env.POSTHOG_API_HOST ?? "https://us.posthog.com").replace(/\/+$/, "")}/project/${encodeURIComponent(env.POSTHOG_PROJECT_ID)}`
+        : undefined,
       TYPESAFE_API_KEY: env.TYPESAFE_API_KEY,
       ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
       FEEDBACK_LIST_ID: env.FEEDBACK_LIST_ID,
