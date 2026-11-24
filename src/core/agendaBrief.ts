@@ -152,17 +152,17 @@ export function buildAgendaBrief(
   const rows = nestItems(found).flatMap(({ children, ...it }) => [it, ...children]);
   const byId = new Map(rows.map((i) => [i.id, i]));
   const parentOf = (i: Item) => (i.parentId ? byId.get(i.parentId) : undefined);
-  // Who can open each list, so an item whose creator has left counts for everyone.
-  const openers = new Map<string, Set<string>>();
-  const canOpen = (userId: string, projectId: string) => {
-    let who = openers.get(projectId);
-    if (!who) {
-      who = new Set(listAssignees(db, viewerId, projectId).map((a) => a.userId));
-      openers.set(projectId, who);
+  // Lists nobody else can be assigned on, where unassigned items are the viewer's.
+  const aloneOn = new Map<string, boolean>();
+  const alone = (projectId: string) => {
+    let is = aloneOn.get(projectId);
+    if (is === undefined) {
+      is = listAssignees(db, viewerId, projectId).every((a) => a.userId === viewerId || !a.canEdit);
+      aloneOn.set(projectId, is);
     }
-    return who.has(userId);
+    return is;
   };
-  const mine = rows.filter((i) => isYours(i, parentOf(i), viewerId, canOpen));
+  const mine = rows.filter((i) => isYours(i, parentOf(i), viewerId, alone));
   const mineIds = new Set(mine.map((i) => i.id));
 
   const stepsLeft = new Map<string, number>();
