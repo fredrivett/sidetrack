@@ -90,6 +90,8 @@ describe("buildAgendaBrief", () => {
       "Kitchen",
       "Assigned to Fred by Sam",
     ]);
+    // Jo can't be assigned them, so none of them are hers.
+    expect(buildAgendaBrief(db, jo, { now: NOW, timeZone: tz, since: null }).dueToday).toEqual([]);
   });
 
   it("reads the viewer's own clock: 2am on Saturday is still Friday evening", () => {
