@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { users } from "./auth-schema";
-import { setDayNote, sharedDayNote } from "./dayNotes";
+import { getDayTags, keepDayTags, removeDayTag, setDayNote, sharedDayNote } from "./dayNotes";
 import { closeDay } from "./dayWrapUps";
 import {
   acceptDayShare,
@@ -551,6 +551,33 @@ describe("a membership shown only someone's today or week", () => {
     setMemberRole(db, lorna, away.id, kim, "viewer", "web", undefined, null);
     setMemberRole(db, lorna, home.id, kim, "viewer", "web", undefined, null);
     expect(sharedDayNote(db, kim, lorna)).toEqual({ note: null, mood: [], wrapUp: null });
+  });
+
+  it("shows the tags she kept as her own in her mood, until she takes one off", () => {
+    const { db, lorna } = setup("today");
+    const kim = createTestUser(db, { username: "kim" });
+    const home = createProject(db, lorna, { name: "Home" }, "web");
+    inviteMember(db, lorna, home.id, "kim", "web", "viewer", { onlyMine: true, within: "today", shareMood: true });
+    acceptInvite(db, kim, home.id, "web");
+    // Kept as typed by Claude, tidied; presets and repeats aren't kept again, nor what can't be a tag.
+    expect(keepDayTags(db, lorna, ["wound  up", "Tired", "Wound up", "On call, again", "Hospital — ward"])).toEqual(["Wound up"]);
+    setDayNote(db, lorna, "2026-11-19", "Wound up, Tired — the Q3 report");
+    // Her own come after the presets, as the board shows them; the words stay hers.
+    expect(sharedDayNote(db, kim, lorna)).toEqual({ note: null, mood: ["Tired", "Wound up"], wrapUp: null });
+    // Taken off, it's remembered so it isn't suggested again, and her note reads as all words, so none of it shows.
+    expect(removeDayTag(db, lorna, "WOUND UP")).toEqual([]);
+    expect(getDayTags(db, lorna)).toEqual({ own: [], removed: ["Wound up"] });
+    expect(sharedDayNote(db, kim, lorna).mood).toEqual([]);
+    // Kept again, it's no longer one she took off.
+    keepDayTags(db, lorna, ["Wound up"]);
+    expect(getDayTags(db, lorna)).toEqual({ own: ["Wound up"], removed: [] });
+  });
+
+  it("keeps at most eight tags of her own", () => {
+    const { db, lorna } = setup("today");
+    const nine = ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel", "India"];
+    expect(keepDayTags(db, lorna, nine)).toEqual(nine.slice(0, 8));
+    expect(keepDayTags(db, lorna, ["Juliet"])).toEqual(nine.slice(0, 8));
   });
 
   it("stops showing her note once the day share ends, even when another day share is set later", () => {

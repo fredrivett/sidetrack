@@ -1,16 +1,16 @@
 "use client";
 
-import { Check, ChevronDown, CircleCheck, Moon, NotebookPen, Plus, RefreshCw, Settings, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
+import { Check, ChevronDown, CircleCheck, Moon, NotebookPen, Plus, RefreshCw, Settings, Sparkles, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
-import { setAgendaReadAction, setDayNoteAction } from "@/app/actions";
+import { removeDayTagAction, setAgendaReadAction, setDayNoteAction } from "@/app/actions";
 import type { Greeting } from "@/core/agendaGreeting";
 import type { WrapUp } from "@/core/dayWrapUps";
 import type { Item } from "@/core/schema";
-import { DAY_TAGS, type DayTag, joinDayNote, splitDayNote, splitTagged, toggleDayTag, WRAP_UP_TAGS } from "@/lib/dayTags";
+import { dayTagsFor, joinDayNote, MAX_OWN_DAY_TAGS, splitDayNote, splitTagged, toggleDayTag, WRAP_UP_TAGS } from "@/lib/dayTags";
 import { parseGreeting } from "@/lib/greeting";
 import { NOTE_MAX } from "@/lib/greetingPrefs";
 import { aiRead } from "./ai-read";
@@ -150,16 +150,18 @@ export function AgendaGreeting({
   const isFixed = fixed !== undefined;
   // The viewer's note for today: as each greeting brings it, then as they save it.
   const [note, setNote] = useState("");
-  const dayNote = splitDayNote(note);
+  // Their own tags for it, as each greeting brings them, then as they change them.
+  const [ownTags, setOwnTags] = useState<string[]>([]);
+  const dayNote = splitDayNote(note, ownTags);
   // How today went, once it's closed (dayWrapUps.ts), and the dialog that closes it.
   const [wrapUp, setWrapUp] = useState<WrapUp | null>(null);
   const [closingDay, setClosingDay] = useState(false);
   const wrapped = splitTagged(wrapUp?.text ?? "", WRAP_UP_TAGS);
   // The note as last set, for saves in quick succession (taps on its tags).
   const noteNow = useRef("");
-  // What's being typed into it, and the tags Jev thinks fit that.
+  // What's being typed into it, and the tags Claude thinks fit that, theirs or new.
   const [typed, setTyped] = useState<string | null>(null);
-  const [suggested, setSuggested] = useState<DayTag[]>([]);
+  const [suggested, setSuggested] = useState<string[]>([]);
   // The greeting is rewritten with the note once its changes stop for a moment.
   const rewriteSoon = useRef<ReturnType<typeof setTimeout>>(undefined);
   // Which of its dialogs is up, kept as it closes so it animates out as it was.
@@ -192,11 +194,12 @@ export function AgendaGreeting({
   // saved text is what the box's draft is kept against.
   const [savingNote, setSavingNote] = useState(false);
   /**
-   * Shows `next` as today's note at once and saves it, putting the last one
-   * back if it fails; once saves stop for a moment, the greeting is
-   * rewritten with it, so a few taps in a row ask Claude once.
+   * Shows `next` as today's note at once and saves it, with the `added`
+   * tags it has that aren't theirs yet, putting the last one back if it
+   * fails; once saves stop for a moment, the greeting is rewritten with it,
+   * so a few taps in a row ask Claude once.
    */
-  const saveNote = async (next: string) => {
+  const saveNote = async (next: string, added: string[] = []) => {
     const before = noteNow.current;
     const show = (n: string) => {
       noteNow.current = n;
@@ -208,7 +211,10 @@ export function AgendaGreeting({
     setSavingNote(true);
     const saved = await runAction(
       // As the server kept it, unless it's been changed again since.
-      setDayNoteAction(next).then((kept) => noteNow.current === next && show(kept ?? "")),
+      setDayNoteAction(next, added).then((kept) => {
+        setOwnTags(kept.dayTags);
+        if (noteNow.current === next) show(kept.note ?? "");
+      }),
       "save your note for today",
     );
     notesSaving.current -= 1;
@@ -229,19 +235,25 @@ export function AgendaGreeting({
   const noteDraft = useDraft(today ? `day:${today}:note` : null, dayNote.rest);
   // Chips picked but not saved yet, kept with the typed text as the draft;
   // null while they're as saved.
-  const [pickedTags, setPickedTags] = useStoredState<DayTag[] | null>(
+  // A suggested tag that isn't theirs yet is one of these until it's saved.
+  const [pickedTags, setPickedTags] = useStoredState<string[] | null>(
     today ? `draft:day:${today}:note-tags` : "draft:day:note-tags",
     null,
   );
-  const tagsShown = pickedTags ?? dayNote.tags;
-  const sameTags = (a: readonly DayTag[], b: readonly DayTag[]) =>
+  const known = dayTagsFor(ownTags);
+  const isNew = (tag: string) => !known.includes(tag);
+  const pendingTags = (pickedTags ?? []).filter(isNew);
+  // Theirs, and the new ones picked: the tags the draft is read and kept with.
+  const draftOwn = [...ownTags, ...pendingTags];
+  const tagsShown = dayTagsFor(draftOwn).filter((t) => (pickedTags ?? dayNote.tags).includes(t));
+  const sameTags = (a: readonly string[], b: readonly string[]) =>
     a.length === b.length && a.every((t) => b.includes(t));
   // Something to save: typing or chips that differ from the saved note.
   const unsaved = noteDraft.value.trim() !== dayNote.rest || !sameTags(tagsShown, dayNote.tags);
   /** Saves the chips and the text together, as one submit. */
   const submitNote = () => {
     if (notesSaving.current > 0 || !unsaved) return;
-    void saveNote(joinDayNote(tagsShown, noteDraft.value)).then((saved) => {
+    void saveNote(joinDayNote(tagsShown, noteDraft.value, draftOwn), pendingTags.filter((t) => tagsShown.includes(t))).then((saved) => {
       // A failed save keeps the draft (see "Drafts" in AGENTS.md).
       if (!saved) return;
       noteDraft.clear();
@@ -253,13 +265,28 @@ export function AgendaGreeting({
     noteDraft.clear();
     setPickedTags(null);
   };
+  // Room for another new tag of their own, counting the ones picked.
+  const roomForNew = draftOwn.length < MAX_OWN_DAY_TAGS;
+  /** The note with `tag` on or off, read with it as one of theirs when it's new; null when it won't fit. */
+  const toggled = (tag: string) => {
+    const own = isNew(tag) && !draftOwn.includes(tag) ? [...draftOwn, tag] : draftOwn;
+    const next = toggleDayTag(joinDayNote(tagsShown, noteDraft.value, own), tag, own);
+    return next === null ? null : splitDayNote(next, own).tags;
+  };
   /** Marks `tag` on or off; it's saved with the text by Save. */
-  const toggleTag = (tag: DayTag) => {
+  const toggleTag = (tag: string) => {
     if (notesSaving.current > 0) return;
-    const next = toggleDayTag(joinDayNote(tagsShown, noteDraft.value), tag);
-    if (next === null) return;
-    const tags = splitDayNote(next).tags;
+    const tags = toggled(tag);
+    if (tags === null) return;
     setPickedTags(sameTags(tags, dayNote.tags) ? null : tags);
+  };
+  /** Takes one of their own tags off, at once, putting it back if that fails. */
+  const removeTag = (tag: string) => {
+    setOwnTags((own) => own.filter((t) => t !== tag));
+    setSuggested((s) => s.filter((t) => t !== tag));
+    void runAction(removeDayTagAction(tag).then(setOwnTags), `remove “${tag}”`).then((done) => {
+      if (!done) setOwnTags((own) => (own.includes(tag) ? own : [...own, tag]));
+    });
   };
 
   // Tags that fit what's being typed, asked for once typing pauses. Kept
@@ -292,6 +319,7 @@ export function AgendaGreeting({
         if (notesSaving.current === 0) {
           noteNow.current = g?.note ?? "";
           setNote(noteNow.current);
+          setOwnTags(g?.dayTags ?? []);
         }
         setAsking(false);
         const at = g?.retryInMs === undefined ? null : Date.now() + g.retryInMs;
@@ -656,7 +684,7 @@ export function AgendaGreeting({
                   placeholder={tagsShown.length ? "Anything else?" : "A few words about today, if you like"}
                   rows={2}
                   // What's left of the note once its tags are in.
-                  maxLength={NOTE_MAX - (tagsShown.length ? joinDayNote(tagsShown, "x").length - 1 : 0)}
+                  maxLength={NOTE_MAX - (tagsShown.length ? joinDayNote(tagsShown, "x", draftOwn).length - 1 : 0)}
                   readOnly={savingNote}
                   aria-busy={savingNote || undefined}
                   onChange={(e) => {
@@ -675,23 +703,39 @@ export function AgendaGreeting({
                   }}
                   className={`min-h-14 resize-none border-transparent bg-white text-sm transition-opacity dark:bg-neutral-950 ${savingNote ? "opacity-60" : ""}`}
                 />
-                {/* Quick words for the note, toggled as they're tapped; the ones
-                    Jev thinks fit what was typed are marked as suggestions. */}
+                {/* Quick words for the note, toggled as they're tapped: the
+                    presets, their own, then new ones Claude suggests from what
+                    was typed. Its suggestions are marked; a new one tapped is
+                    kept as theirs once the note is saved. Their own can be
+                    taken off while they're not picked. */}
                 <div role="group" aria-label="How today feels" className="mt-2.5 flex flex-wrap gap-1.5">
-                  {(Object.keys(DAY_TAGS) as DayTag[]).map((tag) => {
+                  {[...dayTagsFor(draftOwn), ...suggested.filter((t) => !dayTagsFor(draftOwn).includes(t))].map((tag) => {
                     const on = tagsShown.includes(tag);
                     const hint = !on && suggested.includes(tag);
-                    // Too long a note to add it to without cutting off what was typed.
-                    const full = toggleDayTag(joinDayNote(tagsShown, noteDraft.value), tag) === null;
-                    return (
+                    const fresh = isNew(tag) && !draftOwn.includes(tag);
+                    // Too long a note to add it to without cutting off what was typed, or no room for another of theirs.
+                    const full = !on && toggled(tag) === null;
+                    const noRoom = fresh && !roomForNew;
+                    // Not while today's saved note has it, which would then read as words.
+                    const removable = !on && ownTags.includes(tag) && !dayNote.tags.includes(tag);
+                    const chip = (
                       <button
-                        key={tag}
                         type="button"
                         aria-pressed={on}
-                        aria-disabled={full || savingNote || undefined}
-                        title={full ? "Your note is too long to add this" : hint ? "Suggested from your note" : undefined}
+                        aria-disabled={full || noRoom || savingNote || undefined}
+                        title={
+                          full
+                            ? "Your note is too long to add this"
+                            : noRoom
+                              ? `You have ${MAX_OWN_DAY_TAGS} tags of your own: take one off to add this`
+                              : hint
+                                ? fresh
+                                  ? "Suggested from your note, kept as one of your tags once you save"
+                                  : "Suggested from your note"
+                                : undefined
+                        }
                         onClick={() => toggleTag(tag)}
-                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-neutral-300 aria-disabled:pointer-events-none aria-disabled:opacity-40 touch:py-1 dark:focus-visible:ring-neutral-600 ${
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-neutral-300 aria-disabled:pointer-events-none aria-disabled:opacity-40 touch:py-1 dark:focus-visible:ring-neutral-600 ${removable ? "rounded-r-none border-r-0 pr-1" : ""} ${
                           on
                             ? // Picked: a stone fill, so Save stays the one solid thing in the panel.
                             "border-stone-400 bg-stone-200 text-stone-900 hover:bg-stone-300/70 dark:border-stone-500 dark:bg-stone-700 dark:text-stone-50 dark:hover:bg-stone-600"
@@ -702,8 +746,29 @@ export function AgendaGreeting({
                       >
                         {hint && <Sparkles aria-hidden className="size-3" />}
                         {tag}
-                        {hint && <span className="sr-only"> (suggested)</span>}
+                        {hint && <span className="sr-only">{fresh ? " (suggested, new)" : " (suggested)"}</span>}
                       </button>
+                    );
+                    if (!removable) return <span key={tag} className="inline-flex">{chip}</span>;
+                    // One of theirs, not picked: a second half that takes it off.
+                    return (
+                      <span key={tag} className="inline-flex">
+                        {chip}
+                        <button
+                          type="button"
+                          aria-label={`Remove your tag ${tag}`}
+                          title="Remove this tag"
+                          aria-disabled={savingNote || undefined}
+                          onClick={() => removeTag(tag)}
+                          className={`inline-flex items-center rounded-r-full border border-l-0 py-0.5 pr-1.5 pl-0.5 text-neutral-400 outline-none transition-colors hover:text-neutral-800 focus-visible:ring-2 focus-visible:ring-neutral-300 aria-disabled:pointer-events-none aria-disabled:opacity-40 touch:py-1 dark:text-neutral-500 dark:hover:text-neutral-100 dark:focus-visible:ring-neutral-600 ${
+                            hint
+                              ? "border-stone-400 border-dashed bg-white dark:border-stone-500 dark:bg-neutral-900"
+                              : "border-stone-200 bg-white dark:border-stone-800 dark:bg-neutral-900"
+                          }`}
+                        >
+                          <X aria-hidden className="size-3" />
+                        </button>
+                      </span>
                     );
                   })}
                 </div>

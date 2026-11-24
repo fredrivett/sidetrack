@@ -106,6 +106,7 @@ const ACTIONS: Record<string, string | Exempt> = {
   setAgendaReadAction: { exempt: "view", note: "the greeting the user has read in the app" },
   closeDayAction: "close_day",
   setDayNoteAction: { exempt: "view", note: "only the in-app greeting reads it" },
+  removeDayTagAction: { exempt: "view", note: "the in-app greeting's day note tags" },
   setTimeZoneAction: { exempt: "background", note: "synced from the browser" },
   setBoardFiltersAction: { exempt: "view", note: "the board's filters" },
   setGreetingPrefsAction: { exempt: "view", note: "how the in-app greeting reads" },

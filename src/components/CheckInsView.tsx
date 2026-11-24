@@ -17,7 +17,6 @@ import type { InvitationView } from "@/core/invitations";
 import type { AssigneeView } from "@/core/members";
 import type { Item, ItemPrLink, OnlyWithin } from "@/core/schema";
 import type { SeenWrapUp } from "@/core/dayWrapUps";
-import type { DayTag } from "@/lib/dayTags";
 import { nestItems } from "@/lib/itemTree";
 import { addDays, AGENDA_SECTIONS, agendaSection, type AgendaSection, weekday } from "@/lib/time";
 import { Button } from "@/components/ui/button";
@@ -54,7 +53,7 @@ export type CheckIn = {
   today: string;
   /** What they wrote about today, and the mood they tapped, when they chose to share it. */
   note: string | null;
-  mood: DayTag[];
+  mood: string[];
   /** How their today went, once they've closed it, as much as they share. */
   wrapUp: SeenWrapUp | null;
   /** The lists shared just for their day: only their items in it show. */
@@ -72,7 +71,7 @@ export type MyDay = {
   startsAt: number;
   today: string;
   note: string | null;
-  mood: DayTag[];
+  mood: string[];
   wrapUp: SeenWrapUp | null;
   /** Their items in the day they share (mySharedDay). */
   itemIds: string[];
@@ -351,7 +350,7 @@ function DayCard({
   /** The card's ⋯ menu, for someone else's day. */
   menu?: ReactNode;
   note: string | null;
-  mood: DayTag[];
+  mood: string[];
   /** How the day went, once it's closed: shown under the note, never over it. */
   wrapUp: SeenWrapUp | null;
   /** The items in the day, which its progress counts (dayItems). */

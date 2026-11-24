@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { joinDayNote, splitDayNote, suggestDayTags, toggleDayTag } from "./dayTags";
+import { cleanDayTag, joinDayNote, splitDayNote, suggestDayTags, toggleDayTag } from "./dayTags";
 
 describe("day note tags", () => {
   it("keeps tags ahead of what was typed, in the order they're shown, and reads them back", () => {
@@ -18,6 +18,30 @@ describe("day note tags", () => {
     // A dash later in the writing stays in it.
     expect(splitDayNote("Busy — call — then gym")).toEqual({ tags: ["Busy"], rest: "call — then gym" });
     expect(splitDayNote("")).toEqual({ tags: [], rest: "" });
+  });
+
+  it("reads the writer's own tags after the presets, and only theirs", () => {
+    const note = joinDayNote(["Wound up", "Tired"], "report", ["Wound up"]);
+    expect(note).toBe("Tired, Wound up — report");
+    expect(splitDayNote(note, ["Wound up"])).toEqual({ tags: ["Tired", "Wound up"], rest: "report" });
+    // Someone without it reads it as writing, all of it.
+    expect(splitDayNote(note)).toEqual({ tags: [], rest: note });
+    expect(toggleDayTag("Tired — report", "Calm", ["Calm"])).toBe("Tired, Calm — report");
+  });
+});
+
+describe("cleanDayTag", () => {
+  it("takes a word or three of letters, capitalised, and nothing that breaks a note", () => {
+    expect(cleanDayTag("  wound   up ")).toBe("Wound up");
+    expect(cleanDayTag("Can't focus")).toBe("Can't focus");
+    expect(cleanDayTag("Été")).toBe("Été");
+    expect(cleanDayTag("Tired, busy")).toBeNull();
+    expect(cleanDayTag("Busy — call")).toBeNull();
+    expect(cleanDayTag("Day 2")).toBeNull();
+    expect(cleanDayTag("One two three four")).toBeNull();
+    expect(cleanDayTag("Twentyonecharacterss")).toBe("Twentyonecharacterss");
+    expect(cleanDayTag("Twentyonecharactersss")).toBeNull();
+    expect(cleanDayTag("")).toBeNull();
   });
 });
 
@@ -38,19 +62,34 @@ describe("toggleDayTag", () => {
 });
 
 describe("suggestDayTags", () => {
-  const answering = (noul: Record<string, number>): typeof fetch => async () =>
-    new Response(
-      JSON.stringify({ answers: Object.fromEntries(Object.entries(noul).map(([k, p]) => [k, { noul: p }])) }),
-    );
+  const claude = (tags: unknown, stop = "end_turn"): typeof fetch => async () =>
+    new Response(JSON.stringify({ stop_reason: stop, content: [{ type: "text", text: JSON.stringify({ tags }) }] }));
+  const none = { own: [], removed: [] };
 
-  it("suggests the best two tags Jev rates a fit, best first", async () => {
-    const fetchImpl = answering({ Tired: 0.8, Unwell: 0.95, Stressed: 0.75, Busy: 0.69 });
-    expect(await suggestDayTags("rough night, feel rotten", "key", fetchImpl)).toEqual(["Unwell", "Tired"]);
+  it("suggests up to three, existing ones as spelled there and new ones tidied", async () => {
+    const fetchImpl = claude(["unwell", "Calm", "tired", "Wound up", "Busy"]);
+    expect(await suggestDayTags("off sick", { own: ["Calm"], removed: [] }, "key", fetchImpl)).toEqual([
+      "Unwell",
+      "Calm",
+      "Tired",
+    ]);
+    expect(await suggestDayTags("can't sit still", none, "key", claude(["restless", "Restless"]))).toEqual(["Restless"]);
   });
 
-  it("suggests nothing when none fits or Jev can't be asked", async () => {
-    expect(await suggestDayTags("ok", "key", answering({ Busy: 0.5 }))).toEqual([]);
+  it("drops what can't be a tag, what they took off, and new ones once they have eight", async () => {
+    const said = claude(["Hospital, ward 4", "Wound up", "Calm", "Tired"]);
+    expect(await suggestDayTags("x", { own: [], removed: ["wound up"] }, "key", said)).toEqual(["Calm", "Tired"]);
+    const eight = ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel"];
+    expect(await suggestDayTags("x", { own: eight, removed: [] }, "key", claude(["Calm", "Golf", "Tired"]))).toEqual([
+      "Golf",
+      "Tired",
+    ]);
+  });
+
+  it("suggests nothing when Claude can't be asked or doesn't finish", async () => {
     const down: typeof fetch = async () => new Response("", { status: 500 });
-    expect(await suggestDayTags("ok", "key", down)).toEqual([]);
+    expect(await suggestDayTags("ok", none, "key", down)).toEqual([]);
+    expect(await suggestDayTags("ok", none, "key", claude(["Tired"], "max_tokens"))).toEqual([]);
+    expect(await suggestDayTags("ok", none, "key", claude("Tired"))).toEqual([]);
   });
 });
