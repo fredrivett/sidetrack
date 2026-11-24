@@ -5,7 +5,7 @@ import { getEventCoordinates } from "@dnd-kit/utilities";
 import { ArrowRight, Boxes, LogOut, TriangleAlert, User, UserMinus, UserPlus, Users } from "lucide-react";
 import { type ComponentProps, type ReactNode, useEffect, useLayoutEffect, useRef, useState, useTransition } from "react";
 import { listMembersAction, listSpaceMembersAction } from "@/app/actions";
-import type { SpaceColor } from "@/core/schema";
+import type { SpaceColor, SpaceRole } from "@/core/schema";
 import { flushSync } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { LoadingEllipsis } from "@/components/ui/loading-ellipsis";
@@ -65,7 +65,10 @@ export function flipColumns(change: () => void) {
 }
 
 // Renaming the list in its header, typing or selecting, isn't a drag.
-const inField = (e: { target: EventTarget }) =>
+// Nor is a press in one of its popups (the icon picker, the ⋯ menu), which
+// are portaled out of the header but still bubble through it in React.
+const inField = (e: { target: EventTarget; currentTarget: Element }) =>
+  !e.currentTarget.contains(e.target as Node) ||
   (e.target as Element).closest?.("input, textarea, [contenteditable]") != null;
 
 /** A list's column, dragged by its header unless `draggable` is false. */
@@ -137,6 +140,16 @@ export function ListDragging({
     props.current = { nameOf, canDrop, onPreview, onDrop };
   });
   const drag = useRef<Dragging | null>(null);
+  // Gone mid-drag (a view switch): stop following the pointer, and take the
+  // card in hand off the page.
+  useEffect(
+    () => () => {
+      drag.current?.stop();
+      drag.current?.clone.remove();
+      drag.current = null;
+    },
+    [],
+  );
 
   const name = (active: Active) => props.current.nameOf(String(active.id).slice(COLUMN.length));
   useLayoutEffect(() =>
@@ -224,6 +237,8 @@ export function ListDragging({
       height: `${rect.height}px`,
       margin: "0",
       zIndex: "999",
+      visibility: "",
+      pointerEvents: "none",
       opacity: "1",
       transition: "scale 150ms ease-out, box-shadow 150ms ease-out",
     });
@@ -350,7 +365,7 @@ export interface ListMoveRequest {
   to: TrayView;
 }
 
-type Person = AvatarUser;
+type Person = AvatarUser & { role: SpaceRole };
 
 /**
  * Asks before a list dropped on another tray goes into that Space, or out
@@ -425,17 +440,24 @@ function MoveListSheet({
       Promise.all([inSpace(from.spaceId), inSpace(to.spaceId), listMembersAction(list.id)]).then(
         ([fromPeople, toPeople, members]) => {
           if (!live) return;
-          const direct = new Set([
+          // As the server decides (revokeListAccess): anyone left without
+          // edit loses it and comes off its items, the viewer included (an
+          // admin taking someone else's list out of their Space).
+          const accepted = members.filter((m) => m.status === "accepted");
+          const anyDirect = new Set([list.userId, ...accepted.map((m) => m.userId)]);
+          const editDirect = new Set([
             list.userId,
-            viewerId,
-            ...members.filter((m) => m.status === "accepted").map((m) => m.userId),
+            ...accepted.filter((m) => m.role === "editor").map((m) => m.userId),
           ]);
+          const edits = (r: SpaceRole) => r === "admin" || r === "member";
           const fromIds = new Set(fromPeople.map((p) => p.userId));
-          const toIds = new Set(toPeople.map((p) => p.userId));
+          const toEditors = new Set(toPeople.filter((p) => edits(p.role)).map((p) => p.userId));
           const person = (p: Omit<Person, "image">): Person => ({ ...p, image: null });
           setPeople({
-            gaining: toPeople.filter((p) => !direct.has(p.userId) && !fromIds.has(p.userId)).map(person),
-            losing: fromPeople.filter((p) => !direct.has(p.userId) && !toIds.has(p.userId)).map(person),
+            gaining: toPeople.filter((p) => !anyDirect.has(p.userId) && !fromIds.has(p.userId)).map(person),
+            losing: fromPeople
+              .filter((p) => edits(p.role) && !editDirect.has(p.userId) && !toEditors.has(p.userId))
+              .map(person),
             fromSize: fromPeople.length,
             toSize: toPeople.length,
           });
@@ -448,7 +470,7 @@ function MoveListSheet({
     return () => {
       live = false;
     };
-  }, [list.id, list.name, list.userId, from.spaceId, to.spaceId, viewerId]);
+  }, [list.id, list.name, list.userId, from.spaceId, to.spaceId]);
 
   const leaving = to.spaceId === null;
   return (
@@ -513,10 +535,10 @@ function MoveListSheet({
           ) : (
             <ul className="divide-y divide-neutral-200 rounded-lg border border-input dark:divide-neutral-800">
               {people.gaining.map((p) => (
-                <PersonRow key={p.userId} person={p} change="gains" via={to.name} />
+                <PersonRow key={p.userId} person={p} you={p.userId === viewerId} change="gains" via={to.name} />
               ))}
               {people.losing.map((p) => (
-                <PersonRow key={p.userId} person={p} change="loses" via={from.name} />
+                <PersonRow key={p.userId} person={p} you={p.userId === viewerId} change="loses" via={from.name} />
               ))}
             </ul>
           )}
@@ -663,12 +685,22 @@ function AccessCount({ change, n }: { change: keyof typeof CHANGE; n: number }) 
   );
 }
 
+const CAN: Record<SpaceRole, string> = {
+  admin: "can see and change it",
+  member: "can see and change it",
+  commenter: "can see and comment on it",
+  viewer: "can see it",
+};
+
 function PersonRow({
   person,
+  you,
   change,
   via,
 }: {
   person: Person;
+  /** The viewer, who can lose it too: an admin taking it out of their Space. */
+  you: boolean;
   change: keyof typeof CHANGE;
   /** The Space they gain it through or lose it with. */
   via: string;
@@ -678,9 +710,12 @@ function PersonRow({
     <li className="flex items-center gap-2.5 px-2.5 py-2">
       <UserAvatar user={person} size={24} />
       <span className="min-w-0 flex-1">
-        <span className="block truncate">{person.name || assigneeName(person)}</span>
+        <span className="block truncate">
+          {person.name || assigneeName(person)}
+          {you && <span className="text-muted-foreground"> (you)</span>}
+        </span>
         <span className="block truncate text-xs text-muted-foreground">
-          {change === "gains" ? `Through ${via}: can see and change it` : `Only had it through ${via}`}
+          {change === "gains" ? `Through ${via}: ${CAN[person.role]}` : `Only had it through ${via}`}
         </span>
       </span>
       <span

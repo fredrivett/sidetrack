@@ -155,7 +155,8 @@ export const ProjectColumn = memo(function ProjectColumn({
     <ListSaveContext value={listSave}>
     <DraggableColumnCard
       projectId={project.id}
-      draggable={draggable}
+      // Not while it holds a save, which it's dimmed for.
+      draggable={draggable && !held && !listSave.saving}
       data-project-id={project.id}
       aria-busy={listSave.saving || held || undefined}
       style={{ opacity: listSave.saving || held ? 0.7 : 1 }}
