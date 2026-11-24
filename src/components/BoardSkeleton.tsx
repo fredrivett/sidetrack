@@ -180,7 +180,9 @@ export function BoardSkeleton({ view }: { view: BoardView }) {
           <Bone className="h-7 w-7 rounded-md sm:w-[90px] touch:h-9 touch:w-9 touch:sm:w-20" />
         )}
         <Bone className="h-7 w-7 rounded-md touch:h-9 touch:w-9 touch:sm:w-[42px]" />
-        <Bone className="size-7 rounded-full touch:size-9" />
+        <span data-account>
+          <Bone className="size-7 rounded-full touch:size-9" />
+        </span>
       </BoardHeader>
       {view === "brief" || view === "done" || view === "check-ins" ? (
         <>
