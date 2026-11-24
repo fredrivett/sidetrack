@@ -34,7 +34,7 @@ export function DoneView({
   onOpenItem,
 }: {
   /** The lists on the board; archived lists stay out. */
-  projects: Pick<ProjectView, "id" | "name" | "refPrefix">[];
+  projects: Pick<ProjectView, "id" | "name" | "refPrefix" | "icon" | "homepageUrl">[];
   itemsByProject: Record<string, Item[]>;
   assigneesByProject: Record<string, AssigneeView[]>;
   prLinksByItem: Record<string, ItemPrLink[]>;
