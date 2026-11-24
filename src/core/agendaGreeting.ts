@@ -87,7 +87,7 @@ export type StoredGreeting = Omit<Greeting, "hello" | "written" | "note"> & {
   note?: string | null;
 };
 
-/** What about an item the greeting depends on: its title, days, whether it's done, and who has it. */
+/** What about an item the greeting depends on: its title, days, whether it's done or Someday, and who has it. */
 function stampsOf(db: Db, ids: string[]): Record<string, string> {
   if (ids.length === 0) return {};
   return Object.fromEntries(
@@ -99,6 +99,7 @@ function stampsOf(db: Db, ids: string[]): Record<string, string> {
         dueFrom: items.dueFrom,
         completedAt: items.completedAt,
         assigneeIds: items.assigneeIds,
+        somedayAt: items.somedayAt,
       })
       .from(items)
       .where(inArray(items.id, ids))
@@ -106,7 +107,15 @@ function stampsOf(db: Db, ids: string[]): Record<string, string> {
       .map((i) =>
         [
           i.id,
-          JSON.stringify([i.title, i.dueDate, i.dueFrom, i.completedAt !== null, [...i.assigneeIds].sort()]),
+          // Someday only when set, so greetings kept before it existed still match.
+          JSON.stringify([
+            i.title,
+            i.dueDate,
+            i.dueFrom,
+            i.completedAt !== null,
+            [...i.assigneeIds].sort(),
+            ...(i.somedayAt !== null ? ["someday"] : []),
+          ]),
         ] as const,
       ),
   );
