@@ -103,8 +103,10 @@ describe("DoneView", () => {
       .getByRole("heading", { name: /Yesterday/ })
       .closest("section") as HTMLElement;
     expect(within(yesterday).getByText("Book trains")).toBeTruthy();
-    // A sub-item names its list and parent.
-    expect(within(yesterday).getByText("Home › Trip")).toBeTruthy();
+    // A sub-item names its parent, marked as such, and its list as a chip.
+    const row = within(yesterday).getByText("Book trains").closest("[data-item-row]") as HTMLElement;
+    expect(within(row).getByRole("img", { name: "Sub-item of" }).parentElement?.textContent).toBe("Trip");
+    expect(within(row).getByText("Home")).toBeTruthy();
     expect(screen.queryByText("Tax return")).toBeNull();
     expect(screen.queryByText("Open")).toBeNull();
     expect(screen.getByText("That's everything.")).toBeTruthy();

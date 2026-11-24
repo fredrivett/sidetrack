@@ -20,8 +20,8 @@ function Bone({ className }: { className: string }) {
 
 /**
  * An item row (ItemRow): checkbox, a 20px title line, then the space of the
- * assignee avatar. With `context` (its width), the 16.5px line under the
- * title that names the row's list, as Done's rows all have.
+ * assignee avatar. With `context` (its width), the 16px list chip under the
+ * title, as Done's rows all have.
  */
 function RowBone({ width, context }: { width: string; context?: string }) {
   return (
@@ -32,8 +32,8 @@ function RowBone({ width, context }: { width: string; context?: string }) {
           <Bone className={`h-3 ${width}`} />
         </span>
         {context && (
-          <span className="flex h-[16.5px] items-center">
-            <Bone className={`h-2 ${context}`} />
+          <span className="flex h-4 items-center">
+            <Bone className={`h-4 ${context}`} />
           </span>
         )}
       </span>
@@ -157,7 +157,7 @@ function BriefBody() {
   );
 }
 
-/** Done (DoneView): the days' sections, newest first, each row naming its list. */
+/** Done (DoneView): the days' sections, newest first, each row with its list's chip. */
 function DoneBody() {
   return (
     <div className="flex-1 overflow-y-auto" aria-hidden="true">

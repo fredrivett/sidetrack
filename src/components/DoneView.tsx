@@ -112,7 +112,8 @@ export function DoneView({
                     assignees={assigneesByProject[item.projectId] ?? []}
                     viewerId={viewerId}
                     prLinks={prLinksByItem[item.id] ?? []}
-                    context={[project?.name, parent?.title].filter(Boolean).join(" › ")}
+                    context={parent?.title}
+                    list={project}
                     onOpenDetail={() => (onOpenItem ?? detail.openDetail)(item)}
                   />
                 );

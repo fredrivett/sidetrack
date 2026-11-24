@@ -9,6 +9,7 @@ import {
   Check,
   ChevronRight,
   CircleX,
+  CornerLeftUp,
   Copy,
   Eye,
   IndentDecrease,
@@ -119,7 +120,7 @@ type ItemRowProps = {
   nestUnder?: { id: string; title: string };
   /** For a sub-item, its parent's title (offers "Move out of …"). */
   parentTitle?: string;
-  /** Where the item lives, shown below its title in views across lists. */
+  /** A sub-item's parent title, shown below its title in views across lists. */
   context?: string;
   /** The item's list, as the first tag, in views that don't group by list. */
   list?: { name: string; icon: string | null; homepageUrl: string | null };
@@ -443,10 +444,12 @@ function ItemRowView({
                 </span>
               )}
             </span>
-            {/* Below the title, so the checkbox stays on the title's line. */}
+            {/* Below the title, so the checkbox stays on the title's line. The
+                arrow up marks it as the parent, not a description. */}
             {context && (
-              <span className="block w-full truncate text-[11px] text-neutral-400">
-                {context}
+              <span className="flex w-full items-center gap-0.5 text-[11px] text-neutral-400">
+                <CornerLeftUp role="img" aria-label="Sub-item of" className="size-3 shrink-0" />
+                <span className="truncate">{context}</span>
               </span>
             )}
             {(cancelled || list || item.labels.length > 0 || item.dueDate || item.smartRule || repeat) && (
