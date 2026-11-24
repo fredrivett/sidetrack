@@ -272,8 +272,9 @@ export default async function AdminPage() {
                   const joined = user.joinedOn;
                   const here = isLooking(user.id);
                   return (
-                    <tr key={user.id} className="group">
-                      <td className="sticky left-0 z-10 bg-background px-4 py-3 group-hover:bg-muted">
+                    // The signup notice links here (#@username), so the row it names stands out.
+                    <tr key={user.id} id={`@${user.username.toLowerCase()}`} className="group scroll-mt-24">
+                      <td className="sticky left-0 z-10 bg-background px-4 py-3 group-hover:bg-muted group-target:bg-amber-100 dark:group-target:bg-amber-950">
                         <div className="flex w-52 items-center gap-3">
                           <span className="relative shrink-0">
                             <UserAvatar
@@ -341,7 +342,7 @@ export default async function AdminPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="py-3 pr-4 group-hover:bg-muted/50">
+                      <td className="py-3 pr-4 group-hover:bg-muted/50 group-target:bg-amber-100/60 dark:group-target:bg-amber-950/60">
                         {/* One picture with one summary for screen readers; each
                             square's date and count show on hover. */}
                         <div

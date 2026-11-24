@@ -9,9 +9,10 @@ vi.hoisted(() => {
   process.env.BETTER_AUTH_SECRET = "test-secret-for-the-invite-suite-0123456789ab";
   process.env.BETTER_AUTH_URL = "http://localhost:3000";
 });
+const notifySignup = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock("@/lib/email", () => ({
   sendPasswordResetEmail: async () => {},
-  notifySignup: async () => {},
+  notifySignup,
 }));
 
 import { listDayShares } from "@/core/dayShares";
@@ -51,6 +52,9 @@ describe("signing up from an invite on a closed instance", () => {
     const jo = (await signUp("joanna", token)).user.id;
     expect(listDayShares(db, fred)).toMatchObject([{ personId: jo, within: "today", note: true, pending: false }]);
     expect(findInvitation(db, token)).toMatchObject({ status: "accepted", acceptedBy: jo });
+    // The operator's notice says whose invite it was; a sign-up without one names nobody.
+    expect(notifySignup).toHaveBeenLastCalledWith(expect.objectContaining({ username: "joanna", invitedBy: "fred" }));
+    expect(notifySignup).toHaveBeenNthCalledWith(1, expect.objectContaining({ username: "fred", invitedBy: null }));
 
     // Used: the same link lets nobody else in.
     await expect(signUp("samuel", token)).rejects.toThrow(/Sign-up is closed/);
