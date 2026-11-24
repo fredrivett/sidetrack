@@ -140,7 +140,7 @@ export function ProjectDetailDialog({
             <>
               <div className="flex shrink-0 flex-col gap-2 border-b border-neutral-200 px-4 pt-3 pb-4 dark:border-neutral-800">
                 <div className="flex items-center gap-2">
-                  <ProjectIconPicker project={project} listIcon={listIcon} size={22} />
+                  <ProjectIconPicker project={project} listIcon={listIcon} size={22} fadeUnchosen />
                   <StatusBadge status={project.status} />
                   <ResponsiveDialogCloseButton className="ml-auto" />
                 </div>

@@ -51,17 +51,20 @@ export function useListIcon(project: Project) {
 }
 
 /**
- * A list's icon, saved as someone's choice as soon as one is picked. One
- * nobody chose shows faded.
+ * A list's icon, saved as someone's choice as soon as one is picked. Pass
+ * `fadeUnchosen` where the list is being edited, so one nobody chose shows
+ * faded there; elsewhere, such as the board, it shows like any other.
  */
 export function ProjectIconPicker({
   project,
   listIcon,
   size = 20,
+  fadeUnchosen = false,
 }: {
   project: Project;
   listIcon: ReturnType<typeof useListIcon>;
   size?: number;
+  fadeUnchosen?: boolean;
 }) {
   // Held on the list: its column dims until the new icon lands.
   const { saving, save } = useListSave();
@@ -82,7 +85,7 @@ export function ProjectIconPicker({
     <IconPicker
       icon={listIcon.shown.emoji}
       chosen={listIcon.shown.chosen}
-      faded={listIcon.shown.faded}
+      faded={fadeUnchosen && listIcon.shown.faded}
       homepageUrl={project.homepageUrl}
       name={project.name}
       size={size}
