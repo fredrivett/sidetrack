@@ -1,7 +1,7 @@
 "use client";
 
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import { useMediaQuery } from "@/components/ui/use-media-query";
 import { cn } from "@/lib/utils";
@@ -38,6 +38,15 @@ function PopoverContent({
   // its trigger, and keeps it on screen when its trigger scrolls away.
   const touch = useMediaQuery("(hover: none) and (pointer: coarse)");
   const [typing, setTyping] = useState(false);
+  // Closing removes the field without a blur, and this component outlives
+  // the popup, so typing ends with the popup too: it reopens not sticky.
+  const popupRef = useCallback((popup: HTMLDivElement | null) => {
+    const stop = keepFieldInView(popup);
+    return () => {
+      stop?.();
+      setTyping(false);
+    };
+  }, []);
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Positioner
@@ -60,11 +69,15 @@ function PopoverContent({
             onFocus?.(e);
           }}
           onBlur={(e) => {
-            setTyping(isField(e.relatedTarget));
+            // Typing goes on only if focus moves to another of its fields.
+            const next = e.relatedTarget;
+            setTyping(
+              isField(next) && e.currentTarget.contains(next as Node),
+            );
             onBlur?.(e);
           }}
           {...props}
-          ref={keepFieldInView}
+          ref={popupRef}
         />
       </PopoverPrimitive.Positioner>
     </PopoverPrimitive.Portal>
