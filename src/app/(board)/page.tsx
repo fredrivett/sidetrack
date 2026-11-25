@@ -35,6 +35,7 @@ import type { ItemPrLink } from "@/core/schema";
 import { requireUserId } from "@/auth/session";
 import { PostHogIdentify } from "@/components/PostHogIdentify";
 import type { CheckIn } from "@/components/CheckInsView";
+import { listReactions, reactionKey } from "@/core/reactions";
 
 export const dynamic = "force-dynamic";
 
@@ -50,10 +51,12 @@ export default async function Home({
     view?: string | string[];
     p?: string | string[];
     item?: string | string[];
+    /** With item, an Activity row to open at (a push about someone's change). */
+    activity?: string | string[];
     open?: string | string[];
   }>;
 }) {
-  const { view, p, item, open } = await searchParams;
+  const { view, p, item, activity, open } = await searchParams;
   const userId = await requireUserId();
   const { db } = getDb();
   // Repeating items whose next due day has come reopen as the page loads.
@@ -119,7 +122,19 @@ export default async function Home({
     });
   }
   // The viewer's own day, as the people they share it with see it.
-  const myDay = myDayView(db, userId);
+  const ownDay = myDayView(db, userId);
+  // The reactions on each day's note and wrap-up, today's, in one read.
+  const days = [
+    ...[...checkIns.values()].map((c) => `${c.personId}:${c.today}`),
+    `${userId}:${ownDay.today}`,
+  ];
+  const dayReactions = listReactions(db, userId, days.flatMap((id) => [{ type: "day_note" as const, id }, { type: "wrap_up" as const, id }]));
+  const reactionsOn = (id: string) => ({
+    note: dayReactions[reactionKey({ type: "day_note", id })] ?? [],
+    wrapUp: dayReactions[reactionKey({ type: "wrap_up", id })] ?? [],
+  });
+  for (const c of checkIns.values()) c.reactions = reactionsOn(`${c.personId}:${c.today}`);
+  const myDay = { ...ownDay, reactions: reactionsOn(`${userId}:${ownDay.today}`) };
   const pendingInvites = listPendingInvites(db, userId);
   // Finished items stay on the board until their week is over (in each
   // list's Done), so leave older ones out. The browser trims to its own week
@@ -199,6 +214,7 @@ export default async function Home({
             refreshAt={Math.min(...[...limited.values(), ...sharedWhole].map((l) => l.turnsAt ?? Infinity)) || null}
             initialListId={typeof p === "string" ? p : null}
             initialItemId={typeof item === "string" ? item : null}
+            initialActivityId={typeof item === "string" && typeof activity === "string" ? activity : null}
             // A link elsewhere (Profile's Invites) can open one of the board's invite dialogs.
             initialOpen={open === "invite" || open === "share-day" ? open : null}
           // A push can link to an item not loaded with the board.

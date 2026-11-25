@@ -16,6 +16,7 @@ import {
 } from "@/core/agentSessions";
 import { sendAgentRequest } from "@/lib/agentRequest";
 import { type AuditOrigin, listAudit } from "@/core/audit";
+import { listReactions, reactionKey, toggleReaction } from "@/core/reactions";
 import {
   autoNewListIcon,
   withAutoLabelEmoji,
@@ -114,6 +115,7 @@ import {
   COMMENT_MAX,
   type Item,
   PROJECT_STATUSES,
+  REACTION_TARGETS,
   SPACE_COLORS,
   LIST_ROLES,
   ONLY_WITHIN,
@@ -889,6 +891,34 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         return errorText(`${(e as Error).message} — no change was made.`);
       }
       return json({ deleted: true });
+    },
+  );
+
+  server.registerTool(
+    "react",
+    {
+      title: "React with an emoji",
+      description:
+        "React with one emoji to something someone did, wrote or shared, or take the reaction back: reacting again with the same emoji removes it. " +
+        "Whoever it belongs to is notified, with a push, so react only when the user asks you to, or to acknowledge a comment addressed to you (\"👀\" for on it) instead of replying. " +
+        "target is one of: { type: \"activity\", id } for a person's change to an item, id being the row's id from list_audit (e.g. someone completing it); " +
+        "{ type: \"comment\", id } for a comment, id from get_item's comments or list_recent_comments; " +
+        "{ type: \"day_note\" | \"wrap_up\", id: \"<userId>:<YYYY-MM-DD>\" } for the note or wrap-up of a day someone shares with the user, today only. " +
+        "Needs comment access on the item's list. Returns { reacted, reactions }: whether the reaction is now there, and every reaction on the target ({ emoji, people, mine }).",
+      inputSchema: {
+        target: z.object({ type: z.enum(REACTION_TARGETS), id: z.string().min(1) }),
+        emoji: z.string().min(1),
+      },
+    },
+    async ({ target, emoji }) => {
+      const { db } = getDb();
+      let reacted;
+      try {
+        ({ reacted } = toggleReaction(db, userId, target, emoji, SOURCE));
+      } catch (e) {
+        return errorText(`${(e as Error).message} — no change was made.`);
+      }
+      return json({ reacted, reactions: listReactions(db, userId, [target])[reactionKey(target)] ?? [] });
     },
   );
 

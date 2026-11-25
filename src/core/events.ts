@@ -1,7 +1,16 @@
 import type { ItemSort } from "../lib/itemSorts";
 import type { InstallPlatform } from "../lib/getStarted";
 import type { Repeat } from "../lib/repeat";
-import type { AuditAction, AuditEntity, ListRole, OnlyWithin, ProjectStatus, SpaceColor, SpaceRole } from "./schema";
+import type {
+  AuditAction,
+  AuditEntity,
+  ListRole,
+  OnlyWithin,
+  ProjectStatus,
+  ReactionTarget,
+  SpaceColor,
+  SpaceRole,
+} from "./schema";
 
 // Change events: what a change did, as data. The function making a change
 // records one with recordAudit, in the change's transaction, and it's stored
@@ -374,7 +383,24 @@ export type ChangeEvent =
   | ({ type: "item.pr.linked" | "item.pr.unlinked"; projectId: string; prUrl: string } & ItemAt)
   | ItemMove
   | AgentWork
+  | Reaction
   | AccountEvent;
+
+/** An emoji reaction added or taken back (reactions.ts), on `target`, whose
+ * `owner` did, wrote or shared it. `item` is the item an activity row or
+ * comment is about; `projectId` its list, null for a shared day's note or
+ * wrap-up. */
+export type Reaction = {
+  type: "reaction.added" | "reaction.removed";
+  reactionId: string;
+  emoji: string;
+  target: { type: ReactionTarget; id: string };
+  owner: PersonAt;
+  projectId: string | null;
+  item?: ItemAt;
+  /** For an activity row, what the change was, to say what was reacted to. */
+  change?: ChangeEvent["type"];
+};
 
 /** One row of an item's move, written in each list's history: `out` in the
  * list it left, `in` in the one it joined. */
@@ -612,6 +638,16 @@ export function auditColumns(event: ChangeEvent): {
     case "agent.stopped":
     case "agent.ended":
       return { action: "finish", entityType: "item", entityId: event.itemId, projectId: event.projectId };
+    case "reaction.added":
+    case "reaction.removed":
+      // In the item's history, like its comments.
+      return {
+        action: event.type === "reaction.added" ? "create" : "delete",
+        entityType: "reaction",
+        entityId: event.reactionId,
+        projectId: event.projectId,
+        parentId: event.item?.itemId ?? null,
+      };
     case "api_key.created":
       return account("create", "api_key", event.keyId);
     case "api_key.revoked":

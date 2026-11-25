@@ -16,6 +16,7 @@ import {
   ResponsiveDialogDescription,
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
+import { Reactions } from "./Reactions";
 import { DueBadge } from "./DueBadge";
 import { runAction } from "./run-action";
 import { CommentCard } from "./ItemComments";
@@ -87,8 +88,12 @@ export function AuditEntryRow({
   entry: e,
   listName,
   className,
+  react,
 }: {
   entry: AuditEntryWithActor;
+  /** Shows a person's change's reactions (an item's history), and with canReact, a button to add one.
+   * `focused`: the row a push opened at, marked, its button showing. */
+  react?: { viewerId: string; canReact: boolean; focused?: boolean };
   /** The list it happened in, for a view that spans lists. */
   listName?: string;
   className?: string;
@@ -113,7 +118,10 @@ export function AuditEntryRow({
   const verb = space === -1 ? sentence : sentence.slice(0, space);
   const rest = space === -1 ? "" : sentence.slice(space + 1);
   return (
-    <li className={`flex items-start gap-2 ${className ?? ""}`}>
+    <li
+      id={react?.focused ? `activity-${e.id}` : undefined}
+      className={`group/reactable relative flex items-start gap-2 ${react?.focused ? "-mx-2 rounded-lg bg-blue-50 px-2 py-1.5 dark:bg-blue-950/40" : ""} ${className ?? ""}`}
+    >
       <span
         className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${SOURCE_BADGE[e.source]}`}
       >
@@ -152,6 +160,17 @@ export function AuditEntryRow({
             {listName ? ` · ${listName}` : ""}
           </span>
         </p>
+        {react && e.reactions && (
+          <Reactions
+            target={{ type: "activity", id: e.id }}
+            reactions={e.reactions}
+            viewerId={react.viewerId}
+            // Not to your own change: there's nobody to tell.
+            canReact={react.canReact && e.actor !== react.viewerId}
+            quiet={!react.focused}
+            className="mt-1"
+          />
+        )}
       </div>
     </li>
   );

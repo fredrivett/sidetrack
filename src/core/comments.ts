@@ -10,7 +10,8 @@ import { getItem } from "./items";
 import type { PersonAt } from "./events";
 import { listAssignees, personAt } from "./members";
 import { getProject } from "./projects";
-import { type Comment, COMMENT_MAX, comments, type Item, items, projects } from "./schema";
+import { listReactions, reactionKey, type ReactionView } from "./reactions";
+import { type Comment, COMMENT_MAX, comments, type Item, items, projects, reactions } from "./schema";
 
 // Comments are accessed through their item → project, like PR links: whoever
 // can open an item can read and add its comments, and only a comment's author
@@ -25,6 +26,8 @@ export interface CommentView extends Comment {
     email: string | null;
     image: string | null;
   } | null;
+  /** Its reactions, on the item's own comments (listComments). */
+  reactions?: ReactionView[];
 }
 
 function cleanBody(raw: string): string {
@@ -106,7 +109,9 @@ export function listRecentComments(
 
 /** The item's comments, oldest first; none when the user can't open it. */
 export function listComments(db: Db, userId: string, itemId: string): CommentView[] {
-  return selectComments(db, userId, eq(comments.itemId, itemId)).map(withoutItem);
+  const list = selectComments(db, userId, eq(comments.itemId, itemId)).map(withoutItem);
+  const reactions = listReactions(db, userId, list.map((c) => ({ type: "comment" as const, id: c.id })));
+  return list.map((c) => ({ ...c, reactions: reactions[reactionKey({ type: "comment", id: c.id })] ?? [] }));
 }
 
 /** Who on the item's list can see it, by user id: the people a comment on
@@ -310,6 +315,10 @@ export function deleteComment(
   const { item } = ownComment(db, userId, id);
   db.transaction((tx) => {
     tx.delete(comments).where(eq(comments.id, id)).run();
+    // Its reactions go with it: deleting the comment is the logged event.
+    tx.delete(reactions)
+      .where(and(eq(reactions.targetType, "comment"), eq(reactions.targetId, id)))
+      .run();
     recordAudit(tx as unknown as Db, {
       actor: userId,
       source,

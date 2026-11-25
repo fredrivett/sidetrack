@@ -177,8 +177,10 @@ const ACTIVITY_PAGE = 50;
  * open it reloads whenever the item does, so a change made here shows up
  * straight away.
  */
-function ItemActivity({ item }: { item: Item }) {
-  const [expanded, setExpanded] = useState(false);
+function ItemActivity({ item, viewerId, focus }: { item: Item; viewerId: string; focus: string | null }) {
+  const canReact = useListAccess(item.projectId) !== "view";
+  // Opened from a push about one of its rows: open, at that row.
+  const [expanded, setExpanded] = useState(focus !== null);
   const [limit, setLimit] = useState(ACTIVITY_PAGE);
   const [entries, setEntries] = useState<AuditEntryWithActor[] | null>(null);
   const [pending, start] = useTransition();
@@ -216,6 +218,14 @@ function ItemActivity({ item }: { item: Item }) {
     };
   }, [expanded, item, limit]);
 
+  // Once it's loaded, bring that row into view, once.
+  const scrolled = useRef(false);
+  useEffect(() => {
+    if (!focus || !entries || scrolled.current) return;
+    scrolled.current = true;
+    document.getElementById(`activity-${focus}`)?.scrollIntoView({ block: "center" });
+  }, [focus, entries]);
+
   return (
     <div className="space-y-1">
       <button
@@ -239,7 +249,11 @@ function ItemActivity({ item }: { item: Item }) {
           <>
             <ul className="space-y-2.5">
               {entries.map((e) => (
-                <AuditEntryRow key={e.id} entry={e} />
+                <AuditEntryRow
+                  key={e.id}
+                  entry={e}
+                  react={{ viewerId, canReact, focused: e.id === focus }}
+                />
               ))}
             </ul>
             {entries.length === limit && limit < 500 && (
@@ -560,6 +574,8 @@ type ItemDetailProps = {
   open: boolean;
   /** The sub-item just gone back from, to focus its checklist line. */
   cameFrom?: string | null;
+  /** An Activity row to open at, ready to react to: a push about it was tapped. */
+  focusActivity?: string | null;
 };
 
 /**
@@ -614,6 +630,7 @@ export function ItemDetailView({
   prLinks,
   open,
   cameFrom = null,
+  focusActivity = null,
   onClose,
   back,
 }: ItemDetailProps & {
@@ -1073,7 +1090,7 @@ export function ItemDetailView({
         <ItemComments key={item.id} item={item} viewerId={viewerId} people={assignees} />
       </Field>
 
-      <ItemActivity item={item} />
+      <ItemActivity item={item} viewerId={viewerId} focus={focusActivity} />
     </div>
 
     <div className="flex shrink-0 items-center justify-between border-t border-neutral-200 px-4 py-2.5 dark:border-neutral-800">

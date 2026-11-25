@@ -96,6 +96,7 @@ const ACTIONS: Record<string, string | Exempt> = {
   addCommentAction: "add_comment",
   updateCommentAction: "update_comment",
   deleteCommentAction: "delete_comment",
+  toggleReactionAction: "react",
   setNoDateCollapsedAction: { exempt: "view", note: "folding the Agenda's No date" },
   setNoDateListFoldedAction: { exempt: "view", note: "folding a list's card in No date" },
   setOverdueCollapsedAction: { exempt: "view", note: "folding the Agenda's Overdue" },

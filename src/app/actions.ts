@@ -25,6 +25,12 @@ import {
 } from "@/core/agentSessions";
 import { listAudit as listAuditCore } from "@/core/audit";
 import {
+  listReactions as listReactionsCore,
+  reactionKey,
+  type ReactionRef,
+  toggleReaction as toggleReactionCore,
+} from "@/core/reactions";
+import {
   calendarConfig,
   CalendarConnectError,
   connectICloud as connectICloudCore,
@@ -1082,6 +1088,18 @@ export async function deleteCommentAction(id: string) {
   const { db } = getDb();
   deleteCommentCore(db, userId, id, SOURCE);
   refresh();
+}
+
+/**
+ * React to something with an emoji, or take it back. Made in quick runs, so
+ * no refresh: it returns the target's reactions as saved, for the one place
+ * showing them, and live updates reach everyone else.
+ */
+export async function toggleReactionAction(target: ReactionRef, emoji: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  toggleReactionCore(db, userId, target, emoji, SOURCE);
+  return listReactionsCore(db, userId, [target])[reactionKey(target)] ?? [];
 }
 
 /** Fold away or show the Agenda's No date section, for the signed-in user. */

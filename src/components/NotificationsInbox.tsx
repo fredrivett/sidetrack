@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { DueBadge } from "./DueBadge";
 import { runAction } from "./run-action";
 import { ProjectIcon } from "./ProjectIcon";
+import { Reactions } from "./Reactions";
 import { AgentAvatar, UserAvatar } from "./UserAvatar";
 
 /**
@@ -28,6 +29,7 @@ export function NotificationsInbox({
   notifications,
   onOpenNotification,
   onOpenList,
+  viewerId,
 }: {
   /** Controlled by the board, so its N shortcut can open the inbox. */
   open: boolean;
@@ -37,6 +39,7 @@ export function NotificationsInbox({
   onOpenNotification: (notification: NotificationView) => void;
   /** Show a list a notification names. */
   onOpenList: (listId: string) => void;
+  viewerId: string;
 }) {
   // Marked seen since this page loaded, before the server says so.
   const [seen, setSeen] = useState<ReadonlySet<string>>(new Set());
@@ -202,6 +205,16 @@ export function NotificationsInbox({
                     <span className="line-clamp-2 border-l-2 border-border pl-2 text-xs text-muted-foreground">
                       {n.snippet}
                     </span>
+                  )}
+                  {/* Above the row's button, like the list chips, so a tap
+                      reacts rather than opens the item. */}
+                  {n.reactTo && (
+                    <Reactions
+                      target={n.reactTo}
+                      reactions={n.reactions ?? []}
+                      viewerId={viewerId}
+                      className="relative z-10 pt-0.5"
+                    />
                   )}
                   <span className="flex items-center text-xs text-muted-foreground">
                     {/* Where, unless the sentence already shows the list. */}

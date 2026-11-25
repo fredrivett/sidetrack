@@ -14,7 +14,8 @@ import type { Db } from "./db";
 import { SYSTEM_ACTOR } from "./audit";
 import { duePart, type Part, plainText } from "./describe";
 import { autoFollow, followersOf } from "./follows";
-import type { ChangeEvent, DueAt, ItemAt, PersonAt } from "./events";
+import type { ChangeEvent, DueAt, ItemAt, PersonAt, Reaction } from "./events";
+import { listReactions, reactionKey, type ReactionRef, type ReactionView, standingReactions } from "./reactions";
 import { isLooking } from "./presence";
 import { remindDue } from "./reminders";
 import { forgetPushSubscriptions, pushTargets } from "./push";
@@ -78,6 +79,10 @@ export interface NotificationView {
   /** For an invite: who was invited (null: the reader) and to where, so a
    * push about one invite to several places or people can say it once. */
   invite?: { who: string | null; place: string };
+  /** What reacting to it reacts to: the change it's about, or the comment. */
+  reactTo?: ReactionRef;
+  /** The reactions on that, so far. */
+  reactions?: ReactionView[];
 }
 
 const INBOX_SIZE = 30;
@@ -321,6 +326,15 @@ function rule(
     case "agent.finished":
       // The agent's owner: it was working for them.
       return onItem(event.itemId, event.projectId, as("agent-finished", [actor]));
+    case "reaction.added":
+      // Whose it is; reactions to one thing are told together. Taking one
+      // back tells nobody: its notification goes (describe).
+      return {
+        to: as("reacted", [event.owner.userId]),
+        groupKey: `reaction:${event.target.type}:${event.target.id}`,
+        ...(event.projectId && { projectId: event.projectId }),
+        ...(event.item && { itemId: event.item.itemId }),
+      };
     default:
       return null;
   }
@@ -551,6 +565,7 @@ type Row = {
   readAt: number | null;
   /** A due reminder's item; it has no change, so no event or actor. */
   itemId: string | null;
+  auditId: string | null;
   event: ChangeEvent | null;
   agentName: string | null;
   actorId: string | null;
@@ -567,6 +582,7 @@ function selectRows(db: Db) {
       createdAt: notifications.createdAt,
       readAt: notifications.readAt,
       itemId: notifications.itemId,
+      auditId: notifications.auditId,
       event: auditLog.event,
       agentName: auditLog.agentName,
       actorId: auditLog.actor,
@@ -610,8 +626,38 @@ function itemOf(event: ChangeEvent): ItemAt | null {
     case "comment.created":
     case "comment.edited":
       return event.item;
+    case "reaction.added":
+      return event.item ?? null;
     default:
       return null;
+  }
+}
+
+/** What reacting to a notification reacts to: the change it's about, or the comment. */
+function reactTarget(r: Row): ReactionRef | undefined {
+  const e = r.event;
+  if (!e || !r.auditId || r.actorId === SYSTEM_ACTOR) return undefined;
+  if (e.type === "comment.created" || e.type === "comment.edited") return { type: "comment", id: e.commentId };
+  if (e.type === "reaction.added" || !itemOf(e)) return undefined;
+  return { type: "activity", id: r.auditId };
+}
+
+/** What a reaction was to, said to whose it is ("to you completing"). */
+function reactedTo(e: Reaction): string {
+  if (e.target.type === "comment") return " to your comment on ";
+  if (e.target.type === "day_note") return " to your day note";
+  if (e.target.type === "wrap_up") return " to your wrap-up";
+  switch (e.change) {
+    case "item.completed":
+      return " to you completing ";
+    case "item.created":
+      return " to you adding ";
+    case "item.cancelled":
+      return " to you cancelling ";
+    case "item.reopened":
+      return " to you reopening ";
+    default:
+      return " to your change to ";
   }
 }
 
@@ -657,7 +703,11 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
     ).map((r) => [r.id, r]),
   );
   const commentIds = events.flatMap((e) =>
-    e.type === "comment.created" || e.type === "comment.edited" ? [e.commentId] : [],
+    e.type === "comment.created" || e.type === "comment.edited"
+      ? [e.commentId]
+      : e.type === "reaction.added" && e.target.type === "comment"
+        ? [e.target.id]
+        : [],
   );
   const bodies = new Map(
     (commentIds.length
@@ -764,7 +814,14 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
     ).map((d) => d.id),
   );
 
+  // Reactions not taken back since: one that was tells nobody.
+  const reacted = standingReactions(
+    db,
+    events.flatMap((e) => (e.type === "reaction.added" ? [e.reactionId] : [])),
+  );
+
   return rows.flatMap((r): NotificationView[] => {
+    if (r.event?.type === "reaction.added" && !reacted.has(r.event.reactionId)) return [];
     // A due reminder: the item as it is now, while they can open it.
     if (r.reason === "due-today" || r.reason === "overdue") {
       const now = r.itemId ? open.get(r.itemId) : undefined;
@@ -813,7 +870,11 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
       readAt: r.readAt,
       actor: a?.userId ? a : null,
       agentName: r.agentName,
+      ...(reactTarget(r) && { reactTo: reactTarget(r) }),
     };
+    // "Fred reacted 🎉 to you completing", the emoji on its own so a push
+    // of several can list them (summarise).
+    const reaction = (e: Reaction, ...rest: Part[]): Part[] => [who, t(" reacted "), t(e.emoji), t(reactedTo(e)), ...rest];
     const about = itemOf(event);
     if (about) {
       const now = open.get(about.itemId);
@@ -893,7 +954,15 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
               snippet: event.note ? excerpt(event.note) : null,
             },
           ];
+        case "reaction.added": {
+          const body = event.target.type === "comment" ? bodies.get(event.target.id) : undefined;
+          return say(reaction(event, item), body ? excerpt(body) : null);
+        }
       }
+    }
+    // On a shared day's note or wrap-up: seen on Check-ins.
+    if (event.type === "reaction.added") {
+      return [{ ...base, title: "Check-ins", url: "/check-ins", parts: reaction(event), snippet: null }];
     }
     if (
       (event.type === "member.invited" || event.type === "space.member.invited") &&
@@ -1108,7 +1177,15 @@ export function listNotifications(db: Db, userId: string): NotificationView[] {
     if (rows.length < INBOX_SIZE) break;
   }
   // A stable sort, so ties keep the order the queries gave them.
-  return [...unseen, ...seen.slice(0, INBOX_SIZE)].sort((a, b) => b.createdAt - a.createdAt);
+  const views = [...unseen, ...seen.slice(0, INBOX_SIZE)]
+    .sort((a, b) => b.createdAt - a.createdAt)
+    // Reacting is a small comment: not on a list they only view.
+    .map((v): NotificationView =>
+      v.reactTo && v.list && listAccess(db, userId, v.list.id) === "view" ? { ...v, reactTo: undefined } : v,
+    );
+  // Each one's reactions, for its react button; describe kept only what they can open.
+  const reactions = listReactions(db, userId, views.flatMap((v) => v.reactTo ?? []));
+  return views.map((v) => (v.reactTo ? { ...v, reactions: reactions[reactionKey(v.reactTo)] ?? [] } : v));
 }
 
 /**
@@ -1299,7 +1376,12 @@ function summarise(views: NotificationView[], today: string): Omit<PushMessage, 
     return {
       title: last.title,
       body: plainText(last.parts, today) + (last.snippet ? `: ${last.snippet}` : ""),
-      url: last.url,
+      // Someone's change opens at its Activity row, ready to react to: iOS
+      // shows no buttons on a web push, so the tap is the way in.
+      url:
+        last.reactTo?.type === "activity"
+          ? `${last.url}&activity=${encodeURIComponent(last.reactTo.id)}`
+          : last.url,
     };
   }
   // A morning's due reminders: what's due, by name, and the Agenda.
@@ -1347,6 +1429,12 @@ function summarise(views: NotificationView[], today: string): Omit<PushMessage, 
       : names.length === 2
         ? `${names[0]} and ${names[1]}`
         : `${names[0]} and ${names.length - 1} others`;
+  // Reactions to one thing: who, with what, to what ("Fred and Sam reacted
+  // 🎉👏 to you completing "Water the plants"").
+  if (views.every((v) => v.reason === "reacted")) {
+    const emoji = [...new Set(views.map((v) => v.parts[2]?.text ?? ""))].join("");
+    return { title: last.title, body: `${who} reacted ${emoji}${plainText(last.parts.slice(3), today)}`, url: last.url };
+  }
   // An item's group names the item; a list's, the list.
   const item = last.parts.find((p) => p.em === "item");
   const sameItem = views.every((v) => v.url === last.url);
