@@ -104,7 +104,9 @@ export function TitleField({
   const panelId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const at = caret == null ? undefined : parts.find((p) => caret >= p.start && caret <= p.end);
-  const staying = parts.filter((p) => p.shown === "stays" && p.field !== "filler" && !p.kept);
+  // What each part sets, said while the caret's elsewhere, so the struck
+  // words don't leave you guessing once you've moved on.
+  const setting = parts.filter((p) => p.shown !== "clash" && p.field !== "filler");
   const track = (e: React.SyntheticEvent<HTMLInputElement>) => {
     const input = e.currentTarget;
     setCaret(document.activeElement === input ? input.selectionStart : null);
@@ -183,22 +185,29 @@ export function TitleField({
           }
         }}
       >
-      {(saved !== title.trim() || staying.length > 0 || at) && (
+      {(saved !== title.trim() || setting.length > 0 || at) && (
         <div className="grid gap-1 rounded-lg bg-muted px-2.5 py-1.5 text-xs text-muted-foreground">
-          {saved !== title.trim() ? (
+          {saved !== title.trim() && (
             <p className="min-w-0">
               Adds as <span className="font-medium text-foreground">“{saved}”</span>
             </p>
-          ) : (
-            staying.length > 0 && (
-              <p className="flex min-w-0 items-center gap-2">
-                <span className={cn("size-1.5 shrink-0 rounded-full", PART_TONE[staying[0].field].dot)} />
-                <span className="min-w-0">
-                  {staying.map((p) => `“${p.text}” sets the ${FIELD_NAME[p.field]}`).join(", ")}, and
-                  stays in the title
-                </span>
-              </p>
-            )
+          )}
+          {/* Not announced: it's rebuilt at each answer while typing. */}
+          {!at && setting.length > 0 && (
+            <p
+              aria-live="off"
+              className="flex min-w-0 items-center gap-2 border-t border-border pt-1 first:border-t-0 first:pt-0">
+              <span className={cn("size-1.5 shrink-0 rounded-full", PART_TONE[setting[0].field].dot)} />
+              <span className="min-w-0">
+                {setting
+                  .map(
+                    (p) =>
+                      `“${p.text}” sets the ${FIELD_NAME[p.field]}: ${p.value}` +
+                      (p.shown === "stays" ? " (stays in the title)" : ""),
+                  )
+                  .join(", ")}
+              </span>
+            </p>
           )}
           {/* Pressing a choice mustn't move the caret out of the part. */}
           {at && (

@@ -112,17 +112,54 @@ export const AI_READS = {
           (p) => p.status === "active" && access.get(p.id) === "edit",
         );
       };
-      // Read alongside Jev's answers, so it adds no wait of its own.
+      const nothing = {
+        projectId: null,
+        duplicate: null,
+        parent: null,
+        due: null,
+        repeat: null,
+        label: null,
+        assigneeId: null,
+      };
+      if (!draft.title) return { ...nothing, titleParts: [] };
+      let projectId = input.projectId;
+      // When it's due and how it repeats don't depend on the list, so
+      // they're asked along with the list when there's one to find.
+      let timing: Pick<DraftAnswers, "due" | "repeat"> | null = null;
+      if (!projectId && apiKey) {
+        const titles = sampleOpenItemTitles(db, userId, 10);
+        // Only lists they can add to: not ones they view or comment on.
+        const lists = editable().map((p) => ({
+          id: p.id,
+          name: p.name,
+          summary: p.summary,
+          itemTitles: titles.get(p.id) ?? [],
+        }));
+        // Who it's for doesn't say where it goes, but an @handle made Jev
+        // unsure enough to suggest no list, and with it nothing that
+        // depends on one: the people or labels.
+        const title = draft.title.replace(/(?<=^|\s)@[\w.-]+/g, "").replace(/\s+/g, " ").trim();
+        const found = await askAboutDraft(
+          { ...draft, title: title || draft.title },
+          { lists, timing: true },
+          apiKey,
+          ctx.fetch,
+        );
+        timing = { due: found.due, repeat: found.repeat };
+        projectId = found.listId;
+      }
+      // The title's parts, read with the people and labels of the list it
+      // goes in, chosen or suggested, alongside Jev's answers about it.
       const titleParts =
-        ANTHROPIC_API_KEY && input.today && draft.title
+        ANTHROPIC_API_KEY && input.today
           ? askTitleParts(
               draft.title,
               {
                 today: input.today,
                 lists: editable().map((p) => ({ id: p.id, name: p.name })),
-                labels: input.projectId ? listLabels(db, userId, input.projectId).map((l) => l.name) : [],
-                people: input.projectId
-                  ? listAssignees(db, userId, input.projectId)
+                labels: projectId ? listLabels(db, userId, projectId).map((l) => l.name) : [],
+                people: projectId
+                  ? listAssignees(db, userId, projectId)
                       .filter((a) => a.canEdit)
                       .map((a) => ({ id: a.userId, name: personName(a, userId) }))
                   : [],
@@ -135,35 +172,7 @@ export const AI_READS = {
       return { ...suggestion, titleParts: parts };
 
       async function suggest() {
-        const nothing = {
-          projectId: null,
-          duplicate: null,
-          parent: null,
-          due: null,
-          repeat: null,
-          label: null,
-          assigneeId: null,
-        };
-        if (!apiKey || !draft.title) return nothing;
-        let projectId = input.projectId;
-        // When it's due and how it repeats don't depend on the list, so
-        // they're asked along with the list when there's one to find.
-        let timing: Pick<DraftAnswers, "due" | "repeat"> | null = null;
-        if (!projectId) {
-          const titles = sampleOpenItemTitles(db, userId, 10);
-          // Only lists they can add to: not ones they view or comment on.
-          const lists = editable()
-            .map((p) => ({
-              id: p.id,
-              name: p.name,
-              summary: p.summary,
-              itemTitles: titles.get(p.id) ?? [],
-            }));
-          const found = await askAboutDraft(draft, { lists, timing: true }, apiKey, ctx.fetch);
-          timing = { due: found.due, repeat: found.repeat };
-          projectId = found.listId;
-          if (!projectId) return { ...nothing, ...timing };
-        }
+        if (!apiKey || !projectId) return { ...nothing, ...timing };
         const found = getProjectWithItems(db, userId, projectId);
         if (!found) return { ...nothing, ...timing };
         const labels = listLabels(db, userId, projectId);

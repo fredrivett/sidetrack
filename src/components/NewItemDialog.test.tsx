@@ -183,6 +183,30 @@ describe("NewItemDialog", () => {
     );
   });
 
+  it("ignores a label Claude found that the item's list doesn't have, but makes a #label", async () => {
+    vi.mocked(aiRead).mockResolvedValue({
+      projectId: "p1",
+      duplicate: null,
+      parent: null,
+      due: null,
+      repeat: null,
+      label: null,
+      assigneeId: null,
+      titleParts: [
+        { field: "label", label: "Finances", text: "Finances -", remove: true },
+        { field: "label", label: "money", text: "#money", remove: true },
+      ],
+    });
+    render(dialog());
+    const title = screen.getByPlaceholderText<HTMLInputElement>("Add a task…");
+    fireEvent.change(title, { target: { value: "Finances - pay rent #money" } });
+    await act(() => new Promise((r) => setTimeout(r, 500)));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: /Add & create more/ })));
+    expect(vi.mocked(addItemAction)).toHaveBeenLastCalledWith(
+      expect.objectContaining({ title: "Finances - pay rent", labels: ["money"] }),
+    );
+  });
+
   it("adds without the title's parts that set its fields, unless one disagrees with a pick", async () => {
     const bins = "put the bins out tomorrow and every monday";
     vi.mocked(aiRead).mockResolvedValue({
@@ -205,6 +229,9 @@ describe("NewItemDialog", () => {
     // What's typed stays in the field; the line under it says what's added.
     expect(title().value).toBe(`TODO ${bins}`);
     expect(document.body.textContent).toContain("Adds as “Put the bins out”");
+    // Once the caret leaves the title, it still says what the struck words set.
+    fireEvent.blur(title());
+    expect(document.body.textContent).toMatch(/“tomorrow” sets the due date: \w+.*“every monday” sets the repeat/);
     await act(async () => fireEvent.click(screen.getByRole("button", { name: /Add & create more/ })));
     expect(vi.mocked(addItemAction)).toHaveBeenLastCalledWith(
       expect.objectContaining({
