@@ -1175,7 +1175,7 @@ export async function setAgendaReadAction() {
  * The signed-in user's note for today, in their time zone; "" removes it.
  * `added` are suggested tags it has that aren't theirs yet, kept as their
  * own first, so the note reads back with them. Returns the note as kept and
- * their own tags. No refresh: only their greeting reads it, and it asks again.
+ * their own tags. Refreshes, so their own Check-ins card shows it.
  */
 export async function setDayNoteAction(text: string, added: string[] = []) {
   const userId = await requireUserId();
@@ -1183,10 +1183,12 @@ export async function setDayNoteAction(text: string, added: string[] = []) {
   const timeZone = getTimeZoneCore(db, userId);
   if (!timeZone) throw new Error("time zone not known yet");
   const dayTags = keepDayTags(db, userId, Array.isArray(added) ? added.slice(0, 10).map(String) : []);
-  return { note: setDayNoteCore(db, userId, dayOf(Date.now(), timeZone), String(text)), dayTags };
+  const note = setDayNoteCore(db, userId, dayOf(Date.now(), timeZone), String(text));
+  refresh();
+  return { note, dayTags };
 }
 
-/** Take one of the signed-in user's own day tags off. Returns their own tags as kept. No refresh, as for the note. */
+/** Take one of the signed-in user's own day tags off. Returns their own tags as kept. No refresh: only a tag the note doesn't use comes off, so nothing shown changes. */
 export async function removeDayTagAction(tag: string) {
   const userId = await requireUserId();
   return removeDayTagCore(getDb().db, userId, String(tag));

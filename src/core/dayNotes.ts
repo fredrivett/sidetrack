@@ -11,6 +11,7 @@ import { cleanDayTag, dayTagsFor, MAX_OWN_DAY_TAGS, splitDayNote } from "../lib/
 import { cleanNote } from "../lib/greetingPrefs";
 import { dayOf } from "../lib/time";
 import { users } from "./auth-schema";
+import { announceChange } from "./changes";
 import type { Db } from "./db";
 import { validZone } from "./db-functions";
 import { getWrapUp, type SeenWrapUp, seenWrapUp } from "./dayWrapUps";
@@ -37,9 +38,10 @@ export function setDayNote(db: Db, userId: string, day: string, raw: string): st
   const mine = and(eq(dayNotes.userId, userId), eq(dayNotes.day, day));
   if (!text) {
     // audit-exempt: one person's own note, seen only through a day share
-    // they opted it into (see above). Not announced: a partner's Check-ins
-    // picks it up on their next reload.
+    // they opted it into (see above). Announced, so a partner's Check-ins
+    // shows the change live.
     db.delete(dayNotes).where(mine).run();
+    announceChange({ actor: userId, projectId: null });
     return null;
   }
   const updatedAt = Date.now();
@@ -48,6 +50,7 @@ export function setDayNote(db: Db, userId: string, day: string, raw: string): st
     .values({ userId, day, text, updatedAt })
     .onConflictDoUpdate({ target: [dayNotes.userId, dayNotes.day], set: { text, updatedAt } })
     .run();
+  announceChange({ actor: userId, projectId: null });
   return text;
 }
 

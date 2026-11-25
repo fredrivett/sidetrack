@@ -2,7 +2,7 @@ import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { getPostHog } from "../lib/posthog";
 import { hasItemAccess, hasProjectAccess, hasWholeListAccess } from "./access";
 import type { Db } from "./db";
-import { items, projectMembers, projects, spaceMembers } from "./schema";
+import { dayShares, items, projectMembers, projects, spaceMembers } from "./schema";
 
 /**
  * Live updates. Every committed change is announced here, and each open page
@@ -175,7 +175,7 @@ function visibleItems(db: Db, userId: string, partial: Set<string>): Set<string>
  * Space with: everyone in, or invited to, their Spaces and the Spaces their
  * lists are in (members see invitees listed, so an invitee declining changes
  * what they see), and the admins of a Space they're invited to, who change
- * or revoke the invite. */
+ * or revoke the invite; and whoever shares their day with them (day_shares). */
 function audience(db: Db, userId: string) {
   const shown = db
     .select({ id: projects.id, owner: projects.userId, spaceId: projects.spaceId })
@@ -223,6 +223,13 @@ function audience(db: Db, userId: string) {
         )
         .all()
     : [];
+  // Who shares their day with them, or asks to, without places of its own:
+  // their name, note and wrap-up show on Check-ins, whatever lists they share.
+  const daySharers = db
+    .select({ userId: dayShares.sharerId })
+    .from(dayShares)
+    .where(eq(dayShares.viewerId, userId))
+    .all();
   // Lists they see only part of.
   const partial = db
     .select({ id: projects.id })
@@ -237,6 +244,7 @@ function audience(db: Db, userId: string) {
       ...shown.map((p) => p.owner),
       ...members.map((m) => m.userId),
       ...spacePeople.map((m) => m.userId),
+      ...daySharers.map((d) => d.userId),
     ]),
   };
 }
