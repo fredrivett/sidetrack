@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 import { getDb } from "@/core/db";
 import { listItems } from "@/core/items";
+import { addLabel } from "@/core/labels";
 import { getProject } from "@/core/projects";
 import { expect, test } from "./fixtures";
 
@@ -20,6 +21,37 @@ test("adds an item to a list", async ({ page, user }) => {
   // Saved, not only shown.
   await page.reload();
   await expect(row(page, "Water plants")).toBeVisible();
+});
+
+test("adds an item with a checklist ticked and set up before it's added", async ({ page, user }) => {
+  const home = user.addList("Home");
+  // A line's #word sets a label the list already has.
+  addLabel(getDb().db, user.id, home.id, { name: "tech" }, "web");
+  await page.goto("/board");
+  await page.getByRole("button", { name: "Add item to Home" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByPlaceholder("Add a task…").fill("Pack for the trip");
+  const step = dialog.getByRole("textbox", { name: "Add a sub-item" });
+  for (const line of ["Toothbrush", "Charger #tech"]) {
+    await step.fill(line);
+    await step.press("Enter");
+  }
+  await dialog.getByRole("checkbox", { name: "Complete Toothbrush" }).check();
+  // Opened, a line gets a date of its own.
+  await dialog.getByRole("button", { name: /^Charger/ }).click();
+  await dialog.getByRole("button", { name: "Due date" }).click();
+  await page.getByRole("button", { name: "Tomorrow" }).click();
+  await dialog.getByRole("button", { name: "Back to Pack for the trip" }).click();
+  await dialog.getByRole("button", { name: "Add item" }).click();
+  await expect(dialog).toBeHidden();
+
+  // Saved, each line with what was set on it.
+  const all = listItems(getDb().db, user.id, home.id, { includeCompleted: true });
+  const by = (title: string) => all.find((i) => i.title === title);
+  expect(by("Pack for the trip")?.completedAt).toBeNull();
+  expect(by("Toothbrush")?.completedAt).not.toBeNull();
+  expect(by("Charger")).toMatchObject({ labels: ["tech"], completedAt: null });
+  expect(by("Charger")?.dueDate).not.toBeNull();
 });
 
 test("completes an item, and it stays completed", async ({ page, user }) => {

@@ -3,9 +3,10 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 import { addSubItemAction, setItemParentAction, updateItemAction } from "@/app/actions";
-import type { Item } from "@/core/schema";
+import type { Item, Label } from "@/core/schema";
 import { isReplaySafe } from "@/lib/replayPrivacy";
 import { ItemDetailDialog } from "./ItemDetailDialog";
+import { LabelsContext } from "./Labels";
 
 // Server actions pull in server-only modules; the dialog only needs callable stubs.
 vi.mock("@/app/actions", () => ({
@@ -326,9 +327,42 @@ describe("ItemDetailDialog checklist", () => {
     expect(screen.getByText("Buy bread").closest("[aria-busy]")).toBeTruthy();
 
     await act(async () => fail());
-    expect(screen.queryByText("Buy bread")).toBeNull();
+    // Gone from the checklist (the input's own highlight copy still shows it).
+    expect(screen.queryAllByText("Buy bread").filter((l) => l.closest("[aria-busy]"))).toHaveLength(0);
     expect(input.value).toBe("Buy bread");
     expect(toast.error).toHaveBeenCalledWith("Couldn't add “Buy bread”. Please try again.");
+  });
+
+  it("adds a line with a label of the list its title names, and leaves other #words", async () => {
+    const beach = { name: "Beach", emoji: null } as unknown as Label;
+    render(
+      <LabelsContext.Provider value={{ [item.projectId]: [beach] }}>
+        <ItemDetailDialog
+          item={item}
+          parent={null}
+          checklist={[]}
+          nestTargets={[]}
+          onOpenItem={() => {}}
+          prefix="ENG"
+          assignees={[viewer]}
+          viewerId="u1"
+          prLinks={[]}
+          open
+          onOpenChange={() => {}}
+        />
+      </LabelsContext.Provider>,
+    );
+    const input = screen.getByRole("textbox", { name: "Add a sub-item" });
+    for (const line of ["Buy sunscreen #beach", "Fix #42"]) {
+      fireEvent.change(input, { target: { value: line } });
+      fireEvent.keyDown(input, { key: "Enter" });
+      await act(async () => {});
+    }
+    expect(vi.mocked(addSubItemAction).mock.calls.slice(-2)).toEqual([
+      ["i1", { title: "Buy sunscreen", assigneeIds: [], labels: ["Beach"] }],
+      // Not a label the list has: it stays in the title, and makes none.
+      ["i1", { title: "Fix #42", assigneeIds: [], labels: [] }],
+    ]);
   });
 
   it("shows a saved line once when it arrives while the next line still saves", async () => {

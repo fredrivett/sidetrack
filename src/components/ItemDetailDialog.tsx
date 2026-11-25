@@ -44,7 +44,6 @@ import { repeatOf } from "@/lib/repeat";
 import { dayLabel, formatRelative } from "@/lib/time";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
 import {
   DropdownMenu,
@@ -70,6 +69,7 @@ import { EditableText } from "./EditableText";
 import { useDraft } from "./use-draft";
 import { ItemComments } from "./ItemComments";
 import { LabelBadge, LabelChips, useListLabels } from "./Labels";
+import { TitleField, useLineParts } from "./TitleField";
 import { DueBadge, SomedayBadge, WaitingBadge } from "./DueBadge";
 import { RepeatBadge } from "./RepeatBadge";
 import { SmartDuePanel } from "./SmartDuePanel";
@@ -361,18 +361,29 @@ function Checklist({
     }
   }, [rows]);
 
+  // "@amy" in a line assigns her, "#errands" labels it, as in New item.
+  const listLabels = useListLabels(parent.projectId);
+  const line = useLineParts(
+    draft,
+    assignees.filter((a) => a.canEdit),
+    listLabels.map((l) => l.name),
+  );
   const saves = useItemSaves();
   function add() {
-    const title = draft.trim();
-    if (!title) return;
+    const typed = draft.trim();
+    if (!typed) return;
+    const title = line.saved;
+    const assigneeIds = line.assigneeIds;
+    const labels = line.labels;
     setDraft("");
+    line.reset();
     const save = queue.current.then(async () => {
       const added = await runAction(
-        saves.addSubItem(parent.id, title),
+        saves.addSubItem(parent.id, { title, assigneeIds, labels }),
         `add “${title}”`,
       );
       // Put a failed line back, unless another is already being typed.
-      if (!added) setDraft((cur) => cur || title);
+      if (!added) setDraft((cur) => cur || typed);
     });
     queue.current = save;
     startTransition(async () => {
@@ -475,10 +486,17 @@ function Checklist({
       {readOnly ? (
         items.length === 0 && <p className="px-1 text-sm text-neutral-400">No steps.</p>
       ) : (
-      <Input
-        ref={input}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
+      <TitleField
+        variant="line"
+        inputRef={input}
+        title={draft}
+        onTitle={setDraft}
+        parts={line.parts}
+        saved={line.saved}
+        struck={line.struck}
+        onKeep={line.onKeep}
+        onDrop={line.onDrop}
+        disabled={false}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.nativeEvent.isComposing) {
             e.preventDefault();
@@ -486,11 +504,8 @@ function Checklist({
           }
         }}
         placeholder={rows ? "Add another…" : "Add a step…"}
-        className="scroll-mb-4"
-        // Not the task's title: Safari reads the label to guess the field,
-        // so a task like "Change phone plan" got phone-number AutoFill (it
-        // ignores autocomplete="off"). The dialog is already titled.
-        aria-label="Add a sub-item"
+        // Not the task's title (see TitleField's label).
+        label="Add a sub-item"
       />
       )}
     </div>

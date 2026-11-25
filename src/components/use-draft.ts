@@ -92,6 +92,25 @@ export function claimDrafts(userId: string) {
   if (!mine) writeStored("local", OWNER, userId);
 }
 
+/**
+ * The text of the draft under `key` for something new (base ""), outside
+ * the field that writes it, such as New item reading each checklist line's
+ * description as it adds them.
+ */
+export function readDraft(key: string): string {
+  try {
+    const kept = JSON.parse(readStored("local", PREFIX + key) ?? "null") as Kept | null;
+    return kept && kept.base === "" ? kept.text : "";
+  } catch {
+    return "";
+  }
+}
+
+/** Forgets every draft whose key starts with `prefix`, once they're saved or abandoned. */
+export function clearDrafts(prefix: string) {
+  removeStored("local", PREFIX + prefix, () => true);
+}
+
 /** Drops every draft, as signing out does. */
 export function forgetDrafts() {
   removeStored("local", PREFIX, () => true);

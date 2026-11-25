@@ -76,7 +76,7 @@ export function CloseDayDialog({
           </div>
           <ResponsiveDialogCloseButton className="shrink-0" />
         </div>
-        <div aria-busy={saving || undefined} className={`space-y-3 px-4 py-3 transition-opacity ${saving ? "opacity-60" : ""}`}>
+        <div aria-busy={saving || undefined} className={`min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-3 transition-opacity ${saving ? "opacity-60" : ""}`}>
           <div role="group" aria-label="How today went" className="flex flex-wrap gap-1.5">
             {WRAP_UP_TAGS.map((tag) => {
               const on = tags.includes(tag);

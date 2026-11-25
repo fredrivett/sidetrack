@@ -1,9 +1,18 @@
 "use client";
 
 import { useId, useRef, useState } from "react";
-import type { PlacedPart, TitleField as Field } from "@/lib/titleParts";
+import type { AssigneeView } from "@/core/members";
+import {
+  cutTitle,
+  type PlacedPart,
+  placeParts,
+  ruleParts,
+  type TitleField as Field,
+  type TitlePart,
+} from "@/lib/titleParts";
 import { cn } from "@/lib/utils";
 import { Struck } from "./Struck";
+import { assigneeName } from "./UserAvatar";
 
 /**
  * The colour of each field a title part sets, shared by its words in the
@@ -68,11 +77,67 @@ export type ShownPart = PlacedPart & {
 };
 
 /**
- * New item's title: an input over a copy of its text that highlights the
- * parts setting a field and strikes the words the item adds without. The
- * input's own text is transparent, so typing, the caret, selection and undo
- * are the browser's own. Under it, the title it adds as; with the caret in
- * a part, what it sets and the choices to keep it in the title or not set it.
+ * A checklist line as typed, read by the rules alone, without Jev: an
+ * @handle of someone who can edit the list assigns them, a #word labels it,
+ * and filler such as "Remind me to" goes. Both checklists, New item's and
+ * the item's own, read their lines this way, so a line adds the same from
+ * either. `reset` forgets what was kept in or dropped, for the next line.
+ */
+export function useLineParts(title: string, people: AssigneeView[], labels: string[]) {
+  const [kept, setKept] = useState<string[]>([]);
+  const [dropped, setDropped] = useState<string[]>([]);
+  const key = (p: TitlePart) => `${p.field}:${p.text.toLowerCase()}`;
+  const found = ruleParts(title, {
+    people: people.map((a) => ({ userId: a.userId, handle: a.displayUsername ?? a.username })),
+    labels,
+  })
+    // A line goes in on Enter, with nothing to review, so a #word only sets
+    // a label the list already has: "Fix #42" stays as typed.
+    .filter((p) => p.field !== "label" || labels.includes(p.label))
+    .filter((p) => !dropped.includes(key(p)));
+  const parts: ShownPart[] = placeParts(title, found).map((p) => {
+    const person = p.field === "who" ? people.find((a) => a.userId === p.userId) : undefined;
+    const isKept = kept.includes(key(p));
+    return {
+      ...p,
+      kept: isKept,
+      value: person ? assigneeName(person) : p.field === "label" ? p.label : "",
+      shown: p.remove && !isKept ? "out" : "stays",
+    };
+  });
+  const { saved, struck } = cutTitle(title, parts.filter((p) => p.shown === "out"));
+  return {
+    parts,
+    saved,
+    struck,
+    assigneeIds: [...new Set(parts.flatMap((p) => (p.field === "who" ? [p.userId] : [])))],
+    labels: [...new Set(parts.flatMap((p) => (p.field === "label" ? [p.label] : [])))],
+    onKeep: (p: ShownPart) =>
+      setKept((cur) => (cur.includes(key(p)) ? cur.filter((k) => k !== key(p)) : [...cur, key(p)])),
+    onDrop: (p: ShownPart) => setDropped((cur) => [...cur, key(p)]),
+    reset: () => {
+      setKept([]);
+      setDropped([]);
+    },
+  };
+}
+
+// The text of each kind of field: a title, large and unboxed; a checklist
+// line, boxed as an Input is. The overlay copy and the input share it, so
+// the copy sits exactly under the typing. 16px on phones, so iOS doesn't
+// zoom in on focus.
+const TEXT = {
+  title: "text-base leading-6 font-medium",
+  line: "text-base leading-6 md:text-sm",
+};
+
+/**
+ * New item's title, or a checklist line (`variant="line"`): an input over a
+ * copy of its text that highlights the parts setting a field and strikes
+ * the words the item adds without. The input's own text is transparent, so
+ * typing, the caret, selection and undo are the browser's own. Under it,
+ * the title it adds as; with the caret in a part, what it sets and the
+ * choices to keep it in the title or not set it.
  */
 export function TitleField({
   inputRef,
@@ -84,6 +149,10 @@ export function TitleField({
   onKeep,
   onDrop,
   disabled,
+  variant = "title",
+  placeholder = "Add a task…",
+  label = "Title",
+  onKeyDown,
 }: {
   inputRef: React.RefObject<HTMLInputElement | null>;
   title: string;
@@ -98,7 +167,14 @@ export function TitleField({
   /** Stops a part setting its field; its words stay. */
   onDrop: (part: ShownPart) => void;
   disabled: boolean;
+  variant?: "title" | "line";
+  placeholder?: string;
+  /** Its accessible name. Not a task's title: Safari reads it to guess the
+   * field, and offered phone-number AutoFill for "Change phone plan". */
+  label?: string;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
 }) {
+  const text = TEXT[variant];
   const [scroll, setScroll] = useState(0);
   const [caret, setCaret] = useState<number | null>(null);
   const panelId = useId();
@@ -144,10 +220,25 @@ export function TitleField({
 
   return (
     <>
-      <div className="relative">
+      <div
+        className={cn(
+          // Laid out as the checklist's rows are, as the line it's about to
+          // be, with a faint tint while it's being typed in.
+          variant === "line" &&
+            "flex scroll-mb-4 items-center gap-2 rounded-md px-1 py-0.5 transition-colors focus-within:bg-neutral-100/70 touch:py-1.5 dark:focus-within:bg-neutral-800/50",
+        )}
+      >
+      {/* The circle the line will have, fainter: a stand-in, not a control. */}
+      {variant === "line" && (
+        <span
+          aria-hidden
+          className="size-4 shrink-0 rounded-full border-[1.5px] border-neutral-200 dark:border-neutral-700"
+        />
+      )}
+      <div className={cn("relative", variant === "line" && "min-w-0 flex-1")}>
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 overflow-hidden text-base leading-6 font-medium whitespace-pre"
+          className={cn("pointer-events-none absolute inset-0 overflow-hidden whitespace-pre", text)}
         >
           <div style={{ transform: `translateX(${-scroll}px)` }}>{runs}</div>
         </div>
@@ -160,17 +251,26 @@ export function TitleField({
           }}
           onSelect={track}
           onScroll={track}
+          onKeyDown={onKeyDown}
+          // A checklist line holds while its item saves, keeping focus
+          // (aria-disabled, not disabled). The title stays open for the next.
+          readOnly={variant === "line" && disabled}
+          aria-disabled={(variant === "line" && disabled) || undefined}
           // Tabbing on to the part's choices keeps them; anywhere else drops them.
           onBlur={(e) => {
             if (!panelRef.current?.contains(e.relatedTarget)) setCaret(null);
           }}
           aria-describedby={panelId}
           // Coming back to New item from an item it opened lands here too.
-          autoFocus
-          placeholder="Add a task…"
-          aria-label="Title"
-          className="relative w-full bg-transparent text-base leading-6 font-medium text-transparent caret-foreground outline-none placeholder:text-muted-foreground selection:bg-blue-500/30 selection:text-transparent"
+          autoFocus={variant === "title"}
+          placeholder={placeholder}
+          aria-label={label}
+          className={cn(
+            "relative w-full bg-transparent text-transparent caret-foreground outline-none placeholder:text-muted-foreground selection:bg-blue-500/30 selection:text-transparent",
+            text,
+          )}
         />
+      </div>
       </div>
       {/* One panel: what it adds as, then, while the caret's in a part, that
           part. Always there, as the title's description, so screen readers
