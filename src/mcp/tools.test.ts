@@ -433,7 +433,7 @@ describe("positions", () => {
     const fred = createTestUser(db, { username: "fred" });
     const list = createProject(db, fred, { name: "Home" }, "web");
     const add = (title: string, parentId?: string) =>
-      addItem(db, fred, { projectId: list.id, title, parentId }, "web");
+      addItem(db, fred, { projectId: list.id, title, parentId, positionRef: "end" }, "web");
     return { fred, list, add };
   }
   const titles = (db: Db, userId: string, listId: string) =>
@@ -953,8 +953,8 @@ describe("move_item", () => {
     const fred = createTestUser(db, { username: "fred" });
     const eng = createProject(db, fred, { name: "Engineering" }, "web");
     const ops = createProject(db, fred, { name: "Ops" }, "web");
-    addItem(db, fred, { projectId: ops.id, title: "Rotate keys", subItems: ["Find them"] }, "web");
-    addItem(db, fred, { projectId: ops.id, title: "Patch hosts" }, "web");
+    addItem(db, fred, { projectId: ops.id, title: "Rotate keys", subItems: ["Find them"], positionRef: "end" }, "web");
+    addItem(db, fred, { projectId: ops.id, title: "Patch hosts", positionRef: "end" }, "web");
     const item = addItem(db, fred, { projectId: eng.id, title: "Fix login" }, "web");
     const call = await connectAs(fred);
 

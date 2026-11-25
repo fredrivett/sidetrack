@@ -97,7 +97,7 @@ describe("projects", () => {
     const trip = createProject(db, u, { name: "Trip" }, "web");
     const archived = createProject(db, u, { name: "Someday" }, "web");
     for (const title of ["Water plants", "Descale", "Mow lawn"]) {
-      addItem(db, u, { projectId: home.id, title }, "web");
+      addItem(db, u, { projectId: home.id, title, positionRef: "end" }, "web");
     }
     const done = addItem(db, u, { projectId: trip.id, title: "Book flights" }, "web");
     completeItem(db, u, done.id, "web");

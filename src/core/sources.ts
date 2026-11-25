@@ -340,6 +340,9 @@ export function addFromSource(
   const counts = { added: 0, updated: 0, completed: 0, skipped: 0 };
   db.transaction((tx) => {
     const itemOfLine = new Map<string, string>();
+    // New items go to the top of their list; the rest of a list's lines
+    // follow the first, so the page keeps its order.
+    const lastTopIn = new Map<string, string>();
     for (const line of found.lines) {
       const review = byId.get(line.id);
       if (!review?.add) {
@@ -388,6 +391,7 @@ export function addFromSource(
         if (listAccess(tx as unknown as Db, userId, projectId) !== "edit") {
           throw new Error(`list not found or not yours to change: ${projectId}`);
         }
+        const after = parentId ? undefined : lastTopIn.get(projectId);
         const item = addItem(
           tx as unknown as Db,
           userId,
@@ -395,6 +399,7 @@ export function addFromSource(
             projectId,
             title: review.title?.trim() || line.title,
             parentId,
+            positionRef: after && `after:${after}`,
             dueDate: review.dueDate !== undefined ? review.dueDate : line.dueDate,
             labels: review.labels ?? line.labels,
             labelEmoji: review.labelEmoji,
@@ -406,6 +411,7 @@ export function addFromSource(
           source,
         );
         itemId = item.id;
+        if (!parentId) lastTopIn.set(projectId, item.id);
         counts.added++;
       }
       itemOfLine.set(line.id, itemId);

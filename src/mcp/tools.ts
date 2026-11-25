@@ -982,7 +982,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "when the user names one (\"on the 1st of every month\", \"rent on the 28th\"): it then comes back on the next of that day after it's done, " +
         "however early or late, then `every` - 1 months on, so { every: 1, unit: \"month\", day: 1 } done on 21 November is due 1 December. " +
         "A month without that day (29 to 31) uses its last day. " +
-        "position defaults to end (the bottom of the list, or of the parent's sub-items); top|end|after:<item>|before:<item> are also valid, " +
+        "position defaults to top (the top of the list) for a task and to end (the bottom of the parent's sub-items) for a sub-item; top|end|after:<item>|before:<item> are also valid; to add several tasks in order, put each after:<the one before>, " +
         "where <item> is a short ref (e.g. \"HOM-12\") or an id of a sibling (same list, same parent). " +
         "Returns { created, items } where items is every incomplete item in the list in position order " +
         "(so an item created completed is in created but not items). " +

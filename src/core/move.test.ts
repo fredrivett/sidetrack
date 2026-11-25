@@ -14,8 +14,8 @@ function seed() {
   const eng = createProject(db, fred, { name: "Engineering" }, "web");
   const ops = createProject(db, fred, { name: "Ops" }, "web");
   // Ops already has two items, so moved ones can't keep their numbers.
-  const first = addItem(db, fred, { projectId: ops.id, title: "Rotate keys" }, "web");
-  addItem(db, fred, { projectId: ops.id, title: "Patch hosts" }, "web");
+  const first = addItem(db, fred, { projectId: ops.id, title: "Rotate keys", positionRef: "end" }, "web");
+  addItem(db, fred, { projectId: ops.id, title: "Patch hosts", positionRef: "end" }, "web");
   return { db, fred, eng, ops, first };
 }
 
