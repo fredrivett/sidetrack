@@ -74,6 +74,10 @@ export const AUDIT_ENTITIES = [
   "invitation",
   // A day shared without places of its own (dayShares); no project.
   "day_share",
+  // An emoji reaction (reactions); entityId is the reaction's id. On
+  // something in a list, its project and, for an item's activity or
+  // comment, the item as parentId.
+  "reaction",
 ] as const;
 export type AuditEntity = (typeof AUDIT_ENTITIES)[number];
 
@@ -533,6 +537,33 @@ export const comments = sqliteTable(
   ],
 );
 
+// What an emoji reaction is on (core/reactions.ts): something someone did,
+// by its audit row ("Lorna completed Water the plants"); a comment; or a
+// shared day's note or wrap-up, by `<userId>:<day>`.
+export const REACTION_TARGETS = ["activity", "comment", "day_note", "wrap_up"] as const;
+export type ReactionTarget = (typeof REACTION_TARGETS)[number];
+
+// An emoji reaction: one person's one emoji on one thing, so reacting again
+// with the same emoji takes it back. `owner` is whose thing it is, who
+// hears about it. No foreign keys: an audit row is never deleted, and a
+// comment's reactions go with it (deleteComment). Audited, since others
+// see it.
+export const reactions = sqliteTable(
+  "reactions",
+  {
+    id: text("id").primaryKey(),
+    targetType: text("target_type").$type<ReactionTarget>().notNull(),
+    targetId: text("target_id").notNull(),
+    owner: text("owner").notNull(),
+    userId: text("user_id").notNull(),
+    emoji: text("emoji").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    uniqueIndex("reactions_target_user_emoji").on(t.targetType, t.targetId, t.userId, t.emoji),
+  ],
+);
+
 // A user's GitHub webhook: the id goes in the payload URL GitHub posts to
 // (/api/github/webhook/<id>) and picks whose board the PR titles' refs resolve
 // against. One per user. No foreign key on user_id, matching projects.user_id.
@@ -844,6 +875,8 @@ export const NOTIFICATION_REASONS = [
   // Involved: something they're part of moved.
   "unassigned",
   "following",
+  // Someone reacted to what they did, wrote or shared (core/reactions.ts).
+  "reacted",
   "joined",
   "role",
   // A list or Space they're in was archived, restored or deleted.

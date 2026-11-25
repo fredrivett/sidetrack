@@ -7,6 +7,7 @@ import type { Db } from "./db";
 import { describeEvent, hideAnchors, namesFor, type Part, plainText } from "./describe";
 import { auditColumns, type ChangeEvent } from "./events";
 import { writeNotifications } from "./notifications";
+import { listReactions, reactionKey, type ReactionView } from "./reactions";
 import {
   type AuditEntry,
   type AuditSource,
@@ -26,6 +27,9 @@ export interface AuditEntryWithActor extends AuditEntry {
   actorName: string | null;
   /** Actor's avatar image, when they've set one. */
   actorImage: string | null;
+  /** For a person's change in an item's history, its reactions, which
+   * reacting to it adds to. */
+  reactions?: ReactionView[];
 }
 
 /**
@@ -59,10 +63,10 @@ export interface EventInput {
  * Rows about no item pass. Needs `projects` joined to the row's list.
  */
 function seesRowItem(userId: string) {
-  const about = sql`(case when ${auditLog.entityType} = 'comment' then ${auditLog.parentId} else ${auditLog.entityId} end)`;
+  const about = sql`(case when ${auditLog.entityType} in ('comment', 'reaction') then ${auditLog.parentId} else ${auditLog.entityId} end)`;
   return or(
     // A label's name can give a hidden item away, like the item's own history.
-    sql`${auditLog.entityType} not in ('item', 'comment', 'label')`,
+    sql`${auditLog.entityType} not in ('item', 'comment', 'label', 'reaction')`,
     isNull(projects.id),
     hasWholeListAccess(userId),
     sql`exists (select 1 from ${items} inner join ${projects} on ${projects.id} = ${items.projectId} where ${items.id} = ${about} and ${hasItemAccess(userId)})`,
@@ -249,9 +253,17 @@ export function listAudit(
     rows.flatMap((r) => (r.entry.event ? [r.entry.event] : [])),
     userId,
   );
+  // An item's history: who reacted to each person's change.
+  const reactable = (e: AuditEntry) => opts.itemId && e.entityType === "item" && e.event && e.actor !== SYSTEM_ACTOR;
+  const reactions = listReactions(
+    db,
+    userId,
+    rows.flatMap((r) => (reactable(r.entry) ? [{ type: "activity" as const, id: r.entry.id }] : [])),
+  );
   return rows.map((r) => {
     const parts = r.entry.event ? describeEvent(r.entry.event, names) : null;
     return {
+    ...(reactable(r.entry) && { reactions: reactions[reactionKey({ type: "activity", id: r.entry.id })] ?? [] }),
     ...r.entry,
     event: r.entry.event && hideAnchors(r.entry.event, names),
     parts,

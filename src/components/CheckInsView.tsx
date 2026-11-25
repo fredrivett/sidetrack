@@ -37,6 +37,8 @@ import { UserAvatar } from "./UserAvatar";
 import type { ProjectView } from "./Kanban";
 import { runAction } from "./run-action";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
+import { Reactions } from "./Reactions";
+import type { ReactionView } from "@/core/reactions";
 
 /** Someone who shares their today or week with the viewer, and the lists it covers. */
 export type CheckIn = {
@@ -56,11 +58,16 @@ export type CheckIn = {
   mood: string[];
   /** How their today went, once they've closed it, as much as they share. */
   wrapUp: SeenWrapUp | null;
+  /** The reactions on today's note and wrap-up. */
+  reactions?: DayReactions;
   /** The lists shared just for their day: only their items in it show. */
   lists: ProjectView[];
   /** Their items in it on lists the viewer sees whole (dayOnWholeLists). */
   alsoItemIds: string[];
 };
+
+/** The reactions on a day's note and on its wrap-up. */
+export type DayReactions = { note: ReactionView[]; wrapUp: ReactionView[] };
 
 /** The viewer's own day, as Check-ins shows it, and who they share it with. */
 export type MyDay = {
@@ -73,12 +80,16 @@ export type MyDay = {
   note: string | null;
   mood: string[];
   wrapUp: SeenWrapUp | null;
+  /** What people reacted to their note and wrap-up with. */
+  reactions?: DayReactions;
   /** Their items in the day they share (mySharedDay). */
   itemIds: string[];
   shares: DayShare[];
   /** Invited by email, not joined yet. */
   invited: InvitationView[];
 };
+
+const NO_REACTIONS: DayReactions = { note: [], wrapUp: [] };
 
 const NO_ONE: MyDay = { within: "today", day: "", startsAt: 0, today: "", note: null, mood: [], wrapUp: null, itemIds: [], shares: [], invited: [] };
 
@@ -229,6 +240,8 @@ export function CheckInsView({
             note={myDay.note}
             mood={myDay.mood}
             wrapUp={myDay.wrapUp}
+            // Your own: who reacted, nothing to react to.
+            react={{ viewerId, canReact: false, ...(myDay.reactions ?? NO_REACTIONS) }}
             items={mine.inDay}
             today={myDay.today}
             groups={groups(mine, myDay.today)}
@@ -283,6 +296,7 @@ export function CheckInsView({
                     note={c.note}
                     mood={c.mood}
                     wrapUp={c.wrapUp}
+                    react={{ viewerId, canReact: true, ...(c.reactions ?? NO_REACTIONS) }}
                     items={day.inDay}
                     today={c.today}
                     groups={groups(day, c.today)}
@@ -337,6 +351,7 @@ function DayCard({
   note,
   mood,
   wrapUp,
+  react,
   items,
   today,
   groups,
@@ -353,6 +368,8 @@ function DayCard({
   mood: string[];
   /** How the day went, once it's closed: shown under the note, never over it. */
   wrapUp: SeenWrapUp | null;
+  /** The reactions on the note and wrap-up, and whether the viewer can add one. */
+  react: { viewerId: string; canReact: boolean } & DayReactions;
   /** The items in the day, which its progress counts (dayItems). */
   items: Item[];
   today: string;
@@ -409,6 +426,13 @@ function DayCard({
               ))}
             </ul>
           )}
+          <Reactions
+            target={{ type: "day_note", id: `${person.userId}:${today}` }}
+            reactions={react.note}
+            viewerId={react.viewerId}
+            canReact={react.canReact}
+            className={note ? "pl-[22px]" : ""}
+          />
         </div>
       )}
       {wrapUp && (
@@ -440,6 +464,13 @@ function DayCard({
               ))}
             </ul>
           )}
+          <Reactions
+            target={{ type: "wrap_up", id: `${person.userId}:${today}` }}
+            reactions={react.wrapUp}
+            viewerId={react.viewerId}
+            canReact={react.canReact}
+            className={wrapUp.note ? "pl-[22px]" : ""}
+          />
         </div>
       )}
       <div className="space-y-3 px-4 py-3">

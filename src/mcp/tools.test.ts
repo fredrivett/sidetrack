@@ -651,6 +651,31 @@ describe("comments", () => {
   });
 });
 
+describe("react", () => {
+  it("reacts to a comment as the agent, takes it back, and errors on what isn't an emoji", async () => {
+    const fred = createTestUser(db, { username: "fred", name: "Fred" });
+    const bob = createTestUser(db, { username: "bob" });
+    const list = createProject(db, fred, { name: "Home" }, "web");
+    inviteMember(db, fred, list.id, "bob", "web");
+    acceptInvite(db, bob, list.id, "web");
+    const item = addItem(db, fred, { projectId: list.id, title: "Fix tap" }, "web");
+    const bobs = addComment(db, bob, item.id, "Can you look at this?", "web");
+    const call = await connectAs(fred);
+    const target = { type: "comment", id: bobs.id };
+
+    const added = await call("react", { target, emoji: "👀" });
+    expect(added.data).toEqual({ reacted: true, reactions: [{ emoji: "👀", people: [{ userId: fred, name: "Fred" }], mine: true }] });
+    expect(listAudit(db, fred)[0]).toMatchObject({
+      source: "mcp",
+      agentName: AGENT.name,
+      detail: 'reacted 👀 to @bob\'s comment on "Fix tap"',
+    });
+
+    expect((await call("react", { target, emoji: "👀" })).data).toEqual({ reacted: false, reactions: [] });
+    expect((await call("react", { target, emoji: "ok" })).error).toBe("a reaction is one emoji — no change was made.");
+  });
+});
+
 describe("comment edits and deletes", () => {
   it("edits and deletes the user's own comment, audited as the agent, and refuses anyone else's", async () => {
     const fred = createTestUser(db, { username: "fred" });

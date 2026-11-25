@@ -31,6 +31,7 @@ import {
 import { Kbd } from "@/components/ui/kbd";
 import { EditableText } from "./EditableText";
 import { Markdown } from "./Markdown";
+import { Reactions } from "./Reactions";
 import { runAction } from "./run-action";
 import { useListAccess } from "./list-access";
 import { MentionTextarea } from "./MentionTextarea";
@@ -160,6 +161,7 @@ export function ItemComments({
                 key={c.id}
                 comment={c}
                 people={mentionable}
+                react={{ viewerId, canReact: canComment }}
                 own={
                   c.userId === viewerId
                     ? {
@@ -167,7 +169,10 @@ export function ItemComments({
                         // back what they wrote, but not change it.
                         onEdited: canComment
                           ? (comment) =>
-                              change((cur) => cur.map((x) => (x.id === comment.id ? comment : x)))
+                              // An edit keeps its reactions.
+                              change((cur) =>
+                                cur.map((x) => (x.id === comment.id ? { ...comment, reactions: x.reactions } : x)),
+                              )
                           : undefined,
                         onDelete: () => remove(c.id),
                       }
@@ -210,8 +215,11 @@ export function CommentCard({
   own,
   context,
   clamp = false,
+  react,
 }: {
   comment: CommentView;
+  /** Shows its reactions, and with canReact, a button to add one. */
+  react?: { viewerId: string; canReact: boolean };
   /** Who can open its item, whose `@username` shows as a mention, and
    * who editing it suggests. */
   people?: AssigneeView[];
@@ -224,7 +232,7 @@ export function CommentCard({
   const onEdited = own?.onEdited;
   const agents = c.agentName ? [{ id: c.id, name: c.agentName }] : [];
   return (
-    <li className="group/comment rounded-lg bg-neutral-50 px-3 pt-2 pb-2.5 ring-1 ring-neutral-950/5 dark:bg-white/[0.03] dark:ring-white/5">
+    <li className="group/comment group/reactable relative rounded-lg bg-neutral-50 px-3 pt-2 pb-2.5 ring-1 ring-neutral-950/5 dark:bg-white/[0.03] dark:ring-white/5">
       <div className="flex h-6 items-center gap-2 text-[13px]">
         {/* The agent ahead of the person it wrote for, as in Activity. */}
         {(users.length > 0 || agents.length > 0) && (
@@ -287,6 +295,16 @@ export function CommentCard({
           <Markdown mentions={people}>{c.body}</Markdown>
         )}
       </div>
+      {react && c.reactions && (
+        <Reactions
+          target={{ type: "comment", id: c.id }}
+          reactions={c.reactions}
+          viewerId={react.viewerId}
+          canReact={react.canReact && c.userId !== react.viewerId}
+          quiet
+          className="mt-1.5"
+        />
+      )}
     </li>
   );
 }

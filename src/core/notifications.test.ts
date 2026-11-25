@@ -15,6 +15,8 @@ import {
 } from "./notifications";
 import { createProject, deleteProject, updateProject } from "./projects";
 import { markLooking } from "./presence";
+import { listAudit } from "./audit";
+import { toggleReaction } from "./reactions";
 import { remindDue } from "./reminders";
 import { savePushSubscription } from "./push";
 import {
@@ -728,7 +730,8 @@ describe("notifications", () => {
       {
         title: "Home",
         body: 'Fred added "Fix tap" for you',
-        url: `/board?p=${listId}&item=${item.id}`,
+        // At the change's Activity row, to react to it.
+        url: `/board?p=${listId}&item=${item.id}&activity=${listAudit(db, fred, { itemId: item.id })[0].id}`,
         tag: `item:${item.id}`,
         badge: 1,
       },
@@ -840,5 +843,85 @@ describe("notifications", () => {
     await deliverNotifications(db, due());
     expect(sendPush).not.toHaveBeenCalled();
     expect(unread(db, alice)).toContain('Fred added "Old news" for you');
+  });
+});
+
+describe("reactions", () => {
+  /** Sends what setting up pushed (Fred hearing she completed it), so only reactions are left. */
+  async function flushPushes(db: ReturnType<typeof seed>["db"]) {
+    await deliverNotifications(db, due());
+    sendPush.mockClear();
+  }
+
+  /** Alice completes "Water the plants"; Fred's notification about it. */
+  function completed() {
+    const s = seed();
+    const item = addItem(s.db, s.alice, { projectId: s.listId, title: "Water the plants" }, "web");
+    setFollowing(s.db, s.fred, item.id, true);
+    completeItem(s.db, s.alice, item.id, "web");
+    const n = listNotifications(s.db, s.fred).find((v) => plainText(v.parts) === 'Alice completed "Water the plants"');
+    if (!n?.reactTo) throw new Error("no notification to react to");
+    return { ...s, item, target: n.reactTo };
+  }
+
+  it("tells whoever did it, pushed, and shows on the notification reacted to", async () => {
+    const { db, fred, alice, item, listId, target } = completed();
+    subscribe(db, alice);
+    await flushPushes(db);
+    expect(toggleReaction(db, fred, target, "🎉", "web")).toEqual({ reacted: true });
+    expect(unread(db, alice)).toEqual(['Fred reacted 🎉 to you completing "Water the plants"']);
+    await deliverNotifications(db, due());
+    expect(sendPush).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        body: 'Fred reacted 🎉 to you completing "Water the plants"',
+        url: `/board?p=${listId}&item=${item.id}`,
+      }),
+      expect.anything(),
+    );
+    const mine = listNotifications(db, fred).find((v) => v.reactTo?.id === target.id);
+    expect(mine?.reactions).toEqual([{ emoji: "🎉", people: [{ userId: fred, name: "Fred" }], mine: true }]);
+  });
+
+  it("takes a reaction back with the same emoji, telling nobody", async () => {
+    const { db, fred, alice, target } = completed();
+    subscribe(db, alice);
+    await flushPushes(db);
+    toggleReaction(db, fred, target, "🎉", "web");
+    expect(toggleReaction(db, fred, target, "🎉", "web")).toEqual({ reacted: false });
+    expect(unread(db, alice)).toEqual([]);
+    await deliverNotifications(db, due());
+    expect(sendPush).not.toHaveBeenCalled();
+    expect(listNotifications(db, fred).find((v) => v.reactTo?.id === target.id)?.reactions).toEqual([]);
+  });
+
+  it("pushes several reactions to one thing as one", async () => {
+    const { db, fred, alice, listId, target } = completed();
+    const sam = createTestUser(db, { username: "sam", name: "Sam" });
+    inviteMember(db, fred, listId, "sam", "web");
+    acceptInvite(db, sam, listId, "web");
+    subscribe(db, alice);
+    await flushPushes(db);
+    toggleReaction(db, fred, target, "🎉", "web");
+    toggleReaction(db, sam, target, "👏", "web");
+    toggleReaction(db, sam, target, "🎉", "web");
+    await deliverNotifications(db, due());
+    expect(sendPush).toHaveBeenCalledTimes(1);
+    expect(sendPush).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ body: 'Fred and Sam reacted 🎉👏 to you completing "Water the plants"' }),
+      expect.anything(),
+    );
+  });
+
+  it("is only for those who can comment on the list, and only emoji", () => {
+    const { db, fred, listId, target } = completed();
+    const vic = createTestUser(db, { username: "vic", name: "Vic" });
+    inviteMember(db, fred, listId, "vic", "web", "viewer");
+    acceptInvite(db, vic, listId, "web");
+    const out = createTestUser(db, { username: "out", name: "Out" });
+    expect(() => toggleReaction(db, vic, target, "🎉", "web")).toThrow(/can view/);
+    expect(() => toggleReaction(db, out, target, "🎉", "web")).toThrow(/not found/);
+    expect(() => toggleReaction(db, fred, target, "nice", "web")).toThrow(/one emoji/);
   });
 });

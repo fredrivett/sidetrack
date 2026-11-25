@@ -271,7 +271,7 @@ export function smartLabel(rule: string, lead: number): string {
 }
 
 export function describeEvent(event: ChangeEvent, names: Names): Part[] {
-  const projectId = "projectId" in event ? event.projectId : "";
+  const projectId = "projectId" in event ? (event.projectId ?? "") : "";
   const item = (it: ItemAt): Part => ({
     text: names.item(it, projectId),
     em: "item",
@@ -414,6 +414,16 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
       return [t("edited a comment on "), item(event.item)];
     case "comment.deleted":
       return [t("deleted a comment on "), item(event.item)];
+    case "reaction.added":
+    case "reaction.removed": {
+      const what: Part[] =
+        event.target.type === "activity"
+          ? [person(event.owner), t("'s change to "), ...(event.item ? [item(event.item)] : [t("an item")])]
+          : event.target.type === "comment"
+            ? [person(event.owner), t("'s comment on "), ...(event.item ? [item(event.item)] : [t("an item")])]
+            : [person(event.owner), t(event.target.type === "day_note" ? "'s day note" : "'s wrap-up")];
+      return [t(event.type === "reaction.added" ? `reacted ${event.emoji} to ` : `took back ${event.emoji} on `), ...what];
+    }
     case "list.created":
       return event.space
         ? [t("created list "), list(event.listName), t(" in space "), space(event.space)]

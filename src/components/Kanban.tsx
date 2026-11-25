@@ -171,6 +171,7 @@ export function Kanban({
   initialCollapsedTrays,
   initialListId,
   initialItemId,
+  initialActivityId = null,
   initialOpen = null,
   initialItemExtra,
   notifications,
@@ -240,6 +241,8 @@ export function Kanban({
   initialListId: string | null;
   /** From `?item=`, an item to open on load, as tapping a notification does. */
   initialItemId: string | null;
+  /** The Activity row of that item to open at, ready to react to (?activity=). */
+  initialActivityId?: string | null;
   /** ?open=: a dialog to open once, from a link elsewhere. */
   initialOpen?: "invite" | "share-day" | null;
   /** ?item= when it isn't on the board (done before this week), with its sub-items. */
@@ -752,6 +755,9 @@ export function Kanban({
   ];
   // The board's dialog also reopens the item that was open before a reload.
   const paletteDetail = useItemDetailDialog(detailItems, initialItemId, true);
+  // Kept from the first render: the URL loses ?item= and ?activity= at once
+  // (below), so the next refresh passes null.
+  const [opened] = useState({ itemId: initialItemId, activityId: initialActivityId });
   // ?open= opens its dialog once, from a link such as Profile's Invites.
   useEffect(() => {
     if (initialOpen === "invite") setInviting(true);
@@ -768,6 +774,7 @@ export function Kanban({
     const url = new URL(window.location.href);
     if (!url.searchParams.has("item")) return;
     url.searchParams.delete("item");
+    url.searchParams.delete("activity");
     window.history.replaceState(null, "", url.toString());
   }, []);
   const paletteProject = projects.find(
@@ -791,6 +798,7 @@ export function Kanban({
     assignees: assigneesByProject[item.projectId] ?? [],
     viewerId,
     prLinks: prLinksByItem[item.id] ?? [],
+    focusActivity: item.id === opened.itemId ? opened.activityId : null,
   });
 
   // Centre a list in the rail, switching to the board first when needed; the
@@ -1104,6 +1112,7 @@ export function Kanban({
             open={inboxOpen}
             onOpenChange={setInboxOpen}
             notifications={notifications}
+            viewerId={viewerId}
             // An archived list isn't on the board: it's in Archived.
             onOpenList={(id) => (id in trayByList ? openList(id) : switchView("archived"))}
             onOpenNotification={(n) => {
