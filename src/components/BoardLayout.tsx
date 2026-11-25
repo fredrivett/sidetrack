@@ -13,13 +13,16 @@ export function BoardMain({ children }: { children: ReactNode }) {
 
 /**
  * The top bar: logo and title on the left, then `nav` (the Brief and Board
- * switch), and `children` on the right.
+ * switch), and `children` on the right. The title is the page's h1 unless
+ * `titleAs="div"`, for a board shown inside a page with its own (PreviewBoard).
  */
 export function BoardHeader({
   nav,
+  titleAs: Title = "h1",
   children,
 }: {
   nav?: ReactNode;
+  titleAs?: "h1" | "div";
   children: ReactNode;
 }) {
   return (
@@ -28,11 +31,11 @@ export function BoardHeader({
     // The header is the app's own text; the avatar's initial is data-private.
     <div data-replay-safe data-board-header className="flex items-center justify-between gap-2 max-[360px]:gap-1.5 border-b border-neutral-200 px-3 py-2 sm:gap-3 sm:px-4 dark:border-neutral-800">
       <div className="flex shrink-0 items-center gap-2 self-stretch sm:gap-3">
-        <h1 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+        <Title className="flex items-center gap-2 text-sm font-semibold tracking-tight">
           <LogoMark />
           {/* The name gives way to the view switch on phones. */}
           <span className={nav ? "sr-only sm:not-sr-only" : undefined}>Sidetrack</span>
-        </h1>
+        </Title>
         {/* On phones, where the name is hidden, a rule keeps the logo from
             reading as a third view. */}
         {nav && <span aria-hidden className="h-4 w-px bg-neutral-200 sm:hidden dark:bg-neutral-800" />}
