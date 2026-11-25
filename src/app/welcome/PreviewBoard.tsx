@@ -731,6 +731,7 @@ export function PreviewBoard({
               tray's 16px. */}
           <div className="flex h-[36rem] flex-col overflow-hidden rounded-2xl [&_section]:[--column-width:calc(100vw-82px)] border border-neutral-200 bg-neutral-50 text-left shadow-xl shadow-neutral-900/5 dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-black/40">
             <BoardHeader
+              titleAs="div"
               nav={
                 // The board's view switch (Kanban). The underline sits on the header's bottom border: 8px of
                 // padding and the 1px border below the tabs, which stretch to

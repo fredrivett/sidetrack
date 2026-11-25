@@ -87,6 +87,9 @@ it("keeps every change in the page", async () => {
     />,
   );
 
+  // The landing page's headline is its one h1; the preview's logo isn't another.
+  expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
+
   // It opens on the Brief, whose greeting names today's item and the
   // overdue boiler service.
   const greeting = () => screen.getByRole("heading", { level: 2, name: /Fred\./ }).nextElementSibling as HTMLElement;
