@@ -2280,7 +2280,8 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "What has changed in Sidetrack itself, from its changelog (the app's /changelog page): one entry per change a person using it could notice, plus longer posts about notable ones, newest first, up to the build this server runs. " +
         "Use it when the user asks what's new, or asks about something that works differently from what they expected or remember: check here before calling it a bug, and if a change explains it, tell them what changed and when, in your own words. " +
         "If nothing here explains it, say the changelog doesn't mention it rather than guessing; send_feedback can report it. " +
-        "search keeps entries and posts that contain every word given (any case); since (YYYY-MM-DD) keeps those from that day on. " +
+        "search keeps entries and posts that contain every word given, also inside longer words (any case); since (YYYY-MM-DD) keeps those from that day on. " +
+        "For what's new, pass since (such as a month ago) rather than reading everything. " +
         "Returns { entries: [{ date, type: new | improved | fixed, text, prs (pull request URLs, for more detail), forSelfHosters? }], posts: [{ date, title, body }] }. " +
         "forSelfHosters marks a change only people running their own copy of Sidetrack would notice.",
       inputSchema: {

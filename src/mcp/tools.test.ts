@@ -762,27 +762,28 @@ describe("list_changes", () => {
     const changes = async (args: Record<string, unknown>) =>
       (await call("list_changes", args)).data as Changes;
 
-    const twoFactor = await changes({ search: "AUTHENTICATOR backup" });
-    expect(twoFactor.entries).toEqual([
-      expect.objectContaining({
-        date: "2026-11-20",
-        text: expect.stringContaining("two-factor sign-in"),
-        prs: ["https://github.com/fredrivett/sidetrack/pull/367"],
-      }),
-    ]);
+    const pr = (n: number) => (e: Changes["entries"][number]) =>
+      e.prs.includes(`https://github.com/fredrivett/sidetrack/pull/${n}`);
+    const twoFactor = (await changes({ search: "AUTHENTICATOR backup" })).entries;
+    expect(twoFactor.find(pr(367))).toMatchObject({
+      date: "2026-11-20",
+      text: expect.stringContaining("two-factor sign-in"),
+    });
+    expect(twoFactor.every((e) => /authenticator/i.test(e.text) && /backup/i.test(e.text))).toBe(true);
     expect((await changes({ search: "authenticator nosuchword" })).entries).toEqual([]);
 
     // since is inclusive, and narrows posts as well as entries.
-    expect((await changes({ search: "authenticator", since: "2026-11-20" })).entries).toHaveLength(1);
-    expect((await changes({ search: "authenticator", since: "2026-11-21" })).entries).toEqual([]);
+    expect((await changes({ search: "authenticator", since: "2026-11-20" })).entries.some(pr(367))).toBe(true);
+    const later = (await changes({ search: "authenticator", since: "2026-11-21" })).entries;
+    expect(later.some(pr(367))).toBe(false);
     const recent = await changes({ since: "2026-11-22" });
     expect(recent.entries.every((e) => e.date >= "2026-11-22")).toBe(true);
     expect(recent.posts.map((p) => p.title)).toContain("Share your day, not your whole life");
     expect(recent.posts.map((p) => p.title)).not.toContain("A calmer place to start");
 
-    const [backups] = (await changes({ search: "S3-compatible bucket" })).entries;
-    expect(backups.forSelfHosters).toBe(true);
-    expect(twoFactor.entries[0].forSelfHosters).toBeUndefined();
+    const all = (await changes({})).entries;
+    expect(all.find(pr(365))?.forSelfHosters).toBe(true);
+    expect(all.find(pr(367))?.forSelfHosters).toBeUndefined();
   });
 });
 
