@@ -29,6 +29,7 @@ const brief: AgendaBrief = {
   sinceDay: "2026-11-16",
   lookBack: { finished: [item("f1", "Fix the porch light")], finishedCount: 5, slipped: [] },
   dueToday: [sam],
+  doneToday: 0,
   overdue: [bank],
   ahead: [],
   thisWeek: [],

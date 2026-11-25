@@ -153,7 +153,7 @@ function traceOf(
     why,
     looked: {
       dueToday: open,
-      doneToday: brief.dueToday.length - open,
+      doneToday: brief.doneToday,
       slipped: brief.overdue.length,
       thisWeek: brief.thisWeek.length,
       undated: brief.undated.length,
@@ -525,7 +525,7 @@ export function templateGreeting(
   const hello = helloFor(brief, name);
 
   const open = brief.dueToday.filter((i) => i.completedAt === null);
-  const doneToday = brief.dueToday.length - open.length;
+  const doneToday = brief.doneToday;
 
   // Evening winds down: today's left, or nothing, and no looking ahead.
   if (brief.partOfDay === "evening") {

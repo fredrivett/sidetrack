@@ -27,6 +27,7 @@ const brief = (more: Partial<AgendaBrief> = {}): AgendaBrief => ({
   sinceDay: null,
   lookBack: { finished: [], finishedCount: 0, slipped: [] },
   dueToday: [],
+  doneToday: 0,
   overdue: [],
   ahead: Array.from({ length: 11 }, (_, i) => ({ day: `2026-11-${19 + i}`, open: 0 })),
   thisWeek: [],

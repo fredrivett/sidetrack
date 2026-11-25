@@ -40,6 +40,7 @@ const brief = (more: Partial<AgendaBrief> = {}): AgendaBrief => ({
   sinceDay: null,
   lookBack: { finished: [], finishedCount: 0, slipped: [] },
   dueToday: [],
+  doneToday: 0,
   overdue: [],
   ahead: ahead(),
   thisWeek: [],
@@ -155,7 +156,7 @@ describe("templateGreeting", () => {
       "Good morning. Nothing due today. A few things are still open this week, {{item:span}} and {{item:a}} among them.",
     );
     // Today's all done, and one thing is left for the week.
-    const done = brief({ dueToday: [it_("t", { completedAt: 1 })], thisWeek: [span] });
+    const done = brief({ dueToday: [it_("t", { completedAt: 1 })], doneToday: 1, thisWeek: [span] });
     expect(templateGreeting(done, null)).toBe(
       "Good morning. That's everything for today. {{item:span}} is still open this week.",
     );
