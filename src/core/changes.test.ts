@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { changeSeq, type Seen, watchChanges } from "./changes";
+import { setDayNote } from "./dayNotes";
+import { closeDay } from "./dayWrapUps";
 import { setFollowing } from "./follows";
 import { addComment } from "./comments";
 import { addLabel, updateLabel } from "./labels";
 import { addItem, completeItem, reorderItem, setItemParent, setItemsCollapsed, updateItem } from "./items";
-import { acceptInvite, inviteMember } from "./members";
+import { acceptDayShare, shareDay } from "./dayShares";
+import { acceptInvite, inviteMember, removeMember } from "./members";
 import { linkItemToPr, setPrState } from "./prLinks";
 import { createProject, deleteProject, updateProject } from "./projects";
 import { createTestDb, createTestUser } from "./test-helpers";
@@ -277,5 +280,31 @@ describe("watchChanges", () => {
     setTimeZone(db, owner, "Asia/Tokyo");
     await settle();
     expect(heard).toEqual({ [owner]: 1, [stranger]: 0 });
+  });
+
+  // A partner's Check-ins shows the note, and how the day went, as they change.
+  it("tells collaborators, not strangers, about someone's day note, its removal, and their wrap-up", async () => {
+    watch(member, stranger);
+    setDayNote(db, owner, "2026-11-25", "Tired — slow start");
+    await settle();
+    expect(heard).toEqual({ [member]: 1, [stranger]: 0 });
+    setDayNote(db, owner, "2026-11-25", "");
+    await settle();
+    expect(heard).toEqual({ [member]: 2, [stranger]: 0 });
+    closeDay(db, owner, "2026-11-25", "Got a lot done");
+    await settle();
+    expect(heard).toEqual({ [member]: 3, [stranger]: 0 });
+  });
+
+  // A day shared without places shows on Check-ins even once they share no list.
+  it("tells someone shown a day without places about its note, after they stop sharing lists", async () => {
+    shareDay(db, owner, { person: "member", within: "today", note: true }, "web");
+    acceptDayShare(db, member, owner, "web");
+    removeMember(db, owner, projectId, member, "web");
+    await settle();
+    watch(member);
+    setDayNote(db, owner, "2026-11-25", "Tired — slow start");
+    await settle();
+    expect(heard).toEqual({ [member]: 1 });
   });
 });

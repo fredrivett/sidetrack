@@ -9,6 +9,7 @@
 import { and, eq } from "drizzle-orm";
 import { splitTagged, WRAP_UP_TAGS, type WrapUpTag } from "../lib/dayTags";
 import { cleanNote } from "../lib/greetingPrefs";
+import { announceChange } from "./changes";
 import type { Db } from "./db";
 import { dayWrapUps } from "./schema";
 
@@ -44,11 +45,13 @@ export function getWrapUp(db: Db, userId: string, day: string): WrapUp | null {
 export function closeDay(db: Db, userId: string, day: string, raw: string, now = Date.now()): WrapUp {
   const text = cleanNote(raw);
   // audit-exempt: one person's own words, seen only through a day share
-  // they opted them into (see above).
+  // they opted them into (see above). Announced, so a partner's Check-ins
+  // shows it live.
   db.insert(dayWrapUps)
     .values({ userId, day, text, closedAt: now, updatedAt: now })
     .onConflictDoUpdate({ target: [dayWrapUps.userId, dayWrapUps.day], set: { text, updatedAt: now } })
     .run();
+  announceChange({ actor: userId, projectId: null });
   return getWrapUp(db, userId, day) as WrapUp;
 }
 
