@@ -69,7 +69,12 @@ describe("adding a photo's lines", () => {
       ["Lounge", true],
       ["Bedroom", false],
     ]);
-    expect(items.some((i) => i.title === "Buy slippers" && i.parentId === null)).toBe(true);
+    // New items go to the top of the list, in the page's order.
+    expect(items.filter((i) => i.parentId === null).map((i) => i.title)).toEqual([
+      "Tidy up flat",
+      "Buy slippers",
+      "Change phone plan",
+    ]);
     expect(items.some((i) => i.title === "Doodle")).toBe(false);
     expect(getItem(db, fred, fredLine.id)?.completedAt).not.toBeNull();
     // Only the existing two plus the four added.

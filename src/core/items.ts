@@ -384,6 +384,7 @@ export function addItem(
     labels?: string[];
     /** The emoji for labels this adds to the list, by name. */
     labelEmoji?: Record<string, LabelEmoji>;
+    /** top | end | after:<id> | before:<id>; by default the top, or a sub-item the end. */
     positionRef?: string;
     parentId?: string | null;
     dueDate?: string | null;
@@ -419,7 +420,13 @@ export function addItem(
     if (!parent) throw new Error(`item not found: ${input.parentId}`);
     assertCanParent(parent, input.projectId);
   }
-  const ref = parseRef(input.positionRef);
+  // A new item goes first in its list, where its header's + is; a sub-item
+  // goes last, so a checklist reads in the order it was written.
+  const ref = input.positionRef
+    ? parseRef(input.positionRef)
+    : parent
+      ? "last"
+      : "first";
   const siblings = getAllSiblings(
     db,
     userId,
@@ -1272,7 +1279,7 @@ export function sortItems(
 /**
  * Put a list's top-level items in the order of `ids`, such as the order
  * sortItems returned, to undo a sort. Ids no longer in the list are skipped,
- * and items added since go after the rest, in their current order.
+ * and items added since stay first, where new items go, in their current order.
  */
 export function setItemOrder(
   db: Db,
@@ -1285,7 +1292,7 @@ export function setItemOrder(
   const current = getAllSiblings(db, userId, projectId, null);
   const rank = new Map(ids.map((id, i) => [id, i]));
   const ordered = current.toSorted(
-    (a, b) => (rank.get(a.id) ?? ids.length) - (rank.get(b.id) ?? ids.length),
+    (a, b) => (rank.get(a.id) ?? -1) - (rank.get(b.id) ?? -1),
   );
   if (sameOrder(ordered, current)) return;
   applyItemOrder(db, userId, projectId, ordered, name, null, source);

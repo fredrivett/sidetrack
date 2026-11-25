@@ -65,7 +65,7 @@ export async function createPerson() {
      * `role`, invite already accepted. */
     shareList(name: string, items: string[], withId: string, withHandle: string, role: ListRole) {
       const project = createProject(db, user.id, { name }, SOURCE);
-      for (const title of items) addItem(db, user.id, { projectId: project.id, title }, SOURCE);
+      for (const title of items) addItem(db, user.id, { projectId: project.id, title, positionRef: "end" }, SOURCE);
       inviteMember(db, user.id, project.id, withHandle, SOURCE, role);
       acceptInvite(db, withId, project.id, SOURCE);
       return { id: project.id };
@@ -153,7 +153,7 @@ export const test = base.extend<{ user: User }>({
       password: PASSWORD,
       addList(name, items = []) {
         const project = createProject(db, response.user.id, { name }, SOURCE);
-        for (const title of items) addItem(db, response.user.id, { projectId: project.id, title }, SOURCE);
+        for (const title of items) addItem(db, response.user.id, { projectId: project.id, title, positionRef: "end" }, SOURCE);
         return { id: project.id };
       },
       addItem(listId, title, assigneeIds = [], dueDate, subItems) {

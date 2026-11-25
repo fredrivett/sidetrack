@@ -166,6 +166,7 @@ async function seed() {
           {
             projectId: project.id,
             title: item.title,
+            positionRef: "end",
             labels: item.labels,
             // As if Jev suggested them when the labels were typed.
             labelEmoji: SEED_LABEL_EMOJI,

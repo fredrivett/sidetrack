@@ -45,13 +45,17 @@ function seedProject() {
 }
 
 describe("items", () => {
-  it("appends to the end of the active range by default", () => {
+  it("puts a new item first by default, and a new sub-item last", () => {
     const { db, userId, projectId } = seedProject();
-    addItem(db, userId, { projectId, title: "first" }, "web");
+    const first = addItem(db, userId, { projectId, title: "first" }, "web");
     addItem(db, userId, { projectId, title: "second" }, "web");
+    addItem(db, userId, { projectId, title: "step 1", parentId: first.id }, "web");
+    addItem(db, userId, { projectId, title: "step 2", parentId: first.id }, "web");
     expect(listItems(db, userId, projectId).map((i) => i.title)).toEqual([
-      "first",
       "second",
+      "first",
+      "step 1",
+      "step 2",
     ]);
   });
 
@@ -73,7 +77,7 @@ describe("items", () => {
   it("keeps a completed item in place, and reopening leaves it there", () => {
     const { db, userId, projectId } = seedProject();
     const add = (title: string) =>
-      addItem(db, userId, { projectId, title }, "web");
+      addItem(db, userId, { projectId, title, positionRef: "end" }, "web");
     add("a");
     const b = add("b");
     add("c");
@@ -123,7 +127,7 @@ describe("items", () => {
   it("orders tied positions by id and can still place next to them", () => {
     const { db, userId, projectId } = seedProject();
     const add = (title: string) =>
-      addItem(db, userId, { projectId, title }, "web");
+      addItem(db, userId, { projectId, title, positionRef: "end" }, "web");
     const a = add("a");
     const b = add("b");
     const c = add("c");
@@ -280,7 +284,7 @@ describe("items", () => {
   it("places next to a middle item, and rejects unknown anchors and bad refs", () => {
     const { db, userId, projectId } = seedProject();
     const add = (title: string) =>
-      addItem(db, userId, { projectId, title }, "web");
+      addItem(db, userId, { projectId, title, positionRef: "end" }, "web");
     add("a");
     const b = add("b");
     add("c");
@@ -545,7 +549,7 @@ describe("checklists (sub-items)", () => {
     const add = (
       title: string,
       opts: { parentId?: string; positionRef?: string; subItems?: string[]; completed?: boolean } = {},
-    ) => addItem(db, userId, { projectId, title, ...opts }, "web");
+    ) => addItem(db, userId, { projectId, title, positionRef: "end", ...opts }, "web");
     const tree = () =>
       nestItems(listItems(db, userId, projectId, { includeCompleted: true })).map(
         (i) => [i.title, i.children.map((c) => c.title)],
@@ -1120,7 +1124,7 @@ describe("due dates and Today", () => {
       addItem(
         db,
         userId,
-        { projectId, title, dueDate, parentId: more.parentId },
+        { projectId, title, dueDate, parentId: more.parentId, positionRef: "end" },
         "web",
       );
 
@@ -1473,18 +1477,18 @@ describe("sorting a list", () => {
 
   it("sorts by due date soonest first, a span by its last day, undated last, ties in list order", () => {
     const { db, userId, projectId } = seedProject();
-    addItem(db, userId, { projectId, title: "undated A" }, "web");
-    addItem(db, userId, { projectId, title: "Nov 20", dueDate: "2026-11-20" }, "web");
+    addItem(db, userId, { projectId, title: "undated A", positionRef: "end" }, "web");
+    addItem(db, userId, { projectId, title: "Nov 20", dueDate: "2026-11-20", positionRef: "end" }, "web");
     // Starts first but ends after Nov 20, so it sorts after it.
     addItem(
       db,
       userId,
-      { projectId, title: "span to Nov 22", dueFrom: "2026-11-01", dueDate: "2026-11-22" },
+      { projectId, title: "span to Nov 22", dueFrom: "2026-11-01", dueDate: "2026-11-22", positionRef: "end" },
       "web",
     );
-    addItem(db, userId, { projectId, title: "Nov 10 first", dueDate: "2026-11-10" }, "web");
-    addItem(db, userId, { projectId, title: "undated B" }, "web");
-    addItem(db, userId, { projectId, title: "Nov 10 second", dueDate: "2026-11-10" }, "web");
+    addItem(db, userId, { projectId, title: "Nov 10 first", dueDate: "2026-11-10", positionRef: "end" }, "web");
+    addItem(db, userId, { projectId, title: "undated B", positionRef: "end" }, "web");
+    addItem(db, userId, { projectId, title: "Nov 10 second", dueDate: "2026-11-10", positionRef: "end" }, "web");
 
     expect(sortItems(db, userId, projectId, "due", "web")).not.toBeNull();
     expect(titles(db, userId, projectId)).toEqual([
@@ -1524,7 +1528,7 @@ describe("sorting a list", () => {
       "tie A",
       "high",
       "tie B",
-    ].map((title) => addItem(db, userId, { projectId, title }, "web"));
+    ].map((title) => addItem(db, userId, { projectId, title, positionRef: "end" }, "web"));
     completeItem(db, userId, done.id, "web");
     // Scored while open, then finished before the sort reads the list.
     completeItem(db, userId, finished.id, "web");
@@ -1560,8 +1564,8 @@ describe("sorting a list", () => {
 
   it("audits a sort once, and writes nothing when the list is already in order", () => {
     const { db, userId, projectId } = seedProject();
-    addItem(db, userId, { projectId, title: "b" }, "web");
-    addItem(db, userId, { projectId, title: "a" }, "web");
+    addItem(db, userId, { projectId, title: "b", positionRef: "end" }, "web");
+    addItem(db, userId, { projectId, title: "a", positionRef: "end" }, "web");
     const before = listAudit(db, userId, { projectId }).length;
 
     // As the sort_items tool calls it, so the row names the agent.
@@ -1583,22 +1587,23 @@ describe("sorting a list", () => {
     expect(listAudit(db, userId, { projectId })).toHaveLength(before + 1);
   });
 
-  it("undoes a sort, keeping items added since at the end", () => {
+  it("undoes a sort, keeping items added since at the top", () => {
     const { db, userId, projectId } = seedProject();
-    for (const title of ["c", "a", "b"]) addItem(db, userId, { projectId, title }, "web");
+    for (const title of ["c", "a", "b"]) addItem(db, userId, { projectId, title, positionRef: "end" }, "web");
     const previous = sortItems(db, userId, projectId, "title", "web");
-    addItem(db, userId, { projectId, title: "new" }, "web");
+    // Even one put at the end goes to the top, where new items go.
+    addItem(db, userId, { projectId, title: "new", positionRef: "end" }, "web");
 
     if (!previous) throw new Error("expected the sort to change the order");
     setItemOrder(db, userId, projectId, previous, "web");
-    expect(titles(db, userId, projectId)).toEqual(["c", "a", "b", "new"]);
+    expect(titles(db, userId, projectId)).toEqual(["new", "c", "a", "b"]);
     expect(listAudit(db, userId, { projectId })[0].detail).toBe('reordered the items in "P"');
   });
 
   it("refuses a list the user can't see, and an unknown sort", () => {
     const { db, userId, projectId } = seedProject();
-    addItem(db, userId, { projectId, title: "b" }, "web");
-    addItem(db, userId, { projectId, title: "a" }, "web");
+    addItem(db, userId, { projectId, title: "b", positionRef: "end" }, "web");
+    addItem(db, userId, { projectId, title: "a", positionRef: "end" }, "web");
     const other = createTestUser(db);
     expect(() => sortItems(db, other, projectId, "title", "web")).toThrow(/list not found/);
     expect(() => setItemOrder(db, other, projectId, [], "web")).toThrow(/list not found/);

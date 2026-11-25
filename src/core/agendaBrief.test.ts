@@ -30,7 +30,7 @@ function board({ shared = false } = {}) {
   const add = (
     title: string,
     more: { dueDate?: string; dueFrom?: string; assigneeIds?: string[]; parentId?: string } = {},
-  ) => addItem(db, fred, { projectId: home.id, title, ...more }, "web");
+  ) => addItem(db, fred, { projectId: home.id, title, positionRef: "end", ...more }, "web");
   const brief = (opts: { now?: number; since?: number | null } = {}) =>
     buildAgendaBrief(db, fred, { now: opts.now ?? NOW, timeZone: tz, since: opts.since ?? null });
   return { db, fred, sam, home, add, brief };
@@ -63,7 +63,7 @@ describe("buildAgendaBrief", () => {
     const { db, fred, sam, home, add, brief } = board({ shared: true });
     const today = "2026-11-18";
     const bySam = (title: string, more: { parentId?: string; assigneeIds?: string[] } = {}) =>
-      addItem(db, sam, { projectId: home.id, title, dueDate: today, ...more }, "web");
+      addItem(db, sam, { projectId: home.id, title, dueDate: today, positionRef: "end", ...more }, "web");
     bySam("Sam's errand");
     add("Fred's errand", { dueDate: today });
     const tidy = add("Tidy flat", { dueDate: today, assigneeIds: [fred] });
