@@ -9,7 +9,7 @@ import { isYours } from "../lib/filters";
 import { formatItemRef } from "../lib/itemRef";
 import { nestItems } from "../lib/itemTree";
 import { addDays, agendaSection, dayOf, weekSpan } from "../lib/time";
-import { hasItemAccess } from "./access";
+import { hasItemAccess, inDayOf } from "./access";
 import type { Db } from "./db";
 import { getDayNote } from "./dayNotes";
 import { listAssignees } from "./members";
@@ -80,6 +80,13 @@ export interface AgendaBrief {
   };
   /** The Agenda's Today: open, or finished today. */
   dueToday: BriefItem[];
+  /**
+   * How many items the viewer finished today, whenever each was due: the
+   * items in their day (inDayOf, as their shared day on Check-ins counts
+   * them, so assigned to them), on every active list. Cancelled ones
+   * weren't done.
+   */
+  doneToday: number;
   /** The Agenda's Overdue, open items only. */
   overdue: BriefItem[];
   /** Open single-day items per day, from tomorrow to the end of next week. */
@@ -279,6 +286,21 @@ export function buildAgendaBrief(
       slipped: newestFirst(slipped),
     },
     dueToday: mine.filter((i) => sectionOf(i) === "Today").map(brief),
+    doneToday: db
+      .select({ completedAt: items.completedAt })
+      .from(items)
+      .innerJoin(projects, eq(projects.id, items.projectId))
+      .where(
+        and(
+          hasItemAccess(viewerId),
+          eq(projects.status, "active"),
+          inDayOf(viewerId, "today"),
+          eq(items.cancelled, false),
+          gte(items.completedAt, doneFrom),
+        ),
+      )
+      .all()
+      .filter((i) => i.completedAt !== null && dayOf(i.completedAt, timeZone) === today).length,
     overdue: open.filter((i) => sectionOf(i) === "Overdue").map(brief),
     ahead,
     // A checklist comes up once, as its parent, when the parent is here too.

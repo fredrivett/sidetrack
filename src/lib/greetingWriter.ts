@@ -124,7 +124,7 @@ export function writerInput(
       weekend: brief.weekend,
       part_of_day: brief.partOfDay,
       open_today: open,
-      done_today: brief.dueToday.length - open,
+      done_today: brief.doneToday,
       ...(since && finished > 0 && {
         finished_since_last_visit: {
           count: finished,

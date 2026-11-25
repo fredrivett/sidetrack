@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildAgendaBrief } from "./agendaBrief";
-import { addItem, completeItem } from "./items";
+import { addItem, cancelItem, completeItem } from "./items";
 import { acceptInvite, inviteMember, removeMember } from "./members";
 import { addComment } from "./comments";
 import { createProject, updateProject } from "./projects";
@@ -146,6 +146,36 @@ describe("buildAgendaBrief", () => {
 
     // No read yet: nothing to look back on.
     expect(brief().lookBack).toEqual({ finished: [], finishedCount: 0, slipped: [] });
+  });
+
+  it("counts what's finished today in the viewer's day, as their shared day does, whenever it was due", () => {
+    const { db, fred, add: addAny, brief } = board();
+    const add = (title: string, more: { dueDate?: string; parentId?: string } = {}) =>
+      addAny(title, { assigneeIds: [fred], ...more });
+    const done = (title: string, more: { dueDate?: string; parentId?: string } = {}) =>
+      completeItem(db, fred, add(title, more).id, "web");
+    done("Due today", { dueDate: "2026-11-18" });
+    done("Due Monday", { dueDate: "2026-11-16" });
+    done("Due Friday", { dueDate: "2026-11-20" });
+    const parent = add("Due today with steps", { dueDate: "2026-11-18" });
+    add("Open step", { parentId: parent.id });
+    const stepYesterday = add("Step done yesterday", { parentId: parent.id });
+    done("Step of today's item", { parentId: parent.id });
+    // Not in the day: undated, a step of an item due next week, cancelled,
+    // finished yesterday, or unassigned, though nobody else can be assigned here.
+    done("Undated");
+    const later = add("Due next week", { dueDate: "2026-11-25" });
+    add("Its open step", { parentId: later.id });
+    done("Its step", { parentId: later.id });
+    cancelItem(db, fred, add("Cancelled", { dueDate: "2026-11-18" }).id, {}, "web");
+    completeItem(db, fred, addAny("Unassigned", { dueDate: "2026-11-18" }).id, "web");
+    const yesterday = add("Done yesterday", { dueDate: "2026-11-17" });
+    vi.setSystemTime(at("2026-11-17"));
+    completeItem(db, fred, yesterday.id, "web");
+    completeItem(db, fred, stepYesterday.id, "web");
+    vi.setSystemTime(NOW);
+
+    expect(brief().doneToday).toBe(4);
   });
 
   it("caps each look-back list at ten, counts all that were finished, and lets neither crowd out the other", () => {

@@ -245,6 +245,8 @@ export function CheckInsView({
             items={mine.inDay}
             today={myDay.today}
             groups={groups(mine, myDay.today)}
+            // Only the lists they share, so it can count less than the Agenda.
+            scope={myDay.shares.length ? "Counts only the lists you share." : undefined}
             empty={myDay.shares.length ? "Nothing of yours is due in it yet." : "Share your day and what’s due on it shows here, as they see it."}
             footer={
               <div className="space-y-1 border-t border-stone-100 px-4 py-3 dark:border-stone-800/60">
@@ -355,6 +357,7 @@ function DayCard({
   items,
   today,
   groups,
+  scope,
   empty,
   footer,
 }: {
@@ -375,6 +378,8 @@ function DayCard({
   today: string;
   /** Each item group, by the section it's in: null once it's closed, done or cancelled. */
   groups: { section: AgendaSection | null; due: string; cancelled: boolean; node: ReactNode }[];
+  /** What its progress covers, under the bar, when that's less than it looks. */
+  scope?: string;
   empty: string;
   footer: ReactNode;
 }) {
@@ -496,6 +501,7 @@ function DayCard({
               style={{ width: `${planned.length ? Math.round((done / planned.length) * 100) : 0}%` }}
             />
           </div>
+          {scope && <p className="text-xs text-neutral-500">{scope}</p>}
         </div>
         {items.length === 0 ? (
           <p className="text-xs text-neutral-500">{empty}</p>
