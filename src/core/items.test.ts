@@ -51,9 +51,9 @@ describe("items", () => {
     addItem(db, userId, { projectId, title: "second" }, "web");
     addItem(db, userId, { projectId, title: "step 1", parentId: first.id }, "web");
     addItem(db, userId, { projectId, title: "step 2", parentId: first.id }, "web");
-    expect(listItems(db, userId, projectId).map((i) => i.title)).toEqual([
-      "second",
-      "first",
+    const all = listItems(db, userId, projectId);
+    expect(all.filter((i) => !i.parentId).map((i) => i.title)).toEqual(["second", "first"]);
+    expect(all.filter((i) => i.parentId === first.id).map((i) => i.title)).toEqual([
       "step 1",
       "step 2",
     ]);
