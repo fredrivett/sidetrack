@@ -750,6 +750,42 @@ describe("search_done, labels and notifications", () => {
   });
 });
 
+// Reads the real changes/ and posts/ files, which only ever gain entries.
+describe("list_changes", () => {
+  type Changes = {
+    entries: { date: string; text: string; prs: string[]; forSelfHosters?: boolean }[];
+    posts: { date: string; title: string; body: string }[];
+  };
+
+  it("keeps entries and posts with every search word, from since on", async () => {
+    const call = await connectAs(createTestUser(db));
+    const changes = async (args: Record<string, unknown>) =>
+      (await call("list_changes", args)).data as Changes;
+
+    const twoFactor = await changes({ search: "AUTHENTICATOR backup" });
+    expect(twoFactor.entries).toEqual([
+      expect.objectContaining({
+        date: "2026-11-20",
+        text: expect.stringContaining("two-factor sign-in"),
+        prs: ["https://github.com/fredrivett/sidetrack/pull/367"],
+      }),
+    ]);
+    expect((await changes({ search: "authenticator nosuchword" })).entries).toEqual([]);
+
+    // since is inclusive, and narrows posts as well as entries.
+    expect((await changes({ search: "authenticator", since: "2026-11-20" })).entries).toHaveLength(1);
+    expect((await changes({ search: "authenticator", since: "2026-11-21" })).entries).toEqual([]);
+    const recent = await changes({ since: "2026-11-22" });
+    expect(recent.entries.every((e) => e.date >= "2026-11-22")).toBe(true);
+    expect(recent.posts.map((p) => p.title)).toContain("Share your day, not your whole life");
+    expect(recent.posts.map((p) => p.title)).not.toContain("A calmer place to start");
+
+    const [backups] = (await changes({ search: "S3-compatible bucket" })).entries;
+    expect(backups.forSelfHosters).toBe(true);
+    expect(twoFactor.entries[0].forSelfHosters).toBeUndefined();
+  });
+});
+
 describe("feedback and collaborators", () => {
   it("files feedback under the user's name, saying which agent sent it, and adds to it once", async () => {
     const fred = createTestUser(db, { username: "fred" });
