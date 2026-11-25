@@ -7,6 +7,8 @@ import { type McpContext, registerTools } from "./tools";
 // start_work / report_work / finish_work descriptions in tools.ts.
 const INSTRUCTIONS = `Sidetrack is the user's task board: lists of items, each with a short ref such as SDT-42. An item can have sub-items, one level deep, which the board shows as its checklist.
 
+When the user asks what's new in Sidetrack, or why something in it works the way it does or seems to have changed, check list_changes, its changelog, before answering or calling it a bug.
+
 When the user shares a photo of a list (a notebook page, a whiteboard) to add to Sidetrack, read it and use add_from_photo: it proposes the lines for the user to review in the app, and its description says how to read the page and upload the photo.
 
 Lists can be shared two ways: with people one list at a time (invite_member), or by putting the list in a Space, a group such as a household whose members all see and edit every list in it (list_spaces; a list's spaceId says which Space it's in). Admins manage a Space's people and the Space itself; members can put their own lists in it. When the user asks to share something with the people they already share a Space with, use the Space rather than inviting them list by list.

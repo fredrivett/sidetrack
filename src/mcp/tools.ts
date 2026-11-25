@@ -36,6 +36,7 @@ import {
 import { plainText } from "@/core/describe";
 import { addFeedbackFollowUp, submitFeedback } from "@/core/feedback";
 import { setFollowing } from "@/core/follows";
+import { loadEntries, loadPosts } from "@/lib/changelog";
 import { FEEDBACK_KINDS } from "@/lib/feedback";
 import {
   listNotificationLevels,
@@ -2296,6 +2297,46 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         return errorText(`${(e as Error).message} — no change was made.`);
       }
       return json({ ok: true });
+    },
+  );
+
+  // The same entries and posts /changelog shows, read from the changes/ and
+  // posts/ files this build shipped with, so they describe this server.
+  server.registerTool(
+    "list_changes",
+    {
+      title: "List changes to Sidetrack",
+      description:
+        "What has changed in Sidetrack itself, from its changelog (the app's /changelog page): one entry per change a person using it could notice, plus longer posts about notable ones, newest first, up to the build this server runs. " +
+        "Use it when the user asks what's new, or asks about something that works differently from what they expected or remember: check here before calling it a bug, and if a change explains it, tell them what changed and when, in your own words. " +
+        "If nothing here explains it, say the changelog doesn't mention it rather than guessing; send_feedback can report it. " +
+        "search keeps entries and posts that contain every word given, also inside longer words (any case); since (YYYY-MM-DD) keeps those from that day on. " +
+        "For what's new, pass since (such as a month ago) rather than reading everything. " +
+        "Returns { entries: [{ date, type: new | improved | fixed, text, prs (pull request URLs, for more detail), forSelfHosters? }], posts: [{ date, title, body }] }. " +
+        "forSelfHosters marks a change only people running their own copy of Sidetrack would notice.",
+      inputSchema: {
+        search: z.string().optional(),
+        since: DueDate.optional(),
+      },
+    },
+    async ({ search, since }) => {
+      const words = (search ?? "").toLowerCase().split(/\s+/).filter(Boolean);
+      const keep = (date: string, text: string) =>
+        (!since || date >= since) && words.every((w) => text.toLowerCase().includes(w));
+      return json({
+        entries: loadEntries()
+          .filter((e) => keep(e.date, e.text))
+          .map((e) => ({
+            date: e.date,
+            type: e.type,
+            text: e.text,
+            prs: e.pr.map((n) => `https://github.com/fredrivett/sidetrack/pull/${n}`),
+            ...(e.for === "self-hosters" && { forSelfHosters: true }),
+          })),
+        posts: loadPosts()
+          .filter((p) => keep(p.date, `${p.title}\n${p.body}`))
+          .map((p) => ({ date: p.date, title: p.title, body: p.paragraphs.join("\n\n") })),
+      });
     },
   );
 
