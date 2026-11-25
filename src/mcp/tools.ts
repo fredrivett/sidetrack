@@ -2395,7 +2395,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "role is what they can do once they join: editor (the default) changes everything except owner-only actions " +
         "(delete, prefix, managing members); commenter sees the list and comments on its items; viewer only sees it. " +
         "Use the role the user asked for; when they said to share it read-only or just so someone can see it, that's viewer. " +
-        "only_mine (viewer or commenter) shows them only the items assigned to the user, as for an accountability partner.",
+        "only_mine (viewer or commenter), with only_within, shares the user's day: they see only the user's items in their today or week, as on Check-ins.",
       inputSchema: {
         list_id: z.string(),
         person: z.string().min(1),
@@ -2404,7 +2404,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           .boolean()
           .optional()
           .describe("Viewers and commenters only: they see just the items assigned to you (the user), not the rest of the list."),
-        only_within: z.enum(ONLY_WITHIN).nullable().optional().describe("With only_mine: today or week shows them only those of your items in your today (due today, overdue, or finished today) or your week (Monday to Sunday), by your clock; null shows every day. Leave it out to keep it as it is."),
+        only_within: z.enum(ONLY_WITHIN).nullable().optional().describe("With only_mine: today or week shows them only those of your items in your today (due today, overdue, or finished today) or your week (Monday to Sunday), by your clock. Required with only_mine: someone is shown just your items only in your today or week. Leave it out to keep it as it is."),
       },
     },
     async ({ list_id, person, role, only_mine, only_within }) => {
@@ -2425,7 +2425,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Change what a member, or someone invited, can do on a list (owner only): editor, commenter (sees the list and comments) " +
         "or viewer (sees it only). user_id comes from list_members. Taking edit away takes them off the list's items " +
         "and ends their agents' work there, unless the list's Space still lets them edit. " +
-        "only_mine turns showing them only the user's items on or off; leave it out to keep it as it is. Editors always see everything.",
+        "only_mine false shows someone shown only the user's day the whole list; true needs only_within. Leave it out to keep it as it is. Editors always see everything.",
       inputSchema: {
         list_id: z.string(),
         user_id: z.string(),
@@ -2434,7 +2434,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           .boolean()
           .optional()
           .describe("Viewers and commenters only: they see just the items assigned to you (the user), not the rest of the list."),
-        only_within: z.enum(ONLY_WITHIN).nullable().optional().describe("With only_mine: today or week shows them only those of your items in your today (due today, overdue, or finished today) or your week (Monday to Sunday), by your clock; null shows every day. Leave it out to keep it as it is."),
+        only_within: z.enum(ONLY_WITHIN).nullable().optional().describe("With only_mine: today or week shows them only those of your items in your today (due today, overdue, or finished today) or your week (Monday to Sunday), by your clock. Required with only_mine: someone is shown just your items only in your today or week. Leave it out to keep it as it is."),
       },
     },
     async ({ list_id, user_id, role, only_mine, only_within }) => {
@@ -2869,7 +2869,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Each place is a list_id (owner only; role editor, commenter or viewer) or a space_id (admins only; " +
         "role member, commenter or viewer). Each invitee gets one push and one email naming every place; " +
         "people already in a place hear only of that place. Use it instead of invite_member / invite_space_member " +
-        "when the user names more than one place or person. A place's only_mine (viewer or commenter) shows them only the user's items there, and its only_within (today or week) only those in the user's today or week. " +
+        "when the user names more than one place or person. A place's only_mine (viewer or commenter) with its only_within (today or week, required with it) shares the user's day there: only the user's items in their today or week. " +
         "Check with the user before inviting someone they didn't name.",
       inputSchema: {
         people: z.array(z.string().min(1)).min(1),
@@ -2939,7 +2939,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "Invite an existing user to a Space (admins only). person is a username (\"alice\" or \"@alice\") or an email; " +
         "for someone without an account, use invite_people, which emails them a link to join that brings them in. Once they accept they see every list in the Space, and role says what else: " +
         "member (the default) edits them, commenter comments on their items, viewer only sees them. " +
-        "only_mine (viewer or commenter) shows them only the items assigned to the user. " +
+        "only_mine (viewer or commenter), with only_within, shares the user's day: they see only the user's items in their today or week. " +
         "Check with the user before inviting someone they didn't name.",
       inputSchema: {
         space_id: z.string(),
@@ -2949,7 +2949,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           .boolean()
           .optional()
           .describe("Viewers and commenters only: they see just the items assigned to you (the user), not the rest of the list."),
-        only_within: z.enum(ONLY_WITHIN).nullable().optional().describe("With only_mine: today or week shows them only those of your items in your today (due today, overdue, or finished today) or your week (Monday to Sunday), by your clock; null shows every day. Leave it out to keep it as it is."),
+        only_within: z.enum(ONLY_WITHIN).nullable().optional().describe("With only_mine: today or week shows them only those of your items in your today (due today, overdue, or finished today) or your week (Monday to Sunday), by your clock. Required with only_mine: someone is shown just your items only in your today or week. Leave it out to keep it as it is."),
       },
     },
     async ({ space_id, person, role, only_mine, only_within }) => {
@@ -2989,7 +2989,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         "commenter (sees its lists and comments) or viewer (sees its lists only). user_id comes from list_space_members, " +
         "and they must have accepted. All admins are equal. A Space always keeps an admin, so the last admin can't be given another role. " +
         "Taking edit away takes them off the items they're assigned in the Space. " +
-        "only_mine turns showing them only the user's items on or off; leave it out to keep it as it is. Admins and members always see everything.",
+        "only_mine false shows someone shown only the user's day the whole Space; true needs only_within. Leave it out to keep it as it is. Admins and members always see everything.",
       inputSchema: {
         space_id: z.string(),
         user_id: z.string(),
@@ -2998,7 +2998,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           .boolean()
           .optional()
           .describe("Viewers and commenters only: they see just the items assigned to you (the user), not the rest of the list."),
-        only_within: z.enum(ONLY_WITHIN).nullable().optional().describe("With only_mine: today or week shows them only those of your items in your today (due today, overdue, or finished today) or your week (Monday to Sunday), by your clock; null shows every day. Leave it out to keep it as it is."),
+        only_within: z.enum(ONLY_WITHIN).nullable().optional().describe("With only_mine: today or week shows them only those of your items in your today (due today, overdue, or finished today) or your week (Monday to Sunday), by your clock. Required with only_mine: someone is shown just your items only in your today or week. Leave it out to keep it as it is."),
       },
     },
     async ({ space_id, user_id, role, only_mine, only_within }) => {

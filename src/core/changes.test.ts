@@ -59,10 +59,10 @@ describe("watchChanges", () => {
 
   it("reloads someone shown only the owner's items only for those, and for one leaving them", async () => {
     const jo = createTestUser(db, { username: "jo" });
-    inviteMember(db, owner, projectId, "jo", "web", "viewer", { onlyMine: true });
+    inviteMember(db, owner, projectId, "jo", "web", "viewer", { onlyMine: true, within: "week" });
     acceptInvite(db, jo, projectId, "web");
-    const hidden = addItem(db, member, { projectId, title: "Hidden" }, "web");
-    const mine = addItem(db, owner, { projectId, title: "Mine", assigneeIds: [owner] }, "web");
+    const hidden = addItem(db, member, { projectId, title: "Hidden", dueDate: "2026-01-01" }, "web");
+    const mine = addItem(db, owner, { projectId, title: "Mine", assigneeIds: [owner], dueDate: "2026-01-01" }, "web");
     await settle();
     watch(jo, member);
     updateItem(db, member, hidden.id, { title: "Still hidden" }, "web");
@@ -255,11 +255,11 @@ describe("watchChanges", () => {
 
   it("names the checklist someone shown only the owner's items gains or loses with one of those", async () => {
     const jo = createTestUser(db, { username: "jo" });
-    inviteMember(db, owner, projectId, "jo", "web", "viewer", { onlyMine: true });
+    inviteMember(db, owner, projectId, "jo", "web", "viewer", { onlyMine: true, within: "week" });
     acceptInvite(db, jo, projectId, "web");
-    const parent = addItem(db, owner, { projectId, title: "Trip" }, "web");
+    const parent = addItem(db, owner, { projectId, title: "Trip", dueDate: "2026-01-01" }, "web");
     const line = addItem(db, owner, { projectId, title: "Pack", parentId: parent.id }, "web");
-    const theirs = addItem(db, owner, { projectId, title: "Tickets", assigneeIds: [owner] }, "web");
+    const theirs = addItem(db, owner, { projectId, title: "Tickets", assigneeIds: [owner], dueDate: "2026-01-01" }, "web");
     await settle();
     const seen: Seen[] = [];
     stops.push(watchChanges(db, jo, (_, s) => seen.push(s)));

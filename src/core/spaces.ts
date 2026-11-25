@@ -285,11 +285,10 @@ export function checkSpaceInvite(
 ) {
   const { space } = requireAdmin(db, userId, spaceId, "invite people");
   if (!["member", "commenter", "viewer"].includes(role)) throw new Error(`invalid role: ${role}`);
-  const within = assertWithin(opts.onlyMine, opts.within);
   if (opts.onlyMine && role === "member") {
     throw new Error("only viewers and commenters can be shown just your items");
   }
-  return { space, within };
+  return { space, within: assertWithin(opts.onlyMine, opts.within) };
 }
 
 /**
@@ -549,7 +548,7 @@ export function setSpaceMemberRole(
         ? userId
         : null;
   // A window is someone's day: one now limited to another person's items isn't theirs.
-  const window = within === undefined ? (limitedTo && limitedTo === membership.onlyAssignedTo ? membership.onlyWithin : null) : assertWithin(!!limitedTo, within);
+  const window = assertWithin(!!limitedTo, within === undefined ? (limitedTo && limitedTo === membership.onlyAssignedTo ? membership.onlyWithin : null) : within);
   // Their note and mood go with the day share they were chosen for: a share
   // no longer of that person's day, or of no day, drops them, and setting a
   // window again doesn't bring them back.

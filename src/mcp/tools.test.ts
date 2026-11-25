@@ -309,18 +309,22 @@ describe("invite_by_email", () => {
 });
 
 describe("only_mine", () => {
-  it("lets an agent share a list so someone sees only the user's items", async () => {
+  it("lets an agent share a list so someone sees only the user's day", async () => {
     const lorna = createTestUser(db, { username: "lorna" });
     const jo = createTestUser(db, { username: "jo" });
     const list = createProject(db, lorna, { name: "Week" }, "web");
-    addItem(db, lorna, { projectId: list.id, title: "Swim", assigneeIds: [lorna] }, "web");
+    // Overdue, so in her today whatever the clock says.
+    addItem(db, lorna, { projectId: list.id, title: "Swim", assigneeIds: [lorna], dueDate: "2026-01-01" }, "web");
     addItem(db, lorna, { projectId: list.id, title: "Hidden" }, "web");
     const call = await connectAs(lorna);
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     try {
       const editor = await call("invite_member", { list_id: list.id, person: "jo", role: "editor", only_mine: true });
       expect(editor.error).toMatch(/viewers and commenters/);
-      const sent = await call("invite_member", { list_id: list.id, person: "jo", role: "viewer", only_mine: true });
+      // Only as her day: there's no limit to all her items, on every day.
+      const always = await call("invite_member", { list_id: list.id, person: "jo", role: "viewer", only_mine: true });
+      expect(always.error).toMatch(/share your day/);
+      const sent = await call("invite_member", { list_id: list.id, person: "jo", role: "viewer", only_mine: true, only_within: "today" });
       expect(sent.data).toEqual(expect.objectContaining({ onlyAssignedTo: lorna }));
       acceptInvite(db, jo, list.id, "web");
       expect(listItems(db, jo, list.id).map((i) => i.title)).toEqual(["Swim"]);
@@ -328,10 +332,10 @@ describe("only_mine", () => {
       await call("set_member_role", { list_id: list.id, user_id: jo, role: "commenter", only_mine: false });
       await call("set_member_role", { list_id: list.id, user_id: jo, role: "viewer" });
       expect(listItems(db, jo, list.id)).toHaveLength(2);
-      // Only her today: Swim has no date, so it goes.
       expect((await call("set_member_role", { list_id: list.id, user_id: jo, role: "viewer", only_within: "today" })).error).toMatch(/just your items/);
-      await call("set_member_role", { list_id: list.id, user_id: jo, role: "viewer", only_mine: true, only_within: "today" });
-      expect(listItems(db, jo, list.id)).toEqual([]);
+      expect((await call("set_member_role", { list_id: list.id, user_id: jo, role: "viewer", only_mine: true })).error).toMatch(/share your day/);
+      await call("set_member_role", { list_id: list.id, user_id: jo, role: "viewer", only_mine: true, only_within: "week" });
+      expect(listItems(db, jo, list.id).map((i) => i.title)).toEqual(["Swim"]);
     } finally {
       log.mockRestore();
     }

@@ -170,7 +170,6 @@ function SpaceCard({
   // What the next invite lets them do. Admins are made from members, not
   // invited as admins.
   const [role, setRole] = useState<Exclude<SpaceRole, "admin">>("member");
-  const [onlyMine, setOnlyMine] = useState(false);
   const [saving, start] = useTransition();
   const tap = useTapToConfirm();
 
@@ -288,7 +287,7 @@ function SpaceCard({
             e.preventDefault();
             if (everyone.length === 0) return;
             // As Invite people does: anyone not on Sidetrack yet gets a link to join that brings them here.
-            const place = { kind: "space", id: space.id, role, onlyMine: role !== "member" && onlyMine } as const;
+            const place = { kind: "space", id: space.id, role } as const;
             const who = everyone.length === 1 ? everyone[0] : `${everyone.length} people`;
             save(() => inviteAnyoneAction(everyone, [place]), `invite ${who}`, () => {
               setPerson("");
@@ -313,7 +312,6 @@ function SpaceCard({
             roles={INVITE_ROLES}
             scope="space"
             onChange={setRole}
-            onlyMine={{ value: onlyMine, onChange: setOnlyMine }}
           />
           <Button type="submit" size="sm" aria-disabled={everyone.length === 0 || undefined}>
             Invite

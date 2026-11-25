@@ -12,7 +12,7 @@ function open() {
 }
 
 describe("RoleSelect", () => {
-  it("names whose items someone sees when another admin limited them, and lets you switch or lift it", () => {
+  it("names whose day someone sees, and only lets you show them everything instead", () => {
     const onChange = vi.fn();
     const props = {
       label: "What Jo can do",
@@ -21,24 +21,20 @@ describe("RoleSelect", () => {
       scope: "space" as const,
       onChange: () => {},
     };
-    render(<RoleSelect {...props} onlyMine={{ value: false, someoneElse: "@alex", onChange }} />);
-    expect(screen.getByRole("button", { name: "What Jo can do" }).textContent).toBe("Can view, @alex’s items");
+    render(<RoleSelect {...props} onlyMine={{ value: false, someoneElse: "@alex", onChange }} within="today" />);
+    expect(screen.getByRole("button", { name: "What Jo can do" }).textContent).toBe("Can view, @alex’s day");
     open();
-    const alex = screen.getByRole("menuitemcheckbox", { name: /^Only @alex’s items/ });
-    const mine = screen.getByRole("menuitemcheckbox", { name: /^Only my items/ });
-    expect([alex.getAttribute("aria-checked"), mine.getAttribute("aria-checked")]).toEqual(["true", "false"]);
-    fireEvent.click(mine);
-    expect(onChange).toHaveBeenLastCalledWith(true);
-    // A tick keeps the menu open.
-    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: /^Only @alex’s items/ }));
-    expect(onChange).toHaveBeenLastCalledWith(false);
-    expect(onChange).toHaveBeenCalledTimes(2);
-
-    // Limited to you: no one else is named.
-    cleanup();
-    render(<RoleSelect {...props} onlyMine={{ value: true, onChange }} />);
-    expect(screen.getByRole("button", { name: "What Jo can do" }).textContent).toBe("Can view, my items");
-    open();
+    const alex = screen.getByRole("menuitemcheckbox", { name: /^Only @alex’s day/ });
+    expect(alex.getAttribute("aria-checked")).toBe("true");
     expect(screen.getAllByRole("menuitemcheckbox")).toHaveLength(1);
+    fireEvent.click(alex);
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(false);
+
+    // Not limited: nothing to limit them to here, that's Share your day's job.
+    cleanup();
+    render(<RoleSelect {...props} onlyMine={{ value: false, onChange }} />);
+    expect(screen.getByRole("button", { name: "What Jo can do" }).textContent).toBe("Can view");
+    open();
+    expect(screen.queryAllByRole("menuitemcheckbox")).toHaveLength(0);
   });
 });

@@ -34,8 +34,6 @@ type Picked = {
   places: string[];
   listRoles: Record<string, ListRole>;
   spaceRoles: Record<string, InviteSpaceRole>;
-  /** Places, by key, where they'll see only your items. */
-  onlyMine?: string[];
 };
 const NOTHING_PICKED: Picked = { people: [], places: [], listRoles: {}, spaceRoles: {} };
 
@@ -74,12 +72,6 @@ export function InviteDialog({
   const [kept, setKept] = useStoredState("draft:invite:picked", NOTHING_PICKED);
   const { people, listRoles, spaceRoles } = kept;
   const picked = new Set(kept.places);
-  const mine = new Set(kept.onlyMine ?? []);
-  const setMine = (k: string, on: boolean) =>
-    setKept((c) => ({
-      ...c,
-      onlyMine: on ? [...new Set([...(c.onlyMine ?? []), k])] : (c.onlyMine ?? []).filter((x) => x !== k),
-    }));
   const setPeople = (next: (current: string[]) => string[]) =>
     setKept((c) => ({ ...c, people: next(c.people) }));
   const [error, setError] = useState<string | null>(null);
@@ -105,26 +97,13 @@ export function InviteDialog({
   const chosen = groups.flatMap((g): { place: InvitePlace; name: string }[] => [
     ...(g.admin && picked.has(key({ kind: "space", id: g.id }))
       ? [
-          {
-            place: {
-              kind: "space",
-              id: g.id,
-              role: spaceRoles[g.id] ?? "member",
-              onlyMine: (spaceRoles[g.id] ?? "member") !== "member" && mine.has(key({ kind: "space", id: g.id })),
-            } as const,
-            name: g.name,
-          },
+          { place: { kind: "space", id: g.id, role: spaceRoles[g.id] ?? "member" } as const, name: g.name },
         ]
       : []),
     ...g.lists
       .filter((l) => picked.has(key({ kind: "list", id: l.id })))
       .map((l) => ({
-        place: {
-          kind: "list",
-          id: l.id,
-          role: listRoles[l.id] ?? "editor",
-          onlyMine: (listRoles[l.id] ?? "editor") !== "editor" && mine.has(key({ kind: "list", id: l.id })),
-        } as const,
+        place: { kind: "list", id: l.id, role: listRoles[l.id] ?? "editor" } as const,
         name: l.name,
       })),
   ]);
@@ -156,9 +135,8 @@ export function InviteDialog({
   }
 
   /** What follows a ticked place: what they can do there. */
-  const roleSelect = (kind: "space" | "list", id: string, name: string) => {
-    const k = key({ kind, id });
-    return kind === "space" ? (
+  const roleSelect = (kind: "space" | "list", id: string, name: string) =>
+    kind === "space" ? (
       <RoleSelect
         label={`What they can do in ${name}`}
         value={spaceRoles[id] ?? "member"}
@@ -166,7 +144,6 @@ export function InviteDialog({
         scope="space"
         disabled={pending}
         onChange={(r) => setKept((c) => ({ ...c, spaceRoles: { ...c.spaceRoles, [id]: r } }))}
-        onlyMine={{ value: mine.has(k), onChange: (on) => setMine(k, on) }}
       />
     ) : (
       <RoleSelect
@@ -176,10 +153,8 @@ export function InviteDialog({
         scope="list"
         disabled={pending}
         onChange={(r) => setKept((c) => ({ ...c, listRoles: { ...c.listRoles, [id]: r } }))}
-        onlyMine={{ value: mine.has(k), onChange: (on) => setMine(k, on) }}
       />
     );
-  };
 
   return (
     // It stays open while it saves, so a failure shows where they're looking.

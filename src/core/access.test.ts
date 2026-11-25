@@ -270,7 +270,11 @@ describe("list roles: view, comment, edit", () => {
 describe("a membership shown only someone's items", () => {
   // Lorna's week: what's assigned to her (or has a line that is) shows
   // whole; everything else must never reach Jo, by any read.
+  afterEach(() => vi.useRealTimers());
   function setup() {
+    // Saturday 21 November 2026: her week runs Monday 16th to Sunday 22nd.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.parse("2026-11-21T12:00:00Z"));
     const { db } = createTestDb();
     const lorna = createTestUser(db, { username: "lorna", name: "Lorna" });
     const fred = createTestUser(db, { username: "fred", name: "Fred" });
@@ -281,14 +285,14 @@ describe("a membership shown only someone's items", () => {
     acceptInvite(db, fred, list.id, "web");
     inviteMember(db, lorna, list.id, "vic", "web", "viewer");
     acceptInvite(db, vic, list.id, "web");
-    inviteMember(db, lorna, list.id, "jo", "web", "commenter", { onlyMine: true });
+    inviteMember(db, lorna, list.id, "jo", "web", "commenter", { onlyMine: true, within: "week" });
     acceptInvite(db, jo, list.id, "web");
     for (const u of [jo, vic]) setNotificationLevel(db, u, "all", "all");
 
-    const swim = addItem(db, lorna, { projectId: list.id, title: "Swim", assigneeIds: [lorna], subItems: ["Pack towel"] }, "web");
+    const swim = addItem(db, lorna, { projectId: list.id, title: "Swim", assigneeIds: [lorna], subItems: ["Pack towel"], dueDate: "2026-11-21" }, "web");
     const garden = addItem(db, lorna, { projectId: list.id, title: "Garden", subItems: ["Mow"] }, "web");
     const mow = listSubItems(db, lorna, garden.id)[0];
-    updateItem(db, lorna, mow.id, { assigneeIds: [lorna] }, "web");
+    updateItem(db, lorna, mow.id, { assigneeIds: [lorna], dueDate: "2026-11-21" }, "web");
     const party = addItem(db, fred, { projectId: list.id, title: "SECRET party", labels: ["fun"], subItems: ["SECRET cake"], dueDate: "2026-11-21" }, "web");
     const cake = listSubItems(db, fred, party.id)[0];
     updateItem(db, fred, cake.id, { assigneeIds: [fred] }, "web");
@@ -339,7 +343,7 @@ describe("a membership shown only someone's items", () => {
     expect(rows).toHaveLength(listNotifications(db, jo).length);
     expect(Object.keys(countCommentsByItem(db, vic))).toEqual([party.id]);
     expect(listItems(db, jo, list.id).map((i) => i.title).sort()).toEqual(["Garden", "Mow", "Pack towel", "Swim"]);
-    expect([...limitedListsById(db, jo)]).toEqual([[list.id, { personId: lorna, username: "lorna", name: "Lorna", image: null, within: null, day: null, startsAt: null, today: null, turnsAt: null }]]);
+    expect([...limitedListsById(db, jo)]).toEqual([[list.id, expect.objectContaining({ personId: lorna, within: "week", day: "2026-11-16" })]]);
     expect(limitedListsById(db, vic).size).toBe(0);
     // Nor can she act on what she can't see.
     expect(() => addComment(db, jo, party.id, "hi", "web")).toThrow(/not found/);
@@ -353,7 +357,7 @@ describe("a membership shown only someone's items", () => {
     // A sub-item she sees leaves a parent she doesn't, which is then renamed.
     const parent = addItem(db, fred, { projectId: list.id, title: "Parent", subItems: ["Lorna's bit"] }, "web");
     const bit = listSubItems(db, fred, parent.id)[0];
-    updateItem(db, fred, bit.id, { assigneeIds: [lorna] }, "web");
+    updateItem(db, fred, bit.id, { assigneeIds: [lorna], dueDate: "2026-11-21" }, "web");
     setItemParent(db, fred, bit.id, null, "web");
     updateItem(db, fred, parent.id, { title: "SECRET parent" }, "web");
     const feed = JSON.stringify([listAudit(db, jo, { projectId: list.id }), listAudit(db, jo), listAudit(db, jo, { itemId: bit.id })]);
@@ -387,12 +391,12 @@ describe("a membership shown only someone's items", () => {
     );
   });
 
-  it("says whose items they see when they're invited and join", () => {
+  it("says whose week they see when they're invited and join", () => {
     const { db, lorna, fred, jo } = setup();
     const said = (u: string) => listNotifications(db, u).map((n) => plainText(n.parts));
-    expect(said(fred)).toContain('Lorna invited @jo to "Week" as a commenter of @lorna\'s items');
-    expect(said(jo)).toContain('Lorna invited you to "Week" as a commenter of @lorna\'s items');
-    expect(said(lorna)).toContain('Jo joined "Week" as a commenter of your items');
+    expect(said(fred)).toContain('Lorna invited @jo to "Week" as a commenter of @lorna\'s week');
+    expect(said(jo)).toContain('Lorna invited you to "Week" as a commenter of @lorna\'s week');
+    expect(said(lorna)).toContain('Jo joined "Week" as a commenter of your week');
   });
 
   it("follows assignment as it changes, and the most generous route in", () => {
@@ -431,13 +435,20 @@ describe("a membership shown only someone's items", () => {
     const kim = createTestUser(db, { username: "kim", name: "Kim" });
     const space = createSpace(db, lorna, { name: "Fam" }, "web");
     const home = createProject(db, lorna, { name: "Home", spaceId: space.id }, "web");
-    const mine = addItem(db, lorna, { projectId: home.id, title: "Mine", assigneeIds: [lorna] }, "web");
-    const hidden = addItem(db, lorna, { projectId: home.id, title: "SECRET home" }, "web");
-    inviteSpaceMember(db, lorna, space.id, "kim", "web", "viewer", { onlyMine: true });
+    const mine = addItem(db, lorna, { projectId: home.id, title: "Mine", assigneeIds: [lorna], dueDate: "2026-11-21" }, "web");
+    const hidden = addItem(db, lorna, { projectId: home.id, title: "SECRET home", dueDate: "2026-11-30" }, "web");
+    // Nobody else can be assigned on Home, so an unassigned item in her week is hers.
+    const unassigned = addItem(db, lorna, { projectId: home.id, title: "Unassigned this week", dueDate: "2026-11-20" }, "web");
+    inviteSpaceMember(db, lorna, space.id, "kim", "web", "viewer", { onlyMine: true, within: "week" });
     acceptSpaceInvite(db, kim, space.id, "web");
     expect(everything(db, kim, home.id, [mine.id, hidden.id])).not.toContain("SECRET");
     expect(getItem(db, kim, mine.id)?.title).toBe("Mine");
+    expect(getItem(db, kim, unassigned.id)?.title).toBe("Unassigned this week");
     expect(getItem(db, fred, mine.id)).toBeUndefined();
+    // Once someone else can be assigned there, it's no longer hers.
+    inviteMember(db, lorna, home.id, "fred", "web", "editor");
+    acceptInvite(db, fred, home.id, "web");
+    expect(getItem(db, kim, unassigned.id)).toBeUndefined();
   });
 });
 
@@ -547,9 +558,9 @@ describe("a membership shown only someone's today or week", () => {
     closeDay(db, lorna, "2026-11-19", "Good day — changed my mind", 9);
     expect(sharedDayNote(db, kim, lorna).wrapUp).toEqual({ note: "changed my mind", mood: ["Good day"], closedAt: 5 });
     expect(sharedDayNote(db, jo, lorna).wrapUp).toBeNull();
-    // Only while it's a day share: kept to her items for all time, it stops.
-    setMemberRole(db, lorna, away.id, kim, "viewer", "web", undefined, null);
-    setMemberRole(db, lorna, home.id, kim, "viewer", "web", undefined, null);
+    // Only while it's a day share: shown everything instead, it stops.
+    setMemberRole(db, lorna, away.id, kim, "viewer", "web", false);
+    setMemberRole(db, lorna, home.id, kim, "viewer", "web", false);
     expect(sharedDayNote(db, kim, lorna)).toEqual({ note: null, mood: [], wrapUp: null });
   });
 
@@ -588,9 +599,9 @@ describe("a membership shown only someone's today or week", () => {
     inviteMember(db, lorna, home.id, "jo", "web", "viewer", { onlyMine: true, within: "today", shareNote: true, shareMood: true });
     acceptInvite(db, jo, home.id, "web");
     expect(sharedDayNote(db, jo, lorna).note).toBe("private words");
-    // Kept to her items for all time, then her week again: not opted in again.
-    setMemberRole(db, lorna, home.id, jo, "viewer", "web", undefined, null);
-    setMemberRole(db, lorna, home.id, jo, "viewer", "web", undefined, "week");
+    // Shown everything, then her week again: not opted in again.
+    setMemberRole(db, lorna, home.id, jo, "viewer", "web", false);
+    setMemberRole(db, lorna, home.id, jo, "viewer", "web", true, "week");
     expect(sharedDayNote(db, jo, lorna)).toEqual({ note: null, mood: [], wrapUp: null });
 
     // In a Space, another admin can't revive it, nor take it over as theirs.
@@ -601,7 +612,7 @@ describe("a membership shown only someone's today or week", () => {
     inviteSpaceMember(db, lorna, space.id, "jo", "web", "commenter", { onlyMine: true, within: "today", shareNote: true });
     acceptSpaceInvite(db, jo, space.id, "web");
     expect(sharedDayNote(db, jo, lorna).note).toBe("private words");
-    setSpaceMemberRole(db, sam, space.id, jo, "commenter", "web", true);
+    setSpaceMemberRole(db, sam, space.id, jo, "commenter", "web", true, "today");
     setDayNote(db, sam, "2026-11-19", "Sam's own words");
     expect(sharedDayNote(db, jo, lorna)).toEqual({ note: null, mood: [], wrapUp: null });
     expect(sharedDayNote(db, jo, sam)).toEqual({ note: null, mood: [], wrapUp: null });
@@ -729,20 +740,18 @@ describe("a membership shown only someone's today or week", () => {
     // Fred's list shows whose day Jo sees: Lorna's, not his.
     expect(listMembers(db, fred, home.id).find((m) => m.userId === jo)?.sharerName).toBe("Lorna");
 
-    // Fred making it only his items doesn't turn it into a share of his day.
+    // Nor can Fred keep Sam to all his items, on every day: that's no longer a thing.
     const sam = createTestUser(db, { username: "sam", name: "Sam" });
     inviteMember(db, lorna, home.id, "sam", "web", "viewer", { onlyMine: true, within: "today" });
-    setMemberRole(db, fred, home.id, sam, "viewer", "web", true);
-    expect(listMembers(db, fred, home.id).find((m) => m.userId === sam)).toMatchObject({ onlyAssignedTo: fred, onlyWithin: null });
+    expect(() => setMemberRole(db, fred, home.id, sam, "viewer", "web", true)).toThrow(/share your day/);
     expect(listDayShares(db, fred)).toEqual([]);
-    expect(listDayShares(db, lorna).map((s) => s.name)).not.toContain("Sam");
 
-    // Off the list, her share ends there: Jo leaves it, and the log says so.
+    // Off the list, her shares end there: Jo and Sam leave it, and the log says so.
     removeMember(db, fred, home.id, lorna, "web");
     expect(listAccess(db, jo, home.id)).toBeNull();
     expect(listDayShares(db, lorna).find((s) => s.name === "Jo")?.places.map((p) => p.name)).toEqual(["Week"]);
     expect(listAudit(db, fred, { projectId: home.id }).map((r) => plainText(r.parts ?? []))).toContainEqual(
-      expect.stringContaining("stopped sharing their day with 1 person"),
+      expect.stringContaining("stopped sharing their day with 2 people"),
     );
   });
 
