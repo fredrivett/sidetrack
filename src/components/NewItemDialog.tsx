@@ -376,6 +376,9 @@ export function NewItemDialog({
       value = assigneeName(person);
       clash = picked.assigneeIds !== undefined && !picked.assigneeIds.includes(p.userId);
     } else if (p.field === "label") {
+      // Claude names labels of the list it was asked about, which may not be
+      // this one; only a #label typed in the title makes a new one.
+      if (!p.text.startsWith("#") && !listLabels.some((l) => l.name === p.label)) return [];
       value = p.label;
     } else if (p.field === "list") {
       const list = projects.find((pr) => pr.id === p.projectId);

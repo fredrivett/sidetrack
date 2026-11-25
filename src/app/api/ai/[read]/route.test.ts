@@ -4,6 +4,7 @@ import { acceptInvite, inviteMember } from "@/core/members";
 import { createProject } from "@/core/projects";
 import { createTestDb, createTestUser } from "@/core/test-helpers";
 import { askAboutDraft } from "@/lib/itemSuggest";
+import { askTitleParts } from "@/lib/titleParse";
 import { POST } from "./route";
 
 // The reads run against a real in-memory DB as `viewer`; only the framework
@@ -13,7 +14,9 @@ vi.mock("@/auth/session", () => ({
   getCurrentSession: async () => (ctx.viewer ? { user: { id: ctx.viewer } } : null),
 }));
 vi.mock("@/core/db", () => ({ getDb: () => ({ db: ctx.db }) }));
-vi.mock("@/lib/env", () => ({ getEnv: () => ({ TYPESAFE_API_KEY: "test" }) }));
+vi.mock("@/lib/env", () => ({
+  getEnv: () => ({ TYPESAFE_API_KEY: "test", ANTHROPIC_API_KEY: "test" }),
+}));
 const { NOTHING } = vi.hoisted(() => ({
   NOTHING: {
     listId: null,
@@ -28,6 +31,7 @@ const { NOTHING } = vi.hoisted(() => ({
 vi.mock("@/lib/itemSuggest", () => ({
   askAboutDraft: vi.fn(async () => NOTHING),
 }));
+vi.mock("@/lib/titleParse", () => ({ askTitleParts: vi.fn(async () => []) }));
 
 type Db = ReturnType<typeof createTestDb>["db"];
 let db: Db;
@@ -36,6 +40,7 @@ beforeEach(() => {
   db = createTestDb().db;
   ctx.db = db;
   vi.mocked(askAboutDraft).mockClear();
+  vi.mocked(askTitleParts).mockClear();
 });
 
 const HOST = "sidetrack.example";
@@ -81,6 +86,18 @@ describe("POST /api/ai/[read]", () => {
     const res = await ask("newItem", draft(shared.id));
     expect(res.status).toBe(200);
     expect((await res.json()).duplicate?.ref).toBe(`fred/ENG-${target.number}`);
+  });
+
+  it("finds the list without the @handle, then reads the title with that list's people", async () => {
+    const list = fredsList();
+    vi.mocked(askAboutDraft).mockResolvedValueOnce({ ...NOTHING, listId: list.id });
+    const body = { projectId: null, title: "Fix the login @fred", description: "", today: "2026-11-25" };
+    const res = await ask("newItem", JSON.stringify(body));
+    expect((await res.json()).projectId).toBe(list.id);
+    expect(vi.mocked(askAboutDraft).mock.calls[0][0].title).toBe("Fix the login");
+    const [title, titleCtx] = vi.mocked(askTitleParts).mock.calls[0];
+    expect(title).toBe("Fix the login @fred");
+    expect(titleCtx.people.map((p) => p.id)).toEqual([ctx.viewer]);
   });
 
   it("refuses another site's page, a missing origin, and asks nothing", async () => {
