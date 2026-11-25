@@ -326,9 +326,22 @@ describe("ItemDetailDialog checklist", () => {
     expect(screen.getByText("Buy bread").closest("[aria-busy]")).toBeTruthy();
 
     await act(async () => fail());
-    expect(screen.queryByText("Buy bread")).toBeNull();
+    // Gone from the checklist (the input's own highlight copy still shows it).
+    expect(screen.queryAllByText("Buy bread").filter((l) => l.closest("[aria-busy]"))).toHaveLength(0);
     expect(input.value).toBe("Buy bread");
     expect(toast.error).toHaveBeenCalledWith("Couldn't add “Buy bread”. Please try again.");
+  });
+
+  it("adds a line with the label its title names, as New item's checklist does", async () => {
+    renderDialog();
+    const input = screen.getByRole("textbox", { name: "Add a sub-item" });
+    fireEvent.change(input, { target: { value: "Buy sunscreen #beach" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await act(async () => {});
+    expect(vi.mocked(addSubItemAction).mock.lastCall).toEqual([
+      "i1",
+      { title: "Buy sunscreen", assigneeIds: [], labels: ["beach"] },
+    ]);
   });
 
   it("shows a saved line once when it arrives while the next line still saves", async () => {

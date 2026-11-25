@@ -25,7 +25,7 @@ export interface ItemSaves {
   reorderItem: (id: string, position: string) => Promise<unknown>;
   setItemParent: (id: string, parentId: string | null, position?: string) => Promise<unknown>;
   setItemsCollapsed: (ids: string[], collapsed: boolean) => Promise<unknown>;
-  addSubItem: (parentId: string, title: string) => Promise<unknown>;
+  addSubItem: (parentId: string, line: Parameters<typeof addSubItemAction>[1]) => Promise<unknown>;
   startAgent: (itemId: string, keyId: string) => Promise<unknown>;
   stopAgent: (itemId: string, keyId: string) => Promise<unknown>;
 }
@@ -37,7 +37,7 @@ export const defaultItemSaves: ItemSaves = {
   reorderItem: (id, position) => reorderItemAction(id, position),
   setItemParent: (id, parentId, position) => setItemParentAction(id, parentId, position),
   setItemsCollapsed: (ids, collapsed) => setItemsCollapsedAction(ids, collapsed),
-  addSubItem: (parentId, title) => addSubItemAction(parentId, title),
+  addSubItem: (parentId, line) => addSubItemAction(parentId, line),
   startAgent: (itemId, keyId) => startAgentAction(itemId, keyId),
   stopAgent: (itemId, keyId) => stopAgentAction(itemId, keyId),
 };

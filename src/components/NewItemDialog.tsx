@@ -23,10 +23,10 @@ import type { Repeat } from "@/lib/repeat";
 import { type Due, dueLabel, parseDue, sameDue } from "@/lib/time";
 import { cutTitle, placeParts, ruleParts, type TitlePart } from "@/lib/titleParts";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { MentionTextarea } from "@/components/MentionTextarea";
-import { useDraft } from "@/components/use-draft";
+import { clearDrafts, readDraft, useDraft } from "@/components/use-draft";
 import { useStoredState } from "@/components/use-stored-state";
-import { Input } from "@/components/ui/input";
 import {
   ResponsiveDialog,
   ResponsiveDialogBackButton,
@@ -58,7 +58,11 @@ import { runAction } from "./run-action";
 import { useItemShortcuts } from "./useItemShortcuts";
 import { aiRead } from "./ai-read";
 import { shortLabel } from "./RepeatBadge";
-import { PART_TONE, PartButton, type ShownPart, TitleField } from "./TitleField";
+import { PART_TONE, PartButton, type ShownPart, TitleField, useLineParts } from "./TitleField";
+import { LINE_DRAFTS, lineDescriptionKey, type NewLine, NewItemLine } from "./NewItemLine";
+import { AvatarStack } from "./UserAvatar";
+import { DueBadge } from "./DueBadge";
+import { RepeatBadge } from "./RepeatBadge";
 import { assigneeName } from "./UserAvatar";
 
 // Wait for a pause in typing before asking Jev about the draft.
@@ -108,7 +112,13 @@ function AddedToast({
   );
 }
 
-const NO_SUB_ITEMS: string[] = [];
+const NO_SUB_ITEMS: NewLine[] = [];
+const newLineId = () => Math.random().toString(36).slice(2, 10);
+// Drafts saved before lines had fields hold just their titles, or no id.
+const asLine = (s: NewLine | string | Omit<NewLine, "id">, i: number): NewLine =>
+  typeof s === "string"
+    ? { id: `old${i}`, title: s, done: false }
+    : { ...s, id: "id" in s && s.id ? s.id : `old${i}` };
 
 /**
  * What's been picked in New item. The fields Jev can fill in are undefined
@@ -242,7 +252,25 @@ export function NewItemDialog({
   const initialDue: Due | null = dueToday && today ? { dueFrom: null, dueDate: today } : null;
   const setDue = (next: Due | null) => setPicked((cur) => ({ ...cur, due: next }));
   // The steps added so far, kept as drafts are (signing out drops them).
-  const [subItems, setSubItems] = useStoredState("draft:new-item:sub-items", NO_SUB_ITEMS);
+  const [storedSubItems, setStoredSubItems] = useStoredState<(NewLine | string)[]>(
+    "draft:new-item:sub-items",
+    NO_SUB_ITEMS,
+  );
+  const subItems = storedSubItems.map(asLine);
+  const setSubItems = (update: (cur: NewLine[]) => NewLine[]) =>
+    setStoredSubItems((cur) => update(cur.map(asLine)));
+  const clearSubItems = () => {
+    setStoredSubItems(NO_SUB_ITEMS);
+    clearDrafts(LINE_DRAFTS);
+  };
+  // The line opened to set its fields, if any, sliding in over the form.
+  const [lineView, setLineView] = useState<{ id: string | null; direction: "forward" | "back" }>({
+    id: null,
+    direction: "forward",
+  });
+  const openLine = subItems.find((l) => l.id === lineView.id);
+  const updateLine = (id: string, patch: Partial<NewLine>) =>
+    setSubItems((cur) => cur.map((l) => (l.id === id ? { ...l, ...patch } : l)));
   const { value: subDraft, set: setSubDraft } = useDraft("new-item:sub-draft");
   // How many were added, so the same draft is asked about again.
   const [added, setAdded] = useState(0);
@@ -288,6 +316,7 @@ export function NewItemDialog({
       setAssignOpen(false);
       setDueOpen(false);
       setAddedAny(false);
+      setLineView({ id: null, direction: "forward" });
       trail.reset(null);
     }
   }
@@ -449,7 +478,7 @@ export function NewItemDialog({
   const openPicker = useCallback(() => setAssignOpen(true), []);
   const toggleMe = () => setAssigneeIds(toggleAssignee(assigneeIds, viewerId));
   useItemShortcuts({
-    active: open && !pending && !dueOpen && !shownItem,
+    active: open && !pending && !dueOpen && !shownItem && !openLine,
     onOpenPicker: projectId ? openPicker : () => {},
     onAssignToMe: projectId && canAssignSelf ? toggleMe : undefined,
     onDue: () => setDueOpen(true),
@@ -496,11 +525,21 @@ export function NewItemDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, context]);
 
+  // "@amy" in a line assigns her, "#errands" labels it, as in the item's
+  // own checklist.
+  const line = useLineParts(
+    subDraft,
+    editors,
+    listLabels.map((l) => l.name),
+  );
   function addSubItem() {
-    const t = subDraft.trim();
-    if (!t) return;
-    setSubItems((cur) => [...cur, t]);
+    if (!subDraft.trim()) return;
+    const next: NewLine = { id: newLineId(), title: line.saved, done: false };
+    if (line.assigneeIds.length) next.assigneeIds = line.assigneeIds;
+    if (line.labels.length) next.labels = line.labels;
+    setSubItems((cur) => [...cur, next]);
     setSubDraft("");
+    line.reset();
   }
 
   /**
@@ -523,7 +562,22 @@ export function NewItemDialog({
     const r = repeatSuggested && !fresh ? null : repeat;
     const p = chosenParent?.id ?? null;
     // A sub-item still in its input counts, so it isn't lost to the click.
-    const subs = [...subItems, subDraft.trim()].filter(Boolean);
+    const typed: NewLine[] = subDraft.trim()
+      ? [{ id: "", title: line.saved, done: false, assigneeIds: line.assigneeIds, labels: line.labels }]
+      : [];
+    const subs = [...subItems, ...typed]
+      .filter((s) => s.title.trim())
+      .map((s) => ({
+        title: s.title.trim(),
+        completed: s.done,
+        description: (s.id && readDraft(lineDescriptionKey(s.id)).trim()) || null,
+        dueDate: s.due?.dueDate ?? null,
+        dueFrom: s.due?.dueFrom ?? null,
+        repeat: s.repeat ?? null,
+        // Only who can edit the list it goes on: one picked on another list drops off.
+        assigneeIds: (s.assigneeIds ?? []).filter((id) => editors.some((a) => a.userId === id)),
+        labels: s.labels ?? [],
+      }));
     const startedIn = session.current;
     const prefix = projects.find((pr) => pr.id === projectId)?.refPrefix;
     setAddingAnother(another);
@@ -590,8 +644,9 @@ export function NewItemDialog({
         duplicateIgnored: undefined,
       }));
       // Sub-items can't be edited while it saves, so they're all this item's.
-      setSubItems(NO_SUB_ITEMS);
+      clearSubItems();
       setSubDraft("");
+      line.reset();
       setAdded((n) => n + 1);
       setAddedAny(true);
       titleRef.current?.focus();
@@ -602,8 +657,9 @@ export function NewItemDialog({
   function close() {
     setTitle("");
     setDescription("");
-    setSubItems(NO_SUB_ITEMS);
+    clearSubItems();
     setSubDraft("");
+    line.reset();
     setPicked(NOTHING_PICKED);
     onOpenChange(false);
   }
@@ -611,7 +667,10 @@ export function NewItemDialog({
   return (
     <ResponsiveDialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : close())}>
       <ResponsiveDialogContent initialFocus={titleRef}>
-        <ResponsiveDialogViews view={shownItem ? `item:${shownItem.id}` : "form"} direction={trail.direction}>
+        <ResponsiveDialogViews
+          view={shownItem ? `item:${shownItem.id}` : openLine ? `line:${openLine.id}` : "form"}
+          direction={shownItem ? trail.direction : lineView.direction}
+        >
         {shownItem ? (
           renderItem(shownItem, {
             back: (
@@ -626,6 +685,28 @@ export function NewItemDialog({
             // Deleted or moved: back to the form.
             onClose: () => trail.reset(null),
           })
+        ) : openLine ? (
+          <NewItemLine
+            key={openLine.id}
+            line={openLine}
+            onChange={(patch) => updateLine(openLine.id, patch)}
+            onRemove={() => {
+              setSubItems((cur) => cur.filter((l) => l.id !== openLine.id));
+              setLineView({ id: null, direction: "back" });
+            }}
+            back={
+              <ResponsiveDialogBackButton
+                label={title.trim() || "New item"}
+                onClick={() => setLineView({ id: null, direction: "back" })}
+              />
+            }
+            projectId={projectId}
+            assignees={listAssignees}
+            viewerId={viewerId}
+            labelEmoji={labelEmoji}
+            onLabelEmoji={(name, emoji) => setLabelEmoji((cur) => ({ ...cur, [name]: emoji }))}
+            disabled={pending}
+          />
         ) : (
         <form
           onSubmit={(e) => {
@@ -634,7 +715,13 @@ export function NewItemDialog({
           }}
           className="flex min-h-0 flex-1 flex-col"
         >
-          <div className="flex shrink-0 flex-col gap-2 border-b border-neutral-200 px-4 pt-3 pb-4 dark:border-neutral-800">
+          {/* One scrolling body, the item's fields included, so on a phone
+              the drawer's keyboard handling can bring any field above the
+              keyboard: a fixed header would take most of what's left of the
+              drawer once the keyboard's up, hiding the checklist input. On
+              desktop the fields stay put over the checklist. */}
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <div className="flex flex-col gap-2 border-b border-neutral-200 bg-popover px-4 pt-3 pb-4 md:sticky md:top-0 md:z-10 dark:border-neutral-800">
             <div className="flex min-w-0 items-center gap-1">
               <ResponsiveDialogTitle className="text-sm font-medium text-neutral-500">
                 New item
@@ -880,33 +967,90 @@ export function NewItemDialog({
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
-            <Field label="Checklist">
+          <div className="px-4 py-4">
+            <Field
+              label={
+                subItems.length
+                  ? `Checklist · ${subItems.filter((s) => s.done).length}/${subItems.length}`
+                  : "Checklist"
+              }
+            >
+              {/* Laid out as the item's own checklist will be once it's
+                  added, and ticked off the same way: a line already done is
+                  added done. */}
               <div className="space-y-1">
-                {subItems.map((sub, i) => (
-                  <div key={i} className="flex items-center gap-2 pl-2.5">
-                    <span className="min-w-0 flex-1 truncate text-sm">{sub}</span>
+                {subItems.map((sub) => {
+                  const lineAssigned = editors.filter((a) => sub.assigneeIds?.includes(a.userId));
+                  return (
+                  <div key={sub.id} className="flex items-center gap-2 rounded-md px-1 py-0.5">
+                    <Checkbox
+                      checked={sub.done}
+                      onCheckedChange={(done) => updateLine(sub.id, { done })}
+                      disabled={pending}
+                      aria-label={`${sub.done ? "Uncomplete" : "Complete"} ${sub.title}`}
+                    />
+                    {/* Opens the line, to set its date, people and the rest,
+                        as a saved sub-item opens from the item's checklist. */}
+                    <button
+                      type="button"
+                      onClick={() => setLineView({ id: sub.id, direction: "forward" })}
+                      disabled={pending}
+                      className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-sm hover:underline"
+                    >
+                      <span
+                        className={cn("min-w-0 truncate", sub.done && "text-neutral-400 line-through")}
+                      >
+                        {sub.title}
+                      </span>
+                      {sub.due && (
+                        <span className="shrink-0">
+                          <DueBadge due={sub.due.dueDate} from={sub.due.dueFrom} done={sub.done} />
+                        </span>
+                      )}
+                      {sub.repeat && (
+                        <span className="shrink-0">
+                          <RepeatBadge repeat={sub.repeat} completedAt={null} />
+                        </span>
+                      )}
+                      {sub.labels?.map((name) => (
+                        <span
+                          key={name}
+                          className="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400"
+                        >
+                          {name}
+                        </span>
+                      ))}
+                    </button>
+                    {lineAssigned.length > 0 && <AvatarStack users={lineAssigned} size={18} />}
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon-xs"
                       disabled={pending}
                       onClick={() => {
-                        setSubItems((cur) => cur.filter((_, j) => j !== i));
+                        setSubItems((cur) => cur.filter((l) => l.id !== sub.id));
                         // The button unmounts, so keep focus in the checklist.
                         subRef.current?.focus();
                       }}
-                      aria-label={`Remove sub-item ${sub}`}
-                      className="text-neutral-400"
+                      aria-label={`Remove sub-item ${sub.title}`}
+                      className="text-neutral-400 touch:size-8"
                     >
                       <X />
                     </Button>
                   </div>
-                ))}
-                <Input
-                  ref={subRef}
-                  value={subDraft}
-                  onChange={(e) => setSubDraft(e.target.value)}
+                  );
+                })}
+                <TitleField
+                  variant="line"
+                  inputRef={subRef}
+                  title={subDraft}
+                  onTitle={setSubDraft}
+                  parts={line.parts}
+                  saved={line.saved}
+                  struck={line.struck}
+                  onKeep={line.onKeep}
+                  onDrop={line.onDrop}
+                  disabled={pending}
                   onKeyDown={(e) => {
                     // Enter adds the typed sub-item; on an empty input it
                     // submits the form as usual.
@@ -916,12 +1060,11 @@ export function NewItemDialog({
                     }
                   }}
                   placeholder={subItems.length ? "Add another…" : "Add a step…"}
-                  disabled={pending}
-                  className="text-sm"
-                  aria-label="Add a sub-item"
+                  label="Add a sub-item"
                 />
               </div>
             </Field>
+          </div>
           </div>
 
           <div className="flex shrink-0 items-center justify-end gap-2 border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">

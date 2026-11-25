@@ -726,6 +726,86 @@ describe("checklists (sub-items)", () => {
     ).toEqual(['completed "tidy"', 'completed "lounge"', 'completed "kitchen"']);
   });
 
+  it("creates the lines ticked before adding done, logged, leaving the item open", () => {
+    const { db, userId, projectId } = setup();
+    addItem(
+      db,
+      userId,
+      {
+        projectId,
+        title: "tidy",
+        subItems: [{ title: "lounge", completed: true }, "kitchen", { title: "hall", completed: true }],
+      },
+      "web",
+    );
+    const all = listItems(db, userId, projectId, { includeCompleted: true });
+    expect(Object.fromEntries(all.map((i) => [i.title, i.completedAt !== null]))).toEqual({
+      tidy: false,
+      lounge: true,
+      kitchen: false,
+      hall: true,
+    });
+    expect(
+      listAudit(db, userId, { projectId })
+        .filter((e) => e.entityType === "item" && e.action !== "create")
+        .map((e) => e.detail)
+        .reverse(),
+    ).toEqual(['completed "lounge"', 'completed "hall"']);
+
+    // Every line ticked still adds the item open.
+    addItem(
+      db,
+      userId,
+      { projectId, title: "shop", subItems: [{ title: "milk", completed: true }] },
+      "web",
+    );
+    const shop = listItems(db, userId, projectId, { includeCompleted: true }).find(
+      (i) => i.title === "shop",
+    );
+    expect(shop?.completedAt).toBeNull();
+  });
+
+  it("creates each line with its own fields, not the item's, and its new labels", () => {
+    const { db, userId, projectId } = setup();
+    addItem(
+      db,
+      userId,
+      {
+        projectId,
+        title: "Trip",
+        dueDate: "2026-12-01",
+        labels: ["travel"],
+        labelEmoji: { packing: { emoji: "🎒", chosen: true } },
+        subItems: [
+          {
+            title: "Book trains",
+            description: "Off-peak",
+            dueDate: "2026-11-27",
+            assigneeIds: [userId],
+            repeat: { every: 1, unit: "week" },
+            labels: ["packing"],
+          },
+          "Pack",
+        ],
+      },
+      "web",
+    );
+    const all = listItems(db, userId, projectId, { includeCompleted: true });
+    const by = (title: string) => all.find((i) => i.title === title);
+    expect(by("Book trains")).toMatchObject({
+      description: "Off-peak",
+      dueDate: "2026-11-27",
+      assigneeIds: [userId],
+      repeatEvery: 1,
+      repeatUnit: "week",
+      labels: ["packing"],
+      parentId: by("Trip")?.id,
+    });
+    // A line set nothing on gets nothing, not the item's.
+    expect(by("Pack")).toMatchObject({ dueDate: null, labels: [], assigneeIds: [] });
+    expect(listLabels(db, userId, projectId).find((l) => l.name === "packing")?.emoji).toBe("🎒");
+  });
+
   it("completing a parent ticks its open sub-items, keeping earlier ticks", () => {
     const { db, userId, projectId, add } = setup();
     const p = add("tidy");

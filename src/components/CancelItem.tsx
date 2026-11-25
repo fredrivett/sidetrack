@@ -65,9 +65,12 @@ export function CancelItemDialog({
             if (!saving) cancel();
           }}
           aria-busy={saving || undefined}
-          className={`transition-opacity ${saving ? "opacity-60" : ""}`}
+          // A column with a scrolling body, as the other dialogs: on a phone
+          // the keyboard inset squeezes the drawer, and the body gives way
+          // instead of the buttons being cut off below it.
+          className={`flex min-h-0 flex-1 flex-col transition-opacity ${saving ? "opacity-60" : ""}`}
         >
-          <div className="flex items-start gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+          <div className="flex shrink-0 items-start gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
             <div className="min-w-0 flex-1">
               <ResponsiveDialogTitle>Cancel “{item.title}”</ResponsiveDialogTitle>
               <ResponsiveDialogDescription className="text-sm text-neutral-500">
@@ -76,7 +79,7 @@ export function CancelItemDialog({
             </div>
             <ResponsiveDialogCloseButton className="shrink-0" />
           </div>
-          <div className="space-y-3 px-4 py-4">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-4">
             <label className="block space-y-1">
               <span className="text-xs text-neutral-500">Why (optional)</span>
               <Input
@@ -102,7 +105,7 @@ export function CancelItemDialog({
               />
             </label>
           </div>
-          <div className="flex justify-end gap-2 border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
+          <div className="flex shrink-0 justify-end gap-2 border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
             <Button type="button" variant="ghost" onClick={() => change(false)} aria-disabled={saving || undefined}>
               Keep it open
             </Button>

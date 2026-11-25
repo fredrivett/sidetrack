@@ -373,6 +373,18 @@ function personAt(db: Db, userId: string): PersonAt {
   return { userId, name: assigneeLabel(db, userId) };
 }
 
+/** A sub-item added with its item (addItem's `subItems`), with fields of its own. */
+export type SubItemLine = {
+  title: string;
+  description?: string | null;
+  labels?: string[];
+  dueDate?: string | null;
+  dueFrom?: string | null;
+  assigneeIds?: string[];
+  repeat?: Repeat | null;
+  completed?: boolean;
+};
+
 export function addItem(
   db: Db,
   userId: string,
@@ -395,8 +407,13 @@ export function addItem(
     /** Create it already done, e.g. to log something the user just finished. */
     completed?: boolean;
     repeat?: Repeat | null;
-    /** Titles of sub-items to create under it, in order, in the same transaction. */
-    subItems?: string[];
+    /**
+     * Sub-items to create under it, in order, in the same transaction: a
+     * title, or a line with its own fields, such as one already ticked off
+     * (`completed`) before it was added. Its new labels' emoji are in
+     * `labelEmoji`.
+     */
+    subItems?: (string | SubItemLine)[];
     /** The source it was added from, such as a photo of a page, for its history. */
     from?: SourceAt;
   },
@@ -511,13 +528,21 @@ export function addItem(
     if (parent && !input.completed) {
       reopenParentIfDone(tx as unknown as Db, userId, parent, source);
     }
-    // Each sub-item is added and logged as if added on its own afterwards, and
-    // shares the item's done state; one bad title rolls back the lot.
-    for (const subTitle of input.subItems ?? []) {
+    // Each sub-item is added and logged as if added on its own afterwards,
+    // done if it was ticked or the item is; one bad line rolls back the lot.
+    // Ticking every line leaves the item open: it's the item being added.
+    for (const sub of input.subItems ?? []) {
+      const line = typeof sub === "string" ? { title: sub } : sub;
       addItem(
         tx as unknown as Db,
         userId,
-        { projectId: input.projectId, title: subTitle, parentId: id, completed: input.completed },
+        {
+          ...line,
+          projectId: input.projectId,
+          labelEmoji: input.labelEmoji,
+          parentId: id,
+          completed: input.completed || line.completed,
+        },
         source,
         true,
       );

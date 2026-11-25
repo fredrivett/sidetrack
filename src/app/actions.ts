@@ -99,6 +99,7 @@ import {
   listDoneBefore as listDoneBeforeCore,
   readItems as readItemsCore,
   type Saved,
+  type SubItemLine,
   reorderItem as reorderItemCore,
   setItemOrder as setItemOrderCore,
   setItemParent as setItemParentCore,
@@ -735,15 +736,17 @@ export async function addItemAction(input: {
   dueFrom?: string | null;
   assigneeIds?: string[];
   repeat?: Repeat | null;
-  subItems?: string[];
+  subItems?: SubItemLine[];
 }) {
   const userId = await requireUserId();
   const { db } = getDb();
+  // New labels on its lines get an emoji too.
+  const allLabels = [...(input.labels ?? []), ...(input.subItems ?? []).flatMap((s) => s.labels ?? [])];
   const labelEmoji = await withAutoLabelEmoji(
     db,
     userId,
     input.projectId,
-    input.labels,
+    allLabels,
     input.labelEmoji,
   );
   const it = addItemCore(db, userId, { ...input, labelEmoji }, SOURCE);
@@ -780,14 +783,31 @@ export async function updateItemAction(
   refresh();
 }
 
-/** A checklist line added from the item's dialog, with its parent (it can reopen it). */
-export async function addSubItemAction(parentId: string, title: string) {
+/**
+ * A checklist line added from the item's dialog, with its parent (it can
+ * reopen it), and the people and labels its title named.
+ */
+export async function addSubItemAction(
+  parentId: string,
+  line: { title: string; assigneeIds?: string[]; labels?: string[] },
+) {
   const userId = await requireUserId();
   const { db } = getDb();
   const parent = getItemCore(db, userId, parentId);
   if (!parent) throw new Error(`item not found: ${parentId}`);
+  const labelEmoji = await withAutoLabelEmoji(db, userId, parent.projectId, line.labels);
   const from = changeSeq();
-  const it = addItemCore(db, userId, { projectId: parent.projectId, title, parentId }, SOURCE);
+  const it = addItemCore(
+    db,
+    userId,
+    { ...line, projectId: parent.projectId, parentId, labelEmoji },
+    SOURCE,
+  );
+  // Labels can make new ones on the list, which the rows don't carry.
+  if (line.labels?.length) {
+    refresh();
+    return;
+  }
   return savedRows(db, userId, from, [it.id, parentId]);
 }
 

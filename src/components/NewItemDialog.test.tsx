@@ -111,6 +111,78 @@ describe("NewItemDialog", () => {
     expect(screen.getByPlaceholderText<HTMLInputElement>("Add a step…").value).toBe("");
   });
 
+  it("adds a line ticked off before the item exists as done, and the rest open", async () => {
+    render(dialog());
+    fireEvent.change(screen.getByPlaceholderText("Add a task…"), { target: { value: "Pack" } });
+    const step = () => screen.getByRole<HTMLInputElement>("textbox", { name: "Add a sub-item" });
+    for (const t of ["Toothbrush", "Charger"]) {
+      fireEvent.change(step(), { target: { value: t } });
+      fireEvent.keyDown(step(), { key: "Enter" });
+    }
+    fireEvent.click(screen.getByRole("checkbox", { name: "Complete Charger" }));
+    expect(screen.getByText("Checklist · 1/2")).toBeTruthy();
+    // Typed but not yet entered: it's added too, open.
+    fireEvent.change(step(), { target: { value: "Boots" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Add item" }));
+    });
+    expect(
+      vi.mocked(addItemAction).mock.lastCall?.[0].subItems?.map(({ title, completed }) => ({ title, completed })),
+    ).toEqual([
+      { title: "Toothbrush", completed: false },
+      { title: "Charger", completed: true },
+      { title: "Boots", completed: false },
+    ]);
+  });
+
+  it("adds a line with what its title and its own view set, not the item's", async () => {
+    render(dialog(true, true, [me, bob]));
+    fireEvent.change(screen.getByPlaceholderText("Add a task…"), { target: { value: "Trip" } });
+    const step = () => screen.getByRole<HTMLInputElement>("textbox", { name: "Add a sub-item" });
+    // "@bob" and "#travel" set the line's people and label, and come out of its title.
+    fireEvent.change(step(), { target: { value: "Book trains @bob #travel" } });
+    fireEvent.keyDown(step(), { key: "Enter" });
+    fireEvent.change(step(), { target: { value: "Pack" } });
+    fireEvent.keyDown(step(), { key: "Enter" });
+
+    // Opened, the line gets a description and a date of its own.
+    fireEvent.click(screen.getByRole("button", { name: /^Book trains/ }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Description" }), {
+      target: { value: "Off-peak" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Due/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Tomorrow" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to Trip" }));
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Add item" }));
+    });
+    const input = vi.mocked(addItemAction).mock.lastCall?.[0];
+    expect(input?.dueDate).toBe("2026-11-14");
+    expect(input?.subItems).toEqual([
+      {
+        title: "Book trains",
+        completed: false,
+        description: "Off-peak",
+        dueDate: "2026-11-15",
+        dueFrom: null,
+        repeat: null,
+        assigneeIds: ["bob"],
+        labels: ["travel"],
+      },
+      {
+        title: "Pack",
+        completed: false,
+        description: null,
+        dueDate: null,
+        dueFrom: null,
+        repeat: null,
+        assigneeIds: [],
+        labels: [],
+      },
+    ]);
+  });
+
   it("keeps what's picked through a reload, until it's cancelled", () => {
     const { rerender } = render(dialog(true, false));
     rerender(dialog(true));

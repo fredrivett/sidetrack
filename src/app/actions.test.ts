@@ -132,7 +132,8 @@ describe("item saves", () => {
   it("adding a line to a finished parent returns it reopened, and says the adder follows the line", async () => {
     const { parent } = checklist();
     await completeItemAction(parent.id);
-    const saved = await addSubItemAction(parent.id, "Passport");
+    const saved = await addSubItemAction(parent.id, { title: "Passport" });
+    if (!saved) throw new Error("A line without labels returns its rows");
     const line = saved.items.find((i) => i.title === "Passport");
     expect(row(saved, parent.id)?.completedAt).toBeNull();
     expect(saved.followed).toContain(line?.id);
@@ -141,6 +142,10 @@ describe("item saves", () => {
   it("still reloads for a label change, which can make new labels", async () => {
     const { parent } = checklist();
     expect(await updateItemAction(parent.id, { labels: ["Holiday"] })).toBeUndefined();
+    expect(revalidatePath).toHaveBeenCalled();
+    vi.mocked(revalidatePath).mockClear();
+    // As does a line added with one.
+    expect(await addSubItemAction(parent.id, { title: "Sunscreen", labels: ["Beach"] })).toBeUndefined();
     expect(revalidatePath).toHaveBeenCalled();
   });
 });
