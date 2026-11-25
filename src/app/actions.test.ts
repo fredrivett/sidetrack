@@ -132,10 +132,14 @@ describe("item saves", () => {
   it("adding a line to a finished parent returns it reopened, and says the adder follows the line", async () => {
     const { parent } = checklist();
     await completeItemAction(parent.id);
-    const saved = await addSubItemAction(parent.id, { title: "Passport" });
+    // A field a line doesn't have, such as `completed`, is ignored.
+    const saved = await addSubItemAction(parent.id, { title: "Passport", completed: true } as {
+      title: string;
+    });
     if (!saved) throw new Error("A line without labels returns its rows");
     const line = saved.items.find((i) => i.title === "Passport");
     expect(row(saved, parent.id)?.completedAt).toBeNull();
+    expect(line?.completedAt).toBeNull();
     expect(saved.followed).toContain(line?.id);
   });
 

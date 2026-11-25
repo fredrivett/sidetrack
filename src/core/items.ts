@@ -532,12 +532,19 @@ export function addItem(
     // done if it was ticked or the item is; one bad line rolls back the lot.
     // Ticking every line leaves the item open: it's the item being added.
     for (const sub of input.subItems ?? []) {
-      const line = typeof sub === "string" ? { title: sub } : sub;
+      const line: SubItemLine = typeof sub === "string" ? { title: sub } : sub;
       addItem(
         tx as unknown as Db,
         userId,
         {
-          ...line,
+          // Only a line's own fields, whatever else the caller sends.
+          title: line.title,
+          description: line.description,
+          labels: line.labels,
+          dueDate: line.dueDate,
+          dueFrom: line.dueFrom,
+          assigneeIds: line.assigneeIds,
+          repeat: line.repeat,
           projectId: input.projectId,
           labelEmoji: input.labelEmoji,
           parentId: id,

@@ -74,6 +74,10 @@ export function NewItemLine({
   disabled: boolean;
 }) {
   const description = useDraft(lineDescriptionKey(line.id));
+  // What's in the title field: it can be emptied while retyping, but the
+  // line keeps its last title, so clearing it never drops the line and its
+  // fields. Leaving the field empty puts that title back.
+  const [titleText, setTitleText] = useState(line.title);
   const [dueOpen, setDueOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   const editors = assignees.filter((a) => a.canEdit);
@@ -101,8 +105,14 @@ export function NewItemLine({
           <ResponsiveDialogTitle className="min-w-0 flex-1">
             {/* The line's title is kept with the checklist, a draft already. */}
             <Input
-              value={line.title}
-              onChange={(e) => onChange({ title: e.target.value })}
+              value={titleText}
+              onChange={(e) => {
+                setTitleText(e.target.value);
+                if (e.target.value.trim()) onChange({ title: e.target.value });
+              }}
+              onBlur={() => {
+                if (!titleText.trim()) setTitleText(line.title);
+              }}
               aria-label="Sub-item title"
               disabled={disabled}
               className="h-auto border-0 bg-transparent px-0 py-0 text-base leading-6 font-medium shadow-none focus-visible:ring-0 md:text-base dark:bg-transparent"

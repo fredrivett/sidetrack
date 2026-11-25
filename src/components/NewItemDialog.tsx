@@ -533,7 +533,8 @@ export function NewItemDialog({
     listLabels.map((l) => l.name),
   );
   function addSubItem() {
-    if (!subDraft.trim()) return;
+    // Lines held while the item saves: the add clears the checklist after.
+    if (pending || !subDraft.trim()) return;
     const next: NewLine = { id: newLineId(), title: line.saved, done: false };
     if (line.assigneeIds.length) next.assigneeIds = line.assigneeIds;
     if (line.labels.length) next.labels = line.labels;
@@ -692,6 +693,7 @@ export function NewItemDialog({
             onChange={(patch) => updateLine(openLine.id, patch)}
             onRemove={() => {
               setSubItems((cur) => cur.filter((l) => l.id !== openLine.id));
+              clearDrafts(lineDescriptionKey(openLine.id));
               setLineView({ id: null, direction: "back" });
             }}
             back={
@@ -1029,6 +1031,7 @@ export function NewItemDialog({
                       disabled={pending}
                       onClick={() => {
                         setSubItems((cur) => cur.filter((l) => l.id !== sub.id));
+                        clearDrafts(lineDescriptionKey(sub.id));
                         // The button unmounts, so keep focus in the checklist.
                         subRef.current?.focus();
                       }}

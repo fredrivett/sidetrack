@@ -797,10 +797,12 @@ export async function addSubItemAction(
   if (!parent) throw new Error(`item not found: ${parentId}`);
   const labelEmoji = await withAutoLabelEmoji(db, userId, parent.projectId, line.labels);
   const from = changeSeq();
+  // Only a line's own fields, whatever else the client sends.
+  const { title, assigneeIds, labels } = line;
   const it = addItemCore(
     db,
     userId,
-    { ...line, projectId: parent.projectId, parentId, labelEmoji },
+    { title, assigneeIds, labels, projectId: parent.projectId, parentId, labelEmoji },
     SOURCE,
   );
   // Labels can make new ones on the list, which the rows don't carry.

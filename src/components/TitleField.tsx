@@ -90,7 +90,11 @@ export function useLineParts(title: string, people: AssigneeView[], labels: stri
   const found = ruleParts(title, {
     people: people.map((a) => ({ userId: a.userId, handle: a.displayUsername ?? a.username })),
     labels,
-  }).filter((p) => !dropped.includes(key(p)));
+  })
+    // A line goes in on Enter, with nothing to review, so a #word only sets
+    // a label the list already has: "Fix #42" stays as typed.
+    .filter((p) => p.field !== "label" || labels.includes(p.label))
+    .filter((p) => !dropped.includes(key(p)));
   const parts: ShownPart[] = placeParts(title, found).map((p) => {
     const person = p.field === "who" ? people.find((a) => a.userId === p.userId) : undefined;
     const isKept = kept.includes(key(p));
@@ -248,6 +252,10 @@ export function TitleField({
           onSelect={track}
           onScroll={track}
           onKeyDown={onKeyDown}
+          // A checklist line holds while its item saves, keeping focus
+          // (aria-disabled, not disabled). The title stays open for the next.
+          readOnly={variant === "line" && disabled}
+          aria-disabled={(variant === "line" && disabled) || undefined}
           // Tabbing on to the part's choices keeps them; anywhere else drops them.
           onBlur={(e) => {
             if (!panelRef.current?.contains(e.relatedTarget)) setCaret(null);

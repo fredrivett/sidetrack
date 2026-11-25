@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 import { getDb } from "@/core/db";
 import { listItems } from "@/core/items";
+import { addLabel } from "@/core/labels";
 import { getProject } from "@/core/projects";
 import { expect, test } from "./fixtures";
 
@@ -24,6 +25,8 @@ test("adds an item to a list", async ({ page, user }) => {
 
 test("adds an item with a checklist ticked and set up before it's added", async ({ page, user }) => {
   const home = user.addList("Home");
+  // A line's #word sets a label the list already has.
+  addLabel(getDb().db, user.id, home.id, { name: "tech" }, "web");
   await page.goto("/board");
   await page.getByRole("button", { name: "Add item to Home" }).click();
   const dialog = page.getByRole("dialog");

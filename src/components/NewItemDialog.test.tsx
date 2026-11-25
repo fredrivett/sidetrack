@@ -2,11 +2,12 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { addItemAction } from "@/app/actions";
-import type { Item } from "@/core/schema";
+import type { Item, Label } from "@/core/schema";
 import type { ProjectView } from "./Kanban";
 import type { AssigneeView } from "@/core/members";
 import { aiRead } from "./ai-read";
 import { NewItemDialog } from "./NewItemDialog";
+import { LabelsContext } from "./Labels";
 
 vi.mock("@/app/actions", () => ({
   addItemAction: vi.fn(async (input: { title: string }) => ({ id: "new", projectId: "p1", title: input.title })),
@@ -136,7 +137,10 @@ describe("NewItemDialog", () => {
   });
 
   it("adds a line with what its title and its own view set, not the item's", async () => {
-    render(dialog(true, true, [me, bob]));
+    const travel = { name: "travel", emoji: null } as unknown as Label;
+    render(
+      <LabelsContext.Provider value={{ p1: [travel] }}>{dialog(true, true, [me, bob])}</LabelsContext.Provider>,
+    );
     fireEvent.change(screen.getByPlaceholderText("Add a task…"), { target: { value: "Trip" } });
     const step = () => screen.getByRole<HTMLInputElement>("textbox", { name: "Add a sub-item" });
     // "@bob" and "#travel" set the line's people and label, and come out of its title.
@@ -181,6 +185,25 @@ describe("NewItemDialog", () => {
         labels: [],
       },
     ]);
+  });
+
+  it("holds the checklist while the item saves, so no line is lost to the add", async () => {
+    let finish!: () => void;
+    vi.mocked(addItemAction).mockReturnValueOnce(
+      new Promise((resolve) => (finish = () => resolve({ id: "new", projectId: "p1", title: "Pack" } as Item))),
+    );
+    render(dialog());
+    fireEvent.change(screen.getByPlaceholderText("Add a task…"), { target: { value: "Pack" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add & create more" }));
+    const step = screen.getByRole<HTMLInputElement>("textbox", { name: "Add a sub-item" });
+    expect(step.getAttribute("aria-disabled")).toBe("true");
+    expect(step.readOnly).toBe(true);
+    // Enter while it saves adds no line for the save to clear away.
+    fireEvent.change(step, { target: { value: "Socks" } });
+    fireEvent.keyDown(step, { key: "Enter" });
+    expect(screen.queryByRole("checkbox", { name: "Complete Socks" })).toBeNull();
+    await act(async () => finish());
+    expect(step.getAttribute("aria-disabled")).toBeNull();
   });
 
   it("keeps what's picked through a reload, until it's cancelled", () => {
