@@ -109,7 +109,12 @@ export function NotificationsInbox({
           Notifications <Kbd>N</Kbd>
         </TooltipContent>
       </Tooltip>
-      <PopoverContent align="end" className="w-[22rem] max-w-[calc(100vw-1rem)] p-0">
+      <PopoverContent
+        // A list to read: nothing to type.
+        initialFocus={null}
+        align="end"
+        className="w-[22rem] max-w-[calc(100vw-1rem)] p-0"
+      >
         <div className="flex items-baseline justify-between border-b border-border px-4 py-2.5">
           <h2 data-replay-safe className="text-sm font-semibold">Notifications</h2>
           {unread.length > 0 && (

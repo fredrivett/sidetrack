@@ -134,7 +134,13 @@ export function Reactions({
           >
             <SmilePlus className="size-4" />
           </PopoverTrigger>
-          <PopoverContent align="start" className="w-72 p-0">
+          <PopoverContent
+            // The quick reactions and the emoji grid are what's pressed: its
+            // search is for the odd one, and a phone's keyboard would cover it.
+            initialFocus={null}
+            align="start"
+            className="w-72 p-0"
+          >
             <div className="flex justify-between border-b p-1.5">
               {QUICK.map((emoji) => (
                 <button

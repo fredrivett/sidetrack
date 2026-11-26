@@ -1,7 +1,7 @@
 "use client";
 
 import { Plus, Tag, X } from "lucide-react";
-import { createContext, useContext, useState, useTransition } from "react";
+import { createContext, type RefObject, useContext, useRef, useState, useTransition } from "react";
 import { updateLabelAction } from "@/app/actions";
 import type { LabelEmoji } from "@/core/labels";
 import type { Label } from "@/core/schema";
@@ -221,6 +221,7 @@ export function LabelPicker({
   selected,
   onAdd,
   disabled,
+  inputRef,
 }: {
   projectId: string;
   labels: Label[];
@@ -228,6 +229,8 @@ export function LabelPicker({
   selected: string[];
   onAdd: (name: string, emoji?: LabelEmoji) => void;
   disabled?: boolean;
+  /** Its input, for the popover that opens it to focus. */
+  inputRef: RefObject<HTMLInputElement | null>;
 }) {
   const [query, setQuery] = useState("");
   const typed = query.trim();
@@ -272,6 +275,7 @@ export function LabelPicker({
       disabled={disabled}
     >
       <ComboboxInput
+        ref={inputRef}
         placeholder="Add a label…"
         aria-label="Add a label"
         disabled={disabled}
@@ -342,6 +346,7 @@ export function LabelChips({
 }) {
   const labels = useListLabels(projectId);
   const [open, setOpen] = useState(false);
+  const pickerInput = useRef<HTMLInputElement>(null);
   const remove = (name: string) => onChange(value.filter((n) => n !== name));
   return (
     <>
@@ -378,8 +383,9 @@ export function LabelChips({
           <Tag />
           {value.length === 0 && <span data-replay-safe>Label</span>}
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-64 p-2">
+        <PopoverContent initialFocus={pickerInput} align="start" className="w-64 p-2">
           <LabelPicker
+            inputRef={pickerInput}
             projectId={projectId}
             labels={labels}
             selected={value}

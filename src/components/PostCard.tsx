@@ -68,7 +68,10 @@ export function PostsProvider({ posts, children }: { posts: ChangelogPost[]; chi
         }}
       >
         {open && (
-          <ResponsiveDialogContent>
+          <ResponsiveDialogContent
+            // A post to read: nothing to type.
+            initialFocus={null}
+          >
             <div className="overflow-y-auto px-4 pb-5 pt-3">
               <div className="flex items-start gap-2">
                 <ResponsiveDialogTitle className="min-w-0 pt-1 text-base font-semibold tracking-tight">

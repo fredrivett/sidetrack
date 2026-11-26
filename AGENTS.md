@@ -98,6 +98,13 @@ itself, not an SDT copy, so its PR merging checks it off.
   `variant="destructive"` — see `ProjectMenu.tsx` for the canonical shape.
   Inside a draggable element, `stopPropagation` the trigger's `onPointerDown`
   so opening the menu doesn't start a drag.
+- A dialog or popover with a primary field (the thing it's opened to type
+  in) focuses it as it opens, phones included, so typing starts at once:
+  `ResponsiveDialogContent` and `PopoverContent` require `initialFocus`, a
+  ref to that field (types). `null` means it has none, such as a
+  confirmation, a list to read or an emoji grid: say why in a comment. A
+  field that appears later in it, such as a tab's, takes `autoFocus`
+  (`SmartDuePanel`'s rule).
 - Item rows have no `⋯` button: their actions are a right-click `ContextMenu`
   (`ItemRow.tsx`), disabled on touch, where tapping the row opens the detail
   dialog with the same actions. Don't add per-row action buttons; put new

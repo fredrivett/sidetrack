@@ -114,13 +114,19 @@ function ResponsiveDialogContent({
 }: {
   className?: string
   children: React.ReactNode
-  initialFocus?: React.RefObject<HTMLElement | null>
+  /** Its primary field, focused as it opens (on phones too, keyboard and
+   * all), so the person can type straight away. `null` when it has none,
+   * with a comment saying why: then Base UI's default applies (the first
+   * control, or on touch and in the phone drawer the popup itself, so no
+   * keyboard comes up). */
+  initialFocus: React.RefObject<HTMLElement | null> | null
 }) {
   const isDesktop = React.useContext(IsDesktopContext)
+  const focus = initialFocus ?? undefined
   return isDesktop ? (
     <DialogContent
       showCloseButton={false}
-      initialFocus={initialFocus}
+      initialFocus={focus}
       onKeyDown={leaveDragKeys}
       className={cn(
         "flex max-h-[85vh] flex-col gap-0 p-0 sm:max-w-lg",
@@ -131,7 +137,7 @@ function ResponsiveDialogContent({
     </DialogContent>
   ) : (
     <DrawerContent
-      initialFocus={initialFocus}
+      initialFocus={focus}
       onKeyDown={leaveDragKeys}
       // Lift the whole drawer above the on-screen keyboard. The keyboard
       // provider scrolls a field into view within the body, but undoes iOS's

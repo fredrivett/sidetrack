@@ -390,7 +390,10 @@ export function MoveListDialog({
   const [pending, start] = useTransition();
   return (
     <ResponsiveDialog open={request !== null} onOpenChange={(open) => !open && !pending && onCancel()}>
-      <ResponsiveDialogContent>
+      <ResponsiveDialogContent
+        // A confirmation: nothing to type.
+        initialFocus={null}
+      >
         {shown && (
           <MoveListSheet
             key={`${shown.list.id}:${shown.to.spaceId}`}
