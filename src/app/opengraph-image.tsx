@@ -1,11 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { CSSProperties, ReactNode } from "react";
-import { __iconNode as calendarDays } from "lucide-react/dist/esm/icons/calendar-days.mjs";
-import { __iconNode as chevronDown } from "lucide-react/dist/esm/icons/chevron-down.mjs";
-import { __iconNode as listChecks } from "lucide-react/dist/esm/icons/list-checks.mjs";
-import { __iconNode as repeat } from "lucide-react/dist/esm/icons/repeat.mjs";
-import { __iconNode as sparkles } from "lucide-react/dist/esm/icons/sparkles.mjs";
+import * as calendarDaysIcon from "lucide-react/dist/esm/icons/calendar-days.mjs";
+import * as chevronDownIcon from "lucide-react/dist/esm/icons/chevron-down.mjs";
+import * as listChecksIcon from "lucide-react/dist/esm/icons/list-checks.mjs";
+import * as repeatIcon from "lucide-react/dist/esm/icons/repeat.mjs";
+import * as sparklesIcon from "lucide-react/dist/esm/icons/sparkles.mjs";
 import { ImageResponse } from "next/og";
 
 // The card link previews show for every page (Open Graph, and X, which falls
@@ -275,6 +275,21 @@ function Words({
     </div>
   );
 }
+
+/** An icon's shapes: lucide-react 1.16 exports them as `__iconNode`, 1.76 as
+ * `__iconData.node`. Read by name so the build doesn't resolve either export
+ * at compile time. */
+function nodeOf(icon: object): [string, Record<string, string>][] {
+  const read = icon as Record<string, unknown>;
+  const data = read["__iconData"] as { node: [string, Record<string, string>][] } | undefined;
+  return data?.node ?? (read["__iconNode"] as [string, Record<string, string>][]);
+}
+
+const calendarDays = nodeOf(calendarDaysIcon);
+const chevronDown = nodeOf(chevronDownIcon);
+const listChecks = nodeOf(listChecksIcon);
+const repeat = nodeOf(repeatIcon);
+const sparkles = nodeOf(sparklesIcon);
 
 /**
  * A lucide icon, the same one the board uses, drawn from its shapes:
