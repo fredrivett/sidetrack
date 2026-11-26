@@ -15,6 +15,10 @@ const env = {
   ALLOW_SIGNUP: "true",
   // The admin e2e/fixtures.ts's createAdmin makes.
   ADMIN_USER_IDS: "e2e-admin",
+  // No AI, as on CI, even where the shell has a key: the Brief's greeting
+  // is the template, and no test calls Claude.
+  ANTHROPIC_API_KEY: "",
+  TYPESAFE_API_KEY: "",
 };
 Object.assign(process.env, env);
 
