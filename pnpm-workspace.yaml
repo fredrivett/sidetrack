@@ -3,4 +3,4 @@ ignoredBuiltDependencies:
   - unrs-resolver
 
 # 7 day delay
-minimum-release-age: 10080
+minimumReleaseAge: 10080

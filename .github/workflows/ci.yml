@@ -29,7 +29,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # pnpm's minimum-release-age only applies when pnpm resolves, and
+      # pnpm's minimumReleaseAge only applies when pnpm resolves, and
       # Dependabot writes the lockfile itself (scripts/check-release-age.ts).
       - name: Lockfile release age
         if: github.event_name == 'pull_request'
