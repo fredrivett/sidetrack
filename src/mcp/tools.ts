@@ -24,6 +24,7 @@ import {
   withAutoListIcon,
 } from "@/core/autoEmoji";
 import { itemPriorities } from "@/core/autoPriority";
+import { aiFetch } from "@/core/aiUsage";
 import {
   addComment,
   deleteComment,
@@ -658,7 +659,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
           {
             ...input,
             homepageUrl,
-            icon: chosen ? icon : await autoNewListIcon({ ...input, homepageUrl }),
+            icon: chosen ? icon : await autoNewListIcon(db, userId, { ...input, homepageUrl }),
             iconChosen: chosen,
             spaceId: space_id,
           },
@@ -1094,6 +1095,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
             { title: created.title, description: created.description ?? "" },
             { items: before.map((it) => ({ id: it.id, title: it.title, topLevel: false })) },
             apiKey,
+            aiFetch(db, userId, "newItem"),
           )
         : { duplicateId: null };
       const duplicate = before.find((it) => it.id === duplicateId);

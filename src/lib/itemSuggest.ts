@@ -164,7 +164,7 @@ export async function askAboutDraft(
   draft: DraftItem,
   ask: DraftQuestions,
   apiKey: string,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch,
 ): Promise<DraftAnswers> {
   const questions: Record<string, ChoiceQuestion> = {};
   const { lists = [], items = [], labels = [], people = [] } = ask;

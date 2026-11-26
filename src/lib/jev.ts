@@ -17,6 +17,7 @@
 //   each emoji's meaning from its fit question changed which emoji fit.
 
 const ENDPOINT = "https://api.typesafe.ai/v1/systemone";
+export const JEV_MODEL = "jev-latest";
 
 export interface ChoiceQuestion {
   type: "choice";
@@ -35,13 +36,14 @@ export interface NoulQuestion {
  * probabilities, keyed by question id; a noul's options are "true" and
  * "false". Best effort: a failed request
  * (network, rate limit, bad key, a 5 s timeout) yields null, so callers just
- * suggest nothing. `fetchImpl` is injectable for tests.
+ * suggest nothing. `fetchImpl` is core's metered fetch (core/aiUsage.ts), which
+ * records what the call used; tests pass a fake.
  */
 export async function askJev(
   state: unknown,
   questions: Record<string, ChoiceQuestion | NoulQuestion>,
   apiKey: string,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch,
 ): Promise<Record<string, Record<string, number>> | null> {
   let res: Response;
   try {
@@ -51,7 +53,7 @@ export async function askJev(
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ model: "jev-latest", state, questions }),
+      body: JSON.stringify({ model: JEV_MODEL, state, questions }),
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return null;

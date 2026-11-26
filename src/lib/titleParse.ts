@@ -137,7 +137,7 @@ export async function askTitleParts(
   title: string,
   ctx: TitleContext,
   apiKey: string,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch,
 ): Promise<TitlePart[]> {
   try {
     const res = await fetchImpl(ENDPOINT, {

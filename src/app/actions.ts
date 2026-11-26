@@ -253,7 +253,7 @@ export async function createProjectAction(input: {
   let icon = input.icon;
   // Jev hadn't answered when the form was sent: ask now.
   if (iconChosen === false && !icon) {
-    icon = await autoNewListIcon({ name, summary, homepageUrl });
+    icon = await autoNewListIcon(db, userId, { name, summary, homepageUrl });
   }
   const p = createProjectCore(
     db,

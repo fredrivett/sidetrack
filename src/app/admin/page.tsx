@@ -4,6 +4,7 @@ import Link from "next/link";
 import { LogoMark } from "@/components/LogoMark";
 import { UserAvatar } from "@/components/UserAvatar";
 import { requireAdmin } from "@/auth/session";
+import { aiSpend } from "@/core/aiUsage";
 import { getDb } from "@/core/db";
 import { isLooking } from "@/core/presence";
 import { cohorts, dailyUsage } from "@/core/usage";
@@ -63,6 +64,40 @@ function percent(part: number, whole: number): string {
   return p === 0 && part > 0 ? "<1%" : `${p}%`;
 }
 
+/** Days of AI spend shown: the stat, each person's and the features'. */
+const AI_DAYS = 30;
+
+/** What asked the AI, by the feature name aiFetch records. */
+const AI_FEATURES: Record<string, string> = {
+  greeting: "Agenda greeting",
+  newItem: "New item suggestions",
+  listIcons: "List icon suggestions",
+  listIcon: "List icons on save",
+  labelEmoji: "Label emoji suggestions",
+  labelEmojiOnSave: "Label emoji on save",
+  dayTags: "Day note tags",
+  feedbackFollowUps: "Feedback follow-ups",
+  prioritySort: "Sort by priority",
+};
+
+/**
+ * Dollars, with as many places as small sums need: cheap models make a
+ * month's spend a fraction of a cent, which "$0.00" would hide.
+ */
+function dollars(usd: number): string {
+  if (usd === 0) return "$0";
+  if (usd < 0.0001) return "<$0.0001";
+  if (usd < 0.01) return `$${usd.toPrecision(2)}`;
+  return `$${usd.toFixed(usd < 1 ? 3 : usd < 100 ? 2 : 0)}`;
+}
+
+/** A token count, short: 950, 12.3k, 4.1M. */
+function tokenCount(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
+  return `${(n / 1_000_000).toFixed(1)}M`;
+}
+
 /** A headline number, with what it's out of and, optionally, a small chart. */
 function Stat({ label, value, note, children }: { label: string; value: string | number; note?: string; children?: React.ReactNode }) {
   return (
@@ -80,10 +115,21 @@ function Stat({ label, value, note, children }: { label: string; value: string |
 }
 
 /** Small bars, oldest first, the last one (now) in full colour. */
-function Bars({ values, labels, label }: { values: number[]; labels: string[]; label: string }) {
-  const top = Math.max(1, ...values);
+function Bars({
+  values,
+  labels,
+  label,
+  format = String,
+}: {
+  values: number[];
+  labels: string[];
+  label: string;
+  format?: (n: number) => string;
+}) {
+  // The tallest bar fills the chart, even when it's a few cents.
+  const top = Math.max(...values) || 1;
   return (
-    <div className="flex h-8 items-end gap-px" role="img" aria-label={`${label}: ${values.join(", ")}`}>
+    <div className="flex h-8 items-end gap-px" role="img" aria-label={`${label}: ${values.map(format).join(", ")}`}>
       {values.map((n, i) => (
         <span
           key={labels[i]}
@@ -155,6 +201,15 @@ export default async function AdminPage() {
   const grid = { gridTemplateColumns: `repeat(${DAYS}, ${CELL}px)` };
   // Grey (all in the app) to violet (all through agents), like agents' avatars.
   const fill = (agentShare: number) => `color-mix(in oklab, var(--agent) ${Math.round(100 * agentShare)}%, var(--foreground))`;
+  // UTC days, as the AI's usage is kept.
+  const aiDays = Array.from({ length: AI_DAYS }, (_, i) => new Date(now - (AI_DAYS - 1 - i) * DAY_MS).toISOString().slice(0, 10));
+  const ai = aiSpend(db, aiDays[0]);
+  const aiPerDay = aiDays.map((d) => ai.byDay.get(d)?.cost ?? 0);
+  const aiFeatures = [...ai.byFeature].sort((a, b) => b[1].cost - a[1].cost || b[1].calls - a[1].calls);
+  const aiNotes = [
+    ...Object.entries(ai.unconfirmed).map(([model, why]) => `${model}: price unconfirmed (${why.toLowerCase()}), so the last known one is used`),
+    ...ai.unpriced.map((model) => `${model}: no price, so it counts as free`),
+  ];
 
   return (
     <div className="min-h-dvh bg-neutral-50 dark:bg-neutral-950">
@@ -184,7 +239,7 @@ export default async function AdminPage() {
         </header>
 
         {/* One strip, 1px lines between the stats. */}
-        <section className="grid grid-cols-2 gap-px border border-border bg-border lg:grid-cols-4">
+        <section className="grid grid-cols-2 gap-px border border-border bg-border lg:grid-cols-5">
           <Stat label="People" value={users.length} note={newPeople ? `+${newPeople} in 30 days` : undefined}>
             <Bars
               values={signups}
@@ -216,6 +271,20 @@ export default async function AdminPage() {
               <span className="ml-auto bg-violet-600 dark:bg-violet-400" style={{ width: `${total ? (100 * agentTotal) / total : 0}%` }} />
             </div>
           </Stat>
+          <div className="col-span-2 grid lg:col-span-1">
+            <Stat
+              label={`AI spend, ${AI_DAYS} days`}
+              value={dollars(ai.total.cost)}
+              note={`${tokenCount(ai.total.tokens)} tokens`}
+            >
+              <Bars
+                values={aiPerDay}
+                labels={aiPerDay.map((usd, i) => `${dayLabel(aiDays[i])}: ${dollars(usd)}`)}
+                label={`AI spend each day over the last ${AI_DAYS} days`}
+                format={dollars}
+              />
+            </Stat>
+          </div>
         </section>
 
         <section className="overflow-hidden border border-border bg-background">
@@ -271,6 +340,7 @@ export default async function AdminPage() {
                 {users.map((user) => {
                   const joined = user.joinedOn;
                   const here = isLooking(user.id);
+                  const spent = ai.byUser.get(user.id);
                   return (
                     // The signup notice links here (#@username), so the row it names stands out.
                     <tr key={user.id} id={`@${user.username.toLowerCase()}`} className="group scroll-mt-24">
@@ -339,6 +409,15 @@ export default async function AdminPage() {
                               </span>
                               <Features features={user.features} />
                             </div>
+                            {spent && (
+                              <div
+                                className="truncate text-xs text-muted-foreground"
+                                title={`${spent.calls} AI call${spent.calls === 1 ? "" : "s"} in the last ${AI_DAYS} days`}
+                              >
+                                AI <span className="font-medium text-foreground tabular-nums">{dollars(spent.cost)}</span> ·{" "}
+                                {tokenCount(spent.tokens)} tokens
+                              </div>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -379,6 +458,64 @@ export default async function AdminPage() {
               </tbody>
             </table>
           </div>
+        </section>
+
+        <section className="overflow-hidden border border-border bg-background">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-b border-border px-4 py-3">
+            <h2 className="text-sm font-semibold">AI spend</h2>
+            <p className="text-xs text-muted-foreground">
+              What asked Claude and Jev over the last {AI_DAYS} days, priced at each day&apos;s published rates.
+              {ai.checkedAt !== null &&
+                ` Prices checked ${now - ai.checkedAt < DAY_MS ? "today" : `${Math.floor((now - ai.checkedAt) / DAY_MS)}d ago`}.`}
+            </p>
+          </div>
+          {aiFeatures.length === 0 ? (
+            <p className="px-4 py-6 text-sm text-muted-foreground">No AI calls in the last {AI_DAYS} days.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-border text-xs text-muted-foreground">
+                    <th className="px-4 py-2 text-left font-medium">Feature</th>
+                    <th className="px-3 py-2 text-right font-medium">Calls</th>
+                    <th className="px-3 py-2 text-right font-medium">Tokens</th>
+                    <th className="px-3 py-2 text-right font-medium">Cost</th>
+                    <th className="hidden w-1/3 px-4 py-2 text-left font-medium sm:table-cell">Share</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {aiFeatures.map(([feature, s]) => (
+                    <tr key={feature}>
+                      <td className="px-4 py-2">{AI_FEATURES[feature] ?? feature}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{s.calls}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{tokenCount(s.tokens)}</td>
+                      <td className="px-3 py-2 text-right font-medium tabular-nums">{dollars(s.cost)}</td>
+                      <td className="hidden px-4 py-2 sm:table-cell">
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <div className="h-2 flex-1 bg-muted-foreground/15" aria-hidden>
+                            <div
+                              className="h-full bg-foreground"
+                              style={{ width: `${ai.total.cost ? (100 * s.cost) / ai.total.cost : 0}%` }}
+                            />
+                          </div>
+                          <span className="w-9 text-right tabular-nums">
+                            {ai.total.cost ? percent(s.cost, ai.total.cost) : "–"}
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {aiNotes.length > 0 && (
+            <ul className="space-y-0.5 border-t border-border px-4 py-2 text-xs text-muted-foreground">
+              {aiNotes.map((note) => (
+                <li key={note}>{note}</li>
+              ))}
+            </ul>
+          )}
         </section>
 
         <section className="overflow-hidden border border-border bg-background">

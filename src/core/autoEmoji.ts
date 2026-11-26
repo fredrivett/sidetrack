@@ -7,6 +7,7 @@
 
 import { autoLabelEmoji, autoListIcon } from "@/lib/emojiSuggest";
 import { getEnv } from "@/lib/env";
+import { aiFetch } from "./aiUsage";
 import type { Db } from "./db";
 import { getLabel, type LabelEmoji, newLabelNames, normalizeLabelEmoji } from "./labels";
 import { getProject, getProjectWithItems } from "./projects";
@@ -48,19 +49,20 @@ export async function withAutoListIcon<
   if (patch.icon !== undefined || !rereads) return patch;
   const found = listIconContext(db, userId, id, patch);
   if (!found || found.project.iconChosen) return patch;
-  const icon = await autoListIcon(found.context, getEnv().TYPESAFE_API_KEY);
+  const icon = await autoListIcon(found.context, getEnv().TYPESAFE_API_KEY, aiFetch(db, userId, "listIcon"));
   return icon === undefined ? patch : { ...patch, icon, iconChosen: false };
 }
 
 /** A new list's icon when nobody chose one: Jev's for what it reads. */
-export async function autoNewListIcon(input: {
-  name: string;
-  summary?: string;
-  homepageUrl?: string | null;
-}): Promise<string | null> {
+export async function autoNewListIcon(
+  db: Db,
+  userId: string,
+  input: { name: string; summary?: string; homepageUrl?: string | null },
+): Promise<string | null> {
   const icon = await autoListIcon(
     { name: input.name, summary: input.summary ?? "", homepageUrl: input.homepageUrl, itemTitles: [] },
     getEnv().TYPESAFE_API_KEY,
+    aiFetch(db, userId, "listIcon"),
   );
   return icon ?? null;
 }
@@ -81,7 +83,7 @@ export async function withAutoLabelEmoji(
   if (!names || !project) return given;
   const missing = newLabelNames(db, projectId, names).filter((n) => !Object.hasOwn(given, n));
   if (missing.length === 0) return given;
-  const auto = await autoLabelEmoji(missing, project.name, getEnv().TYPESAFE_API_KEY);
+  const auto = await autoLabelEmoji(missing, project.name, getEnv().TYPESAFE_API_KEY, aiFetch(db, userId, "labelEmojiOnSave"));
   return {
     ...Object.fromEntries(
       Object.entries(auto).map(([name, emoji]) => [name, { emoji, chosen: false }]),
@@ -103,6 +105,11 @@ export async function withAutoLabelRename<
   const project = label && getProject(db, userId, label.projectId);
   // Repeating its current name isn't a rename, so nothing to re-suggest.
   if (!label || !project || label.emojiChosen || label.name === name) return patch;
-  const { [name]: emoji } = await autoLabelEmoji([name], project.name, getEnv().TYPESAFE_API_KEY);
+  const { [name]: emoji } = await autoLabelEmoji(
+    [name],
+    project.name,
+    getEnv().TYPESAFE_API_KEY,
+    aiFetch(db, userId, "labelEmojiOnSave"),
+  );
   return emoji ? { ...patch, emoji, emojiChosen: false } : patch;
 }

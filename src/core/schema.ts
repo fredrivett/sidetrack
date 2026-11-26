@@ -5,6 +5,7 @@ import {
   index,
   integer,
   primaryKey,
+  real,
   sqliteTable,
   text,
   uniqueIndex,
@@ -999,6 +1000,45 @@ export const dayNotes = sqliteTable(
     updatedAt: integer("updated_at").notNull(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.day] })],
+);
+
+// The tokens each person's AI calls used (aiUsage.ts): one row per person,
+// UTC day, feature and model, added to as calls come back. Telemetry for
+// the admin page, so not audited. Cost isn't stored: it's worked out from
+// the prices in effect each day, so a corrected price corrects history.
+export const aiUsage = sqliteTable(
+  "ai_usage",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    day: text("day").notNull(),
+    // What asked: the AI read's name, or what a save or tool asked for.
+    feature: text("feature").notNull(),
+    model: text("model").notNull(),
+    calls: integer("calls").notNull().default(0),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    cacheReadTokens: integer("cache_read_tokens").notNull().default(0),
+    cacheWriteTokens: integer("cache_write_tokens").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.day, t.feature, t.model] }), index("ai_usage_day_idx").on(t.day)],
+);
+
+// Prices the daily check found had changed (aiUsage.ts), on top of the ones
+// in code (lib/aiPrices.ts): each applies from its UTC day on. USD per
+// million tokens.
+export const aiPrices = sqliteTable(
+  "ai_prices",
+  {
+    model: text("model").notNull(),
+    from: text("from").notNull(),
+    input: real("input").notNull(),
+    output: real("output").notNull(),
+    cacheRead: real("cache_read").notNull(),
+    cacheWrite: real("cache_write").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.model, t.from] })],
 );
 
 // How someone's day went, written when they close it (dayWrapUps.ts): an

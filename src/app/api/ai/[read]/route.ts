@@ -1,4 +1,5 @@
 import { getCurrentSession } from "@/auth/session";
+import { aiFetch } from "@/core/aiUsage";
 import { getDb } from "@/core/db";
 import { AI_READS, type AiReadName } from "../reads";
 
@@ -40,13 +41,17 @@ export async function POST(request: Request, ctx: { params: Promise<{ read: stri
   try {
     // `read` is one of the union, which TypeScript can't pair with its own
     // input; the schema above has just checked that it is.
+    const { db } = getDb();
     const result = await read.run(input.data as never, {
-      db: getDb().db,
+      db,
       userId,
       // Stops the model request when the browser stops waiting, such as when
       // newer typing replaces a suggestion, keeping each request's own timeout.
-      fetch: (url, init) =>
+      // Both count what the calls use as this read's, by this user.
+      fetch: aiFetch(db, userId, name, (url, init) =>
         fetch(url, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, signal]) : signal }),
+      ),
+      fetchToEnd: aiFetch(db, userId, name),
     });
     return Response.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

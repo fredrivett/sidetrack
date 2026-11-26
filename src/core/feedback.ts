@@ -225,7 +225,8 @@ export async function feedbackFollowUps(
   userId: string,
   input: { listId: string; itemId: string },
   apiKey: string | undefined,
-  fetchImpl?: typeof fetch,
+  /** Metered (aiFetch), as it comes from the AI read. */
+  fetchImpl: typeof fetch,
   now = Date.now(),
 ): Promise<FollowUp[]> {
   if (!apiKey) return [];

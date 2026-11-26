@@ -312,7 +312,8 @@ export async function writtenGreetingFor(
   timeZone: string,
   keys: { jev: string | undefined; anthropic: string | undefined },
   now = Date.now(),
-  fetchImpl: typeof fetch = fetch,
+  /** Metered (aiFetch), so the greeting counts toward the viewer's AI spend. */
+  fetchImpl: typeof fetch,
   /** Asked for with "Rewrite now": it waits ASK_NOW_EVERY_MS, not the back-off. The daily caps still hold. */
   rewriteNow = false,
 ): Promise<Greeting> {
