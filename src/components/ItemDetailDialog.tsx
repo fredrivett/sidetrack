@@ -60,6 +60,7 @@ import {
   ResponsiveDialogDescription,
   ResponsiveDialogTitle,
   ResponsiveDialogViews,
+  pinnedHeader,
 } from "@/components/ui/responsive-dialog";
 import { AssigneeOptions } from "./AssigneeOptions";
 import { AuditEntryRow } from "./AuditDialog";
@@ -798,8 +799,8 @@ export function ItemDetailView({
         fixed header would take most of what's left of the drawer once the
         keyboard's up, hiding the checklist input. On desktop the fields stay
         put over the rest, as in New item. */}
-    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-    <div className="flex flex-col gap-2 border-b border-neutral-200 bg-popover px-4 pt-3 pb-4 md:sticky md:top-0 md:z-10 dark:border-neutral-800">
+    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain" ref={pinnedHeader}>
+    <div className="flex flex-col gap-2 border-b border-neutral-200 bg-popover px-4 pt-3 pb-4 md:sticky md:top-0 md:z-10 data-tall:static dark:border-neutral-800">
       <div className="flex min-w-0 items-center gap-1">
         {back}
         <button

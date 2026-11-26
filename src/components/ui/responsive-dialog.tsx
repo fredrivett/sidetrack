@@ -106,7 +106,9 @@ function leaveDragKeys(
 }
 
 /** A column: callers give it a fixed header, a scrolling body
- * (`min-h-0 flex-1 overflow-y-auto`) and a fixed footer. */
+ * (`min-h-0 flex-1 overflow-y-auto`) and a fixed footer. Or, so a phone's
+ * keyboard can't crowd out the body, the header goes in the body, pinned on
+ * desktop (`pinnedHeader`). */
 function ResponsiveDialogContent({
   className,
   children,
@@ -356,6 +358,28 @@ function ResponsiveDialogBackButton({
   )
 }
 
+/**
+ * Ref for a scrolling body whose first child is a header pinned to its top
+ * (`md:sticky md:top-0 data-tall:static`), as New item's and an item's
+ * fields are on desktop. Keeps what's under the header reachable: focus and
+ * scrolling to a field stop below the header rather than behind it, and a
+ * header taller than half the body (a long description) isn't pinned, as
+ * it would otherwise cover the rest whatever the scroll.
+ */
+function pinnedHeader(body: HTMLElement | null) {
+  const header = body?.firstElementChild
+  if (!body || !(header instanceof HTMLElement)) return
+  const observer = new ResizeObserver(() => {
+    const height = header.offsetHeight
+    header.toggleAttribute("data-tall", height > body.clientHeight / 2)
+    const pinned = getComputedStyle(header).position === "sticky"
+    body.style.scrollPaddingTop = pinned ? `${height}px` : ""
+  })
+  observer.observe(body)
+  observer.observe(header)
+  return () => observer.disconnect()
+}
+
 export {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -364,4 +388,5 @@ export {
   ResponsiveDialogCloseButton,
   ResponsiveDialogBackButton,
   ResponsiveDialogViews,
+  pinnedHeader,
 }
