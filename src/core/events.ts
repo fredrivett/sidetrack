@@ -472,6 +472,9 @@ export type AccountEvent =
   | { type: "day_share.invited"; shareId: string; viewer: PersonAt; within: OnlyWithin; shareNote?: true; shareMood?: true }
   /** By the viewer. */
   | { type: "day_share.joined" | "day_share.declined"; shareId: string; sharer: PersonAt }
+  /** The actor closed their `day` (dayWrapUps.ts), the first time: never
+   * with what they wrote, which isn't audited. */
+  | { type: "day.closed"; day: string }
   /** By the sharer: only what changed. */
   | { type: "day_share.updated"; shareId: string; viewer: PersonAt; within?: OnlyWithin; shareNote?: boolean; shareMood?: boolean }
   /** Stopped by the sharer, or left by the viewer. */
@@ -683,6 +686,8 @@ export function auditColumns(event: ChangeEvent): {
     case "day_share.declined":
     case "day_share.removed":
       return account("delete", "day_share", event.shareId);
+    case "day.closed":
+      return account("create", "wrap_up", event.day);
     case "invitation.sent":
       return account("create", "invitation", event.invitationId);
     case "invitation.resent":

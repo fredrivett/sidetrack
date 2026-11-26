@@ -688,6 +688,8 @@ export function describeEvent(event: ChangeEvent, names: Names): Part[] {
         ...(event.within ? [t(event.within === "week" ? ", to this week" : ", to today")] : []),
         ...noteText(event.shareNote, event.shareMood),
       ];
+    case "day.closed":
+      return [t("closed the day")];
     case "day_share.removed":
       return event.how === "left"
         ? [t("stopped seeing "), person(event.sharer), t("'s day")]

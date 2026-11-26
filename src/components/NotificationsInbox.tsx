@@ -206,9 +206,24 @@ export function NotificationsInbox({
                       );
                     })}
                   </span>
-                  {n.snippet && (
+                  {n.snippet && !n.moods && (
                     <span className="line-clamp-2 border-l-2 border-border pl-2 text-xs text-muted-foreground">
                       {n.snippet}
+                    </span>
+                  )}
+                  {/* A closed day: its words, then its moods as badges, as on
+                      Check-ins; beside short words, under longer ones. */}
+                  {n.moods && (
+                    <span className="flex flex-wrap items-center gap-1 border-l-2 border-border pl-2 text-xs text-muted-foreground">
+                      {n.snippet && <span className="line-clamp-2">{n.snippet}</span>}
+                      {n.moods.map((mood) => (
+                        <span
+                          key={mood}
+                          className="rounded-full border border-stone-300 bg-stone-100 px-1.5 text-[11px] leading-4 text-stone-800 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100"
+                        >
+                          {mood}
+                        </span>
+                      ))}
                     </span>
                   )}
                   {/* Above the row's button, like the list chips, so a tap

@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { finishWork, startWork } from "./agentSessions";
 import { addComment, updateComment } from "./comments";
+import { acceptDayShare, shareDay, stopDayShare } from "./dayShares";
+import { closeDay } from "./dayWrapUps";
 import { plainText } from "./describe";
 import { addItem, completeItem, listItems, reopenDueRepeats, uncompleteItem, updateItem } from "./items";
 import { moveItem, previewMoveItem } from "./move";
@@ -923,5 +925,51 @@ describe("reactions", () => {
     expect(() => toggleReaction(db, vic, target, "🎉", "web")).toThrow(/can view/);
     expect(() => toggleReaction(db, out, target, "🎉", "web")).toThrow(/not found/);
     expect(() => toggleReaction(db, fred, target, "nice", "web")).toThrow(/one emoji/);
+  });
+});
+
+describe("closing the day", () => {
+  it("tells whoever sees the day's note or mood, once, with as much as they may see", async () => {
+    const { db, fred, alice, listId } = seed();
+    const sam = createTestUser(db, { username: "sam", name: "Sam" });
+    const jo = createTestUser(db, { username: "jo", name: "Jo" });
+    for (const [id, handle] of [[sam, "sam"], [jo, "jo"]]) {
+      inviteMember(db, fred, listId, handle, "web");
+      acceptInvite(db, id, listId, "web");
+    }
+    shareDay(db, fred, { person: "alice", within: "today", mood: true }, "web");
+    shareDay(db, fred, { person: "sam", within: "today" }, "web");
+    shareDay(db, fred, { person: "jo", within: "today", note: true }, "web");
+    for (const viewer of [alice, sam, jo]) acceptDayShare(db, viewer, fred, "web");
+    for (const u of [fred, alice, sam, jo]) markNotificationsRead(db, u);
+    subscribe(db, alice);
+
+    const today = dayOf(Date.now(), "UTC");
+    closeDay(db, fred, today, "Got a lot done — did the bottles", "web");
+    // Changing what it says later tells nobody again.
+    closeDay(db, fred, today, "Got a lot done — did the bottles and the recycling", "web");
+
+    // Alice sees its mood, Jo its words, Sam neither, so isn't told.
+    const told = (u: string) =>
+      listNotifications(db, u).filter((n) => !n.readAt).map((n) => [plainText(n.parts), n.moods ?? [], n.snippet]);
+    expect(told(alice)).toEqual([["Fred closed the day", ["Got a lot done"], null]]);
+    expect(told(jo)).toEqual([["Fred closed the day", [], "did the bottles and the recycling"]]);
+    expect(told(sam)).toEqual([]);
+    expect(listNotifications(db, fred).filter((n) => !n.readAt)).toEqual([]);
+    await deliverNotifications(db, due());
+    expect(sendPush).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ body: "Fred closed the day: Got a lot done", url: "/check-ins" }),
+      expect.anything(),
+    );
+    // A past day's close says so, but not how it went, as Check-ins wouldn't.
+    closeDay(db, fred, "2020-01-06", "Rough day", AMP);
+    expect(told(alice)).toEqual([
+      ["Fred closed the day", [], null],
+      ["Fred closed the day", ["Got a lot done"], null],
+    ]);
+    // Once their day is no longer shared with her, it's gone from her inbox.
+    stopDayShare(db, fred, alice, "web");
+    expect(told(alice)).toEqual([]);
   });
 });

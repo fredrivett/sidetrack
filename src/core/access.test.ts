@@ -552,10 +552,10 @@ describe("a membership shown only someone's today or week", () => {
     acceptInvite(db, kim, away.id, "web");
     expect(sharedDayNote(db, kim, lorna)).toEqual({ note: "long day at work", mood: ["Busy", "Tired"], wrapUp: null });
     // Once she closes the day, how it went shows beside the note, as much of it as each share allows.
-    closeDay(db, lorna, "2026-11-18", "Rough day — yesterday's close", 1);
+    closeDay(db, lorna, "2026-11-18", "Rough day — yesterday's close", "web", 1);
     expect(sharedDayNote(db, kim, lorna).wrapUp).toBeNull();
-    closeDay(db, lorna, "2026-11-19", "Got a lot done, Tired — did the bottles", 5);
-    closeDay(db, lorna, "2026-11-19", "Good day — changed my mind", 9);
+    closeDay(db, lorna, "2026-11-19", "Got a lot done, Tired — did the bottles", "web", 5);
+    closeDay(db, lorna, "2026-11-19", "Good day — changed my mind", "web", 9);
     expect(sharedDayNote(db, kim, lorna).wrapUp).toEqual({ note: "changed my mind", mood: ["Good day"], closedAt: 5 });
     expect(sharedDayNote(db, jo, lorna).wrapUp).toBeNull();
     // Only while it's a day share: shown everything instead, it stops.

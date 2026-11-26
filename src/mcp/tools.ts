@@ -565,7 +565,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
         return errorText("The user's timezone isn't known until they open Sidetrack in a browser, so their day can't be closed yet. Nothing was changed.");
       }
       const day = dayOf(Date.now(), timeZone);
-      const kept = closeDay(db, userId, day, joinTagged(mood ?? [], words ?? "", WRAP_UP_TAGS));
+      const kept = closeDay(db, userId, day, joinTagged(mood ?? [], words ?? "", WRAP_UP_TAGS), SOURCE);
       const { tags, rest } = splitTagged(kept.text, WRAP_UP_TAGS);
       return json({ day, mood: tags, words: rest, closedAt: new Date(kept.closedAt).toISOString() });
     },
