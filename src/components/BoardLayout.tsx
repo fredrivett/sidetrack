@@ -29,16 +29,28 @@ export function BoardHeader({
     // Tighter on phones so the views fit beside the header's buttons down to
     // 320px; px-3 lines the logo up with the views below.
     // The header is the app's own text; the avatar's initial is data-private.
-    <div data-replay-safe data-board-header className="flex items-center justify-between gap-2 max-[360px]:gap-1.5 border-b border-neutral-200 px-3 py-2 sm:gap-3 sm:px-4 dark:border-neutral-800">
+    // data-board-header marks the page's own board, the one that becomes the
+    // window's title bar in an installed app (globals.css), not a preview
+    // inside another page.
+    <div data-replay-safe data-board-header={Title === "h1" ? "" : undefined} className="flex items-center justify-between gap-2 max-[360px]:gap-1.5 border-b border-neutral-200 px-3 py-2 sm:gap-3 sm:px-4 dark:border-neutral-800">
       <div className="flex shrink-0 items-center gap-2 self-stretch sm:gap-3">
         <Title className="flex items-center gap-2 text-sm font-semibold tracking-tight">
           <LogoMark />
-          {/* The name gives way to the view switch on phones. */}
-          <span className={nav ? "sr-only sm:not-sr-only" : undefined}>Sidetrack</span>
+          {/* The name gives way to the view switch on phones, and in a
+              narrow app window whose header shares the title bar with the
+              window controls (globals.css), which take about 170px of it. */}
+          <span className={nav ? "sr-only sm:not-sr-only titlebar:max-[45rem]:sr-only" : undefined}>
+            Sidetrack
+          </span>
         </Title>
-        {/* On phones, where the name is hidden, a rule keeps the logo from
-            reading as a third view. */}
-        {nav && <span aria-hidden className="h-4 w-px bg-neutral-200 sm:hidden dark:bg-neutral-800" />}
+        {/* Where the name is hidden, a rule keeps the logo from reading as a
+            third view. */}
+        {nav && (
+          <span
+            aria-hidden
+            className="h-4 w-px bg-neutral-200 sm:hidden dark:bg-neutral-800 titlebar:max-[45rem]:block"
+          />
+        )}
         {nav}
       </div>
       {/* On phones the buttons are bare square icons as large as the views'

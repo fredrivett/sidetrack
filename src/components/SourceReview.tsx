@@ -280,13 +280,14 @@ export function SourceReview({
   return (
     <LabelsContext value={labelsByProject}>
       <div data-source-review className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:grid-cols-[minmax(0,1fr)_minmax(0,30rem)]">
-        <div className="sticky top-0 z-10 -mx-4 bg-neutral-50 px-4 pb-2 sm:-mx-6 sm:px-6 md:top-4 md:mx-0 md:self-start md:px-0 md:pb-0 dark:bg-neutral-950">
+        {/* Below the installed app's title bar, when Chrome or Edge's is hidden (globals.css). */}
+        <div className="sticky top-[env(titlebar-area-height,0px)] z-10 -mx-4 bg-neutral-50 px-4 pb-2 sm:-mx-6 sm:px-6 md:top-[calc(1rem+env(titlebar-area-height,0px))] md:mx-0 md:self-start md:px-0 md:pb-0 dark:bg-neutral-950">
           <SourcePhoto
             sourceId={source.id}
             highlight={region}
             regions={regions}
             onPick={pick}
-            className="[--photo-max-h:38dvh] md:[--photo-max-h:calc(100dvh-2rem)]"
+            className="[--photo-max-h:38dvh] md:[--photo-max-h:calc(100dvh-2rem-env(titlebar-area-height,0px))]"
           />
         </div>
         <div className="min-w-0 pb-20 md:pb-0">

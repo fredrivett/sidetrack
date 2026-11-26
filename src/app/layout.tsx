@@ -83,6 +83,16 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-dvh bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
+        {/* The window's title bar on pages without the board's header,
+            when Chrome or Edge's installed app hides its own (globals.css):
+            the page's colour, so what scrolls up passes under it, as under
+            a title bar, rather than behind the window controls; under
+            dialogs (z-50). */}
+        <div
+          aria-hidden
+          data-titlebar-drag
+          className="fixed inset-x-0 top-0 z-40 hidden bg-neutral-50 dark:bg-neutral-950"
+        />
         {children}
         <Toaster />
         <ServiceWorker />

@@ -10,6 +10,10 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: "/launch",
     id: "/",
     display: "standalone",
+    // Chrome and Edge on a computer let the user hide the title bar, putting
+    // the board's header beside the window controls (globals.css). Others
+    // ignore it and use display.
+    display_override: ["window-controls-overlay"],
     orientation: "any",
     background_color: "#0a0a0a",
     theme_color: "#0a0a0a",
