@@ -21,6 +21,7 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer"
 import { useMediaQuery } from "@/components/ui/use-media-query"
+import { useHydrated } from "@/components/use-stored-state"
 
 // Centred modal on desktop, swipe-to-dismiss bottom drawer on mobile
 // (shadcn's responsive dialog pattern). The root picks once; the parts below
@@ -39,9 +40,15 @@ function ResponsiveDialog({
   const matchesDesktop = useMediaQuery("(min-width: 768px)", true)
   // Follow the width only while closed. Swapping Dialog for Drawer remounts
   // the body, so crossing 768px while open (a phone rotating to landscape)
-  // would throw away half-typed input.
-  const [isDesktop, setIsDesktop] = React.useState(matchesDesktop)
-  if (!open && isDesktop !== matchesDesktop) setIsDesktop(matchesDesktop)
+  // would throw away half-typed input. Until the page hydrates the width is
+  // the server's guess (desktop), so the first real one is taken even when
+  // open: a dialog kept open over a reload is open by the time it arrives.
+  const hydrated = useHydrated()
+  const [chosen, setChosen] = React.useState<boolean | null>(null)
+  if (hydrated && (chosen === null || (!open && chosen !== matchesDesktop))) {
+    setChosen(matchesDesktop)
+  }
+  const isDesktop = chosen ?? matchesDesktop
   // Toasts sit outside the dialog but over it, not behind it, so pressing
   // one (such as copying the ref from New item's "Added" toast) isn't a
   // press outside that closes the dialog.

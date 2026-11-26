@@ -231,3 +231,30 @@ test("opens each view on its own loading skeleton", async ({ page, user }) => {
   expect(await html("/board")).toContain("Loading lists…");
   expect(await html("/done")).toContain("Loading what");
 });
+
+test.describe("on a phone", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+  test("New item comes back as the same sheet after a reload", async ({ page, user }) => {
+    user.addList("Home");
+    await page.goto("/board");
+    await page.getByRole("button", { name: "Add item to Home" }).tap();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByPlaceholder("Add a task…").fill("Book dentist");
+    // A sheet: the screen's full width, along its bottom edge.
+    const asSheet = async () => {
+      await expect(dialog).toBeVisible();
+      await expect
+        .poll(async () => {
+          const box = await dialog.boundingBox();
+          return box && { width: Math.round(box.width), bottom: Math.round(box.y + box.height) };
+        })
+        .toEqual({ width: 390, bottom: 844 });
+    };
+    await asSheet();
+
+    await page.reload();
+    await expect(dialog.getByPlaceholder("Add a task…")).toHaveValue("Book dentist");
+    await asSheet();
+  });
+});
