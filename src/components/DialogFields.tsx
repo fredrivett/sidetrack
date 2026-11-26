@@ -222,7 +222,7 @@ export function RepeatChip({
         <span data-replay-safe>{repeat ? shortLabel(repeat) : "Repeat"}</span>
       </PopoverTrigger>
       <PopoverContent
-        // Repeats to press; Custom's count shows only once picked.
+        // Repeats to press; Custom's count focuses itself once picked.
         initialFocus={null}
         align="start"
         className="w-80 max-w-[calc(100vw-2rem)] p-2"

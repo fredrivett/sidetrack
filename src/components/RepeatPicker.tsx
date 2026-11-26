@@ -171,7 +171,10 @@ export function RepeatPicker({
           {editing && (
             <>
               Every
+              {/* Focused once Custom is pressed: the count is what's
+                  typed next. Not when it opens on a custom repeat. */}
               <input
+                autoFocus={custom}
                 type="number"
                 inputMode="numeric"
                 min={1}
