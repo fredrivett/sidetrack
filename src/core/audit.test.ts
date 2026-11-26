@@ -456,5 +456,25 @@ describe("password audit", () => {
     );
     expect(passwordLog(userId).filter((r) => r[1] === "reset password with an emailed link")).toHaveLength(1);
     expect(passwordLog(other)).toEqual([["update", "changed password", other, other, "web"]]);
+
+    // Better Auth 1.7 consumes the link before writing the password, leaving
+    // only the /reset-password hook's marker: that counts as a reset too, once,
+    // and an expired one doesn't.
+    const marker = (id: string, user: string, expiresAt: Date) => ({
+      ...token(id, user, expiresAt),
+      identifier: `reset-consumed:${id}`,
+    });
+    db.insert(authSchema.verifications)
+      .values([marker("marked", userId, soon), marker("stale", other, new Date(Date.now() - 60_000))])
+      .run();
+    setPassword("a1", "hash-4");
+    setPassword("a1", "hash-5");
+    setPassword("a2", "hash-3");
+    expect(links()).toEqual(["other-kind"]);
+    expect(passwordLog(userId).slice(-2).map((r) => r[1])).toEqual([
+      "reset password with an emailed link",
+      "changed password",
+    ]);
+    expect(passwordLog(other).slice(-1).map((r) => r[1])).toEqual(["changed password"]);
   });
 });

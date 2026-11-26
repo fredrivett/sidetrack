@@ -1,4 +1,4 @@
-import { and, count, eq, like, sql } from "drizzle-orm";
+import { and, count, eq, gt, like, or, sql } from "drizzle-orm";
 import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -154,10 +154,45 @@ function revokeResetLinks(userId: string): void {
   db.delete(verifications)
     .where(
       and(
-        like(verifications.identifier, "reset-password:%"),
+        or(
+          like(verifications.identifier, "reset-password:%"),
+          like(verifications.identifier, "reset-consumed:%"),
+        ),
         eq(verifications.value, userId),
       ),
     )
+    .run();
+}
+
+// Better Auth 1.7 consumes a reset link before it writes the new password, so
+// the accounts trigger (migration 0045) can no longer see it to call the change
+// a reset. Leave a marker the trigger reads instead, which it clears with the
+// user's links. A reset that then fails leaves one for a minute, and a
+// signed-in change clears it first (revokeResetLinks).
+// audit-exempt: Better Auth one-time token bookkeeping, not a user action; the
+// password change this goes with is audited by the accounts trigger.
+function markResetInFlight(token: string): void {
+  const link = db
+    .select({ userId: verifications.value })
+    .from(verifications)
+    .where(
+      and(
+        eq(verifications.identifier, `reset-password:${token}`),
+        gt(verifications.expiresAt, new Date()),
+      ),
+    )
+    .get();
+  if (!link) return;
+  const now = new Date();
+  db.insert(verifications)
+    .values({
+      id: crypto.randomUUID(),
+      identifier: `reset-consumed:${crypto.randomUUID()}`,
+      value: link.userId,
+      expiresAt: new Date(now.getTime() + 60_000),
+      createdAt: now,
+      updatedAt: now,
+    })
     .run();
 }
 
@@ -278,6 +313,11 @@ export const auth = betterAuth({
   },
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
+      if (ctx.path === "/reset-password") {
+        const token = ctx.body?.token ?? ctx.query?.token;
+        if (typeof token === "string") markResetInFlight(token);
+        return;
+      }
       // A signed-in password change clears the user's reset links before the
       // new password is written, so the accounts trigger (migration 0022)
       // never takes it for a reset. The trigger clears them after every
