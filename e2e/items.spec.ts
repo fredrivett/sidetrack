@@ -288,8 +288,18 @@ test("⇧X opens Cancel for the hovered item, and X still ticks it", async ({ pa
   await expect(cancel).toBeHidden();
   const item = page.locator("[data-item-row]").filter({ hasText: "Water plants" });
   await expect(item.getByText("Cancelled")).toBeVisible();
-  await item.hover();
-  await page.keyboard.press("x");
+  // The dialog's overlay ended the hover, a pointer that hasn't moved since
+  // doesn't start it again, and the row only listens for keys once it has
+  // seen the hover: hover anew and press until it reopens (at once, as
+  // ticking is optimistic, so a press that landed is never repeated).
+  await expect(async () => {
+    if (await item.getByRole("checkbox", { name: "Reopen" }).count()) {
+      await page.mouse.move(0, 0);
+      await item.hover();
+      await page.keyboard.press("x");
+    }
+    await expect(item.getByRole("checkbox", { name: "Complete" })).toBeVisible({ timeout: 500 });
+  }).toPass();
   await expect(item.getByRole("checkbox", { name: "Complete" })).not.toBeChecked();
   await expect(item.getByText("Cancelled")).toBeHidden();
 });
