@@ -793,7 +793,13 @@ export function ItemDetailView({
 
   return (
     <>
-    <div className="flex shrink-0 flex-col gap-2 border-b border-neutral-200 px-4 pt-3 pb-4 dark:border-neutral-800">
+    {/* One scrolling body, the item's fields included, so on a phone the
+        drawer's keyboard handling can bring any field above the keyboard: a
+        fixed header would take most of what's left of the drawer once the
+        keyboard's up, hiding the checklist input. On desktop the fields stay
+        put over the rest, as in New item. */}
+    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+    <div className="flex flex-col gap-2 border-b border-neutral-200 bg-popover px-4 pt-3 pb-4 md:sticky md:top-0 md:z-10 dark:border-neutral-800">
       <div className="flex min-w-0 items-center gap-1">
         {back}
         <button
@@ -1064,7 +1070,7 @@ export function ItemDetailView({
       )}
     </div>
 
-    <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-4">
+    <div className="space-y-5 px-4 py-4">
       <AgentWork item={item} assignees={assignees} />
 
       {!parent && !item.parentId && (
@@ -1112,6 +1118,7 @@ export function ItemDetailView({
       </Field>
 
       <ItemActivity item={item} viewerId={viewerId} focus={focusActivity} />
+    </div>
     </div>
 
     <div className="flex shrink-0 items-center justify-between border-t border-neutral-200 px-4 py-2.5 dark:border-neutral-800">
