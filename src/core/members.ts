@@ -224,7 +224,6 @@ export function checkListInvite(
   opts: { onlyMine?: boolean; within?: OnlyWithin | null },
 ) {
   assertListRole(role);
-  const within = assertWithin(opts.onlyMine, opts.within);
   if (opts.onlyMine && role === "editor") {
     throw new Error("only viewers and commenters can be shown just your items");
   }
@@ -232,16 +231,23 @@ export function checkListInvite(
   if (!project) throw new Error(`list not found: ${projectId}`);
   // Anyone who can edit the list can share their own day on it: only their
   // items show (hasItemAccess), and the list's people are told who's coming.
-  const sharingDay = opts.onlyMine && within !== null && listAccess(db, userId, projectId) === "edit";
+  const sharingDay = opts.onlyMine && !!opts.within && listAccess(db, userId, projectId) === "edit";
   if (project.userId !== userId && !sharingDay) {
     throw new Error("only the list owner can invite members");
   }
-  return { project, within };
+  return { project, within: assertWithin(opts.onlyMine, opts.within) };
 }
 
-/** The window to store: only with a limit to someone's items, and a known one. */
+/**
+ * The window to store: a known one, with a limit to someone's items, and
+ * only then. A limit is someone's day, shared from Check-ins: there's no
+ * limit to all their items, on every day.
+ */
 export function assertWithin(limited: boolean | undefined, within: OnlyWithin | null | undefined): OnlyWithin | null {
-  if (!within) return null;
+  if (!within) {
+    if (limited) throw new Error("someone can be shown just your items only in your today or week: share your day instead");
+    return null;
+  }
   if (!(ONLY_WITHIN as readonly string[]).includes(within)) throw new Error(`invalid window: ${within}`);
   if (!limited) throw new Error("only someone shown just your items can be shown just your today or week");
   return within;
@@ -299,7 +305,7 @@ export function setMemberRole(
           ? userId
           : null;
   // A window is someone's day: one now limited to another person's items isn't theirs.
-  const window = within === undefined ? (limitedTo && limitedTo === membership.onlyAssignedTo ? membership.onlyWithin : null) : assertWithin(!!limitedTo, within);
+  const window = assertWithin(!!limitedTo, within === undefined ? (limitedTo && limitedTo === membership.onlyAssignedTo ? membership.onlyWithin : null) : within);
   // Their note and mood go with the day share they were chosen for: a share
   // no longer of that person's day, or of no day, drops them, and setting a
   // window again doesn't bring them back.

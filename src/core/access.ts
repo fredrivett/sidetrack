@@ -118,7 +118,8 @@ export function inDayOf(person: string, within: OnlyWithin) {
  * What a membership limited to `person`'s items, in their `within` (null:
  * every day), sees of the item (`items` and `projects` in scope). On their
  * own list, the item groups assigned to them: an item with its sub-items,
- * whole, when they're on any of it. On someone else's list, just their
+ * whole, when they're on any of it, or when it's unassigned and nobody else
+ * can be assigned there (aloneOn), as isYours. On someone else's list, just their
  * own items (theirs): someone else's item, or sub-item, isn't theirs to
  * share, nor does it count towards the window. A sub-item of theirs under
  * someone else's item shows on its own, with only that item's title to
@@ -128,7 +129,21 @@ function limitedSees(person: SQL, within: SQL) {
   // The item's group: its parent's, for a sub-item.
   const group = sql`coalesce(${items.parentId}, ${items.id})`;
   const onGroup = sql`exists (select 1 from items g, json_each(g.assignee_ids) a where (g.id = ${group} or g.parent_id = ${group}) and a.value = ${person})`;
-  return sql`(case when ${projects.userId} = ${person} then (${onGroup} and ${inWindow(group, person, within)}) else (${theirs(sql`"items"`, person)} and ${inWindow(group, person, within, true)}) end)`;
+  // An unassigned item, where nobody else can be assigned, is theirs too
+  // (isYours); in their day only, so a limit kept from before every limit
+  // had one ("only my items") still shows just what's assigned to them.
+  const unassigned = sql`exists (select 1 from items r where r.id = ${group} and json_array_length(r.assignee_ids) = 0)`;
+  const yours = sql`(${onGroup} or (${within} is not null and ${unassigned} and ${aloneOn(person)}))`;
+  return sql`(case when ${projects.userId} = ${person} then (${yours} and ${inWindow(group, person, within)}) else (${theirs(sql`"items"`, person)} and ${inWindow(group, person, within, true)}) end)`;
+}
+
+/**
+ * Whether nobody but `person` can be assigned on the list (`projects` in
+ * scope): no one else edits it, directly or through its Space, as
+ * listAssignees counts them. Unassigned items there are theirs.
+ */
+function aloneOn(person: SQL) {
+  return sql`(not exists (select 1 from ${projectMembers} m where m.project_id = ${projects.id} and m.user_id != ${person} and m.status = 'accepted' and m.role in (${inList(LIST_ROLES_FOR.edit)})) and not exists (select 1 from ${spaceMembers} m where m.space_id = ${projects.spaceId} and m.user_id != ${person} and m.status = 'accepted' and m.role in (${inList(SPACE_ROLES_FOR.edit)})))`;
 }
 
 /**

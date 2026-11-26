@@ -161,21 +161,22 @@ describe("buildAgendaBrief", () => {
     add("Open step", { parentId: parent.id });
     const stepYesterday = add("Step done yesterday", { parentId: parent.id });
     done("Step of today's item", { parentId: parent.id });
+    // Unassigned, where nobody else can be assigned, is Fred's too.
+    completeItem(db, fred, addAny("Unassigned", { dueDate: "2026-11-18" }).id, "web");
     // Not in the day: undated, a step of an item due next week, cancelled,
-    // finished yesterday, or unassigned, though nobody else can be assigned here.
+    // or finished yesterday.
     done("Undated");
     const later = add("Due next week", { dueDate: "2026-11-25" });
     add("Its open step", { parentId: later.id });
     done("Its step", { parentId: later.id });
     cancelItem(db, fred, add("Cancelled", { dueDate: "2026-11-18" }).id, {}, "web");
-    completeItem(db, fred, addAny("Unassigned", { dueDate: "2026-11-18" }).id, "web");
     const yesterday = add("Done yesterday", { dueDate: "2026-11-17" });
     vi.setSystemTime(at("2026-11-17"));
     completeItem(db, fred, yesterday.id, "web");
     completeItem(db, fred, stepYesterday.id, "web");
     vi.setSystemTime(NOW);
 
-    expect(brief().doneToday).toBe(4);
+    expect(brief().doneToday).toBe(5);
   });
 
   it("caps each look-back list at ten, counts all that were finished, and lets neither crowd out the other", () => {

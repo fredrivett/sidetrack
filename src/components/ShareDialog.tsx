@@ -64,7 +64,6 @@ export function ShareDialog({
     `draft:share:${projectId ?? ""}:role`,
     "editor",
   );
-  const [onlyMine, setOnlyMine] = useStoredState(`draft:share:${projectId ?? ""}:only-mine`, false);
   // Those added as chips, part of the draft too.
   const [people, setPeople] = useStoredState<string[]>(`draft:share:${projectId ?? ""}:people`, []);
   const everyone = everyoneIn(people, person);
@@ -151,7 +150,7 @@ export function ShareDialog({
     start(async () => {
       let refused: string | undefined;
       try {
-        const place = { kind: "list", id: projectId, role, onlyMine: role !== "editor" && onlyMine } as const;
+        const place = { kind: "list", id: projectId, role } as const;
         refused = (await inviteAnyoneAction(handles, [place]))?.error;
       } catch (err) {
         unstable_rethrow(err);
@@ -214,7 +213,6 @@ export function ShareDialog({
           draft.clear();
           setPeople([]);
           setRole("editor");
-          setOnlyMine(false);
         }
         onOpenChange(next);
       }}
@@ -257,7 +255,6 @@ export function ShareDialog({
               scope="list"
               disabled={pending}
               onChange={setRole}
-              onlyMine={{ value: onlyMine, onChange: setOnlyMine }}
             />
             <Button type="submit" size="sm" aria-disabled={everyone.length === 0 || pending || undefined}>
               <UserPlus data-icon="inline-start" />
