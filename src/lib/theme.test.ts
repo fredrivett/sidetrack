@@ -24,6 +24,29 @@ function loadPage(): string | undefined {
   return document.documentElement.dataset.theme;
 }
 
+/** The OS's mode, as matchMedia reports it (jsdom has none), and its listeners. */
+let osMode: "light" | "dark" = "light";
+const schemeQueries: { onchange: (() => void) | null }[] = [];
+globalThis.matchMedia = (query: string) => {
+  const mql = {
+    get matches() {
+      return query.includes(osMode);
+    },
+    onchange: null,
+  };
+  schemeQueries.push(mql);
+  return mql as unknown as MediaQueryList;
+};
+function switchOs(mode: "light" | "dark") {
+  osMode = mode;
+  schemeQueries.forEach((q) => q.onchange?.());
+}
+
+/** The bar colour Chrome's installed app uses: the theme-color without media. */
+function appTitleBarColor(): string | undefined {
+  return document.querySelector<HTMLMetaElement>('meta[name="theme-color"]:not([media])')?.content;
+}
+
 /** The bar colour a browser picks: the first theme-color whose media matches. */
 function themeColor(os: "light" | "dark"): string | undefined {
   const metas = [...document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')];
@@ -38,6 +61,8 @@ describe("theme", () => {
 
   afterEach(() => {
     pageChannels.splice(0).forEach((c) => c.close());
+    schemeQueries.splice(0);
+    osMode = "light";
   });
 
   it("keeps the chosen theme across a reload", () => {
@@ -66,6 +91,18 @@ describe("theme", () => {
     setTheme("system");
     expect(themeColor("dark")).toBe("#0a0a0a");
     expect(themeColor("light")).toBe("#fafafa");
+  });
+
+  it("colours Chrome's app title bar for the OS's mode on System, as it switches", () => {
+    osMode = "dark";
+    loadPage();
+    expect(appTitleBarColor()).toBe("#0a0a0a");
+    switchOs("light");
+    expect(appTitleBarColor()).toBe("#fafafa");
+    // A chosen theme ignores the OS.
+    setTheme("dark");
+    switchOs("light");
+    expect(appTitleBarColor()).toBe("#0a0a0a");
   });
 
   it("follows a theme chosen in another tab", async () => {

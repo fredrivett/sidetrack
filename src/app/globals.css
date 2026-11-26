@@ -20,6 +20,10 @@
    finger-sized targets there, keeping the denser sizes for a pointer. */
 @custom-variant touch (@media (hover: none) and (pointer: coarse));
 
+/* Chrome or Edge's installed app with its title bar hidden, where the
+   board's header is the window's title bar (see below). */
+@custom-variant titlebar (@media (display-mode: window-controls-overlay));
+
 @theme inline {
   --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
   --font-heading: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
@@ -274,6 +278,51 @@ body {
   text-decoration: line-through 1.25px var(--color-neutral-600);
   @variant dark {
     text-decoration-color: var(--color-neutral-300);
+  }
+}
+
+/* The installed app in Chrome or Edge on a computer, once its title bar is
+   hidden (manifest.ts, display_override): the page runs up under the window
+   controls, which the browser lays over the titlebar-area rectangle's sides
+   (on a Mac, the traffic lights left and the app menu right). The board's
+   header moves up beside them as the window's title bar: it clears them,
+   and drags the window by its empty parts. Other pages start below the
+   title bar instead, with a strip there to drag by (layout.tsx), and their
+   full-height boxes give that strip's height back so they don't scroll. */
+@media (display-mode: window-controls-overlay) {
+  /* The title bar's height above its bottom border, which the window
+     controls' backgrounds would paint over, so its contents centre on the
+     same line as them (the view tabs drop their extra height, Kanban's
+     ViewTabs); at least the header's usual sm:px-4 on the side without
+     controls (both of Windows' are on the right). */
+  [data-board-header] {
+    min-height: calc(env(titlebar-area-height) + 1px);
+    padding-block: 0;
+    padding-left: max(1rem, calc(env(titlebar-area-x) + 0.25rem));
+    padding-right: max(1rem, calc(100vw - env(titlebar-area-x) - env(titlebar-area-width) + 0.25rem));
+    -webkit-app-region: drag;
+    user-select: none;
+  }
+  /* Drag regions ignore what's painted over them, so controls, and dialogs
+     and menus that open over the title bar, opt out. */
+  [data-board-header] :is(a, button, input, [role="button"], [role="tab"], [data-slot="button"]),
+  [data-slot$="-content"],
+  [data-slot$="-overlay"] {
+    -webkit-app-region: no-drag;
+  }
+  body:not(:has([data-board-header])) {
+    padding-top: env(titlebar-area-height);
+    & .min-h-dvh {
+      min-height: calc(100dvh - env(titlebar-area-height));
+    }
+  }
+  [data-titlebar-drag] {
+    display: block;
+    height: env(titlebar-area-height);
+    -webkit-app-region: drag;
+  }
+  body:has([data-board-header]) [data-titlebar-drag] {
+    display: none;
   }
 }
 

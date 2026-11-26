@@ -1509,8 +1509,9 @@ function ViewTabs({
       // Tabs that fill the header top to bottom, through its padding
       // (-my-2 against its py-2), so they click anywhere above the
       // underline: at least the header's buttons beside them (28px, 36px
-      // on touch) plus that padding, taller when the header wraps.
-      className="relative -my-2 flex min-h-11 self-stretch text-[13px] font-medium max-[360px]:text-xs touch:min-h-13 touch:text-sm touch:max-[360px]:text-xs"
+      // on touch) plus that padding, taller when the header wraps. As the
+      // installed app's title bar, no taller than it (globals.css).
+      className="relative -my-2 flex min-h-11 self-stretch titlebar:my-0 titlebar:min-h-0 text-[13px] font-medium max-[360px]:text-xs touch:min-h-13 touch:text-sm touch:max-[360px]:text-xs"
     >
       {BOARD_VIEWS.map(([v, label, Icon], i) => (
         <Tooltip key={v}>

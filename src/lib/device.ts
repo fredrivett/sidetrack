@@ -17,6 +17,8 @@ export function isIos() {
 export function isInstalled() {
   return (
     window.matchMedia("(display-mode: standalone)").matches ||
+    // Chrome or Edge's app with its title bar hidden (manifest.ts).
+    window.matchMedia("(display-mode: window-controls-overlay)").matches ||
     ("standalone" in navigator && navigator.standalone === true)
   );
 }

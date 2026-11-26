@@ -24,7 +24,7 @@ export function parseTheme(value: string | null | undefined): Theme {
 /**
  * Applies a theme to the page: <html data-theme> for the CSS, and the browser
  * bar's colour. THEME_INIT_SCRIPT inlines its source, so it uses only its
- * arguments.
+ * arguments and the browser's globals.
  *
  * The theme-color tags are written here rather than through Next's
  * viewport.themeColor: React claims an existing tag with matching content as
@@ -44,6 +44,12 @@ function applyTheme(theme: Theme, colors: typeof THEME_COLORS) {
   if (theme === "system") {
     add(colors.light, "(prefers-color-scheme: light)");
     add(colors.dark, "(prefers-color-scheme: dark)");
+    // Chrome's installed app ignores tags with a media query, painting its
+    // title bar the manifest's dark theme_color instead, so it gets the
+    // current mode's colour without one. Browsers take the first tag that
+    // matches, so the others still use the ones above. THEME_INIT_SCRIPT
+    // rewrites it when the system's mode changes.
+    add(colors[matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"]);
   } else {
     add(colors[theme]);
   }
@@ -51,10 +57,11 @@ function applyTheme(theme: Theme, colors: typeof THEME_COLORS) {
 
 /**
  * Applies the cookie's theme before first paint, so no page flashes the wrong
- * mode, then applies the choices other tabs make (setTheme) while it's open.
+ * mode, then applies the choices other tabs make (setTheme) and, on System,
+ * the system's switches between light and dark while it's open.
  * Inlined in the root layout; built from constants only.
  */
-export const THEME_INIT_SCRIPT = `try{var m=document.cookie.match(/(?:^|; )${THEME_COOKIE}=(light|dark)(?:;|$)/),a=(${applyTheme}),c=${JSON.stringify(THEME_COLORS)};a(m?m[1]:"system",c);new BroadcastChannel(${JSON.stringify(THEME_CHANNEL)}).onmessage=function(e){a(e.data==="light"||e.data==="dark"?e.data:"system",c)}}catch(e){}`;
+export const THEME_INIT_SCRIPT = `try{var m=document.cookie.match(/(?:^|; )${THEME_COOKIE}=(light|dark)(?:;|$)/),a=(${applyTheme}),c=${JSON.stringify(THEME_COLORS)};a(m?m[1]:"system",c);matchMedia("(prefers-color-scheme: dark)").onchange=function(){var t=document.documentElement.dataset.theme;if(t==="system")a(t,c)};new BroadcastChannel(${JSON.stringify(THEME_CHANNEL)}).onmessage=function(e){a(e.data==="light"||e.data==="dark"?e.data:"system",c)}}catch(e){}`;
 
 /**
  * Applies a theme to this page, remembers it for the next load, and tells the
