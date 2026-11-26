@@ -282,7 +282,9 @@ function Words({
 function nodeOf(icon: object): [string, Record<string, string>][] {
   const read = icon as Record<string, unknown>;
   const data = read["__iconData"] as { node: [string, Record<string, string>][] } | undefined;
-  return data?.node ?? (read["__iconNode"] as [string, Record<string, string>][]);
+  const node = data?.node ?? (read["__iconNode"] as [string, Record<string, string>][] | undefined);
+  if (!node) throw new Error("lucide icon has neither __iconData nor __iconNode");
+  return node;
 }
 
 const calendarDays = nodeOf(calendarDaysIcon);
