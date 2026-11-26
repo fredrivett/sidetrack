@@ -1226,7 +1226,7 @@ export async function closeDayAction(text: string) {
   const { db } = getDb();
   const timeZone = getTimeZoneCore(db, userId);
   if (!timeZone) throw new Error("time zone not known yet");
-  const kept = closeDayCore(db, userId, dayOf(Date.now(), timeZone), String(text));
+  const kept = closeDayCore(db, userId, dayOf(Date.now(), timeZone), String(text), SOURCE);
   refresh();
   return kept;
 }

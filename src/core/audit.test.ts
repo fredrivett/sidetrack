@@ -277,7 +277,7 @@ const TABLE_AUDIT: Record<string, "audited" | `exempt: ${string}`> = {
   calendar_events: "exempt: a cache of the owner's own calendar, rebuilt by sync",
   audit_log: "exempt: the log itself",
   agenda_greetings: "exempt: a cache of one person's greeting, seen by nobody else",
-  day_wrap_ups: "exempt: one person's words on how their day went, seen only through a day share they opted them into",
+  day_wrap_ups: "audited",
   day_notes: "exempt: one person's note about their day, for their greeting, seen by nobody else",
   meta: "exempt: app bookkeeping (sign-up lock, last backup time, last AI price check)",
   ai_usage: "exempt: telemetry, the tokens AI calls used, for the admin page",

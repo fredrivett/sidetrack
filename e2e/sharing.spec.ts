@@ -390,5 +390,8 @@ test("closes the day with how it went, which shows on their Check-ins", async ({
   const went = joPage.getByRole("region", { name: "E2E User’s day" }).getByRole("group", { name: "How today went" });
   await expect(went.getByText("Did the bottles too")).toBeVisible();
   await expect(went.getByRole("list", { name: "How it went" }).getByText("Got a lot done")).toBeVisible();
+  // And Jo was told it's closed.
+  await joPage.getByRole("button", { name: /^Notifications/ }).click();
+  await expect(joPage.getByText("E2E User closed the day")).toBeVisible();
   await context.close();
 });

@@ -75,6 +75,8 @@ export const AUDIT_ENTITIES = [
   "invitation",
   // A day shared without places of its own (dayShares); no project.
   "day_share",
+  // A day closed (dayWrapUps); entityId is the day, the actor whose it is.
+  "wrap_up",
   // An emoji reaction (reactions); entityId is the reaction's id. On
   // something in a list, its project and, for an item's activity or
   // comment, the item as parentId.
@@ -879,6 +881,8 @@ export const NOTIFICATION_REASONS = [
   // Someone reacted to what they did, wrote or shared (core/reactions.ts).
   "reacted",
   "joined",
+  // Someone whose day they see closed it (dayWrapUps.ts).
+  "day-closed",
   "role",
   // A list or Space they're in was archived, restored or deleted.
   "member",
@@ -1043,9 +1047,9 @@ export const aiPrices = sqliteTable(
 
 // How someone's day went, written when they close it (dayWrapUps.ts): an
 // accountability update for the people they share their day with, kept
-// beside the day's note, never over it. One per person per day. Not
-// audited, like day notes: their own words, seen only through a day share
-// they opted them into.
+// beside the day's note, never over it. One per person per day. Its words
+// aren't audited, like day notes: their own words, seen only through a day
+// share they opted them into. Closing the day is, without them (day.closed).
 export const dayWrapUps = sqliteTable(
   "day_wrap_ups",
   {

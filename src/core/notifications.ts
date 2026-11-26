@@ -17,6 +17,9 @@ import { autoFollow, followersOf } from "./follows";
 import type { ChangeEvent, DueAt, ItemAt, PersonAt, Reaction } from "./events";
 import { listReactions, reactionKey, type ReactionRef, type ReactionView, standingReactions } from "./reactions";
 import { isLooking } from "./presence";
+import { noteSeen, noteViewers } from "./dayNotes";
+import { getWrapUp, seenWrapUp } from "./dayWrapUps";
+import { validZone } from "./db-functions";
 import { remindDue } from "./reminders";
 import { forgetPushSubscriptions, pushTargets } from "./push";
 import {
@@ -56,6 +59,8 @@ export interface NotificationView {
   parts: Part[];
   /** What it quotes: a comment as it reads now, or an agent's closing note. */
   snippet: string | null;
+  /** The moods a closed day went with, shown as its badges beside the snippet. */
+  moods?: string[];
   /** The list it happened in, when the reader can open it, to show and link to. */
   list?: Part["list"];
   /** Where it happened: the list, or the Space for a Space invite. */
@@ -311,6 +316,9 @@ function rule(
       return { to: as("invited", [event.viewer.userId]), groupKey: `day_share:${event.shareId}` };
     case "day_share.joined":
       return { to: as("joined", [event.sharer.userId]), groupKey: `day_share:${event.shareId}` };
+    // Whoever sees their day's note or wrap-up: it's closed.
+    case "day.closed":
+      return { to: as("day-closed", noteViewers(db, actor)), groupKey: `day:${actor}:${event.day}` };
     case "member.role":
       return {
         to: as("role", [event.member.userId]),
@@ -1132,6 +1140,30 @@ function describe(db: Db, userId: string, rows: Row[]): NotificationView[] {
         },
       ];
     }
+    // A day closed, by whoever's day it is, even through their agent; told
+    // while the reader sees its note. How it went shows as Check-ins shows
+    // it: as much as they may see, as it reads now, and only while it's
+    // still that day for them, never a past day's.
+    if (event.type === "day.closed") {
+      const sharer = r.actorId;
+      const seen = sharer ? noteSeen(db, r.userId, sharer) : null;
+      if (!sharer || !seen || (!seen.words && !seen.mood)) return [];
+      const zone = db.select({ tz: users.timeZone }).from(users).where(eq(users.id, sharer)).get()?.tz;
+      const went =
+        event.day === dayOf(Date.now(), validZone(zone))
+          ? seenWrapUp(getWrapUp(db, sharer, event.day), seen.words, seen.mood)
+          : null;
+      return [
+        {
+          ...base,
+          title: "Check-ins",
+          url: "/check-ins",
+          parts: [person, t(" closed the day")],
+          snippet: went?.note ? excerpt(went.note) : null,
+          ...(went?.mood.length ? { moods: went.mood } : {}),
+        },
+      ];
+    }
     if (event.type === "day_share.joined") {
       return [
         {
@@ -1219,6 +1251,9 @@ const MAX_WAIT_MS = 5 * 60_000;
 const PUSH_FRESH_MS = 10 * 60_000;
 // How often to look for due reminders to write: within this of 8am.
 const REMIND_EVERY_MS = 15 * 60_000;
+
+/** What a notification quotes, as plain text: its snippet, then a closed day's moods. */
+const quoted = (n: NotificationView) => [n.snippet, n.moods?.join(", ")].filter(Boolean).join(" · ");
 
 /**
  * Push what's due: each person's unsent notifications about one item (or,
@@ -1375,7 +1410,7 @@ function summarise(views: NotificationView[], today: string): Omit<PushMessage, 
   if (views.length === 1) {
     return {
       title: last.title,
-      body: plainText(last.parts, today) + (last.snippet ? `: ${last.snippet}` : ""),
+      body: plainText(last.parts, today) + (quoted(last) ? `: ${quoted(last)}` : ""),
       // Someone's change opens at its Activity row, ready to react to: iOS
       // shows no buttons on a web push, so the tap is the way in.
       url:

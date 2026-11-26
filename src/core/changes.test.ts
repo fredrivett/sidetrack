@@ -291,7 +291,7 @@ describe("watchChanges", () => {
     setDayNote(db, owner, "2026-11-25", "");
     await settle();
     expect(heard).toEqual({ [member]: 2, [stranger]: 0 });
-    closeDay(db, owner, "2026-11-25", "Got a lot done");
+    closeDay(db, owner, "2026-11-25", "Got a lot done", "web");
     await settle();
     expect(heard).toEqual({ [member]: 3, [stranger]: 0 });
   });

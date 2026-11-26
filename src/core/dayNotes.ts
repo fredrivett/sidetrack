@@ -113,25 +113,18 @@ export function removeDayTag(db: Db, userId: string, tag: string): string[] {
 }
 
 /**
- * What `viewerId` may see of `personId`'s note for their own today, and of
- * how it went once they close it (dayWrapUps.ts): the words, the mood
- * (tags), both or neither, as `personId` chose when sharing their day with
- * them (an accepted membership limited to their items and a window, with
- * shareNote or shareMood). Whichever share allows more wins.
+ * The accepted shares of `personId`'s day that show its note's words or
+ * mood: memberships limited to their items and a window, and a day shared
+ * without places of its own. `viewerId` narrows them to one viewer's.
  */
-export function sharedDayNote(
-  db: Db,
-  viewerId: string,
-  personId: string,
-  now = Date.now(),
-): { note: string | null; mood: string[]; wrapUp: SeenWrapUp | null } {
+function noteShares(db: Db, personId: string, viewerId?: string) {
   const shares = [projectMembers, spaceMembers].flatMap((m) =>
     db
-      .select({ note: m.shareNote, mood: m.shareMood })
+      .select({ viewerId: m.userId, note: m.shareNote, mood: m.shareMood })
       .from(m)
       .where(
         and(
-          eq(m.userId, viewerId),
+          viewerId ? eq(m.userId, viewerId) : undefined,
           eq(m.onlyAssignedTo, personId),
           eq(m.status, "accepted"),
           isNotNull(m.onlyWithin),
@@ -140,15 +133,47 @@ export function sharedDayNote(
       )
       .all(),
   );
-  // And a day shared without places of its own, once accepted.
-  const own = db
-    .select({ note: dayShares.shareNote, mood: dayShares.shareMood })
-    .from(dayShares)
-    .where(and(eq(dayShares.viewerId, viewerId), eq(dayShares.sharerId, personId), eq(dayShares.status, "accepted")))
-    .get();
-  if (own) shares.push(own);
-  const words = shares.some((s) => s.note);
-  const mood = shares.some((s) => s.mood);
+  return [
+    ...shares,
+    ...db
+      .select({ viewerId: dayShares.viewerId, note: dayShares.shareNote, mood: dayShares.shareMood })
+      .from(dayShares)
+      .where(
+        and(
+          viewerId ? eq(dayShares.viewerId, viewerId) : undefined,
+          eq(dayShares.sharerId, personId),
+          eq(dayShares.status, "accepted"),
+          or(eq(dayShares.shareNote, true), eq(dayShares.shareMood, true)),
+        ),
+      )
+      .all(),
+  ];
+}
+
+/** Who sees `personId`'s day note or wrap-up, its words or its mood: who hears they closed their day. */
+export function noteViewers(db: Db, personId: string): string[] {
+  return [...new Set(noteShares(db, personId).map((s) => s.viewerId))].filter((id) => id !== personId);
+}
+
+/** Whether `viewerId` may see the words and the mood of `personId`'s note and wrap-up. Whichever share allows more wins. */
+export function noteSeen(db: Db, viewerId: string, personId: string): { words: boolean; mood: boolean } {
+  const shares = noteShares(db, personId, viewerId);
+  return { words: shares.some((s) => s.note), mood: shares.some((s) => s.mood) };
+}
+
+/**
+ * What `viewerId` may see of `personId`'s note for their own today, and of
+ * how it went once they close it (dayWrapUps.ts): the words, the mood
+ * (tags), both or neither, as `personId` chose when sharing their day with
+ * them (noteSeen).
+ */
+export function sharedDayNote(
+  db: Db,
+  viewerId: string,
+  personId: string,
+  now = Date.now(),
+): { note: string | null; mood: string[]; wrapUp: SeenWrapUp | null } {
+  const { words, mood } = noteSeen(db, viewerId, personId);
   if (!words && !mood) return { note: null, mood: [], wrapUp: null };
   const zone = db.select({ tz: users.timeZone }).from(users).where(eq(users.id, personId)).get()?.tz;
   const day = dayOf(now, validZone(zone));
