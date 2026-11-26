@@ -89,6 +89,7 @@ import {
 import type { FeedbackArea, FeedbackKind, FeedbackRating } from "@/lib/feedback";
 import {
   addItem as addItemCore,
+  addParentItem as addParentItemCore,
   cancelItem as cancelItemCore,
   completeItem as completeItemCore,
   deleteItem as deleteItemCore,
@@ -970,6 +971,15 @@ export async function setItemParentAction(
   const from = changeSeq();
   setItemParentCore(db, userId, id, parentId, SOURCE, position);
   return savedRows(db, userId, from, [...left, ...groupIdsCore(db, userId, id)]);
+}
+
+/** Add a parent in the item's place, with the item as its first sub-item: the rows, and the new parent. */
+export async function addParentItemAction(id: string, title: string) {
+  const userId = await requireUserId();
+  const { db } = getDb();
+  const from = changeSeq();
+  const parent = addParentItemCore(db, userId, id, title, SOURCE);
+  return { ...savedRows(db, userId, from, groupIdsCore(db, userId, id)), parent };
 }
 
 export async function previewMoveItemAction(id: string, projectId: string) {

@@ -15,6 +15,7 @@ import {
   GitBranch,
   IndentDecrease,
   IndentIncrease,
+  ListTree,
   Trash2,
   UserRound,
 } from "lucide-react";
@@ -50,6 +51,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -89,6 +91,7 @@ import { useCopyItemRef } from "./useCopyItemRef";
 import { useFollows } from "./follows";
 import { Struck } from "./Struck";
 import { CancelItemDialog, CancelledChip } from "./CancelItem";
+import { NewParentDialog } from "./NewParentDialog";
 import { AgentAvatar, AvatarStack, assigneeName, assigneeNames } from "./UserAvatar";
 import { useAgentAssignment, useItemAgentSessions } from "./agent-sessions";
 
@@ -695,6 +698,7 @@ export function ItemDetailView({
   // Closed without being done: an ✕ and a dashed strike, never the green tick.
   const cancelled = completed && item.cancelled;
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [newParentOpen, setNewParentOpen] = useState(false);
   // Done and cancelled titles share the strike; the ✕ and chip tell them apart.
   const strike = "text-neutral-400 line-through";
   const ref = formatItemRef(prefix, item.number);
@@ -1059,9 +1063,9 @@ export function ItemDetailView({
             </span>
           ) : (
             // The touch way to nest an existing task, where there's no
-            // row menu: an item with sub-items can't become one.
-            checklist.length === 0 &&
-            nestTargets.length > 0 && (
+            // row menu, or to give it a new one: an item with sub-items
+            // can't become one.
+            checklist.length === 0 && (
               <DropdownMenu>
                 <DropdownMenuTrigger
                   aria-disabled={pending || undefined}
@@ -1072,6 +1076,11 @@ export function ItemDetailView({
                   <span data-replay-safe>Parent</span>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-64">
+                  <DropdownMenuItem onClick={() => setNewParentOpen(true)}>
+                    <ListTree />
+                    New parent…
+                  </DropdownMenuItem>
+                  {nestTargets.length > 0 && <DropdownMenuSeparator />}
                   {nestTargets.map((t) => (
                     <DropdownMenuItem
                       key={t.id}
@@ -1193,6 +1202,10 @@ export function ItemDetailView({
       )}
     </div>
     {cancelOpen && <CancelItemDialog item={item} open={cancelOpen} onOpenChange={setCancelOpen} />}
+    {newParentOpen && (
+      // Opens the new parent once it's added, to add the other steps to its checklist.
+      <NewParentDialog item={item} open={newParentOpen} onOpenChange={setNewParentOpen} onAdded={onOpenItem} />
+    )}
     </>
   );
 }

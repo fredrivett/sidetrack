@@ -12,6 +12,7 @@ import {
   useTransition,
 } from "react";
 import {
+  addParentItemAction,
   cancelItemAction,
   completeItemAction,
   deleteItemAction,
@@ -37,6 +38,12 @@ export interface ItemChanges {
    * asks (the cancel dialog) waits on it, dimmed, and closes once it lands.
    */
   cancel: (item: Item, opts: CancelOpts) => Promise<boolean>;
+  /**
+   * Held too: a new item in this one's place, holding it as its first
+   * sub-item. The server gives the new item its ref, so whatever asks (the
+   * new parent dialog) waits on it. The new parent, or null if it failed.
+   */
+  addParent: (item: Item, title: string) => Promise<Item | null>;
 }
 
 /** `replacedBy`: the ref typed, such as "SDT-87". */
@@ -56,6 +63,17 @@ const saves = (merge: (saved: unknown) => void) => ({
     ),
   cancel: (item: Item, opts: CancelOpts) =>
     runAction(cancelItemAction(item.id, opts).then(merge), `cancel “${item.title}”`),
+  addParent: async (item: Item, title: string) => {
+    let parent: Item | null = null;
+    await runAction(
+      addParentItemAction(item.id, title).then((saved) => {
+        merge(saved);
+        parent = saved.parent;
+      }),
+      `add a parent for “${item.title}”`,
+    );
+    return parent;
+  },
   delete: (item: Item) => runAction(deleteItemAction(item.id).then(merge), `delete “${item.title}”`),
   parent: (item: Item, parentId: string | null) =>
     runAction(setItemParentAction(item.id, parentId).then(merge), `move “${item.title}”`),
@@ -71,6 +89,7 @@ export const ItemChangesContext = createContext<ItemChanges>({
   deleteItem: (item) => void unheld.delete(item),
   setParent: (item, parentId) => void unheld.parent(item, parentId),
   cancel: (item, opts) => unheld.cancel(item, opts),
+  addParent: (item, title) => unheld.addParent(item, title),
 });
 export const useItemChanges = () => useContext(ItemChangesContext);
 
@@ -350,6 +369,7 @@ export function useOptimisticItems(
       setParent: (item, parentId) =>
         run({ kind: "parent", item, parentId }, () => save.parent(item, parentId)),
       cancel: (item, opts) => save.cancel(item, opts),
+      addParent: (item, title) => save.addParent(item, title),
     };
   }, [apply, merge]);
   return [optimistic, changes] as const;

@@ -5,6 +5,7 @@ import { changeSeq } from "./changes";
 import { addLabel, listLabels } from "./labels";
 import {
   addItem,
+  addParentItem,
   cancelItem,
   completeItem,
   deleteItem,
@@ -949,6 +950,33 @@ describe("checklists (sub-items)", () => {
     // An item with sub-items can't become one, and nothing nests under itself.
     expect(() => setItemParent(db, userId, a.id, b.id, "web")).toThrow(/has sub-items/);
     expect(() => setItemParent(db, userId, b.id, b.id, "web")).toThrow(/own sub-item/);
+  });
+
+  it("adds a parent in an item's place, with the item as its first sub-item", () => {
+    const { db, userId, projectId, add, tree } = setup();
+    add("a");
+    const b = add("b");
+    add("c");
+
+    const trip = addParentItem(db, userId, b.id, "Trip", "web");
+    expect(tree()).toEqual([
+      ["a", []],
+      ["Trip", ["b"]],
+      ["c", []],
+    ]);
+    expect(trip.parentId).toBeNull();
+    // Logged as the add, then the nesting.
+    expect(listAudit(db, userId, { projectId }).slice(0, 2).map((r) => r.action)).toEqual([
+      "update",
+      "create",
+    ]);
+
+    // A sub-item can't have one, nor can an item with sub-items, and nothing is added.
+    const count = () => listItems(db, userId, projectId).length;
+    const before = count();
+    expect(() => addParentItem(db, userId, b.id, "x", "web")).toThrow(/already a sub-item/);
+    expect(() => addParentItem(db, userId, trip.id, "x", "web")).toThrow(/has sub-items/);
+    expect(count()).toBe(before);
   });
 
   it("nests and moves out at a given position, as a drop does", () => {

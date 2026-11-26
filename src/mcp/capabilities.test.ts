@@ -88,6 +88,7 @@ const ACTIONS: Record<string, string | Exempt> = {
   // A whole order at once (the board's undo of a sort); agents move one at a time.
   setItemOrderAction: "reorder_item",
   setItemParentAction: "set_item_parent",
+  addParentItemAction: "add_parent",
   previewMoveItemAction: "move_item",
   moveItemAction: "move_item",
   deleteItemAction: "delete_item",

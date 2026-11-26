@@ -229,6 +229,33 @@ test("reorders a checklist from the Brief and from the item's dialog", async ({ 
   await expect(steps).toHaveText(["Garage", "Oven", "Windows"]);
 });
 
+test("gives an item a new parent from its right-click menu, then adds a sibling", async ({ page, user }) => {
+  user.addList("Home", ["Water plants", "Book flights"]);
+  await page.goto("/board");
+  await row(page, "Book flights").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "New parent…" }).click();
+  const create = page.getByRole("dialog", { name: "New parent" });
+  await expect(create.getByLabel("Title")).toBeFocused();
+  await page.keyboard.type("Trip to Rome");
+  await create.getByRole("button", { name: "Add parent" }).click();
+
+  // The new parent opens, holding the item, ready for the other steps.
+  const parent = page.getByRole("dialog", { name: "Trip to Rome" });
+  await expect(parent.getByRole("checkbox", { name: "Complete Book flights" })).toBeVisible();
+  await parent.getByPlaceholder("Add another…").fill("Pack bags");
+  await page.keyboard.press("Enter");
+  await expect(parent.getByRole("checkbox", { name: "Complete Pack bags" })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // Saved: after a reload both sit under it, in order.
+  await page.reload();
+  await row(page, "Trip to Rome").click();
+  const steps = page.getByRole("dialog", { name: "Trip to Rome" }).getByRole("checkbox", { name: /^Complete / });
+  await expect(steps).toHaveCount(2);
+  await expect(steps.nth(0)).toHaveAccessibleName("Complete Book flights");
+  await expect(steps.nth(1)).toHaveAccessibleName("Complete Pack bags");
+});
+
 test("cancels an item with its replacement, and reopens it", async ({ page, user }) => {
   const home = user.addList("Home", ["Water plants", "Water the garden"]);
   const { db } = getDb();
