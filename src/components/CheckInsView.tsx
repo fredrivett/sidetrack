@@ -160,31 +160,28 @@ export function CheckInsView({
   /** Opens Share my day, with someone to share it with already filled in. */
   onShareDay: (person?: string) => void;
 }) {
+  const every = Object.values(itemsByProject).flat();
   const byIds = (ids: string[]) => {
     const wanted = new Set(ids);
-    return Object.values(itemsByProject)
-      .flat()
-      .filter((i) => wanted.has(i.id));
+    return every.filter((i) => wanted.has(i.id));
   };
   // Theirs on the lists shared for it, then on the lists the viewer sees whole.
   const itemsOf = (c: CheckIn) => [...c.lists.flatMap((l) => itemsByProject[l.id] ?? []), ...byIds(c.alsoItemIds)];
-  const theirs = checkIns.flatMap(itemsOf);
-  const myItems = byIds(myDay.itemIds);
-  const mine = dayItems(myItems, myDay);
-  // An item on more than one day (a joint one) once.
-  const all = [...new Map([...theirs, ...myItems].map((i) => [i.id, i])).values()];
+  const mine = dayItems(byIds(myDay.itemIds), myDay);
   const projectOf = new Map([
     ...projectsById,
     ...checkIns.flatMap((c) => c.lists.map((l) => [l.id, l] as const)),
   ]);
-  const detail = useItemDetailDialog(all);
+  // Every item, not just those in a day, so an open dialog stays open when
+  // its item leaves the day (its due date removed, say), as on the Agenda.
+  const detail = useItemDetailDialog(every);
   const detailProject = detail.item ? projectOf.get(detail.item.projectId) : undefined;
   const sharesBack = new Set(myDay.shares.map((s) => s.personId));
   const sharing = myDay.shares.length + myDay.invited.length > 0;
 
   // Titles of the items those sub-items sit under: hidden ones' (parentTitles),
   // and, on the viewer's own card, ones they can see but aren't in their day.
-  const titles = { ...Object.fromEntries(Object.values(itemsByProject).flat().map((i) => [i.id, i.title])), ...parentTitles };
+  const titles = { ...Object.fromEntries(every.map((i) => [i.id, i.title])), ...parentTitles };
 
   // Grouped by when they're due, by the sharer's clock, as the Brief groups
   // them (agendaSection); a group goes where its soonest open item does,
@@ -324,9 +321,9 @@ export function CheckInsView({
       {detail.item && detailProject && (
         <ItemDetailDialog
           item={detail.item}
-          parent={all.find((i) => i.id === detail.item?.parentId) ?? null}
+          parent={every.find((i) => i.id === detail.item?.parentId) ?? null}
           parentTitle={detail.item.parentId ? titles[detail.item.parentId] : undefined}
-          checklist={all.filter((i) => i.parentId === detail.item?.id)}
+          checklist={every.filter((i) => i.parentId === detail.item?.id)}
           // Nothing to nest under here: Check-ins follows a day, it doesn't plan one.
           nestTargets={[]}
           onOpenItem={detail.goTo}

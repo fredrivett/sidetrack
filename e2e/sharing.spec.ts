@@ -157,6 +157,27 @@ test("shares your day, which shows on their Check-ins, not their board", async (
   await context.close();
 });
 
+test("an item opened from your day on Check-ins stays open once it leaves the day", async ({ page, user, context }) => {
+  const list = user.addList("Week");
+  user.addItem(list.id, "Overdue swim", [user.id], "2020-01-06");
+  user.shareDayWith(await createPerson(), [list.id]);
+  const open = async (p: typeof page) => {
+    await p.goto("/check-ins");
+    await p.getByRole("region", { name: "Your day" }).getByRole("button", { name: /^Overdue swim/ }).click();
+    return p.getByRole("dialog", { name: "Overdue swim" });
+  };
+  const dialog = await open(page);
+  await expect(dialog.getByRole("button", { name: "Due 6 Jan 2020" })).toBeVisible();
+  // Undated in another tab, it leaves the day there and, live, here, where
+  // only the board's refresh can tell: still open, with its date gone.
+  const tab = await context.newPage();
+  await (await open(tab)).getByRole("button", { name: "Due 6 Jan 2020" }).click();
+  await tab.getByRole("button", { name: "Clear" }).click();
+  await expect(dialog.getByRole("button", { name: "Due date" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("region", { name: "Your day" }).getByText("Nothing of yours is due in it yet.")).toBeVisible();
+});
+
 test("shares your day on lists you already share with them too, without picking them", async ({ page, user, browser, baseURL }) => {
   const gym = user.addList("Gym");
   user.addItem(gym.id, "Overdue swim", [user.id], "2020-01-06");
