@@ -26,6 +26,7 @@ import { SourcePhoto } from "./SourcePhoto";
 import { spaceTint } from "./SpaceColor";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
+import { Fold } from "./ui/fold";
 import { AgentAvatar, AvatarStack } from "./UserAvatar";
 
 type ListOption = { id: string; name: string; icon: string | null; homepageUrl: string | null };
@@ -278,7 +279,7 @@ export function SourceReview({
 
   return (
     <LabelsContext value={labelsByProject}>
-      <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:grid-cols-[minmax(0,1fr)_minmax(0,30rem)]">
+      <div data-source-review className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:grid-cols-[minmax(0,1fr)_minmax(0,30rem)]">
         <div className="sticky top-0 z-10 -mx-4 bg-neutral-50 px-4 pb-2 sm:-mx-6 sm:px-6 md:top-4 md:mx-0 md:self-start md:px-0 md:pb-0 dark:bg-neutral-950">
           <SourcePhoto
             sourceId={source.id}
@@ -358,7 +359,9 @@ function ListCard({
           className={cn("ml-auto size-4 text-neutral-500 transition-transform", !open && "-rotate-90")}
         />
       </button>
-      {open && <div className="mt-0.5 space-y-1.5">{children}</div>}
+      <Fold open={open} className="space-y-1.5 pt-0.5">
+        {children}
+      </Fold>
     </section>
   );
 }

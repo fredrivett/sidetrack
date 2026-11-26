@@ -15,6 +15,7 @@ import { EditableText } from "./EditableText";
 import { ItemDetailDialog } from "./ItemDetailDialog";
 import { DraggableColumnCard } from "./ListDrag";
 import { DraggableItemList, isHiddenParent, type ItemGroup, ItemGroupView, withHiddenParents } from "./ItemList";
+import { Fold } from "./ui/fold";
 import { ProjectDetailDialog } from "./ProjectDetailDialog";
 import { ProjectIconPicker, useListIcon } from "./ProjectIconPicker";
 import { ProjectMenu } from "./ProjectMenu";
@@ -408,7 +409,8 @@ export const ProjectColumn = memo(function ProjectColumn({
 /**
  * The list's Later section: what isn't for now (see isLaterGroup), folded
  * away under a quiet header with its count, and shown only when there's
- * some. Not a drop zone: an item's date decides whether it's here.
+ * some. Not a drop zone: an item's date decides whether it's here. At the
+ * foot of the list, it scrolls into view as it opens (Fold).
  */
 function LaterFold({
   projectId,
@@ -425,7 +427,7 @@ function LaterFold({
   if (groups.length === 0) return null;
   const bodyId = `later-${projectId}`;
   return (
-    <section className="space-y-1.5 border-t border-neutral-100 pt-2 dark:border-neutral-800">
+    <section className="border-t border-neutral-100 pt-2 dark:border-neutral-800">
       <h3 className="text-xs font-medium">
         <button
           type="button"
@@ -441,13 +443,11 @@ function LaterFold({
           <span className="tabular-nums text-neutral-400 dark:text-neutral-500">{groups.length}</span>
         </button>
       </h3>
-      {open && (
-        <div id={bodyId} className="space-y-1.5">
-          {groups.map((g) => (
-            <ItemGroupView key={g.id} group={g} {...row} />
-          ))}
-        </div>
-      )}
+      <Fold id={bodyId} open={open} className="space-y-1.5 pt-1.5">
+        {groups.map((g) => (
+          <ItemGroupView key={g.id} group={g} {...row} />
+        ))}
+      </Fold>
     </section>
   );
 }

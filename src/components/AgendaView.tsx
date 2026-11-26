@@ -4,7 +4,6 @@ import { ChevronDown } from "lucide-react";
 import {
   type ReactNode,
   useContext,
-  useEffect,
   useId,
   useOptimistic,
   useRef,
@@ -32,6 +31,7 @@ import { ItemRow } from "./ItemRow";
 import { MoveToTomorrowDialog } from "./MoveToTomorrowDialog";
 import type { ProjectView } from "./Kanban";
 import { Button } from "./ui/button";
+import { Fold } from "./ui/fold";
 import { ProjectIcon } from "./ProjectIcon";
 import { runAction } from "./run-action";
 import { useToday } from "./use-day-start";
@@ -78,7 +78,7 @@ function BriefRows({ entries }: { entries: Entry[] }) {
     <ChecklistDragContext value={setDragging}>
       {/* flow-root keeps the first row's margin inside, where the rows are
           measured from (as on the board). */}
-      <div ref={listEl} className="flow-root" style={{ paddingBottom: virtual.below }}>
+      <div ref={listEl} data-fold-rows className="flow-root" style={{ paddingBottom: virtual.below }}>
         {virtual.rows.map(({ index, above }) => (
           <div key={ids[index]} ref={virtual.measure} data-index={index} style={{ marginTop: above }}>
             {entries[index].node}
@@ -86,37 +86,6 @@ function BriefRows({ entries }: { entries: Entry[] }) {
         ))}
       </div>
     </ChecklistDragContext>
-  );
-}
-
-/**
- * A section's rows, folding away. Rows 0fr to 1fr animates to the content's
- * own height. Folded, it's inert, so its rows leave the tab order too, and
- * once the fold has closed they unmount: a folded No date with hundreds of
- * items costs nothing to render.
- */
-function Fold({ id, collapsed, children }: { id: string; collapsed: boolean; children: ReactNode }) {
-  const [mounted, setMounted] = useState(!collapsed);
-  if (!collapsed && !mounted) setMounted(true);
-  useEffect(() => {
-    if (!collapsed) return;
-    // As long as the fold's transition (duration-300).
-    const timer = setTimeout(() => setMounted(false), 300);
-    return () => clearTimeout(timer);
-  }, [collapsed]);
-  return (
-    <div
-      id={id}
-      inert={collapsed}
-      className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none ${
-        collapsed ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100"
-      }`}
-    >
-      {/* -mx-1 px-1 and pb-1 leave room for the rows' focus rings. */}
-      <div className="-mx-1 min-h-0 overflow-hidden">
-        <div className="space-y-1.5 px-1 pt-0.5 pb-1">{mounted && children}</div>
-      </div>
-    </div>
   );
 }
 
@@ -159,7 +128,7 @@ export function OverdueCard({
           <FoldChevron collapsed={collapsed} className="size-3.5" />
         </button>
       </Heading>
-      <Fold id={id} collapsed={collapsed}>
+      <Fold id={id} open={!collapsed} className="space-y-1.5 pt-0.5">
         {children}
       </Fold>
     </section>
@@ -287,7 +256,7 @@ export function AgendaView({
       );
     });
   const fold = (id: string, collapsed: boolean, rows: ReactNode) => (
-    <Fold id={id} collapsed={collapsed}>
+    <Fold id={id} open={!collapsed} className="space-y-1.5 pt-0.5">
       {rows}
     </Fold>
   );
@@ -533,12 +502,14 @@ export function AgendaView({
                 return;
               }
               // Until there's a triage of its own: open Overdue and go to it.
+              // Opening it brings it into view (Fold); one already open, we go to.
               if (action !== "triage") return;
               if (overdueCollapsed) toggleOverdue();
-              document
-                .getElementById(overdueId)
-                ?.closest("section")
-                ?.scrollIntoView({ behavior: "smooth", block: "start" });
+              else
+                document
+                  .getElementById(overdueId)
+                  ?.closest("section")
+                  ?.scrollIntoView({ behavior: "smooth", block: "start" });
             }}
           />
           {today && (

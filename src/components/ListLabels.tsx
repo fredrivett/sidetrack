@@ -14,6 +14,7 @@ import type { Label } from "@/core/schema";
 import { formatItemRef } from "@/lib/itemRef";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Fold } from "@/components/ui/fold";
 import {
   ResponsiveDialogBackButton,
   ResponsiveDialogCloseButton,
@@ -101,7 +102,8 @@ export function ListLabelsField({
     <div className="-mx-2 space-y-1">
       <ul>{labels.filter((l) => l.archivedAt === null).map(row)}</ul>
       {archived.length > 0 && (
-        <>
+        // Its own block, so opening it scrolls it, from its button, into view.
+        <div>
           <button
             type="button"
             aria-expanded={showArchived}
@@ -111,8 +113,10 @@ export function ListLabelsField({
             {showArchived ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
             Archived ({archived.length})
           </button>
-          {showArchived && <ul>{archived.map(row)}</ul>}
-        </>
+          <Fold open={showArchived}>
+            <ul>{archived.map(row)}</ul>
+          </Fold>
+        </div>
       )}
     </div>
   );
