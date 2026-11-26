@@ -401,6 +401,7 @@ function Checklist({
     const done = child.completedAt !== null;
     const childAssigneeIds = assigneesById[child.id] ?? child.assigneeIds;
     const assigned = assignees.filter((a) => childAssigneeIds.includes(a.userId));
+    const childRepeat = repeatOf(child);
     return (
       <div
         {...drag?.attributes}
@@ -408,11 +409,14 @@ function Checklist({
         ref={drag?.setActivatorNodeRef}
         aria-label={drag ? `Reorder ${child.title}` : undefined}
         data-item-ref={lifted ? undefined : formatItemRef(prefix, child.number)}
-        className={`flex items-center gap-2 rounded-md px-1 py-0.5 outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 ${
+        className={`flex items-center gap-2 rounded-md px-1 py-0.5 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-neutral-400 ${
           drag ? "touch-manipulation" : ""
         } ${
           // While dragged, the line stays behind as the slot it would drop into.
-          drag?.isDragging ? "bg-neutral-100 *:invisible dark:bg-neutral-800/50" : ""
+          drag?.isDragging
+            ? "bg-neutral-100 *:invisible dark:bg-neutral-800/50"
+            : // Not on the copy following the pointer, always under it.
+              lifted ? "" : "hover:bg-neutral-50 dark:hover:bg-neutral-800/40"
         }`}
       >
         <Checkbox
@@ -426,11 +430,26 @@ function Checklist({
           type="button"
           autoFocus={!lifted && child.id === focusId}
           onClick={() => onOpenItem(child)}
-          className={`min-w-0 flex-1 truncate text-left text-sm hover:underline ${
-            done ? "text-neutral-400 line-through" : ""
-          }`}
+          className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-sm"
         >
-          {child.title}
+          <span className={`min-w-0 truncate ${done ? "text-neutral-400 line-through" : ""}`}>
+            {child.title}
+          </span>
+          {/* When it's due and how it repeats, as on its card. A smart rule
+              still waiting can be long, so it shares the room with the title,
+              each cut short; the other badges stay whole. */}
+          {!child.dueDate && child.smartRule && (
+            <span className="flex min-w-0">
+              <WaitingBadge rule={child.smartRule} />
+            </span>
+          )}
+          <span className="flex shrink-0 items-center gap-1.5 empty:hidden">
+            {child.dueDate && (
+              <DueBadge due={child.dueDate} from={child.dueFrom} done={done} smart={child.smartRule} />
+            )}
+            {child.somedayAt !== null && <SomedayBadge />}
+            {childRepeat && <RepeatBadge repeat={childRepeat} completedAt={child.completedAt} />}
+          </span>
         </button>
         {readOnly ? (
           assigned.length > 0 && <AvatarStack users={assigned} size={18} />
