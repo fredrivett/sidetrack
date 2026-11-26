@@ -338,6 +338,9 @@ export function addFromSource(
   const byId = new Map(reviews.map((r) => [r.id, r]));
   const from = { sourceId, kind: "photo" as const };
   const counts = { added: 0, updated: 0, completed: 0, skipped: 0 };
+  // Write-locked from the start: it reads the items it matches before its
+  // first write, and a write from another connection in between would fail
+  // it (SQLITE_BUSY_SNAPSHOT, which busy_timeout doesn't wait out).
   db.transaction((tx) => {
     const itemOfLine = new Map<string, string>();
     // New items go to the top of their list; the rest of a list's lines
@@ -426,7 +429,7 @@ export function addFromSource(
       source,
       event: { type: "source.added", sourceId, kind: "photo", ...counts },
     });
-  });
+  }, { behavior: "immediate" });
   return counts;
 }
 
