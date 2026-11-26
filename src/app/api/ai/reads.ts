@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { buildAgendaBrief } from "@/core/agendaBrief";
 import { type Greeting, writtenGreetingFor } from "@/core/agendaGreeting";
 import { listIconContext } from "@/core/autoEmoji";
 import { getDayTags } from "@/core/dayNotes";
@@ -16,6 +17,7 @@ import { suggestEmoji, suggestLabelEmoji } from "@/lib/emojiSuggest";
 import { getEnv } from "@/lib/env";
 import { formatItemRef } from "@/lib/itemRef";
 import { askAboutDraft, type DraftAnswers } from "@/lib/itemSuggest";
+import { suggestNewDays } from "@/lib/newDays";
 import { dayOf, isDay } from "@/lib/time";
 import { askTitleParts } from "@/lib/titleParse";
 
@@ -244,6 +246,28 @@ export const AI_READS = {
     const apiKey = getEnv().ANTHROPIC_API_KEY;
     if (!apiKey || !typed.trim()) return [];
     return suggestDayTags(typed.trim(), getDayTags(db, userId), apiKey, fetch);
+  }),
+
+  /**
+   * What's left of the viewer's day as they close it, each with a new day
+   * in the week ahead and why: today's open items and what slipped, as the
+   * Agenda has them, with Claude Haiku's days when AI is on and the rules'
+   * otherwise (newDays.ts). `ahead` is how full each of those days is.
+   * Null before their timezone is known.
+   */
+  whatsLeft: read(z.object({}), async (_, { db, userId, fetch }) => {
+    const timeZone = getTimeZone(db, userId);
+    if (!timeZone) return null;
+    const brief = buildAgendaBrief(db, userId, { now: Date.now(), timeZone, since: null });
+    const left = [...brief.overdue, ...brief.dueToday.filter((i) => i.completedAt === null)].map((i) => ({
+      id: i.id,
+      title: i.title,
+      context: i.parent ?? i.list,
+      dueDate: i.dueDate ?? brief.today,
+    }));
+    const ahead = brief.ahead.slice(0, 7);
+    const days = await suggestNewDays(left, ahead, brief.today, getEnv().ANTHROPIC_API_KEY, fetch);
+    return { items: left.map((item, n) => ({ ...item, day: days[n].day, why: days[n].why })), ahead };
   }),
 
   /**

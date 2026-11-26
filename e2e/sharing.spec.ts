@@ -365,6 +365,13 @@ test("closes the day with how it went, which shows on their Check-ins", async ({
   await page.goto("/");
   // It folds open in place, under the day's note, and shut once it's closed.
   await page.getByRole("button", { name: "Close the day" }).click();
+  // What's left comes one at a time, with a suggested day (Claude's when
+  // it's set up, so not checked here), moved there and then.
+  const left = page.getByRole("group", { name: "What's left" });
+  await expect(left).toContainText("1 of 1");
+  await expect(left).toContainText("Hoover upstairs");
+  await left.getByRole("button", { name: /^Move to / }).click();
+  await expect(left).toContainText(/Moved 1 to /);
   await page.getByRole("group", { name: "How today went" }).getByRole("button", { name: "Got a lot done" }).click();
   await page.getByLabel("How did today go?").fill("Did the bottles too");
   await page.getByRole("button", { name: "Done for today" }).click();
@@ -373,6 +380,8 @@ test("closes the day with how it went, which shows on their Check-ins", async ({
   await expect(closed).toContainText("Did the bottles too");
   await page.reload();
   await expect(closed).toContainText("Got a lot done");
+  // Moved for good: it's no longer overdue.
+  await expect(page.getByRole("button", { name: /^Hoover upstairs Home 6 Jan/ })).toHaveCount(0);
 
   const context = await browser.newContext();
   await jo.signIn(context, baseURL ?? "");
