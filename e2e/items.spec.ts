@@ -84,6 +84,44 @@ test("renames an item from its dialog", async ({ page, user }) => {
   await expect(row(page, "Water the ferns")).toBeVisible();
 });
 
+test("an item's pinned fields never hide its checklist", async ({ page, user }) => {
+  const home = user.addList("Home");
+  const steps = Array.from({ length: 30 }, (_, i) => `Step ${i + 1}`);
+  user.addItem(home.id, "Spring clean", [], undefined, steps);
+  // Whether the user sees it: what's at its middle is it, not the header.
+  const uncovered = (target: ReturnType<Page["locator"]>) =>
+    target.evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      return el.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+    });
+  await page.goto("/board");
+  await row(page, "Spring clean").click();
+  const dialog = page.getByRole("dialog", { name: "Spring clean" });
+  const first = dialog.getByRole("checkbox", { name: "Complete Step 1", exact: true });
+  const last = dialog.getByRole("checkbox", { name: "Complete Step 30" });
+
+  // Scrolled down, focus back on the first step stops below the header.
+  await last.focus();
+  await expect(first).not.toBeInViewport();
+  await first.focus();
+  expect(await uncovered(first)).toBe(true);
+  // And editing the title where it's pinned leaves the checklist where it is.
+  await last.focus();
+  await dialog.getByRole("button", { name: "Spring clean", exact: true }).click();
+  await expect(dialog.getByRole("textbox").first()).toBeFocused();
+  expect(await uncovered(last)).toBe(true);
+  await page.keyboard.press("Enter");
+
+  // A description too long to pin doesn't cover the steps either: it scrolls away.
+  await dialog.getByRole("button", { name: "Add description…" }).click();
+  await page.keyboard.type(Array.from({ length: 40 }, (_, i) => `Line ${i + 1}`).join("\n\n"));
+  await page.keyboard.press("ControlOrMeta+Enter");
+  await last.focus();
+  expect(await uncovered(last)).toBe(true);
+  await first.focus();
+  expect(await uncovered(first)).toBe(true);
+});
+
 test("deletes an item from its right-click menu", async ({ page, user }) => {
   user.addList("Home", ["Water plants", "Refill salt"]);
   await page.goto("/board");

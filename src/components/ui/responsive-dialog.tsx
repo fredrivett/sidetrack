@@ -106,7 +106,9 @@ function leaveDragKeys(
 }
 
 /** A column: callers give it a fixed header, a scrolling body
- * (`min-h-0 flex-1 overflow-y-auto`) and a fixed footer. */
+ * (`min-h-0 flex-1 overflow-y-auto`) and a fixed footer. Or, so a phone's
+ * keyboard can't crowd out the body, the header goes in the body, pinned on
+ * desktop (`pinnedHeader`). */
 function ResponsiveDialogContent({
   className,
   children,
@@ -356,6 +358,46 @@ function ResponsiveDialogBackButton({
   )
 }
 
+/**
+ * Ref for a scrolling body whose first child is a header pinned to its top
+ * (`md:sticky md:top-0 data-tall:static`), as New item's and an item's
+ * fields are on desktop. Keeps what's under the header reachable: focus and
+ * scrolling to a field stop below the header rather than behind it, and a
+ * header taller than half the body (a long description) isn't pinned, as
+ * it would otherwise cover the rest whatever the scroll.
+ */
+function pinnedHeader(body: HTMLElement | null) {
+  const header = body?.firstElementChild
+  if (!body || !(header instanceof HTMLElement)) return
+  // What's under the header gets a scroll margin of its height (globals.css),
+  // not the body a scroll padding: that would cover the header too, so
+  // focusing its own fields while scrolled down would scroll them into view.
+  body.setAttribute("data-pinned-header", "")
+  const update = () => {
+    const height = header.offsetHeight
+    const tall = height > body.clientHeight / 2
+    // A description grown past half while typing in it: the header unpins,
+    // so back to the top, where it was showing, or the field leaves view.
+    if (tall && !header.hasAttribute("data-tall") && header.contains(document.activeElement)) {
+      body.scrollTop = 0
+    }
+    header.toggleAttribute("data-tall", tall)
+    const pinned = getComputedStyle(header).position === "sticky"
+    body.style.setProperty("--pinned-header", pinned ? `${height}px` : "")
+  }
+  const observer = new ResizeObserver(update)
+  observer.observe(body)
+  observer.observe(header)
+  // The header pins from md up, and a window can cross that while the
+  // dialog's open without either size changing.
+  const md = matchMedia("(min-width: 48rem)")
+  md.addEventListener("change", update)
+  return () => {
+    observer.disconnect()
+    md.removeEventListener("change", update)
+  }
+}
+
 export {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -364,4 +406,5 @@ export {
   ResponsiveDialogCloseButton,
   ResponsiveDialogBackButton,
   ResponsiveDialogViews,
+  pinnedHeader,
 }
