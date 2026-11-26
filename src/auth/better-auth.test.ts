@@ -81,7 +81,41 @@ const resetLinkHolders = () =>
       .all() as { value: string }[]
   ).map((r) => r.value);
 
+const resetMarkers = () =>
+  (
+    sqlite
+      .prepare("select value from verifications where identifier like 'reset-consumed:%'")
+      .all() as { value: string }[]
+  ).map((r) => r.value);
+
 describe("password resets and changes", () => {
+  // Better Auth 1.7 consumes a reset link before writing the password, so the
+  // /reset-password hook leaves a marker the audit trigger reads (migration 0082).
+  it("leaves a reset marker only for a live link, from either place the token can be", async () => {
+    const dana = await signUp("dana");
+    const link = await requestReset("dana");
+    const clear = () => sqlite.prepare("delete from verifications where identifier like 'reset-consumed:%'").run();
+
+    // A token that isn't a link leaves nothing.
+    await expect(auth.api.resetPassword({ body: { token: "nope", newPassword: "reset-pass-2" } })).rejects.toThrow();
+    expect(resetMarkers()).toEqual([]);
+
+    // A rejected password still leaves one, from the body or, with an empty body token, the query.
+    await expect(auth.api.resetPassword({ body: { token: link, newPassword: "short" } })).rejects.toThrow();
+    expect(resetMarkers()).toEqual([dana]);
+    clear();
+    await expect(
+      auth.api.resetPassword({ body: { token: "", newPassword: "short" }, query: { token: link } }),
+    ).rejects.toThrow();
+    expect(resetMarkers()).toEqual([dana]);
+
+    // A signed-in change right after is an ordinary one, and clears it.
+    const headers = await signIn("dana", "first-pass-1");
+    await auth.api.changePassword({ body: { currentPassword: "first-pass-1", newPassword: "changed-pass-2" }, headers });
+    expect(passwordLog(dana)).toEqual(["changed password"]);
+    expect(resetMarkers()).toEqual([]);
+  });
+
   it("label resets and changes exactly, and cancel only that user's pending reset links", async () => {
     const alice = await signUp("alice");
     const bob = await signUp("bob");
