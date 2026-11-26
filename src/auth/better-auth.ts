@@ -314,7 +314,7 @@ export const auth = betterAuth({
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
       if (ctx.path === "/reset-password") {
-        const token = ctx.body?.token ?? ctx.query?.token;
+        const token = ctx.body?.token || ctx.query?.token;
         if (typeof token === "string") markResetInFlight(token);
         return;
       }
