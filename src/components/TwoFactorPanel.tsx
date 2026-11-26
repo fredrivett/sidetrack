@@ -114,7 +114,12 @@ export function TwoFactorPanel({
       const data = await run(() => twoFactor.enable({ password }), {
         fallback: "Couldn't start setting up two-factor sign-in.",
       });
-      if (data) go({ kind: "scan", totpURI: data.totpURI, backupCodes: data.backupCodes });
+      // Better Auth 1.7 types the result as either an emailed code or an
+      // authenticator app's; only the app's carries what the scan view needs.
+      if (data) {
+        if ("totpURI" in data) go({ kind: "scan", totpURI: data.totpURI, backupCodes: data.backupCodes });
+        else setError("Couldn't start setting up two-factor sign-in.");
+      }
     } else if (action === "codes") {
       const data = await run(() => twoFactor.generateBackupCodes({ password }), {
         fallback: "Couldn't generate new backup codes.",

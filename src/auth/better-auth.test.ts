@@ -185,7 +185,9 @@ describe("two-factor sign-in", () => {
     let { jar } = await passwordStep("carol", password);
 
     // Started but not verified: sign-in doesn't ask yet.
-    const { totpURI, backupCodes } = await auth.api.enableTwoFactor({ body: { password }, headers: jar });
+    const setup = await auth.api.enableTwoFactor({ body: { password }, headers: jar });
+    if (!("totpURI" in setup)) throw new Error("expected an authenticator app setup");
+    const { totpURI, backupCodes } = setup;
     expect(backupCodes).toHaveLength(10);
     expect((await passwordStep("carol", password)).asked).toBe(false);
 
