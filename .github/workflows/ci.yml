@@ -31,9 +31,12 @@ jobs:
 
       # pnpm's minimumReleaseAge only applies when pnpm resolves, and
       # Dependabot writes the lockfile itself (scripts/check-release-age.ts).
+      # It switches the age off for its security updates, so its PRs are held
+      # to one day: a release under 24 hours old still waits.
       - name: Lockfile release age
         if: github.event_name == 'pull_request'
         env:
+          MIN_AGE_DAYS: ${{ github.event.pull_request.user.login == 'dependabot[bot]' && '1' || '' }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           git fetch --quiet --depth=1 origin "$BASE_SHA"
