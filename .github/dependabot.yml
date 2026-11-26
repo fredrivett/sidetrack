@@ -5,10 +5,17 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
-    # Match pnpm's minimum-release-age: skip versions published < 7 days ago.
+    # Match pnpm's minimumReleaseAge: skip versions published < 7 days ago.
     cooldown:
       default-days: 7
     open-pull-requests-limit: 10
+    # No user-facing change, so no changelog entry (AGENTS.md, "Changelog").
+    # `labels` replaces Dependabot's default labels, so they're repeated.
+    labels: [dependencies, javascript, no-changelog]
+    ignore:
+      # Node 26's types don't match production's Node 22 (Dockerfile, CI).
+      - dependency-name: "@types/node"
+        update-types: [version-update:semver-major]
     groups:
       # Collapse the routine churn into one PR per week per stream.
       dev-dependencies:
@@ -26,6 +33,7 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    labels: [dependencies, no-changelog]
     ignore:
       # Major Node upgrades are deliberate, alongside CI's node-version.
       - dependency-name: node
@@ -38,3 +46,4 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    labels: [dependencies, github_actions, no-changelog]

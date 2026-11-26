@@ -1,5 +1,5 @@
 // Fails a PR whose pnpm-lock.yaml adds a package version published more
-// recently than pnpm-workspace.yaml's minimum-release-age (CI, on PRs).
+// recently than pnpm-workspace.yaml's minimumReleaseAge (CI, on PRs).
 // pnpm only applies that delay when it resolves; Dependabot regenerates the
 // lockfile itself and pulls in the newest transitive versions, so this checks
 // the result. Needs BASE_SHA, the commit the PR is compared against.
@@ -14,8 +14,8 @@ function lockedPackages(lockfile: string): Set<string> {
   return new Set([...section.matchAll(/^ {2}'?(@?[^@'\s]+@[^('\s:]+)/gm)].map((m) => m[1]));
 }
 
-const minutes = Number(/^minimum-release-age:\s*(\d+)/m.exec(readFileSync("pnpm-workspace.yaml", "utf8"))?.[1]);
-if (!minutes) throw new Error("pnpm-workspace.yaml sets no minimum-release-age");
+const minutes = Number(/^minimumReleaseAge:\s*(\d+)/m.exec(readFileSync("pnpm-workspace.yaml", "utf8"))?.[1]);
+if (!minutes) throw new Error("pnpm-workspace.yaml sets no minimumReleaseAge");
 const cutoff = Date.now() - minutes * 60_000;
 
 const before = lockedPackages(git("show", `${process.env.BASE_SHA}:pnpm-lock.yaml`));
@@ -36,7 +36,7 @@ async function main() {
   console.log(`Checked ${added.length} package versions the lockfile adds.`);
   if (tooNew.length) {
     console.error(
-      `These were published less than ${minutes / 1440} days ago (minimum-release-age):\n` +
+      `These were published less than ${minutes / 1440} days ago (minimumReleaseAge):\n` +
         tooNew.map((p) => `  ${p}`).join("\n") +
         "\nPin them back with temporary pnpm overrides, or wait and rerun.",
     );
