@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { limitedListsById, listAccessById } from "@/core/access";
 import { AgentSessionsProvider } from "@/components/agent-sessions";
 import { CommentCountsProvider } from "@/components/comment-counts";
@@ -48,7 +48,7 @@ export default async function Home({
   searchParams,
 }: {
   searchParams: Promise<{
-    view?: string | string[];
+    /** A list to show, from a link (a push); the board keeps it in this tab after. */
     p?: string | string[];
     item?: string | string[];
     /** With item, an Activity row to open at (a push about someone's change). */
@@ -56,7 +56,9 @@ export default async function Home({
     open?: string | string[];
   }>;
 }) {
-  const { view, p, item, activity, open } = await searchParams;
+  const { p, item, activity, open } = await searchParams;
+  // From the path (/brief, /board, …), which the proxy passes in a header.
+  const view = (await headers()).get("x-board-view");
   const userId = await requireUserId();
   const { db } = getDb();
   // Repeating items whose next due day has come reopen as the page loads.
@@ -189,7 +191,6 @@ export default async function Home({
             noDateFoldedLists={getNoDateFoldedLists(db, userId)}
             getStarted={getGetStarted(db, userId, { push: Boolean(getEnv().VAPID) })}
             posts={postsToShow(loadPosts(), getSeenPosts(db, userId), new Date().toISOString().slice(0, 10))}
-            // From the path (/brief, /board, …), which the proxy passes as ?view=.
             initialView={
               view === "board" || view === "done" || view === "archived" || view === "check-ins" ? view : "brief"
             }
