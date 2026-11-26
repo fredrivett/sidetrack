@@ -34,6 +34,8 @@ const brief = (more: Partial<AgendaBrief> = {}): AgendaBrief => ({
   undated: [],
   stale: [],
   dayNote: null,
+  closed: null,
+  lastNight: null,
   ...more,
 });
 
@@ -61,6 +63,11 @@ describe("possibleMoments", () => {
       possibleMoments(brief({ partOfDay: "evening", dueToday: [item("a")], undated: [item("u")] })),
     ).toEqual(["wind-down"]);
     expect(possibleMoments(brief({ partOfDay: "evening" }))).toEqual(["clear"]);
+    // Once it's closed, it only says goodnight, whatever's left and whenever it was closed.
+    const closed = { mood: ["Good day"], words: null };
+    expect(
+      possibleMoments(brief({ closed, dueToday: [item("a")], overdue: [item("o")] })),
+    ).toEqual(["goodnight"]);
     // Tidying waits for a light day with nothing slipped.
     expect(possibleMoments(brief({ stale: [item("s")], overdue: [item("o")] }))).toEqual([
       "triage",

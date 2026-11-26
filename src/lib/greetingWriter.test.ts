@@ -36,6 +36,8 @@ const brief: AgendaBrief = {
   undated: [],
   stale: [],
   dayNote: null,
+  closed: null,
+  lastNight: null,
 };
 const pick: GreetingPick = {
   moments: ["triage", "plan"],
@@ -85,6 +87,16 @@ describe("writerInput", () => {
 });
 
 describe("writerInput, with the reader's settings", () => {
+  it("tells it how the day went once it's closed, and how last night went in the morning only", () => {
+    const went = { mood: ["Rough day"], words: "long one" };
+    const night = writerInput({ ...brief, closed: went, lastNight: went }, pick);
+    expect(night.facts).toMatchObject({ day_closed: went });
+    expect(night.facts).not.toHaveProperty("last_night");
+    const morning = writerInput({ ...brief, lastNight: went }, pick);
+    expect(morning.facts).toMatchObject({ last_night: went });
+    expect(morning.facts).not.toHaveProperty("day_closed");
+  });
+
   it("passes on the note and caps the sentences at the chosen length", () => {
     const short = writerInput(brief, pick, { length: "short", note: "No praise.", shareNote: false });
     expect(short.facts).toMatchObject({ max_sentences: 1, reader_note: "No praise." });

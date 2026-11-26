@@ -776,7 +776,16 @@ export function AgendaGreeting({
           follows it on Check-ins; once closed, it says so, to edit. Not tied
           to AI, as the note is: it's for people, not the greeting. */}
       {greeting && !isFixed && today && (wrapUp || isEvening()) && (
-        <CloseDayPanel today={today} wrapUp={wrapUp} onClosed={setWrapUp} />
+        <CloseDayPanel
+          today={today}
+          wrapUp={wrapUp}
+          onClosed={(closed) => {
+            setWrapUp(closed);
+            // The greeting says goodnight, written with how it went.
+            clearTimeout(rewriteSoon.current);
+            rewriteSoon.current = setTimeout(() => askAgain(true), 1500);
+          }}
+        />
       )}
 
       <GreetingDialog

@@ -7,6 +7,7 @@ import { createTestDb, createTestUser } from "./test-helpers";
 import * as greetingJev from "../lib/greetingJev";
 import { agendaGreetings } from "./schema";
 import { setDayNote } from "./dayNotes";
+import { closeDay } from "./dayWrapUps";
 import { acceptInvite, inviteMember, removeMember } from "./members";
 import { getGreetingPrefs, getProfile, setAgendaReadAt, setGreetingPrefs } from "./users";
 
@@ -47,6 +48,8 @@ const brief = (more: Partial<AgendaBrief> = {}): AgendaBrief => ({
   undated: [],
   stale: [],
   dayNote: null,
+  closed: null,
+  lastNight: null,
   ...more,
 });
 
@@ -100,6 +103,17 @@ describe("templateGreeting", () => {
     );
     const clear = brief({ partOfDay: "evening", dueToday: [it_("a", { completedAt: 1 })] });
     expect(templateGreeting(clear, "Fred")).toMatch(/^Evening, Fred\. .*Enjoy the (rest of the )?evening\.$/);
+  });
+
+  it("says goodnight once the day's closed, leaving what's open alone", () => {
+    const closed = { mood: ["Tired"], words: null };
+    const text = templateGreeting(
+      brief({ partOfDay: "evening", closed, doneToday: 2, dueToday: [it_("a")] }),
+      "Fred",
+    );
+    expect(text).toMatch(/^Evening, Fred\. That's today closed, with two things done\. (Sleep|Rest) well\.$/);
+    // Closed early by an agent, it still says goodnight.
+    expect(templateGreeting(brief({ closed }), null)).toMatch(/^Good morning\. That's today closed\. /);
   });
 
   it("looks ahead to a day that stands out, naming next week's as next", () => {
@@ -714,6 +728,47 @@ describe("greetingFor", () => {
       const third = await writtenGreetingFor(db, fred, "UTC", keys, later + 6 * 60_000, spy);
       expect(calls.claude).toBe(3);
       expect(third.note).toBeNull();
+    });
+
+    it("says goodnight once the day's closed, and reads how it went the next morning", async () => {
+      const { db, fred } = setup();
+      // The evening names the loft; once closed, it names nothing.
+      const open = fake("{{item:1}} can wait until tomorrow.");
+      const { calls, impl } = fake("A full day, and a good one. Sleep well.");
+      let now_ = open.impl;
+      const bodies: Array<{ url: string; body: string }> = [];
+      const spy = ((url: string, init: RequestInit) => {
+        bodies.push({ url, body: String(init.body) });
+        return now_(url, init);
+      }) as unknown as typeof fetch;
+      const evening = Date.UTC(2026, 10, 18, 20);
+      expect(await writtenGreetingFor(db, fred, "UTC", keys, evening, spy)).toMatchObject({ written: true });
+      now_ = impl;
+
+      closeDay(db, fred, "2026-11-18", "Good day — did the bottles too", "web", evening);
+      const later = evening + 3 * 60_000;
+      const night = await writtenGreetingFor(db, fred, "UTC", keys, later, spy);
+      expect(calls.claude).toBe(1);
+      expect(night).toMatchObject({ written: true, text: "A full day, and a good one. Sleep well." });
+      // Jev isn't asked, as only goodnight can be said; Claude is told how it went.
+      expect(calls.jev).toBe(0);
+      const claude = bodies.at(-1) as { url: string; body: string };
+      expect(claude.url).toContain("anthropic");
+      expect(night.trace?.looked).toMatchObject({ closed: true, lastNight: false });
+      expect(claude.body.split("Facts as JSON")[1]).toContain("day_closed");
+      expect(claude.body).toContain("did the bottles too");
+      // Read back until how it went changes.
+      expect(await writtenGreetingFor(db, fred, "UTC", keys, later + 60_000, spy)).toEqual(night);
+      closeDay(db, fred, "2026-11-18", "Tired", "web", later);
+      await writtenGreetingFor(db, fred, "UTC", keys, later + 6 * 60_000, spy);
+      expect(calls.claude).toBe(2);
+
+      // The next morning reads last night's, not as the day closed.
+      await writtenGreetingFor(db, fred, "UTC", keys, Date.UTC(2026, 10, 19, 8), spy);
+      const morning = (bodies.at(-1)?.body ?? "").split("Facts as JSON")[1];
+      expect(morning).toContain("last_night");
+      expect(morning).toContain("Tired");
+      expect(morning).not.toContain("day_closed");
     });
 
     it("uses the template when AI is off", async () => {

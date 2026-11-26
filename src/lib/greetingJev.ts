@@ -18,6 +18,7 @@ export const MOMENTS = [
   "wind-down",
   "clear",
   "lighten",
+  "goodnight",
 ] as const;
 export type Moment = (typeof MOMENTS)[number];
 
@@ -33,6 +34,8 @@ export const MOMENT_MEANING: Record<Moment, string> = {
   clear: "Today is done or empty: say so warmly and briefly.",
   lighten:
     "The reader's note for today asks for a lighter day (unwell, tired, short on time): offer to move today's tasks to tomorrow. Only when the note says so.",
+  goodnight:
+    "The reader has closed their day: say goodnight, looking back lightly on how it went. Nothing to do tonight, no tasks, no offers, nothing about tomorrow.",
 };
 
 /** At most this many items from each moment's pool are scored or shown to Jev. */
@@ -52,7 +55,7 @@ export const UNDATED_ITEM_THRESHOLD = 0.3;
  * A day with nothing open always names the week's open items: "nothing due
  * today" alone reads as nothing to do (STF-1).
  */
-const ALWAYS: Moment[] = ["triage", "week", "wind-down"];
+const ALWAYS: Moment[] = ["triage", "week", "wind-down", "goodnight"];
 
 const openToday = (brief: AgendaBrief) => brief.dueToday.filter((i) => i.completedAt === null);
 
@@ -72,6 +75,9 @@ export function heavyDay(brief: AgendaBrief): { day: string; open: number } | nu
 /** The moments that can apply to `brief`; the rest aren't asked about. */
 export function possibleMoments(brief: AgendaBrief): Moment[] {
   const open = openToday(brief);
+  // A closed day only says goodnight, whenever it was closed (an agent may
+  // close it early): what's left was dealt with as it closed.
+  if (brief.closed) return ["goodnight"];
   const evening = brief.partOfDay === "evening";
   const m: Moment[] = [];
   if (!evening && open.length > 0) m.push("plan");
@@ -246,7 +252,7 @@ export function pickGreeting(brief: AgendaBrief, scores: GreetingScores, most = 
     const picks = byScore(pool(brief, m))
       .filter((i) => !undated || score(i) >= UNDATED_ITEM_THRESHOLD)
       .slice(0, 2);
-    if (picks.length === 0 && m !== "heavy" && m !== "clear" && m !== "lighten") {
+    if (picks.length === 0 && m !== "heavy" && m !== "clear" && m !== "lighten" && m !== "goodnight") {
       why.set(m, `No item scored ${UNDATED_ITEM_THRESHOLD} or more to name`);
       continue;
     }
