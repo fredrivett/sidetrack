@@ -258,3 +258,26 @@ test.describe("on a phone", () => {
     await asSheet();
   });
 });
+
+// The list in view is kept for the tab, not in the URL: a replaceState that
+// changes the search makes Next's next refresh miss (vercel/next.js#98323).
+test("comes back to the list in view after a reload, and opens a link's list", async ({ page, user }) => {
+  const lists = Array.from({ length: 8 }, (_, i) => user.addList(`List ${i + 1}`, [`Thing ${i + 1}`]));
+  // A phone's width, where one list is in view at a time.
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.goto("/board");
+  const middle = page.getByRole("button", { name: "Thing 5", exact: true });
+  await middle.evaluate((el) => el.scrollIntoView({ inline: "center", behavior: "instant" }));
+  // Noted for the tab once it's the list in view, and the URL left alone.
+  await expect
+    .poll(() => page.evaluate(() => sessionStorage.getItem("sidetrack:list-in-view")))
+    .toBe(JSON.stringify(lists[4].id));
+  await expect(page).toHaveURL(/\/board$/);
+  await page.reload();
+  await expect(middle).toBeInViewport({ ratio: 1 });
+  await expect(page.getByRole("button", { name: "Thing 1", exact: true })).not.toBeInViewport();
+
+  // A link to a list (a push's) opens on it.
+  await page.goto(`/board?p=${lists[0].id}`);
+  await expect(page.getByRole("button", { name: "Thing 1", exact: true })).toBeInViewport();
+});

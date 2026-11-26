@@ -46,15 +46,15 @@ describe("proxy, signed in", () => {
 
   // One page serves every view, so switching views never remounts it.
   it.each([
-    ["/brief", "https://sidetrack.test/?view=brief"],
-    ["/board?p=L1", "https://sidetrack.test/?p=L1&view=board"],
-    ["/done", "https://sidetrack.test/?view=done"],
-    ["/archived", "https://sidetrack.test/?view=archived"],
+    ["/brief", "https://sidetrack.test/"],
+    ["/board?p=L1", "https://sidetrack.test/?p=L1"],
+    ["/done", "https://sidetrack.test/"],
+    ["/archived", "https://sidetrack.test/"],
   ])("serves %s from the board page", (path, target) => {
     const res = signedIn(path);
     expect(res.headers.get("location")).toBeNull();
     expect(res.headers.get("x-middleware-rewrite")).toBe(target);
-    // And tells its loading.tsx which view's skeleton to show.
+    // The view goes in a header, for the page and its loading.tsx.
     expect(res.headers.get("x-middleware-request-x-board-view")).toBe(
       new URL(path, "https://sidetrack.test").pathname.slice(1),
     );

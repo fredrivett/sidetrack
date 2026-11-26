@@ -143,9 +143,6 @@ test("adds what an agent read off a photo, after review", async ({ page, user })
     { title: "Plant jasmine", projectId: home.id },
   ]);
   await page.goto("/board");
-  // The board notes the list in view (?p=) with replaceState, which cancels
-  // a link followed at the same moment; wait for it.
-  await expect(page).toHaveURL(/[?&]p=/);
   await page.getByRole("button", { name: "Review" }).click();
   await expect(page.getByRole("heading", { name: "Add these to Sidetrack" })).toBeVisible();
   await page.getByRole("button", { name: "Leave out “Plant jasmine”" }).click();

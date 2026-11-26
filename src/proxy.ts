@@ -90,12 +90,13 @@ export function proxy(request: NextRequest) {
 
   // Each view has its own path, served by the one board page (app/(board)) so
   // switching views in the browser (Kanban's switchView) never remounts it.
-  // The view also goes in a request header for the page's loading.tsx, which
-  // gets no searchParams, so its skeleton is the view that's opening.
+  // The view goes to the page, and its loading.tsx, in a request header, not
+  // the search: there each view would be a different page to Next's router,
+  // which switchView's replaceState doesn't tell, so the next refresh would
+  // miss and two in a row reload the whole page (vercel/next.js#98323).
   if (VIEWS.includes(pathname.slice(1))) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
-    url.searchParams.set("view", pathname.slice(1));
     const headers = new Headers(request.headers);
     headers.set("x-board-view", pathname.slice(1));
     return NextResponse.rewrite(url, { request: { headers } });

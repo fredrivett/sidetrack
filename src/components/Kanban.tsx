@@ -69,7 +69,7 @@ import { SpaceMenu } from "./SpaceMenu";
 import { saveCollapsedTrays, SpaceTray } from "./SpaceTray";
 import { useDayStart, useToday } from "./use-day-start";
 import { claimDrafts } from "./use-draft";
-import { useStoredState } from "./use-stored-state";
+import { readStored, useStoredState, writeStored } from "./use-stored-state";
 import { useItemDetailDialog } from "./use-item-detail-dialog";
 import { useSameContent } from "./use-same-content";
 import { LabelsContext } from "./Labels";
@@ -114,6 +114,23 @@ const BOARD_VIEWS = [
 ] as const;
 /** The switch's views, plus Done and Archived, which the account menu opens (/done, /archived). */
 export type BoardView = (typeof BOARD_VIEWS)[number][0] | "done" | "archived";
+
+/**
+ * The list most in view on the board, kept for this tab so a reload comes
+ * back to it. Not in the URL: Next's router isn't told of a replaceState,
+ * so after one that changes the search, its next refresh misses, and two in
+ * a row reload the whole page (vercel/next.js#98323). Written, not watched,
+ * so scrolling re-renders nothing.
+ */
+const LIST_IN_VIEW = "list-in-view";
+function listInView(): string | null {
+  try {
+    const id: unknown = JSON.parse(readStored("session", LIST_IN_VIEW) ?? "null");
+    return typeof id === "string" ? id : null;
+  } catch {
+    return null;
+  }
+}
 
 const NO_CHECK_INS: CheckIn[] = [];
 const NO_DAY_SHARE_INVITES: DayShareInvite[] = [];
@@ -571,14 +588,9 @@ export function Kanban({
     else next.delete(trayId);
     setCollapsedTrays(next);
     saveCollapsedTrays([...next]);
-    // ?p= follows the list on view; once its tray folds away it isn't, and
-    // keeping it would open the tray again on the next load.
-    const url = new URL(window.location.href);
-    const shown = url.searchParams.get("p");
-    if (value && shown && trayByList[shown] === trayId) {
-      url.searchParams.delete("p");
-      window.history.replaceState(null, "", url.toString());
-    }
+    // Once the list in view's tray folds away, it isn't in view.
+    const shown = listInView();
+    if (value && shown && trayByList[shown] === trayId) writeStored("session", LIST_IN_VIEW, null);
   }
   // The board's lists as a list drag shows them: the one in hand where it
   // would drop, on the tray it would go to.
@@ -769,13 +781,21 @@ export function Kanban({
     // Once, on load, like ?item= below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // ?item= opens the item once; a reload shouldn't open it again.
+  // A link's ?p= becomes the list in view, and its tray stays open from
+  // then on, as openList's does. ?item= opens the item once; a reload
+  // shouldn't open it again. ?p= goes with it, but stays on its own: every
+  // replaceState that changes the search can cost a full reload.
   useEffect(() => {
+    if (initialListId) {
+      writeStored("session", LIST_IN_VIEW, initialListId);
+      if (initialCollapsedTrays.includes(trayByList[initialListId])) saveCollapsedTrays([...collapsedTrays]);
+    }
     const url = new URL(window.location.href);
     if (!url.searchParams.has("item")) return;
-    url.searchParams.delete("item");
-    url.searchParams.delete("activity");
+    for (const key of ["item", "activity", "p"]) url.searchParams.delete(key);
     window.history.replaceState(null, "", url.toString());
+    // Once, on load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const paletteProject = projects.find(
     (p) => p.id === paletteDetail.item?.projectId,
@@ -802,12 +822,10 @@ export function Kanban({
   });
 
   // Centre a list in the rail, switching to the board first when needed; the
-  // effect below scrolls to ?p= once the rail mounts. A collapsed tray opens
-  // first, and the scroll waits for it to finish widening.
+  // effect below scrolls to the list in view once the rail mounts. A
+  // collapsed tray opens first, and the scroll waits for it to finish widening.
   function openList(projectId: string) {
-    const url = new URL(window.location.href);
-    url.searchParams.set("p", projectId);
-    window.history.replaceState(null, "", url.toString());
+    writeStored("session", LIST_IN_VIEW, projectId);
     // Without Spaces there are no trays, whatever the cookie says.
     const trayId = spaces.length > 0 ? (trayByList[projectId] ?? "") : "";
     const opening = collapsedTrays.has(trayId);
@@ -982,12 +1000,10 @@ export function Kanban({
   }, [selection]);
 
   // On first paint, and on coming back from Agenda or Done (which unmount
-  // the rail):
-  // scroll to ?p=<id> if present.
+  // the rail): scroll to the list in view, if there is one.
   useEffect(() => {
     if (view !== "board") return;
-    const params = new URLSearchParams(window.location.search);
-    const targetId = params.get("p");
+    const targetId = listInView();
     if (!targetId) return;
     const el = railRef.current?.querySelector(
       `[data-project-id="${CSS.escape(targetId)}"]`,
@@ -997,7 +1013,7 @@ export function Kanban({
     }
   }, [view]);
 
-  // Observe which column is most centred; reflect in ?p=<id> via replaceState.
+  // Observe which column is most centred: it's the list in view.
   useEffect(() => {
     const rail = railRef.current;
     if (!rail) return;
@@ -1010,10 +1026,7 @@ export function Kanban({
         if (!visible) return;
         const id = (visible.target as HTMLElement).dataset.projectId;
         if (!id) return;
-        const url = new URL(window.location.href);
-        if (url.searchParams.get("p") === id) return;
-        url.searchParams.set("p", id);
-        window.history.replaceState(null, "", url.toString());
+        if (listInView() !== id) writeStored("session", LIST_IN_VIEW, id);
       },
       {
         root: rail,
@@ -1222,7 +1235,7 @@ export function Kanban({
           </>
         ) : view === "archived" ? (
           // The one place archived lists and their items show. No rail ref:
-          // ?p= follows the board's lists only.
+          // the list in view is one of the board's lists only.
           <>
             <MenuViewTitle title="Archived lists" onBack={() => switchView("board")} />
             <BoardRail>
