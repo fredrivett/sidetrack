@@ -29,7 +29,7 @@ export async function rankByPriority(
   tasks: PriorityTask[],
   today: string,
   apiKey: string,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch,
 ): Promise<Map<string, number> | null> {
   if (tasks.length === 0) return new Map();
   const describe = (t: PriorityTask) => ({

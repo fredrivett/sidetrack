@@ -4,6 +4,7 @@
 import { rankByPriority } from "@/lib/itemPriority";
 import { getEnv } from "@/lib/env";
 import { dayOf } from "@/lib/time";
+import { aiFetch } from "./aiUsage";
 import type { Db } from "./db";
 import { listItems } from "./items";
 import { getProject } from "./projects";
@@ -42,5 +43,5 @@ export async function itemPriorities(
       steps: steps.get(it.id) ?? [],
     }));
   const today = dayOf(Date.now(), getTimeZone(db, userId) ?? "UTC");
-  return rankByPriority(project, tasks, today, apiKey);
+  return rankByPriority(project, tasks, today, apiKey, aiFetch(db, userId, "prioritySort"));
 }

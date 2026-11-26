@@ -41,9 +41,11 @@ in `src/components/`.
   never the body), a capped body, the entry's zod input, a per-user rate
   limit, and a bare status on failure. An entry only says what it reads.
 - Pass the entry's `fetch` to the model call, so the request stops when the
-  browser gives up on it (newer typing aborts the old suggestion). Use the
-  global `fetch` only for work worth finishing anyway, like the greeting's
-  shared cache.
+  browser gives up on it (newer typing aborts the old suggestion). Use
+  `fetchToEnd` only for work worth finishing anyway, like the greeting's
+  shared cache. Both count the call's tokens toward the user's AI spend on
+  /admin (`aiFetch`, `src/core/aiUsage.ts`); the global `fetch` doesn't, so
+  the AI modules take no default. Saves and MCP tools pass `aiFetch` too.
 - Saves that ask an AI along the way (sort by priority, a new list's icon)
   stay Server Actions: they change data, and a route can't refresh the page.
 

@@ -32,6 +32,8 @@ interface ReadContext {
   userId: string;
   /** fetch that gives up once the browser does, for model requests. */
   fetch: typeof fetch;
+  /** fetch that finishes after the browser has gone, for work worth keeping. */
+  fetchToEnd: typeof fetch;
 }
 
 function read<I extends z.ZodType, R>(
@@ -61,11 +63,11 @@ export const AI_READS = {
    * templates. Null before their timezone is known. `now` is "Rewrite now";
    * agendaGreeting.ts limits how often one person can make it ask.
    */
-  greeting: read(z.object({ now: z.boolean() }), async ({ now }, { db, userId }) => {
+  greeting: read(z.object({ now: z.boolean() }), async ({ now }, { db, userId, fetchToEnd }) => {
     const timeZone = getTimeZone(db, userId);
     if (!timeZone) return null;
     const { TYPESAFE_API_KEY, ANTHROPIC_API_KEY } = getEnv();
-    // Not ctx.fetch: it's kept for every tab and the next visit, so it's
+    // fetchToEnd, not ctx.fetch: it's kept for every tab and the next visit, so it's
     // worth finishing after the browser that asked has gone.
     const greeting = await writtenGreetingFor(
       db,
@@ -73,7 +75,7 @@ export const AI_READS = {
       timeZone,
       { jev: TYPESAFE_API_KEY, anthropic: ANTHROPIC_API_KEY },
       undefined,
-      undefined,
+      fetchToEnd,
       now,
     );
     // How today went, once they've closed it, for the panel under it, and

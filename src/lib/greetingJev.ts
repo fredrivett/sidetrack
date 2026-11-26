@@ -166,7 +166,7 @@ export interface GreetingScores {
 export async function scoreGreeting(
   brief: AgendaBrief,
   apiKey: string,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch,
 ): Promise<GreetingScores | null> {
   const moments = possibleMoments(brief);
   const items = candidates(brief);

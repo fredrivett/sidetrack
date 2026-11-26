@@ -48,7 +48,7 @@ const CASES: Case[] = [
 
 describe.skipIf(!key)("titleParse eval", () => {
   it.concurrent.each(CASES)("%s", async (title, due, saved) => {
-    const parts = await askTitleParts(title, ctx, key);
+    const parts = await askTitleParts(title, ctx, key, fetch);
     const dues = parts.flatMap((p) => (p.field === "due" ? [p.due] : []));
     const got = dues[0] ? [dues[0].dueFrom, dues[0].dueDate].filter(Boolean).join("/") : null;
     expect(got).toBe(due);
@@ -64,7 +64,7 @@ describe.skipIf(!key)("titleParse eval", () => {
   ])(
     "keeps a date that's what the task is about: %s",
     async (title) => {
-      const parts = await askTitleParts(title, ctx, key);
+      const parts = await askTitleParts(title, ctx, key, fetch);
       expect(saveAs(title, parts)).toBe(title);
     },
     20_000,

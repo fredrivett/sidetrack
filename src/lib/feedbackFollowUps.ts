@@ -88,7 +88,7 @@ export function checkFollowUps(raw: unknown): FollowUp[] {
 export async function askFollowUps(
   feedback: { title: string; labels: string[]; text: string },
   apiKey: string,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch,
 ): Promise<FollowUp[]> {
   try {
     const res = await fetchImpl(ENDPOINT, {

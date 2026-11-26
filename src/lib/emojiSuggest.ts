@@ -230,7 +230,7 @@ function domainOf(url: string | null | undefined): string | undefined {
 export function suggestEmoji(
   context: IconContext,
   apiKey: string,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch,
   alternatives = true,
 ): Promise<string[]> {
   return ask(
@@ -251,7 +251,7 @@ export function suggestEmoji(
 export function suggestLabelEmoji(
   context: { name: string; listName: string },
   apiKey: string,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch,
   alternatives = true,
 ): Promise<string[]> {
   return ask(
@@ -322,7 +322,7 @@ async function ask(
 export async function autoListIcon(
   context: IconContext,
   apiKey: string | undefined,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch,
 ): Promise<string | null | undefined> {
   if (context.homepageUrl) return null;
   if (!apiKey || !context.name.trim()) return undefined;
@@ -341,7 +341,7 @@ export async function autoLabelEmoji(
   names: string[],
   listName: string,
   apiKey: string | undefined,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch,
 ): Promise<Record<string, string>> {
   if (!apiKey) return {};
   const picks = await Promise.all(

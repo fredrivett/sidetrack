@@ -228,7 +228,7 @@ export async function writeGreeting(
   brief: AgendaBrief,
   pick: GreetingPick,
   apiKey: string,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch,
   prefs: GreetingPrefs = DEFAULT_GREETING_PREFS,
 ): Promise<{ text: string } | { failed: string }> {
   const input = writerInput(brief, pick, prefs);

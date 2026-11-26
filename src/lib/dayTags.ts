@@ -133,7 +133,7 @@ export async function suggestDayTags(
   typed: string,
   mine: { own: readonly string[]; removed: readonly string[] },
   apiKey: string,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch,
 ): Promise<string[]> {
   const known = dayTagsFor(mine.own);
   let said: unknown;

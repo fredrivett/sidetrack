@@ -17,6 +17,9 @@ export async function register() {
   const { getDb } = await import("./core/db");
   const { startNotificationDelivery } = await import("./core/notifications");
   startNotificationDelivery(getDb().db);
+  // Keeps the AI prices on /admin current, when AI is set up.
+  const { scheduleAiPriceChecks } = await import("./core/aiUsage");
+  scheduleAiPriceChecks(getDb().db);
   // Copies connected calendars' events, when calendars are set up.
   const { calendarConfig, startCalendarSync } = await import("./core/calendars");
   const calendars = calendarConfig();
