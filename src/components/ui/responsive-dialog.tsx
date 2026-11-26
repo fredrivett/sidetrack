@@ -369,15 +369,33 @@ function ResponsiveDialogBackButton({
 function pinnedHeader(body: HTMLElement | null) {
   const header = body?.firstElementChild
   if (!body || !(header instanceof HTMLElement)) return
-  const observer = new ResizeObserver(() => {
+  // What's under the header gets a scroll margin of its height (globals.css),
+  // not the body a scroll padding: that would cover the header too, so
+  // focusing its own fields while scrolled down would scroll them into view.
+  body.setAttribute("data-pinned-header", "")
+  const update = () => {
     const height = header.offsetHeight
-    header.toggleAttribute("data-tall", height > body.clientHeight / 2)
+    const tall = height > body.clientHeight / 2
+    // A description grown past half while typing in it: the header unpins,
+    // so back to the top, where it was showing, or the field leaves view.
+    if (tall && !header.hasAttribute("data-tall") && header.contains(document.activeElement)) {
+      body.scrollTop = 0
+    }
+    header.toggleAttribute("data-tall", tall)
     const pinned = getComputedStyle(header).position === "sticky"
-    body.style.scrollPaddingTop = pinned ? `${height}px` : ""
-  })
+    body.style.setProperty("--pinned-header", pinned ? `${height}px` : "")
+  }
+  const observer = new ResizeObserver(update)
   observer.observe(body)
   observer.observe(header)
-  return () => observer.disconnect()
+  // The header pins from md up, and a window can cross that while the
+  // dialog's open without either size changing.
+  const md = matchMedia("(min-width: 48rem)")
+  md.addEventListener("change", update)
+  return () => {
+    observer.disconnect()
+    md.removeEventListener("change", update)
+  }
 }
 
 export {

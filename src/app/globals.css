@@ -286,3 +286,11 @@ body {
     scroll-padding: calc(38dvh + 0.5rem) 0 4rem;
   }
 }
+
+/* A dialog body with a pinned header (pinnedHeader, responsive-dialog.tsx):
+   what's brought into view under the header, as by Shift+Tab, stops below
+   it rather than behind it. --pinned-header is its height while pinned. */
+[data-pinned-header] > :not(:first-child),
+[data-pinned-header] > :not(:first-child) * {
+  scroll-margin-top: var(--pinned-header, 0px);
+}
