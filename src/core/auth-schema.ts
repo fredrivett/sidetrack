@@ -100,6 +100,10 @@ export const twoFactors = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     verified: integer("verified", { mode: "boolean" }).notNull().default(true),
+    // Better Auth 1.7's lockout after too many wrong codes. It keeps these
+    // counters itself; they're not audited, like the rest of its bookkeeping.
+    failedVerificationCount: integer("failed_verification_count").default(0),
+    lockedUntil: integer("locked_until", { mode: "timestamp_ms" }),
   },
   (t) => [index("two_factors_user_id").on(t.userId)],
 );
