@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { runAction } from "./run-action";
 import { useDraft } from "./use-draft";
 import { useStoredState } from "./use-stored-state";
+import { WhatsLeft } from "./WhatsLeft";
 
 /** "21:40", as the greeting's own times read. */
 const clockTime = (ts: number) => new Date(ts).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
@@ -20,7 +21,8 @@ const clockTime = (ts: number) => new Date(ts).toLocaleTimeString("en-GB", { hou
  * viewer shares their day with. It folds open under the day's note, as that
  * does; shut, it shows the wrap-up once the day's closed. Holds while it
  * saves (the server cleans the words up), then folds shut. What's picked and
- * typed is a draft until then.
+ * typed is a draft until then. Before it's closed, it also offers what's
+ * left of the day new days (WhatsLeft).
  */
 export function CloseDayPanel({
   today,
@@ -201,6 +203,8 @@ export function CloseDayPanel({
             <p id={hintId} className="mt-2.5 text-xs text-neutral-500 dark:text-neutral-400">
               Whoever you share your day with sees this beside your note for today.
             </p>
+            {/* Before it's closed: what's left of the day, to give new days. */}
+            {!wrapUp && <WhatsLeft today={today} ask={open} />}
           </div>
         </div>
       </div>
