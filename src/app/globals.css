@@ -128,6 +128,10 @@ body {
   content-visibility: auto;
   contain-intrinsic-height: auto 36px;
 }
+/* Except while opening into view, when they're measured (openRows). */
+[data-brief] [data-opening] [data-item-row] {
+  content-visibility: visible;
+}
 
 :root {
   --background: oklch(1 0 0);

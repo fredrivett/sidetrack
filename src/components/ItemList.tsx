@@ -58,6 +58,7 @@ import { useItemSaves } from "./item-saves";
 import { ItemRow, type RowDrag } from "./ItemRow";
 import { useMoveItem } from "./MoveItem";
 import { Button } from "./ui/button";
+import { holdScroll, openRows } from "./ui/fold";
 import { runAction } from "./run-action";
 import { useCollapsedItems } from "./use-collapsed-items";
 import { SelectedItemContext } from "./useItemShortcuts";
@@ -545,8 +546,35 @@ export function ItemGroupView({
   const expanded = !(given ?? collapsed.has(group.id));
   const all = group.children;
   const children = shown ? all.filter((c) => shown.has(c.id)) : all;
+  // Shown by hand, its sub-items, the rows after its own, open into view;
+  // shown any other way (Expand all, another device), they're just there.
+  const groupEl = useRef<HTMLDivElement>(null);
+  const [byHand, setByHand] = useState(false);
+  const [wasExpanded, setWasExpanded] = useState(expanded);
+  if (wasExpanded !== expanded) {
+    setWasExpanded(expanded);
+    if (!expanded) setByHand(false);
+  }
+  useLayoutEffect(() => {
+    const el = groupEl.current;
+    if (!expanded || !byHand || !el?.firstElementChild) return;
+    return openRows(
+      el.firstElementChild as HTMLElement,
+      // Not the drag's hidden instructions and announcements beside them.
+      [...el.children].slice(1).filter((c): c is HTMLElement =>
+        c instanceof HTMLElement && c.querySelector("[data-item-row]") !== null,
+      ),
+    );
+    // Only as it expands: byHand is set first, on the click.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded]);
+  const toggle = () => {
+    if (!expanded) holdScroll(document.querySelector(`[data-item-row="${group.id}"]`));
+    setByHand(!expanded);
+    setCollapsed([group.id], expanded);
+  };
   return (
-    <div className="space-y-1.5">
+    <div ref={groupEl} className="space-y-1.5">
       {rowFor(row, group, {
         list,
         checklist:
@@ -554,7 +582,7 @@ export function ItemGroupView({
             ? {
                 ...progress(all),
                 expanded,
-                onToggle: () => setCollapsed([group.id], expanded),
+                onToggle: toggle,
               }
             : undefined,
       })}
@@ -1145,6 +1173,28 @@ export function DraggableItemList({
     [setListRef],
   );
 
+  // A task whose sub-items the viewer just showed, by hand: once they're on
+  // the page, they open into view under it, the way a Fold opens.
+  const opening = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const id = opening.current;
+    if (id === null || folded(id)) return;
+    opening.current = null;
+    // Each row's place in the list, which carries the gap above it.
+    const rowEl = (rowId: string) =>
+      listEl.current
+        ?.querySelector(`[data-row-id="${rowId}"]`)
+        ?.closest<HTMLElement>("[data-list-index]") ?? null;
+    const parent = rowEl(id);
+    if (!parent) return;
+    // Not cancelled by the next render, which the save brings mid-scroll: it
+    // ends by itself.
+    openRows(
+      parent,
+      childrenOf(id).flatMap((c) => rowEl(c.id) ?? []),
+    );
+  });
+
   const active = activeId ? own.get(activeId) : undefined;
   // How far in the dragged card sits: the depth it would land at, or its own
   // where it can't land; flush away from its list.
@@ -1305,7 +1355,13 @@ export function DraggableItemList({
             ? {
                 ...progress(children),
                 expanded: !folded(item.id),
-                onToggle: () => onToggleCollapsed(item.id),
+                onToggle: () => {
+                  if (folded(item.id)) {
+                    opening.current = item.id;
+                    holdScroll(listEl.current);
+                  }
+                  onToggleCollapsed(item.id);
+                },
               }
             : undefined,
       });
