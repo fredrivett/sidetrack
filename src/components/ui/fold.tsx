@@ -209,6 +209,11 @@ function closeRows(anchor: HTMLElement, rows: HTMLElement[], done: () => void) {
     row.style.clipPath = CLIP
     return [shrink]
   })
+  // Without animations (jsdom, which the tests run in), they go at once.
+  if (!shrinks.length) {
+    done()
+    return
+  }
   let cancelled = false
   // Cancelled from elsewhere, they go anyway rather than stay stuck.
   const finish = () => !cancelled && done()
