@@ -119,17 +119,19 @@ function enter(fold: HTMLElement) {
  * appearing. The first waits for the scroll to bring it on screen (glide);
  * after the eighth they all come in together, so a long body is no slower.
  */
-function stagger(rows: Iterable<Element>) {
+function stagger(rows: Iterable<Element>, rise: (row: Element) => Element = (row) => row) {
   if (reduced()) return
   let i = 0
   for (const row of rows) {
-    // Optional: jsdom, which the tests run in, has no animations.
-    row.animate?.([{ opacity: 0, translate: "0 8px" }, { opacity: 1, translate: "0 0" }], {
+    const timing: KeyframeAnimationOptions = {
       duration: 260,
       delay: 100 + Math.min(i++, 8) * 45,
       easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
       fill: "backwards",
-    })
+    }
+    // Optional: jsdom, which the tests run in, has no animations.
+    row.animate?.([{ opacity: 0 }, { opacity: 1 }], timing)
+    rise(row).animate?.([{ translate: "0 8px" }, { translate: "0 0" }], timing)
   }
 }
 
@@ -161,18 +163,72 @@ function openRows(anchor: HTMLElement, rows: HTMLElement[]) {
           // Tailwind's ease-out, as the Fold's rows.
           easing: "cubic-bezier(0, 0, 0.2, 1)",
         })
-    // Clipped while it grows, so it doesn't spill over the row below.
-    if (grow) row.style.overflow = "clip"
+    if (grow) row.style.clipPath = CLIP
     const done = () => {
-      row.style.removeProperty("overflow")
+      // Unless it's already closing again (closeRows), which clips it itself.
+      if (!row.inert) row.style.removeProperty("clip-path")
       delete row.dataset.opening
     }
     if (grow) grow.finished.then(done, done)
     else done()
   })
-  stagger(rows)
+  // Each row's tree line fades in with its card, so the line reaches each
+  // row as it arrives, but only the card rises: the line stays in place.
+  stagger(rows, (row) => row.querySelector("[data-item-row]") ?? row)
   return glide(anchor, end)
 }
+
+/**
+ * Folds rows under `anchor` shut, the way they opened (openRows): they
+ * shrink to nothing and fade, then `done` runs, which takes them off the
+ * page. Inert meanwhile. Call it from a layout effect; returns a cancel,
+ * which puts them back as they were, for rows opened again before they've
+ * gone.
+ */
+function closeRows(anchor: HTMLElement, rows: HTMLElement[], done: () => void) {
+  if (!rows.length || reduced()) {
+    // From the layout effect, so they go before the next paint.
+    done()
+    return
+  }
+  const anchorGap = getComputedStyle(anchor).marginBottom
+  const shrinks = rows.flatMap((row, i) => {
+    const height = `${row.getBoundingClientRect().height}px`
+    const { marginTop, marginBottom } = getComputedStyle(row)
+    const to = { height: "0px", marginTop: i ? "0px" : `-${anchorGap}`, marginBottom: "0px", opacity: 0 }
+    // Optional: jsdom, which the tests run in, has no animations.
+    const shrink = row.animate?.([{ height, marginTop, marginBottom, opacity: 1 }, to], {
+      duration: DURATION,
+      // Eased in and out, so it's seen to go: easing out, as opening does,
+      // it's nearly gone in the first frames.
+      easing: "cubic-bezier(0.4, 0, 0.2, 1)",
+      fill: "forwards",
+    })
+    if (!shrink) return []
+    row.inert = true
+    row.style.clipPath = CLIP
+    return [shrink]
+  })
+  let cancelled = false
+  // Cancelled from elsewhere, they go anyway rather than stay stuck.
+  const finish = () => !cancelled && done()
+  Promise.all(shrinks.map((a) => a.finished)).then(finish, finish)
+  return () => {
+    cancelled = true
+    for (const a of shrinks) a.cancel()
+    for (const row of rows) {
+      row.inert = false
+      row.style.removeProperty("clip-path")
+    }
+  }
+}
+
+/**
+ * Clips a row growing or shrinking at its bottom edge, so it doesn't spill
+ * over the row below, but not above or to the sides, where its tree line
+ * reaches up into the gap to the row before it and its focus ring shows.
+ */
+const CLIP = "inset(-8px -100vw 0 -100vw)"
 
 const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches
 
@@ -289,4 +345,4 @@ function glide(anchor: HTMLElement, end: number) {
   return stop
 }
 
-export { Fold, holdScroll, openRows }
+export { closeRows, Fold, holdScroll, openRows }

@@ -58,7 +58,7 @@ import { useItemSaves } from "./item-saves";
 import { ItemRow, type RowDrag } from "./ItemRow";
 import { useMoveItem } from "./MoveItem";
 import { Button } from "./ui/button";
-import { holdScroll, openRows } from "./ui/fold";
+import { closeRows, holdScroll, openRows } from "./ui/fold";
 import { runAction } from "./run-action";
 import { useCollapsedItems } from "./use-collapsed-items";
 import { SelectedItemContext } from "./useItemShortcuts";
@@ -546,31 +546,41 @@ export function ItemGroupView({
   const expanded = !(given ?? collapsed.has(group.id));
   const all = group.children;
   const children = shown ? all.filter((c) => shown.has(c.id)) : all;
-  // Shown by hand, its sub-items, the rows after its own, open into view;
-  // shown any other way (Expand all, another device), they're just there.
+  // Shown by hand, its sub-items, the rows after its own, open into view,
+  // and hidden by hand, they fold shut before they go; shown or hidden any
+  // other way (Expand all, another device), they're just there or gone.
   const groupEl = useRef<HTMLDivElement>(null);
   const [byHand, setByHand] = useState(false);
+  const [closing, setClosing] = useState(false);
   const [wasExpanded, setWasExpanded] = useState(expanded);
   if (wasExpanded !== expanded) {
     setWasExpanded(expanded);
     if (!expanded) setByHand(false);
+    else setClosing(false);
   }
+  // The rows after its own: not the drag's hidden instructions and
+  // announcements beside them.
+  const subRows = (el: HTMLElement) =>
+    [...el.children].slice(1).filter((c): c is HTMLElement =>
+      c instanceof HTMLElement && c.querySelector("[data-item-row]") !== null,
+    );
   useLayoutEffect(() => {
     const el = groupEl.current;
     if (!expanded || !byHand || !el?.firstElementChild) return;
-    return openRows(
-      el.firstElementChild as HTMLElement,
-      // Not the drag's hidden instructions and announcements beside them.
-      [...el.children].slice(1).filter((c): c is HTMLElement =>
-        c instanceof HTMLElement && c.querySelector("[data-item-row]") !== null,
-      ),
-    );
+    return openRows(el.firstElementChild as HTMLElement, subRows(el));
     // Only as it expands: byHand is set first, on the click.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expanded]);
+  useLayoutEffect(() => {
+    const el = groupEl.current;
+    if (expanded || !closing || !el?.firstElementChild) return;
+    // Reopened before they've gone, they're put back as they were.
+    return closeRows(el.firstElementChild as HTMLElement, subRows(el), () => setClosing(false));
+  }, [expanded, closing]);
   const toggle = () => {
     if (!expanded) holdScroll(document.querySelector(`[data-item-row="${group.id}"]`));
     setByHand(!expanded);
+    setClosing(expanded);
     setCollapsed([group.id], expanded);
   };
   return (
@@ -586,7 +596,7 @@ export function ItemGroupView({
               }
             : undefined,
       })}
-      {expanded &&
+      {(expanded || closing) &&
         (sortable ? (
           <SortableChecklist
             items={children}
@@ -834,10 +844,17 @@ export function DraggableItemList({
   const carried = activeId ?? (entering && !entering.dropped ? entering.item.id : null);
   const folded = (id: string) =>
     enteringIds.has(id) ? entering?.collapsed : collapsed.has(id);
+  // A task whose sub-items the viewer just hid, by hand: they stay, folding
+  // shut, until they've gone (closeRows).
+  const [closing, setClosing] = useState<string | null>(null);
+  // Shown again some other way meanwhile (Expand all, another device), they
+  // stay, as they were.
+  if (closing !== null && !folded(closing)) setClosing(null);
   const visible = rows.filter(
     (f) =>
       (enteringIds.has(f.item.id) || !shown || shown.has(f.item.id)) &&
-      (f.parentId === null || (!folded(f.parentId) && f.parentId !== carried)),
+      (f.parentId === null ||
+        ((!folded(f.parentId) || f.parentId === closing) && f.parentId !== carried)),
   );
   // Rows that stay rendered in a long list wherever it's scrolled: the one
   // being dragged, which dnd-kit needs, those on their way in, and the
@@ -1195,6 +1212,20 @@ export function DraggableItemList({
     );
   });
 
+  useLayoutEffect(() => {
+    if (closing === null) return;
+    const rowEl = (rowId: string) =>
+      listEl.current
+        ?.querySelector(`[data-row-id="${rowId}"]`)
+        ?.closest<HTMLElement>("[data-list-index]") ?? null;
+    const parent = rowEl(closing);
+    const subs = parent ? childrenOf(closing).flatMap((c) => rowEl(c.id) ?? []) : [];
+    // Reopened before they've gone, they're put back as they were.
+    return closeRows(parent ?? document.body, subs, () => setClosing(null));
+    // Only as it starts closing: its rows are the ones on the page then.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [closing]);
+
   const active = activeId ? own.get(activeId) : undefined;
   // How far in the dragged card sits: the depth it would land at, or its own
   // where it can't land; flush away from its list.
@@ -1360,6 +1391,8 @@ export function DraggableItemList({
                     opening.current = item.id;
                     holdScroll(listEl.current);
                   }
+                  // Another checklist's close carries on.
+                  setClosing((c) => (folded(item.id) ? (c === item.id ? null : c) : item.id));
                   onToggleCollapsed(item.id);
                 },
               }

@@ -161,7 +161,8 @@ export function stepItemRow(
   dir: (typeof NAV_KEYS)[string],
 ): HTMLElement | null {
   const rows = [...document.querySelectorAll<HTMLElement>("[data-item-row]")].filter(
-    (r) => !r.closest('[role="dialog"]'),
+    // Not a checklist folding shut (closeRows), about to go.
+    (r) => !r.closest('[role="dialog"]') && !r.closest("[inert]"),
   );
   const current = rows.find((r) => r.dataset.itemRow === selectedId);
   if (!current) {
