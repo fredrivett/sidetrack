@@ -19,6 +19,7 @@ import {
 } from "@/app/actions";
 import { QrCode } from "@/components/QrCode";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Fold } from "@/components/ui/fold";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -460,62 +461,60 @@ export function GetStartedStack({
           />
         </button>
       </h2>
-      {!collapsed && (
-        <div id={bodyId} className="mt-1 space-y-2">
-          {front ? (
-            // The cards behind peek out below the front one.
-            <div className="relative" style={{ paddingBottom: behind * 6 }}>
-              {Array.from({ length: behind }, (_, i) => (
-                <div
-                  key={i}
-                  aria-hidden="true"
-                  className="absolute inset-x-0 top-0 rounded-xl border border-border bg-muted/40"
-                  style={{
-                    bottom: behind * 6,
-                    transform: `translateY(${(i + 1) * 6}px) scale(${1 - (i + 1) * 0.03})`,
-                    zIndex: 5 - i,
+      <Fold id={bodyId} open={!collapsed} className="space-y-2 pt-1">
+        {front ? (
+          // The cards behind peek out below the front one.
+          <div className="relative" style={{ paddingBottom: behind * 6 }}>
+            {Array.from({ length: behind }, (_, i) => (
+              <div
+                key={i}
+                aria-hidden="true"
+                className="absolute inset-x-0 top-0 rounded-xl border border-border bg-muted/40"
+                style={{
+                  bottom: behind * 6,
+                  transform: `translateY(${(i + 1) * 6}px) scale(${1 - (i + 1) * 0.03})`,
+                  zIndex: 5 - i,
+                }}
+              />
+            ))}
+            {card(front)}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-border bg-background p-3">
+            <h3 className="text-sm font-medium">You&apos;re all set</h3>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Everything&apos;s in place. This stays here, folded, if you want it again.
+            </p>
+          </div>
+        )}
+        <ul className="space-y-0.5 text-sm">
+          {state.steps.map((step) =>
+            done(step) ? (
+              <li key={step} className="flex items-center gap-2 px-1 py-0.5 text-muted-foreground">
+                <Check aria-hidden="true" className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span className="flex-1">{TITLES[step]}</span>
+                <span className="text-xs">Done</span>
+              </li>
+            ) : (
+              <li key={step}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPicked(step);
+                    setShowCode(false);
                   }}
-                />
-              ))}
-              {card(front)}
-            </div>
-          ) : (
-            <div className="rounded-xl border border-border bg-background p-3">
-              <h3 className="text-sm font-medium">You&apos;re all set</h3>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                Everything&apos;s in place. This stays here, folded, if you want it again.
-              </p>
-            </div>
-          )}
-          <ul className="space-y-0.5 text-sm">
-            {state.steps.map((step) =>
-              done(step) ? (
-                <li key={step} className="flex items-center gap-2 px-1 py-0.5 text-muted-foreground">
-                  <Check aria-hidden="true" className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+                  aria-current={step === front ? "step" : undefined}
+                  className="flex w-full items-center gap-2 rounded-md px-1 py-0.5 text-left outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-neutral-300 aria-[current=step]:bg-muted dark:focus-visible:ring-neutral-600"
+                >
+                  <span aria-hidden="true" className="size-3.5 rounded-[4px] border border-neutral-400" />
                   <span className="flex-1">{TITLES[step]}</span>
-                  <span className="text-xs">Done</span>
-                </li>
-              ) : (
-                <li key={step}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPicked(step);
-                      setShowCode(false);
-                    }}
-                    aria-current={step === front ? "step" : undefined}
-                    className="flex w-full items-center gap-2 rounded-md px-1 py-0.5 text-left outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-neutral-300 aria-[current=step]:bg-muted dark:focus-visible:ring-neutral-600"
-                  >
-                    <span aria-hidden="true" className="size-3.5 rounded-[4px] border border-neutral-400" />
-                    <span className="flex-1">{TITLES[step]}</span>
-                    {step === "agent" && <span className="text-xs text-muted-foreground">Optional</span>}
-                  </button>
-                </li>
-              ),
-            )}
-          </ul>
-        </div>
-      )}
+                  {step === "agent" && <span className="text-xs text-muted-foreground">Optional</span>}
+                </button>
+              </li>
+            ),
+          )}
+        </ul>
+      </Fold>
     </section>
   );
 }

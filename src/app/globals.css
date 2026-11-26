@@ -272,3 +272,13 @@ body {
     text-decoration-color: var(--color-neutral-300);
   }
 }
+
+/* The source review on a phone: its photo sticks to the top of the page (at
+   most 38dvh, plus its pb-2) and its actions to the bottom (about 4rem), so
+   what's brought into view, by a fold opening or a line picked on the photo,
+   stops clear of both. */
+@media (width < 48rem) {
+  html:has([data-source-review]) {
+    scroll-padding: calc(38dvh + 0.5rem) 0 4rem;
+  }
+}

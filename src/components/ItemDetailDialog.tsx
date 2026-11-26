@@ -44,6 +44,7 @@ import { repeatOf } from "@/lib/repeat";
 import { dayLabel, formatRelative } from "@/lib/time";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Fold } from "@/components/ui/fold";
 import { Kbd } from "@/components/ui/kbd";
 import {
   DropdownMenu,
@@ -227,7 +228,7 @@ function ItemActivity({ item, viewerId, focus }: { item: Item; viewerId: string;
   }, [focus, entries]);
 
   return (
-    <div className="space-y-1">
+    <div>
       <button
         type="button"
         onClick={() => setExpanded((e) => !e)}
@@ -240,8 +241,8 @@ function ItemActivity({ item, viewerId, focus }: { item: Item; viewerId: string;
         />
         Activity
       </button>
-      {expanded &&
-        (entries === null ? (
+      <Fold open={expanded} loading={entries === null} className="space-y-1 pt-1">
+        {entries === null ? (
           <p className="text-sm text-neutral-400">Loading…</p>
         ) : entries.length === 0 ? (
           <p className="text-sm text-neutral-400">No activity yet.</p>
@@ -268,7 +269,8 @@ function ItemActivity({ item, viewerId, focus }: { item: Item; viewerId: string;
               </Button>
             )}
           </>
-        ))}
+        )}
+      </Fold>
     </div>
   );
 }
