@@ -247,6 +247,8 @@ export function FilterMenu({
           button. */}
       <Popover open={rangeOpen} onOpenChange={setRangeOpen}>
         <PopoverContent
+          // A calendar to pick days on: nothing to type.
+          initialFocus={null}
           anchor={button}
           align="end"
           finalFocus={button}

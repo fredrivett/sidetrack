@@ -609,7 +609,11 @@ export function ItemDetailDialog({
 }) {
   return (
     <ResponsiveDialog open={props.open} onOpenChange={onOpenChange}>
-      <ResponsiveDialogContent>
+      <ResponsiveDialogContent
+        // Opened to read as much as to edit, and its single-key shortcuts
+        // would type into a focused field: the comment box waits to be picked.
+        initialFocus={null}
+      >
         <ResponsiveDialogViews view={props.item.id} direction={history?.direction ?? "forward"}>
           <ItemDetailView
             {...props}

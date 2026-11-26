@@ -118,7 +118,10 @@ export function GreetingDialog({
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
-      <ResponsiveDialogContent>
+      <ResponsiveDialogContent
+        // Choices to press; going back focuses the one it came from.
+        initialFocus={null}
+      >
         <ResponsiveDialogViews
           view={item ? `item:${item.id}` : list}
           direction={trail.direction}

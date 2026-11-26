@@ -195,3 +195,18 @@ test("drags a list along its tray, and into a Space once confirmed", async ({ pa
   await expectLists("Work", ["Garden"]);
   await expectLists("Personal", ["Home"]);
 });
+
+test.describe("on a phone", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+  test("a list detail's field opens ready to type in", async ({ page, user }) => {
+    user.addList("Home");
+    await page.goto("/board");
+    await page.getByRole("button", { name: "List options" }).tap();
+    await page.getByRole("menuitem", { name: "List details" }).tap();
+    await page.getByRole("dialog", { name: "Home" }).getByTitle("Homepage").tap();
+    // Focused on a tap too, which Base UI otherwise leaves on the popup
+    // to keep the keyboard down.
+    await expect(page.getByRole("textbox", { name: "Homepage" })).toBeFocused();
+  });
+});

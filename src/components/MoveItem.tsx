@@ -212,7 +212,10 @@ export function MoveItemDialog({
       open={request !== null}
       onOpenChange={(open) => !open && !pending && onClose()}
     >
-      <ResponsiveDialogContent>
+      <ResponsiveDialogContent
+        // A confirmation, its label choices pressed: nothing to type.
+        initialFocus={null}
+      >
         {shown && (
           // A new request starts afresh.
           <MoveSheet

@@ -1,7 +1,7 @@
 "use client";
 
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
-import { useCallback, useState } from "react";
+import { type RefObject, useCallback, useState } from "react";
 
 import { useMediaQuery } from "@/components/ui/use-media-query";
 import { cn } from "@/lib/utils";
@@ -23,12 +23,19 @@ function PopoverContent({
   className,
   onFocus,
   onBlur,
+  initialFocus,
   ...props
-}: Omit<PopoverPrimitive.Popup.Props, "ref"> &
+}: Omit<PopoverPrimitive.Popup.Props, "ref" | "initialFocus"> &
   Pick<
     PopoverPrimitive.Positioner.Props,
     "align" | "alignOffset" | "side" | "sideOffset" | "anchor"
-  >) {
+  > & {
+    /** Its primary field, focused as it opens (on phones too, keyboard and
+     * all), so the person can type straight away. `null` when it has none,
+     * with a comment saying why: then its first control is focused, or on
+     * touch nothing, so no keyboard comes up. */
+    initialFocus: RefObject<HTMLElement | null> | null;
+  }) {
   // On a phone, typing in a popover's field (a search, a date) brings up the
   // keyboard, and iOS pans the page to keep the field above it, which can
   // carry the trigger off screen. Meanwhile the popover is sticky: it stays
@@ -77,6 +84,7 @@ function PopoverContent({
             onBlur?.(e);
           }}
           {...props}
+          initialFocus={initialFocus ?? undefined}
           ref={popupRef}
         />
       </PopoverPrimitive.Positioner>

@@ -122,7 +122,11 @@ export function ProjectDetailDialog({
 
   return (
     <ResponsiveDialog open={open} onOpenChange={change}>
-      <ResponsiveDialogContent>
+      <ResponsiveDialogContent
+        // Opened to read as much as to edit: its name and summary are
+        // edited in place once picked, and the label view focuses Back.
+        initialFocus={null}
+      >
         <ResponsiveDialogViews
           view={label ? `label:${label.id}` : "list"}
           direction={label ? "forward" : "back"}

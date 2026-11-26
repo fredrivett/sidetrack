@@ -224,7 +224,14 @@ export function IconPicker({
           />
         )}
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-[288px] p-0">
+      <PopoverContent
+        // The emoji grid is what's picked from. Its search, the first
+        // field, still gets focus with a mouse; on a phone a keyboard would
+        // cover the grid.
+        initialFocus={null}
+        align="start"
+        className="w-[288px] p-0"
+      >
         <EmojiPicker
           className="h-[340px] w-full"
           onEmojiSelect={({ emoji }) => select(emoji)}

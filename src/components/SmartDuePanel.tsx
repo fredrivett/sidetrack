@@ -105,7 +105,10 @@ export function SmartDuePanel({
         }}
         className="flex items-center gap-1.5"
       >
+        {/* Focused as the Smart tab opens, whichever way: the rule is
+            what's written here. */}
         <Input
+          autoFocus
           value={rule.value}
           onChange={(e) => rule.set(e.target.value)}
           placeholder="before our next trip"

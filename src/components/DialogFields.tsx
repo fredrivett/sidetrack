@@ -1,7 +1,7 @@
 "use client";
 
 import { CalendarDays, ExternalLink, Rainbow, Repeat as RepeatIcon, Sparkles, UserRound } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { AssigneeView } from "@/core/members";
 import type { Repeat } from "@/lib/repeat";
 import type { Due } from "@/lib/time";
@@ -121,7 +121,12 @@ export function DueChip({
           <span data-replay-safe>Due date</span>
         )}
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 max-w-[calc(100vw-2rem)] space-y-2 p-2">
+      <PopoverContent
+        // Quick dates to press; the Smart tab focuses its own rule field.
+        initialFocus={null}
+        align="start"
+        className="w-80 max-w-[calc(100vw-2rem)] space-y-2 p-2"
+      >
         {smart && (
           <div
             data-replay-safe
@@ -216,7 +221,12 @@ export function RepeatChip({
         <RepeatIcon />
         <span data-replay-safe>{repeat ? shortLabel(repeat) : "Repeat"}</span>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 max-w-[calc(100vw-2rem)] p-2">
+      <PopoverContent
+        // Repeats to press; Custom's count shows only once picked.
+        initialFocus={null}
+        align="start"
+        className="w-80 max-w-[calc(100vw-2rem)] p-2"
+      >
         <RepeatPicker
           repeat={repeat}
           completedAt={completedAt}
@@ -318,6 +328,7 @@ export function TextChip({
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(value);
   const [error, setError] = useState<string | null>(null);
+  const input = useRef<HTMLInputElement>(null);
   function save() {
     const next = draft.trim();
     if (next === value) {
@@ -353,7 +364,11 @@ export function TextChip({
         {icon}
         {value ? children : <span data-replay-safe>{label}</span>}
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 max-w-[calc(100vw-2rem)] space-y-2 p-2">
+      <PopoverContent
+        initialFocus={input}
+        align="start"
+        className="w-80 max-w-[calc(100vw-2rem)] space-y-2 p-2"
+      >
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -364,6 +379,7 @@ export function TextChip({
           className="flex items-center gap-2"
         >
           <Input
+            ref={input}
             value={draft}
             onChange={(e) => {
               setDraft(e.target.value);

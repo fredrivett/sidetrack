@@ -70,7 +70,11 @@ export function ShortcutsDialog({
 }) {
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
-      <ResponsiveDialogContent className="sm:max-w-2xl">
+      <ResponsiveDialogContent
+        // A list to read: nothing to type.
+        initialFocus={null}
+        className="sm:max-w-2xl"
+      >
         <div className="flex shrink-0 items-center gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
           <ResponsiveDialogTitle>Keyboard shortcuts</ResponsiveDialogTitle>
           <ResponsiveDialogCloseButton className="ml-auto shrink-0" />

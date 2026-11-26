@@ -155,7 +155,10 @@ export function FeedbackDialog({
   if (sent) {
     return (
       <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
-        <ResponsiveDialogContent>
+        <ResponsiveDialogContent
+          // The follow-ups are optional questions answered by pressing.
+          initialFocus={null}
+        >
           <FollowUpForm sent={sent} onDone={() => onOpenChange(false)} />
         </ResponsiveDialogContent>
       </ResponsiveDialog>
