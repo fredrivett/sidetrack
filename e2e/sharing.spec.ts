@@ -400,15 +400,16 @@ test("closes the day with how it went, which shows on their Check-ins", async ({
   evening.setHours(21, 0, 0, 0);
   await page.clock.setFixedTime(evening);
   await page.goto("/");
+  // It folds open in place, under the day's note, and shut once it's closed.
   await page.getByRole("button", { name: "Close the day" }).click();
-  const dialog = page.getByRole("dialog", { name: "How did today go?" });
-  await dialog.getByRole("button", { name: "Got a lot done" }).click();
-  await dialog.getByLabel("A few words about today").fill("Did the bottles too");
-  await dialog.getByRole("button", { name: "Done for today" }).click();
-  await expect(dialog).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /^Day closed at .* Edit how today went$/ })).toBeVisible();
+  await page.getByRole("group", { name: "How today went" }).getByRole("button", { name: "Got a lot done" }).click();
+  await page.getByLabel("How did today go?").fill("Did the bottles too");
+  await page.getByRole("button", { name: "Done for today" }).click();
+  const closed = page.getByRole("button", { name: /^Day closed \d\d:\d\d/ });
+  await expect(closed).toHaveAttribute("aria-expanded", "false");
+  await expect(closed).toContainText("Did the bottles too");
   await page.reload();
-  await expect(page.getByRole("button", { name: /^Day closed at / })).toContainText("Got a lot done");
+  await expect(closed).toContainText("Got a lot done");
 
   const context = await browser.newContext();
   await jo.signIn(context, baseURL ?? "");
