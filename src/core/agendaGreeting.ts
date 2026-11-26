@@ -67,6 +67,9 @@ export interface GreetingTrace {
     sinceDay: string | null;
     /** Whether it read the viewer's note for today. Absent on ones from before notes. */
     dayNote?: boolean;
+    /** Whether it read how today went, once closed, or in the morning how last night did. Absent on older ones. */
+    closed?: boolean;
+    lastNight?: boolean;
   };
   /** Each thing it could say, Jev's score and why it was or wasn't said; null before Jev. */
   moments: Array<{ moment: Moment; score: number; said: boolean; why: string }> | null;
@@ -87,6 +90,8 @@ export type StoredGreeting = Omit<Greeting, "hello" | "written" | "note"> & {
   stamps?: Record<string, string>;
   /** The note for today it was written with; absent on rows from before notes, which had none. */
   note?: string | null;
+  /** How today went as it was written, once closed (agendaBrief's closed); absent while open. */
+  closed?: string;
 };
 
 /** What about an item the greeting depends on: its title, days, whether it's done or Someday, and who has it. */
@@ -161,6 +166,9 @@ function traceOf(
       finishedSince: brief.lookBack.finishedCount,
       sinceDay: brief.sinceDay,
       dayNote: brief.dayNote !== null,
+      closed: brief.closed !== null,
+      // As the writer reads it: only in the morning, while today's still open.
+      lastNight: !brief.closed && brief.partOfDay === "morning" && brief.lastNight !== null,
     },
     moments: jev
       ? jev.pick.considered
@@ -337,9 +345,14 @@ export async function writtenGreetingFor(
     const g = { ...s };
     delete g.stamps;
     delete g.note;
+    delete g.closed;
     return { hello, ...g, written: true, note: brief.dayNote };
   };
-  if (kept && unchanged(db, kept) && (kept.note ?? null) === brief.dayNote) return shown(kept);
+  // Closing the day, or changing how it went, has it written again.
+  const closed = brief.closed ? JSON.stringify(brief.closed) : undefined;
+  if (kept && unchanged(db, kept) && (kept.note ?? null) === brief.dayNote && kept.closed === closed) {
+    return shown(kept);
+  }
   // Until it may ask again, the one it has stays, out of date or not,
   // rather than the reader seeing it swap for the built-in one. With none
   // kept, the built-in one, still saying when to ask again.
@@ -415,7 +428,10 @@ export async function writtenGreetingFor(
     ),
   );
 
-  const scores = await scoreGreeting(brief, keys.jev, fetchImpl);
+  // A closed day can only say goodnight, so there's nothing to ask Jev.
+  const scores = brief.closed
+    ? { moments: { goodnight: 1 }, items: {} }
+    : await scoreGreeting(brief, keys.jev, fetchImpl);
   if (!scores) {
     const trace = traceOf(brief, prefs, timeZone, now, "Jev didn't answer, so there was nothing to go on");
     keep({ text: "", titles: {}, others: [], trace });
@@ -436,6 +452,7 @@ export async function writtenGreetingFor(
     others: pick.others.map((i) => ({ id: i.id, title: i.title })),
     trace: traceOf(brief, prefs, timeZone, now, null, { scores, pick, named: written.text }),
     note: brief.dayNote,
+    ...(closed && { closed }),
   };
   keep(greeting);
   return shown(greeting);
@@ -527,6 +544,12 @@ export function templateGreeting(
 
   const open = brief.dueToday.filter((i) => i.completedAt === null);
   const doneToday = brief.doneToday;
+
+  // Closed, whenever it was: goodnight, and nothing about what's left.
+  if (brief.closed) {
+    const done = doneToday > 0 ? `, with ${things(doneToday)} done` : "";
+    return `${hello} That's today closed${done}. ${pick(brief, "closed", ["Sleep well.", "Rest well."])}`;
+  }
 
   // Evening winds down: today's left, or nothing, and no looking ahead.
   if (brief.partOfDay === "evening") {

@@ -27,6 +27,7 @@ const MOMENT_NAME: Record<string, string> = {
   "wind-down": "Winding down",
   clear: "A clear day",
   lighten: "A lighter day",
+  goodnight: "Saying goodnight",
 };
 
 const LENGTH_NAME: Record<GreetingLength, string> = {
@@ -254,6 +255,7 @@ function Explanation({
       ? `${l.finishedSince} finished since ${l.sinceDay === trace.day ? "earlier today" : dayName(l.sinceDay)}`
       : "no earlier visit to look back to",
     ...(l.dayNote ? ["your note for today"] : []),
+    ...(l.closed ? ["how you closed today"] : l.lastNight ? ["how last night went"] : []),
   ];
   const h3 = "text-xs font-medium tracking-wide text-neutral-500 uppercase dark:text-neutral-400";
   return (

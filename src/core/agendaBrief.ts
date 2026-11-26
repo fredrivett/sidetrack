@@ -5,6 +5,7 @@
 // later) only ever states what's here.
 
 import { and, eq, gte, inArray, isNull, max, or } from "drizzle-orm";
+import { splitTagged, WRAP_UP_TAGS } from "../lib/dayTags";
 import { isYours } from "../lib/filters";
 import { formatItemRef } from "../lib/itemRef";
 import { nestItems } from "../lib/itemTree";
@@ -12,6 +13,7 @@ import { addDays, agendaSection, dayOf, weekSpan } from "../lib/time";
 import { hasItemAccess, inDayOf } from "./access";
 import type { Db } from "./db";
 import { getDayNote } from "./dayNotes";
+import { getWrapUp } from "./dayWrapUps";
 import { listAssignees } from "./members";
 import { listProjects } from "./projects";
 import { auditLog, type Item, items, projects } from "./schema";
@@ -99,6 +101,23 @@ export interface AgendaBrief {
   stale: BriefItem[];
   /** What the viewer wrote about today (dayNotes.ts), in their own words; null for none. */
   dayNote: string | null;
+  /** How today went, once the viewer has closed it (dayWrapUps.ts): its moods and words; null while it's open. */
+  closed: DayWentAs | null;
+  /** How yesterday went, if they closed it; null if they didn't. */
+  lastNight: DayWentAs | null;
+}
+
+/** How a closed day went: its wrap-up's moods, and its words, if any. */
+export interface DayWentAs {
+  mood: string[];
+  words: string | null;
+}
+
+function wentAs(db: Db, userId: string, day: string): DayWentAs | null {
+  const w = getWrapUp(db, userId, day);
+  if (!w) return null;
+  const { tags, rest } = splitTagged(w.text, WRAP_UP_TAGS);
+  return { mood: tags, words: rest || null };
 }
 
 /** Morning until noon, afternoon until 6pm, then evening until the 4am turnover. */
@@ -312,6 +331,8 @@ export function buildAgendaBrief(
     undated: undated.map(brief),
     stale: stale.map(brief),
     dayNote: getDayNote(db, viewerId, today),
+    closed: wentAs(db, viewerId, today),
+    lastNight: wentAs(db, viewerId, addDays(today, -1)),
   };
 }
 

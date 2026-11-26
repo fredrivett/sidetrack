@@ -378,6 +378,8 @@ test("closes the day with how it went, which shows on their Check-ins", async ({
   const closed = page.getByRole("button", { name: /^Day closed \d\d:\d\d/ });
   await expect(closed).toHaveAttribute("aria-expanded", "false");
   await expect(closed).toContainText("Did the bottles too");
+  // The greeting says goodnight (the template here, with no AI).
+  await expect(page.getByText(/That's today closed/)).toBeVisible();
   await page.reload();
   await expect(closed).toContainText("Got a lot done");
   // Moved for good: it's no longer overdue.
