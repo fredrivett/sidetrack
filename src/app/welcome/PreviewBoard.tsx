@@ -557,7 +557,8 @@ export function PreviewBoard({
       // A plain new task in the item's place: nothing of the item's but its list.
       const parent: Item = {
         ...item,
-        id: `visitor-${item.id}-parent`,
+        // Unique each time: moved out, the item can be given another.
+        id: `visitor-parent-${Date.now()}`,
         title: title.trim(),
         number,
         parentId: null,
@@ -583,7 +584,7 @@ export function PreviewBoard({
       };
       // The list's order is its array's, so the parent goes just before it.
       setItems((list) =>
-        list.flatMap((i) => (i.id === item.id ? [parent, { ...i, parentId: parent.id }] : [i])),
+        list.flatMap((i) => (i.id === item.id ? [parent, { ...i, parentId: parent.id, somedayAt: null }] : [i])),
       );
       record("create", item.projectId, [said("added "), named(parent)]);
       record("update", item.projectId, [said("made "), named(item), said(" a sub-item of "), named(parent)]);
