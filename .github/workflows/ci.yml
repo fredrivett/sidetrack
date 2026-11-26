@@ -31,8 +31,11 @@ jobs:
 
       # pnpm's minimumReleaseAge only applies when pnpm resolves, and
       # Dependabot writes the lockfile itself (scripts/check-release-age.ts).
+      # It switches the age off for its security updates, which would never
+      # pass, so its PRs only warn here: the failure shows, the job goes on.
       - name: Lockfile release age
         if: github.event_name == 'pull_request'
+        continue-on-error: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
