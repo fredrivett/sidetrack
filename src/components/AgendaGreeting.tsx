@@ -605,7 +605,7 @@ export function AgendaGreeting({
         // holds Save and Discard while there's something to save.
         <div className="mt-3 animate-in rounded-xl bg-stone-100 px-3 py-2.5 fade-in duration-500 dark:bg-stone-800/50">
           {/* One fixed-height row in every state, so the buttons appearing don't move anything. */}
-          <div className="flex h-6 items-center gap-2 touch:h-8">
+          <div className="@container flex h-6 items-center gap-2 touch:h-8">
             <button
               type="button"
               onClick={() => setNoteOpen((open) => !open)}
@@ -614,7 +614,10 @@ export function AgendaGreeting({
               className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-md text-left text-sm text-neutral-600 outline-none hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-stone-300 dark:text-neutral-400 dark:hover:text-neutral-100 dark:focus-visible:ring-stone-600"
             >
               <NotebookPen aria-hidden className="size-3.5 shrink-0 text-stone-400 dark:text-stone-500" />
-              <span className="shrink-0">How&apos;s today looking?</span>
+              {/* Beside Discard and Save, it gives way to them on a narrow phone. */}
+              <span className={noteOpen && (unsaved || savingNote) ? "min-w-0 truncate" : "shrink-0"}>
+                How&apos;s today looking?
+              </span>
               {/* Shut, the note shows beside it: its moods as badges, then what was written. */}
               {!noteOpen && dayNote.tags.map((tag) => (
                 <span
@@ -644,11 +647,15 @@ export function AgendaGreeting({
                   size="xs"
                   variant="outline"
                   onClick={cancelNote}
+                  aria-label="Discard"
+                  title="Discard"
                   aria-disabled={savingNote || undefined}
                   // Its edge shows on the tint, so it reads the same size as Save.
                   className="border-stone-300 bg-transparent aria-disabled:pointer-events-none aria-disabled:opacity-60 dark:border-stone-700 dark:bg-transparent"
                 >
-                  Discard
+                  {/* Where the row's too narrow for the word beside the header, it's an X. */}
+                  <X aria-hidden className="@[22rem]:hidden" />
+                  <span className="hidden @[22rem]:inline">Discard</span>
                 </Button>
                 <Button
                   size="xs"

@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, CircleCheck, Moon } from "lucide-react";
+import { Check, ChevronDown, CircleCheck, Moon, X } from "lucide-react";
 import { useId, useRef, useTransition } from "react";
 import { closeDayAction } from "@/app/actions";
 import type { WrapUp } from "@/core/dayWrapUps";
@@ -48,6 +48,9 @@ export function CloseDayPanel({
   const unsaved = picked !== null || words.value.trim() !== saved.rest;
   // Closing it needs no words; once it's closed, Save only shows for a change.
   const canSave = !wrapUp || unsaved;
+  // Open with something to save, Discard and Save sit beside the header; on a
+  // narrow phone its label gives way to them, rather than running under them.
+  const label = open && canSave ? "min-w-0 truncate" : "shrink-0";
 
   const toggle = (tag: WrapUpTag) => {
     if (saving) return;
@@ -80,7 +83,7 @@ export function CloseDayPanel({
   return (
     <div className="mt-2 rounded-xl bg-stone-100 px-3 py-2.5 dark:bg-stone-800/50">
       {/* One fixed-height row in every state, so the buttons appearing don't move anything. */}
-      <div className="flex h-6 items-center gap-2 touch:h-8">
+      <div className="@container flex h-6 items-center gap-2 touch:h-8">
         <button
           ref={header}
           type="button"
@@ -92,12 +95,12 @@ export function CloseDayPanel({
           {wrapUp ? (
             <>
               <CircleCheck aria-hidden className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-              <span className="shrink-0">Day closed {clockTime(wrapUp.closedAt)}</span>
+              <span className={label}>Day closed {clockTime(wrapUp.closedAt)}</span>
             </>
           ) : (
             <>
               <Moon aria-hidden className="size-3.5 shrink-0 text-stone-400 dark:text-stone-500" />
-              <span className="shrink-0">Close the day</span>
+              <span className={label}>Close the day</span>
             </>
           )}
           {/* Shut, the wrap-up shows beside it: its moods as badges, then its words. */}
@@ -128,11 +131,15 @@ export function CloseDayPanel({
                 size="xs"
                 variant="outline"
                 onClick={discard}
+                aria-label="Discard"
+                title="Discard"
                 aria-disabled={saving || undefined}
                 // Its edge shows on the tint, so it reads the same size as Save.
                 className="border-stone-300 bg-transparent aria-disabled:pointer-events-none aria-disabled:opacity-60 dark:border-stone-700 dark:bg-transparent"
               >
-                Discard
+                {/* Where the row's too narrow for the word beside the header, it's an X. */}
+                <X aria-hidden className="@[22rem]:hidden" />
+                <span className="hidden @[22rem]:inline">Discard</span>
               </Button>
             )}
             <Button
