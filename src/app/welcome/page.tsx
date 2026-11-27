@@ -81,10 +81,11 @@ export default async function Welcome() {
   // Self-hosted instances usually lock signup after the first account, so
   // the call to action falls back to signing in. `nudge` is what the
   // preview says when the visitor tries something that needs an account.
+  const signUpOpen = !signedIn && isSignUpOpen();
   const cta = signedIn
     ? { href: "/", label: "Open Sidetrack", nudge: "Open Sidetrack to try it on yours." }
-    : isSignUpOpen()
-      ? { href: "/login?mode=sign-up", label: "Get started", nudge: "Sign up to try it out." }
+    : signUpOpen
+      ? { href: "/login?mode=sign-up", label: "Sign up for free", nudge: "Sign up to try it out." }
       : { href: "/login", label: "Sign in", nudge: "Sign in to try it out." };
 
   // The repo on GitHub with its stars. In the header on wider screens; on
@@ -134,7 +135,15 @@ export default async function Welcome() {
             </Link>
           )}
           <Link href={cta.href} className={buttonVariants()}>
-            {cta.label}
+            {/* The narrowest phones (320px) have no room for "for free" beside
+                Sign in; the hero's button still says it. */}
+            {signUpOpen ? (
+              <span className="whitespace-nowrap">
+                Sign up<span className="max-[359px]:hidden"> for free</span>
+              </span>
+            ) : (
+              cta.label
+            )}
             <ArrowRight
               data-icon="inline-end"
               className="transition-transform duration-200 ease-out motion-safe:group-hover/button:translate-x-0.5"
