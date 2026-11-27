@@ -45,6 +45,7 @@ import { repeatOf } from "@/lib/repeat";
 import { dayLabel, formatRelative } from "@/lib/time";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ChecklistLine } from "./ChecklistLine";
 import { Fold } from "@/components/ui/fold";
 import { Kbd } from "@/components/ui/kbd";
 import {
@@ -406,86 +407,74 @@ function Checklist({
     const assigned = assignees.filter((a) => childAssigneeIds.includes(a.userId));
     const childRepeat = repeatOf(child);
     return (
-      <div
-        {...drag?.attributes}
-        {...drag?.listeners}
-        ref={drag?.setActivatorNodeRef}
-        aria-label={drag ? `Reorder ${child.title}` : undefined}
-        data-item-ref={lifted ? undefined : formatItemRef(prefix, child.number)}
-        className={`flex items-center gap-2 rounded-md px-1 py-0.5 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-neutral-400 ${
-          drag ? "touch-manipulation" : ""
-        } ${
-          // While dragged, the line stays behind as the slot it would drop into.
-          drag?.isDragging
-            ? "bg-neutral-100 *:invisible dark:bg-neutral-800/50"
-            : // Not on the copy following the pointer, always under it.
-              lifted ? "" : "hover:bg-neutral-50 dark:hover:bg-neutral-800/40"
-        }`}
-      >
-        <Checkbox
-          checked={done}
-          cancelled={done && child.cancelled}
-          onCheckedChange={() => setCompleted(child, !done)}
-          readOnly={readOnly}
-          aria-label={`${readOnly ? (done ? "Done:" : "Not done:") : done ? "Uncomplete" : "Complete"} ${child.title}`}
-        />
-        <button
-          type="button"
-          autoFocus={!lifted && child.id === focusId}
-          onClick={() => onOpenItem(child)}
-          className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-sm"
-        >
-          <span className={`min-w-0 truncate ${done ? "text-neutral-400 line-through" : ""}`}>
-            {child.title}
-          </span>
-          {/* When it's due and how it repeats, as on its card. A smart rule
-              still waiting can be long, so it shares the room with the title,
-              each cut short; the other badges stay whole. */}
-          {!child.dueDate && child.smartRule && (
-            <span className="flex min-w-0">
-              <WaitingBadge rule={child.smartRule} />
-            </span>
-          )}
-          <span className="flex shrink-0 items-center gap-1.5 empty:hidden">
-            {child.dueDate && (
-              <DueBadge due={child.dueDate} from={child.dueFrom} done={done} smart={child.smartRule} />
+      <ChecklistLine
+        drag={drag}
+        lifted={lifted}
+        itemRef={lifted ? undefined : formatItemRef(prefix, child.number)}
+        title={child.title}
+        done={done}
+        autoFocus={!lifted && child.id === focusId}
+        onOpen={() => onOpenItem(child)}
+        checkbox={
+          <Checkbox
+            checked={done}
+            cancelled={done && child.cancelled}
+            onCheckedChange={() => setCompleted(child, !done)}
+            readOnly={readOnly}
+            aria-label={`${readOnly ? (done ? "Done:" : "Not done:") : done ? "Uncomplete" : "Complete"} ${child.title}`}
+          />
+        }
+        badges={
+          <>
+            {/* When it's due and how it repeats, as on its card. A smart rule
+                still waiting can be long, so it shares the room with the title,
+                each cut short; the other badges stay whole. */}
+            {!child.dueDate && child.smartRule && (
+              <span className="flex min-w-0">
+                <WaitingBadge rule={child.smartRule} />
+              </span>
             )}
-            {child.somedayAt !== null && <SomedayBadge />}
-            {childRepeat && <RepeatBadge repeat={childRepeat} completedAt={child.completedAt} />}
-          </span>
-        </button>
-        {readOnly ? (
+            <span className="flex shrink-0 items-center gap-1.5 empty:hidden">
+              {child.dueDate && (
+                <DueBadge due={child.dueDate} from={child.dueFrom} done={done} smart={child.smartRule} />
+              )}
+              {child.somedayAt !== null && <SomedayBadge />}
+              {childRepeat && <RepeatBadge repeat={childRepeat} completedAt={child.completedAt} />}
+            </span>
+          </>
+        }
+        end={readOnly ? (
           assigned.length > 0 && <AvatarStack users={assigned} size={18} />
         ) : (
-        <DropdownMenu
-          open={pickerFor === child.id}
-          onOpenChange={(o) => onPickerFor(o ? child.id : null)}
-        >
-          <DropdownMenuTrigger
-            aria-label={
-              assigned.length
-                ? `${child.title}: assigned to ${assigneeNames(assigned)}. Change assignees`
-                : `Assign ${child.title}`
-            }
-            className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full touch:h-8 touch:min-w-8 text-neutral-300 transition hover:bg-neutral-100 hover:text-neutral-600 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+          <DropdownMenu
+            open={pickerFor === child.id}
+            onOpenChange={(o) => onPickerFor(o ? child.id : null)}
           >
-            {assigned.length ? (
-              <AvatarStack users={assigned} size={18} ringClassName="ring-popover" />
-            ) : (
-              <UserRound className="size-4" />
-            )}
-          </DropdownMenuTrigger>
-          <DropdownMenuContent data-assignee-picker align="end" className="w-52">
-            <AssigneeOptions
-              selected={childAssigneeIds}
-              assignees={assignees}
-              viewerId={viewerId}
-              onChange={(assigneeIds) => onAssign(child.id, assigneeIds)}
-            />
-          </DropdownMenuContent>
-        </DropdownMenu>
+            <DropdownMenuTrigger
+              aria-label={
+                assigned.length
+                  ? `${child.title}: assigned to ${assigneeNames(assigned)}. Change assignees`
+                  : `Assign ${child.title}`
+              }
+              className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full touch:h-8 touch:min-w-8 text-neutral-300 transition hover:bg-neutral-100 hover:text-neutral-600 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+            >
+              {assigned.length ? (
+                <AvatarStack users={assigned} size={18} ringClassName="ring-popover" />
+              ) : (
+                <UserRound className="size-4" />
+              )}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent data-assignee-picker align="end" className="w-52">
+              <AssigneeOptions
+                selected={childAssigneeIds}
+                assignees={assignees}
+                viewerId={viewerId}
+                onChange={(assigneeIds) => onAssign(child.id, assigneeIds)}
+              />
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
-      </div>
+      />
     );
   }
 
