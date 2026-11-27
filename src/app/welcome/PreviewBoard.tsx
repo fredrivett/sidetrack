@@ -554,7 +554,7 @@ export function PreviewBoard({
     },
     addParent: async (item, title) => {
       const number = Math.max(0, ...items.filter((i) => i.projectId === item.projectId).map((i) => i.number)) + 1;
-      // A plain new task in the item's place: nothing of the item's but its list.
+      // A new task in the item's place, with its list, labels and people, as on the server.
       const parent: Item = {
         ...item,
         // Unique each time: moved out, the item can be given another.
@@ -563,8 +563,6 @@ export function PreviewBoard({
         number,
         parentId: null,
         description: null,
-        labels: [],
-        assigneeIds: [],
         createdBy: VIEWER,
         createdAt: Date.now(),
         dueDate: null,

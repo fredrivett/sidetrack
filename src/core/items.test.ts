@@ -549,7 +549,15 @@ describe("checklists (sub-items)", () => {
     const { db, userId, projectId } = seedProject();
     const add = (
       title: string,
-      opts: { parentId?: string; positionRef?: string; subItems?: string[]; completed?: boolean } = {},
+      opts: {
+        parentId?: string;
+        positionRef?: string;
+        subItems?: string[];
+        completed?: boolean;
+        labels?: string[];
+        assigneeIds?: string[];
+        dueDate?: string;
+      } = {},
     ) => addItem(db, userId, { projectId, title, positionRef: "end", ...opts }, "web");
     const tree = () =>
       nestItems(listItems(db, userId, projectId, { includeCompleted: true })).map(
@@ -955,10 +963,12 @@ describe("checklists (sub-items)", () => {
   it("adds a parent in an item's place, with the item as its first sub-item", () => {
     const { db, userId, projectId, add, tree } = setup();
     add("a");
-    const b = add("b");
+    const b = add("b", { labels: ["travel"], assigneeIds: [userId], dueDate: "2026-12-01" });
     add("c");
 
     const trip = addParentItem(db, userId, b.id, "Trip", "web");
+    // It takes the item's labels and people, but not its date.
+    expect(trip).toMatchObject({ labels: ["travel"], assigneeIds: [userId], dueDate: null });
     expect(tree()).toEqual([
       ["a", []],
       ["Trip", ["b"]],
