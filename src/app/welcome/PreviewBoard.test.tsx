@@ -10,6 +10,10 @@ import { PreviewBoard } from "./PreviewBoard";
 // that starts saving some other way than ItemSavesContext and ItemChanges
 // fails this test with the action's name. The Brief's greeting is written
 // in the page, so asking the server for one (a fetch) fails it too.
+// Days start at 4am on the browser's clock, so which of the sample's
+// finished items count on a check-in depends on its time zone.
+process.env.TZ = "UTC";
+
 const { called } = vi.hoisted(() => ({ called: [] as string[] }));
 vi.mock(
   "@/app/actions",
@@ -189,8 +193,36 @@ it("keeps every change in the page", async () => {
   fireEvent.click(await screen.findByRole("menuitem", { name: "Profile" }));
   expect(toast).toHaveBeenCalledTimes(2);
 
+  // Check-ins reads the same lists: the boiler service and spam fix ticked
+  // above count on the viewer's day, so ticking its last item finishes it.
+  fireEvent.click(screen.getByRole("button", { name: "Check-ins" }));
+  const myDay = screen.getByRole("region", { name: "Your day" });
+  expect(within(myDay).getByText("4 of 5 done")).toBeTruthy();
+  fireEvent.click(within(myDay).getByRole("checkbox", { name: /Write the launch post|Complete/ }));
   noServerCalls();
-  expect(fetched).not.toHaveBeenCalled();
+  expect(within(myDay).getByText("All done")).toBeTruthy();
+  expect(within(screen.getByRole("region", { name: "Sam’s week" })).getByText("Fix the dripping tap")).toBeTruthy();
+
+  // Reacting to Jo's wrap-up shows on the page.
+  const jo = screen.getByRole("region", { name: "Jo’s day" });
+  fireEvent.click(within(within(jo).getByRole("group", { name: "How today went" })).getByRole("button", { name: "React" }));
+  fireEvent.click(await screen.findByRole("button", { name: "React 🎉" }));
+  noServerCalls();
+  expect(within(jo).getByRole("button", { name: /^🎉 1: You$/ })).toBeTruthy();
+  // It stays through the next change.
+  fireEvent.click(within(row("Write the launch post")).getByRole("checkbox"));
+  expect(within(jo).getByRole("button", { name: /^🎉 1: You$/ })).toBeTruthy();
+
+  // Stopping seeing someone's day needs an account.
+  const options = within(jo).getByRole("button", { name: "Jo’s day options" });
+  fireEvent.pointerDown(options);
+  fireEvent.click(options);
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Stop seeing Jo’s day" }));
+  expect(toast).toHaveBeenCalledTimes(3);
+
+  noServerCalls();
+  // The emoji picker loads its emoji from a CDN; nothing else is fetched.
+  expect(fetched.mock.calls.map(([url]) => String(url)).filter((url) => !url.includes("emojibase-data"))).toEqual([]);
   expect(toast.error).not.toHaveBeenCalled();
   expect(router.push).not.toHaveBeenCalled();
   expect(router.replace).not.toHaveBeenCalled();
