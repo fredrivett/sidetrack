@@ -1448,3 +1448,37 @@ export function setItemParent(
   });
   return getItemOrThrow(db, userId, id);
 }
+
+/**
+ * Add a new item in `id`'s place and make `id` its first sub-item, for when
+ * a task turns out to be one step of something bigger. Logged as adding the
+ * new item and then nesting `id` under it; either fails, neither happens.
+ * Returns the new parent.
+ */
+export function addParentItem(
+  db: Db,
+  userId: string,
+  id: string,
+  title: string,
+  source: AuditOrigin,
+): Item {
+  const existing = getItem(db, userId, id);
+  if (!existing) throw new Error(`item not found: ${id}`);
+  // Sub-items go one level deep: a sub-item's parent would need a parent of its own.
+  if (existing.parentId !== null) {
+    throw new Error(`"${existing.title}" is already a sub-item`);
+  }
+  if (childrenOf(db, id).length > 0) {
+    throw new Error(`"${existing.title}" has sub-items, so it can't become one`);
+  }
+  return db.transaction((tx) => {
+    const parent = addItem(
+      tx as unknown as Db,
+      userId,
+      { projectId: existing.projectId, title, positionRef: `before:${id}` },
+      source,
+    );
+    setItemParent(tx as unknown as Db, userId, id, parent.id, source);
+    return getItemOrThrow(tx as unknown as Db, userId, parent.id);
+  });
+}

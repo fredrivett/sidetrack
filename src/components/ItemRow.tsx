@@ -15,6 +15,7 @@ import {
   IndentDecrease,
   IndentIncrease,
   ListChecks,
+  ListTree,
   MessageSquare,
   TextAlignStart,
   Trash2,
@@ -57,6 +58,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CancelItemDialog, CancelledChip } from "./CancelItem";
+import { NewParentDialog } from "./NewParentDialog";
 import { Kbd } from "@/components/ui/kbd";
 import { useMediaQuery } from "@/components/ui/use-media-query";
 import { toggleAssignee } from "@/lib/assignees";
@@ -125,6 +127,11 @@ type ItemRowProps = {
   /** The item's list, as the first tag, in views that don't group by list. */
   list?: { name: string; icon: string | null; homepageUrl: string | null };
   onOpenDetail: () => void;
+  /**
+   * Opens another item, such as a parent just added for this one. Where it's
+   * given (a list), a top-level task without sub-items offers "New parent…".
+   */
+  onOpenItem?: (item: Item) => void;
 };
 
 /**
@@ -140,6 +147,7 @@ export function ItemRow(props: ItemRowProps) {
   });
   const [handlers] = useState(() => ({
     onOpenDetail: () => latest.current.onOpenDetail(),
+    onOpenItem: (item: Item) => latest.current.onOpenItem?.(item),
     onToggleChecklist: () => latest.current.checklist?.onToggle(),
   }));
   const { checklist } = props;
@@ -147,6 +155,7 @@ export function ItemRow(props: ItemRowProps) {
     <MemoItemRow
       {...props}
       onOpenDetail={handlers.onOpenDetail}
+      onOpenItem={props.onOpenItem && handlers.onOpenItem}
       checklist={checklist && { ...checklist, onToggle: handlers.onToggleChecklist }}
     />
   );
@@ -165,6 +174,7 @@ function ItemRowView({
   context,
   list,
   onOpenDetail,
+  onOpenItem,
 }: ItemRowProps) {
   const isDragging = drag?.isDragging ?? false;
   const [pending, start] = useTransition();
@@ -206,6 +216,9 @@ function ItemRowView({
   // Closed without being done: an ✕, a dashed strike and a Cancelled chip.
   const cancelled = completed && item.cancelled;
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [newParentOpen, setNewParentOpen] = useState(false);
+  // Sub-items go one level deep, so only a plain top-level task can get one.
+  const canAddParent = onOpenItem !== undefined && item.parentId === null && !checklist;
   const repeat = repeatOf(item);
   const listLabels = useListLabels(item.projectId);
   const commentCount = useCommentCount(item.id);
@@ -709,9 +722,15 @@ function ItemRowView({
             Cancel item…
           </ContextMenuItem>
         )}
-        {(nestUnder || parentTitle) && (
+        {(nestUnder || parentTitle || canAddParent) && (
           <>
             <ContextMenuSeparator />
+            {canAddParent && (
+              <ContextMenuItem data-replay-safe onClick={() => setNewParentOpen(true)}>
+                <ListTree />
+                New parent…
+              </ContextMenuItem>
+            )}
             {nestUnder && (
               <ContextMenuItem onClick={() => setParent(nestUnder.id)}>
                 <IndentIncrease />
@@ -751,6 +770,9 @@ function ItemRowView({
     </ContextMenu>
     {/* Mounted once asked for: a board has hundreds of rows. */}
     {cancelOpen && <CancelItemDialog item={item} open={cancelOpen} onOpenChange={setCancelOpen} />}
+    {newParentOpen && onOpenItem && (
+      <NewParentDialog item={item} open={newParentOpen} onOpenChange={setNewParentOpen} onAdded={onOpenItem} />
+    )}
     </>
   );
 }

@@ -78,6 +78,7 @@ import {
 } from "@/core/members";
 import {
   addItem,
+  addParentItem,
   cancelItem,
   completeItem,
   deleteItem,
@@ -1631,6 +1632,32 @@ export function registerTools(server: McpServer, ctx: McpContext) {
             setItemParent(db, userId, item.id, parentId, SOURCE, pos.position),
           ),
         );
+      } catch (e) {
+        return errorText(`${(e as Error).message} — no change was made.`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "add_parent",
+    {
+      title: "Add a parent to an item",
+      description:
+        "Add a new task in an item's place, in the same list, and make the item its first sub-item: for when a task turns out to be one step of something bigger. " +
+        "Returns the new parent; add the other steps under it with add_item (parent) or set_item_parent. " +
+        "Sub-items are one level deep, so the item must be a top-level item with no sub-items of its own. " +
+        "id accepts a short ref (e.g. \"ENG-42\") or an internal id.",
+      inputSchema: {
+        id: z.string(),
+        title: z.string(),
+      },
+    },
+    async ({ id, title }) => {
+      const { db } = getDb();
+      const { item, error } = resolveItemArg(db, userId, id);
+      if (error) return error;
+      try {
+        return json(withItemRef(db, userId, addParentItem(db, userId, item.id, title, SOURCE)));
       } catch (e) {
         return errorText(`${(e as Error).message} — no change was made.`);
       }

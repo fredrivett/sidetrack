@@ -552,6 +552,44 @@ export function PreviewBoard({
       record("cancel", item.projectId, [said("cancelled "), named(item)]);
       return true;
     },
+    addParent: async (item, title) => {
+      const number = Math.max(0, ...items.filter((i) => i.projectId === item.projectId).map((i) => i.number)) + 1;
+      // A plain new task in the item's place: nothing of the item's but its list.
+      const parent: Item = {
+        ...item,
+        // Unique each time: moved out, the item can be given another.
+        id: `visitor-parent-${Date.now()}`,
+        title: title.trim(),
+        number,
+        parentId: null,
+        description: null,
+        labels: [],
+        assigneeIds: [],
+        createdBy: VIEWER,
+        createdAt: Date.now(),
+        dueDate: null,
+        dueFrom: null,
+        repeatEvery: null,
+        repeatUnit: null,
+        repeatOn: null,
+        repeatDay: null,
+        smartRule: null,
+        smartLead: null,
+        somedayAt: null,
+        completedAt: null,
+        cancelled: false,
+        cancelReason: null,
+        replacedById: null,
+        collapsed: false,
+      };
+      // The list's order is its array's, so the parent goes just before it.
+      setItems((list) =>
+        list.flatMap((i) => (i.id === item.id ? [parent, { ...i, parentId: parent.id, somedayAt: null }] : [i])),
+      );
+      record("create", item.projectId, [said("added "), named(parent)]);
+      record("update", item.projectId, [said("made "), named(item), said(" a sub-item of "), named(parent)]);
+      return parent;
+    },
   };
   const saves: ItemSaves = (() => {
     const nameOf = (id: string) =>

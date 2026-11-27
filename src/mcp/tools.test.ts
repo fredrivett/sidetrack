@@ -521,6 +521,20 @@ describe("error results", () => {
     expect(getItem(db, fred, parent.id)?.parentId).toBeNull();
   });
 
+  it("add_parent puts a parent in the item's place, and refuses a sub-item", async () => {
+    const fred = createTestUser(db, { username: "fred" });
+    const list = createProject(db, fred, { name: "Home" }, "web");
+    addItem(db, fred, { projectId: list.id, title: "Book flights" }, "web"); // HOM-1
+    const call = await connectAs(fred);
+
+    const { data } = await call("add_parent", { id: "HOM-1", title: "Trip to Rome" });
+    expect(data).toMatchObject({ ref: "HOM-2", title: "Trip to Rome" });
+    const count = listItems(db, fred, list.id).length;
+    const { error } = await call("add_parent", { id: "HOM-1", title: "Holiday" });
+    expect(error).toBe(`"Book flights" is already a sub-item — no change was made.`);
+    expect(listItems(db, fred, list.id)).toHaveLength(count);
+  });
+
   it("refuses conflicting inputs before changing anything", async () => {
     const fred = createTestUser(db, { username: "fred" });
     const list = createProject(db, fred, { name: "Home" }, "web");

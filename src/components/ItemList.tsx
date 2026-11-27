@@ -1381,6 +1381,7 @@ export function DraggableItemList({
       return rowFor(rp, item, {
         drag,
         nestUnder: canNest ? { id: prev.id, title: prev.title } : undefined,
+        onOpenItem: children.length === 0 && !isEntering ? rp.onOpenDetail : undefined,
         checklist:
           children.length > 0
             ? {
