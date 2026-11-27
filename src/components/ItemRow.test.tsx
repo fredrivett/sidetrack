@@ -14,6 +14,7 @@ import type { AgentSession, Item } from "@/core/schema";
 import { isReplaySafe } from "@/lib/replayPrivacy";
 import { AgentSessionsProvider } from "./agent-sessions";
 import { ItemRow } from "./ItemRow";
+import { RowMenus } from "./RowMenu";
 
 // The server actions pull in server-only modules (next/cache, the DB); the menu
 // render only needs them to exist as callable stubs.
@@ -122,18 +123,20 @@ function renderRow(
   onOpenDetail: () => void = () => {},
 ) {
   return render(
-    <DndContext>
-      <SortableContext items={[rowItem.id]}>
-        <ItemRow
-          item={rowItem}
-          prefix="ENG"
-          assignees={assignees}
-          viewerId="u1"
-          prLinks={[]}
-          onOpenDetail={onOpenDetail}
-        />
-      </SortableContext>
-    </DndContext>,
+    <RowMenus>
+      <DndContext>
+        <SortableContext items={[rowItem.id]}>
+          <ItemRow
+            item={rowItem}
+            prefix="ENG"
+            assignees={assignees}
+            viewerId="u1"
+            prLinks={[]}
+            onOpenDetail={onOpenDetail}
+          />
+        </SortableContext>
+      </DndContext>
+    </RowMenus>,
   );
 }
 
@@ -204,15 +207,17 @@ describe("ItemRow checklist", () => {
   function renderWith(props: Partial<Parameters<typeof ItemRow>[0]>) {
     const onOpenDetail = vi.fn();
     const { container } = render(
-      <ItemRow
-        item={item}
-        prefix="ENG"
-        assignees={[viewer]}
-        viewerId="u1"
-        prLinks={[]}
-        onOpenDetail={onOpenDetail}
-        {...props}
-      />,
+      <RowMenus>
+        <ItemRow
+          item={item}
+          prefix="ENG"
+          assignees={[viewer]}
+          viewerId="u1"
+          prLinks={[]}
+          onOpenDetail={onOpenDetail}
+          {...props}
+        />
+      </RowMenus>,
     );
     return { row: container.querySelector(".group") as HTMLElement, onOpenDetail };
   }

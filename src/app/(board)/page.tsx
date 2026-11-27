@@ -3,6 +3,7 @@ import { limitedListsById, listAccessById } from "@/core/access";
 import { AgentSessionsProvider } from "@/components/agent-sessions";
 import { CommentCountsProvider } from "@/components/comment-counts";
 import { Kanban } from "@/components/Kanban";
+import { RowMenus } from "@/components/RowMenu";
 import {
   listAllAgentSessions,
   listStartableAgents,
@@ -182,6 +183,9 @@ export default async function Home({
         startableIn={listStartableLists(db, userId)}
       >
         <CommentCountsProvider counts={countCommentsByItem(db, userId)}>
+          {/* The board's one right-click menu, out here so the board's own
+              updates don't re-render it, and with it everything inside. */}
+          <RowMenus>
           <Kanban
             viewerId={userId}
             viewer={viewer}
@@ -237,6 +241,7 @@ export default async function Home({
             admin={getEnv().ADMIN_USER_IDS.includes(userId)}
             seq={seq}
           />
+          </RowMenus>
         </CommentCountsProvider>
         <PostHogIdentify userId={userId} username={viewer?.displayUsername ?? null} />
       </AgentSessionsProvider>

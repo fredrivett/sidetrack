@@ -37,7 +37,6 @@ import type { Item, ItemPrLink } from "@/core/schema";
 import { modifierSymbol } from "@/lib/keyboard";
 import { type Due, quickDues, sameDue, spanDates } from "@/lib/time";
 import {
-  ContextMenu,
   ContextMenuContent,
   ContextMenuGroup,
   ContextMenuItem,
@@ -47,7 +46,6 @@ import {
   ContextMenuSub,
   ContextMenuSubContent,
   ContextMenuSubTrigger,
-  ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import {
   DropdownMenu,
@@ -60,7 +58,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { CancelItemDialog, CancelledChip } from "./CancelItem";
 import { NewParentDialog } from "./NewParentDialog";
 import { Kbd } from "@/components/ui/kbd";
-import { useMediaQuery } from "@/components/ui/use-media-query";
 import { toggleAssignee } from "@/lib/assignees";
 import { formatItemRef } from "@/lib/itemRef";
 import { sameContent } from "@/lib/same-content";
@@ -69,6 +66,7 @@ import { AssigneeOptions } from "./AssigneeOptions";
 import { useCommentCount } from "./comment-counts";
 import { LabelBadge, useListLabels } from "./Labels";
 import { MoveToListContextMenu } from "./MoveItem";
+import { useRowMenu } from "./RowMenu";
 import { DueBadge, SomedayBadge, WaitingBadge } from "./DueBadge";
 import { PrLink } from "./PrLink";
 import { ProjectIcon } from "./ProjectIcon";
@@ -202,8 +200,19 @@ function ItemRowView({
   // owning the shortcuts.
   const [keyDelete, setKeyDelete] = useState(false);
   if (keyDelete && !owns) setKeyDelete(false);
-  const canHover = useMediaQuery("(hover: hover)");
   const today = useToday();
+  // The board's right-click menu, while it's this row's (RowMenus).
+  const rowRef = useRef<HTMLDivElement | null>(null);
+  const setActivator = drag?.setActivatorNodeRef;
+  const setRowRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      rowRef.current = el;
+      setActivator?.(el);
+    },
+    [setActivator],
+  );
+  const menu = useRowMenu(rowRef);
+  if (confirmingDelete && !menu?.open) setConfirmingDelete(false);
 
   // Clicking anywhere on the row opens the detail dialog, but a drag must not.
   // Track whether dnd-kit treated this gesture as a drag (per its sensors'
@@ -363,21 +372,13 @@ function ItemRowView({
   return (
     // Item actions live in a right-click menu rather than a ⋯ button, so the
     // row stays checkbox, title, avatar with nothing reserving space beside
-    // them. Disabled without hover (touch): its long-press would fight the
-    // touch drag, and tapping the row opens the detail dialog, which has the
-    // same actions.
+    // them. The board has the one menu (RowMenus); this row fills it in.
     <>
-    <ContextMenu
-      disabled={!canHover}
-      onOpenChange={(open) => {
-        if (!open) setConfirmingDelete(false);
-      }}
-    >
-      <ContextMenuTrigger
-        style={{ opacity: pending ? 0.7 : 1 }}
+      <div
+        style={{ opacity: pending ? 0.7 : 1, WebkitTouchCallout: "none" }}
         {...(drag && canEdit ? drag.attributes : {})}
         {...(drag && canEdit ? drag.listeners : {})}
-        ref={drag?.setActivatorNodeRef}
+        ref={setRowRef}
         onPointerDownCapture={() => {
           draggedRef.current = false;
         }}
@@ -393,7 +394,7 @@ function ItemRowView({
         // Pointer everywhere, like the title button and controls inside it:
         // a click opens the item, and the lifted card shows grabbing once a
         // drag starts.
-        className={`group relative flex cursor-pointer items-start gap-2 rounded-lg border border-neutral-200 bg-white p-2 outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 data-selected:ring-2 data-selected:ring-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 ${
+        className={`group relative flex cursor-pointer select-none items-start gap-2 rounded-lg border border-neutral-200 bg-white p-2 outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 data-selected:ring-2 data-selected:ring-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 ${
           keyDelete ? "ring-2 ring-destructive! " : ""
         }${
           drag ? "touch-manipulation" : ""
@@ -634,9 +635,10 @@ function ItemRowView({
             </DropdownMenu>
           )}
         </div>
-      </ContextMenuTrigger>
-      {/* A sibling of the trigger, not a child, so clicks in the (portaled) menu
+      </div>
+      {/* A sibling of the row, not a child, so clicks in the (portaled) menu
           don't bubble through the React tree to the row's open-detail onClick. */}
+      {menu && (
       <ContextMenuContent className="w-56">
         <ContextMenuItem data-replay-safe onClick={onOpenDetail}>
           <Eye />
@@ -748,7 +750,8 @@ function ItemRowView({
         <ContextMenuSeparator />
         <ContextMenuItem data-replay-safe
           variant="destructive"
-          closeOnClick={false}
+          // It closes once it deletes, as the row (and its menu) goes.
+          closeOnClick={confirmingDelete}
           onClick={del}
           className={
             confirmingDelete
@@ -767,7 +770,7 @@ function ItemRowView({
         </>
         )}
       </ContextMenuContent>
-    </ContextMenu>
+      )}
     {/* Mounted once asked for: a board has hundreds of rows. */}
     {cancelOpen && <CancelItemDialog item={item} open={cancelOpen} onOpenChange={setCancelOpen} />}
     {newParentOpen && onOpenItem && (

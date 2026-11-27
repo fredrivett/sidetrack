@@ -12,6 +12,7 @@ import type { AssigneeView } from "@/core/members";
 import type { AgentSession, AuditAction, Item, Label } from "@/core/schema";
 import { type AgendaSaves, AgendaSavesContext } from "@/components/agenda-saves";
 import { helloNow } from "@/components/AgendaGreeting";
+import { RowMenus } from "@/components/RowMenu";
 import { AgendaView } from "@/components/AgendaView";
 import { AgentSessionsProvider } from "@/components/agent-sessions";
 import { AuditDialog } from "@/components/AuditDialog";
@@ -852,6 +853,7 @@ export function PreviewBoard({
           startable={AGENTS}
           startableIn={ALL_LISTS}
         >
+        <RowMenus>
           {/* On phones a column fills the frame, not the screen as on the
               board (SpaceTray's --column-width): the screen less the page's
               40px of padding, the frame's 2px border, the rail's 24px and the
@@ -1013,6 +1015,7 @@ export function PreviewBoard({
             onClose={() => setActivityOpen(false)}
             preview={{ entries: log.map(logged), comments: initial.comments }}
           />
+        </RowMenus>
         </AgentSessionsProvider>
         </BoardDrag>
         </LabelsContext>
