@@ -1453,6 +1453,8 @@ export function setItemParent(
  * Add a new item in `id`'s place and make `id` its first sub-item, for when
  * a task turns out to be one step of something bigger. Logged as adding the
  * new item and then nesting `id` under it; either fails, neither happens.
+ * The parent takes the item's labels and assignees, as what it's part of
+ * is usually theirs too; not its dates, which are the step's own.
  * Returns the new parent.
  */
 export function addParentItem(
@@ -1475,7 +1477,13 @@ export function addParentItem(
     const parent = addItem(
       tx as unknown as Db,
       userId,
-      { projectId: existing.projectId, title, positionRef: `before:${id}` },
+      {
+        projectId: existing.projectId,
+        title,
+        labels: existing.labels,
+        assigneeIds: existing.assigneeIds,
+        positionRef: `before:${id}`,
+      },
       source,
     );
     setItemParent(tx as unknown as Db, userId, id, parent.id, source);

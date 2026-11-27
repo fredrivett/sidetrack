@@ -1644,6 +1644,7 @@ export function registerTools(server: McpServer, ctx: McpContext) {
       title: "Add a parent to an item",
       description:
         "Add a new task in an item's place, in the same list, and make the item its first sub-item: for when a task turns out to be one step of something bigger. " +
+        "The new task takes the item's labels and assignees, not its due date or repeat. " +
         "Returns the new parent; add the other steps under it with add_item (parent) or set_item_parent. " +
         "Sub-items are one level deep, so the item must be a top-level item with no sub-items of its own. " +
         "id accepts a short ref (e.g. \"ENG-42\") or an internal id.",
