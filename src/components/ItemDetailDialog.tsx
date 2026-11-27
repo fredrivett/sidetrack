@@ -603,9 +603,8 @@ type ItemDetailProps = {
   /** This item's sub-items, in order. */
   checklist: Item[];
   /** Tasks this item can become a sub-item of: the list's other open
-   * top-level tasks, in order. null where it's not for nesting at all,
-   * which hides the Parent chip, New parent included. */
-  nestTargets: Item[] | null;
+   * top-level tasks, in order. */
+  nestTargets: Item[];
   /** Switch to another item (a sub-item or the parent). */
   onOpenItem: (item: Item) => void;
   prefix: string;
@@ -1068,8 +1067,7 @@ export function ItemDetailView({
             // can't become one.
             // A sub-item whose parent they can't see lands here too: it can't get one.
             item.parentId === null &&
-            checklist.length === 0 &&
-            nestTargets && (
+            checklist.length === 0 && (
               <DropdownMenu>
                 <DropdownMenuTrigger
                   aria-disabled={pending || undefined}
