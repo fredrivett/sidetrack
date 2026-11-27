@@ -324,8 +324,9 @@ export function CheckInsView({
           parent={every.find((i) => i.id === detail.item?.parentId) ?? null}
           parentTitle={detail.item.parentId ? titles[detail.item.parentId] : undefined}
           checklist={every.filter((i) => i.parentId === detail.item?.id)}
-          // Nothing to nest under here: Check-ins follows a day, it doesn't plan one.
-          nestTargets={null}
+          // Nothing to nest under here: Check-ins follows a day, it doesn't plan
+          // one. New parent stays, for a task that turns out to be part of more.
+          nestTargets={[]}
           onOpenItem={detail.goTo}
           history={detail.history}
           prefix={detailProject.refPrefix}

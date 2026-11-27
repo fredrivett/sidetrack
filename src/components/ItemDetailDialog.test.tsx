@@ -7,6 +7,7 @@ import type { Item, Label } from "@/core/schema";
 import { isReplaySafe } from "@/lib/replayPrivacy";
 import { ItemDetailDialog } from "./ItemDetailDialog";
 import { LabelsContext } from "./Labels";
+import { ListAccessContext } from "./list-access";
 
 // Server actions pull in server-only modules; the dialog only needs callable stubs.
 vi.mock("@/app/actions", () => ({
@@ -200,6 +201,52 @@ describe("ItemDetailDialog nesting", () => {
     const child: Item = { ...item, id: "c1", title: "Lounge", parentId: "i1", number: 43 };
     renderDialog(true, [child], [other]);
     expect(screen.queryByRole("button", { name: /make it a sub-item of/i })).toBeNull();
+  });
+
+  /** The Parent chip's menu items, or null when there's no chip. */
+  const parentMenu = () => {
+    const trigger = screen.queryByRole("button", { name: /make it a sub-item of/i });
+    if (!trigger) return null;
+    fireEvent.pointerDown(trigger);
+    fireEvent.click(trigger);
+    return screen.getAllByRole("menuitem").map((m) => m.textContent);
+  };
+
+  it("offers New parent even with nothing to nest under, as in Check-ins", () => {
+    renderDialog(true, [], []);
+    expect(parentMenu()).toEqual(["New parent…"]);
+  });
+
+  it("offers New parent above the tasks to nest under", () => {
+    renderDialog(true, [], [other]);
+    expect(parentMenu()).toEqual(["New parent…", "Tidy up flat"]);
+  });
+
+  it("doesn't offer New parent for a sub-item whose parent the viewer can't see", () => {
+    renderDialog(true, [], [], { parentId: "hidden" });
+    expect(parentMenu()).toBeNull();
+  });
+
+  it("doesn't offer New parent to someone who can only comment", () => {
+    render(
+      <ListAccessContext value={{ p1: "comment" }}>
+        <ItemDetailDialog
+          item={item}
+          parent={null}
+          checklist={[]}
+          nestTargets={[]}
+          onOpenItem={() => {}}
+          prefix="ENG"
+          assignees={[viewer]}
+          viewerId="u1"
+          prLinks={[]}
+          open
+          onOpenChange={() => {}}
+        />
+      </ListAccessContext>,
+    );
+    expect(screen.getByText("Write docs")).toBeTruthy();
+    expect(parentMenu()).toBeNull();
   });
 });
 
