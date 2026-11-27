@@ -143,6 +143,7 @@ export function CheckInsView({
   parentTitles,
   viewerId,
   onShareDay,
+  preview,
 }: {
   checkIns: CheckIn[];
   myDay?: MyDay;
@@ -151,7 +152,7 @@ export function CheckInsView({
   viewer: { name: string; username: string | null; image: string | null };
   itemsByProject: Record<string, Item[]>;
   /** The viewer's lists, to show their own items with. */
-  projectsById: Map<string, ProjectView>;
+  projectsById: Map<string, Pick<ProjectView, "name" | "icon" | "homepageUrl" | "refPrefix">>;
   assigneesByProject: Record<string, AssigneeView[]>;
   prLinksByItem: Record<string, ItemPrLink[]>;
   /** Titles of items they can't see that hold sub-items they can. */
@@ -159,6 +160,12 @@ export function CheckInsView({
   viewerId: string;
   /** Opens Share my day, with someone to share it with already filled in. */
   onShareDay: (person?: string) => void;
+  /**
+   * The landing page's preview: `onOpenItem` instead of an item's dialog,
+   * which loads from the server, and `onNeedsAccount` instead of saving a
+   * share. Reactions show on the page and save nothing.
+   */
+  preview?: { onOpenItem: (item: Item) => void; onNeedsAccount: () => void };
 }) {
   const every = Object.values(itemsByProject).flat();
   const byIds = (ids: string[]) => {
@@ -168,13 +175,14 @@ export function CheckInsView({
   // Theirs on the lists shared for it, then on the lists the viewer sees whole.
   const itemsOf = (c: CheckIn) => [...c.lists.flatMap((l) => itemsByProject[l.id] ?? []), ...byIds(c.alsoItemIds)];
   const mine = dayItems(byIds(myDay.itemIds), myDay);
-  const projectOf = new Map([
+  const projectOf = new Map<string, Pick<ProjectView, "name" | "icon" | "homepageUrl" | "refPrefix">>([
     ...projectsById,
     ...checkIns.flatMap((c) => c.lists.map((l) => [l.id, l] as const)),
   ]);
   // Every item, not just those in a day, so an open dialog stays open when
   // its item leaves the day (its due date removed, say), as on the Agenda.
   const detail = useItemDetailDialog(every);
+  const openDetail = preview ? preview.onOpenItem : detail.openDetail;
   const detailProject = detail.item ? projectOf.get(detail.item.projectId) : undefined;
   const sharesBack = new Set(myDay.shares.map((s) => s.personId));
   const sharing = myDay.shares.length + myDay.invited.length > 0;
@@ -216,7 +224,7 @@ export function CheckInsView({
             assignees={assigneesByProject[group.projectId] ?? []}
             viewerId={viewerId}
             prLinksByItem={prLinksByItem}
-            onOpenDetail={detail.openDetail}
+            onOpenDetail={openDetail}
             shown={shown}
           />
         ),
@@ -238,7 +246,7 @@ export function CheckInsView({
             mood={myDay.mood}
             wrapUp={myDay.wrapUp}
             // Your own: who reacted, nothing to react to.
-            react={{ viewerId, canReact: false, ...(myDay.reactions ?? NO_REACTIONS) }}
+            react={{ viewerId, canReact: false, offline: !!preview, ...(myDay.reactions ?? NO_REACTIONS) }}
             items={mine.inDay}
             today={myDay.today}
             groups={groups(mine, myDay.today)}
@@ -251,7 +259,7 @@ export function CheckInsView({
                   {sharing ? "Who sees your day" : "Only you see this."}
                 </h3>
                 {myDay.shares.map((s) => (
-                  <ShareRow key={s.personId} share={s} />
+                  <ShareRow key={s.personId} share={s} instead={preview?.onNeedsAccount} />
                 ))}
                 {myDay.invited.map((i) => (
                   <InvitedRow key={i.id} invitation={i} />
@@ -291,11 +299,11 @@ export function CheckInsView({
                     title={`${c.name}’s ${span}`}
                     person={{ userId: c.personId, displayUsername: c.username, name: c.name, email: null, image: c.image }}
                     sub={c.within === "today" ? dayName(c.day) : `Week of ${dayName(c.day)}`}
-                    menu={<StopSeeingMenu personId={c.personId} name={c.name} span={span} />}
+                    menu={<StopSeeingMenu personId={c.personId} name={c.name} span={span} instead={preview?.onNeedsAccount} />}
                     note={c.note}
                     mood={c.mood}
                     wrapUp={c.wrapUp}
-                    react={{ viewerId, canReact: true, ...(c.reactions ?? NO_REACTIONS) }}
+                    react={{ viewerId, canReact: true, offline: !!preview, ...(c.reactions ?? NO_REACTIONS) }}
                     items={day.inDay}
                     today={c.today}
                     groups={groups(day, c.today)}
@@ -318,7 +326,7 @@ export function CheckInsView({
         </div>
       </div>
 
-      {detail.item && detailProject && (
+      {!preview && detail.item && detailProject && (
         <ItemDetailDialog
           item={detail.item}
           parent={every.find((i) => i.id === detail.item?.parentId) ?? null}
@@ -370,7 +378,7 @@ function DayCard({
   /** How the day went, once it's closed: shown under the note, never over it. */
   wrapUp: SeenWrapUp | null;
   /** The reactions on the note and wrap-up, and whether the viewer can add one. */
-  react: { viewerId: string; canReact: boolean } & DayReactions;
+  react: { viewerId: string; canReact: boolean; offline: boolean } & DayReactions;
   /** The items in the day, which its progress counts (dayItems). */
   items: Item[];
   today: string;
@@ -434,6 +442,7 @@ function DayCard({
             reactions={react.note}
             viewerId={react.viewerId}
             canReact={react.canReact}
+            offline={react.offline}
             className={note ? "pl-[22px]" : ""}
           />
         </div>
@@ -472,6 +481,7 @@ function DayCard({
             reactions={react.wrapUp}
             viewerId={react.viewerId}
             canReact={react.canReact}
+            offline={react.offline}
             className={wrapUp.note ? "pl-[22px]" : ""}
           />
         </div>
@@ -552,13 +562,22 @@ function DayCard({
  * Each change holds the row (the server decides what they then see), and a
  * failure says so.
  */
-function ShareRow({ share: s }: { share: DayShare }) {
+function ShareRow({
+  share: s,
+  instead,
+}: {
+  share: DayShare;
+  /** Done instead of saving, in the landing page's preview. */
+  instead?: () => void;
+}) {
   const [saving, start] = useTransition();
-  const save = (action: () => Promise<unknown>, what: string) =>
-    !saving &&
-    start(async () => {
-      await runAction(action(), what);
-    });
+  const save = (action: () => Promise<unknown>, what: string) => {
+    if (instead) instead();
+    else if (!saving)
+      start(async () => {
+        await runAction(action(), what);
+      });
+  };
   return (
     <div
       aria-disabled={saving || undefined}
@@ -672,7 +691,18 @@ export function InvitedRow({ invitation: i }: { invitation: InvitationView }) {
  * Someone else's day card's ⋯ menu: stop seeing it, which ends the share
  * (they'd have to share it again). Holds the menu while it saves.
  */
-function StopSeeingMenu({ personId, name, span }: { personId: string; name: string; span: string }) {
+function StopSeeingMenu({
+  personId,
+  name,
+  span,
+  instead,
+}: {
+  personId: string;
+  name: string;
+  span: string;
+  /** Done instead of saving, in the landing page's preview. */
+  instead?: () => void;
+}) {
   const [saving, start] = useTransition();
   return (
     <DropdownMenu>
@@ -686,12 +716,13 @@ function StopSeeingMenu({ personId, name, span }: { personId: string; name: stri
       <DropdownMenuContent align="end" className="min-w-52">
         <DropdownMenuItem
           variant="destructive"
-          onClick={() =>
-            !saving &&
-            start(async () => {
-              await runAction(leaveDayShareAction(personId), `stop seeing ${name}’s ${span}`);
-            })
-          }
+          onClick={() => {
+            if (instead) instead();
+            else if (!saving)
+              start(async () => {
+                await runAction(leaveDayShareAction(personId), `stop seeing ${name}’s ${span}`);
+              });
+          }}
         >
           Stop seeing {name}’s {span}
         </DropdownMenuItem>

@@ -46,6 +46,7 @@ export function Reactions({
   viewerId,
   canReact = true,
   quiet = false,
+  offline = false,
   className,
 }: {
   target: ReactionRef;
@@ -56,6 +57,8 @@ export function Reactions({
    * (a `relative group/reactable`) until it's hovered or focused; always
    * there on touch. */
   quiet?: boolean;
+  /** Reacting shows here and saves nothing, as on the landing page's preview. */
+  offline?: boolean;
   className?: string;
 }) {
   const [views, setViews] = useState(reactions);
@@ -74,6 +77,7 @@ export function Reactions({
     setOpen(false);
     const before = views;
     setViews(toggled(views, emoji, { userId: viewerId, name: "You" }));
+    if (offline) return;
     const n = ++latest.current;
     void runAction(
       toggleReactionAction(target, emoji).then((saved) => {

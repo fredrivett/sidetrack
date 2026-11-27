@@ -1,6 +1,6 @@
 "use client";
 
-import { History, SquareKanban, Sunrise } from "lucide-react";
+import { HeartHandshake, History, SquareKanban, Sunrise } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -16,6 +16,7 @@ import { AgendaView } from "@/components/AgendaView";
 import { AgentSessionsProvider } from "@/components/agent-sessions";
 import { AuditDialog } from "@/components/AuditDialog";
 import { BoardHeader, BoardRail, ColumnCard, MenuViewTitle } from "@/components/BoardLayout";
+import { type CheckIn, CheckInsView, type MyDay } from "@/components/CheckInsView";
 import { cn } from "@/lib/utils";
 import { DoneView } from "@/components/DoneView";
 import { FilterMenu } from "@/components/FilterMenu";
@@ -36,10 +37,10 @@ import {
 import { UserMenu } from "@/components/UserMenu";
 import { type ItemFilters, matchesFilters, NO_FILTERS, shownInGroups } from "@/lib/filters";
 import { nestItems } from "@/lib/itemTree";
-import { addDays, weekday, weekSpan } from "@/lib/time";
+import { addDays, startOfDay, startOfWeek, weekday, weekSpan } from "@/lib/time";
 
-// The landing page's board: the app's own Brief, Board, Done, Activity and
-// account menu, on made-up lists kept in this component's state. It opens on
+// The landing page's board: the app's own Brief, Board, Check-ins, Done,
+// Activity and account menu, on made-up lists kept in this component's state. It opens on
 // the Brief, whose greeting is written here from the lists (previewGreeting),
 // so it keeps up as they change. Ticking, assigning, due dates, dragging and
 // folding checklists and sections all work, through local versions of the
@@ -211,10 +212,12 @@ function demo(today: string, now: number) {
     labels: ["Heating"],
     dueDate: addDays(today, -2),
   });
-  // Folded, to leave room for the roof's checklist below.
+  // Folded, to leave room for the roof's checklist below. Sam's doing it at
+  // the weekend, as he says in its comment, which puts it in his week.
   const tap = add("fix", 6, "Fix the dripping tap", {
     assigneeIds: ["sam"],
     labels: ["Plumbing"],
+    ...weekSpan(today, 0, "weekend"),
     collapsed: true,
   });
   add("fix", 8, "Buy washers", { parentId: tap, completedAt: hoursAgo(26) });
@@ -428,6 +431,94 @@ function previewGreeting(items: Item[], sessions: AgentSession[], today: string)
   };
 }
 
+// The reactions on the sample days. Made once, not per render: Reactions
+// starts over from its prop whenever that changes, which would drop the
+// visitor's own reactions at their next tick.
+const samReacted = (emoji: string) => ({ emoji, people: [{ userId: SAM.userId, name: SAM.name ?? "" }], mine: false });
+const FRED_REACTIONS = { note: [samReacted("💪")], wrapUp: [] };
+const JO_REACTIONS = { note: [], wrapUp: [samReacted("❤️")] };
+
+/**
+ * Check-ins on the sample lists: the viewer's day, shared with Sam, Sam's
+ * week and Jo's day, already wrapped up. Each is someone's items on the Home
+ * lists (and the viewer's on Launch too), read from the lists as they stand,
+ * so ticking one there or on the board shows on both. Shown only once the
+ * visitor opens Check-ins, so its clock is the browser's.
+ */
+function demoDays(items: Item[], today: string, now: number): { myDay: MyDay; checkIns: CheckIn[] } {
+  // Someone's items, with their whole checklists, as the server sends them.
+  const itemsOf = (userId: string, lists: string[]) => {
+    const theirs = new Set(
+      items.filter((i) => lists.includes(i.projectId) && i.assigneeIds.includes(userId)).map((i) => i.id),
+    );
+    return items.filter((i) => theirs.has(i.id) || (i.parentId !== null && theirs.has(i.parentId))).map((i) => i.id);
+  };
+  const dayStart = startOfDay(now);
+  const day = (p: AssigneeView, within: "today" | "week", extra: Partial<CheckIn>): CheckIn => ({
+    personId: p.userId,
+    username: p.displayUsername,
+    name: p.name ?? "",
+    image: p.image,
+    within,
+    day: within === "today" ? today : addDays(today, -((weekday(today) + 6) % 7)),
+    startsAt: within === "today" ? dayStart : startOfWeek(now),
+    today,
+    note: null,
+    mood: [],
+    wrapUp: null,
+    lists: [],
+    alsoItemIds: itemsOf(p.userId, ["cho", "fix"]),
+    ...extra,
+  });
+  return {
+    myDay: {
+      within: "today",
+      day: today,
+      startsAt: dayStart,
+      today,
+      note: "Coffee in hand, phone on silent. If the launch post gets written today, the rest can wait.",
+      mood: ["Focused"],
+      wrapUp: null,
+      reactions: FRED_REACTIONS,
+      itemIds: itemsOf(VIEWER, ALL_LISTS),
+      shares: [
+        {
+          personId: SAM.userId,
+          username: SAM.displayUsername,
+          name: SAM.name ?? "",
+          image: null,
+          within: "today",
+          note: true,
+          mood: true,
+          pending: false,
+          places: [
+            { kind: "space", id: "home", name: "Home", pending: false },
+            { kind: "list", id: "lch", name: "Launch", pending: false },
+          ],
+          withoutPlaces: false,
+        },
+      ],
+      invited: [],
+    },
+    checkIns: [
+      day(SAM, "week", {
+        note: "Kids are off school all week, so I'm fitting jobs in around them. Wish me luck with that tap.",
+        mood: ["Busy"],
+      }),
+      day(JO, "today", {
+        note: "Slow start and sunny out. Pottering in the garden for a bit.",
+        mood: ["Taking it easy"],
+        wrapUp: {
+          note: "Lovely quiet one. The fern was looking sorry for itself, so it's got a shady corner now. Fingers crossed it perks up.",
+          mood: ["Good day"],
+          closedAt: now - 20 * 60_000,
+        },
+        reactions: JO_REACTIONS,
+      }),
+    ],
+  };
+}
+
 /** One of the viewer's agents at work on an item, last heard from then. */
 function agentSession(itemId: string, agentName: string, lastActiveAt: number): AgentSession {
   return {
@@ -465,7 +556,7 @@ export function PreviewBoard({
   const [log, setLog] = useState(initial.log);
   const [collapsedTrays, setCollapsedTrays] = useState<ReadonlySet<string>>(new Set());
   const [filters, setFilters] = useState(NO_FILTERS);
-  const [view, setView] = useState<"brief" | "board" | "done">("brief");
+  const [view, setView] = useState<"brief" | "board" | "check-ins" | "done">("brief");
   const [activityOpen, setActivityOpen] = useState(false);
 
   // What needs an account (an item's dialog, settings) asks for one instead.
@@ -777,6 +868,7 @@ export function PreviewBoard({
                     [
                       ["Brief", Sunrise],
                       ["Board", SquareKanban],
+                      ["Check-ins", HeartHandshake],
                     ] as const
                   ).map(([label, Icon]) => {
                     const to = label.toLowerCase() as typeof view;
@@ -853,6 +945,19 @@ export function PreviewBoard({
                   }}
                 />
               </AgendaSavesContext>
+            ) : view === "check-ins" ? (
+              <CheckInsView
+                {...demoDays(items, today, now)}
+                viewer={{ name: FRED.name ?? "", username: FRED.displayUsername, image: FRED.image }}
+                projectsById={new Map(LISTS.map((l) => [l.id, l]))}
+                itemsByProject={itemsByProject}
+                assigneesByProject={assigneesByProject}
+                prLinksByItem={{}}
+                parentTitles={{}}
+                viewerId={VIEWER}
+                onShareDay={askToSignUp}
+                preview={{ onOpenItem: askToSignUp, onNeedsAccount: askToSignUp }}
+              />
             ) : view === "done" ? (
               <>
                 <MenuViewTitle title="Done items" onBack={() => setView("board")} />
