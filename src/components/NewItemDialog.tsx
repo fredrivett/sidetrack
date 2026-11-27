@@ -24,6 +24,7 @@ import { type Due, dueLabel, parseDue, sameDue } from "@/lib/time";
 import { cutTitle, placeParts, ruleParts, type TitlePart } from "@/lib/titleParts";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ChecklistLine } from "@/components/ChecklistLine";
 import { MentionTextarea } from "@/components/MentionTextarea";
 import { clearDrafts, readDraft, useDraft } from "@/components/use-draft";
 import { useStoredState } from "@/components/use-stored-state";
@@ -985,63 +986,66 @@ export function NewItemDialog({
                 {subItems.map((sub) => {
                   const lineAssigned = editors.filter((a) => sub.assigneeIds?.includes(a.userId));
                   return (
-                  <div key={sub.id} className="flex items-center gap-2 rounded-md px-1 py-0.5">
-                    <Checkbox
-                      checked={sub.done}
-                      onCheckedChange={(done) => updateLine(sub.id, { done })}
-                      disabled={pending}
-                      aria-label={`${sub.done ? "Uncomplete" : "Complete"} ${sub.title}`}
-                    />
-                    {/* Opens the line, to set its date, people and the rest,
-                        as a saved sub-item opens from the item's checklist. */}
-                    <button
-                      type="button"
-                      onClick={() => setLineView({ id: sub.id, direction: "forward" })}
-                      disabled={pending}
-                      className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-sm hover:underline"
-                    >
-                      <span
-                        className={cn("min-w-0 truncate", sub.done && "text-neutral-400 line-through")}
-                      >
-                        {sub.title}
-                      </span>
-                      {sub.due && (
-                        <span className="shrink-0">
-                          <DueBadge due={sub.due.dueDate} from={sub.due.dueFrom} done={sub.done} />
-                        </span>
-                      )}
-                      {sub.repeat && (
-                        <span className="shrink-0">
-                          <RepeatBadge repeat={sub.repeat} completedAt={null} />
-                        </span>
-                      )}
-                      {sub.labels?.map((name) => (
-                        <span
-                          key={name}
-                          className="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400"
+                  // Opens the line, to set its date, people and the rest, as a
+                  // saved sub-item opens from the item's checklist.
+                  <ChecklistLine
+                    key={sub.id}
+                    title={sub.title}
+                    done={sub.done}
+                    onOpen={() => setLineView({ id: sub.id, direction: "forward" })}
+                    disabled={pending}
+                    checkbox={
+                      <Checkbox
+                        checked={sub.done}
+                        onCheckedChange={(done) => updateLine(sub.id, { done })}
+                        disabled={pending}
+                        aria-label={`${sub.done ? "Uncomplete" : "Complete"} ${sub.title}`}
+                      />
+                    }
+                    badges={
+                      <>
+                        {sub.due && (
+                          <span className="shrink-0">
+                            <DueBadge due={sub.due.dueDate} from={sub.due.dueFrom} done={sub.done} />
+                          </span>
+                        )}
+                        {sub.repeat && (
+                          <span className="shrink-0">
+                            <RepeatBadge repeat={sub.repeat} completedAt={null} />
+                          </span>
+                        )}
+                        {sub.labels?.map((name) => (
+                          <span
+                            key={name}
+                            className="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400"
+                          >
+                            {name}
+                          </span>
+                        ))}
+                      </>
+                    }
+                    end={
+                      <>
+                        {lineAssigned.length > 0 && <AvatarStack users={lineAssigned} size={18} />}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          disabled={pending}
+                          onClick={() => {
+                            setSubItems((cur) => cur.filter((l) => l.id !== sub.id));
+                            clearDrafts(lineDescriptionKey(sub.id));
+                            // The button unmounts, so keep focus in the checklist.
+                            subRef.current?.focus();
+                          }}
+                          aria-label={`Remove sub-item ${sub.title}`}
+                          className="text-neutral-400 touch:size-8"
                         >
-                          {name}
-                        </span>
-                      ))}
-                    </button>
-                    {lineAssigned.length > 0 && <AvatarStack users={lineAssigned} size={18} />}
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-xs"
-                      disabled={pending}
-                      onClick={() => {
-                        setSubItems((cur) => cur.filter((l) => l.id !== sub.id));
-                        clearDrafts(lineDescriptionKey(sub.id));
-                        // The button unmounts, so keep focus in the checklist.
-                        subRef.current?.focus();
-                      }}
-                      aria-label={`Remove sub-item ${sub.title}`}
-                      className="text-neutral-400 touch:size-8"
-                    >
-                      <X />
-                    </Button>
-                  </div>
+                          <X />
+                        </Button>
+                      </>
+                    }
+                  />
                   );
                 })}
                 <TitleField
