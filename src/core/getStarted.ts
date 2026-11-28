@@ -6,7 +6,7 @@
 // is an audited `profile.installed` event. How the stack is left (which cards
 // went to the back, whether it's collapsed) is view state on the user's row.
 
-import { type SQL, and, count, eq, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
+import { type SQL, and, eq, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { apiKeys, users } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
@@ -19,6 +19,7 @@ import {
   INSTALL_PLATFORMS,
   type InstallPlatform,
 } from "../lib/getStarted";
+import { canEditProject } from "./access";
 import { handleFor } from "./members";
 import {
   auditLog,
@@ -29,6 +30,12 @@ import {
   pushSubscriptions,
   spaceMembers,
 } from "./schema";
+
+/** Items of the user's own before labels are offered: enough to want to group. */
+export const LABEL_AFTER_ITEMS = 5;
+/** Items, or days since signing up, before securing the account is offered. */
+export const SECURE_AFTER_ITEMS = 10;
+export const SECURE_AFTER_DAYS = 7;
 
 interface Saved {
   later: GetStartedStep[];
@@ -144,17 +151,17 @@ function pendingInvitees(db: Db, userId: string): string[] {
   return [...new Set(people.map((p) => handleFor(p, p.id)))];
 }
 
-/**
- * Whether an item the user added, or one in a list they own, matches `where`:
- * the board they've set up, not just lists they were invited to.
- */
+/** Items the user added, or that are in a list they own: the board they've set up. */
+const ownItem = (userId: string) => or(eq(items.createdBy, userId), eq(projects.userId, userId));
+
+/** Whether one of the user's own items (ownItem) matches `where`. */
 function hasItem(db: Db, userId: string, where: SQL): boolean {
   return (
     db
       .select({ id: items.id })
       .from(items)
       .innerJoin(projects, eq(projects.id, items.projectId))
-      .where(and(or(eq(items.createdBy, userId), eq(projects.userId, userId)), where))
+      .where(and(ownItem(userId), where))
       .limit(1)
       .get() !== undefined
   );
@@ -170,8 +177,34 @@ export function getGetStarted(
   userId: string,
   { push = true }: { push?: boolean } = {},
 ): GetStarted {
-  const lists =
-    db.select({ n: count() }).from(projects).where(eq(projects.userId, userId)).get()?.n ?? 0;
+  const ownsList =
+    db.select({ id: projects.id }).from(projects).where(eq(projects.userId, userId)).limit(1).get() !==
+    undefined;
+  // A list they can add items to: their own, or one shared with them to edit.
+  // Someone invited to a list starts from it, without making one first.
+  const canAdd =
+    ownsList ||
+    db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(and(canEditProject(userId), eq(projects.status, "active")))
+      .limit(1)
+      .get() !== undefined;
+  // Counted only as far as the highest threshold, so it stops early: this runs
+  // on every board load, and an established board has many more.
+  const itemCount = db
+    .select({ id: items.id })
+    .from(items)
+    .innerJoin(projects, eq(projects.id, items.projectId))
+    .where(ownItem(userId))
+    .limit(Math.max(LABEL_AFTER_ITEMS, SECURE_AFTER_ITEMS))
+    .all().length;
+  const user = db
+    .select({ secure: users.twoFactorEnabled, createdAt: users.createdAt })
+    .from(users)
+    .where(eq(users.id, userId))
+    .get();
+  const daysIn = user ? (Date.now() - user.createdAt.getTime()) / 86_400_000 : 0;
   const installed = installedPlatforms(db, userId);
   // iOS only sends web push to an installed app, so a push subscription from
   // an iPhone or iPad means it's on the Home Screen there. (Android sends it
@@ -205,8 +238,7 @@ export function getGetStarted(
       .get() !== undefined;
 
   const done: Record<GetStartedStep, boolean> = {
-    // A list of their own: one shared with them isn't one they set up.
-    lists: lists >= 1,
+    lists: canAdd,
     date: hasItem(db, userId, isNotNull(items.dueDate)),
     repeat: hasItem(db, userId, isNotNull(items.repeatEvery)),
     // A label on an item, or one made in List details before using it.
@@ -228,25 +260,27 @@ export function getGetStarted(
         .limit(1)
         .get() !== undefined,
     // Unticks if they turn it off again.
-    secure:
-      db
-        .select({ on: users.twoFactorEnabled })
-        .from(users)
-        .where(eq(users.id, userId))
-        .get()?.on === true,
+    secure: user?.secure === true,
     phone: installed.has("phone") || iosPush,
     computer: installed.has("computer"),
     share: isSharing(db, userId),
     agent,
   };
-  // Each waits for what it builds on: dates and labels go on items, which
-  // need a list of the user's own; repeating needs a date. A step that's
-  // done always shows, ticked.
+  // Each step waits until it's useful, so a new account starts with one:
+  // most need a list to put things in, sharing a list of their own, and
+  // repeats and nudges something with a date. Labels wait for enough items to
+  // group, and securing the account for something worth protecting. A step
+  // that's done always shows, ticked.
   const waitsFor: Partial<Record<GetStartedStep, boolean>> = {
     date: done.lists,
-    label: done.lists,
+    phone: done.lists,
+    computer: done.lists,
+    agent: done.lists,
+    share: ownsList,
     repeat: done.date,
-    notifications: push,
+    notifications: push && done.date,
+    label: itemCount >= LABEL_AFTER_ITEMS,
+    secure: itemCount >= SECURE_AFTER_ITEMS || daysIn >= SECURE_AFTER_DAYS,
   };
   const steps = GET_STARTED_STEPS.filter((step) => done[step] || (waitsFor[step] ?? true));
   const saved = readSaved(db, userId);

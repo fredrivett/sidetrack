@@ -209,10 +209,9 @@ export function GetStartedStack({
   );
 
   const card = (step: GetStartedStep) => {
-    const optional = step === "agent";
     const laterButton = (
       <Button size="sm" variant="ghost" onClick={() => later(step)}>
-        {optional ? "Not now" : "Later"}
+        Later
       </Button>
     );
     let why: React.ReactNode;
@@ -406,14 +405,7 @@ export function GetStartedStack({
           />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-sm font-medium">{TITLES[step]}</h3>
-            {optional && (
-              <span className="rounded border border-border px-1.5 text-[11px] text-muted-foreground">
-                Optional
-              </span>
-            )}
-          </div>
+          <h3 className="text-sm font-medium">{TITLES[step]}</h3>
           <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{why}</p>
           {step === "phone" && showCode && device?.platform === "computer" && (
             <div className="mt-3">
@@ -451,7 +443,9 @@ export function GetStartedStack({
             />
           </span>
           <span className="tabular-nums text-neutral-400 dark:text-neutral-500">
-            {doneCount} of {state.steps.length}
+            {/* Not "of N": steps join as they become useful, and a growing
+                total would read as falling behind. */}
+            {doneCount} completed
           </span>
           <ChevronDown
             aria-hidden="true"
@@ -493,7 +487,8 @@ export function GetStartedStack({
               <li key={step} className="flex items-center gap-2 px-1 py-0.5 text-muted-foreground">
                 <Check aria-hidden="true" className="size-3.5 text-emerald-600 dark:text-emerald-400" />
                 <span className="flex-1">{TITLES[step]}</span>
-                <span className="text-xs">Done</span>
+                {/* The tick says it to everyone else. */}
+                <span className="sr-only">Done</span>
               </li>
             ) : (
               <li key={step}>
@@ -508,7 +503,6 @@ export function GetStartedStack({
                 >
                   <span aria-hidden="true" className="size-3.5 rounded-[4px] border border-neutral-400" />
                   <span className="flex-1">{TITLES[step]}</span>
-                  {step === "agent" && <span className="text-xs text-muted-foreground">Optional</span>}
                 </button>
               </li>
             ),

@@ -1,12 +1,12 @@
 // The Agenda's Get started steps, shared by the server that works out where
 // the user is with them (core/getStarted.ts) and the stack that shows them.
 
-/** The steps in the order they're offered. `agent` is optional. */
+/** The steps in the order they're offered. */
 // The board's own habits first (dates, then repeats, then labels), then
-// getting it onto devices; `secure` comes late, once there's something to
-// protect. `repeat` is only offered once something has a date
-// (GetStarted.steps), and `notifications` after the phone, which an iPhone
-// needs before it can turn them on.
+// getting it onto devices; `notifications` after the phone, which an iPhone
+// needs before it can turn them on. Each step is only offered once it's
+// useful, such as repeats once something has a date (`waitsFor` in
+// core/getStarted.ts), so most join the stack later, in their place here.
 export const GET_STARTED_STEPS = [
   "lists",
   "date",
