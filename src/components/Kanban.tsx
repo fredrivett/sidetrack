@@ -858,16 +858,15 @@ export function Kanban({
     [setShare],
   );
 
-  // Open the new-item dialog with the caller's list (a list's ⋯ menu), or
-  // none (the C shortcut, the palette), which the dialog suggests from the
-  // title. With no lists on the board the viewer can add to, there's nowhere
-  // to add an item — start a list instead.
   // Whether there's a list the viewer can add an item to. Without one, the
   // buttons that add an item are hidden; only C, a shortcut that can't be
   // hidden, still answers, by making a list first.
   const canAddItem = projects.some(
     (p) => p.access === "edit" && (view === "archived" || p.status === "active"),
   );
+  // Open the new-item dialog with the caller's list (a list's ⋯ menu), or
+  // none (the C shortcut, the palette), which the dialog suggests from the
+  // title. With no list to add to, start a list, then go on to the item.
   const openNewItem = useCallback(
     (projectId?: string, dueToday?: boolean) => {
       if (!canAddItem) {
