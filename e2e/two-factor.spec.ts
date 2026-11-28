@@ -2,7 +2,9 @@ import { totpCode } from "@/auth/totp.test-helper";
 import { expect, test } from "./fixtures";
 
 test("sets up two-factor sign-in, then signs in with a code", async ({ page, user }) => {
-  // From Get started's card, which opens setup at the password step.
+  // From Get started's card, which opens setup at the password step. It's
+  // offered once there's something to protect: ten items.
+  user.addList("Home", Array.from({ length: 10 }, (_, n) => `Item ${n + 1}`));
   await page.goto("/brief");
   const getStarted = page.getByRole("region", { name: "Get started" });
   await getStarted.getByRole("button", { name: "Secure your account" }).click();

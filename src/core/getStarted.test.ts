@@ -38,25 +38,50 @@ function addPushDevice(db: ReturnType<typeof setup>["db"], userId: string, devic
 }
 
 describe("getGetStarted", () => {
-  it("starts with every step open, in order", () => {
+  it("starts a new account on its first list alone", () => {
     const { db, fred } = setup();
     const state = getGetStarted(db, fred);
     expect(Object.values(state.done).some(Boolean)).toBe(false);
-    // Dates and labels wait for a list to put items in; repeat waits for a date.
-    expect(state.steps).toEqual(["lists", "phone", "notifications", "computer", "share", "secure", "agent"]);
+    expect(state.steps).toEqual(["lists"]);
     expect(state.queue).toEqual(state.steps);
     expect(state.collapsed).toBe(false);
   });
 
-  it("offers dates and labels once the user has a list of their own, in their place", () => {
-    const { db, fred, alice } = setup();
-    // A list shared with fred doesn't count: it isn't one he set up.
-    const theirs = createProject(db, alice, { name: "Theirs" }, "web");
-    inviteMember(db, alice, theirs.id, "fred", "web");
-    acceptInvite(db, fred, theirs.id, "web");
-    expect(getGetStarted(db, fred).steps).not.toContain("date");
+  it("brings in each step once it's useful, in its place", () => {
+    const { db, fred } = setup();
+    const home = createProject(db, fred, { name: "Home" }, "web");
+    expect(getGetStarted(db, fred).queue).toEqual(["date", "phone", "computer", "share", "agent"]);
+    // Something dated: repeats and nudges.
+    addItem(db, fred, { projectId: home.id, title: "Dentist", dueDate: "2026-11-24" }, "web");
+    expect(getGetStarted(db, fred).queue).toEqual(["repeat", "phone", "notifications", "computer", "share", "agent"]);
+    // Enough items to group: labels, at five and not before.
+    for (const n of [2, 3, 4]) addItem(db, fred, { projectId: home.id, title: `Item ${n}` }, "web");
+    expect(getGetStarted(db, fred).steps).not.toContain("label");
+    addItem(db, fred, { projectId: home.id, title: "Item 5" }, "web");
+    expect(getGetStarted(db, fred).queue.slice(0, 2)).toEqual(["repeat", "label"]);
+    // Something worth protecting: securing the account, at ten.
+    for (const n of [6, 7, 8, 9]) addItem(db, fred, { projectId: home.id, title: `Item ${n}` }, "web");
+    expect(getGetStarted(db, fred).steps).not.toContain("secure");
+    addItem(db, fred, { projectId: home.id, title: "Item 10" }, "web");
+    expect(getGetStarted(db, fred).queue.slice(-2)).toEqual(["secure", "agent"]);
+  });
+
+  it("offers securing the account a week after signing up, however few items", () => {
+    const { db, fred } = setup();
     createProject(db, fred, { name: "Home" }, "web");
-    expect(getGetStarted(db, fred).queue.slice(0, 3)).toEqual(["date", "label", "phone"]);
+    const signedUp = (days: number) =>
+      db.update(users).set({ createdAt: new Date(Date.now() - days * 86_400_000) }).where(eq(users.id, fred)).run();
+    signedUp(6.9);
+    expect(getGetStarted(db, fred).steps).not.toContain("secure");
+    signedUp(7);
+    expect(getGetStarted(db, fred).steps).toContain("secure");
+  });
+
+  it("leaves notifications out where the server can't send them", () => {
+    const { db, fred } = setup();
+    const home = createProject(db, fred, { name: "Home" }, "web");
+    addItem(db, fred, { projectId: home.id, title: "Dentist", dueDate: "2026-11-24" }, "web");
+    expect(getGetStarted(db, fred, { push: false }).steps).not.toContain("notifications");
   });
 
   it("offers repeat once something has a date, and ticks each from the user's own items", () => {
@@ -75,7 +100,7 @@ describe("getGetStarted", () => {
     expect(state.done.date).toBe(true);
     expect(state.done.repeat).toBe(false);
     // It takes the place it has in the order, ahead of the devices.
-    expect(state.queue.slice(0, 3)).toEqual(["repeat", "label", "phone"]);
+    expect(state.queue.slice(0, 3)).toEqual(["repeat", "phone", "notifications"]);
 
     addItem(db, fred, { projectId: home.id, title: "Rent", repeat: { every: 1, unit: "month" } }, "web");
     state = getGetStarted(db, fred);
@@ -112,16 +137,23 @@ describe("getGetStarted", () => {
     expect(getGetStarted(db, fred).done.secure).toBe(false);
   });
 
-  it("ticks lists from the user's first list of their own", () => {
+  it("starts someone invited to edit a list from it, but shares only a list of their own", () => {
     const { db, fred, alice } = setup();
-    // A list shared with fred isn't one he set up.
     const theirs = createProject(db, alice, { name: "Theirs" }, "web");
-    inviteMember(db, alice, theirs.id, "fred", "web");
+    // Seeing a list isn't somewhere to add things.
+    inviteMember(db, alice, theirs.id, "fred", "web", "viewer");
     acceptInvite(db, fred, theirs.id, "web");
     expect(getGetStarted(db, fred).done.lists).toBe(false);
+    const groceries = createProject(db, alice, { name: "Groceries" }, "web");
+    inviteMember(db, alice, groceries.id, "fred", "web");
+    acceptInvite(db, fred, groceries.id, "web");
+    let state = getGetStarted(db, fred);
+    expect(state.done.lists).toBe(true);
+    // Sharing is ticked by Alice's list, and offered only once he owns one.
+    expect(state.queue).toEqual(["date", "phone", "computer", "agent"]);
     createProject(db, fred, { name: "Home" }, "web");
-    expect(getGetStarted(db, fred).done.lists).toBe(true);
-    expect(getGetStarted(db, fred).queue).not.toContain("lists");
+    state = getGetStarted(db, fred);
+    expect(state.steps).toContain("share");
   });
 
   it("ticks share once someone accepts a list invite, for both of them", () => {
@@ -208,22 +240,32 @@ describe("recordInstall", () => {
 });
 
 describe("the stack's view state", () => {
-  it("puts cards sent to the back after the rest, in the order they went", () => {
+  /** Fred with every step offered: a list and ten items, one of them dated. */
+  function setupAllOffered() {
     const { db, fred } = setup();
+    const home = createProject(db, fred, { name: "Home" }, "web");
+    for (let n = 1; n <= 10; n++) {
+      addItem(db, fred, { projectId: home.id, title: `Item ${n}`, dueDate: n === 1 ? "2026-11-24" : undefined }, "web");
+    }
+    return { db, fred };
+  }
+
+  it("puts cards sent to the back after the rest, in the order they went", () => {
+    const { db, fred } = setupAllOffered();
     sendGetStartedToBack(db, fred, "phone");
-    sendGetStartedToBack(db, fred, "lists");
-    const rest = ["notifications", "computer", "share", "secure", "agent"];
-    expect(getGetStarted(db, fred).queue).toEqual([...rest, "phone", "lists"]);
+    sendGetStartedToBack(db, fred, "repeat");
+    const rest = ["label", "notifications", "computer", "share", "secure", "agent"];
+    expect(getGetStarted(db, fred).queue).toEqual([...rest, "phone", "repeat"]);
     // Sending one back again moves it behind the other.
     sendGetStartedToBack(db, fred, "phone");
-    expect(getGetStarted(db, fred).queue).toEqual([...rest, "lists", "phone"]);
+    expect(getGetStarted(db, fred).queue).toEqual([...rest, "repeat", "phone"]);
     // A card that's done leaves the queue wherever it was.
     recordInstall(db, fred, "phone", "web");
-    expect(getGetStarted(db, fred).queue).toEqual([...rest, "lists"]);
+    expect(getGetStarted(db, fred).queue).toEqual([...rest, "repeat"]);
   });
 
   it("keeps collapsed separately from the order", () => {
-    const { db, fred } = setup();
+    const { db, fred } = setupAllOffered();
     sendGetStartedToBack(db, fred, "computer");
     setGetStartedCollapsed(db, fred, true);
     const state = getGetStarted(db, fred);
@@ -232,13 +274,13 @@ describe("the stack's view state", () => {
   });
 
   it("reads a damaged saved state as untouched", () => {
-    const { db, fred } = setup();
+    const { db, fred } = setupAllOffered();
     db.update(users)
       .set({ getStarted: { later: ["nope", 3, "share"], collapsed: "yes" } })
       .where(eq(users.id, fred))
       .run();
     const state = getGetStarted(db, fred);
-    expect(state.queue).toEqual(["lists", "phone", "notifications", "computer", "secure", "agent", "share"]);
+    expect(state.queue).toEqual(["repeat", "label", "phone", "notifications", "computer", "secure", "agent", "share"]);
     expect(state.collapsed).toBe(false);
   });
 });
