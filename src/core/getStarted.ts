@@ -6,7 +6,7 @@
 // is an audited `profile.installed` event. How the stack is left (which cards
 // went to the back, whether it's collapsed) is view state on the user's row.
 
-import { type SQL, and, count, eq, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
+import { type SQL, and, eq, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { apiKeys, users } from "./auth-schema";
 import { type AuditOrigin, recordAudit } from "./audit";
