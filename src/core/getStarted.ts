@@ -190,13 +190,15 @@ export function getGetStarted(
       .where(and(canEditProject(userId), eq(projects.status, "active")))
       .limit(1)
       .get() !== undefined;
-  const itemCount =
-    db
-      .select({ n: count() })
-      .from(items)
-      .innerJoin(projects, eq(projects.id, items.projectId))
-      .where(ownItem(userId))
-      .get()?.n ?? 0;
+  // Counted only as far as the highest threshold, so it stops early: this runs
+  // on every board load, and an established board has many more.
+  const itemCount = db
+    .select({ id: items.id })
+    .from(items)
+    .innerJoin(projects, eq(projects.id, items.projectId))
+    .where(ownItem(userId))
+    .limit(Math.max(LABEL_AFTER_ITEMS, SECURE_AFTER_ITEMS))
+    .all().length;
   const user = db
     .select({ secure: users.twoFactorEnabled, createdAt: users.createdAt })
     .from(users)
