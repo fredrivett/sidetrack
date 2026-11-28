@@ -136,13 +136,20 @@ export function loadPosts(dir = POSTS_DIR): ChangelogPost[] {
 
 /**
  * The posts the Brief stacks, newest first: those under POST_SHOWS_FOR_DAYS
- * old on `today` (YYYY-MM-DD) that the viewer hasn't read or dismissed.
+ * old on `today` (YYYY-MM-DD) that the viewer hasn't read or dismissed. Only
+ * posts from after the day they signed up (`joined`): what came before is
+ * how Sidetrack already was when they arrived, not news to them.
  */
-export function postsToShow(posts: ChangelogPost[], seen: string[], today: string): ChangelogPost[] {
+export function postsToShow(
+  posts: ChangelogPost[],
+  seen: string[],
+  today: string,
+  joined: string,
+): ChangelogPost[] {
   const now = Date.parse(`${today}T00:00:00Z`);
   return posts.filter((p) => {
     const age = (now - Date.parse(`${p.date}T00:00:00Z`)) / 86_400_000;
-    return age >= 0 && age < POST_SHOWS_FOR_DAYS && !seen.includes(p.slug);
+    return age >= 0 && age < POST_SHOWS_FOR_DAYS && p.date > joined && !seen.includes(p.slug);
   });
 }
 

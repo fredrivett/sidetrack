@@ -298,6 +298,7 @@ test("someone invited by email joins through the link and sees your week", async
   await theirs.goto(`${baseURL}${link}`);
   await expect(theirs.getByText("E2E User wants to share their week with you")).toBeVisible();
   await expect(theirs.getByLabel("Email")).toHaveValue(email);
+  await theirs.getByLabel("Name", { exact: true }).fill("Newcomer");
   await theirs.getByLabel("Username").fill(`n${user.username}`.slice(0, 30));
   await theirs.getByLabel("Password").fill("newcomer-password");
   await theirs.getByRole("button", { name: /Create account|Sign up/ }).click();

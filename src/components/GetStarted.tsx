@@ -47,7 +47,7 @@ import {
 import { runAction } from "./run-action";
 
 const TITLES: Record<GetStartedStep, string> = {
-  lists: "Set up your lists",
+  lists: "Create your first list",
   date: "Give something a date",
   repeat: "Make something repeat",
   label: "Create your first label",
@@ -219,7 +219,7 @@ export function GetStartedStack({
     let actions: React.ReactNode;
     switch (step) {
       case "lists":
-        why = "Make a list for each thing you're juggling: home, work, a side project.";
+        why = "Start with one thing you're juggling: home, work, a side project. Add a list for each of the others whenever you like.";
         actions = (
           <Button size="sm" onClick={onAddList}>
             Add a list

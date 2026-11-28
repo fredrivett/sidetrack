@@ -13,6 +13,24 @@ test("creates a list", async ({ page, user }) => {
   await expect(page.getByRole("button", { name: "Add item to Garden" })).toBeVisible();
 });
 
+// `user` signs in a brand-new user, with no lists.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+test("with no list, adding an item makes one first, then goes on to the item", async ({ page, user }) => {
+  await page.goto("/brief");
+  // Nothing offers to add an item until there's a list to put it in…
+  await expect(page.getByRole("button", { name: "Create your first list" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add for today" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Give something a date" })).toBeHidden();
+  // …but C, which can't be hidden, makes the list and carries on.
+  await page.keyboard.press("c");
+  const list = page.getByRole("dialog", { name: "New list" });
+  await list.getByPlaceholder("List name, e.g. Home or Buy").fill("Errands");
+  await list.getByRole("button", { name: "Create" }).click();
+  const item = page.getByRole("dialog", { name: "New item" });
+  await expect(item.getByRole("combobox", { name: "List" })).toHaveText(/Errands/);
+  await expect(item.getByRole("button", { name: "Due Today" })).toBeHidden();
+});
+
 test("shows a long list's rows as it scrolls", async ({ page, user }) => {
   user.addList(
     "Inbox",

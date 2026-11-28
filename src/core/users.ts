@@ -154,6 +154,12 @@ export function markPostsSeen(db: Db, userId: string, slugs: string[]): void {
   announceChange({ actor: userId, projectId: null });
 }
 
+/** The day the user signed up, YYYY-MM-DD in UTC, like changelog posts' dates. */
+export function getSignupDay(db: Db, userId: string): string {
+  const at = db.select({ at: users.createdAt }).from(users).where(eq(users.id, userId)).get()?.at;
+  return (at ?? new Date()).toISOString().slice(0, 10);
+}
+
 /** The display fields for the user's own avatar and name, or null if unknown. */
 export function getProfile(db: Db, userId: string) {
   return (

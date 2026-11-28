@@ -66,7 +66,8 @@ export function CommandPalette({
   /** The lists on the board, in board order; archived lists stay out. */
   lists: ProjectView[];
   itemsByProject: Record<string, Item[]>;
-  onNewItem: () => void;
+  /** Left out while there's no list to add an item to. */
+  onNewItem?: () => void;
   onNewList: () => void;
   onSwitchView: (view: BoardView) => void;
   onShowActivity: () => void;
@@ -100,7 +101,7 @@ export function CommandPalette({
     shortcut?: string;
     action: () => void;
   }[] = [
-    { label: "New item", icon: <Plus />, shortcut: "C", action: onNewItem },
+    ...(onNewItem ? [{ label: "New item", icon: <Plus />, shortcut: "C", action: onNewItem }] : []),
     { label: "New list", icon: <ListPlus />, shortcut: "⇧C", action: onNewList },
     { label: "Go to Brief", icon: <Sunrise />, shortcut: "1", action: () => onSwitchView("brief") },
     { label: "Go to Board", icon: <Columns3 />, shortcut: "2", action: () => onSwitchView("board") },
