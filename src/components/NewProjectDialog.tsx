@@ -48,6 +48,7 @@ export function NewProjectDialog({
   takenPrefixes,
   spaces,
   defaultSpaceId = "",
+  onCreated,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -58,6 +59,8 @@ export function NewProjectDialog({
   spaces: SpaceView[];
   /** The Space to create the list in by default: the tray whose + opened it. */
   defaultSpaceId?: string;
+  /** Called with the new list once it's saved, after the dialog closes. */
+  onCreated?: (list: { id: string }) => void;
 }) {
   // Kept until the list is created or the dialog's cancelled (useDraft).
   const nameDraft = useDraft("new-list:name");
@@ -104,6 +107,7 @@ export function NewProjectDialog({
     // The Homepage chip only takes a valid URL, so there's nothing else to check.
     if (!trimmedName) return;
     start(async () => {
+      let list: { id: string } | undefined;
       const created = await runAction(
         createProjectAction({
           name: trimmedName,
@@ -112,10 +116,13 @@ export function NewProjectDialog({
           icon: icon.emoji,
           iconChosen: icon.chosen,
           spaceId: spaceId || null,
-        }),
+        }).then((p) => (list = p)),
         "create the list",
       );
-      if (created) close();
+      if (created) {
+        close();
+        if (list) onCreated?.(list);
+      }
     });
   }
 

@@ -45,7 +45,8 @@ describe("parsePost", () => {
 describe("postsToShow", () => {
   const post = (slug: string, date: string) => parsePost(`${slug}.md`, `---\ndate: ${date}\ntitle: T\n---\nText.\n`);
   const posts = [post("newer", "2026-11-21"), post("older", "2026-11-10")];
-  const slugs = (seen: string[], today: string) => postsToShow(posts, seen, today).map((p) => p.slug);
+  const slugs = (seen: string[], today: string, joined = "2026-01-01") =>
+    postsToShow(posts, seen, today, joined).map((p) => p.slug);
 
   // Seeing the newest must not hide the older one still unread.
   it("stacks every unseen post, newest first", () => {
@@ -59,6 +60,13 @@ describe("postsToShow", () => {
     expect(slugs([], "2026-12-10")).toEqual(["newer"]);
     expect(slugs([], "2026-12-21")).toEqual([]);
     expect(slugs([], "2026-11-20")).toEqual(["older"]);
+  });
+
+  // Someone who signed up after a post went out never sees it as news.
+  it("shows only posts from after the day the viewer signed up", () => {
+    expect(slugs([], "2026-11-21", "2026-11-09")).toEqual(["newer", "older"]);
+    expect(slugs([], "2026-11-21", "2026-11-10")).toEqual(["newer"]);
+    expect(slugs([], "2026-11-21", "2026-11-21")).toEqual([]);
   });
 });
 

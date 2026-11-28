@@ -42,10 +42,21 @@ describe("getGetStarted", () => {
     const { db, fred } = setup();
     const state = getGetStarted(db, fred);
     expect(Object.values(state.done).some(Boolean)).toBe(false);
-    // Repeat waits for a date.
-    expect(state.steps).toEqual(["lists", "date", "label", "phone", "notifications", "computer", "share", "secure", "agent"]);
+    // Dates and labels wait for a list to put items in; repeat waits for a date.
+    expect(state.steps).toEqual(["lists", "phone", "notifications", "computer", "share", "secure", "agent"]);
     expect(state.queue).toEqual(state.steps);
     expect(state.collapsed).toBe(false);
+  });
+
+  it("offers dates and labels once the user has a list of their own, in their place", () => {
+    const { db, fred, alice } = setup();
+    // A list shared with fred doesn't count: it isn't one he set up.
+    const theirs = createProject(db, alice, { name: "Theirs" }, "web");
+    inviteMember(db, alice, theirs.id, "fred", "web");
+    acceptInvite(db, fred, theirs.id, "web");
+    expect(getGetStarted(db, fred).steps).not.toContain("date");
+    createProject(db, fred, { name: "Home" }, "web");
+    expect(getGetStarted(db, fred).queue.slice(0, 3)).toEqual(["date", "label", "phone"]);
   });
 
   it("offers repeat once something has a date, and ticks each from the user's own items", () => {
@@ -64,7 +75,7 @@ describe("getGetStarted", () => {
     expect(state.done.date).toBe(true);
     expect(state.done.repeat).toBe(false);
     // It takes the place it has in the order, ahead of the devices.
-    expect(state.queue.slice(0, 3)).toEqual(["lists", "repeat", "label"]);
+    expect(state.queue.slice(0, 3)).toEqual(["repeat", "label", "phone"]);
 
     addItem(db, fred, { projectId: home.id, title: "Rent", repeat: { every: 1, unit: "month" } }, "web");
     state = getGetStarted(db, fred);
@@ -101,14 +112,14 @@ describe("getGetStarted", () => {
     expect(getGetStarted(db, fred).done.secure).toBe(false);
   });
 
-  it("counts lists the user owns, from two", () => {
+  it("ticks lists from the user's first list of their own", () => {
     const { db, fred, alice } = setup();
-    createProject(db, fred, { name: "Home" }, "web");
     // A list shared with fred isn't one he set up.
     const theirs = createProject(db, alice, { name: "Theirs" }, "web");
     inviteMember(db, alice, theirs.id, "fred", "web");
+    acceptInvite(db, fred, theirs.id, "web");
     expect(getGetStarted(db, fred).done.lists).toBe(false);
-    createProject(db, fred, { name: "Work" }, "web");
+    createProject(db, fred, { name: "Home" }, "web");
     expect(getGetStarted(db, fred).done.lists).toBe(true);
     expect(getGetStarted(db, fred).queue).not.toContain("lists");
   });
@@ -201,7 +212,7 @@ describe("the stack's view state", () => {
     const { db, fred } = setup();
     sendGetStartedToBack(db, fred, "phone");
     sendGetStartedToBack(db, fred, "lists");
-    const rest = ["date", "label", "notifications", "computer", "share", "secure", "agent"];
+    const rest = ["notifications", "computer", "share", "secure", "agent"];
     expect(getGetStarted(db, fred).queue).toEqual([...rest, "phone", "lists"]);
     // Sending one back again moves it behind the other.
     sendGetStartedToBack(db, fred, "phone");
@@ -227,7 +238,7 @@ describe("the stack's view state", () => {
       .where(eq(users.id, fred))
       .run();
     const state = getGetStarted(db, fred);
-    expect(state.queue).toEqual(["lists", "date", "label", "phone", "notifications", "computer", "secure", "agent", "share"]);
+    expect(state.queue).toEqual(["lists", "phone", "notifications", "computer", "secure", "agent", "share"]);
     expect(state.collapsed).toBe(false);
   });
 });

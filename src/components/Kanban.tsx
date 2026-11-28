@@ -533,7 +533,11 @@ export function Kanban({
   // Kept for this tab, so New item and its draft come back after a reload.
   const [newItem, setNewItem] = useStoredState("new-item", NEW_ITEM_CLOSED, "session");
   // New list starts in the Space of the tray whose + opened it, else in none.
-  const [newList, setNewList] = useState({ open: false, spaceId: "" });
+  // `thenItem`: opened from adding an item with no list to put it in, so the
+  // new list goes on to New item, `dueToday` as asked.
+  const [newList, setNewList] = useState<{ open: boolean; spaceId: string; thenItem?: { dueToday?: boolean } }>(
+    { open: false, spaceId: "" },
+  );
   // Kept for this tab, so Invite people and its draft come back after a reload.
   const [inviting, setInviting] = useStoredState("inviting", false, "session");
   // Share my day: open with who it's for, "" for nobody yet.
@@ -858,19 +862,21 @@ export function Kanban({
   // none (the C shortcut, the palette), which the dialog suggests from the
   // title. With no lists on the board the viewer can add to, there's nowhere
   // to add an item — start a list instead.
+  // Whether there's a list the viewer can add an item to. Without one, the
+  // buttons that add an item are hidden; only C, a shortcut that can't be
+  // hidden, still answers, by making a list first.
+  const canAddItem = projects.some(
+    (p) => p.access === "edit" && (view === "archived" || p.status === "active"),
+  );
   const openNewItem = useCallback(
     (projectId?: string, dueToday?: boolean) => {
-      if (
-        !projects.some(
-          (p) => p.access === "edit" && (view === "archived" || p.status === "active"),
-        )
-      ) {
-        setNewList({ open: true, spaceId: "" });
+      if (!canAddItem) {
+        setNewList({ open: true, spaceId: "", thenItem: { dueToday } });
         return;
       }
       setNewItem({ open: true, projectId: projectId ?? null, dueToday });
     },
-    [projects, view, setNewItem],
+    [canAddItem, setNewItem],
   );
 
 
@@ -1195,7 +1201,7 @@ export function Kanban({
                 : undefined
             }
             firstName={viewer?.name?.trim().split(/\s+/)[0] || null}
-            onAddForToday={() => openNewItem(undefined, true)}
+            onAddForToday={canAddItem ? () => openNewItem(undefined, true) : undefined}
             itemsByProject={itemsByProject}
             assigneesByProject={assigneesByProject}
             prLinksByItem={prLinksByItem}
@@ -1355,6 +1361,9 @@ export function Kanban({
           takenPrefixes={projects.filter((p) => p.isOwner).map((p) => p.prefix)}
           spaces={spaces.filter((s) => s.role === "admin" || s.role === "member")}
           defaultSpaceId={newList.spaceId}
+          onCreated={(list) => {
+            if (newList.thenItem) setNewItem({ open: true, projectId: list.id, dueToday: newList.thenItem.dueToday });
+          }}
         />
 
         <PullToSearch onOpen={() => palette.set(true)} />
@@ -1367,7 +1376,7 @@ export function Kanban({
           store={palette}
           lists={active}
           itemsByProject={itemsByProject}
-          onNewItem={() => openNewItem()}
+          onNewItem={canAddItem ? () => openNewItem() : undefined}
           onNewList={() => setNewList({ open: true, spaceId: "" })}
           onSwitchView={switchView}
           onShowActivity={() => setAudit({ open: true })}

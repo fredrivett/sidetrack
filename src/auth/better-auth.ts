@@ -244,6 +244,11 @@ export const auth = betterAuth({
           // Validate first: a bad avatar rejected after the claim below would
           // leave the instance locked with no user until the next boot.
           const normalized = withNormalizedAvatar(user);
+          // A name is required: the Brief greets people by it, and others
+          // see it on what they share. Sign-up used to fall back to the email.
+          if (typeof user.name !== "string" || !user.name.trim()) {
+            throw new APIError("BAD_REQUEST", { message: "Enter your name." });
+          }
           if (ALLOW_SIGNUP) return normalized;
           // Someone invited (an unused, unexpired link) may join a closed
           // instance: the invite is someone already here letting them in.

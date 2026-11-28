@@ -30,9 +30,6 @@ import {
   spaceMembers,
 } from "./schema";
 
-/** Lists a user needs before "Set up your lists" is done. */
-export const GET_STARTED_MIN_LISTS = 2;
-
 interface Saved {
   later: GetStartedStep[];
   collapsed: boolean;
@@ -208,7 +205,8 @@ export function getGetStarted(
       .get() !== undefined;
 
   const done: Record<GetStartedStep, boolean> = {
-    lists: lists >= GET_STARTED_MIN_LISTS,
+    // A list of their own: one shared with them isn't one they set up.
+    lists: lists >= 1,
     date: hasItem(db, userId, isNotNull(items.dueDate)),
     repeat: hasItem(db, userId, isNotNull(items.repeatEvery)),
     // A label on an item, or one made in List details before using it.
@@ -241,13 +239,16 @@ export function getGetStarted(
     share: isSharing(db, userId),
     agent,
   };
-  // Repeating builds on dates, so it waits for one; a step that's done
-  // always shows, ticked.
-  const steps = GET_STARTED_STEPS.filter(
-    (step) =>
-      done[step] ||
-      (step === "repeat" ? done.date : step === "notifications" ? push : true),
-  );
+  // Each waits for what it builds on: dates and labels go on items, which
+  // need a list of the user's own; repeating needs a date. A step that's
+  // done always shows, ticked.
+  const waitsFor: Partial<Record<GetStartedStep, boolean>> = {
+    date: done.lists,
+    label: done.lists,
+    repeat: done.date,
+    notifications: push,
+  };
+  const steps = GET_STARTED_STEPS.filter((step) => done[step] || (waitsFor[step] ?? true));
   const saved = readSaved(db, userId);
   const open = steps.filter((step) => !done[step]);
   const queue = [

@@ -106,7 +106,7 @@ export function LoginForm({
         const res = await signUp.email({
           email,
           password,
-          name: name || email,
+          name,
           username,
           ...(invite && { invite: invite.token }),
         });
@@ -136,12 +136,12 @@ export function LoginForm({
     }
   }
 
+  // Only a handle shown as taken or invalid holds the button back, where the
+  // note under it says why. One still being checked can be sent: the server
+  // checks it again, and an empty one is caught by the field's `required`.
   const usernameBlocksSubmit =
     mode === "sign-up" &&
-    (usernameStatus.kind === "taken" ||
-      usernameStatus.kind === "invalid" ||
-      usernameStatus.kind === "checking" ||
-      username === "");
+    (usernameStatus.kind === "taken" || usernameStatus.kind === "invalid");
 
   const switchMode = (to: Mode) => {
     setMode(to);
@@ -161,8 +161,9 @@ export function LoginForm({
       </AuthTitle>
       <form action={onSubmit} className="space-y-4">
         {mode === "sign-up" && (
-          <Field id="name" label="Name" hint="Optional">
-            <Input id="name" name="name" autoComplete="name" className="h-9" />
+          <Field id="name" label="Name">
+            {/* The first field, so typing starts there. */}
+            <Input id="name" name="name" autoComplete="name" required autoFocus className="h-9" />
           </Field>
         )}
         {mode === "sign-up" && (
@@ -221,7 +222,7 @@ export function LoginForm({
             placeholder="you@example.com"
             defaultValue={invite?.email}
             required
-            autoFocus
+            autoFocus={mode === "sign-in"}
             className="h-9"
           />
         </Field>
